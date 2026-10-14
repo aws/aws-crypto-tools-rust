@@ -39,7 +39,7 @@ long read_rss_bytes() {
     return resident_pages * sysconf(_SC_PAGESIZE);
 }
 
-bool round_trip(Aws::Esdk::Client& sdk,
+bool round_trip(const Aws::Esdk::Client& sdk,
                 const Aws::Esdk::HierarchicalKeyring& keyring,
                 const std::vector<std::uint8_t>& plaintext) {
     auto encrypted = sdk.encrypt(plaintext, keyring);

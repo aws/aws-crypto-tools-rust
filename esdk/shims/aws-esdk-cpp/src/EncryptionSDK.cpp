@@ -550,14 +550,14 @@ RawAesKeyring::RawAesKeyring(const std::string& key_namespace,
 
 EncryptResult Client::encrypt(const std::vector<std::uint8_t>& plaintext,
                                      const Keyring& keyring,
-                                     const EncryptOptions& options) {
+                                     const EncryptOptions& options) const {
     return encrypt(plaintext.data(), plaintext.size(), keyring, options);
 }
 
 EncryptResult Client::encrypt(const std::uint8_t* plaintext,
                                      std::size_t plaintext_len,
                                      const Keyring& keyring,
-                                     const EncryptOptions& options) {
+                                     const EncryptOptions& options) const {
     ::ffi::EncryptInput in{};
     in.keyring = &*keyring.impl_->handle;
     in.plaintext = ::rust::Slice<const std::uint8_t>(plaintext, plaintext_len);
@@ -585,20 +585,20 @@ EncryptResult Client::encrypt(const std::uint8_t* plaintext,
 
 DecryptResult Client::decrypt(const std::vector<std::uint8_t>& ciphertext,
                                      const Keyring& keyring,
-                                     const DecryptOptions& options) {
+                                     const DecryptOptions& options) const {
     return decrypt(ciphertext.data(), ciphertext.size(), keyring, options);
 }
 
 DecryptResult Client::decrypt(const Bytes& ciphertext,
                                      const Keyring& keyring,
-                                     const DecryptOptions& options) {
+                                     const DecryptOptions& options) const {
     return decrypt(ciphertext.data(), ciphertext.size(), keyring, options);
 }
 
 DecryptResult Client::decrypt(const std::uint8_t* ciphertext,
                                      std::size_t ciphertext_len,
                                      const Keyring& keyring,
-                                     const DecryptOptions& options) {
+                                     const DecryptOptions& options) const {
     ::ffi::DecryptInput in{};
     in.keyring = &*keyring.impl_->handle;
     in.ciphertext = ::rust::Slice<const std::uint8_t>(ciphertext, ciphertext_len);
@@ -625,7 +625,7 @@ DecryptResult Client::decrypt(const std::uint8_t* ciphertext,
 // Streaming
 
 EncryptStream Client::create_encrypt_stream(const Keyring& keyring,
-                                                   const EncryptOptions& options) {
+                                                   const EncryptOptions& options) const {
     ::ffi::EncryptInput in{};
     in.keyring = &*keyring.impl_->handle;
     in.encryption_context = detail::to_ec(options.encryption_context_);
@@ -650,7 +650,7 @@ EncryptStream Client::create_encrypt_stream(const Keyring& keyring,
 }
 
 DecryptStream Client::create_decrypt_stream(const Keyring& keyring,
-                                                   const DecryptOptions& options) {
+                                                   const DecryptOptions& options) const {
     ::ffi::DecryptInput in{};
     in.keyring = &*keyring.impl_->handle;
     in.encryption_context = detail::to_ec(options.encryption_context_);
@@ -744,14 +744,14 @@ StreamResult pump_stream(Stream& stream, std::istream& source, std::ostream& sin
 
 StreamResult Client::encrypt_stream(std::istream& source, std::ostream& sink,
                                            const Keyring& keyring,
-                                           const EncryptOptions& options) {
+                                           const EncryptOptions& options) const {
     EncryptStream stream = create_encrypt_stream(keyring, options);
     return detail::pump_stream(stream, source, sink);
 }
 
 StreamResult Client::decrypt_stream(std::istream& source, std::ostream& sink,
                                            const Keyring& keyring,
-                                           const DecryptOptions& options) {
+                                           const DecryptOptions& options) const {
     DecryptStream stream = create_decrypt_stream(keyring, options);
     return detail::pump_stream(stream, source, sink);
 }

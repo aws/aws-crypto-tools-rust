@@ -31,7 +31,7 @@ Aws::Esdk::Credentials credentials_for_request() {
 // Handles one request: every KMS call it makes uses that request's credentials.
 void handle_request(const Aws::Esdk::KmsClient& kms,
                     const Aws::Esdk::DdbClient& ddb,
-                    Aws::Esdk::Client& esdk,
+                    const Aws::Esdk::Client& esdk,
                     const Aws::Esdk::Credentials& credentials) {
     // The AWS Crypto Tools CI test key store.
     // Replace these with your own key store's table, name, and KMS key ARN.
