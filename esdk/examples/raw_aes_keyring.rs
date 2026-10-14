@@ -6,8 +6,8 @@
 //! Runs offline.
 
 use aws_crypto_mpl::{AesGcm, RawAesKeyring};
+use aws_esdk::EncryptionContext;
 use aws_esdk::error::Error;
-use aws_esdk::{Client, EncryptionContext};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -31,7 +31,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     encryption_context.insert("purpose", "example");
     encryption_context.insert("is not", "secret");
 
-    let esdk = Client::default();
+    let esdk = aws_esdk::Client::default();
 
     let encrypted = esdk
         .encrypt()

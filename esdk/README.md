@@ -30,7 +30,7 @@ A one-shot encrypt/decrypt round trip with a raw AES keyring:
 
 ```rust
 use aws_crypto_mpl::{AesGcm, RawAesKeyring};
-use aws_esdk::{Client, EncryptionContext};
+use aws_esdk::EncryptionContext;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -47,7 +47,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut encryption_context = EncryptionContext::new();
     encryption_context.insert("purpose", "quickstart");
 
-    let esdk = Client::default();
+    let esdk = aws_esdk::Client::default();
 
     let encrypted = esdk
         .encrypt()
@@ -77,9 +77,9 @@ A `Client` holds the commitment policy and the cap on encrypted data keys, and a
 Set either one with `Client::builder()`:
 
 ```rust
-use aws_esdk::{Client, CommitmentPolicy};
+use aws_esdk::CommitmentPolicy;
 
-let esdk = Client::builder()
+let esdk = aws_esdk::Client::builder()
     .commitment_policy(CommitmentPolicy::RequireEncryptRequireDecrypt)
     .build()?;
 let encrypted = esdk.encrypt().plaintext(plaintext).keyring(keyring).send().await?;
@@ -88,12 +88,12 @@ let encrypted = esdk.encrypt().plaintext(plaintext).keyring(keyring).send().awai
 To keep the settings separate from the client, as `aws_sdk_kms::Client::from_conf` does, build a `Config` and pass it to `Client::from_conf`:
 
 ```rust
-use aws_esdk::{Client, CommitmentPolicy, Config};
+use aws_esdk::CommitmentPolicy;
 
-let config = Config::builder()
+let config = aws_esdk::Config::builder()
     .commitment_policy(CommitmentPolicy::RequireEncryptRequireDecrypt)
     .build()?;
-let esdk = Client::from_conf(config);
+let esdk = aws_esdk::Client::from_conf(config);
 ```
 
 ## Streaming

@@ -20,14 +20,14 @@ int main() {
             Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16
         );
 
-        Aws::Esdk::Client sdk;
+        Aws::Esdk::Client esdk;
 
         const std::string plaintext = "Hello World";
         // This uses the string API; the bytes APIs take a std::vector, a pointer and length, or a std::span (C++20).
-        auto encrypted = sdk.encrypt(plaintext, keyring);
+        auto encrypted = esdk.encrypt(plaintext, keyring);
 
         try {
-            auto decrypted = sdk.decrypt(encrypted.ciphertext, keyring);
+            auto decrypted = esdk.decrypt(encrypted.ciphertext, keyring);
             if (decrypted.plaintext.as_string_view() != plaintext) {
                 std::cerr << "Decryption failed: plaintext mismatch\n";
                 return 1;

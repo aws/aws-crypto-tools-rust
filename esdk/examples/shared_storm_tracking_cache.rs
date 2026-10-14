@@ -22,7 +22,7 @@ use aws_crypto_mpl::key_store::{KeyStoreClient, KmsConfiguration};
 use aws_crypto_mpl::{
     HierarchicalKeyring, StormTrackingCmc, aws_config, aws_sdk_dynamodb, aws_sdk_kms,
 };
-use aws_esdk::{Client, EncryptionContext};
+use aws_esdk::EncryptionContext;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -86,7 +86,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     encryption_context.insert("purpose", "example");
     encryption_context.insert("is not", "secret");
 
-    let esdk = Client::default();
+    let esdk = aws_esdk::Client::default();
 
     // Encrypt with A, decrypt with B: both go through the same cache.
     let encrypted = esdk

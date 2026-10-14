@@ -10,7 +10,6 @@ use std::time::{Duration, SystemTime};
 
 use aws_crypto_mpl::key_store::{KeyStoreClient, KmsConfiguration};
 use aws_crypto_mpl::{HierarchicalKeyring, aws_config, aws_sdk_dynamodb, aws_sdk_kms};
-use aws_esdk::Client;
 use aws_sdk_kms::config::Credentials;
 use aws_smithy_http_client::tls::{Provider, rustls_provider::CryptoMode};
 
@@ -32,7 +31,7 @@ fn credentials_for_request() -> Result<Credentials, Box<dyn std::error::Error>> 
 async fn handle_request(
     base_kms: &aws_sdk_kms::Client,
     ddb: &aws_sdk_dynamodb::Client,
-    esdk: &Client,
+    esdk: &aws_esdk::Client,
     credentials: Credentials,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // A copy of the base client that signs with this request's credentials.
@@ -97,11 +96,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .http_client(http_client)
         .load()
         .await;
-    let base_kms = aws_sdk_kms::Client::new(&sdk_config);
+    let kms = aws_sdk_kms::Client::new(&sdk_config);
     let ddb = aws_sdk_dynamodb::Client::new(&sdk_config);
-    let esdk = Client::default();
+    let esdk = aws_esdk::Client::default();
 
-    handle_request(&base_kms, &ddb, &esdk, credentials_for_request()?).await?;
+    handle_request(&kms, &ddb, &esdk, credentials_for_request()?).await?;
 
     println!("Success! Encryption and decryption completed successfully.");
     Ok(())

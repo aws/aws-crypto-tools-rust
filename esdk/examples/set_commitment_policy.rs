@@ -12,11 +12,11 @@
 //! Runs offline.
 
 use aws_crypto_mpl::{AesGcm, RawAesKeyring};
-use aws_esdk::{Client, CommitmentPolicy, EncryptionContext};
+use aws_esdk::{CommitmentPolicy, EncryptionContext};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let esdk = Client::builder()
+    let esdk = aws_esdk::Client::builder()
         .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt)
         .build()?;
 

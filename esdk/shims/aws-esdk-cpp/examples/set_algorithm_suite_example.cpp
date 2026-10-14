@@ -22,10 +22,10 @@ int main() {
             Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16
         );
 
-        Aws::Esdk::Client sdk;
+        Aws::Esdk::Client esdk;
         const std::string plaintext = "Hello World";
 
-        auto encrypted = sdk.encrypt(
+        auto encrypted = esdk.encrypt(
             plaintext, keyring,
             Aws::Esdk::EncryptOptions().with_algorithm_suite(
                 Aws::Esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey));
@@ -35,7 +35,7 @@ int main() {
         }
 
         // Decrypt reads the algorithm suite from the message, so it is not set here.
-        auto decrypted = sdk.decrypt(encrypted.ciphertext, keyring);
+        auto decrypted = esdk.decrypt(encrypted.ciphertext, keyring);
         if (decrypted.plaintext.as_string_view() != plaintext) {
             std::cerr << "Decryption failed: plaintext mismatch\n";
             return 1;

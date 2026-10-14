@@ -13,7 +13,7 @@
 
 int main() {
     try {
-        Aws::Esdk::Client sdk(Aws::Esdk::Config().with_commitment_policy(
+        Aws::Esdk::Client esdk(Aws::Esdk::Config().with_commitment_policy(
             Aws::Esdk::CommitmentPolicy::ForbidEncryptAllowDecrypt));
 
         // For demonstration only: a real application must source its wrapping
@@ -26,8 +26,8 @@ int main() {
         );
 
         const std::string plaintext = "Hello World";
-        auto encrypted = sdk.encrypt(plaintext, keyring);
-        auto decrypted = sdk.decrypt(encrypted.ciphertext, keyring);
+        auto encrypted = esdk.encrypt(plaintext, keyring);
+        auto decrypted = esdk.decrypt(encrypted.ciphertext, keyring);
         if (decrypted.plaintext.as_string_view() != plaintext) {
             std::cerr << "Decryption failed: plaintext mismatch\n";
             return 1;

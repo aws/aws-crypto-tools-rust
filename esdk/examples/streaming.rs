@@ -14,7 +14,7 @@
 use tokio::fs::{self, File};
 
 use aws_crypto_mpl::{AesGcm, RawAesKeyring};
-use aws_esdk::{AlgorithmSuiteId, Client, EncryptionContext};
+use aws_esdk::{AlgorithmSuiteId, EncryptionContext};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -43,7 +43,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     encryption_context.insert("purpose", "streaming-example");
     encryption_context.insert("is not", "secret");
 
-    let esdk = Client::default();
+    let esdk = aws_esdk::Client::default();
 
     let input = File::open(&plaintext_path).await?;
     let output = File::create(&ciphertext_path).await?;

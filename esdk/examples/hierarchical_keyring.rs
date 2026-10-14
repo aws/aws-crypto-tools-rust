@@ -9,15 +9,15 @@ use std::time::Duration;
 
 use aws_crypto_mpl::key_store::{KeyStoreClient, KmsConfiguration};
 use aws_crypto_mpl::{HierarchicalKeyring, aws_config, aws_sdk_dynamodb, aws_sdk_kms};
+use aws_esdk::EncryptionContext;
 use aws_esdk::error::{Error, Resource, Service};
-use aws_esdk::{Client, EncryptionContext};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // The clients take their region and credentials from the default AWS config chain.
     let sdk_config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
-    let kms_client = aws_sdk_kms::Client::new(&sdk_config);
-    let ddb_client = aws_sdk_dynamodb::Client::new(&sdk_config);
+    let kms = aws_sdk_kms::Client::new(&sdk_config);
+    let ddb = aws_sdk_dynamodb::Client::new(&sdk_config);
 
     // The AWS Crypto Tools CI test key store.
     // Replace these with your own key store's table, name, and KMS key ARN.
@@ -27,8 +27,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .kms_configuration(KmsConfiguration::KmsKeyArn(
             "arn:aws:kms:us-west-2:370957321024:key/9d989aa2-2f9c-438c-a745-cc57d3ad0126".into(),
         ))
-        .kms_client(kms_client)
-        .ddb_client(ddb_client)
+        .kms_client(kms)
+        .ddb_client(ddb)
         .build()
         .await?;
 
@@ -46,7 +46,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     encryption_context.insert("purpose", "example");
     encryption_context.insert("is not", "secret");
 
-    let esdk = Client::default();
+    let esdk = aws_esdk::Client::default();
 
     let result = esdk
         .encrypt()
