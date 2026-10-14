@@ -506,7 +506,7 @@ public:
 /// A field left unset defers to the ESDK Rust's default configuration resolution.
 /// One AwsSdkClientConfig may configure multiple clients.
 /// An HTTP client and its connection pool.
-/// Pass one to several ClientConfigs to make their service clients share connections.
+/// Pass one to several AwsSdkClientConfigs to make their service clients share connections.
 class HttpClient {
     std::shared_ptr<detail::HttpClientImpl> impl_;
     friend class AwsSdkClientConfig;
