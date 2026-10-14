@@ -78,7 +78,7 @@ int main() {
     // the message.
     std::map<std::string, std::string> encryption_context = {{"purpose", "readme-example"}};
 
-    Aws::Esdk::EncryptionSDK esdk;
+    Aws::Esdk::Client esdk;
 
     auto enc = esdk.encrypt(
         std::string_view("the quick brown fox"), keyring,

@@ -1,13 +1,13 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! The [`Esdk`] client and its [`EsdkConfig`].
+//! The [`Client`] and its [`Config`].
 //!
-//! `Esdk` holds an [`EsdkConfig`]: a commitment policy and an optional cap on encrypted data keys.
+//! `Client` holds a [`Config`]: a commitment policy and an optional cap on encrypted data keys.
 //! Each operation's fluent builder takes both settings from the client and has no setters for them:
 //!
 //! ```ignore
-//! let esdk = Esdk::builder().commitment_policy(policy).build();
+//! let esdk = Client::builder().commitment_policy(policy).build();
 //! let output = esdk.encrypt().plaintext(plaintext).keyring(keyring).send().await?;
 //! ```
 
@@ -22,34 +22,34 @@ use crate::types::{CommitmentPolicy, DEFAULT_COMMITMENT_POLICY};
 use aws_crypto_mpl::{Cmm, Keyring, SharedCmm, SharedKeyring};
 use std::num::{NonZeroU32, NonZeroUsize};
 
-/// Configuration for the [`Esdk`] client.
+/// Configuration for the [`Client`].
 ///
 /// Holds the commitment policy and the optional cap on the number of encrypted
-/// data keys per message. Construct via [`EsdkConfig::default`] and field
-/// assignment, or via [`Esdk::builder`].
+/// data keys per message. Build with [`Config::builder`] and pass to
+/// [`Client::from_conf`], or set the same options on [`Client::builder`].
 //= spec/client-apis/client.md#initialization
 //= reason=field defaults to None via derive(Default); None means no cap
 //# If no [maximum number of encrypted data keys](#maximum-number-of-encrypted-data-keys) is provided
 //# the default MUST result in no limit on the number of encrypted data keys (aside from the limit imposed by the [message format](../format/message-header.md)).
 //
 //= spec/client-apis/client.md#initialization
-//= reason=EsdkConfig::default() sets commitment_policy to DEFAULT_COMMITMENT_POLICY = RequireEncryptRequireDecrypt
+//= reason=Config::default() sets commitment_policy to DEFAULT_COMMITMENT_POLICY = RequireEncryptRequireDecrypt
 //# If no [commitment policy](#commitment-policy) is provided the default MUST be [REQUIRE_ENCRYPT_REQUIRE_DECRYPT](../framework/algorithm-suites.md#require_encrypt_require_decrypt).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
-pub struct EsdkConfig {
+pub struct Config {
     /// Commitment policy applied to every operation. Default is
     /// `CommitmentPolicy::RequireEncryptRequireDecrypt`.
     //= spec/client-apis/client.md#commitment-policy
     //= reason=CommitmentPolicy is a re-export of the MPL's aws_crypto_mpl::structures::EsdkCommitmentPolicy
     //# The AWS Encryption SDK MUST use the ESDK [commitment policies](../framework/commitment-policy.md) defined in the Material Providers Library.
-    pub commitment_policy: CommitmentPolicy,
+    pub(crate) commitment_policy: CommitmentPolicy,
     /// Optional cap on the number of encrypted data keys per message.
     /// Default is `None` (no cap beyond the message-format limit).
-    pub max_encrypted_data_keys: Option<NonZeroUsize>,
+    pub(crate) max_encrypted_data_keys: Option<NonZeroUsize>,
 }
 
-impl Default for EsdkConfig {
+impl Default for Config {
     fn default() -> Self {
         Self {
             commitment_policy: DEFAULT_COMMITMENT_POLICY,
@@ -58,8 +58,96 @@ impl Default for EsdkConfig {
     }
 }
 
+impl Config {
+    /// Start a builder for `Config`.
+    #[must_use]
+    pub fn builder() -> ConfigBuilder {
+        ConfigBuilder::default()
+    }
+
+    /// The commitment policy applied to every operation.
+    #[must_use]
+    pub const fn commitment_policy(&self) -> CommitmentPolicy {
+        self.commitment_policy
+    }
+
+    /// The maximum number of encrypted data keys per message, if capped.
+    #[must_use]
+    pub const fn max_encrypted_data_keys(&self) -> Option<NonZeroUsize> {
+        self.max_encrypted_data_keys
+    }
+}
+
+/// Builder for [`Config`].
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ConfigBuilder {
+    commitment_policy: Option<CommitmentPolicy>,
+    max_encrypted_data_keys: Option<NonZeroUsize>,
+}
+
+impl ConfigBuilder {
+    /// Set the commitment policy.
+    #[must_use]
+    pub const fn commitment_policy(mut self, commitment_policy: CommitmentPolicy) -> Self {
+        self.commitment_policy = Some(commitment_policy);
+        self
+    }
+
+    /// Set or clear the commitment policy from an `Option`.
+    #[must_use]
+    pub const fn set_commitment_policy(
+        mut self,
+        commitment_policy: Option<CommitmentPolicy>,
+    ) -> Self {
+        self.commitment_policy = commitment_policy;
+        self
+    }
+
+    /// Set the maximum number of encrypted data keys per message.
+    #[must_use]
+    pub const fn max_encrypted_data_keys(mut self, max_encrypted_data_keys: NonZeroUsize) -> Self {
+        self.max_encrypted_data_keys = Some(max_encrypted_data_keys);
+        self
+    }
+
+    /// Set or clear the maximum number of encrypted data keys from an `Option`.
+    #[must_use]
+    pub const fn set_max_encrypted_data_keys(
+        mut self,
+        max_encrypted_data_keys: Option<NonZeroUsize>,
+    ) -> Self {
+        self.max_encrypted_data_keys = max_encrypted_data_keys;
+        self
+    }
+
+    /// The commitment policy set so far.
+    #[must_use]
+    #[allow(clippy::ref_option)] // AWS SDK for Rust getter shape
+    pub const fn get_commitment_policy(&self) -> &Option<CommitmentPolicy> {
+        &self.commitment_policy
+    }
+
+    /// The maximum number of encrypted data keys set so far.
+    #[must_use]
+    #[allow(clippy::ref_option)] // AWS SDK for Rust getter shape
+    pub const fn get_max_encrypted_data_keys(&self) -> &Option<NonZeroUsize> {
+        &self.max_encrypted_data_keys
+    }
+
+    /// Build the `Config`. Unset fields use their defaults
+    /// (`RequireEncryptRequireDecrypt` commitment policy, no EDK cap).
+    #[must_use]
+    pub fn build(self) -> Config {
+        Config {
+            commitment_policy: self.commitment_policy.unwrap_or(DEFAULT_COMMITMENT_POLICY),
+            max_encrypted_data_keys: self.max_encrypted_data_keys,
+        }
+    }
+}
+
 /// The AWS Encryption SDK client.
-/// Applies one [`EsdkConfig`] to every operation.
+/// Applies one [`Config`] to every operation.
+/// Build with [`Client::builder`], or from a [`Config`] with [`Client::from_conf`].
 ///
 /// Each operation method returns a fluent builder that takes `commitment_policy`
 /// and `max_encrypted_data_keys` from the client.
@@ -68,7 +156,7 @@ impl Default for EsdkConfig {
 /// # Example
 ///
 /// ```ignore
-/// let esdk = Esdk::builder()
+/// let esdk = Client::builder()
 ///     .commitment_policy(CommitmentPolicy::RequireEncryptRequireDecrypt)
 ///     .build();
 /// let output = esdk
@@ -81,34 +169,34 @@ impl Default for EsdkConfig {
 /// ```
 #[derive(Debug, Clone, Copy, Default)]
 #[non_exhaustive]
-pub struct Esdk {
+pub struct Client {
     /// Client configuration applied to every call.
     ///
-    /// Private to enforce construction via [`Esdk::new`] / [`Esdk::builder`];
-    /// read via [`Esdk::config`].
+    /// Private to enforce construction via [`Client::builder`] / [`Client::from_conf`];
+    /// read via [`Client::config`].
     //= spec/client-apis/client.md#initialization
     //= type=implication
-    //= reason=pub(crate) prevents external mutation; Esdk is Copy so any "change" must construct a new value
+    //= reason=pub(crate) prevents external mutation; Client is Copy so any "change" must construct a new value
     //# Once a [commitment policy](#commitment-policy) has been set it SHOULD be immutable.
-    pub(crate) config: EsdkConfig,
+    pub(crate) config: Config,
 }
 
-impl Esdk {
-    /// Construct an `Esdk` with the given config.
+impl Client {
+    /// Construct a `Client` from a [`Config`].
     #[must_use]
-    pub const fn new(config: EsdkConfig) -> Self {
+    pub const fn from_conf(config: Config) -> Self {
         Self { config }
     }
 
-    /// Start a fluent builder for `Esdk`.
+    /// Start a fluent builder for `Client`.
     #[must_use]
-    pub fn builder() -> EsdkBuilder {
-        EsdkBuilder::default()
+    pub fn builder() -> ClientBuilder {
+        ClientBuilder::default()
     }
 
     /// Borrow this client's configuration.
     #[must_use]
-    pub const fn config(&self) -> &EsdkConfig {
+    pub const fn config(&self) -> &Config {
         &self.config
     }
 
@@ -291,14 +379,14 @@ macro_rules! decrypt_members {
     };
 }
 
-/// Fluent builder for the encrypt operation, started by [`Esdk::encrypt`].
+/// Fluent builder for the encrypt operation, started by [`Client::encrypt`].
 ///
 /// Encrypts a plaintext held in memory into an encrypted message.
 /// The keyring or CMM supplies the data key and the encrypted data keys stored in the message header.
 #[derive(Debug, Clone)]
 #[must_use = "a fluent builder does nothing until `send` is awaited"]
 pub struct EncryptFluentBuilder<'a> {
-    config: EsdkConfig,
+    config: Config,
     inner: EncryptInputBuilder<'a>,
 }
 
@@ -337,7 +425,7 @@ impl<'a> EncryptFluentBuilder<'a> {
     }
 }
 
-/// Fluent builder for the decrypt operation, started by [`Esdk::decrypt`].
+/// Fluent builder for the decrypt operation, started by [`Client::decrypt`].
 ///
 /// Decrypts an encrypted message held in memory.
 /// The keyring or CMM recovers the data key from one of the message's encrypted data keys.
@@ -345,7 +433,7 @@ impl<'a> EncryptFluentBuilder<'a> {
 #[derive(Debug, Clone)]
 #[must_use = "a fluent builder does nothing until `send` is awaited"]
 pub struct DecryptFluentBuilder<'a> {
-    config: EsdkConfig,
+    config: Config,
     inner: DecryptInputBuilder<'a>,
 }
 
@@ -385,13 +473,13 @@ impl<'a> DecryptFluentBuilder<'a> {
     }
 }
 
-/// Fluent builder for the streaming encrypt operation, started by [`Esdk::encrypt_stream`].
+/// Fluent builder for the streaming encrypt operation, started by [`Client::encrypt_stream`].
 ///
 /// Reads plaintext from an `AsyncRead` and writes the encrypted message to an `AsyncWrite`, one frame at a time.
 #[derive(Debug, Clone)]
 #[must_use = "a fluent builder does nothing until `send` is awaited"]
 pub struct EncryptStreamFluentBuilder {
-    config: EsdkConfig,
+    config: Config,
     inner: EncryptStreamInputBuilder,
 }
 
@@ -436,14 +524,14 @@ impl EncryptStreamFluentBuilder {
     }
 }
 
-/// Fluent builder for the streaming decrypt operation, started by [`Esdk::decrypt_stream`].
+/// Fluent builder for the streaming decrypt operation, started by [`Client::decrypt_stream`].
 ///
 /// Reads an encrypted message from an `AsyncRead` and writes plaintext to an `AsyncWrite`, one frame at a time.
 /// Plaintext is written before the whole message is verified: don't act on it until `send` returns `Ok`.
 #[derive(Debug, Clone)]
 #[must_use = "a fluent builder does nothing until `send` is awaited"]
 pub struct DecryptStreamFluentBuilder {
-    config: EsdkConfig,
+    config: Config,
     inner: DecryptStreamInputBuilder,
 }
 
@@ -459,7 +547,7 @@ impl DecryptStreamFluentBuilder {
     /// # Errors
     ///
     /// Returns an [`Error`](crate::Error), one of:
-    /// - [`Validation`](crate::Error::Validation): the message's encrypted data key count exceeds the configured maximum, the commitment policy does not allow the message's algorithm suite, or the message is multi-frame and signed (decrypt it with [`Esdk::decrypt`] instead).
+    /// - [`Validation`](crate::Error::Validation): the message's encrypted data key count exceeds the configured maximum, the commitment policy does not allow the message's algorithm suite, or the message is multi-frame and signed (decrypt it with [`Client::decrypt`] instead).
     /// - [`InvalidMaterials`](crate::Error::InvalidMaterials): the keyring or CMM returns materials the ESDK cannot use, or materials that do not match the message's algorithm suite or signature settings.
     /// - [`EncryptionContextMismatch`](crate::Error::EncryptionContextMismatch): the reproduced encryption context conflicts with the message, or a required key is missing.
     /// - [`NoMatchingDataKey`](crate::Error::NoMatchingDataKey): none of the message's encrypted data keys belongs to the keyring or CMM.
@@ -487,21 +575,20 @@ impl DecryptStreamFluentBuilder {
     }
 }
 
-/// Fluent builder for [`Esdk`].
+/// Fluent builder for [`Client`].
 #[derive(Debug, Clone, Copy, Default)]
-pub struct EsdkBuilder {
-    commitment_policy: Option<CommitmentPolicy>,
-    max_encrypted_data_keys: Option<NonZeroUsize>,
+pub struct ClientBuilder {
+    config: ConfigBuilder,
 }
 
-impl EsdkBuilder {
+impl ClientBuilder {
     /// Set the commitment policy.
     //= spec/client-apis/client.md#initialization
     //# - On client initialization,
     //# the caller MUST have the option to provide a [commitment policy](#commitment-policy).
     #[must_use]
     pub const fn commitment_policy(mut self, p: CommitmentPolicy) -> Self {
-        self.commitment_policy = Some(p);
+        self.config = self.config.commitment_policy(p);
         self
     }
 
@@ -511,7 +598,7 @@ impl EsdkBuilder {
         mut self,
         commitment_policy: Option<CommitmentPolicy>,
     ) -> Self {
-        self.commitment_policy = commitment_policy;
+        self.config = self.config.set_commitment_policy(commitment_policy);
         self
     }
 
@@ -521,7 +608,7 @@ impl EsdkBuilder {
     //# the caller MUST have the option to provide a [maximum number of encrypted data keys](#maximum-number-of-encrypted-data-keys).
     #[must_use]
     pub const fn max_encrypted_data_keys(mut self, n: NonZeroUsize) -> Self {
-        self.max_encrypted_data_keys = Some(n);
+        self.config = self.config.max_encrypted_data_keys(n);
         self
     }
 
@@ -531,7 +618,9 @@ impl EsdkBuilder {
         mut self,
         max_encrypted_data_keys: Option<NonZeroUsize>,
     ) -> Self {
-        self.max_encrypted_data_keys = max_encrypted_data_keys;
+        self.config = self
+            .config
+            .set_max_encrypted_data_keys(max_encrypted_data_keys);
         self
     }
 
@@ -539,25 +628,20 @@ impl EsdkBuilder {
     #[must_use]
     #[allow(clippy::ref_option)] // AWS SDK for Rust getter shape
     pub const fn get_commitment_policy(&self) -> &Option<CommitmentPolicy> {
-        &self.commitment_policy
+        self.config.get_commitment_policy()
     }
 
     /// The maximum number of encrypted data keys set so far.
     #[must_use]
     #[allow(clippy::ref_option)] // AWS SDK for Rust getter shape
     pub const fn get_max_encrypted_data_keys(&self) -> &Option<NonZeroUsize> {
-        &self.max_encrypted_data_keys
+        self.config.get_max_encrypted_data_keys()
     }
 
-    /// Build the `Esdk`. Unset fields use their defaults
+    /// Build the `Client`. Unset fields use their defaults
     /// (`RequireEncryptRequireDecrypt` commitment policy, no EDK cap).
     #[must_use]
-    pub fn build(self) -> Esdk {
-        Esdk {
-            config: EsdkConfig {
-                commitment_policy: self.commitment_policy.unwrap_or(DEFAULT_COMMITMENT_POLICY),
-                max_encrypted_data_keys: self.max_encrypted_data_keys,
-            },
-        }
+    pub fn build(self) -> Client {
+        Client::from_conf(self.config.build())
     }
 }

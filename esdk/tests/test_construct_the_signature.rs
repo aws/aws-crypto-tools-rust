@@ -7,7 +7,7 @@
 mod fixtures;
 mod test_helpers;
 
-use aws_esdk::Esdk;
+use aws_esdk::Client;
 use test_helpers::*;
 
 #[tokio::test(flavor = "multi_thread")]
@@ -44,7 +44,7 @@ async fn test_signature_uses_signing_algorithm() {
     use aws_mpl_primitives::{DigestContext, EcdsaSignatureAlgorithm, ecdsa_verify_context};
 
     let keyring = test_keyring().await;
-    let output = Esdk::default()
+    let output = Client::default()
         .encrypt()
         .plaintext(b"algorithm choice test")
         .encryption_context(aws_esdk::EncryptionContext::new())
@@ -110,7 +110,7 @@ async fn test_signature_key_is_signing_key() {
     use aws_mpl_primitives::{DigestContext, EcdsaSignatureAlgorithm, ecdsa_verify_context};
 
     let keyring = test_keyring().await;
-    let output = Esdk::default()
+    let output = Client::default()
         .encrypt()
         .plaintext(b"signing key direct test")
         .encryption_context(aws_esdk::EncryptionContext::new())
@@ -299,7 +299,7 @@ async fn test_footer_equals_calculated() {
     use aws_mpl_primitives::{DigestContext, EcdsaSignatureAlgorithm, ecdsa_verify_context};
 
     let keyring = test_keyring().await;
-    let output = Esdk::default()
+    let output = Client::default()
         .encrypt()
         .plaintext(b"footer equals calculated test")
         .encryption_context(aws_esdk::EncryptionContext::new())
@@ -334,7 +334,7 @@ async fn test_footer_equals_calculated() {
     );
 
     // Round-trip corroboration.
-    let pt = Esdk::default()
+    let pt = Client::default()
         .decrypt()
         .ciphertext(ct)
         .encryption_context(aws_esdk::EncryptionContext::new())
@@ -373,7 +373,7 @@ async fn test_no_signature_without_signing_suite() {
 async fn test_footer_serialized_releases_all_bytes() {
     // Signing suite output ends exactly at the footer; proves all bytes released atomically.
     let keyring = test_keyring().await;
-    let ct = Esdk::default()
+    let ct = Client::default()
         .encrypt()
         .plaintext(b"release all bytes test")
         .encryption_context(aws_esdk::EncryptionContext::new())

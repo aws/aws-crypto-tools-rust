@@ -134,7 +134,7 @@ use aws_crypto_mpl::key_store::{Discovery, KeyStoreClient, KmsConfiguration, MrD
 use aws_crypto_mpl::keyring::{RawAesKeyring, SharedKeyring};
 use aws_crypto_mpl::structures::{EsdkAlgorithmSuiteId, EsdkCommitmentPolicy};
 use aws_crypto_mpl::{aws_sdk_dynamodb, aws_sdk_kms};
-use aws_esdk::Esdk;
+use aws_esdk::Client;
 use aws_esdk::error::{Resource, RetryKind, Service};
 use aws_sdk_kms::config::{IdentityCache, SharedCredentialsProvider, SharedHttpClient};
 use aws_smithy_runtime::client::defaults::default_http_client_plugin_v2;
@@ -1164,16 +1164,16 @@ fn create_sdk_config(
 // ESDK/MPL Client Operations
 
 /// An `ffi::EncryptInput`'s settings, converted for the core ESDK:
-/// the `EncryptionSDK` client's commitment policy and encrypted data key cap as an `Esdk`,
+/// the C++ `Client`'s commitment policy and encrypted data key cap as a `Client`,
 /// and the per-call algorithm suite and frame length for its encrypt builder.
 struct EncryptSettings {
-    esdk: Esdk,
+    esdk: Client,
     algorithm_suite_id: Option<EsdkAlgorithmSuiteId>,
     frame_length: Option<NonZeroU32>,
 }
 
 fn encrypt_settings(input: &ffi::EncryptInput<'_>) -> Result<EncryptSettings, String> {
-    let esdk = Esdk::builder()
+    let esdk = Client::builder()
         //= spec/shim/esdk-shim.md#encrypt-inputs
         //# - MUST provide the target-supplied maximum-encrypted-data-keys value to
         //# the core ESDK, converted as defined in
@@ -1216,8 +1216,8 @@ fn encrypt_settings(input: &ffi::EncryptInput<'_>) -> Result<EncryptSettings, St
     })
 }
 
-fn decrypt_client(input: &ffi::DecryptInput<'_>) -> Result<Esdk, String> {
-    Ok(Esdk::builder()
+fn decrypt_client(input: &ffi::DecryptInput<'_>) -> Result<Client, String> {
+    Ok(Client::builder()
         //= spec/shim/esdk-shim.md#decrypt-inputs
         //# - MUST provide the target-supplied maximum-encrypted-data-keys value to
         //# the core ESDK, converted as defined in

@@ -192,7 +192,7 @@ async fn test_unrecognized_algorithm_suite_errors() {
         ct[suite_offset] = 0xFF;
         ct[suite_offset + 1] = 0xFF;
         let keyring = test_keyring().await;
-        let err = Esdk::default()
+        let err = Client::default()
             .decrypt()
             .ciphertext(&ct)
             .keyring(keyring)

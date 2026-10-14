@@ -83,7 +83,7 @@
 //!
 //! ```no_run
 //! # fn record_throttle(_: &str) {}
-//! # async fn example(esdk: aws_esdk::Esdk, keyring: aws_esdk::SharedKeyring) {
+//! # async fn example(esdk: aws_esdk::Client, keyring: aws_esdk::SharedKeyring) {
 //! use aws_esdk::error::{Error, Resource, Service};
 //!
 //! if let Err(Error::Throttling(e)) = esdk.encrypt().plaintext(b"data").keyring(keyring).send().await {
@@ -112,7 +112,7 @@
 //! An error with no collection yields itself.
 //!
 //! ```no_run
-//! # async fn example(esdk: aws_esdk::Esdk, keyring: aws_esdk::SharedKeyring, ciphertext: &[u8]) {
+//! # async fn example(esdk: aws_esdk::Client, keyring: aws_esdk::SharedKeyring, ciphertext: &[u8]) {
 //! use aws_esdk::error::{Error, Resource, Service};
 //!
 //! if let Err(e) = esdk.decrypt().ciphertext(ciphertext).keyring(keyring).send().await {

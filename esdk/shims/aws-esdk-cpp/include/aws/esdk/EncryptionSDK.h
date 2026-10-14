@@ -504,40 +504,40 @@ public:
 
 /// AWS service-client configuration for AWS SDK clients.
 /// A field left unset defers to the ESDK Rust's default configuration resolution.
-/// One ClientConfig may configure multiple clients.
+/// One SdkConfig may configure multiple clients.
 /// An HTTP client and its connection pool.
 /// Pass one to several ClientConfigs to make their service clients share connections.
 class HttpClient {
     std::shared_ptr<detail::HttpClientImpl> impl_;
-    friend class ClientConfig;
+    friend class SdkConfig;
 
 public:
     HttpClient();
 };
 
-class ClientConfig {
+class SdkConfig {
     std::shared_ptr<detail::ClientConfigImpl> impl_;
     friend class KmsClient;
     friend class DdbClient;
 
 public:
-    ClientConfig();
+    SdkConfig();
     /// Maximum request attempts (1 = no retries).
-    ClientConfig& with_max_retry_attempts(std::uint32_t n);
+    SdkConfig& with_max_retry_attempts(std::uint32_t n);
     /// Selects adaptive retry mode instead of the standard one.
-    ClientConfig& with_adaptive_retry(bool a);
+    SdkConfig& with_adaptive_retry(bool a);
     /// AWS region for the client (ex. "us-west-2").
-    ClientConfig& with_region(const std::string& r);
+    SdkConfig& with_region(const std::string& r);
     /// Credentials the client signs every request with, in place of the default credential chain.
     /// Throws ValidationException if the expiration is before the Unix epoch.
-    ClientConfig& with_credentials(const Credentials& credentials);
+    SdkConfig& with_credentials(const Credentials& credentials);
     /// HTTP client the service client sends requests through.
     /// Unset gives each service client its own connection pool.
-    ClientConfig& with_http_client(const HttpClient& http_client);
+    SdkConfig& with_http_client(const HttpClient& http_client);
 };
 
 /// KMS Client.
-/// Each client has its own connection pool unless its ClientConfig sets an HttpClient.
+/// Each client has its own connection pool unless its SdkConfig sets an HttpClient.
 /// Clients without explicit credentials share one default credential chain.
 class KmsClient {
     std::shared_ptr<detail::KmsClientImpl> impl_;
@@ -546,7 +546,7 @@ class KmsClient {
 
 public:
     /// Creates a KMS client.
-    explicit KmsClient(const ClientConfig& cfg = {});
+    explicit KmsClient(const SdkConfig& cfg = {});
     /// Returns a copy of this client that signs requests with `credentials`.
     /// The copy keeps this client's configuration and connection pool, so it is cheap to make per request.
     /// This client is unchanged.
@@ -560,7 +560,7 @@ public:
 };
 
 /// DynamoDB client.
-/// Each client has its own connection pool unless its ClientConfig sets an HttpClient.
+/// Each client has its own connection pool unless its SdkConfig sets an HttpClient.
 /// Clients without explicit credentials share one default credential chain.
 class DdbClient {
     std::shared_ptr<detail::DdbClientImpl> impl_;
@@ -569,7 +569,7 @@ class DdbClient {
 
 public:
     /// Creates a DynamoDB client.
-    explicit DdbClient(const ClientConfig& cfg = {});
+    explicit DdbClient(const SdkConfig& cfg = {});
     /// Returns a copy of this client that signs requests with `credentials`.
     /// The copy keeps this client's configuration and connection pool, so it is cheap to make per request.
     /// This client is unchanged.
@@ -628,7 +628,7 @@ public:
 ///  - Handling its own thread safety
 class Keyring {
     std::shared_ptr<detail::KeyringImpl> impl_;
-    friend class EncryptionSDK;
+    friend class Client;
 
 protected:
     explicit Keyring(std::shared_ptr<detail::KeyringImpl> impl) : impl_(std::move(impl)) {}
@@ -810,7 +810,7 @@ class EncryptOptions {
     std::optional<AlgorithmSuiteId> algorithm_suite_;
     std::map<std::string, std::string> encryption_context_;
     std::optional<std::uint32_t> frame_length_;
-    friend class EncryptionSDK;
+    friend class Client;
 
 public:
     /// Algorithm suite for encryption, identified by the two-byte ID from the ESDK message format. 
@@ -827,7 +827,7 @@ public:
 /// A field left unset keeps the ESDK Rust's default.
 class DecryptOptions {
     std::map<std::string, std::string> encryption_context_;
-    friend class EncryptionSDK;
+    friend class Client;
 
 public:
     /// Encryption context to verify against the encrypted message; every entry must be present in the message's context.
@@ -936,7 +936,7 @@ struct DecryptResult {
     AlgorithmSuiteId algorithm_suite_id;
 };
 
-/// Client-level configuration for EncryptionSDK.
+/// Configuration for Client.
 ///
 /// A field set both here and on a per-call EncryptOptions/DecryptOptions is rejected with ValidationException.
 /// Each field must be set in exactly one place.
@@ -945,21 +945,21 @@ struct DecryptResult {
 //= spec/shim/esdk-shim.md#client-configuration
 //# The ESDK shim MAY expose a client-level configuration mirroring the core
 //# ESDK's client configuration, applied to every operation of that client.
-class EncryptionSDKConfig {
+class Config {
     std::optional<CommitmentPolicy> commitment_policy_;
     std::optional<std::uint32_t> max_encrypted_data_keys_;
-    friend class EncryptionSDK;
+    friend class Client;
 
 public:
     /// Commitment policy applied to every operation on this client.
     /// Governs whether messages are encrypted with, and are required to carry, key commitment.
     /// <https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/migrate-commitment-policy.html>
     /// Default is CommitmentPolicy::RequireEncryptRequireDecrypt.
-    EncryptionSDKConfig& with_commitment_policy(CommitmentPolicy p) { commitment_policy_ = p; return *this; }
+    Config& with_commitment_policy(CommitmentPolicy p) { commitment_policy_ = p; return *this; }
     /// Cap on the number of encrypted data keys per message, applied to every
     /// operation on this client. 0 means no limit.
     /// <https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/configure.html#config-limit-keys>
-    EncryptionSDKConfig& with_max_encrypted_data_keys(std::uint32_t n) { max_encrypted_data_keys_ = n; return *this; }
+    Config& with_max_encrypted_data_keys(std::uint32_t n) { max_encrypted_data_keys_ = n; return *this; }
 };
 
 /// Result of finishing a stream
@@ -975,11 +975,11 @@ struct StreamResult {
 
 /// Streaming encrypt. Feed plaintext in chunks, receive ciphertext as it is produced.
 /// `finish()` flushes the final frame (and signature footer, for signing suites).
-/// Create via EncryptionSDK::create_encrypt_stream.
+/// Create via Client::create_encrypt_stream.
 /// One stream is single-threaded; different streams may run on different threads.
 class EncryptStream {
     std::shared_ptr<detail::EncryptStreamImpl> impl_;
-    friend class EncryptionSDK;
+    friend class Client;
     explicit EncryptStream(std::shared_ptr<detail::EncryptStreamImpl> impl) : impl_(std::move(impl)) {}
 
 public:
@@ -1011,7 +1011,7 @@ public:
 /// Decrypt these messages with Aws::Esdk::decrypt instead.
 class DecryptStream {
     std::shared_ptr<detail::DecryptStreamImpl> impl_;
-    friend class EncryptionSDK;
+    friend class Client;
     explicit DecryptStream(std::shared_ptr<detail::DecryptStreamImpl> impl) : impl_(std::move(impl)) {}
 
 public:
@@ -1037,13 +1037,13 @@ public:
 };
 
 /// ESDK client interface.
-class EncryptionSDK {
+class Client {
     std::optional<CommitmentPolicy> commitment_policy_;
     std::optional<std::uint32_t> max_encrypted_data_keys_;
 
 public:
-    EncryptionSDK() = default;
-    explicit EncryptionSDK(const EncryptionSDKConfig& options)
+    Client() = default;
+    explicit Client(const Config& options)
         : commitment_policy_(options.commitment_policy_),
           max_encrypted_data_keys_(options.max_encrypted_data_keys_) {}
 

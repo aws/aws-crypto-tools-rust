@@ -6,7 +6,7 @@
 mod test_helpers;
 
 use aws_esdk::__test_internals::{BodyAADContent, body_aad};
-use aws_esdk::Esdk;
+use aws_esdk::Client;
 use test_helpers::*;
 
 // Known literal values from the spec, repeated here verbatim so the tests
@@ -388,7 +388,7 @@ async fn test_body_aad_sequence_number_framed_rejects_tampered_seq() {
 
     // Attempt to decrypt the tampered ciphertext. Must fail.
     let keyring = test_keyring().await;
-    let err = Esdk::default()
+    let err = Client::default()
         .decrypt()
         .ciphertext(&tampered)
         .keyring(keyring)

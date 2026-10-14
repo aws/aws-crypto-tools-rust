@@ -19,7 +19,7 @@ int main() {
 
         // From here on, nothing is special about your keyring.
         // Use it like any other keyring.
-        Aws::Esdk::EncryptionSDK sdk;
+        Aws::Esdk::Client sdk;
 
         const std::string plaintext = "Hello World";
         // This uses the string API; the bytes APIs take a std::vector, a pointer and length, or a std::span (C++20).

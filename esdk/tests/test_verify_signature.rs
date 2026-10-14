@@ -18,7 +18,7 @@ async fn test_verify_signature_fails_on_tampered_footer() {
     let keyring = test_keyring().await;
     let plaintext = b"tamper footer test";
 
-    let valid_ct = Esdk::default()
+    let valid_ct = Client::default()
         .encrypt()
         .plaintext(plaintext)
         .keyring(keyring.clone())
@@ -46,7 +46,7 @@ async fn test_verify_signature_fails_on_tampered_footer() {
     //= reason=Untampered → Ok; tampered → Err halts decrypt with no plaintext released
     //# If this verification is not successful, this operation MUST immediately halt and fail.
     assert!(
-        Esdk::default()
+        Client::default()
             .decrypt()
             .ciphertext(&valid_ct)
             .keyring(keyring.clone())
@@ -55,7 +55,7 @@ async fn test_verify_signature_fails_on_tampered_footer() {
             .is_ok(),
         "valid ct must decrypt"
     );
-    let err = Esdk::default()
+    let err = Client::default()
         .decrypt()
         .ciphertext(&tampered_ct)
         .keyring(keyring)
@@ -81,7 +81,7 @@ async fn test_verify_signature_inputs_directly_verified() {
     use aws_mpl_primitives::{DigestContext, EcdsaSignatureAlgorithm, ecdsa_verify_context};
 
     let keyring = test_keyring().await;
-    let output = Esdk::default()
+    let output = Client::default()
         .encrypt()
         .plaintext(b"verify inputs direct test")
         .keyring(keyring)
@@ -200,7 +200,7 @@ async fn test_footer_wait_truncated_message_fails() {
     let keyring = test_keyring().await;
     let plaintext = b"truncated footer test";
 
-    let valid_ct = Esdk::default()
+    let valid_ct = Client::default()
         .encrypt()
         .plaintext(plaintext)
         .keyring(keyring.clone())
@@ -222,7 +222,7 @@ async fn test_footer_wait_truncated_message_fails() {
     //# the Decrypt operation MUST wait for enough bytes to become consumable or for the caller
     //# to indicate an end to the encrypted message.
     assert!(
-        Esdk::default()
+        Client::default()
             .decrypt()
             .ciphertext(&valid_ct)
             .keyring(keyring.clone())
@@ -232,7 +232,7 @@ async fn test_footer_wait_truncated_message_fails() {
         "full ct must decrypt"
     );
     assert!(
-        Esdk::default()
+        Client::default()
             .decrypt()
             .ciphertext(&truncated_ct)
             .keyring(keyring)

@@ -11,7 +11,7 @@
 //! does not yet implement:
 //!   - the Required Encryption Context CMM
 //!     (`create_required_encryption_context_cmm`) — native MPL exposes only
-//!     `DefaultCmm`, and `Esdk::encrypt` has no required-encryption-context-keys
+//!     `DefaultCmm`, and `Client::encrypt` has no required-encryption-context-keys
 //!     field, so the "filter EC out of the header AAD, supply it as reproduced
 //!     EC on decrypt" behavior these tests assert cannot be expressed;
 //!   - the multi-keyring (`create_multi_keyring`);
@@ -124,7 +124,7 @@ async fn test_repr_encryption_context_with_same_ec_happy_case() {
     // Test supply same encryption context on encrypt and decrypt NO filtering
     let encryption_context = small_encryption_context(SmallEncryptionContextVariation::AB);
 
-    let esdk = Esdk::default();
+    let esdk = Client::default();
     let encrypt_output = esdk
         .encrypt()
         .plaintext(plaintext)
@@ -205,7 +205,7 @@ async fn test_remove_on_encrypt_and_supply_on_decrypt_happy_case() {
         .await
         .unwrap();
 
-    let esdk = Esdk::default();
+    let esdk = Client::default();
     let encrypt_output = esdk
         .encrypt()
         .plaintext(plaintext)

@@ -30,7 +30,7 @@ int main() {
                 .with_cache(Aws::Esdk::DefaultCmc(42))
         );
 
-        Aws::Esdk::EncryptionSDK esdk;
+        Aws::Esdk::Client esdk;
 
         const std::string plaintext = "Hello World";
         try {

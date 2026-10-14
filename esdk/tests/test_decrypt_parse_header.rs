@@ -16,7 +16,7 @@ async fn test_unsupported_version_rejected() {
     let keyring = test_keyring().await;
     let plaintext = b"unsupported version test";
 
-    let esdk = Esdk::default();
+    let esdk = Client::default();
     let valid_ct = esdk
         .encrypt()
         .plaintext(plaintext)
@@ -111,7 +111,7 @@ async fn test_unsupported_content_type_v2_rejected() {
     let keyring = test_keyring().await;
     let plaintext = b"unsupported content type v2 test";
 
-    let esdk = Esdk::default();
+    let esdk = Client::default();
     let valid_ct = esdk
         .encrypt()
         .plaintext(plaintext)
@@ -232,7 +232,7 @@ async fn test_max_encrypted_data_keys_enforcement() {
         .unwrap();
 
     let plaintext = b"max edk decrypt test";
-    let ct = Esdk::default().encrypt().plaintext(plaintext).keyring(multi_keyring.clone()).send().await.unwrap().ciphertext;
+    let ct = Client::default().encrypt().plaintext(plaintext).keyring(multi_keyring.clone()).send().await.unwrap().ciphertext;
 
     let allowing = esdk_with_max_edks(2);
     let limiting = esdk_with_max_edks(1);
@@ -264,7 +264,7 @@ async fn test_no_header_info_released_before_verification() {
     let keyring = test_keyring().await;
     let plaintext = b"no header info before verification";
 
-    let esdk = Esdk::default();
+    let esdk = Client::default();
     let valid_ct = esdk
         .encrypt()
         .plaintext(plaintext)
@@ -563,7 +563,7 @@ async fn test_v2_header_body_fields_parsed_from_wire() {
     let keyring = test_keyring().await;
     let plaintext = b"v2 fields parse test";
 
-    let esdk = Esdk::default();
+    let esdk = Client::default();
     let ct = esdk
         .encrypt()
         .plaintext(plaintext)

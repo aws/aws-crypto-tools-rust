@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Performance benchmark for the C++ hierarchical keyring. Exercises
-// encrypt/decrypt through Aws::Esdk::EncryptionSDK and measures throughput,
+// encrypt/decrypt through Aws::Esdk::Client and measures throughput,
 // resident memory, and concurrent round trips. Results are written as JSON and,
 // in CI, published to CloudWatch Logs under language "rust-cpp".
 
@@ -52,7 +52,7 @@ std::vector<std::uint8_t> random_bytes(std::size_t n) {
 // One encrypt+decrypt round trip; returns {encrypt_ms, decrypt_ms}. Throws on
 // failure or a plaintext mismatch.
 std::pair<double, double> encrypt_decrypt(
-    Aws::Esdk::EncryptionSDK& sdk,
+    Aws::Esdk::Client& sdk,
     const Aws::Esdk::HierarchicalKeyring& keyring,
     const std::vector<std::uint8_t>& data) {
     Aws::Esdk::EncryptOptions encrypt_options;
@@ -74,7 +74,7 @@ std::pair<double, double> encrypt_decrypt(
 }
 
 // Operations per second and latency percentiles over serial round trips.
-BenchmarkResult run_throughput(Aws::Esdk::EncryptionSDK& sdk,
+BenchmarkResult run_throughput(Aws::Esdk::Client& sdk,
                                const Aws::Esdk::HierarchicalKeyring& keyring,
                                std::size_t data_size, int warmup,
                                int measurement) {
@@ -124,7 +124,7 @@ BenchmarkResult run_throughput(Aws::Esdk::EncryptionSDK& sdk,
 
 // Peak resident-memory delta and payload-bytes-per-byte efficiency during one
 // operation, sampled from a background thread.
-BenchmarkResult run_memory(Aws::Esdk::EncryptionSDK& sdk,
+BenchmarkResult run_memory(Aws::Esdk::Client& sdk,
                            const Aws::Esdk::HierarchicalKeyring& keyring,
                            std::size_t data_size) {
     auto data = random_bytes(data_size);
@@ -180,7 +180,7 @@ BenchmarkResult run_memory(Aws::Esdk::EncryptionSDK& sdk,
 }
 
 // Parallel throughput across workers sharing one keyring and SDK facade.
-BenchmarkResult run_concurrent(Aws::Esdk::EncryptionSDK& sdk,
+BenchmarkResult run_concurrent(Aws::Esdk::Client& sdk,
                                const Aws::Esdk::HierarchicalKeyring& keyring,
                                std::size_t data_size, int concurrency) {
     std::mutex mutex;
@@ -270,7 +270,7 @@ int main(int argc, char** argv) {
         return 0;
     }
 
-    Aws::Esdk::EncryptionSDK sdk;
+    Aws::Esdk::Client sdk;
     std::vector<BenchmarkResult> results;
     try {
         auto keyring = esdk_bench::make_keyring(*env);

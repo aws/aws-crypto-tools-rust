@@ -63,7 +63,7 @@ int main() {
             {"is not", "secret"},
         };
 
-        Aws::Esdk::EncryptionSDK esdk;
+        Aws::Esdk::Client esdk;
 
         // Encrypt
         {

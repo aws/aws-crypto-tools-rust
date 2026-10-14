@@ -147,7 +147,7 @@ async fn test_plaintext_length_bound_must_not_encrypt_longer() {
     let plaintext = vec![0xAAu8; 20];
     let mut reader = std::io::Cursor::new(&plaintext);
     let mut output = Vec::new();
-    let result = Esdk::default()
+    let result = Client::default()
         .encrypt_stream()
         .keyring(keyring)
         .data_size(5)
@@ -169,7 +169,7 @@ async fn test_construct_body_plaintext_length_bound_runtime_enforcement() {
     let plaintext = vec![0xBBu8; 50];
     let mut reader = std::io::Cursor::new(&plaintext);
     let mut output = Vec::new();
-    let result = Esdk::default()
+    let result = Client::default()
         .encrypt_stream()
         .keyring(keyring)
         .data_size(10)

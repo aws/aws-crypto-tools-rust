@@ -929,7 +929,7 @@ async fn test_final_frame_auth_tag_authenticates_final_frame() {
     let mut tampered = ct.clone();
     tampered[final_frame.tag_offset] ^= 0xFF;
 
-    let err = Esdk::default()
+    let err = Client::default()
         .decrypt()
         .ciphertext(&tampered)
         .keyring(keyring)
@@ -960,7 +960,7 @@ async fn test_regular_frame_auth_tag_authenticates_regular_frame() {
     let mut tampered = ct.clone();
     tampered[regular.tag_offset] ^= 0xFF;
 
-    let err = Esdk::default()
+    let err = Client::default()
         .decrypt()
         .ciphertext(&tampered)
         .keyring(keyring)
@@ -1012,7 +1012,7 @@ async fn test_regular_frame_seq_num_out_of_order_rejected() {
     tampered[frame1.seq_num_offset..frame1.seq_num_offset + 4]
         .copy_from_slice(&tampered_seq.to_be_bytes());
 
-    let err = Esdk::default()
+    let err = Client::default()
         .decrypt()
         .ciphertext(&tampered)
         .keyring(keyring)

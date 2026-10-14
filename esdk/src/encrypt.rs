@@ -57,7 +57,7 @@ struct EncryptionMaterialsResult {
     message_id: MessageId,
 }
 
-/// Encrypt `input.plaintext`. Called by [`Esdk::encrypt`](crate::Esdk::encrypt).
+/// Encrypt `input.plaintext`. Called by [`Client::encrypt`](crate::Client::encrypt).
 pub(crate) async fn encrypt(input: &EncryptInput<'_>) -> Result<EncryptOutput, Error> {
     let mut cursor = std::io::Cursor::new(input.plaintext);
 
@@ -96,7 +96,7 @@ pub(crate) async fn encrypt(input: &EncryptInput<'_>) -> Result<EncryptOutput, E
     })
 }
 
-/// Encrypt a plaintext stream into a ciphertext stream. Called by [`Esdk::encrypt_stream`](crate::Esdk::encrypt_stream).
+/// Encrypt a plaintext stream into a ciphertext stream. Called by [`Client::encrypt_stream`](crate::Client::encrypt_stream).
 //= spec/client-apis/streaming.md#overview
 //# The AWS Encryption SDK MAY provide APIs that enable streamed [encryption](encrypt.md)
 //# and [decryption](decrypt.md).

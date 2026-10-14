@@ -20,7 +20,7 @@ int main() {
             Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16
         );
 
-        Aws::Esdk::EncryptionSDK sdk;
+        Aws::Esdk::Client sdk;
 
         const std::string plaintext = "Hello World";
         // This uses the string API; the bytes APIs take a std::vector, a pointer and length, or a std::span (C++20).

@@ -5,14 +5,14 @@
 mod fixtures;
 mod test_helpers;
 
-use aws_esdk::{EncryptionContext, Esdk};
+use aws_esdk::{Client, EncryptionContext};
 use std::num::NonZeroU32;
 use test_helpers::test_keyring;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_encrypt_decrypt() {
     let keyring = test_keyring().await;
-    let esdk = Esdk::default();
+    let esdk = Client::default();
     let plaintext = b"hello esdk";
     let ec = EncryptionContext::new();
 
@@ -47,7 +47,7 @@ async fn test_encrypt_decrypt() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_bad_decrypt_input() {
-    let result = Esdk::default().decrypt().ciphertext(b"").send().await;
+    let result = Client::default().decrypt().ciphertext(b"").send().await;
 
     //= spec/client-apis/decrypt.md#input
     //= type=test
@@ -67,7 +67,7 @@ async fn test_bad_decrypt_input() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_encrypt_decrypt_short() {
     let keyring = test_keyring().await;
-    let esdk = Esdk::default();
+    let esdk = Client::default();
     let plaintext = b"hello esdk";
     let ec = EncryptionContext::new();
     let esdk_ciphertext = esdk
@@ -108,7 +108,7 @@ async fn test_encrypt_decrypt_short() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_encrypt_decrypt_ec() {
     let keyring = test_keyring().await;
-    let esdk = Esdk::default();
+    let esdk = Client::default();
     let plaintext = b"hello esdk";
     let encryption_context = fixtures::ec_of(&[("stuff", "junk")]);
     let esdk_ciphertext = esdk
@@ -143,7 +143,7 @@ async fn test_encrypt_decrypt_bad_ec() {
     let keyring = test_keyring().await;
     let plaintext = b"hello esdk";
     let encryption_context = fixtures::ec_of(&[("aws-crypto-stuff", "junk")]);
-    let encrypt_output = Esdk::default()
+    let encrypt_output = Client::default()
         .encrypt()
         .plaintext(plaintext)
         .encryption_context(encryption_context)
@@ -166,7 +166,7 @@ async fn test_encrypt_decrypt_bad_ec() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_bad_encrypt_input() {
-    let result = Esdk::default()
+    let result = Client::default()
         .encrypt()
         .plaintext(b"hello esdk")
         .send()
@@ -191,7 +191,7 @@ async fn test_bad_encrypt_input() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_encrypt_decrypt_varied_frame_lengths() {
     let keyring = test_keyring().await;
-    let esdk = Esdk::default();
+    let esdk = Client::default();
     let plaintext = "0123456789abcdef".as_bytes();
     let ec = EncryptionContext::new();
     for i in 4..=plaintext.len() {

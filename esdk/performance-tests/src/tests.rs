@@ -4,7 +4,7 @@
 use crate::alloc;
 use anyhow::Result;
 use aws_crypto_mpl::HierarchicalKeyring;
-use aws_esdk::{EncryptionContext, Esdk};
+use aws_esdk::{Client, EncryptionContext};
 use chrono::Utc;
 use futures::future::join_all;
 use indicatif::{ProgressBar, ProgressStyle};
@@ -26,7 +26,7 @@ impl EsdkBenchmark {
 
     /// Runs one encrypt+decrypt cycle and returns (encrypt_ms, decrypt_ms).
     async fn encrypt_decrypt(
-        esdk_client: &Esdk,
+        esdk_client: &Client,
         keyring: &HierarchicalKeyring,
         data: &[u8],
     ) -> Result<(f64, f64)> {

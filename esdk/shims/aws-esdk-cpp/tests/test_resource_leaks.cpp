@@ -39,7 +39,7 @@ long read_rss_bytes() {
     return resident_pages * sysconf(_SC_PAGESIZE);
 }
 
-bool round_trip(Aws::Esdk::EncryptionSDK& sdk,
+bool round_trip(Aws::Esdk::Client& sdk,
                 const Aws::Esdk::HierarchicalKeyring& keyring,
                 const std::vector<std::uint8_t>& plaintext) {
     auto encrypted = sdk.encrypt(plaintext, keyring);
@@ -68,7 +68,7 @@ int main(int argc, char** argv) {
         return 2;
     }
 
-    Aws::Esdk::EncryptionSDK sdk;
+    Aws::Esdk::Client sdk;
     try {
         auto keyring = esdk_test::make_hierarchical_keyring(*cfg);
         std::vector<std::uint8_t> plaintext(PAYLOAD_BYTES, 0xA5);
