@@ -13,9 +13,7 @@ use aws_crypto_mpl::aws_sdk_kms;
 use aws_crypto_mpl::cmc::DefaultCmc;
 use aws_crypto_mpl::error::ConflictReason;
 use aws_crypto_mpl::structures::EncryptionContext;
-use aws_crypto_mpl::{
-    Discovery, HierarchicalKeyring, KeyStoreClient, KeyStoreConfig, KmsConfiguration,
-};
+use aws_crypto_mpl::{Discovery, HierarchicalKeyring, KeyStoreClient, KmsConfiguration};
 use aws_esdk::error::{BranchKey, DynamoDbTable, Error, KmsKey, Resource, Service};
 use aws_esdk::{EncryptInput, encrypt};
 
@@ -55,18 +53,15 @@ async fn key_store_with(
     kms: aws_sdk_kms::Client,
     ddb: aws_sdk_dynamodb::Client,
 ) -> KeyStoreClient {
-    KeyStoreClient::from_conf(
-        KeyStoreConfig::builder()
-            .ddb_table_name(table)
-            .logical_key_store_name(TABLE)
-            .kms_configuration(KmsConfiguration::KmsKeyArn(kms_key_arn.into()))
-            .kms_client(kms)
-            .ddb_client(ddb)
-            .build()
-            .unwrap(),
-    )
-    .await
-    .expect("the key store configuration is valid")
+    KeyStoreClient::builder()
+        .ddb_table_name(table)
+        .logical_key_store_name(TABLE)
+        .kms_configuration(KmsConfiguration::KmsKeyArn(kms_key_arn.into()))
+        .kms_client(kms)
+        .ddb_client(ddb)
+        .build()
+        .await
+        .expect("the key store configuration is valid")
 }
 
 async fn encrypt_error(key_store: impl Into<KeyStoreClient>, branch_key_id: &str) -> Error {
@@ -247,20 +242,17 @@ async fn integ_a_discovery_key_store_names_the_kms_key_from_the_record() {
     // A discovery key store calls the KMS key the record names.
     // The us-west-2 client cannot use the us-east-1 key, so AWS KMS rejects it.
     let config = sdk_config().await;
-    let key_store = KeyStoreClient::from_conf(
-        KeyStoreConfig::builder()
-            .ddb_table_name(TABLE)
-            .logical_key_store_name(TABLE)
-            .kms_configuration(KmsConfiguration::Discovery(
-                Discovery::builder().build().unwrap(),
-            ))
-            .kms_client(aws_sdk_kms::Client::new(&config))
-            .ddb_client(aws_sdk_dynamodb::Client::new(&config))
-            .build()
-            .unwrap(),
-    )
-    .await
-    .expect("the key store configuration is valid");
+    let key_store = KeyStoreClient::builder()
+        .ddb_table_name(TABLE)
+        .logical_key_store_name(TABLE)
+        .kms_configuration(KmsConfiguration::Discovery(
+            Discovery::builder().build().unwrap(),
+        ))
+        .kms_client(aws_sdk_kms::Client::new(&config))
+        .ddb_client(aws_sdk_dynamodb::Client::new(&config))
+        .build()
+        .await
+        .expect("the key store configuration is valid");
     let err = encrypt_error(key_store, EAST_BRANCH_KEY_ID).await;
     assert_eq!(err.service(), Some(&Service::Kms), "{err:?}");
     assert_eq!(

@@ -21,7 +21,7 @@ use aws_sdk_kms::Client as KmsClient;
 
 use aws_crypto_mpl::error_chain::{aws_service_error_code, find_in_error_chain};
 use aws_crypto_mpl::key_store::{Discovery, MrDiscovery};
-use aws_crypto_mpl::{KeyStoreClient, KeyStoreConfig, KeyStoreConfigBuilder, KmsConfiguration};
+use aws_crypto_mpl::{KeyStoreClient, KeyStoreClientBuilder, KmsConfiguration};
 
 fn key_store_id(store: &KeyStoreClient) -> String {
     store
@@ -48,8 +48,8 @@ const KMS_KEY_ARN: &str =
 
 /// A builder with every required field, the simplest
 /// `KmsConfiguration::KmsKeyArn` variant, and no optional fields.
-fn required_only() -> KeyStoreConfigBuilder {
-    KeyStoreConfig::builder()
+fn required_only() -> KeyStoreClientBuilder {
+    KeyStoreClient::builder()
         .ddb_table_name("test-table")
         .kms_configuration(KmsConfiguration::KmsKeyArn(KMS_KEY_ARN.into()))
         .logical_key_store_name("test-logical")
@@ -57,23 +57,19 @@ fn required_only() -> KeyStoreConfigBuilder {
 
 /// `required_only` plus a key store id and the dummy clients,
 /// so construction never builds a default client.
-fn fixture_config_with_id(id: &str) -> KeyStoreConfigBuilder {
+fn fixture_config_with_id(id: &str) -> KeyStoreClientBuilder {
     let (kms, ddb) = dummy_clients();
     required_only().id(id).ddb_client(ddb).kms_client(kms)
 }
 
 /// Same as `fixture_config_with_id` but with no id, so construction
 /// exercises the v4-UUID fallback.
-fn fixture_config_no_id() -> KeyStoreConfigBuilder {
+fn fixture_config_no_id() -> KeyStoreClientBuilder {
     fixture_config_with_id("placeholder").set_id(None)
 }
 
-async fn create(builder: KeyStoreConfigBuilder) -> Result<KeyStoreClient, aws_crypto_mpl::Error> {
-    KeyStoreClient::from_conf(builder.build()?).await
-}
-
-async fn build_err(builder: KeyStoreConfigBuilder) -> aws_crypto_mpl::Error {
-    match create(builder).await {
+async fn build_err(builder: KeyStoreClientBuilder) -> aws_crypto_mpl::Error {
+    match builder.build().await {
         Ok(_) => panic!("build must fail"),
         Err(e) => e,
     }
@@ -82,7 +78,7 @@ async fn build_err(builder: KeyStoreConfigBuilder) -> aws_crypto_mpl::Error {
 #[tokio::test]
 async fn build_without_ddb_table_name_returns_configuration_error() {
     let (kms, ddb) = dummy_clients();
-    let builder = KeyStoreConfig::builder()
+    let builder = KeyStoreClient::builder()
         .kms_configuration(KmsConfiguration::KmsKeyArn(KMS_KEY_ARN.into()))
         .logical_key_store_name("test-logical")
         .kms_client(kms)
@@ -94,7 +90,7 @@ async fn build_without_ddb_table_name_returns_configuration_error() {
 #[tokio::test]
 async fn build_without_logical_key_store_name_returns_configuration_error() {
     let (kms, ddb) = dummy_clients();
-    let builder = KeyStoreConfig::builder()
+    let builder = KeyStoreClient::builder()
         .ddb_table_name("test-table")
         .kms_configuration(KmsConfiguration::KmsKeyArn(KMS_KEY_ARN.into()))
         .kms_client(kms)
@@ -106,7 +102,7 @@ async fn build_without_logical_key_store_name_returns_configuration_error() {
 #[tokio::test]
 async fn build_without_kms_configuration_returns_configuration_error() {
     let (kms, ddb) = dummy_clients();
-    let builder = KeyStoreConfig::builder()
+    let builder = KeyStoreClient::builder()
         .ddb_table_name("test-table")
         .logical_key_store_name("test-logical")
         .kms_client(kms)
@@ -116,13 +112,13 @@ async fn build_without_kms_configuration_returns_configuration_error() {
 }
 
 #[test]
-fn from_conf_with_both_clients_is_ready_on_first_poll() {
+fn build_with_both_clients_is_ready_on_first_poll() {
     use std::future::Future;
     use std::task::{Context, Poll, Waker};
 
-    let mut fut = std::pin::pin!(create(fixture_config_with_id("supplied-clients")));
+    let mut fut = std::pin::pin!(fixture_config_with_id("supplied-clients").build());
     let Poll::Ready(result) = fut.as_mut().poll(&mut Context::from_waker(Waker::noop())) else {
-        panic!("from_conf with both clients supplied must not await");
+        panic!("build with both clients supplied must not await");
     };
     let store = result.expect("build must succeed");
     assert_eq!(key_store_id(&store), "supplied-clients");
@@ -133,7 +129,9 @@ fn from_conf_with_both_clients_is_ready_on_first_poll() {
 async fn build_defaults_absent_clients_to_the_kms_arn_region() {
     use aws_crypto_mpl::key_store::__test_internals::branch_key_store::build_clients;
 
-    let (kms, ddb) = build_clients(required_only().build().unwrap()).await;
+    let (kms, ddb) = build_clients(required_only())
+        .await
+        .expect("build must default both absent clients");
     assert_eq!(kms.config().region().map(|r| r.as_ref()), Some("us-west-2"));
     assert_eq!(ddb.config().region().map(|r| r.as_ref()), Some("us-west-2"));
 }
@@ -146,14 +144,17 @@ async fn build_defaults_only_the_absent_client() {
     // The supplied DynamoDB client has no Region; the defaulted KMS client
     // gets the ARN's.
     let (_, ddb) = dummy_clients();
-    let (kms, ddb) = build_clients(required_only().ddb_client(ddb).build().unwrap()).await;
+    let (kms, ddb) = build_clients(required_only().ddb_client(ddb))
+        .await
+        .unwrap();
     assert_eq!(kms.config().region().map(|r| r.as_ref()), Some("us-west-2"));
     assert!(ddb.config().region().is_none());
 }
 
 #[tokio::test]
 async fn new_with_caller_supplied_key_store_id_records_it_verbatim() {
-    let store = create(fixture_config_with_id("caller-id"))
+    let store = fixture_config_with_id("caller-id")
+        .build()
         .await
         .expect("construction with valid config must succeed");
     assert_eq!(key_store_id(&store), "caller-id");
@@ -161,7 +162,8 @@ async fn new_with_caller_supplied_key_store_id_records_it_verbatim() {
 
 #[tokio::test]
 async fn new_without_key_store_id_generates_v4_uuid() {
-    let store = create(fixture_config_no_id())
+    let store = fixture_config_no_id()
+        .build()
         .await
         .expect("construction with valid config must succeed");
 
@@ -195,8 +197,8 @@ async fn new_without_key_store_id_generates_v4_uuid() {
 
 #[tokio::test]
 async fn new_without_key_store_id_two_calls_produce_distinct_uuids() {
-    let store1 = create(fixture_config_no_id()).await.unwrap();
-    let store2 = create(fixture_config_no_id()).await.unwrap();
+    let store1 = fixture_config_no_id().build().await.unwrap();
+    let store2 = fixture_config_no_id().build().await.unwrap();
     assert_ne!(
         key_store_id(&store1),
         key_store_id(&store2),
@@ -208,7 +210,7 @@ async fn new_without_key_store_id_two_calls_produce_distinct_uuids() {
 async fn new_with_malformed_kms_arn_returns_configuration_error() {
     let cfg = fixture_config_with_id("caller-id")
         .kms_configuration(KmsConfiguration::KmsKeyArn("not-an-arn".into()));
-    let err = match create(cfg).await {
+    let err = match cfg.build().await {
         Ok(_) => panic!("construction with malformed ARN must fail"),
         Err(e) => e,
     };
@@ -220,7 +222,7 @@ async fn new_with_alias_kms_arn_returns_configuration_error() {
     let cfg = fixture_config_with_id("caller-id").kms_configuration(KmsConfiguration::KmsKeyArn(
         "arn:aws:kms:us-west-2:111122223333:alias/my-alias".into(),
     ));
-    let err = match create(cfg).await {
+    let err = match cfg.build().await {
         Ok(_) => panic!("construction with alias ARN must fail"),
         Err(e) => e,
     };
@@ -232,7 +234,7 @@ async fn new_with_discovery_config_succeeds_without_arn() {
     let cfg = fixture_config_with_id("caller-id").kms_configuration(KmsConfiguration::Discovery(
         Discovery::builder().build().unwrap(),
     ));
-    create(cfg)
+    cfg.build()
         .await
         .expect("Discovery config requires no ARN and must succeed");
 }
@@ -242,7 +244,7 @@ async fn new_with_mr_discovery_config_succeeds() {
     let cfg = fixture_config_with_id("caller-id").kms_configuration(KmsConfiguration::MrDiscovery(
         MrDiscovery::builder().region("us-west-2").build().unwrap(),
     ));
-    create(cfg)
+    cfg.build()
         .await
         .expect("MrDiscovery config requires no ARN and must succeed");
 }
@@ -250,7 +252,7 @@ async fn new_with_mr_discovery_config_succeeds() {
 #[tokio::test]
 async fn get_key_store_info_returns_configured_values() {
     let (kms, ddb) = dummy_clients();
-    let cfg = KeyStoreConfig::builder()
+    let cfg = KeyStoreClient::builder()
         .ddb_table_name("my-table")
         .kms_configuration(KmsConfiguration::KmsKeyArn(KMS_KEY_ARN.into()))
         .logical_key_store_name("my-logical")
@@ -258,7 +260,7 @@ async fn get_key_store_info_returns_configured_values() {
         .grant_tokens(["grant-1", "grant-2"])
         .ddb_client(ddb)
         .kms_client(kms);
-    let store = create(cfg).await.unwrap();
+    let store = cfg.build().await.unwrap();
 
     let info = store.get_key_store_info().send().unwrap();
     assert_eq!(info.key_store_id(), "my-id");
@@ -273,7 +275,7 @@ async fn get_key_store_info_returns_configured_values() {
 
 #[tokio::test]
 async fn get_key_store_info_returns_empty_grant_tokens_when_none() {
-    let store = create(fixture_config_with_id("id-x")).await.unwrap();
+    let store = fixture_config_with_id("id-x").build().await.unwrap();
     let info = store.get_key_store_info().send().unwrap();
     assert!(info.grant_tokens().is_empty());
 }
@@ -286,7 +288,7 @@ async fn get_key_store_info_returns_empty_grant_tokens_when_none() {
 
 #[tokio::test]
 async fn get_active_branch_key_dispatches_to_dynamodb() {
-    let store = create(fixture_config_with_id("id-x")).await.unwrap();
+    let store = fixture_config_with_id("id-x").build().await.unwrap();
     let err = match store
         .get_active_branch_key()
         .branch_key_id("bk-1".to_string())
@@ -312,7 +314,7 @@ async fn get_active_branch_key_dispatches_to_dynamodb() {
 
 #[tokio::test]
 async fn get_branch_key_version_dispatches_to_dynamodb() {
-    let store = create(fixture_config_with_id("id-x")).await.unwrap();
+    let store = fixture_config_with_id("id-x").build().await.unwrap();
     let err = match store
         .get_branch_key_version()
         .branch_key_id("bk-1".to_string())
@@ -338,7 +340,7 @@ async fn create_key_store_dispatches_to_dynamodb() {
     // fails at dispatch (not a modeled ResourceNotFoundException), so the
     // operation surfaces a Dynamodb-kind error rather than the old
     // not-implemented stub.
-    let store = create(fixture_config_with_id("id-x")).await.unwrap();
+    let store = fixture_config_with_id("id-x").build().await.unwrap();
     let err = match store.create_key_store().send().await {
         Ok(_) => panic!("create_key_store unexpectedly succeeded with no AWS configured"),
         Err(e) => e,
@@ -357,7 +359,7 @@ async fn create_key_store_dispatches_to_dynamodb() {
 
 #[tokio::test]
 async fn create_key_with_branch_key_id_but_no_ec_fails() {
-    let store = create(fixture_config_with_id("id-x")).await.unwrap();
+    let store = fixture_config_with_id("id-x").build().await.unwrap();
     let err = match store
         .create_key()
         .branch_key_id("bk-1".to_string())
@@ -375,7 +377,7 @@ async fn create_key_with_discovery_config_fails() {
     let cfg = fixture_config_with_id("id-x").kms_configuration(KmsConfiguration::Discovery(
         Discovery::builder().build().unwrap(),
     ));
-    let store = create(cfg).await.unwrap();
+    let store = cfg.build().await.unwrap();
     let err = match store.create_key().send().await {
         Ok(_) => panic!("create_key under a Discovery configuration must fail"),
         Err(e) => e,
@@ -388,7 +390,7 @@ async fn create_key_dispatches_to_kms() {
     // With no AWS configured, CreateKey reaches the first KMS
     // GenerateDataKeyWithoutPlaintext call, which fails at dispatch and is
     // surfaced as a Kms-kind error.
-    let store = create(fixture_config_with_id("id-x")).await.unwrap();
+    let store = fixture_config_with_id("id-x").build().await.unwrap();
     let err = match store.create_key().send().await {
         Ok(_) => panic!("create_key unexpectedly succeeded with no AWS configured"),
         Err(e) => e,
@@ -398,7 +400,7 @@ async fn create_key_dispatches_to_kms() {
 
 #[tokio::test]
 async fn version_key_without_a_branch_key_id_fails_before_dispatch() {
-    let store = create(fixture_config_with_id("id-x")).await.unwrap();
+    let store = fixture_config_with_id("id-x").build().await.unwrap();
     let err = store.version_key().send().await.unwrap_err();
     assert!(err.is_validation(), "{:?}", err);
 }
@@ -408,7 +410,7 @@ async fn version_key_with_discovery_config_fails() {
     let cfg = fixture_config_with_id("id-x").kms_configuration(KmsConfiguration::Discovery(
         Discovery::builder().build().unwrap(),
     ));
-    let store = create(cfg).await.unwrap();
+    let store = cfg.build().await.unwrap();
     let err = match store
         .version_key()
         .branch_key_id("bk-1".to_string())
@@ -425,7 +427,7 @@ async fn version_key_with_discovery_config_fails() {
 async fn version_key_dispatches_to_dynamodb() {
     // VersionKey first reads the ACTIVE record; with no AWS configured that
     // GetItem fails at dispatch and surfaces a Dynamodb-kind error.
-    let store = create(fixture_config_with_id("id-x")).await.unwrap();
+    let store = fixture_config_with_id("id-x").build().await.unwrap();
     let err = match store
         .version_key()
         .branch_key_id("bk-1".to_string())
@@ -448,7 +450,7 @@ async fn version_key_dispatches_to_dynamodb() {
 async fn get_beacon_key_dispatches_to_dynamodb() {
     // GetBeaconKey reads the beacon:ACTIVE record; with no AWS configured
     // that GetItem fails at dispatch and surfaces a Dynamodb-kind error.
-    let store = create(fixture_config_with_id("id-x")).await.unwrap();
+    let store = fixture_config_with_id("id-x").build().await.unwrap();
     let err = match store
         .get_beacon_key()
         .branch_key_id("bk-1".to_string())
@@ -471,7 +473,7 @@ async fn get_beacon_key_dispatches_to_dynamodb() {
 async fn the_message_does_not_render_the_sdk_errors_display() {
     // `SdkError`'s `Display` is a bare lifecycle label, so the message must
     // carry this layer and the operation; the detail is in the cause.
-    let store = create(fixture_config_with_id("id-x")).await.unwrap();
+    let store = fixture_config_with_id("id-x").build().await.unwrap();
     let err = match store
         .get_active_branch_key()
         .branch_key_id("bk-1".to_string())
@@ -496,7 +498,7 @@ async fn the_message_does_not_render_the_sdk_errors_display() {
 
 #[tokio::test]
 async fn find_in_error_chain_recovers_the_sdk_error_by_type() {
-    let store = create(fixture_config_with_id("id-x")).await.unwrap();
+    let store = fixture_config_with_id("id-x").build().await.unwrap();
     let err = match store
         .get_active_branch_key()
         .branch_key_id("bk-1".to_string())
@@ -524,7 +526,7 @@ async fn a_dispatch_failure_has_no_service_error_code() {
     // empty metadata. With no AWS configured this fails at dispatch, so
     // there is no code to report. A real service code is asserted in the
     // real-AWS integration suites.
-    let store = create(fixture_config_with_id("id-x")).await.unwrap();
+    let store = fixture_config_with_id("id-x").build().await.unwrap();
     let err = match store
         .get_active_branch_key()
         .branch_key_id("bk-1".to_string())
