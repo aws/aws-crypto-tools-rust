@@ -18,11 +18,11 @@
 //! tokio = { version = "1", features = ["full"] }
 //! ```
 //!
-//! Then create an [`Esdk`] client, and encrypt and decrypt with a keyring:
+//! Then create a [`Client`], and encrypt and decrypt with a keyring:
 //!
 //! ```
 //! use aws_crypto_mpl::{AesGcm, RawAesKeyring};
-//! use aws_esdk::{EncryptionContext, Esdk};
+//! use aws_esdk::{Client, EncryptionContext};
 //!
 //! # #[tokio::main(flavor = "current_thread")]
 //! # async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -37,7 +37,7 @@
 //! let mut encryption_context = EncryptionContext::new();
 //! encryption_context.insert("purpose", "example");
 //!
-//! let esdk = Esdk::default();
+//! let esdk = Client::default();
 //! let encrypted = esdk
 //!     .encrypt()
 //!     .plaintext(b"Hello World")
@@ -59,16 +59,28 @@
 //!
 //! ## Using the SDK
 //!
-//! [`Esdk`] is the client. Configure settings that apply to every call, such as the commitment policy,
-//! with [`Esdk::builder`]. Each operation is a method on the client that returns a fluent builder:
+//! [`Client`] is the client. Configure settings that apply to every call, such as the commitment policy,
+//! with [`Client::builder`]. Each operation is a method on the client that returns a fluent builder:
 //! set its members, then call `send`.
+//!
+//! To keep settings separate from the client, as `aws_sdk_kms::Client::from_conf` does, build a
+//! [`Config`] and pass it to [`Client::from_conf`]:
+//!
+//! ```
+//! use aws_esdk::{Client, CommitmentPolicy, Config};
+//!
+//! let config = Config::builder()
+//!     .commitment_policy(CommitmentPolicy::RequireEncryptRequireDecrypt)
+//!     .build();
+//! let esdk = Client::from_conf(config);
+//! ```
 //!
 //! | Operation | Fluent builder | Output |
 //! |---|---|---|
-//! | [`Esdk::encrypt`] | [`EncryptFluentBuilder`] | [`EncryptOutput`] |
-//! | [`Esdk::decrypt`] | [`DecryptFluentBuilder`] | [`DecryptOutput`] |
-//! | [`Esdk::encrypt_stream`] | [`EncryptStreamFluentBuilder`] | [`EncryptStreamOutput`] |
-//! | [`Esdk::decrypt_stream`] | [`DecryptStreamFluentBuilder`] | [`DecryptStreamOutput`] |
+//! | [`Client::encrypt`] | [`EncryptFluentBuilder`] | [`EncryptOutput`] |
+//! | [`Client::decrypt`] | [`DecryptFluentBuilder`] | [`DecryptOutput`] |
+//! | [`Client::encrypt_stream`] | [`EncryptStreamFluentBuilder`] | [`EncryptStreamOutput`] |
+//! | [`Client::decrypt_stream`] | [`DecryptStreamFluentBuilder`] | [`DecryptStreamOutput`] |
 //!
 //! Keyrings and cryptographic materials managers (CMMs) come from `aws_crypto_mpl`.
 //! To write your own, implement [`Keyring`] or [`Cmm`].
@@ -77,7 +89,7 @@
 //!
 //! ## Crate organization
 //!
-//! - The crate root holds the [`Esdk`] client, its configuration, the fluent builders and their outputs,
+//! - The crate root holds the [`Client`], its [`Config`], the fluent builders and their outputs,
 //!   and the types they take: [`EncryptionContext`], [`AlgorithmSuiteId`], [`CommitmentPolicy`],
 //!   and the [`Keyring`] and [`Cmm`] traits.
 //! - [`error`] holds [`Error`] and the details each error carries.

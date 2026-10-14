@@ -483,13 +483,13 @@ RawAesKeyring::RawAesKeyring(const std::string& key_namespace,
 
 // ESDK Operations
 
-EncryptResult EncryptionSDK::encrypt(const std::vector<std::uint8_t>& plaintext,
+EncryptResult Client::encrypt(const std::vector<std::uint8_t>& plaintext,
                                      const Keyring& keyring,
                                      const EncryptOptions& options) {
     return encrypt(plaintext.data(), plaintext.size(), keyring, options);
 }
 
-EncryptResult EncryptionSDK::encrypt(const std::uint8_t* plaintext,
+EncryptResult Client::encrypt(const std::uint8_t* plaintext,
                                      std::size_t plaintext_len,
                                      const Keyring& keyring,
                                      const EncryptOptions& options) {
@@ -501,7 +501,7 @@ EncryptResult EncryptionSDK::encrypt(const std::uint8_t* plaintext,
     in.frame_length = detail::to_opt(options.frame_length_);
     //= spec/shim/esdk-shim.md#client-configuration
     //= type=implication
-    //= reason=The commitment policy and encrypted data key cap are set only on the EncryptionSDK client; per-call options have no field for either, so neither can be supplied twice.
+    //= reason=The commitment policy and encrypted data key cap are set only on the Client; per-call options have no field for either, so neither can be supplied twice.
     //# - A configuration value the target supplies on both the client and a
     //# per-operation input MUST be rejected as invalid input.
     //
@@ -518,19 +518,19 @@ EncryptResult EncryptionSDK::encrypt(const std::uint8_t* plaintext,
     return result;
 }
 
-DecryptResult EncryptionSDK::decrypt(const std::vector<std::uint8_t>& ciphertext,
+DecryptResult Client::decrypt(const std::vector<std::uint8_t>& ciphertext,
                                      const Keyring& keyring,
                                      const DecryptOptions& options) {
     return decrypt(ciphertext.data(), ciphertext.size(), keyring, options);
 }
 
-DecryptResult EncryptionSDK::decrypt(const Bytes& ciphertext,
+DecryptResult Client::decrypt(const Bytes& ciphertext,
                                      const Keyring& keyring,
                                      const DecryptOptions& options) {
     return decrypt(ciphertext.data(), ciphertext.size(), keyring, options);
 }
 
-DecryptResult EncryptionSDK::decrypt(const std::uint8_t* ciphertext,
+DecryptResult Client::decrypt(const std::uint8_t* ciphertext,
                                      std::size_t ciphertext_len,
                                      const Keyring& keyring,
                                      const DecryptOptions& options) {
@@ -540,7 +540,7 @@ DecryptResult EncryptionSDK::decrypt(const std::uint8_t* ciphertext,
     in.encryption_context = detail::to_ec(options.encryption_context_);
     //= spec/shim/esdk-shim.md#client-configuration
     //= type=implication
-    //= reason=The commitment policy and encrypted data key cap are set only on the EncryptionSDK client; per-call options have no field for either, so neither can be supplied twice.
+    //= reason=The commitment policy and encrypted data key cap are set only on the Client; per-call options have no field for either, so neither can be supplied twice.
     //# - A configuration value the target supplies on both the client and a
     //# per-operation input MUST be rejected as invalid input.
     //
@@ -559,7 +559,7 @@ DecryptResult EncryptionSDK::decrypt(const std::uint8_t* ciphertext,
 
 // Streaming
 
-EncryptStream EncryptionSDK::create_encrypt_stream(const Keyring& keyring,
+EncryptStream Client::create_encrypt_stream(const Keyring& keyring,
                                                    const EncryptOptions& options) {
     ::ffi::EncryptInput in{};
     in.keyring = &*keyring.impl_->handle;
@@ -568,7 +568,7 @@ EncryptStream EncryptionSDK::create_encrypt_stream(const Keyring& keyring,
     in.frame_length = detail::to_opt(options.frame_length_);
     //= spec/shim/esdk-shim.md#client-configuration
     //= type=implication
-    //= reason=The commitment policy and encrypted data key cap are set only on the EncryptionSDK client; per-call options have no field for either, so neither can be supplied twice.
+    //= reason=The commitment policy and encrypted data key cap are set only on the Client; per-call options have no field for either, so neither can be supplied twice.
     //# - A configuration value the target supplies on both the client and a
     //# per-operation input MUST be rejected as invalid input.
     //
@@ -584,14 +584,14 @@ EncryptStream EncryptionSDK::create_encrypt_stream(const Keyring& keyring,
         detail::guard([&] { return ::ffi::create_encrypt_stream(in); })));
 }
 
-DecryptStream EncryptionSDK::create_decrypt_stream(const Keyring& keyring,
+DecryptStream Client::create_decrypt_stream(const Keyring& keyring,
                                                    const DecryptOptions& options) {
     ::ffi::DecryptInput in{};
     in.keyring = &*keyring.impl_->handle;
     in.encryption_context = detail::to_ec(options.encryption_context_);
     //= spec/shim/esdk-shim.md#client-configuration
     //= type=implication
-    //= reason=The commitment policy and encrypted data key cap are set only on the EncryptionSDK client; per-call options have no field for either, so neither can be supplied twice.
+    //= reason=The commitment policy and encrypted data key cap are set only on the Client; per-call options have no field for either, so neither can be supplied twice.
     //# - A configuration value the target supplies on both the client and a
     //# per-operation input MUST be rejected as invalid input.
     //
@@ -677,14 +677,14 @@ StreamResult pump_stream(Stream& stream, std::istream& source, std::ostream& sin
 
 }  // namespace detail
 
-StreamResult EncryptionSDK::encrypt_stream(std::istream& source, std::ostream& sink,
+StreamResult Client::encrypt_stream(std::istream& source, std::ostream& sink,
                                            const Keyring& keyring,
                                            const EncryptOptions& options) {
     EncryptStream stream = create_encrypt_stream(keyring, options);
     return detail::pump_stream(stream, source, sink);
 }
 
-StreamResult EncryptionSDK::decrypt_stream(std::istream& source, std::ostream& sink,
+StreamResult Client::decrypt_stream(std::istream& source, std::ostream& sink,
                                            const Keyring& keyring,
                                            const DecryptOptions& options) {
     DecryptStream stream = create_decrypt_stream(keyring, options);

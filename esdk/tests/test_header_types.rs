@@ -130,7 +130,7 @@ async fn test_content_type_invalid_value_rejected() {
         //= type=test
         //= reason=Negative test asserts that there are no other supported content types
         //# The supported content types MUST be:
-        let err = Esdk::default()
+        let err = Client::default()
             .decrypt()
             .ciphertext(&ct)
             .keyring(keyring.clone())
@@ -151,7 +151,7 @@ async fn test_base64_input_rejected() {
     let mut ct = encrypt_v2(b"base64 test").await;
     ct[0] = 0x41;
 
-    let err = Esdk::default()
+    let err = Client::default()
         .decrypt()
         .ciphertext(&ct)
         .keyring(keyring)
@@ -185,7 +185,7 @@ async fn test_unsupported_type_rejected_v1() {
     //= type=test
     //= reason=Tampering the type byte at offset 1 to an unsupported value proves the field is validated and only the specified types are accepted.
     //# The supported types MUST be:
-    let err = Esdk::default()
+    let err = Client::default()
         .decrypt()
         .ciphertext(&ct)
         .keyring(keyring)

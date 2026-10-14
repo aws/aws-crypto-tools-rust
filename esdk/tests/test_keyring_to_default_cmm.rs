@@ -49,7 +49,7 @@ async fn test_keyring_constructs_default_cmm_for_decrypt() {
     ec.insert("purpose", "keyring-cmm-test");
 
     let default_cmm = default_cmm_from(keyring.clone());
-    let ct = Esdk::default()
+    let ct = Client::default()
         .encrypt()
         .plaintext(pt)
         .encryption_context(ec.clone())
@@ -68,7 +68,7 @@ async fn test_keyring_constructs_default_cmm_for_decrypt() {
     //= type=test
     //= reason=The keyring path obtains decryption materials for the explicit-default-CMM ciphertext, proving the materials path matches
     //# This default CMM constructed from the keyring MUST obtain the decryption materials required for decryption.
-    let result = Esdk::default()
+    let result = Client::default()
         .decrypt()
         .ciphertext(&ct.ciphertext)
         .encryption_context(ec)
@@ -90,7 +90,7 @@ async fn test_keyring_constructs_default_cmm_for_encrypt() {
     let pt = b"keyring constructs default cmm for encrypt";
     let ec = EncryptionContext::new();
 
-    let ct = Esdk::default()
+    let ct = Client::default()
         .encrypt()
         .plaintext(pt)
         .encryption_context(ec.clone())
@@ -106,7 +106,7 @@ async fn test_keyring_constructs_default_cmm_for_encrypt() {
     //# If instead the caller supplied a [keyring](../framework/keyring-interface.md),
     //# this behavior MUST use a [default CMM](../framework/default-cmm.md)
     //# constructed using the caller-supplied keyring as input.
-    let result = Esdk::default()
+    let result = Client::default()
         .decrypt()
         .ciphertext(&ct.ciphertext)
         .encryption_context(ec)
@@ -124,7 +124,7 @@ async fn test_decrypt_fails_with_wrong_keyring() {
     // mode of the keyring → default-CMM path.
     let keyring = test_keyring().await;
     let pt = b"negative test keyring to default cmm";
-    let ct = Esdk::default()
+    let ct = Client::default()
         .encrypt()
         .plaintext(pt)
         .keyring(keyring)
@@ -134,7 +134,7 @@ async fn test_decrypt_fails_with_wrong_keyring() {
         .ciphertext;
 
     let wrong_keyring = aes_keyring(1).await;
-    let result = Esdk::default()
+    let result = Client::default()
         .decrypt()
         .ciphertext(&ct)
         .keyring(wrong_keyring)

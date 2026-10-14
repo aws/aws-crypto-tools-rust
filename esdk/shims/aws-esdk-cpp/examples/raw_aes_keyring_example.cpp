@@ -19,7 +19,7 @@ int main() {
             Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16
         );
 
-        Aws::Esdk::EncryptionSDK sdk;
+        Aws::Esdk::Client sdk;
 
         std::vector<uint8_t> plaintext = {'H', 'e', 'l', 'l', 'o', ' ', 'W', 'o', 'r', 'l', 'd'};
         auto encrypted = sdk.encrypt(plaintext, keyring);

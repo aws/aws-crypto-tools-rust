@@ -11,7 +11,7 @@ use aws_crypto_mpl::keyring::{Keyring, RawAesKeyring, SharedKeyring};
 use aws_crypto_mpl::keyring::{OnDecryptInput, OnEncryptInput};
 use aws_crypto_mpl::keyring::{OnDecryptOutput, OnEncryptOutput};
 use aws_crypto_mpl::structures::{EncryptionContext, EncryptionMaterials, PlaintextDataKey};
-use aws_esdk::{AlgorithmSuiteId, Error, Esdk};
+use aws_esdk::{AlgorithmSuiteId, Client, Error};
 use aws_mpl_primitives::AesGcm;
 use fake_aws::{BRANCH_KEY_ID, FakeAws, KEY_ARN, Reply};
 
@@ -91,7 +91,7 @@ impl Keyring for KnownDataKey {
 }
 
 async fn ciphertext() -> Vec<u8> {
-    Esdk::default()
+    Client::default()
         .encrypt()
         .plaintext(PLAINTEXT.as_bytes())
         .encryption_context(context(EC_VALUE))
@@ -108,7 +108,7 @@ async fn decrypt_error(
     ec: Option<&str>,
     keyring: impl Keyring + 'static,
 ) -> Error {
-    Esdk::default()
+    Client::default()
         .decrypt()
         .ciphertext(ciphertext)
         .keyring(keyring)
@@ -154,7 +154,7 @@ async fn malformed_branch_key_records_contain_no_attribute_values() {
         let fake = FakeAws::new(move |op, _| {
             (op == "DynamoDB_20120810.GetItem").then(|| Reply::ok(item.clone()))
         });
-        let err = Esdk::default()
+        let err = Client::default()
             .encrypt()
             .plaintext(PLAINTEXT.as_bytes())
             .encryption_context(context(EC_VALUE))
@@ -177,7 +177,7 @@ async fn kms_failures_contain_no_branch_key_bytes() {
             ))
         })
     });
-    let err = Esdk::default()
+    let err = Client::default()
         .encrypt()
         .plaintext(PLAINTEXT.as_bytes())
         .encryption_context(context(EC_VALUE))
@@ -191,7 +191,7 @@ async fn kms_failures_contain_no_branch_key_bytes() {
 
 /// The error from decrypting, against `fake`, a message encrypted under the fake's branch key.
 async fn hierarchical_decrypt_error(fake: FakeAws) -> Error {
-    let ciphertext = Esdk::default()
+    let ciphertext = Client::default()
         .encrypt()
         .plaintext(PLAINTEXT.as_bytes())
         .encryption_context(context(EC_VALUE))
@@ -200,7 +200,7 @@ async fn hierarchical_decrypt_error(fake: FakeAws) -> Error {
         .await
         .unwrap()
         .ciphertext;
-    Esdk::default()
+    Client::default()
         .decrypt()
         .ciphertext(&ciphertext)
         .keyring(fake.keyring().await)

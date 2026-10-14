@@ -570,7 +570,7 @@ public:
 ///  - Handling its own thread safety
 class Keyring {
     std::shared_ptr<detail::KeyringImpl> impl_;
-    friend class EncryptionSDK;
+    friend class Client;
 
 protected:
     explicit Keyring(std::shared_ptr<detail::KeyringImpl> impl) : impl_(std::move(impl)) {}
@@ -752,7 +752,7 @@ class EncryptOptions {
     std::optional<AlgorithmSuiteId> algorithm_suite_;
     std::map<std::string, std::string> encryption_context_;
     std::optional<std::uint32_t> frame_length_;
-    friend class EncryptionSDK;
+    friend class Client;
 
 public:
     /// Algorithm suite for encryption, identified by the two-byte ID from the ESDK message format. 
@@ -769,7 +769,7 @@ public:
 /// A field left unset keeps the ESDK Rust's default.
 class DecryptOptions {
     std::map<std::string, std::string> encryption_context_;
-    friend class EncryptionSDK;
+    friend class Client;
 
 public:
     /// Encryption context to verify against the encrypted message; every entry must be present in the message's context.
@@ -878,7 +878,7 @@ struct DecryptResult {
     AlgorithmSuiteId algorithm_suite_id;
 };
 
-/// Client-level configuration for EncryptionSDK.
+/// Configuration for Client.
 ///
 /// A field set both here and on a per-call EncryptOptions/DecryptOptions is rejected with ValidationException.
 /// Each field must be set in exactly one place.
@@ -887,21 +887,21 @@ struct DecryptResult {
 //= spec/shim/esdk-shim.md#client-configuration
 //# The ESDK shim MAY expose a client-level configuration mirroring the core
 //# ESDK's client configuration, applied to every operation of that client.
-class EncryptionSDKConfig {
+class Config {
     std::optional<CommitmentPolicy> commitment_policy_;
     std::optional<std::uint32_t> max_encrypted_data_keys_;
-    friend class EncryptionSDK;
+    friend class Client;
 
 public:
     /// Commitment policy applied to every operation on this client.
     /// Governs whether messages are encrypted with, and are required to carry, key commitment.
     /// <https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/migrate-commitment-policy.html>
     /// Default is CommitmentPolicy::RequireEncryptRequireDecrypt.
-    EncryptionSDKConfig& with_commitment_policy(CommitmentPolicy p) { commitment_policy_ = p; return *this; }
+    Config& with_commitment_policy(CommitmentPolicy p) { commitment_policy_ = p; return *this; }
     /// Cap on the number of encrypted data keys per message, applied to every
     /// operation on this client. 0 means no limit.
     /// <https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/configure.html#config-limit-keys>
-    EncryptionSDKConfig& with_max_encrypted_data_keys(std::uint32_t n) { max_encrypted_data_keys_ = n; return *this; }
+    Config& with_max_encrypted_data_keys(std::uint32_t n) { max_encrypted_data_keys_ = n; return *this; }
 };
 
 /// Result of finishing a stream
@@ -917,11 +917,11 @@ struct StreamResult {
 
 /// Streaming encrypt. Feed plaintext in chunks, receive ciphertext as it is produced.
 /// `finish()` flushes the final frame (and signature footer, for signing suites).
-/// Create via EncryptionSDK::create_encrypt_stream.
+/// Create via Client::create_encrypt_stream.
 /// One stream is single-threaded; different streams may run on different threads.
 class EncryptStream {
     std::shared_ptr<detail::EncryptStreamImpl> impl_;
-    friend class EncryptionSDK;
+    friend class Client;
     explicit EncryptStream(std::shared_ptr<detail::EncryptStreamImpl> impl) : impl_(std::move(impl)) {}
 
 public:
@@ -953,7 +953,7 @@ public:
 /// Decrypt these messages with Aws::Esdk::decrypt instead.
 class DecryptStream {
     std::shared_ptr<detail::DecryptStreamImpl> impl_;
-    friend class EncryptionSDK;
+    friend class Client;
     explicit DecryptStream(std::shared_ptr<detail::DecryptStreamImpl> impl) : impl_(std::move(impl)) {}
 
 public:
@@ -979,13 +979,13 @@ public:
 };
 
 /// ESDK client interface.
-class EncryptionSDK {
+class Client {
     std::optional<CommitmentPolicy> commitment_policy_;
     std::optional<std::uint32_t> max_encrypted_data_keys_;
 
 public:
-    EncryptionSDK() = default;
-    explicit EncryptionSDK(const EncryptionSDKConfig& options)
+    Client() = default;
+    explicit Client(const Config& options)
         : commitment_policy_(options.commitment_policy_),
           max_encrypted_data_keys_(options.max_encrypted_data_keys_) {}
 

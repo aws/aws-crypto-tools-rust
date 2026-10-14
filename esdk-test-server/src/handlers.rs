@@ -3,7 +3,7 @@
 //! `CreateClient` builds the keyring from the modeled config (delegating to the
 //! MPL), registers it under a fresh UUID, and returns the id. `Encrypt` and
 //! `Decrypt` look the registered client up by `clientId` and run the operation
-//! on its `aws_esdk::Esdk`.
+//! on its `aws_esdk::Client`.
 
 use crate::error::ServerError;
 use crate::keyring::keyring_for_cmm;
@@ -13,14 +13,14 @@ use crate::model::{
 };
 use aws_esdk::AlgorithmSuiteId as MplAlgorithmSuiteId;
 use aws_esdk::CommitmentPolicy as MplCommitmentPolicy;
-use aws_esdk::{EncryptionContext, Esdk, SharedKeyring};
+use aws_esdk::{Client, EncryptionContext, SharedKeyring};
 use std::collections::HashMap;
 use std::num::NonZeroUsize;
 use std::sync::Mutex;
 
 /// The ESDK client and keyring a registered client encrypts/decrypts with.
 struct ClientEntry {
-    esdk: Esdk,
+    esdk: Client,
     keyring: SharedKeyring,
 }
 
@@ -100,7 +100,7 @@ impl AppState {
         req: CreateClientRequest,
     ) -> Result<CreateClientResponse, ServerError> {
         let keyring = keyring_for_cmm(&req.config.cmm).await?;
-        let esdk = Esdk::builder()
+        let esdk = Client::builder()
             .commitment_policy(map_commitment(req.config.commitment_policy))
             .set_max_encrypted_data_keys(max_edks(&req.config)?)
             .build();
@@ -160,7 +160,7 @@ impl AppState {
     }
 
     /// Look up a registered client by id, cloning the shared keyring handle.
-    fn client(&self, client_id: &str) -> Result<(Esdk, SharedKeyring), ServerError> {
+    fn client(&self, client_id: &str) -> Result<(Client, SharedKeyring), ServerError> {
         if client_id.is_empty() {
             return Err(ServerError::generic("clientId must be non-empty"));
         }

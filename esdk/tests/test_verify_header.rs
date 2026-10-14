@@ -20,7 +20,7 @@ async fn test_verify_header_fails_on_tampered_header() {
     let keyring = test_keyring().await;
     let plaintext = b"tamper header test";
 
-    let esdk = Esdk::default();
+    let esdk = Client::default();
     let valid_ct = esdk
         .encrypt()
         .plaintext(plaintext)
@@ -110,7 +110,7 @@ async fn test_verify_header_encryption_context_to_only_authenticate() {
         .await
         .unwrap();
 
-    let esdk = Esdk::default();
+    let esdk = Client::default();
     let ct = esdk
         .encrypt()
         .plaintext(plaintext)
@@ -180,7 +180,7 @@ async fn test_streamed_signed_output_not_signed_until_complete() {
     // before completion cannot be considered signed.
     let keyring = test_keyring().await;
     let plaintext = vec![0xBBu8; 30];
-    let valid_ct = Esdk::default()
+    let valid_ct = Client::default()
         .encrypt()
         .plaintext(&plaintext)
         .keyring(keyring.clone())
@@ -201,7 +201,7 @@ async fn test_streamed_signed_output_not_signed_until_complete() {
     let mut valid_output = Vec::new();
     let mut tampered_cursor = std::io::Cursor::new(tampered_ct.as_slice());
     let mut tampered_output = Vec::new();
-    let esdk = Esdk::default();
+    let esdk = Client::default();
 
     //= spec/client-apis/decrypt.md#verify-the-header
     //= type=test
@@ -237,7 +237,7 @@ async fn test_streamed_release_parsed_header_after_verification() {
 
     let mut ec = EncryptionContext::new();
     ec.insert("release-key", "release-value");
-    let ct = Esdk::default()
+    let ct = Client::default()
         .encrypt()
         .plaintext(plaintext)
         .encryption_context(ec)
@@ -249,7 +249,7 @@ async fn test_streamed_release_parsed_header_after_verification() {
 
     let mut cursor = std::io::Cursor::new(ct.as_slice());
     let mut output = Vec::new();
-    let result = Esdk::default()
+    let result = Client::default()
         .decrypt_stream()
         .keyring(keyring)
         .send(&mut cursor, &mut output)

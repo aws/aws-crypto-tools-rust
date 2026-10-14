@@ -54,7 +54,7 @@ async fn test_net_v400_message_is_not_readable() {
         .build()
         .expect("raw AES keyring construction must succeed for the .NET v4.0.0 regression key");
 
-    let err = Esdk::default()
+    let err = Client::default()
         .decrypt()
         .ciphertext(ESDK_NET_V400_MESSAGE)
         .keyring(raw_aes_keyring)
@@ -77,9 +77,9 @@ async fn test_default_commitment_policy() {
     //= type=test
     //= reason=a client built without a commitment policy rejects a non-committing suite on encrypt and a non-committing message on decrypt
     //# If no [commitment policy](#commitment-policy) is provided the default MUST be [REQUIRE_ENCRYPT_REQUIRE_DECRYPT](../framework/algorithm-suites.md#require_encrypt_require_decrypt).
-    let esdk = Esdk::builder().build();
+    let esdk = Client::builder().build();
     assert_eq!(
-        esdk.config().commitment_policy,
+        esdk.config().commitment_policy(),
         CommitmentPolicy::RequireEncryptRequireDecrypt
     );
     let err = esdk
@@ -108,10 +108,10 @@ fn test_default_max_encrypted_data_keys_is_none() {
     //# If no [maximum number of encrypted data keys](#maximum-number-of-encrypted-data-keys) is provided
     //# the default MUST result in no limit on the number of encrypted data keys (aside from the limit imposed by the [message format](../format/message-header.md)).
     assert!(
-        Esdk::builder()
+        Client::builder()
             .build()
             .config()
-            .max_encrypted_data_keys
+            .max_encrypted_data_keys()
             .is_none(),
         "a client built without an EDK cap must have no limit"
     );
@@ -129,7 +129,7 @@ async fn test_frame_length_accepts_max_u32() {
     //= type=test
     //= reason=encrypt accepts a frame length of u32::MAX and writes it to the header, proving the implementation accepts the maximum allowed value
     //# - The total bytes allowed in a single frame MUST be less than or equal to `2^32 - 1`.
-    let out = Esdk::default()
+    let out = Client::default()
         .encrypt()
         .plaintext(b"pt")
         .keyring(test_keyring().await)
@@ -145,7 +145,7 @@ async fn test_frame_length_default_is_4096() {
     //= spec/client-apis/encrypt.md#frame-length
     //= type=test
     //# This value MUST default to 4096 bytes.
-    let out = Esdk::default()
+    let out = Client::default()
         .encrypt()
         .plaintext(b"pt")
         .keyring(test_keyring().await)
@@ -162,7 +162,7 @@ async fn test_encrypt_decrypt_accepts_all_optional_inputs() {
     ec.insert("greet", "hello");
     let plaintext = b"round-trip plaintext";
 
-    let esdk = Esdk::builder()
+    let esdk = Client::builder()
         //= spec/client-apis/client.md#initialization
         //= type=test
         //= reason=the commitment policy is set non-default; encrypt() honors it
@@ -258,7 +258,7 @@ async fn test_encrypt_decrypt_accepts_cmm() {
     let cmm = DefaultCmm::new(keyring);
     let plaintext = b"cmm round-trip plaintext";
 
-    let esdk = Esdk::default();
+    let esdk = Client::default();
 
     let encrypt_output = esdk
         .encrypt()
@@ -302,7 +302,7 @@ async fn test_encrypt_rejects_neither_and_both_sources() {
     //= spec/client-apis/encrypt.md#input
     //= type=test
     //# If the caller does not provide exactly one of a keyring or CMM, the Encrypt operation MUST fail.
-    let err = Esdk::default()
+    let err = Client::default()
         .encrypt()
         .plaintext(b"no source")
         .send()
@@ -314,7 +314,7 @@ async fn test_encrypt_rejects_neither_and_both_sources() {
         err
     );
 
-    let err = Esdk::default()
+    let err = Client::default()
         .encrypt()
         .plaintext(b"two sources")
         .keyring(keyring)
@@ -341,7 +341,7 @@ async fn test_decrypt_rejects_neither_and_both_sources() {
     //= spec/client-apis/decrypt.md#input
     //= type=test
     //# If the caller does not provide exactly one of a keyring or CMM, the Decrypt operation MUST fail.
-    let err = Esdk::default()
+    let err = Client::default()
         .decrypt()
         .ciphertext(b"")
         .send()
@@ -353,7 +353,7 @@ async fn test_decrypt_rejects_neither_and_both_sources() {
         err
     );
 
-    let err = Esdk::default()
+    let err = Client::default()
         .decrypt()
         .ciphertext(b"")
         .keyring(keyring)
@@ -368,31 +368,31 @@ async fn test_decrypt_rejects_neither_and_both_sources() {
     );
 }
 
-// Esdk client tests
+// Client tests
 
 use aws_esdk::AlgorithmSuiteId;
 use aws_esdk::CommitmentPolicy;
-use aws_esdk::{Esdk, EsdkConfig};
+use aws_esdk::{Client, Config};
 
 #[test]
 fn test_esdk_default_uses_default_config() {
-    // Default Esdk has the spec-default commitment policy and no EDK cap.
-    let esdk = Esdk::default();
+    // Default Client has the spec-default commitment policy and no EDK cap.
+    let esdk = Client::default();
     //= spec/client-apis/client.md#initialization
     //= type=test
     //# If no [commitment policy](#commitment-policy) is provided the default MUST be [REQUIRE_ENCRYPT_REQUIRE_DECRYPT](../framework/algorithm-suites.md#require_encrypt_require_decrypt).
     assert_eq!(
-        esdk.config().commitment_policy,
+        esdk.config().commitment_policy(),
         CommitmentPolicy::RequireEncryptRequireDecrypt,
-        "Esdk::default() must use the default commitment policy"
+        "Client::default() must use the default commitment policy"
     );
     //= spec/client-apis/client.md#initialization
     //= type=test
     //# If no [maximum number of encrypted data keys](#maximum-number-of-encrypted-data-keys) is provided
     //# the default MUST result in no limit on the number of encrypted data keys (aside from the limit imposed by the [message format](../format/message-header.md)).
     assert!(
-        esdk.config().max_encrypted_data_keys.is_none(),
-        "Esdk::default() must have no EDK cap"
+        esdk.config().max_encrypted_data_keys().is_none(),
+        "Client::default() must have no EDK cap"
     );
 }
 
@@ -402,13 +402,13 @@ fn test_esdk_builder_sets_commitment_policy() {
     //= type=test
     //# - On client initialization,
     //# the caller MUST have the option to provide a [commitment policy](#commitment-policy).
-    let esdk = Esdk::builder()
+    let esdk = Client::builder()
         .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt)
         .build();
     assert_eq!(
-        esdk.config().commitment_policy,
+        esdk.config().commitment_policy(),
         CommitmentPolicy::ForbidEncryptAllowDecrypt,
-        "builder().commitment_policy(...) must set it on the resulting Esdk's config"
+        "builder().commitment_policy(...) must set it on the resulting Client's config"
     );
 }
 
@@ -419,37 +419,74 @@ fn test_esdk_builder_sets_max_encrypted_data_keys() {
     //= type=test
     //# - On client initialization,
     //# the caller MUST have the option to provide a [maximum number of encrypted data keys](#maximum-number-of-encrypted-data-keys).
-    let esdk = Esdk::builder().max_encrypted_data_keys(cap).build();
+    let esdk = Client::builder().max_encrypted_data_keys(cap).build();
     assert_eq!(
-        esdk.config().max_encrypted_data_keys,
+        esdk.config().max_encrypted_data_keys(),
         Some(cap),
-        "builder().max_encrypted_data_keys(...) must set it on the resulting Esdk's config"
+        "builder().max_encrypted_data_keys(...) must set it on the resulting Client's config"
     );
 }
 
 #[test]
-fn test_esdk_new_takes_explicit_config() {
-    // Direct construction from a built EsdkConfig is also supported.
-    let mut config = EsdkConfig::default();
-    config.commitment_policy = CommitmentPolicy::ForbidEncryptAllowDecrypt;
-    config.max_encrypted_data_keys = std::num::NonZeroUsize::new(7);
-    let esdk = Esdk::new(config);
+fn test_esdk_from_conf_takes_built_config() {
+    let config = Config::builder()
+        .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt)
+        .max_encrypted_data_keys(std::num::NonZeroUsize::new(7).unwrap())
+        .build();
+    let esdk = Client::from_conf(config);
+    assert_eq!(esdk.config(), &config);
     assert_eq!(
-        esdk.config().commitment_policy,
+        esdk.config().commitment_policy(),
         CommitmentPolicy::ForbidEncryptAllowDecrypt
     );
     assert_eq!(
-        esdk.config().max_encrypted_data_keys,
+        esdk.config().max_encrypted_data_keys(),
         std::num::NonZeroUsize::new(7)
     );
 }
 
+#[test]
+fn test_config_builder_defaults_match_client_default() {
+    assert_eq!(Config::builder().build(), Config::default());
+    assert_eq!(
+        Client::builder().build().config(),
+        Client::default().config()
+    );
+}
+
+#[test]
+fn test_builder_getters_track_setters() {
+    let cap = std::num::NonZeroUsize::new(2).unwrap();
+    let policy = CommitmentPolicy::RequireEncryptAllowDecrypt;
+    let config = Config::builder()
+        .commitment_policy(policy)
+        .max_encrypted_data_keys(cap);
+    assert_eq!(config.get_commitment_policy(), &Some(policy));
+    assert_eq!(config.get_max_encrypted_data_keys(), &Some(cap));
+    let config = config
+        .set_commitment_policy(None)
+        .set_max_encrypted_data_keys(None);
+    assert_eq!(config.get_commitment_policy(), &None);
+    assert_eq!(config.get_max_encrypted_data_keys(), &None);
+
+    let client = Client::builder()
+        .commitment_policy(policy)
+        .max_encrypted_data_keys(cap);
+    assert_eq!(client.get_commitment_policy(), &Some(policy));
+    assert_eq!(client.get_max_encrypted_data_keys(), &Some(cap));
+    let client = client
+        .set_commitment_policy(None)
+        .set_max_encrypted_data_keys(None);
+    assert_eq!(client.get_commitment_policy(), &None);
+    assert_eq!(client.get_max_encrypted_data_keys(), &None);
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn test_esdk_encrypt_decrypt_round_trip() {
-    let plaintext: &[u8] = b"hello via Esdk client";
+    let plaintext: &[u8] = b"hello via Client";
     let keyring = test_keyring().await;
 
-    let esdk = Esdk::builder()
+    let esdk = Client::builder()
         .commitment_policy(CommitmentPolicy::RequireEncryptRequireDecrypt)
         .build();
 
@@ -465,7 +502,7 @@ async fn test_esdk_encrypt_decrypt_round_trip() {
         .keyring(keyring.clone())
         .send()
         .await
-        .expect("Esdk::encrypt must succeed with a configured client");
+        .expect("Client::encrypt must succeed with a configured client");
 
     //= spec/client-apis/client.md#decrypt
     //= type=test
@@ -478,10 +515,10 @@ async fn test_esdk_encrypt_decrypt_round_trip() {
         .keyring(keyring)
         .send()
         .await
-        .expect("Esdk::decrypt must succeed on the matching ciphertext");
+        .expect("Client::decrypt must succeed on the matching ciphertext");
     assert_eq!(
         pt.plaintext, plaintext,
-        "Esdk round-trip must produce the original plaintext"
+        "Client round-trip must produce the original plaintext"
     );
 }
 
@@ -489,7 +526,7 @@ async fn test_esdk_encrypt_decrypt_round_trip() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_esdk_commitment_policy_actually_gates_encrypt() {
     let keyring = test_keyring().await;
-    let esdk = Esdk::builder()
+    let esdk = Client::builder()
         .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt)
         .build();
 
@@ -530,7 +567,7 @@ async fn test_esdk_commitment_policy_actually_gates_decrypt() {
     )
     .await;
 
-    let esdk = Esdk::builder()
+    let esdk = Client::builder()
         .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt)
         .build();
     let out = esdk
@@ -542,10 +579,10 @@ async fn test_esdk_commitment_policy_actually_gates_decrypt() {
         .expect("Esdk(ForbidEncryptAllowDecrypt) must accept a V1 non-committing ciphertext");
     assert_eq!(
         out.plaintext, plaintext,
-        "decrypt under Esdk client must round-trip the V1 plaintext"
+        "decrypt under Client must round-trip the V1 plaintext"
     );
 
-    let default_esdk = Esdk::default();
+    let default_esdk = Client::default();
     let err = default_esdk
         .decrypt()
         .ciphertext(&ct)
@@ -553,7 +590,7 @@ async fn test_esdk_commitment_policy_actually_gates_decrypt() {
         .send()
         .await
         .expect_err(
-            "default Esdk (RequireEncryptRequireDecrypt) must reject V1 non-committing ciphertext",
+            "default Client (RequireEncryptRequireDecrypt) must reject V1 non-committing ciphertext",
         );
     assert!(
         err.is_validation(),

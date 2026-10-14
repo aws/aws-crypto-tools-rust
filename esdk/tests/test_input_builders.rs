@@ -7,7 +7,7 @@ mod test_helpers;
 
 use aws_crypto_mpl::cmm::DefaultCmm;
 use aws_esdk::{
-    AlgorithmSuiteId, CommitmentPolicy, EncryptionContext, Esdk, SharedCmm, SharedKeyring,
+    AlgorithmSuiteId, Client, CommitmentPolicy, EncryptionContext, SharedCmm, SharedKeyring,
 };
 use std::num::{NonZeroU32, NonZeroUsize};
 use test_helpers::{count_frames, esdk_with, test_keyring};
@@ -41,7 +41,7 @@ fn plaintext() -> Vec<u8> {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_send_requires_plaintext_and_ciphertext() {
     let keyring = SharedKeyring::new(test_keyring().await);
-    let esdk = Esdk::default();
+    let esdk = Client::default();
 
     let err = esdk
         .encrypt()
@@ -96,7 +96,7 @@ async fn test_encrypt_setters_take_effect() {
     assert_eq!(out.encryption_context, ec());
     assert_eq!(count_frames(&out.ciphertext, FRAME_LENGTH), (2, 1));
 
-    let out = Esdk::default()
+    let out = Client::default()
         .encrypt()
         .plaintext(&plaintext)
         .keyring(keyring.clone())
@@ -114,7 +114,7 @@ async fn test_encrypt_setters_take_effect() {
     assert!(!out.encryption_context.contains_key("k"));
 
     let cmm = SharedCmm::new(DefaultCmm::new(keyring.clone()));
-    Esdk::default()
+    Client::default()
         .encrypt()
         .plaintext(&plaintext)
         .cmm(cmm.clone())
@@ -122,7 +122,7 @@ async fn test_encrypt_setters_take_effect() {
         .await
         .expect("encrypt with only a CMM must succeed");
 
-    Esdk::default()
+    Client::default()
         .encrypt()
         .plaintext(&plaintext)
         .keyring(keyring)
@@ -169,7 +169,7 @@ async fn test_encrypt_stream_setters_take_effect() {
     assert_eq!(out.encryption_context, ec());
     assert_eq!(count_frames(&ct, FRAME_LENGTH), (2, 1));
 
-    let err = Esdk::default()
+    let err = Client::default()
         .encrypt_stream()
         .keyring(keyring.clone())
         .data_size(1)
@@ -178,7 +178,7 @@ async fn test_encrypt_stream_setters_take_effect() {
         .expect_err("plaintext longer than data_size must fail");
     assert!(err.is_validation(), "{:?}", err);
 
-    Esdk::default()
+    Client::default()
         .encrypt_stream()
         .keyring(keyring.clone())
         .data_size(1)
@@ -188,13 +188,13 @@ async fn test_encrypt_stream_setters_take_effect() {
         .expect("set_data_size(None) must clear the bound");
 
     let cmm = SharedCmm::new(DefaultCmm::new(keyring));
-    Esdk::default()
+    Client::default()
         .encrypt_stream()
         .cmm(cmm.clone())
         .send(plaintext.as_slice(), Vec::new())
         .await
         .expect("encrypt_stream with cmm must succeed");
-    Esdk::default()
+    Client::default()
         .encrypt_stream()
         .set_cmm(Some(cmm))
         .send(plaintext.as_slice(), Vec::new())
@@ -278,7 +278,7 @@ async fn test_decrypt_setters_take_effect() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_decrypt_stream_setters_take_effect() {
     let keyring = SharedKeyring::new(test_keyring().await);
-    let esdk = Esdk::default();
+    let esdk = Client::default();
     let ct = esdk
         .encrypt()
         .plaintext(b"plaintext")
@@ -335,9 +335,9 @@ async fn test_getters_return_set_values() {
     let cmm = SharedCmm::new(DefaultCmm::new(keyring.clone()));
     let bytes = plaintext();
     let edks = NonZeroUsize::new(3).unwrap();
-    let esdk = Esdk::default();
+    let esdk = Client::default();
 
-    let b = Esdk::builder();
+    let b = Client::builder();
     assert_eq!(
         (b.get_commitment_policy(), b.get_max_encrypted_data_keys()),
         (&None, &None)

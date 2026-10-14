@@ -156,7 +156,7 @@ async fn test_v2_header_aad() {
         .unwrap();
 
     let pt = b"aad required ec test v2";
-    let esdk = Esdk::default();
+    let esdk = Client::default();
     let ct = esdk
         .encrypt()
         .plaintext(pt)

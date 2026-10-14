@@ -16,7 +16,7 @@ use test_helpers::*;
 async fn test_decrypt_output_includes_encryption_context() {
     let keyring = test_keyring().await;
     let ec = small_encryption_context(SmallEncryptionContextVariation::AB);
-    let ct = Esdk::default()
+    let ct = Client::default()
         .encrypt()
         .plaintext(b"ec test")
         .encryption_context(ec.clone())
@@ -26,7 +26,7 @@ async fn test_decrypt_output_includes_encryption_context() {
         .unwrap()
         .ciphertext;
 
-    let result = Esdk::default()
+    let result = Client::default()
         .decrypt()
         .ciphertext(&ct)
         .encryption_context(ec.clone())
@@ -46,7 +46,7 @@ async fn test_decrypt_output_includes_encryption_context() {
 async fn test_decrypt_output_includes_algorithm_suite() {
     let keyring = test_keyring().await;
     let suite = AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey;
-    let ct = Esdk::default()
+    let ct = Client::default()
         .encrypt()
         .plaintext(b"suite test")
         .keyring(keyring.clone())
@@ -56,7 +56,7 @@ async fn test_decrypt_output_includes_algorithm_suite() {
         .unwrap()
         .ciphertext;
 
-    let result = Esdk::default()
+    let result = Client::default()
         .decrypt()
         .ciphertext(&ct)
         .keyring(keyring.clone())
@@ -81,7 +81,7 @@ async fn test_decrypt_no_unauthenticated_data_released() {
     // unlike tampering the post-authentication signature).
     let keyring = test_keyring().await;
     let pt = vec![0xABu8; 20];
-    let valid_ct = Esdk::default()
+    let valid_ct = Client::default()
         .encrypt()
         .plaintext(&pt)
         .keyring(keyring.clone())
@@ -103,7 +103,7 @@ async fn test_decrypt_no_unauthenticated_data_released() {
     //= reason=Untampered ct decrypts; tampered body auth tag → Cryptographic error with no DecryptOutput, so unauthenticated plaintext is never released
     //# This operation MUST NOT release any unauthenticated plaintext or unauthenticated associated data.
     assert!(
-        Esdk::default()
+        Client::default()
             .decrypt()
             .ciphertext(&valid_ct)
             .keyring(keyring.clone())
@@ -113,7 +113,7 @@ async fn test_decrypt_no_unauthenticated_data_released() {
         "valid ct must decrypt"
     );
     assert!(
-        Esdk::default()
+        Client::default()
             .decrypt()
             .ciphertext(&tampered_ct)
             .keyring(keyring.clone())
@@ -131,7 +131,7 @@ async fn test_streaming_callers_must_discard_on_failure() {
     let plaintext = b"discard on failure test";
     // frame_length 4096 exceeds the plaintext, keeping this a single-frame
     // message so decrypt_stream exercises signature verification.
-    let valid_ct = Esdk::default()
+    let valid_ct = Client::default()
         .encrypt()
         .plaintext(plaintext)
         .keyring(keyring.clone())
@@ -158,7 +158,7 @@ async fn test_streaming_callers_must_discard_on_failure() {
     //# Additionally, if this operation fails, callers MUST discard the released plaintext and encryption context
     //# and MUST rollback any processing done due to the released plaintext or encryption context.
     assert!(
-        Esdk::default()
+        Client::default()
             .decrypt_stream()
             .keyring(keyring.clone())
             .send(&mut valid_cursor, &mut valid_output)
@@ -167,7 +167,7 @@ async fn test_streaming_callers_must_discard_on_failure() {
         "valid ct must stream to Ok"
     );
     assert!(
-        Esdk::default()
+        Client::default()
             .decrypt_stream()
             .keyring(keyring)
             .send(&mut tampered_cursor, &mut tampered_output)

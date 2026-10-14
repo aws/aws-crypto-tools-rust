@@ -45,7 +45,7 @@ async fn test_step_2_construct_header() {
 async fn test_step_4_construct_signature() {
     // Encrypt with a signing suite; verify footer exists on the wire, then decrypt as corroboration.
     let keyring = test_keyring().await;
-    let ct = Esdk::default()
+    let ct = Client::default()
         .encrypt()
         .plaintext(b"test step 4")
         .keyring(keyring.clone())
@@ -64,7 +64,7 @@ async fn test_step_4_construct_signature() {
         has_footer(&ct),
         "signing suite must produce a footer on the wire"
     );
-    let pt = Esdk::default()
+    let pt = Client::default()
         .decrypt()
         .ciphertext(&ct)
         .keyring(keyring)
@@ -192,7 +192,7 @@ async fn test_cmm_used_must_be_input_cmm() {
         observed_max_plaintext_length: observed_len.clone(),
     };
     let pt = b"input cmm test";
-    let ct = Esdk::default()
+    let ct = Client::default()
         .encrypt()
         .plaintext(pt)
         .cmm(spy)
@@ -218,7 +218,7 @@ async fn test_cmm_used_must_be_input_cmm() {
 
     // Round-trip corroboration.
     assert_eq!(
-        Esdk::default()
+        Client::default()
             .decrypt()
             .ciphertext(&ct)
             .keyring(keyring)
@@ -235,7 +235,7 @@ async fn test_cmm_request_encryption_context() {
     // Encrypt with a non-empty encryption context and verify it appears in the output.
     let keyring = test_keyring().await;
     let ec = fixtures::ec_of(&[("mykey", "myval")]);
-    let output = Esdk::default()
+    let output = Client::default()
         .encrypt()
         .plaintext(b"ec test")
         .encryption_context(ec.clone())
@@ -278,7 +278,7 @@ async fn test_cmm_request_empty_encryption_context() {
 async fn test_cmm_request_algorithm_suite_provided() {
     // Encrypt with a specific algorithm suite and verify the output uses it.
     let keyring = test_keyring().await;
-    let output = Esdk::default()
+    let output = Client::default()
         .encrypt()
         .plaintext(b"suite test")
         .keyring(keyring)
@@ -300,7 +300,7 @@ async fn test_cmm_request_algorithm_suite_provided() {
 async fn test_suite_from_materials_used() {
     // Encrypt with a specific suite and verify the output reports the same suite.
     let keyring = test_keyring().await;
-    let output = Esdk::default()
+    let output = Client::default()
         .encrypt()
         .plaintext(b"suite from materials")
         .keyring(keyring)
@@ -413,7 +413,7 @@ async fn test_encrypt_data_key_derived_from_plaintext_data_key() {
 async fn test_frame_length_input_used() {
     // Encrypt with a custom frame length and verify the header records that exact value.
     let keyring = test_keyring().await;
-    let ct = Esdk::default()
+    let ct = Client::default()
         .encrypt()
         .plaintext(b"custom frame length")
         .keyring(keyring.clone())
@@ -444,7 +444,7 @@ async fn test_frame_length_input_used() {
         "header frame_length must equal the input frame length"
     );
 
-    let result = Esdk::default()
+    let result = Client::default()
         .decrypt()
         .ciphertext(&ct)
         .keyring(keyring)
@@ -489,7 +489,7 @@ async fn test_default_frame_length_used() {
 async fn test_message_format_version_matches_suite() {
     // Encrypt with a V2 (committing) suite and verify the first byte is 0x02 (version 2).
     let keyring = test_keyring().await;
-    let ct = Esdk::default()
+    let ct = Client::default()
         .encrypt()
         .plaintext(b"version test")
         .keyring(keyring.clone())
@@ -547,7 +547,7 @@ async fn test_output_includes_encrypted_message() {
 async fn test_output_includes_encryption_context() {
     let keyring = test_keyring().await;
     let ec = fixtures::ec_of(&[("testkey", "testval")]);
-    let output = Esdk::default()
+    let output = Client::default()
         .encrypt()
         .plaintext(b"output ec test")
         .encryption_context(ec)
@@ -567,7 +567,7 @@ async fn test_output_includes_encryption_context() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_output_includes_algorithm_suite() {
     let keyring = test_keyring().await;
-    let output = Esdk::default()
+    let output = Client::default()
         .encrypt()
         .plaintext(b"output suite test")
         .keyring(keyring)
@@ -593,7 +593,7 @@ async fn test_output_includes_algorithm_suite() {
 async fn test_reserved_encryption_context_prefix_must_fail() {
     let keyring = test_keyring().await;
     let ec = fixtures::ec_of(&[("aws-crypto-foo", "bar")]);
-    let result = Esdk::default()
+    let result = Client::default()
         .encrypt()
         .plaintext(b"should fail")
         .encryption_context(ec)
@@ -618,7 +618,7 @@ async fn test_reserved_encryption_context_prefix_boundary_no_dash() {
     // Proves only 'aws-crypto-' (with dash) is reserved; 'aws-crypto' alone is valid.
     let keyring = test_keyring().await;
     let ec = fixtures::ec_of(&[("aws-crypto", "bar")]);
-    let result = Esdk::default()
+    let result = Client::default()
         .encrypt()
         .plaintext(b"should succeed")
         .encryption_context(ec)
@@ -635,7 +635,7 @@ async fn test_reserved_encryption_context_prefix_boundary_no_dash() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_algorithm_suite_used_for_encryption() {
     let keyring = test_keyring().await;
-    let output = Esdk::default()
+    let output = Client::default()
         .encrypt()
         .plaintext(b"suite used test")
         .keyring(keyring.clone())
@@ -652,7 +652,7 @@ async fn test_algorithm_suite_used_for_encryption() {
         "the specified algorithm suite must be used for encryption"
     );
     // Verify round-trip to prove the suite was actually used for encryption
-    let pt = Esdk::default()
+    let pt = Client::default()
         .decrypt()
         .ciphertext(&output.ciphertext)
         .keyring(keyring)
@@ -707,7 +707,7 @@ async fn test_cmm_request_no_algorithm_suite_field() {
     };
 
     let pt = b"no suite spy test";
-    let output = Esdk::default()
+    let output = Client::default()
         .encrypt()
         .plaintext(pt)
         .cmm(cmm_ref)
@@ -735,7 +735,7 @@ async fn test_cmm_request_no_algorithm_suite_field() {
 
     // Round-trip corroboration
     assert_eq!(
-        Esdk::default()
+        Client::default()
             .decrypt()
             .ciphertext(&output.ciphertext)
             .keyring(keyring)
@@ -761,7 +761,7 @@ async fn test_cmm_request_max_plaintext_length_equals_input() {
     };
 
     let pt = b"spy plaintext 23 bytes!"; // 23 bytes
-    Esdk::default()
+    Client::default()
         .encrypt()
         .plaintext(pt)
         .cmm(cmm_ref)
@@ -828,7 +828,7 @@ async fn test_plaintext_length_bound_used_for_unknown_length() {
     let plaintext = vec![0xAAu8; 50];
     let mut reader = std::io::Cursor::new(&plaintext);
     let mut output = Vec::new();
-    Esdk::default()
+    Client::default()
         .encrypt_stream()
         .cmm(cmm_ref)
         .data_size(100)
@@ -864,7 +864,7 @@ async fn test_no_plaintext_length_bound_field_not_included() {
     let plaintext = vec![0xBBu8; 50];
     let mut reader = std::io::Cursor::new(&plaintext);
     let mut output = Vec::new();
-    Esdk::default()
+    Client::default()
         .encrypt_stream()
         .cmm(cmm_ref)
         .send(&mut reader, &mut output)
@@ -890,7 +890,7 @@ async fn test_streaming_header_released_after_serialization() {
     let plaintext = vec![0xCCu8; 20];
     let mut reader = std::io::Cursor::new(&plaintext);
     let mut output = Vec::new();
-    Esdk::default()
+    Client::default()
         .encrypt_stream()
         .keyring(keyring.clone())
         .data_size(20)
@@ -930,7 +930,7 @@ async fn test_message_bodies_not_equal_must_fail() {
     // auth, not an encrypt comparison). That requirement is annotated type=implication in
     // encrypt.rs (the body is written directly to the output, so inequality is impossible).
     assert!(
-        Esdk::default()
+        Client::default()
             .decrypt()
             .ciphertext(&valid_ct)
             .keyring(keyring.clone())
@@ -940,7 +940,7 @@ async fn test_message_bodies_not_equal_must_fail() {
         "valid ct must decrypt"
     );
     assert!(
-        Esdk::default()
+        Client::default()
             .decrypt()
             .ciphertext(&tampered_ct)
             .keyring(keyring)

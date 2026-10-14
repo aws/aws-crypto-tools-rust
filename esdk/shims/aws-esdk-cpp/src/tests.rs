@@ -948,7 +948,7 @@ fn encrypt_settings_forwards_every_optional_input() {
     //# the core ESDK, converted as defined in
     //# [Maximum encrypted data keys](#maximum-encrypted-data-keys).
     assert_eq!(
-        config.max_encrypted_data_keys,
+        config.max_encrypted_data_keys(),
         std::num::NonZeroUsize::new(5)
     );
 
@@ -962,7 +962,7 @@ fn encrypt_settings_forwards_every_optional_input() {
     //= type=test
     //# - MUST provide the target-supplied commitment policy to the core ESDK,
     //# converted as defined in [Commitment policy](#commitment-policy).
-    assert_eq!(config.commitment_policy, C::ForbidEncryptAllowDecrypt);
+    assert_eq!(config.commitment_policy(), C::ForbidEncryptAllowDecrypt);
 
     //= spec/shim/esdk-shim.md#encrypt-inputs
     //= type=test
@@ -978,10 +978,10 @@ fn encrypt_settings_forwards_every_optional_input() {
 fn encrypt_settings_leaves_unset_inputs_defaulted() {
     let settings = encrypt_settings(&unset_encrypt_input()).expect("settings convert");
     let config = settings.esdk.config();
-    assert_eq!(config.max_encrypted_data_keys, None);
+    assert_eq!(config.max_encrypted_data_keys(), None);
     assert_eq!(settings.frame_length, None);
     assert_eq!(
-        config.commitment_policy,
+        config.commitment_policy(),
         EsdkCommitmentPolicy::RequireEncryptRequireDecrypt
     );
     assert_eq!(settings.algorithm_suite_id, None);
@@ -1006,7 +1006,7 @@ fn decrypt_client_forwards_every_optional_input() {
     //# the core ESDK, converted as defined in
     //# [Maximum encrypted data keys](#maximum-encrypted-data-keys).
     assert_eq!(
-        config.max_encrypted_data_keys,
+        config.max_encrypted_data_keys(),
         std::num::NonZeroUsize::new(7)
     );
 
@@ -1014,7 +1014,7 @@ fn decrypt_client_forwards_every_optional_input() {
     //= type=test
     //# - MUST provide the target-supplied commitment policy to the core ESDK,
     //# converted as defined in [Commitment policy](#commitment-policy).
-    assert_eq!(config.commitment_policy, C::RequireEncryptAllowDecrypt);
+    assert_eq!(config.commitment_policy(), C::RequireEncryptAllowDecrypt);
 }
 
 #[test]

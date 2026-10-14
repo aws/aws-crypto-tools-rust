@@ -65,7 +65,7 @@ int main() {
     RawAesKeyring keyring("example-ns", "example-key",
                           std::vector<std::uint8_t>(32, 0x42),
                           AesWrappingAlgorithm::AlgAes256GcmIv12Tag16);
-    EncryptionSDK sdk;
+    Client sdk;
 
     auto payload = make_payload();
     const std::uint8_t* data = payload.get();

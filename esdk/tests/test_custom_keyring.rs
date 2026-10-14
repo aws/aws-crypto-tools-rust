@@ -131,7 +131,7 @@ async fn custom_keyring_round_trips_via_public_api() {
     let plaintext = b"extension interface round trip";
 
     // Encrypt entirely through the custom keyring.
-    let out = Esdk::default()
+    let out = Client::default()
         .encrypt()
         .plaintext(plaintext)
         .keyring(keyring.clone())
@@ -148,7 +148,7 @@ async fn custom_keyring_round_trips_via_public_api() {
     );
 
     // Decrypt back through the same keyring.
-    let dec = Esdk::default()
+    let dec = Client::default()
         .decrypt()
         .ciphertext(&out.ciphertext)
         .keyring(keyring)
@@ -161,7 +161,7 @@ async fn custom_keyring_round_trips_via_public_api() {
 #[tokio::test(flavor = "multi_thread")]
 async fn custom_keyring_wrong_kek_fails_decrypt() {
     let enc_keyring = LocalKekKeyring { kek: [7u8; 32] };
-    let out = Esdk::default()
+    let out = Client::default()
         .encrypt()
         .plaintext(b"wrong kek must fail")
         .keyring(enc_keyring)
@@ -171,7 +171,7 @@ async fn custom_keyring_wrong_kek_fails_decrypt() {
 
     // A keyring with a different KEK cannot unwrap the data key.
     let wrong_keyring = LocalKekKeyring { kek: [8u8; 32] };
-    let err = Esdk::default()
+    let err = Client::default()
         .decrypt()
         .ciphertext(&out.ciphertext)
         .keyring(wrong_keyring)
@@ -223,7 +223,7 @@ impl Keyring for ShortDataKeyKeyring {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_plaintext_data_key_of_the_wrong_length_is_invalid_materials() {
-    let err = Esdk::default()
+    let err = Client::default()
         .encrypt()
         .plaintext(b"short key")
         .keyring(ShortDataKeyKeyring)
@@ -241,14 +241,14 @@ async fn a_plaintext_data_key_of_the_wrong_length_is_invalid_materials() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_decrypt_plaintext_data_key_of_the_wrong_length_is_invalid_materials() {
-    let out = Esdk::default()
+    let out = Client::default()
         .encrypt()
         .plaintext(b"short key")
         .keyring(LocalKekKeyring { kek: [7u8; 32] })
         .send()
         .await
         .unwrap();
-    let err = Esdk::default()
+    let err = Client::default()
         .decrypt()
         .ciphertext(&out.ciphertext)
         .keyring(ShortDataKeyKeyring)
