@@ -4,7 +4,9 @@
 use anyhow::Result;
 use std::time::Duration;
 
-use aws_crypto_mpl::{HierarchicalKeyring, KeyStoreClient, KmsConfiguration, cmc::DefaultCmc};
+use aws_crypto_mpl::{
+    HierarchicalKeyring, KeyStoreClient, KeyStoreConfig, KmsConfiguration, cmc::DefaultCmc,
+};
 use aws_esdk::{CommitmentPolicy, Esdk};
 use log::info;
 use sysinfo::System;
@@ -66,15 +68,18 @@ impl EsdkBenchmark {
 
         let sdk_config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
 
-        let key_store = KeyStoreClient::builder()
-            .kms_client(aws_sdk_kms::Client::new(&sdk_config))
-            .ddb_client(aws_sdk_dynamodb::Client::new(&sdk_config))
-            .ddb_table_name(BRANCH_KEY_STORE_NAME)
-            .logical_key_store_name(LOGICAL_KEY_STORE_NAME)
-            .kms_configuration(KmsConfiguration::KmsKeyArn(HIERARCHY_KEY_ARN.into()))
-            .build()
-            .await
-            .map_err(|e| anyhow::anyhow!("failed to build the key store: {e}"))?;
+        let key_store = KeyStoreClient::from_conf(
+            KeyStoreConfig::builder()
+                .kms_client(aws_sdk_kms::Client::new(&sdk_config))
+                .ddb_client(aws_sdk_dynamodb::Client::new(&sdk_config))
+                .ddb_table_name(BRANCH_KEY_STORE_NAME)
+                .logical_key_store_name(LOGICAL_KEY_STORE_NAME)
+                .kms_configuration(KmsConfiguration::KmsKeyArn(HIERARCHY_KEY_ARN.into()))
+                .build()
+                .map_err(|e| anyhow::anyhow!("failed to build the key store: {e}"))?,
+        )
+        .await
+        .map_err(|e| anyhow::anyhow!("failed to build the key store: {e}"))?;
 
         let keyring = HierarchicalKeyring::builder()
             .key_store(key_store)

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! The [`KeyStore`] implementation backed by AWS KMS and Amazon DynamoDB,
-//! built with [`KeyStoreClient::builder`].
+//! built with [`KeyStoreClient::from_conf`].
 
 use crate::Error;
 use crate::error::{BranchKey, ConflictReason, DynamoDbTable, Kind, Resource, RetryKind, Service};
@@ -77,10 +77,16 @@ const DDB_TABLE_NAME_MIN_LEN: usize = 3;
 const DDB_TABLE_NAME_MAX_LEN: usize = 255;
 
 impl KeyStoreClient {
-    /// Start a builder for a key store backed by AWS KMS and Amazon DynamoDB.
-    #[must_use]
-    pub fn builder() -> KeyStoreClientBuilder {
-        KeyStoreClientBuilder::default()
+    /// Create a client for a key store backed by AWS KMS and Amazon DynamoDB.
+    ///
+    /// Building a default for an unset KMS or DynamoDB client is the only reason this is `async`.
+    /// With both clients supplied it does no IO and completes on the first poll.
+    ///
+    /// # Errors
+    ///
+    /// Does not currently return an error.
+    pub async fn from_conf(config: KeyStoreConfig) -> Result<Self, Error> {
+        Ok(Self::new(DynamoDbKeyStore::from_conf(config).await))
     }
 }
 
@@ -173,12 +179,34 @@ impl DynamoDbKeyStore {
     }
 }
 
-/// Builder for a [`KeyStoreClient`] backed by AWS KMS and Amazon DynamoDB.
+/// Configuration for a [`KeyStoreClient`] backed by AWS KMS and Amazon DynamoDB.
+///
+/// Build one with [`KeyStoreConfig::builder`], then pass it to [`KeyStoreClient::from_conf`].
+#[derive(Debug, Clone)]
+pub struct KeyStoreConfig {
+    ddb_table_name: String,
+    logical_key_store_name: String,
+    kms_configuration: KmsConfiguration,
+    id: Option<String>,
+    grant_tokens: Vec<String>,
+    kms_client: Option<KmsClient>,
+    ddb_client: Option<DynamoDbClient>,
+}
+
+impl KeyStoreConfig {
+    /// Start a builder for a key store configuration.
+    #[must_use]
+    pub fn builder() -> KeyStoreConfigBuilder {
+        KeyStoreConfigBuilder::default()
+    }
+}
+
+/// Builder for a [`KeyStoreConfig`].
 ///
 /// `ddb_table_name`, `logical_key_store_name`, and `kms_configuration` are required.
 /// Everything else is optional.
 #[derive(Debug, Clone, Default)]
-pub struct KeyStoreClientBuilder {
+pub struct KeyStoreConfigBuilder {
     ddb_table_name: Option<String>,
     logical_key_store_name: Option<String>,
     kms_configuration: Option<KmsConfiguration>,
@@ -188,7 +216,7 @@ pub struct KeyStoreClientBuilder {
     ddb_client: Option<DynamoDbClient>,
 }
 
-impl KeyStoreClientBuilder {
+impl KeyStoreConfigBuilder {
     /// Set the DynamoDB table name that backs this key store.
     /// Required.
     #[must_use]
@@ -344,19 +372,12 @@ impl KeyStoreClientBuilder {
         &self.ddb_client
     }
 
-    /// Validate the configuration, build a default for any unset client, and resolve the key store identifier.
-    ///
-    /// Building a default client is the only reason this is `async`.
-    /// With both clients supplied it does no IO and completes on the first poll.
+    /// Validate the configuration.
     ///
     /// # Errors
     ///
     /// - [`Validation`](crate::Error::Validation): a required field is unset, the table name is not 3 to 255 characters long, or the KMS configuration is invalid (malformed ARN, alias, or non-`kms` service).
-    pub async fn build(self) -> Result<KeyStoreClient, Error> {
-        self.build_store().await.map(KeyStoreClient::new)
-    }
-
-    async fn build_store(self) -> Result<DynamoDbKeyStore, Error> {
+    pub fn build(self) -> Result<KeyStoreConfig, Error> {
         let ddb_table_name = required(self.ddb_table_name, "ddb_table_name")?;
         let logical_key_store_name =
             required(self.logical_key_store_name, "logical_key_store_name")?;
@@ -379,10 +400,25 @@ impl KeyStoreClientBuilder {
             ));
         }
 
-        let (kms_client, ddb_client) = match (self.kms_client, self.ddb_client) {
+        Ok(KeyStoreConfig {
+            ddb_table_name,
+            logical_key_store_name,
+            kms_configuration,
+            id: self.id,
+            grant_tokens: self.grant_tokens.unwrap_or_default(),
+            kms_client: self.kms_client,
+            ddb_client: self.ddb_client,
+        })
+    }
+}
+
+impl DynamoDbKeyStore {
+    /// Build a default for any unset client and resolve the key store identifier.
+    async fn from_conf(config: KeyStoreConfig) -> Self {
+        let (kms_client, ddb_client) = match (config.kms_client, config.ddb_client) {
             (Some(kms), Some(ddb)) => (kms, ddb),
             (kms, ddb) => {
-                let sdk_config = default_sdk_config(&kms_configuration).await;
+                let sdk_config = default_sdk_config(&config.kms_configuration).await;
                 (
                     kms.unwrap_or_else(|| KmsClient::new(&sdk_config)),
                     ddb.unwrap_or_else(|| DynamoDbClient::new(&sdk_config)),
@@ -390,19 +426,19 @@ impl KeyStoreClientBuilder {
             }
         };
 
-        let key_store_id = self.id.unwrap_or_else(|| Uuid::new_v4().to_string());
+        let key_store_id = config.id.unwrap_or_else(|| Uuid::new_v4().to_string());
 
-        Ok(DynamoDbKeyStore {
+        Self {
             inner: Arc::new(DynamoDbKeyStoreInner {
-                ddb_table_name,
-                logical_key_store_name,
-                kms_configuration,
-                grant_tokens: self.grant_tokens.unwrap_or_default(),
+                ddb_table_name: config.ddb_table_name,
+                logical_key_store_name: config.logical_key_store_name,
+                kms_configuration: config.kms_configuration,
+                grant_tokens: config.grant_tokens,
                 kms_client,
                 ddb_client,
                 key_store_id,
             }),
-        })
+        }
     }
 }
 
@@ -1185,14 +1221,13 @@ fn record_from_ddb_item(
 /// Not part of the public API and may change in any release.
 #[cfg(feature = "test-utils")]
 pub mod __test_internals {
-    use super::KeyStoreClientBuilder;
-    use crate::Error;
+    use super::{DynamoDbKeyStore, KeyStoreConfig};
 
     /// Build the key store and return its KMS and DynamoDB clients.
     pub async fn build_clients(
-        builder: KeyStoreClientBuilder,
-    ) -> Result<(aws_sdk_kms::Client, aws_sdk_dynamodb::Client), Error> {
-        let store = builder.build_store().await?;
-        Ok((store.kms_client().clone(), store.ddb_client().clone()))
+        config: KeyStoreConfig,
+    ) -> (aws_sdk_kms::Client, aws_sdk_dynamodb::Client) {
+        let store = DynamoDbKeyStore::from_conf(config).await;
+        (store.kms_client().clone(), store.ddb_client().clone())
     }
 }
