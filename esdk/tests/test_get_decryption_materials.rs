@@ -33,7 +33,7 @@ async fn test_decrypt_fails_with_wrong_keyring() {
         .send()
         .await
         .unwrap()
-        .ciphertext;
+        .into_ciphertext();
 
     // A different keyring (different namespace, different wrapping key) — its
     // default CMM cannot unwrap the EDK encrypted by `keyring`.
@@ -165,7 +165,7 @@ async fn test_algorithm_suite_from_decryption_materials() {
     //# The algorithm suite used as input for all decryption described below MUST be the algorithm suite
     //# included in the [decryption materials](../framework/structures.md#decryption-materials).
     assert_eq!(
-        result.algorithm_suite_id.id_bytes(),
+        result.algorithm_suite_id().id_bytes(),
         wire_suite_bytes,
         "output suite must match header's parsed suite"
     );
@@ -280,7 +280,8 @@ async fn test_kdf_algorithm_from_materials_suite() {
         .await
         .unwrap();
     assert_eq!(
-        result.plaintext, pt,
+        result.plaintext(),
+        pt,
         "HKDF-derived key must decrypt the body"
     );
 }
@@ -297,7 +298,7 @@ async fn test_unsupported_esdk_algorithm_suite_yields_error() {
         .send()
         .await
         .unwrap()
-        .ciphertext;
+        .into_ciphertext();
 
     // Tamper the algorithm suite ID bytes in the header to an invalid value.
     // V2 header: byte 0 = version (0x02), bytes 1-2 = algorithm suite ID.
@@ -389,7 +390,7 @@ async fn test_cmm_decrypt_call_receives_header_edks_and_ec() {
         .send()
         .await
         .unwrap()
-        .ciphertext;
+        .into_ciphertext();
 
     let inner_cmm = DefaultCmm::new(keyring);
     let observed_edk_count = Arc::new(Mutex::new(None));
@@ -422,7 +423,7 @@ async fn test_cmm_decrypt_call_receives_header_edks_and_ec() {
     //= type=test
     //= reason=We passed spy_cmm as the input CMM; the spy observing the call proves the input CMM was used
     //# The CMM used MUST be the input CMM, if supplied.
-    assert_eq!(result.plaintext, pt);
+    assert_eq!(result.plaintext(), pt);
 
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
     //= type=test

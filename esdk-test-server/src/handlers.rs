@@ -141,7 +141,7 @@ impl AppState {
             .await
             .map_err(|e| ServerError::esdk(e.to_string()))?;
         Ok(EncryptResponse {
-            ciphertext: output.ciphertext,
+            ciphertext: output.into_ciphertext(),
         })
     }
 
@@ -156,7 +156,7 @@ impl AppState {
             .await
             .map_err(|e| ServerError::esdk(e.to_string()))?;
         Ok(DecryptResponse {
-            plaintext: output.plaintext,
+            plaintext: output.into_plaintext(),
         })
     }
 

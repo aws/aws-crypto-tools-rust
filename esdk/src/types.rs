@@ -176,44 +176,124 @@ pub(crate) const DEFAULT_COMMITMENT_POLICY: CommitmentPolicy =
 //# This output MAY be satisfied by outputting a [parsed header](#parsed-header) containing this value.
 pub struct EncryptOutput {
     /// Algorithm Suite. See <https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/supported-algorithms.html>
-    pub algorithm_suite_id: AlgorithmSuiteId,
+    pub(crate) algorithm_suite_id: AlgorithmSuiteId,
     /// Encrypted message bytes (the serialized AWS Encryption SDK message).
-    pub ciphertext: Vec<u8>,
+    pub(crate) ciphertext: Vec<u8>,
     /// Encryption context associated with the encrypted message.
-    pub encryption_context: EncryptionContext,
+    pub(crate) encryption_context: EncryptionContext,
+}
+
+impl EncryptOutput {
+    /// The algorithm suite the message is encrypted with.
+    #[must_use]
+    pub const fn algorithm_suite_id(&self) -> AlgorithmSuiteId {
+        self.algorithm_suite_id
+    }
+
+    /// The encryption context bound to the message.
+    #[must_use]
+    pub const fn encryption_context(&self) -> &EncryptionContext {
+        &self.encryption_context
+    }
+
+    /// The encrypted message bytes.
+    #[must_use]
+    pub fn ciphertext(&self) -> &[u8] {
+        &self.ciphertext
+    }
+
+    /// Consume the output and return the ciphertext.
+    #[must_use]
+    pub fn into_ciphertext(self) -> Vec<u8> {
+        self.ciphertext
+    }
 }
 #[derive(Debug, PartialEq, Eq, Clone)]
 #[non_exhaustive]
 /// Output of [`Client::encrypt_stream`](crate::Client::encrypt_stream).
 pub struct EncryptStreamOutput {
     /// Algorithm Suite. See <https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/supported-algorithms.html>
-    pub algorithm_suite_id: AlgorithmSuiteId,
+    pub(crate) algorithm_suite_id: AlgorithmSuiteId,
     /// Encryption context associated with the encrypted message.
-    pub encryption_context: EncryptionContext,
+    pub(crate) encryption_context: EncryptionContext,
+}
+
+impl EncryptStreamOutput {
+    /// The algorithm suite the message is encrypted with.
+    #[must_use]
+    pub const fn algorithm_suite_id(&self) -> AlgorithmSuiteId {
+        self.algorithm_suite_id
+    }
+
+    /// The encryption context bound to the message.
+    #[must_use]
+    pub const fn encryption_context(&self) -> &EncryptionContext {
+        &self.encryption_context
+    }
 }
 #[derive(Debug, PartialEq, Eq, Clone)]
 #[non_exhaustive]
 /// Output of [`Client::decrypt`](crate::Client::decrypt).
 pub struct DecryptOutput {
     /// Algorithm Suite. See <https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/supported-algorithms.html>
-    pub algorithm_suite_id: AlgorithmSuiteId,
+    pub(crate) algorithm_suite_id: AlgorithmSuiteId,
     /// Encryption context recovered from the encrypted message.
-    pub encryption_context: EncryptionContext,
+    pub(crate) encryption_context: EncryptionContext,
     /// Decrypted plaintext data
     //= spec/client-apis/decrypt.md#plaintext
     //= type=implication
     //= reason=Vec<u8> is a sequence of bytes by definition
     //# This MUST be a sequence of bytes.
-    pub plaintext: Vec<u8>,
+    pub(crate) plaintext: Vec<u8>,
+}
+
+impl DecryptOutput {
+    /// The algorithm suite the message is encrypted with.
+    #[must_use]
+    pub const fn algorithm_suite_id(&self) -> AlgorithmSuiteId {
+        self.algorithm_suite_id
+    }
+
+    /// The encryption context bound to the message.
+    #[must_use]
+    pub const fn encryption_context(&self) -> &EncryptionContext {
+        &self.encryption_context
+    }
+
+    /// The decrypted plaintext.
+    #[must_use]
+    pub fn plaintext(&self) -> &[u8] {
+        &self.plaintext
+    }
+
+    /// Consume the output and return the plaintext.
+    #[must_use]
+    pub fn into_plaintext(self) -> Vec<u8> {
+        self.plaintext
+    }
 }
 #[derive(Debug, PartialEq, Eq, Clone)]
 #[non_exhaustive]
 /// Output of [`Client::decrypt_stream`](crate::Client::decrypt_stream).
 pub struct DecryptStreamOutput {
     /// Algorithm Suite. See <https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/supported-algorithms.html>
-    pub algorithm_suite_id: AlgorithmSuiteId,
+    pub(crate) algorithm_suite_id: AlgorithmSuiteId,
     /// Encryption context recovered from the encrypted message.
-    pub encryption_context: EncryptionContext,
+    pub(crate) encryption_context: EncryptionContext,
+}
+
+impl DecryptStreamOutput {
+    /// The algorithm suite the message is encrypted with.
+    #[must_use]
+    pub const fn algorithm_suite_id(&self) -> AlgorithmSuiteId {
+        self.algorithm_suite_id
+    }
+
+    /// The encryption context bound to the message.
+    #[must_use]
+    pub const fn encryption_context(&self) -> &EncryptionContext {
+        &self.encryption_context
+    }
 }
 #[derive(Debug, Clone)]
 #[non_exhaustive]

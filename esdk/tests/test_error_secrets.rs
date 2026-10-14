@@ -100,7 +100,7 @@ async fn ciphertext() -> Vec<u8> {
         .send()
         .await
         .unwrap()
-        .ciphertext
+        .into_ciphertext()
 }
 
 async fn decrypt_error(
@@ -199,7 +199,7 @@ async fn hierarchical_decrypt_error(fake: FakeAws) -> Error {
         .send()
         .await
         .unwrap()
-        .ciphertext;
+        .into_ciphertext();
     Client::default()
         .decrypt()
         .ciphertext(&ciphertext)

@@ -53,7 +53,7 @@ async fn test_step_4_construct_signature() {
         .send()
         .await
         .unwrap()
-        .ciphertext;
+        .into_ciphertext();
     //= spec/client-apis/encrypt.md#behavior
     //= type=test
     //= reason=Footer is present on wire; decrypt verifies it — proves encrypt performed signature step
@@ -71,7 +71,7 @@ async fn test_step_4_construct_signature() {
         .send()
         .await
         .unwrap()
-        .plaintext;
+        .into_plaintext();
     assert_eq!(pt, b"test step 4");
 }
 
@@ -155,7 +155,7 @@ async fn test_obtain_materials_from_cmm() {
     let pt = b"obtain materials test";
     let output = encrypt_default(pt).await;
     assert!(
-        !output.ciphertext.is_empty(),
+        !output.ciphertext().is_empty(),
         "encrypt must produce ciphertext from CMM-provided materials"
     );
     // Regression coverage for the basic keyring->materials path. The "a supplied keyring
@@ -171,7 +171,7 @@ async fn test_obtain_materials_from_cmm() {
     //# some fields MUST be constructed using information obtained
     //# from a set of valid [encryption materials](../framework/structures.md#encryption-materials).
     assert_eq!(
-        output.algorithm_suite_id,
+        output.algorithm_suite_id(),
         AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,
         "output suite must come from encryption materials returned by the CMM"
     );
@@ -199,7 +199,7 @@ async fn test_cmm_used_must_be_input_cmm() {
         .send()
         .await
         .unwrap()
-        .ciphertext;
+        .into_ciphertext();
 
     //= spec/client-apis/encrypt.md#get-the-encryption-materials
     //= type=test
@@ -225,7 +225,7 @@ async fn test_cmm_used_must_be_input_cmm() {
             .send()
             .await
             .unwrap()
-            .plaintext,
+            .into_plaintext(),
         pt
     );
 }
@@ -247,7 +247,7 @@ async fn test_cmm_request_encryption_context() {
     //= type=test
     //# - Encryption Context: If provided, this MUST be the [input encryption context](#encryption-context).
     assert!(
-        output.encryption_context.contains_key("mykey"),
+        output.encryption_context().contains_key("mykey"),
         "output encryption context must contain the input key"
     );
 }
@@ -257,9 +257,10 @@ async fn test_cmm_request_empty_encryption_context() {
     // Encrypt with no encryption context; verify no user-provided keys in output.
     let pt = b"empty ec test";
     let output = encrypt_default(pt).await;
-    let decrypted = decrypt_ciphertext(&output.ciphertext).await;
+    let decrypted = decrypt_ciphertext(output.ciphertext()).await;
     assert_eq!(
-        decrypted.plaintext, pt,
+        decrypted.plaintext(),
+        pt,
         "round-trip must recover original plaintext"
     );
     //= spec/client-apis/encrypt.md#get-the-encryption-materials
@@ -267,7 +268,7 @@ async fn test_cmm_request_empty_encryption_context() {
     //# Otherwise, this MUST be an empty encryption context.
     assert!(
         !output
-            .encryption_context
+            .encryption_context()
             .iter()
             .any(|(k, _)| !k.starts_with("aws-crypto-")),
         "output encryption context must not contain user-provided keys when input EC is empty"
@@ -290,7 +291,7 @@ async fn test_cmm_request_algorithm_suite_provided() {
     //= type=test
     //# - Algorithm Suite: If provided, this MUST be the [input algorithm suite](#algorithm-suite).
     assert_eq!(
-        output.algorithm_suite_id,
+        output.algorithm_suite_id(),
         AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey,
         "output algorithm suite must match the input algorithm suite"
     );
@@ -314,7 +315,7 @@ async fn test_suite_from_materials_used() {
     //# MUST be the algorithm suite in the [encryption materials](../framework/structures.md#encryption-materials)
     //# returned from the [Get Encryption Materials](../framework/cmm-interface.md#get-encryption-materials) call.
     assert_eq!(
-        output.algorithm_suite_id,
+        output.algorithm_suite_id(),
         AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey
     );
 }
@@ -421,7 +422,7 @@ async fn test_frame_length_input_used() {
         .send()
         .await
         .unwrap()
-        .ciphertext;
+        .into_ciphertext();
 
     let fields = parse_v2_header_field_offsets(&ct);
     let (_, fl_start, fl_end) = fields
@@ -451,14 +452,14 @@ async fn test_frame_length_input_used() {
         .send()
         .await
         .unwrap();
-    assert_eq!(result.plaintext, b"custom frame length");
+    assert_eq!(result.plaintext(), b"custom frame length");
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_default_frame_length_used() {
     // Encrypt without specifying a frame length and verify the header records the default (4096).
     let pt = b"default frame length test";
-    let ct = encrypt_default(pt).await.ciphertext;
+    let ct = encrypt_default(pt).await.into_ciphertext();
 
     let fields = parse_v2_header_field_offsets(&ct);
     let (_, fl_start, fl_end) = fields
@@ -497,7 +498,7 @@ async fn test_message_format_version_matches_suite() {
         .send()
         .await
         .unwrap()
-        .ciphertext;
+        .into_ciphertext();
     //= spec/client-apis/encrypt.md#construct-the-header
     //= type=test
     //# The [message format version](../data-format/message-header.md#supported-versions) MUST be the value associated with the [algorithm suite](../framework/algorithm-suites.md#supported-algorithm-suites).
@@ -515,7 +516,7 @@ async fn test_message_format_version_matches_suite() {
         .send()
         .await
         .unwrap()
-        .ciphertext;
+        .into_ciphertext();
     assert_eq!(
         ct_v1[0], 0x01,
         "V1 non-committing suite must produce message version 1"
@@ -529,7 +530,7 @@ async fn test_output_includes_encrypted_message() {
     //= type=test
     //# - Encrypt operation output MUST include an [encrypted message](#encrypted-message) value.
     assert!(
-        !output.ciphertext.is_empty(),
+        !output.ciphertext().is_empty(),
         "output must include non-empty encrypted message"
     );
     //= spec/client-apis/encrypt.md#encrypted-message
@@ -537,9 +538,9 @@ async fn test_output_includes_encrypted_message() {
     //# This MUST be a sequence of bytes
     //# and conform to the [message format specification](../data-format/message.md).
     assert!(
-        output.ciphertext[0] == 0x01 || output.ciphertext[0] == 0x02,
+        output.ciphertext()[0] == 0x01 || output.ciphertext()[0] == 0x02,
         "first byte must be a valid ESDK version (0x01 or 0x02), got {:#04x}",
-        output.ciphertext[0]
+        output.ciphertext()[0]
     );
 }
 
@@ -559,7 +560,7 @@ async fn test_output_includes_encryption_context() {
     //= type=test
     //# - Encrypt operation output MUST include an [encryption context](#encryption-context) value.
     assert!(
-        output.encryption_context.contains_key("testkey"),
+        output.encryption_context().contains_key("testkey"),
         "output must include the encryption context"
     );
 }
@@ -583,7 +584,7 @@ async fn test_output_includes_algorithm_suite() {
     //= type=test
     //# This algorithm suite MUST be [supported for the ESDK](../framework/algorithm-suites.md#supported-algorithm-suites-enum).
     assert_eq!(
-        output.algorithm_suite_id,
+        output.algorithm_suite_id(),
         AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey,
         "output must include the algorithm suite"
     );
@@ -647,19 +648,19 @@ async fn test_algorithm_suite_used_for_encryption() {
     //= type=test
     //# The [algorithm suite](../framework/algorithm-suites.md) that MUST be used for encryption.
     assert_eq!(
-        output.algorithm_suite_id,
+        output.algorithm_suite_id(),
         AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey,
         "the specified algorithm suite must be used for encryption"
     );
     // Verify round-trip to prove the suite was actually used for encryption
     let pt = Client::default()
         .decrypt()
-        .ciphertext(&output.ciphertext)
+        .ciphertext(output.ciphertext())
         .keyring(keyring)
         .send()
         .await
         .unwrap()
-        .plaintext;
+        .into_plaintext();
     assert_eq!(pt, b"suite used test");
 }
 
@@ -737,12 +738,12 @@ async fn test_cmm_request_no_algorithm_suite_field() {
     assert_eq!(
         Client::default()
             .decrypt()
-            .ciphertext(&output.ciphertext)
+            .ciphertext(output.ciphertext())
             .keyring(keyring)
             .send()
             .await
             .unwrap()
-            .plaintext,
+            .into_plaintext(),
         pt
     );
 }
@@ -1060,7 +1061,7 @@ async fn test_frame_fields_serialized_per_spec() {
     );
 
     // Round-trip corroboration.
-    let decrypted = decrypt_ciphertext(&ct).await.plaintext;
+    let decrypted = decrypt_ciphertext(&ct).await.into_plaintext();
     assert_eq!(decrypted, pt, "round-trip must recover the plaintext");
 }
 

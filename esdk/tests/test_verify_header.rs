@@ -28,7 +28,7 @@ async fn test_verify_header_fails_on_tampered_header() {
         .send()
         .await
         .unwrap()
-        .ciphertext;
+        .into_ciphertext();
 
     // Tamper with a byte in the header body (byte 10 is safely within the header body).
     let mut tampered_ct = valid_ct.clone();
@@ -191,7 +191,7 @@ async fn test_streamed_signed_output_not_signed_until_complete() {
         .send()
         .await
         .unwrap()
-        .ciphertext;
+        .into_ciphertext();
 
     let mut tampered_ct = valid_ct.clone();
     let len = tampered_ct.len();
@@ -245,7 +245,7 @@ async fn test_streamed_release_parsed_header_after_verification() {
         .send()
         .await
         .unwrap()
-        .ciphertext;
+        .into_ciphertext();
 
     let mut cursor = std::io::Cursor::new(ct.as_slice());
     let mut output = Vec::new();
@@ -257,11 +257,11 @@ async fn test_streamed_release_parsed_header_after_verification() {
         .unwrap();
     assert_eq!(output, plaintext);
     assert_eq!(
-        result.encryption_context.get("release-key"),
+        result.encryption_context().get("release-key"),
         Some("release-value"),
     );
     assert_eq!(
-        result.algorithm_suite_id,
+        result.algorithm_suite_id(),
         AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,
     );
 }

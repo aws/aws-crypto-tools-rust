@@ -24,7 +24,7 @@ async fn test_unsupported_version_rejected() {
         .send()
         .await
         .unwrap()
-        .ciphertext;
+        .into_ciphertext();
 
     // Byte 0 is the version field — set to an unsupported value
     let mut tampered_ct = valid_ct.clone();
@@ -69,7 +69,7 @@ async fn test_unsupported_content_type_v1_rejected() {
         .send()
         .await
         .unwrap()
-        .ciphertext;
+        .into_ciphertext();
 
     let (content_type_offset, _, _, _) = parse_v1_trailing_offsets(&valid_ct);
     let original_content_type = valid_ct[content_type_offset];
@@ -119,7 +119,7 @@ async fn test_unsupported_content_type_v2_rejected() {
         .send()
         .await
         .unwrap()
-        .ciphertext;
+        .into_ciphertext();
 
     let fields = parse_v2_header_field_offsets(&valid_ct);
     let (_, ct_start, _) = fields
@@ -174,7 +174,7 @@ async fn test_unsupported_type_rejected() {
         .send()
         .await
         .unwrap()
-        .ciphertext;
+        .into_ciphertext();
 
     // V1 layout: byte 0 = version (0x01), byte 1 = type (0x80)
     assert_eq!(valid_ct[1], 0x80, "sanity check: V1 type should be 0x80");
@@ -272,7 +272,7 @@ async fn test_no_header_info_released_before_verification() {
         .send()
         .await
         .unwrap()
-        .ciphertext;
+        .into_ciphertext();
 
     let mut tampered_ct = valid_ct.clone();
     tampered_ct[10] ^= 0xFF;
@@ -318,7 +318,7 @@ async fn test_v1_header_auth_tag_deserialized_and_verified() {
         .send()
         .await
         .unwrap()
-        .ciphertext;
+        .into_ciphertext();
 
     // V1 header auth: IV(12) + Tag(16) at the end of the header, before the body.
     // Tamper the last byte of the header (part of the auth tag).
@@ -373,7 +373,7 @@ async fn test_v1_header_auth_iv_deserialized_and_used() {
         .send()
         .await
         .unwrap()
-        .ciphertext;
+        .into_ciphertext();
 
     // V1 header auth IV is 12 bytes immediately before the 16-byte auth tag, which
     // is immediately before the body. Tamper its first byte.
@@ -423,7 +423,7 @@ async fn test_v1_header_body_fields_parsed_from_wire() {
         .send()
         .await
         .unwrap()
-        .ciphertext;
+        .into_ciphertext();
 
     // Parse the V1 header body via the production deserialization function.
     let mut cursor = std::io::Cursor::new(ct.as_slice());
@@ -571,7 +571,7 @@ async fn test_v2_header_body_fields_parsed_from_wire() {
         .send()
         .await
         .unwrap()
-        .ciphertext;
+        .into_ciphertext();
 
     // Parse the V2 header body via the production deserialization function.
     let mut cursor = std::io::Cursor::new(ct.as_slice());

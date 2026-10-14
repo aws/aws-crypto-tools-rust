@@ -81,12 +81,12 @@ async fn custom_cmm_round_trips_via_public_api() {
         .unwrap();
     let dec = esdk
         .decrypt()
-        .ciphertext(&out.ciphertext)
+        .ciphertext(out.ciphertext())
         .cmm(cmm)
         .send()
         .await
         .unwrap();
-    assert_eq!(dec.plaintext, plaintext);
+    assert_eq!(dec.plaintext(), plaintext);
 
     // Both trait methods must have been driven by the ESDK.
     assert!(

@@ -217,9 +217,9 @@ impl Client {
     ///   - [`keyring(impl Keyring)`](EncryptFluentBuilder::keyring) / [`set_keyring(Option<SharedKeyring>)`](EncryptFluentBuilder::set_keyring):<br>required: **one of keyring or cmm**<br>The keyring that protects the message's data key. Set exactly one of a keyring or a CMM.<br>
     ///   - [`cmm(impl Cmm)`](EncryptFluentBuilder::cmm) / [`set_cmm(Option<SharedCmm>)`](EncryptFluentBuilder::set_cmm):<br>required: **one of keyring or cmm**<br>The cryptographic materials manager (CMM) that supplies the message's data key. Set exactly one of a keyring or a CMM.<br>
     /// - On success, responds with [`EncryptOutput`] with field(s):
-    ///   - [`ciphertext`](EncryptOutput::ciphertext): The encrypted message.
-    ///   - [`encryption_context`](EncryptOutput::encryption_context): The encryption context bound to the message, including any pairs the CMM added.
-    ///   - [`algorithm_suite_id`](EncryptOutput::algorithm_suite_id): The algorithm suite the message uses.
+    ///   - [`ciphertext(&[u8])`](EncryptOutput::ciphertext): The encrypted message.
+    ///   - [`encryption_context(&EncryptionContext)`](EncryptOutput::encryption_context): The encryption context bound to the message, including any pairs the CMM added.
+    ///   - [`algorithm_suite_id(AlgorithmSuiteId)`](EncryptOutput::algorithm_suite_id): The algorithm suite the message uses.
     /// - On failure, responds with [`Error`](crate::Error); [`send`](EncryptFluentBuilder::send) lists each variant.
     //= spec/client-apis/client.md#encrypt
     //# The AWS Encryption SDK Client MUST provide an [encrypt](./encrypt.md#input) function
@@ -242,9 +242,9 @@ impl Client {
     ///   - [`keyring(impl Keyring)`](DecryptFluentBuilder::keyring) / [`set_keyring(Option<SharedKeyring>)`](DecryptFluentBuilder::set_keyring):<br>required: **one of keyring or cmm**<br>The keyring that protects the message's data key. Set exactly one of a keyring or a CMM.<br>
     ///   - [`cmm(impl Cmm)`](DecryptFluentBuilder::cmm) / [`set_cmm(Option<SharedCmm>)`](DecryptFluentBuilder::set_cmm):<br>required: **one of keyring or cmm**<br>The cryptographic materials manager (CMM) that supplies the message's data key. Set exactly one of a keyring or a CMM.<br>
     /// - On success, responds with [`DecryptOutput`] with field(s):
-    ///   - [`plaintext`](DecryptOutput::plaintext): The decrypted data.
-    ///   - [`encryption_context`](DecryptOutput::encryption_context): The message's encryption context.
-    ///   - [`algorithm_suite_id`](DecryptOutput::algorithm_suite_id): The algorithm suite the message uses.
+    ///   - [`plaintext(&[u8])`](DecryptOutput::plaintext): The decrypted data.
+    ///   - [`encryption_context(&EncryptionContext)`](DecryptOutput::encryption_context): The message's encryption context.
+    ///   - [`algorithm_suite_id(AlgorithmSuiteId)`](DecryptOutput::algorithm_suite_id): The algorithm suite the message uses.
     /// - On failure, responds with [`Error`](crate::Error); [`send`](DecryptFluentBuilder::send) lists each variant.
     //= spec/client-apis/client.md#decrypt
     //# The AWS Encryption SDK Client MUST provide an [decrypt](./decrypt.md#input) function
@@ -269,8 +269,8 @@ impl Client {
     ///   - [`cmm(impl Cmm)`](EncryptStreamFluentBuilder::cmm) / [`set_cmm(Option<SharedCmm>)`](EncryptStreamFluentBuilder::set_cmm):<br>required: **one of keyring or cmm**<br>The cryptographic materials manager (CMM) that supplies the message's data key. Set exactly one of a keyring or a CMM.<br>
     ///   - [`data_size(usize)`](EncryptStreamFluentBuilder::data_size) / [`set_data_size(Option<usize>)`](EncryptStreamFluentBuilder::set_data_size):<br>required: **false**<br>An upper bound on the plaintext length, in bytes. It is passed to the CMM, and encrypt fails if the stream is longer.<br>
     /// - On success, responds with [`EncryptStreamOutput`] with field(s):
-    ///   - [`encryption_context`](EncryptStreamOutput::encryption_context): The encryption context bound to the message, including any pairs the CMM added.
-    ///   - [`algorithm_suite_id`](EncryptStreamOutput::algorithm_suite_id): The algorithm suite the message uses.
+    ///   - [`encryption_context(&EncryptionContext)`](EncryptStreamOutput::encryption_context): The encryption context bound to the message, including any pairs the CMM added.
+    ///   - [`algorithm_suite_id(AlgorithmSuiteId)`](EncryptStreamOutput::algorithm_suite_id): The algorithm suite the message uses.
     /// - On failure, responds with [`Error`](crate::Error); [`send`](EncryptStreamFluentBuilder::send) lists each variant.
     pub fn encrypt_stream(&self) -> EncryptStreamFluentBuilder {
         EncryptStreamFluentBuilder {
@@ -289,8 +289,8 @@ impl Client {
     ///   - [`keyring(impl Keyring)`](DecryptStreamFluentBuilder::keyring) / [`set_keyring(Option<SharedKeyring>)`](DecryptStreamFluentBuilder::set_keyring):<br>required: **one of keyring or cmm**<br>The keyring that protects the message's data key. Set exactly one of a keyring or a CMM.<br>
     ///   - [`cmm(impl Cmm)`](DecryptStreamFluentBuilder::cmm) / [`set_cmm(Option<SharedCmm>)`](DecryptStreamFluentBuilder::set_cmm):<br>required: **one of keyring or cmm**<br>The cryptographic materials manager (CMM) that supplies the message's data key. Set exactly one of a keyring or a CMM.<br>
     /// - On success, responds with [`DecryptStreamOutput`] with field(s):
-    ///   - [`encryption_context`](DecryptStreamOutput::encryption_context): The message's encryption context.
-    ///   - [`algorithm_suite_id`](DecryptStreamOutput::algorithm_suite_id): The algorithm suite the message uses.
+    ///   - [`encryption_context(&EncryptionContext)`](DecryptStreamOutput::encryption_context): The message's encryption context.
+    ///   - [`algorithm_suite_id(AlgorithmSuiteId)`](DecryptStreamOutput::algorithm_suite_id): The algorithm suite the message uses.
     /// - On failure, responds with [`Error`](crate::Error); [`send`](DecryptStreamFluentBuilder::send) lists each variant.
     pub fn decrypt_stream(&self) -> DecryptStreamFluentBuilder {
         DecryptStreamFluentBuilder {

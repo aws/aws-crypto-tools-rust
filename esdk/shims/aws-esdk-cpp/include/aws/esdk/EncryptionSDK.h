@@ -970,6 +970,10 @@ public:
     /// \copydoc write(const std::uint8_t*, std::size_t)
     Bytes write(const std::vector<std::uint8_t>& chunk) { return write(chunk.data(), chunk.size()); }
     /// \copydoc write(const std::uint8_t*, std::size_t)
+    Bytes write(std::string_view chunk) {
+        return write(reinterpret_cast<const std::uint8_t*>(chunk.data()), chunk.size());
+    }
+    /// \copydoc write(const std::uint8_t*, std::size_t)
     Bytes write(const Bytes& chunk) { return write(chunk.data(), chunk.size()); }
     /// Ends the ciphertext input and completes decryption, including signature
     /// verification for signing suites.
@@ -1038,6 +1042,16 @@ public:
         const EncryptOptions& options = {}) {
         return encrypt(reinterpret_cast<const std::uint8_t*>(plaintext.data()),
                        plaintext.size(), keyring, options);
+    }
+
+    /// Decrypts a ciphertext viewed through a std::string_view without copying it.
+    /// The view must stay valid for the duration of the call.
+    DecryptResult decrypt(
+        std::string_view ciphertext,
+        const Keyring& keyring,
+        const DecryptOptions& options = {}) {
+        return decrypt(reinterpret_cast<const std::uint8_t*>(ciphertext.data()),
+                       ciphertext.size(), keyring, options);
     }
 
     /// Creates a streaming encrypt operation.

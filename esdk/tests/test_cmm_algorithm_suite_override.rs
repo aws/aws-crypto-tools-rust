@@ -95,25 +95,25 @@ async fn test_encrypt_uses_cmm_suite_not_input_suite() {
     //# Note that the algorithm suite in the retrieved encryption materials MAY be different
     //# from the [input algorithm suite](#algorithm-suite).
     assert_eq!(
-        out.algorithm_suite_id,
+        out.algorithm_suite_id(),
         AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey
     );
     assert_ne!(
-        out.algorithm_suite_id,
+        out.algorithm_suite_id(),
         AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384
     );
 
     // Round-trip to prove the ciphertext is valid.
     let dec = Client::default()
         .decrypt()
-        .ciphertext(&out.ciphertext)
+        .ciphertext(out.ciphertext())
         .keyring(keyring)
         .send()
         .await
         .unwrap();
-    assert_eq!(dec.plaintext, b"hello");
+    assert_eq!(dec.plaintext(), b"hello");
     assert_eq!(
-        dec.algorithm_suite_id,
+        dec.algorithm_suite_id(),
         AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey
     );
 }
