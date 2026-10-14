@@ -489,7 +489,7 @@ async fn test_decrypt_materials_reproduced_ec_matching_values_succeeds() {
         .commitment_policy(allow_policy())
         .set_encrypted_data_keys(Some(vec![]))
         .set_encryption_context(Some(message_ec))
-        .reproduced_encryption_context(reproduced_ec);
+        .set_reproduced_encryption_context(Some(reproduced_ec));
     let materials = request
         .send()
         .await
@@ -528,7 +528,7 @@ async fn test_decrypt_materials_reproduced_ec_mismatched_values_fails() {
         .commitment_policy(allow_policy())
         .set_encrypted_data_keys(Some(vec![]))
         .set_encryption_context(Some(message_ec))
-        .reproduced_encryption_context(reproduced_ec);
+        .set_reproduced_encryption_context(Some(reproduced_ec));
     let err = request
         .send()
         .await
@@ -558,7 +558,7 @@ async fn test_decrypt_materials_reproduced_ec_key_only_in_reproduced_is_appended
         .commitment_policy(allow_policy())
         .set_encrypted_data_keys(Some(vec![]))
         .set_encryption_context(Some(message_ec))
-        .reproduced_encryption_context(reproduced_ec);
+        .set_reproduced_encryption_context(Some(reproduced_ec));
     let materials = request
         .send()
         .await
@@ -624,7 +624,7 @@ async fn test_decrypt_materials_appends_reproduced_only_pairs_to_the_keyring_con
         .commitment_policy(allow_policy())
         .set_encrypted_data_keys(Some(vec![]))
         .set_encryption_context(Some(ec_of(&[("b", "b")])))
-        .reproduced_encryption_context(ec_of(&[("a", "a"), ("b", "b")]));
+        .set_reproduced_encryption_context(Some(ec_of(&[("a", "a"), ("b", "b")])));
 
     let materials = request
         .send()
@@ -655,7 +655,7 @@ async fn test_decrypt_materials_appends_when_reproduced_context_is_disjoint() {
         .commitment_policy(allow_policy())
         .set_encrypted_data_keys(Some(vec![]))
         .set_encryption_context(Some(ec_of(&[("a", "a")])))
-        .reproduced_encryption_context(ec_of(&[("b", "b")]));
+        .set_reproduced_encryption_context(Some(ec_of(&[("b", "b")])));
 
     let materials = request
         .send()
@@ -683,7 +683,7 @@ async fn test_decrypt_materials_appends_every_pair_when_message_context_is_empty
         .commitment_policy(allow_policy())
         .set_encrypted_data_keys(Some(vec![]))
         .set_encryption_context(Some(EncryptionContext::new()))
-        .reproduced_encryption_context(ec_of(&[("a", "a"), ("b", "b")]));
+        .set_reproduced_encryption_context(Some(ec_of(&[("a", "a"), ("b", "b")])));
 
     let materials = request
         .send()
@@ -714,7 +714,7 @@ async fn test_decrypt_materials_conflicting_reproduced_value_does_not_call_the_k
         .commitment_policy(allow_policy())
         .set_encrypted_data_keys(Some(vec![]))
         .set_encryption_context(Some(ec_of(&[("a", "a")])))
-        .reproduced_encryption_context(ec_of(&[("a", "different")]));
+        .set_reproduced_encryption_context(Some(ec_of(&[("a", "different")])));
 
     let err = request
         .send()
@@ -770,7 +770,7 @@ async fn test_decrypt_materials_signing_suite_public_key_from_reproduced_context
         .commitment_policy(allow_policy())
         .set_encrypted_data_keys(Some(vec![]))
         .set_encryption_context(Some(EncryptionContext::new()))
-        .reproduced_encryption_context(reproduced);
+        .set_reproduced_encryption_context(Some(reproduced));
 
     let materials = request
         .send()
@@ -801,7 +801,7 @@ async fn test_decrypt_materials_non_signing_suite_rejects_public_key_from_reprod
         .commitment_policy(allow_policy())
         .set_encrypted_data_keys(Some(vec![]))
         .set_encryption_context(Some(EncryptionContext::new()))
-        .reproduced_encryption_context(reproduced);
+        .set_reproduced_encryption_context(Some(reproduced));
 
     let err = request
         .send()

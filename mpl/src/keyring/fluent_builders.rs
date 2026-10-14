@@ -51,7 +51,7 @@ impl OnEncryptFluentBuilder {
     }
 
     /// Set or clear the materials from an `Option`.
-    /// To add one entry, use [`Self::materials`].
+    /// To set a value, use [`Self::materials`].
     pub fn set_materials(mut self, materials: Option<EncryptionMaterials>) -> Self {
         self.inner = self.inner.set_materials(materials);
         self
@@ -99,7 +99,7 @@ impl OnDecryptFluentBuilder {
     }
 
     /// Set or clear the materials from an `Option`.
-    /// To add one entry, use [`Self::materials`].
+    /// To set a value, use [`Self::materials`].
     pub fn set_materials(mut self, materials: Option<DecryptionMaterials>) -> Self {
         self.inner = self.inner.set_materials(materials);
         self

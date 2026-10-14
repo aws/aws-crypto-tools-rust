@@ -175,7 +175,7 @@ impl EncryptionMaterialsBuilder {
     }
 
     /// Set or clear the algorithm suite from an `Option`.
-    /// To add one entry, use [`Self::algorithm_suite_id`].
+    /// To set a value, use [`Self::algorithm_suite_id`].
     #[must_use]
     pub const fn set_algorithm_suite_id(
         mut self,
@@ -285,7 +285,7 @@ impl EncryptionMaterialsBuilder {
     }
 
     /// Set or clear the plaintext data key from an `Option`.
-    /// To add one entry, use [`Self::plaintext_data_key`].
+    /// To set a value, use [`Self::plaintext_data_key`].
     #[must_use]
     pub fn set_plaintext_data_key(mut self, plaintext_data_key: Option<PlaintextDataKey>) -> Self {
         self.plaintext_data_key = plaintext_data_key;
@@ -306,7 +306,7 @@ impl EncryptionMaterialsBuilder {
     }
 
     /// Set or clear the signing key from an `Option`.
-    /// To add one entry, use [`Self::signing_key`].
+    /// To set a value, use [`Self::signing_key`].
     #[must_use]
     pub fn set_signing_key(mut self, signing_key: Option<SigningKey>) -> Self {
         self.signing_key = signing_key;

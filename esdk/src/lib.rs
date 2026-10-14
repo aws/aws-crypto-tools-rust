@@ -41,14 +41,14 @@
 //! let encrypted = esdk
 //!     .encrypt()
 //!     .plaintext(b"Hello World")
-//!     .encryption_context(encryption_context.clone())
+//!     .set_encryption_context(Some(encryption_context.clone()))
 //!     .keyring(keyring.clone())
 //!     .send()
 //!     .await?;
 //! let decrypted = esdk
 //!     .decrypt()
 //!     .ciphertext(encrypted.ciphertext())
-//!     .encryption_context(encryption_context)
+//!     .set_encryption_context(Some(encryption_context))
 //!     .keyring(keyring)
 //!     .send()
 //!     .await?;

@@ -76,7 +76,7 @@ impl GetEncryptionMaterialsFluentBuilder {
     }
 
     /// Set or clear the commitment policy from an `Option`.
-    /// To add one entry, use [`Self::commitment_policy`].
+    /// To set a value, use [`Self::commitment_policy`].
     pub fn set_commitment_policy(mut self, commitment_policy: Option<CommitmentPolicy>) -> Self {
         self.inner = self.inner.set_commitment_policy(commitment_policy);
         self
@@ -96,7 +96,7 @@ impl GetEncryptionMaterialsFluentBuilder {
     }
 
     /// Set or clear the algorithm suite from an `Option`.
-    /// To add one entry, use [`Self::algorithm_suite_id`].
+    /// To set a value, use [`Self::algorithm_suite_id`].
     pub fn set_algorithm_suite_id(mut self, algorithm_suite_id: Option<AlgorithmSuiteId>) -> Self {
         self.inner = self.inner.set_algorithm_suite_id(algorithm_suite_id);
         self
@@ -142,7 +142,7 @@ impl GetEncryptionMaterialsFluentBuilder {
     }
 
     /// Set or clear the maximum plaintext length from an `Option`.
-    /// To add one entry, use [`Self::max_plaintext_length`].
+    /// To set a value, use [`Self::max_plaintext_length`].
     pub fn set_max_plaintext_length(mut self, max_plaintext_length: Option<u64>) -> Self {
         self.inner = self.inner.set_max_plaintext_length(max_plaintext_length);
         self
@@ -190,7 +190,7 @@ impl DecryptMaterialsFluentBuilder {
     }
 
     /// Set or clear the algorithm suite from an `Option`.
-    /// To add one entry, use [`Self::algorithm_suite_id`].
+    /// To set a value, use [`Self::algorithm_suite_id`].
     pub fn set_algorithm_suite_id(mut self, algorithm_suite_id: Option<AlgorithmSuiteId>) -> Self {
         self.inner = self.inner.set_algorithm_suite_id(algorithm_suite_id);
         self
@@ -210,7 +210,7 @@ impl DecryptMaterialsFluentBuilder {
     }
 
     /// Set or clear the commitment policy from an `Option`.
-    /// To add one entry, use [`Self::commitment_policy`].
+    /// To set a value, use [`Self::commitment_policy`].
     pub fn set_commitment_policy(mut self, commitment_policy: Option<CommitmentPolicy>) -> Self {
         self.inner = self.inner.set_commitment_policy(commitment_policy);
         self
@@ -269,14 +269,13 @@ impl DecryptMaterialsFluentBuilder {
         self.inner.get_encryption_context()
     }
 
-    /// Set the encryption context the caller expects the message to have.
+    /// Add one pair to the encryption context the caller expects the message to have.
     pub fn reproduced_encryption_context(
         mut self,
-        reproduced_encryption_context: impl Into<EncryptionContext>,
+        k: impl Into<String>,
+        v: impl Into<String>,
     ) -> Self {
-        self.inner = self
-            .inner
-            .reproduced_encryption_context(reproduced_encryption_context);
+        self.inner = self.inner.reproduced_encryption_context(k, v);
         self
     }
 

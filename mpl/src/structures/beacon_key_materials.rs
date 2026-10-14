@@ -83,7 +83,7 @@ impl BeaconKeyMaterialsBuilder {
     }
 
     /// Set or clear the beacon key identifier from an `Option`.
-    /// To add one entry, use [`Self::beacon_key_id`].
+    /// To set a value, use [`Self::beacon_key_id`].
     #[must_use]
     pub fn set_beacon_key_id(mut self, beacon_key_id: Option<String>) -> Self {
         self.beacon_key_id = beacon_key_id;
@@ -130,7 +130,7 @@ impl BeaconKeyMaterialsBuilder {
     }
 
     /// Set or clear the beacon key from an `Option`.
-    /// To add one entry, use [`Self::beacon_key`].
+    /// To set a value, use [`Self::beacon_key`].
     #[must_use]
     pub fn set_beacon_key(mut self, beacon_key: Option<Vec<u8>>) -> Self {
         self.beacon_key = beacon_key;

@@ -198,7 +198,7 @@ impl KeyStoreClientBuilder {
     }
 
     /// Set or clear the DynamoDB table name from an `Option`.
-    /// To add one entry, use [`Self::ddb_table_name`].
+    /// To set a value, use [`Self::ddb_table_name`].
     #[must_use]
     pub fn set_ddb_table_name(mut self, ddb_table_name: Option<String>) -> Self {
         self.ddb_table_name = ddb_table_name;
@@ -220,7 +220,7 @@ impl KeyStoreClientBuilder {
     }
 
     /// Set or clear the logical key store name from an `Option`.
-    /// To add one entry, use [`Self::logical_key_store_name`].
+    /// To set a value, use [`Self::logical_key_store_name`].
     #[must_use]
     pub fn set_logical_key_store_name(mut self, logical_key_store_name: Option<String>) -> Self {
         self.logical_key_store_name = logical_key_store_name;
@@ -242,7 +242,7 @@ impl KeyStoreClientBuilder {
     }
 
     /// Set or clear the KMS configuration from an `Option`.
-    /// To add one entry, use [`Self::kms_configuration`].
+    /// To set a value, use [`Self::kms_configuration`].
     #[must_use]
     pub fn set_kms_configuration(mut self, kms_configuration: Option<KmsConfiguration>) -> Self {
         self.kms_configuration = kms_configuration;

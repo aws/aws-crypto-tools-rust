@@ -114,7 +114,7 @@ impl GetEncryptionMaterialsInputBuilder {
     }
 
     /// Set or clear the commitment policy from an `Option`.
-    /// To add one entry, use [`Self::commitment_policy`].
+    /// To set a value, use [`Self::commitment_policy`].
     #[must_use]
     pub fn set_commitment_policy(mut self, commitment_policy: Option<CommitmentPolicy>) -> Self {
         self.commitment_policy = commitment_policy;
@@ -136,7 +136,7 @@ impl GetEncryptionMaterialsInputBuilder {
     }
 
     /// Set or clear the algorithm suite from an `Option`.
-    /// To add one entry, use [`Self::algorithm_suite_id`].
+    /// To set a value, use [`Self::algorithm_suite_id`].
     #[must_use]
     pub fn set_algorithm_suite_id(mut self, algorithm_suite_id: Option<AlgorithmSuiteId>) -> Self {
         self.algorithm_suite_id = algorithm_suite_id;
@@ -186,7 +186,7 @@ impl GetEncryptionMaterialsInputBuilder {
     }
 
     /// Set or clear the maximum plaintext length from an `Option`.
-    /// To add one entry, use [`Self::max_plaintext_length`].
+    /// To set a value, use [`Self::max_plaintext_length`].
     #[must_use]
     pub fn set_max_plaintext_length(mut self, max_plaintext_length: Option<u64>) -> Self {
         self.max_plaintext_length = max_plaintext_length;
@@ -261,7 +261,7 @@ impl GetEncryptionMaterialsOutputBuilder {
     }
 
     /// Set or clear the encryption materials from an `Option`.
-    /// To add one entry, use [`Self::encryption_materials`].
+    /// To set a value, use [`Self::encryption_materials`].
     #[must_use]
     pub fn set_encryption_materials(
         mut self,
@@ -359,7 +359,7 @@ impl DecryptMaterialsInputBuilder {
     }
 
     /// Set or clear the algorithm suite from an `Option`.
-    /// To add one entry, use [`Self::algorithm_suite_id`].
+    /// To set a value, use [`Self::algorithm_suite_id`].
     #[must_use]
     pub fn set_algorithm_suite_id(mut self, algorithm_suite_id: Option<AlgorithmSuiteId>) -> Self {
         self.algorithm_suite_id = algorithm_suite_id;
@@ -381,7 +381,7 @@ impl DecryptMaterialsInputBuilder {
     }
 
     /// Set or clear the commitment policy from an `Option`.
-    /// To add one entry, use [`Self::commitment_policy`].
+    /// To set a value, use [`Self::commitment_policy`].
     #[must_use]
     pub fn set_commitment_policy(mut self, commitment_policy: Option<CommitmentPolicy>) -> Self {
         self.commitment_policy = commitment_policy;
@@ -449,13 +449,16 @@ impl DecryptMaterialsInputBuilder {
         &self.encryption_context
     }
 
-    /// Set the encryption context the caller expects the message to have.
+    /// Add one pair to the encryption context the caller expects the message to have.
     #[must_use]
     pub fn reproduced_encryption_context(
         mut self,
-        reproduced_encryption_context: impl Into<EncryptionContext>,
+        k: impl Into<String>,
+        v: impl Into<String>,
     ) -> Self {
-        self.reproduced_encryption_context = Some(reproduced_encryption_context.into());
+        self.reproduced_encryption_context
+            .get_or_insert_with(Default::default)
+            .insert(k, v);
         self
     }
 
@@ -538,7 +541,7 @@ impl DecryptMaterialsOutputBuilder {
     }
 
     /// Set or clear the decryption materials from an `Option`.
-    /// To add one entry, use [`Self::decryption_materials`].
+    /// To set a value, use [`Self::decryption_materials`].
     #[must_use]
     pub fn set_decryption_materials(
         mut self,

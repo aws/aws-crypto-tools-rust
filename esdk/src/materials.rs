@@ -106,7 +106,8 @@ pub(crate) async fn get_decryption_materials(
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
     //# - Reproduced Encryption Context: This MUST be the [input](#input) encryption context.
     if !reproduced_encryption_context.is_empty() {
-        request = request.reproduced_encryption_context(reproduced_encryption_context.clone());
+        request =
+            request.set_reproduced_encryption_context(Some(reproduced_encryption_context.clone()));
     }
 
     //= spec/client-apis/decrypt.md#get-the-decryption-materials

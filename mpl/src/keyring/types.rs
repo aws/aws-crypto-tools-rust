@@ -50,7 +50,7 @@ impl OnEncryptInputBuilder {
     }
 
     /// Set or clear the materials from an `Option`.
-    /// To add one entry, use [`Self::materials`].
+    /// To set a value, use [`Self::materials`].
     #[must_use]
     pub fn set_materials(mut self, materials: Option<EncryptionMaterials>) -> Self {
         self.materials = materials;
@@ -118,7 +118,7 @@ impl OnEncryptOutputBuilder {
     }
 
     /// Set or clear the materials from an `Option`.
-    /// To add one entry, use [`Self::materials`].
+    /// To set a value, use [`Self::materials`].
     #[must_use]
     pub fn set_materials(mut self, materials: Option<EncryptionMaterials>) -> Self {
         self.materials = materials;
@@ -200,7 +200,7 @@ impl OnDecryptInputBuilder {
     }
 
     /// Set or clear the materials from an `Option`.
-    /// To add one entry, use [`Self::materials`].
+    /// To set a value, use [`Self::materials`].
     #[must_use]
     pub fn set_materials(mut self, materials: Option<DecryptionMaterials>) -> Self {
         self.materials = materials;
@@ -298,7 +298,7 @@ impl OnDecryptOutputBuilder {
     }
 
     /// Set or clear the materials from an `Option`.
-    /// To add one entry, use [`Self::materials`].
+    /// To set a value, use [`Self::materials`].
     #[must_use]
     pub fn set_materials(mut self, materials: Option<DecryptionMaterials>) -> Self {
         self.materials = materials;

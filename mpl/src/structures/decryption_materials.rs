@@ -144,7 +144,7 @@ impl DecryptionMaterialsBuilder {
     }
 
     /// Set or clear the algorithm suite from an `Option`.
-    /// To add one entry, use [`Self::algorithm_suite_id`].
+    /// To set a value, use [`Self::algorithm_suite_id`].
     #[must_use]
     pub const fn set_algorithm_suite_id(
         mut self,
@@ -225,7 +225,7 @@ impl DecryptionMaterialsBuilder {
     }
 
     /// Set or clear the plaintext data key from an `Option`.
-    /// To add one entry, use [`Self::plaintext_data_key`].
+    /// To set a value, use [`Self::plaintext_data_key`].
     #[must_use]
     pub fn set_plaintext_data_key(mut self, plaintext_data_key: Option<PlaintextDataKey>) -> Self {
         self.plaintext_data_key = plaintext_data_key;
@@ -246,7 +246,7 @@ impl DecryptionMaterialsBuilder {
     }
 
     /// Set or clear the verification key from an `Option`.
-    /// To add one entry, use [`Self::verification_key`].
+    /// To set a value, use [`Self::verification_key`].
     #[must_use]
     pub fn set_verification_key(mut self, verification_key: Option<VerificationKey>) -> Self {
         self.verification_key = verification_key;
@@ -270,7 +270,7 @@ impl DecryptionMaterialsBuilder {
     }
 
     /// Set or clear the symmetric signing key from an `Option`.
-    /// To add one entry, use [`Self::symmetric_signing_key`].
+    /// To set a value, use [`Self::symmetric_signing_key`].
     #[must_use]
     pub fn set_symmetric_signing_key(
         mut self,

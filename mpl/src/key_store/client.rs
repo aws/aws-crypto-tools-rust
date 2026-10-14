@@ -190,10 +190,16 @@ impl CreateKeyFluentBuilder {
     }
 
     /// Set or clear the branch key identifier from an `Option`.
-    /// To add one entry, use [`Self::branch_key_id`].
+    /// To set a value, use [`Self::branch_key_id`].
     pub fn set_branch_key_id(mut self, branch_key_id: Option<String>) -> Self {
         self.inner = self.inner.set_branch_key_id(branch_key_id);
         self
+    }
+
+    /// The branch key id, if set.
+    #[must_use]
+    pub const fn get_branch_key_id(&self) -> &Option<String> {
+        self.inner.get_branch_key_id()
     }
 
     /// Adds a key-value pair to the custom encryption context for the new branch key.
@@ -210,6 +216,12 @@ impl CreateKeyFluentBuilder {
     pub fn set_encryption_context(mut self, encryption_context: Option<EncryptionContext>) -> Self {
         self.inner = self.inner.set_encryption_context(encryption_context);
         self
+    }
+
+    /// The encryption context, if set.
+    #[must_use]
+    pub const fn get_encryption_context(&self) -> &Option<EncryptionContext> {
+        self.inner.get_encryption_context()
     }
 
     /// Send the request.
@@ -246,10 +258,16 @@ impl VersionKeyFluentBuilder {
     }
 
     /// Set or clear the branch key identifier from an `Option`.
-    /// To add one entry, use [`Self::branch_key_id`].
+    /// To set a value, use [`Self::branch_key_id`].
     pub fn set_branch_key_id(mut self, branch_key_id: Option<String>) -> Self {
         self.inner = self.inner.set_branch_key_id(branch_key_id);
         self
+    }
+
+    /// The branch key id, if set.
+    #[must_use]
+    pub const fn get_branch_key_id(&self) -> &Option<String> {
+        self.inner.get_branch_key_id()
     }
 
     /// Send the request.
@@ -288,10 +306,16 @@ impl GetActiveBranchKeyFluentBuilder {
     }
 
     /// Set or clear the branch key identifier from an `Option`.
-    /// To add one entry, use [`Self::branch_key_id`].
+    /// To set a value, use [`Self::branch_key_id`].
     pub fn set_branch_key_id(mut self, branch_key_id: Option<String>) -> Self {
         self.inner = self.inner.set_branch_key_id(branch_key_id);
         self
+    }
+
+    /// The branch key id, if set.
+    #[must_use]
+    pub const fn get_branch_key_id(&self) -> &Option<String> {
+        self.inner.get_branch_key_id()
     }
 
     /// Send the request.
@@ -330,10 +354,16 @@ impl GetBranchKeyVersionFluentBuilder {
     }
 
     /// Set or clear the branch key identifier from an `Option`.
-    /// To add one entry, use [`Self::branch_key_id`].
+    /// To set a value, use [`Self::branch_key_id`].
     pub fn set_branch_key_id(mut self, branch_key_id: Option<String>) -> Self {
         self.inner = self.inner.set_branch_key_id(branch_key_id);
         self
+    }
+
+    /// The branch key id, if set.
+    #[must_use]
+    pub const fn get_branch_key_id(&self) -> &Option<String> {
+        self.inner.get_branch_key_id()
     }
 
     /// Set the branch key version.
@@ -344,10 +374,16 @@ impl GetBranchKeyVersionFluentBuilder {
     }
 
     /// Set or clear the branch key version from an `Option`.
-    /// To add one entry, use [`Self::branch_key_version`].
+    /// To set a value, use [`Self::branch_key_version`].
     pub fn set_branch_key_version(mut self, branch_key_version: Option<String>) -> Self {
         self.inner = self.inner.set_branch_key_version(branch_key_version);
         self
+    }
+
+    /// The branch key version, if set.
+    #[must_use]
+    pub const fn get_branch_key_version(&self) -> &Option<String> {
+        self.inner.get_branch_key_version()
     }
 
     /// Send the request.
@@ -386,10 +422,16 @@ impl GetBeaconKeyFluentBuilder {
     }
 
     /// Set or clear the branch key identifier from an `Option`.
-    /// To add one entry, use [`Self::branch_key_id`].
+    /// To set a value, use [`Self::branch_key_id`].
     pub fn set_branch_key_id(mut self, branch_key_id: Option<String>) -> Self {
         self.inner = self.inner.set_branch_key_id(branch_key_id);
         self
+    }
+
+    /// The branch key id, if set.
+    #[must_use]
+    pub const fn get_branch_key_id(&self) -> &Option<String> {
+        self.inner.get_branch_key_id()
     }
 
     /// Send the request.
