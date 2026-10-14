@@ -53,10 +53,7 @@ impl BranchKeySupplier for TenantBranchKeySupplier {
 }
 
 fn tenant_context(tenant: &str) -> EncryptionContext {
-    let mut encryption_context = EncryptionContext::new();
-    encryption_context.insert("tenant", tenant);
-    encryption_context.insert("purpose", "example");
-    encryption_context
+    EncryptionContext::from([("tenant", tenant), ("purpose", "example")])
 }
 
 fn fixed_keyring(
@@ -87,8 +84,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build()
         .await?;
 
-    let mut branch_key_context = EncryptionContext::new();
-    branch_key_context.insert("purpose", "example");
+    let branch_key_context = EncryptionContext::from([("purpose", "example")]);
     let create_branch_key = async || {
         key_store
             .create_key()

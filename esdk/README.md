@@ -44,8 +44,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build()?;
 
     // The encryption context is authenticated, not encrypted, and is bound to the message.
-    let mut encryption_context = EncryptionContext::new();
-    encryption_context.insert("purpose", "quickstart");
+    let encryption_context = EncryptionContext::from([("purpose", "quickstart")]);
 
     let esdk = aws_esdk::Client::default();
 

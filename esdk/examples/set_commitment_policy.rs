@@ -31,8 +31,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let plaintext = b"Hello World";
 
-    let mut encryption_context = EncryptionContext::new();
-    encryption_context.insert("purpose", "example");
+    let encryption_context = EncryptionContext::from([("purpose", "example")]);
 
     let encrypted = esdk
         .encrypt()
