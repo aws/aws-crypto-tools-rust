@@ -6,16 +6,16 @@
 //!
 //! ```no_run
 //! # async fn example() -> Result<(), aws_crypto_mpl::Error> {
-//! use aws_crypto_mpl::key_store::{KeyStoreClient, KmsConfiguration};
+//! use aws_crypto_mpl::key_store::{KeyStoreClient, KeyStoreConfig, KmsConfiguration};
 //!
-//! let key_store = KeyStoreClient::builder()
+//! let config = KeyStoreConfig::builder()
 //!     .ddb_table_name("my-table")
 //!     .logical_key_store_name("my-table")
 //!     .kms_configuration(KmsConfiguration::KmsKeyArn(
 //!         "arn:aws:kms:us-west-2:111122223333:key/my-key".into(),
 //!     ))
-//!     .build()
-//!     .await?;
+//!     .build()?;
+//! let key_store = KeyStoreClient::from_conf(config).await?;
 //! let branch_key_id = key_store.create_key().send().await?.into_branch_key_id();
 //! key_store.version_key().branch_key_id(&branch_key_id).send().await?;
 //! # Ok(())
@@ -35,7 +35,7 @@ mod types;
 use crate::Error;
 use async_trait::async_trait;
 
-pub use branch_key_store::KeyStoreClientBuilder;
+pub use branch_key_store::{KeyStoreConfig, KeyStoreConfigBuilder};
 pub use client::{
     CreateKeyFluentBuilder, CreateKeyStoreFluentBuilder, GetActiveBranchKeyFluentBuilder,
     GetBeaconKeyFluentBuilder, GetBranchKeyVersionFluentBuilder, GetKeyStoreInfoFluentBuilder,
@@ -68,7 +68,7 @@ pub trait KeyStore: Send + Sync {
     ///
     /// # Errors
     ///
-    /// The key store [`KeyStoreClient::builder`] builds does not return an error.
+    /// The key store [`KeyStoreClient::from_conf`] creates does not return an error.
     /// Other implementations may return any variant.
     fn get_key_store_info(
         &self,
@@ -79,7 +79,7 @@ pub trait KeyStore: Send + Sync {
     ///
     /// # Errors
     ///
-    /// The key store [`KeyStoreClient::builder`] builds returns:
+    /// The key store [`KeyStoreClient::from_conf`] creates returns:
     /// - [`Validation`](crate::Error::Validation): the table exists but does not have the key store schema.
     /// - [`AccessDenied`](crate::Error::AccessDenied), [`ResourceNotFound`](crate::Error::ResourceNotFound), [`Throttling`](crate::Error::Throttling), [`Service`](crate::Error::Service), [`Dispatch`](crate::Error::Dispatch): an Amazon DynamoDB call failed; `resource()` is the table.
     /// - [`Service`](crate::Error::Service): Amazon DynamoDB reported success but returned no table description or ARN.
@@ -95,7 +95,7 @@ pub trait KeyStore: Send + Sync {
     ///
     /// # Errors
     ///
-    /// The key store [`KeyStoreClient::builder`] builds returns:
+    /// The key store [`KeyStoreClient::from_conf`] creates returns:
     /// - [`Validation`](crate::Error::Validation): the call passes a branch key id but no encryption context, the KMS configuration is not a single KMS key, or the encryption context is invalid.
     /// - [`Conflict`](crate::Error::Conflict): the branch key id already exists; `resource()` is the branch key.
     /// - [`AccessDenied`](crate::Error::AccessDenied), [`ResourceNotFound`](crate::Error::ResourceNotFound), [`Throttling`](crate::Error::Throttling), [`Service`](crate::Error::Service), [`Dispatch`](crate::Error::Dispatch): an AWS KMS or Amazon DynamoDB call failed; `resource()` is the KMS key or the table.
@@ -109,7 +109,7 @@ pub trait KeyStore: Send + Sync {
     ///
     /// # Errors
     ///
-    /// The key store [`KeyStoreClient::builder`] builds returns:
+    /// The key store [`KeyStoreClient::from_conf`] creates returns:
     /// - [`Validation`](crate::Error::Validation): the KMS configuration is not a single KMS key, or the record's `kms-arn` is not compatible with the configured KMS key.
     /// - [`InvalidMaterials`](crate::Error::InvalidMaterials): the ACTIVE record is missing a required attribute or is malformed; `resource()` is the branch key.
     /// - [`Cryptographic`](crate::Error::Cryptographic): the stored ACTIVE record fails AWS KMS authentication (`InvalidCiphertextException`).
@@ -126,7 +126,7 @@ pub trait KeyStore: Send + Sync {
     ///
     /// # Errors
     ///
-    /// The key store [`KeyStoreClient::builder`] builds returns:
+    /// The key store [`KeyStoreClient::from_conf`] creates returns:
     /// - [`InvalidMaterials`](crate::Error::InvalidMaterials): the key store record is malformed or missing a required attribute; `resource()` is the branch key.
     /// - [`Validation`](crate::Error::Validation): the record's `kms-arn` is not compatible with the configured KMS key.
     /// - [`ResourceNotFound`](crate::Error::ResourceNotFound): the branch key has no ACTIVE record; `resource()` is the branch key.
@@ -143,7 +143,7 @@ pub trait KeyStore: Send + Sync {
     ///
     /// # Errors
     ///
-    /// The key store [`KeyStoreClient::builder`] builds returns:
+    /// The key store [`KeyStoreClient::from_conf`] creates returns:
     /// - [`InvalidMaterials`](crate::Error::InvalidMaterials): the key store record is malformed or missing a required attribute; `resource()` is the branch key.
     /// - [`Validation`](crate::Error::Validation): the record's `kms-arn` is not compatible with the configured KMS key.
     /// - [`ResourceNotFound`](crate::Error::ResourceNotFound): the branch key has no record of that version; `resource()` is the branch key.
@@ -160,7 +160,7 @@ pub trait KeyStore: Send + Sync {
     ///
     /// # Errors
     ///
-    /// The key store [`KeyStoreClient::builder`] builds returns:
+    /// The key store [`KeyStoreClient::from_conf`] creates returns:
     /// - [`InvalidMaterials`](crate::Error::InvalidMaterials): the key store record is malformed or missing a required attribute; `resource()` is the branch key.
     /// - [`Validation`](crate::Error::Validation): the record's `kms-arn` is not compatible with the configured KMS key.
     /// - [`ResourceNotFound`](crate::Error::ResourceNotFound): the branch key has no beacon key record; `resource()` is the branch key.

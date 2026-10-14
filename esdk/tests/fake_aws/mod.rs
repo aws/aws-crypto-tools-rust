@@ -10,7 +10,7 @@ use std::time::Duration;
 use aws_crypto_mpl::aws_sdk_dynamodb;
 use aws_crypto_mpl::aws_sdk_kms;
 use aws_crypto_mpl::cmc::DefaultCmc;
-use aws_crypto_mpl::{HierarchicalKeyring, KeyStoreClient, KmsConfiguration};
+use aws_crypto_mpl::{HierarchicalKeyring, KeyStoreClient, KeyStoreConfig, KmsConfiguration};
 use aws_smithy_runtime_api::client::http::{
     HttpConnector, HttpConnectorFuture, SharedHttpConnector, http_client_fn,
 };
@@ -126,15 +126,18 @@ impl FakeAws {
     }
 
     pub async fn key_store(&self) -> KeyStoreClient {
-        KeyStoreClient::builder()
-            .ddb_table_name(TABLE)
-            .logical_key_store_name(TABLE)
-            .kms_configuration(KmsConfiguration::KmsKeyArn(KEY_ARN.into()))
-            .kms_client(self.kms_client())
-            .ddb_client(self.ddb_client())
-            .build()
-            .await
-            .expect("the key store configuration is valid")
+        KeyStoreClient::from_conf(
+            KeyStoreConfig::builder()
+                .ddb_table_name(TABLE)
+                .logical_key_store_name(TABLE)
+                .kms_configuration(KmsConfiguration::KmsKeyArn(KEY_ARN.into()))
+                .kms_client(self.kms_client())
+                .ddb_client(self.ddb_client())
+                .build()
+                .unwrap(),
+        )
+        .await
+        .expect("the key store configuration is valid")
     }
 
     /// A hierarchical keyring for [`BRANCH_KEY_ID`] with its own empty cache.

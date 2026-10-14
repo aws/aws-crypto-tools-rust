@@ -374,7 +374,7 @@ impl HierarchicalKeyringBuilder {
     /// The key store.
     /// Required.
     ///
-    /// Pass the [`KeyStoreClient`] that [`KeyStoreClient::builder`] builds, or any [`KeyStore`](crate::KeyStore).
+    /// Pass the [`KeyStoreClient`] that [`KeyStoreClient::from_conf`] creates, or any [`KeyStore`](crate::KeyStore).
     #[must_use]
     pub fn key_store(mut self, key_store: impl Into<KeyStoreClient>) -> Self {
         self.key_store = Some(key_store.into());
@@ -517,7 +517,7 @@ impl HierarchicalKeyringBuilder {
     /// - [`Cryptographic`](crate::Error::Cryptographic): the random number generator failed while creating the default partition id.
     ///
     /// If the key store's [`get_key_store_info`](crate::KeyStore::get_key_store_info) fails, returns that error unchanged.
-    /// The key store [`KeyStoreClient::builder`] builds does not fail it.
+    /// The key store [`KeyStoreClient::from_conf`] creates does not fail it.
     pub fn build(self) -> Result<HierarchicalKeyring, Error> {
         let Self {
             key_store,

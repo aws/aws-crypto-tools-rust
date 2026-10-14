@@ -3,7 +3,7 @@
 //!
 //! Both keyrings are built from the MPL ([`aws_crypto_mpl`]):
 //! - Raw AES via [`RawAesKeyring`].
-//! - AWS KMS Hierarchical via [`HierarchicalKeyring`] over the key store [`KeyStoreClient::builder`](aws_crypto_mpl::KeyStoreClient::builder) builds.
+//! - AWS KMS Hierarchical via [`HierarchicalKeyring`] over the key store [`KeyStoreClient::from_conf`](aws_crypto_mpl::KeyStoreClient::from_conf) creates.
 //!
 //! Enforces the "exactly one variant member set" invariant that the Smithy
 //! tagged-union-via-optional-members shapes cannot express in the type system.
@@ -14,7 +14,7 @@ use crate::error::ServerError;
 use crate::model::{
     AwsKmsHierarchicalKeyringConfig, CryptographicMaterialsManager, Keyring, RawAesKeyringConfig,
 };
-use aws_crypto_mpl::key_store::{KeyStoreClient, KmsConfiguration};
+use aws_crypto_mpl::key_store::{KeyStoreClient, KeyStoreConfig, KmsConfiguration};
 use aws_crypto_mpl::{AesGcm, HierarchicalKeyring, RawAesKeyring};
 use aws_esdk::SharedKeyring;
 
@@ -105,13 +105,16 @@ async fn build_raw_aes(config: &RawAesKeyringConfig) -> Result<SharedKeyring, Se
 async fn build_hierarchical(
     config: &AwsKmsHierarchicalKeyringConfig,
 ) -> Result<SharedKeyring, ServerError> {
-    let key_store = KeyStoreClient::builder()
-        .ddb_table_name(config.key_store_table_name.clone())
-        .logical_key_store_name(config.logical_key_store_name.clone())
-        .kms_configuration(KmsConfiguration::KmsKeyArn(config.kms_key_arn.clone()))
-        .build()
-        .await
-        .map_err(|e| ServerError::esdk(e.to_string()))?;
+    let key_store = KeyStoreClient::from_conf(
+        KeyStoreConfig::builder()
+            .ddb_table_name(config.key_store_table_name.clone())
+            .logical_key_store_name(config.logical_key_store_name.clone())
+            .kms_configuration(KmsConfiguration::KmsKeyArn(config.kms_key_arn.clone()))
+            .build()
+            .map_err(|e| ServerError::esdk(e.to_string()))?,
+    )
+    .await
+    .map_err(|e| ServerError::esdk(e.to_string()))?;
     let ttl_seconds = u64::try_from(config.ttl_seconds).map_err(|_| {
         ServerError::generic(format!(
             "ttlSeconds must be non-negative, got {}",
