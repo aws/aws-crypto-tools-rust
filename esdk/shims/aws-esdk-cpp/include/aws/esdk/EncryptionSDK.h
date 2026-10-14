@@ -502,9 +502,6 @@ public:
     Credentials& with_expiration(std::chrono::system_clock::time_point t) { expiration_ = t; return *this; }
 };
 
-/// AWS service-client configuration for AWS SDK clients.
-/// A field left unset defers to the ESDK Rust's default configuration resolution.
-/// One AwsSdkClientConfig may configure multiple clients.
 /// An HTTP client and its connection pool.
 /// Pass one to several AwsSdkClientConfigs to make their service clients share connections.
 class HttpClient {
@@ -515,6 +512,9 @@ public:
     HttpClient();
 };
 
+/// AWS service-client configuration for AWS SDK clients.
+/// A field left unset defers to the ESDK Rust's default configuration resolution.
+/// One AwsSdkClientConfig may configure multiple clients.
 class AwsSdkClientConfig {
     std::shared_ptr<detail::ClientConfigImpl> impl_;
     friend class KmsClient;
