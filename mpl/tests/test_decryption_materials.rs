@@ -226,9 +226,21 @@ fn test_plaintext_data_key_immutability_decryption() {
 
 #[test]
 fn test_plaintext_data_key_zeroize_decryption() {
+    use zeroize::Zeroize;
     let mut pdk = PlaintextDataKey::new(b"secret-dec".to_vec());
     pdk.zeroize();
-    assert!(pdk.as_bytes().iter().all(|&b| b == 0));
+    assert!(pdk.is_empty());
+}
+
+#[test]
+fn test_secret_keys_compare_with_ct_eq() {
+    let a = PlaintextDataKey::new(vec![1; 32]);
+    assert!(a.ct_eq(&PlaintextDataKey::new(vec![1; 32])));
+    assert!(!a.ct_eq(&PlaintextDataKey::new(vec![2; 32])));
+    assert!(!a.ct_eq(&PlaintextDataKey::new(vec![1; 16])));
+    let s = SymmetricSigningKey::new(vec![3; 32]);
+    assert!(s.ct_eq(&SymmetricSigningKey::new(vec![3; 32])));
+    assert!(!s.ct_eq(&SymmetricSigningKey::new(vec![4; 32])));
 }
 
 #[test]
@@ -405,4 +417,23 @@ fn test_build_rejects_wrong_length_plaintext_data_key() {
         .build()
         .unwrap_err();
     assert!(err.is_invalid_materials(), "{:?}", err);
+}
+
+#[test]
+fn test_materials_builder_getters_report_unset_and_set() {
+    let builder = DecryptionMaterials::builder();
+    assert!(builder.get_encryption_context().is_none());
+    assert!(builder.get_required_encryption_context_keys().is_none());
+    let builder = builder
+        .encryption_context(make_ec_with_keys(&["k1"]))
+        .required_encryption_context_keys(["k1"]);
+    assert!(builder.get_encryption_context().is_some());
+    assert_eq!(
+        builder.get_required_encryption_context_keys(),
+        &Some(BTreeSet::from(["k1".to_string()]))
+    );
+
+    let builder = aws_crypto_mpl::structures::EncryptionMaterials::builder();
+    assert!(builder.get_encryption_context().is_none());
+    assert!(builder.get_required_encryption_context_keys().is_none());
 }

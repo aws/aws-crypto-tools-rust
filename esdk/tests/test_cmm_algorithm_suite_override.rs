@@ -43,9 +43,9 @@ impl Cmm for SuiteOverrideCmm {
             .algorithm_suite_id(aws_crypto_mpl::structures::AlgorithmSuiteId::Esdk(
                 self.suite,
             ))
-            .set_required_encryption_context_keys(
-                request.required_encryption_context_keys().cloned(),
-            )
+            .set_required_encryption_context_keys(Some(
+                request.required_encryption_context_keys().clone(),
+            ))
             .set_max_plaintext_length(request.max_plaintext_length())
             .send()
             .await
