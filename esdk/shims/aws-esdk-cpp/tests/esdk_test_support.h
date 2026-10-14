@@ -116,7 +116,7 @@ inline std::optional<TestConfig> integration_config_or_gate(int argc, char** arg
 }
 
 inline Aws::Esdk::HierarchicalKeyring make_hierarchical_keyring(const TestConfig& cfg) {
-    auto client_config = Aws::Esdk::SdkConfig().with_max_retry_attempts(3);
+    auto client_config = Aws::Esdk::AwsSdkClientConfig().with_max_retry_attempts(3);
     if (!cfg.region.empty()) {
         client_config.with_region(cfg.region);
     }

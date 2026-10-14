@@ -443,7 +443,7 @@ void test_client_configuration() {
 // Offline: clients that share one HttpClient, and copies derived from them.
 void test_shared_http_client() {
     Aws::Esdk::HttpClient http;
-    const auto config = Aws::Esdk::SdkConfig().with_region("us-west-2").with_http_client(http);
+    const auto config = Aws::Esdk::AwsSdkClientConfig().with_region("us-west-2").with_http_client(http);
     Aws::Esdk::KmsClient kms(config);
     Aws::Esdk::DdbClient ddb(config);
     const auto credentials = Aws::Esdk::Credentials("AKIDREQUEST", "request-secret");
@@ -456,7 +456,7 @@ void test_shared_http_client() {
 
 // Offline: a KMS client copy with extra request headers.
 void test_kms_client_with_headers() {
-    Aws::Esdk::KmsClient kms(Aws::Esdk::SdkConfig().with_region("us-west-2"));
+    Aws::Esdk::KmsClient kms(Aws::Esdk::AwsSdkClientConfig().with_region("us-west-2"));
     const auto with_headers = kms.with_headers({{"x-test-one", "1"}, {"x-test-two", "two"}})
                                   .with_credentials(Aws::Esdk::Credentials("AKIDREQUEST", "request-secret"));
     Aws::Esdk::KeyStore key_store("valid-table-name", "valid-table-name",
@@ -471,7 +471,7 @@ void test_client_credentials() {
     const auto credentials = Aws::Esdk::Credentials("AKIDBASE", "base-secret")
                                  .with_session_token("base-token")
                                  .with_expiration(std::chrono::system_clock::now() + 1h);
-    const auto config = Aws::Esdk::SdkConfig().with_region("us-west-2").with_credentials(credentials);
+    const auto config = Aws::Esdk::AwsSdkClientConfig().with_region("us-west-2").with_credentials(credentials);
     Aws::Esdk::KmsClient kms(config);
     Aws::Esdk::DdbClient ddb(config);
 
@@ -502,7 +502,7 @@ void test_client_credentials() {
     };
     for (const auto& empty : {Aws::Esdk::Credentials("", "secret-value").with_session_token("token-value"),
                               Aws::Esdk::Credentials("AKID", "").with_session_token("token-value")}) {
-        const auto empty_config = Aws::Esdk::SdkConfig().with_credentials(empty);
+        const auto empty_config = Aws::Esdk::AwsSdkClientConfig().with_credentials(empty);
         check_rejected([&] { Aws::Esdk::KmsClient{empty_config}; });
         check_rejected([&] { Aws::Esdk::DdbClient{empty_config}; });
         check_rejected([&] { kms.with_credentials(empty); });
@@ -510,7 +510,7 @@ void test_client_credentials() {
     }
 
     CHECK_THROWS_TYPE(Aws::Esdk::ValidationException,
-                      Aws::Esdk::SdkConfig().with_credentials(
+                      Aws::Esdk::AwsSdkClientConfig().with_credentials(
                           Aws::Esdk::Credentials("AKID", "secret")
                               .with_expiration(std::chrono::system_clock::time_point(-1s))));
 }
@@ -679,7 +679,7 @@ void test_streaming() {
 // KMS accepts the request only if the extra headers are part of the signature.
 void test_shared_http_client_with_headers_round_trip(const TestConfig& cfg) {
     const Aws::Esdk::HttpClient http;
-    auto client_config = Aws::Esdk::SdkConfig().with_http_client(http);
+    auto client_config = Aws::Esdk::AwsSdkClientConfig().with_http_client(http);
     if (!cfg.region.empty()) {
         client_config.with_region(cfg.region);
     }
@@ -701,7 +701,7 @@ void test_shared_http_client_with_headers_round_trip(const TestConfig& cfg) {
 }
 
 void test_full_resource_chain(const TestConfig& cfg) {
-    auto client_config = Aws::Esdk::SdkConfig().with_max_retry_attempts(3);
+    auto client_config = Aws::Esdk::AwsSdkClientConfig().with_max_retry_attempts(3);
     if (!cfg.region.empty()) {
         client_config.with_region(cfg.region);
     }

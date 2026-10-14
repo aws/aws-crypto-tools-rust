@@ -65,7 +65,7 @@ int main() {
         // a single connection pool.
         // DynamoDB calls use the default credential chain; KMS calls use each request's credentials.
         const Aws::Esdk::HttpClient http;
-        const auto config = Aws::Esdk::SdkConfig().with_region("us-west-2").with_http_client(http);
+        const auto config = Aws::Esdk::AwsSdkClientConfig().with_region("us-west-2").with_http_client(http);
         const Aws::Esdk::KmsClient base_kms(config);
         const Aws::Esdk::DdbClient ddb(config);
         Aws::Esdk::Client esdk;

@@ -365,37 +365,37 @@ struct DecryptStreamImpl {
 
 }  // namespace detail
 
-// SdkConfig
+// AwsSdkClientConfig
 
 HttpClient::HttpClient()
     : impl_(std::make_shared<detail::HttpClientImpl>(
           detail::guard([] { return ::ffi::create_http_client(); }))) {}
 
-SdkConfig::SdkConfig() : impl_(std::make_shared<detail::ClientConfigImpl>()) {}
-SdkConfig& SdkConfig::with_http_client(const HttpClient& http_client) {
+AwsSdkClientConfig::AwsSdkClientConfig() : impl_(std::make_shared<detail::ClientConfigImpl>()) {}
+AwsSdkClientConfig& AwsSdkClientConfig::with_http_client(const HttpClient& http_client) {
     impl_->http_client = http_client.impl_;
     return *this;
 }
-SdkConfig& SdkConfig::with_max_retry_attempts(std::uint32_t n) {
+AwsSdkClientConfig& AwsSdkClientConfig::with_max_retry_attempts(std::uint32_t n) {
     impl_->cfg.retry.max_attempts = ::ffi::OptU32{true, n};
     return *this;
 }
-SdkConfig& SdkConfig::with_adaptive_retry(bool a) {
+AwsSdkClientConfig& AwsSdkClientConfig::with_adaptive_retry(bool a) {
     impl_->cfg.retry.mode_adaptive = a;
     return *this;
 }
-SdkConfig& SdkConfig::with_region(const std::string& r) {
+AwsSdkClientConfig& AwsSdkClientConfig::with_region(const std::string& r) {
     impl_->cfg.region = ::ffi::OptString{true, ::rust::String(r)};
     return *this;
 }
-SdkConfig& SdkConfig::with_credentials(const Credentials& credentials) {
+AwsSdkClientConfig& AwsSdkClientConfig::with_credentials(const Credentials& credentials) {
     impl_->cfg.credentials = ::ffi::OptCredentials{true, detail::CredentialsAccess::to_ffi(credentials)};
     return *this;
 }
 
 // Service clients
 
-KmsClient::KmsClient(const SdkConfig& cfg)
+KmsClient::KmsClient(const AwsSdkClientConfig& cfg)
     : impl_(std::make_shared<detail::KmsClientImpl>(
           detail::Retained{},
           detail::guard([&] {
@@ -422,7 +422,7 @@ KmsClient KmsClient::with_headers(
         detail::guard([&] { return ::ffi::kms_client_with_headers(*impl_->handle, std::move(ffi_headers)); })));
 }
 
-DdbClient::DdbClient(const SdkConfig& cfg)
+DdbClient::DdbClient(const AwsSdkClientConfig& cfg)
     : impl_(std::make_shared<detail::DdbClientImpl>(
           detail::Retained{},
           detail::guard([&] {
