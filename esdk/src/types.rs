@@ -60,7 +60,6 @@ const DEFAULT_FRAME_LENGTH: NonZeroU32 = NonZeroU32::new(4096).expect("4096 is n
 //= spec/client-apis/streaming.md#outputs
 //= reason=Sink is tokio's AsyncWrite; write is the output release mechanism
 //# - There MUST be a mechanism for output bytes to be released.
-#[doc(hidden)]
 pub trait Sink: tokio::io::AsyncWrite + Unpin + Send {}
 //= spec/client-apis/streaming.md#outputs
 //= reason=encrypt_stream/decrypt_stream flush the output and then return Ok, the end-of-output indicator
@@ -75,7 +74,6 @@ impl<T: tokio::io::AsyncWrite + Unpin + Send + ?Sized> Sink for T {}
 //= spec/client-apis/streaming.md#inputs
 //= reason=Source is tokio's AsyncRead; read is the input consumption mechanism
 //# - There MUST be a mechanism for input bytes to become consumable.
-#[doc(hidden)]
 pub trait Source: tokio::io::AsyncRead + Unpin + Send {}
 //= spec/client-apis/streaming.md#overview
 //= type=implication
@@ -101,7 +99,6 @@ pub trait Source: tokio::io::AsyncRead + Unpin + Send {}
 impl<T: tokio::io::AsyncRead + Unpin + Send + ?Sized> Source for T {}
 
 /// An in-memory writer that mirrors the bytes a step reads or writes, such as a signature digest.
-#[doc(hidden)]
 pub type Tee = dyn std::io::Write + Send;
 
 /// Algorithm suite identifiers for the ESDK.

@@ -6,9 +6,13 @@
 //! `Client` holds a [`Config`]: a commitment policy and an optional cap on encrypted data keys.
 //! Each operation's fluent builder takes both settings from the client and has no setters for them:
 //!
-//! ```ignore
+//! ```no_run
+//! # use aws_esdk::{CommitmentPolicy, SharedKeyring};
+//! # async fn example(policy: CommitmentPolicy, plaintext: &[u8], keyring: SharedKeyring) -> Result<(), aws_esdk::Error> {
 //! let esdk = aws_esdk::Client::builder().commitment_policy(policy).build()?;
 //! let output = esdk.encrypt().plaintext(plaintext).keyring(keyring).send().await?;
+//! # Ok(())
+//! # }
 //! ```
 
 use crate::Error;
@@ -159,7 +163,9 @@ impl ConfigBuilder {
 ///
 /// # Example
 ///
-/// ```ignore
+/// ```no_run
+/// # use aws_esdk::{CommitmentPolicy, EncryptionContext, SharedKeyring};
+/// # async fn example(plaintext: &[u8], ec: EncryptionContext, keyring: SharedKeyring) -> Result<(), aws_esdk::Error> {
 /// let esdk = aws_esdk::Client::builder()
 ///     .commitment_policy(CommitmentPolicy::RequireEncryptRequireDecrypt)
 ///     .build()?;
@@ -170,6 +176,8 @@ impl ConfigBuilder {
 ///     .keyring(keyring)
 ///     .send()
 ///     .await?;
+/// # Ok(())
+/// # }
 /// ```
 #[derive(Debug, Clone, Copy, Default)]
 #[non_exhaustive]
