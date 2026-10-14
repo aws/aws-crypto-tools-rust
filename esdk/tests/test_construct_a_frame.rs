@@ -365,7 +365,9 @@ async fn test_construct_frame_streaming_frame_released() {
         .encrypt_stream()
         .keyring(keyring.clone())
         .frame_length(NonZeroU32::new(10).unwrap())
-        .send(&mut reader, &mut output)
+        .plaintext(&mut reader)
+        .ciphertext(&mut output)
+        .send()
         .await
         .expect("streaming encrypt");
 

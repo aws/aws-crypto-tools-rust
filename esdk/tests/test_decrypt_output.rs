@@ -161,7 +161,9 @@ async fn test_streaming_callers_must_discard_on_failure() {
         Client::default()
             .decrypt_stream()
             .keyring(keyring.clone())
-            .send(&mut valid_cursor, &mut valid_output)
+            .ciphertext(&mut valid_cursor)
+            .plaintext(&mut valid_output)
+            .send()
             .await
             .is_ok(),
         "valid ct must stream to Ok"
@@ -170,7 +172,9 @@ async fn test_streaming_callers_must_discard_on_failure() {
         Client::default()
             .decrypt_stream()
             .keyring(keyring)
-            .send(&mut tampered_cursor, &mut tampered_output)
+            .ciphertext(&mut tampered_cursor)
+            .plaintext(&mut tampered_output)
+            .send()
             .await
             .unwrap_err()
             .is_cryptographic(),
