@@ -133,7 +133,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Decrypt, handling the failures only decrypt has.
     let result = esdk
         .decrypt()
-        .ciphertext(&encrypted.ciphertext)
+        .ciphertext(encrypted.ciphertext())
         .keyring(keyring)
         .send()
         .await;
@@ -190,7 +190,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             return Err(e.into());
         }
     };
-    assert_eq!(decrypted.plaintext, PLAINTEXT);
+    assert_eq!(decrypted.plaintext(), PLAINTEXT);
     println!("decrypted the message");
 
     // Key store operations return `aws_crypto_mpl::Error`, with the same variants and accessors.

@@ -81,13 +81,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     for encrypted in [before_rotation, after_rotation] {
         let decrypted = esdk
             .decrypt()
-            .ciphertext(&encrypted.ciphertext)
+            .ciphertext(encrypted.ciphertext())
             .encryption_context(encryption_context.clone())
             .keyring(keyring.clone())
             .send()
             .await?;
         assert_eq!(
-            decrypted.plaintext, plaintext,
+            decrypted.plaintext(),
+            plaintext,
             "Decryption failed: plaintext mismatch"
         );
     }

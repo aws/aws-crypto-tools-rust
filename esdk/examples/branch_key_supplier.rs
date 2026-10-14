@@ -134,7 +134,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Tenant B's branch key cannot decrypt tenant A's message.
     let result = esdk
         .decrypt()
-        .ciphertext(&encrypted_a.ciphertext)
+        .ciphertext(encrypted_a.ciphertext())
         .encryption_context(tenant_context("TenantA"))
         .keyring(keyring_b.clone())
         .send()
@@ -151,13 +151,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ] {
         let decrypted = esdk
             .decrypt()
-            .ciphertext(&encrypted.ciphertext)
+            .ciphertext(encrypted.ciphertext())
             .encryption_context(tenant_context(tenant))
             .keyring(keyring)
             .send()
             .await?;
         assert_eq!(
-            decrypted.plaintext, plaintext,
+            decrypted.plaintext(),
+            plaintext,
             "Decryption failed: plaintext mismatch"
         );
     }

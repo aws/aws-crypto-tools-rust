@@ -43,7 +43,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let result = esdk
         .decrypt()
-        .ciphertext(&encrypted.ciphertext)
+        .ciphertext(encrypted.ciphertext())
         .encryption_context(encryption_context)
         .keyring(keyring)
         .send()
@@ -65,7 +65,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     assert_eq!(
-        decrypted.plaintext, plaintext,
+        decrypted.plaintext(),
+        plaintext,
         "Decryption failed: plaintext mismatch"
     );
     println!("Success! Encryption and decryption completed successfully.");

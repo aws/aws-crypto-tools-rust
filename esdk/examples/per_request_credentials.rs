@@ -74,11 +74,11 @@ async fn handle_request(
         .await?;
     let decrypted = esdk
         .decrypt()
-        .ciphertext(&encrypted.ciphertext)
+        .ciphertext(encrypted.ciphertext())
         .keyring(keyring)
         .send()
         .await?;
-    assert_eq!(decrypted.plaintext, plaintext, "plaintext mismatch");
+    assert_eq!(decrypted.plaintext(), plaintext, "plaintext mismatch");
     Ok(())
 }
 
