@@ -34,8 +34,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
 
     // The branch key's encryption context is bound to every version of it.
-    let mut branch_key_context = EncryptionContext::new();
-    branch_key_context.insert("purpose", "example");
+    let branch_key_context = EncryptionContext::from([("purpose", "example")]);
     let branch_key_id = key_store
         .create_key()
         .encryption_context(branch_key_context)
@@ -52,8 +51,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let plaintext = b"Hello World";
-    let mut encryption_context = EncryptionContext::new();
-    encryption_context.insert("purpose", "example");
+    let encryption_context = EncryptionContext::from([("purpose", "example")]);
     let esdk = aws_esdk::Client::default();
     let encrypt_with = async |keyring: HierarchicalKeyring| {
         esdk.encrypt()

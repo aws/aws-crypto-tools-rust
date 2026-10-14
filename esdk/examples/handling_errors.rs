@@ -198,8 +198,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // - `AlreadyExists`: the branch key ID is already in use
     // - `ConcurrentModification`: another caller rotated the branch key at the same time
     // This call reuses the provisioned branch key's ID, so it reaches `AlreadyExists`.
-    let mut branch_key_context = EncryptionContext::new();
-    branch_key_context.insert("purpose", "example");
+    let branch_key_context = EncryptionContext::from([("purpose", "example")]);
     match key_store
         .create_key()
         .branch_key_id(BRANCH_KEY_ID)
