@@ -63,7 +63,8 @@ async fn handle_request(
         .key_store(key_store)
         .branch_key_id("3ce7656b-e166-40f3-8c9b-a920ce6596cd")
         .ttl(Duration::from_secs(300))
-        .build()?;
+        .build()
+        .await?;
 
     let plaintext = b"Hello World";
     let encrypted = esdk

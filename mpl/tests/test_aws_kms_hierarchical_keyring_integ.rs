@@ -114,7 +114,7 @@ const FIXTURE_TTL: Duration = Duration::from_secs(3600);
 
 /// Build a keyring over `key_store` for `branch_key_id`, with its own `LocalCmc`.
 /// Every test varies only these three things, so they share one fixture.
-fn keyring_for(
+async fn keyring_for(
     key_store: impl Into<KeyStoreClient>,
     branch_key_id: &str,
     partition: &str,
@@ -125,11 +125,12 @@ fn keyring_for(
         partition,
         LocalCmc::builder().entry_capacity(1000).build().unwrap(),
     )
+    .await
 }
 
 /// Same, with an explicit cache. Used by the shared-cache tests, which hand
 /// two keyrings the same `SharedCmc`.
-fn keyring_with_cache(
+async fn keyring_with_cache(
     key_store: impl Into<KeyStoreClient>,
     branch_key_id: &str,
     partition: &str,
@@ -143,6 +144,7 @@ fn keyring_with_cache(
             .cache(cache)
             .partition_id(partition)
             .build()
+            .await
             .expect("fixture keyring configuration must be valid"),
     )
 }
@@ -168,7 +170,7 @@ fn fresh_materials() -> EncryptionMaterials {
 #[tokio::test]
 async fn integ_on_encrypt_round_trips_through_real_key_store_and_kms() {
     let key_store = build_key_store().await;
-    let keyring = keyring_for(key_store, BRANCH_KEY_ID, "partition-id-integ");
+    let keyring = keyring_for(key_store, BRANCH_KEY_ID, "partition-id-integ").await;
 
     let materials_in = fresh_materials();
     let ec = materials_in.encryption_context().clone();
@@ -222,7 +224,7 @@ async fn integ_on_decrypt_round_trips_through_real_key_store_and_kms() {
     //      (DDB GetItem + KMS Decrypt for the version-specific record)
     //   5. branch_key_unwrap with the input DM's encryption context
     let key_store = build_key_store().await;
-    let keyring = keyring_for(key_store, BRANCH_KEY_ID, "partition-id-integ-decrypt");
+    let keyring = keyring_for(key_store, BRANCH_KEY_ID, "partition-id-integ-decrypt").await;
 
     let materials_in = fresh_materials();
     let ec = materials_in.encryption_context().clone();
@@ -401,7 +403,7 @@ async fn integ_on_encrypt_with_pre_existing_pdk_round_trips() {
     // not empty ... MUST use the existing plaintext data key") and the
     // produced EDK MUST round-trip back to the same PDK on decrypt.
     let key_store = build_key_store().await;
-    let keyring = keyring_for(key_store, BRANCH_KEY_ID, "partition-id-integ-existing-pdk");
+    let keyring = keyring_for(key_store, BRANCH_KEY_ID, "partition-id-integ-existing-pdk").await;
 
     let suite = non_signing_suite();
     let key_len = suite.specification().encryption_key_length();
@@ -473,8 +475,8 @@ async fn integ_shared_cache_with_same_partition_id_and_same_logical_key_store_na
 
     let cache = shared_cache();
 
-    let hk1 = keyring_with_cache(key_store_west, BRANCH_KEY_ID, "partitionId", cache.clone());
-    let hk2 = keyring_with_cache(key_store_east, BRANCH_KEY_ID, "partitionId", cache);
+    let hk1 = keyring_with_cache(key_store_west, BRANCH_KEY_ID, "partitionId", cache.clone()).await;
+    let hk2 = keyring_with_cache(key_store_east, BRANCH_KEY_ID, "partitionId", cache).await;
 
     // HK2 encrypt fails first: the shared cache is cold, so it must reach KMS.
     assert_failed_at_kms(
@@ -521,6 +523,7 @@ async fn integ_shared_cache_with_different_unspecified_partition_id_and_same_log
             .branch_key_id(BRANCH_KEY_ID)
             .cache(cache.clone())
             .build()
+            .await
             .unwrap(),
     );
     let hk2 = SharedKeyring::new(
@@ -530,6 +533,7 @@ async fn integ_shared_cache_with_different_unspecified_partition_id_and_same_log
             .branch_key_id(BRANCH_KEY_ID)
             .cache(cache)
             .build()
+            .await
             .unwrap(),
     );
 
@@ -577,8 +581,9 @@ async fn integ_shared_cache_with_different_specified_partition_id_and_same_logic
         BRANCH_KEY_ID,
         "partitionIdHK1",
         cache.clone(),
-    );
-    let hk2 = keyring_with_cache(key_store_east, BRANCH_KEY_ID, "partitionIdHK2", cache);
+    )
+    .await;
+    let hk2 = keyring_with_cache(key_store_east, BRANCH_KEY_ID, "partitionIdHK2", cache).await;
 
     assert_failed_at_kms(
         hk2.on_encrypt()
@@ -619,8 +624,8 @@ async fn integ_shared_cache_with_same_partition_id_and_different_logical_key_sto
 
     let cache = shared_cache();
 
-    let hk1 = keyring_with_cache(key_store_west, BRANCH_KEY_ID, "partitionId", cache.clone());
-    let hk2 = keyring_with_cache(key_store_east, BRANCH_KEY_ID, "partitionId", cache);
+    let hk1 = keyring_with_cache(key_store_west, BRANCH_KEY_ID, "partitionId", cache.clone()).await;
+    let hk2 = keyring_with_cache(key_store_east, BRANCH_KEY_ID, "partitionId", cache).await;
 
     assert_failed_at_kms(
         hk2.on_encrypt()
@@ -686,11 +691,14 @@ async fn integ_discovery_key_store_wraps_under_the_records_own_kms_key() {
     // KEY_ARN. Discovery must pick that ARN up from the record, so
     // on_encrypt succeeds and the EDK is unwrappable with the same
     // record's materials.
-    let keyring = SharedKeyring::new(keyring_for(
-        build_discovery_key_store().await,
-        DISCOVERY_BRANCH_KEY_ID,
-        "partition-id-integ-discovery",
-    ));
+    let keyring = SharedKeyring::new(
+        keyring_for(
+            build_discovery_key_store().await,
+            DISCOVERY_BRANCH_KEY_ID,
+            "partition-id-integ-discovery",
+        )
+        .await,
+    );
 
     let materials_in = fresh_materials();
     let ec = materials_in.encryption_context().clone();
@@ -735,11 +743,14 @@ async fn integ_pinned_key_store_rejects_a_branch_key_under_another_kms_key() {
     // through a key store pinned to KEY_ARN MUST fail, because the record's
     // kms-arn disagrees with the configured one. Without this, the Discovery
     // test would pass even if Discovery were silently ignoring the record.
-    let keyring = SharedKeyring::new(keyring_for(
-        build_key_store().await,
-        DISCOVERY_BRANCH_KEY_ID,
-        "partition-id-integ-discovery-negative",
-    ));
+    let keyring = SharedKeyring::new(
+        keyring_for(
+            build_key_store().await,
+            DISCOVERY_BRANCH_KEY_ID,
+            "partition-id-integ-discovery-negative",
+        )
+        .await,
+    );
 
     let err = keyring
         .on_encrypt()
@@ -768,7 +779,7 @@ async fn integ_discovery_key_store_serves_two_branch_keys_under_different_kms_ke
             "partition-id-integ-discovery-two-b",
         ),
     ] {
-        let keyring = keyring_for(key_store.clone(), branch_key_id, partition);
+        let keyring = keyring_for(key_store.clone(), branch_key_id, partition).await;
         let materials_out = keyring
             .on_encrypt()
             .materials(fresh_materials())
@@ -794,7 +805,8 @@ async fn integ_discovery_key_store_on_decrypt_round_trips() {
         build_discovery_key_store().await,
         DISCOVERY_BRANCH_KEY_ID,
         "partition-id-integ-discovery-decrypt",
-    );
+    )
+    .await;
     run_round_trip(&keyring, fresh_materials(), DISCOVERY_BRANCH_KEY_ID).await;
 }
 
@@ -838,11 +850,14 @@ async fn integ_mr_discovery_key_store_reaches_an_mrk_replica_in_the_configured_r
     // build_clients() pins KMS to us-west-2, and MrDiscovery rewrites the
     // record's us-east-1 ARN to us-west-2, so the decrypt lands on the
     // replica that client can reach.
-    let keyring = SharedKeyring::new(keyring_for(
-        build_mr_discovery_key_store("us-west-2").await,
-        EAST_BRANCH_KEY,
-        "partition-id-integ-mrdiscovery",
-    ));
+    let keyring = SharedKeyring::new(
+        keyring_for(
+            build_mr_discovery_key_store("us-west-2").await,
+            EAST_BRANCH_KEY,
+            "partition-id-integ-mrdiscovery",
+        )
+        .await,
+    );
 
     let materials_out = keyring.on_encrypt().materials(fresh_materials()).send().await.expect(
         "MrDiscovery MUST rewrite the record's us-east-1 ARN into us-west-2 and reach the replica",
@@ -859,11 +874,14 @@ async fn integ_discovery_key_store_cannot_reach_an_out_of_region_mrk() {
     // The contrast half of Dafny's TestGetKeysForMrk: plain Discovery does no
     // region rewrite, so the us-east-1 ARN from the record goes to the
     // us-west-2 client and KMS rejects it.
-    let keyring = SharedKeyring::new(keyring_for(
-        build_discovery_key_store().await,
-        EAST_BRANCH_KEY,
-        "partition-id-integ-mrdiscovery-negative",
-    ));
+    let keyring = SharedKeyring::new(
+        keyring_for(
+            build_discovery_key_store().await,
+            EAST_BRANCH_KEY,
+            "partition-id-integ-mrdiscovery-negative",
+        )
+        .await,
+    );
 
     let err = keyring
         .on_encrypt()
@@ -902,6 +920,7 @@ async fn integ_mr_discovery_key_store_on_decrypt_round_trips() {
         build_mr_discovery_key_store("us-west-2").await,
         EAST_BRANCH_KEY,
         "partition-id-integ-mrdiscovery-decrypt",
-    );
+    )
+    .await;
     run_round_trip(&keyring, fresh_materials(), EAST_BRANCH_KEY).await;
 }

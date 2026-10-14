@@ -131,14 +131,13 @@ impl GetKeyStoreInfoFluentBuilder {
     }
 
     /// Send the request.
-    /// The key store answers from its own configuration, so this is synchronous.
     ///
     /// # Errors
     ///
     /// The errors [`KeyStore::get_key_store_info`] documents.
-    pub fn send(self) -> Result<GetKeyStoreInfoOutput, Error> {
+    pub async fn send(self) -> Result<GetKeyStoreInfoOutput, Error> {
         let input = self.inner.build()?;
-        self.client.inner.get_key_store_info(input)
+        self.client.inner.get_key_store_info(input).await
     }
 }
 
