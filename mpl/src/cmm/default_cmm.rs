@@ -1,7 +1,7 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Default CMM — concrete implementation of the [`Cmm`](super::Cmm) trait
+//! Default CMM — concrete implementation of the [`Cmm`] trait
 //! that wraps a single keyring.
 
 use crate::Error;
@@ -49,7 +49,7 @@ const RESERVED_AWS_CRYPTO_PUBLIC_KEY: &str = "aws-crypto-public-key";
 /// - Merges the input's encryption context with its Reproduced
 ///   Encryption Context: shared keys must agree, and pairs present only in
 ///   the reproduced context are appended and reported as Required Encryption
-///   Context Keys. See [`merge_reproduced_encryption_context`].
+///   Context Keys. See `merge_reproduced_encryption_context`.
 /// - For signing suites: extracts and base64-decodes the verification key
 ///   from the merged encryption context.
 /// - For non-signing suites: rejects requests whose merged encryption
