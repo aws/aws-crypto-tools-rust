@@ -5,7 +5,7 @@ use aws_crypto_mpl::cmm::DefaultCmm;
 use aws_crypto_mpl::keyring::RawAesKeyring;
 use aws_esdk::EncryptionContext;
 use aws_mpl_primitives::AesGcm;
-use std::num::NonZeroU32;
+use std::num::{NonZeroU32, NonZeroUsize};
 
 #[allow(clippy::duplicate_mod)]
 mod fixtures;
@@ -461,6 +461,24 @@ fn test_config_builder_defaults_match_client_default() {
         Client::builder().build().unwrap().config(),
         Client::default().config()
     );
+}
+
+#[test]
+fn test_config_to_builder_round_trips_and_overrides_one_field() {
+    let config = Config::builder()
+        .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt)
+        .max_encrypted_data_keys(NonZeroUsize::new(3).unwrap())
+        .build()
+        .unwrap();
+    assert_eq!(config.to_builder().build().unwrap(), config);
+
+    let changed = config
+        .to_builder()
+        .max_encrypted_data_keys(NonZeroUsize::new(5).unwrap())
+        .build()
+        .unwrap();
+    assert_eq!(changed.commitment_policy(), config.commitment_policy());
+    assert_eq!(changed.max_encrypted_data_keys(), NonZeroUsize::new(5));
 }
 
 #[test]

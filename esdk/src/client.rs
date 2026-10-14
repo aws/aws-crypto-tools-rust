@@ -76,6 +76,15 @@ impl Config {
         ConfigBuilder::default()
     }
 
+    /// A builder preloaded with this config's values.
+    #[must_use]
+    pub const fn to_builder(&self) -> ConfigBuilder {
+        ConfigBuilder {
+            commitment_policy: Some(self.commitment_policy),
+            max_encrypted_data_keys: self.max_encrypted_data_keys,
+        }
+    }
+
     /// The commitment policy applied to every operation.
     #[must_use]
     pub const fn commitment_policy(&self) -> CommitmentPolicy {
