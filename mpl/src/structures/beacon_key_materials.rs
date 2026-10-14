@@ -83,7 +83,7 @@ impl BeaconKeyMaterialsBuilder {
     }
 
     /// Set or clear the beacon key identifier from an `Option`.
-    /// To set a value, use [`Self::beacon_key_id`].
+    /// To add one entry, use [`Self::beacon_key_id`].
     #[must_use]
     pub fn set_beacon_key_id(mut self, beacon_key_id: Option<String>) -> Self {
         self.beacon_key_id = beacon_key_id;
@@ -96,16 +96,20 @@ impl BeaconKeyMaterialsBuilder {
         &self.beacon_key_id
     }
 
-    /// Set the custom encryption context of the beacon key.
+    /// Adds a key-value pair to the custom encryption context of the beacon key.
+    ///
+    /// To override the contents of this collection use [`set_encryption_context`](Self::set_encryption_context).
     /// Required.
     #[must_use]
-    pub fn encryption_context(mut self, encryption_context: impl Into<EncryptionContext>) -> Self {
-        self.encryption_context = Some(encryption_context.into());
+    pub fn encryption_context(mut self, k: impl Into<String>, v: impl Into<String>) -> Self {
+        self.encryption_context
+            .get_or_insert_with(Default::default)
+            .insert(k, v);
         self
     }
 
     /// Set or clear the encryption context from an `Option`.
-    /// To set a value, use [`Self::encryption_context`].
+    /// To add one entry, use [`Self::encryption_context`].
     #[must_use]
     pub fn set_encryption_context(mut self, encryption_context: Option<EncryptionContext>) -> Self {
         self.encryption_context = encryption_context;
@@ -126,7 +130,7 @@ impl BeaconKeyMaterialsBuilder {
     }
 
     /// Set or clear the beacon key from an `Option`.
-    /// To set a value, use [`Self::beacon_key`].
+    /// To add one entry, use [`Self::beacon_key`].
     #[must_use]
     pub fn set_beacon_key(mut self, beacon_key: Option<Vec<u8>>) -> Self {
         self.beacon_key = beacon_key;
@@ -139,15 +143,19 @@ impl BeaconKeyMaterialsBuilder {
         &self.beacon_key
     }
 
-    /// Set the HMAC keys derived from the beacon key, by name.
+    /// Adds a key-value pair to the HMAC keys derived from the beacon key, by name.
+    ///
+    /// To override the contents of this collection use [`set_hmac_keys`](Self::set_hmac_keys).
     #[must_use]
-    pub fn hmac_keys(mut self, hmac_keys: impl Into<BTreeMap<String, Vec<u8>>>) -> Self {
-        self.hmac_keys = Some(hmac_keys.into());
+    pub fn hmac_keys(mut self, k: impl Into<String>, v: impl Into<Vec<u8>>) -> Self {
+        self.hmac_keys
+            .get_or_insert_with(Default::default)
+            .insert(k.into(), v.into());
         self
     }
 
     /// Set or clear the HMAC keys from an `Option`.
-    /// To set a value, use [`Self::hmac_keys`].
+    /// To add one entry, use [`Self::hmac_keys`].
     #[must_use]
     pub fn set_hmac_keys(mut self, hmac_keys: Option<BTreeMap<String, Vec<u8>>>) -> Self {
         self.hmac_keys = hmac_keys;

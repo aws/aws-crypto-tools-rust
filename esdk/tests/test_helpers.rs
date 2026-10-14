@@ -103,7 +103,7 @@ pub async fn encrypt_v1_with_ec(plaintext: &[u8], ec: EncryptionContext) -> Vec<
     esdk_v1()
         .encrypt()
         .plaintext(plaintext)
-        .encryption_context(ec)
+        .set_encryption_context(Some(ec))
         .keyring(keyring)
         .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256)
         .send()
@@ -336,7 +336,7 @@ pub async fn encrypt_no_sign_ec_keyring(
     esdk_for(version)
         .encrypt()
         .plaintext(plaintext)
-        .encryption_context(ec)
+        .set_encryption_context(Some(ec))
         .keyring(keyring.clone())
         .algorithm_suite_id(non_signing_suite_for(version))
         .send()
@@ -370,7 +370,7 @@ pub async fn decrypt_with_keyring_ec(
     Client::default()
         .decrypt()
         .ciphertext(ciphertext)
-        .encryption_context(ec)
+        .set_encryption_context(Some(ec))
         .keyring(keyring.clone())
         .send()
         .await
@@ -387,7 +387,7 @@ pub async fn decrypt_v1_with_keyring_ec(
     esdk_v1()
         .decrypt()
         .ciphertext(ciphertext)
-        .encryption_context(ec)
+        .set_encryption_context(Some(ec))
         .keyring(keyring.clone())
         .send()
         .await
@@ -482,7 +482,7 @@ pub async fn round_trip_v2(plaintext: &[u8], ec: EncryptionContext) -> Vec<u8> {
     let ct = Client::default()
         .encrypt()
         .plaintext(plaintext)
-        .encryption_context(ec)
+        .set_encryption_context(Some(ec))
         .keyring(keyring.clone())
         .send()
         .await
@@ -504,7 +504,7 @@ pub async fn round_trip_with_ec(plaintext: &[u8], ec: EncryptionContext) -> Decr
     let ct = esdk
         .encrypt()
         .plaintext(plaintext)
-        .encryption_context(ec.clone())
+        .set_encryption_context(Some(ec.clone()))
         .keyring(keyring.clone())
         .send()
         .await
@@ -512,7 +512,7 @@ pub async fn round_trip_with_ec(plaintext: &[u8], ec: EncryptionContext) -> Decr
         .into_ciphertext();
     esdk.decrypt()
         .ciphertext(&ct)
-        .encryption_context(ec)
+        .set_encryption_context(Some(ec))
         .keyring(keyring)
         .send()
         .await

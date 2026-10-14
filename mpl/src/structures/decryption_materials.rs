@@ -144,7 +144,7 @@ impl DecryptionMaterialsBuilder {
     }
 
     /// Set or clear the algorithm suite from an `Option`.
-    /// To set a value, use [`Self::algorithm_suite_id`].
+    /// To add one entry, use [`Self::algorithm_suite_id`].
     #[must_use]
     pub const fn set_algorithm_suite_id(
         mut self,
@@ -160,16 +160,20 @@ impl DecryptionMaterialsBuilder {
         &self.algorithm_suite_id
     }
 
-    /// Set the encryption context.
+    /// Adds a key-value pair to the encryption context.
+    ///
+    /// To override the contents of this collection use [`set_encryption_context`](Self::set_encryption_context).
     /// Defaults to empty.
     #[must_use]
-    pub fn encryption_context(mut self, encryption_context: impl Into<EncryptionContext>) -> Self {
-        self.encryption_context = Some(encryption_context.into());
+    pub fn encryption_context(mut self, k: impl Into<String>, v: impl Into<String>) -> Self {
+        self.encryption_context
+            .get_or_insert_with(EncryptionContext::new)
+            .insert(k, v);
         self
     }
 
     /// Set or clear the encryption context from an `Option`.
-    /// To set a value, use [`Self::encryption_context`].
+    /// To add one entry, use [`Self::encryption_context`].
     #[must_use]
     pub fn set_encryption_context(mut self, encryption_context: Option<EncryptionContext>) -> Self {
         self.encryption_context = encryption_context;
@@ -183,24 +187,20 @@ impl DecryptionMaterialsBuilder {
         &self.encryption_context
     }
 
-    /// Set the required encryption context keys.
+    /// Appends an item to the required encryption context keys.
+    ///
+    /// To override the contents of this collection use [`set_required_encryption_context_keys`](Self::set_required_encryption_context_keys).
     /// Defaults to none.
     #[must_use]
-    pub fn required_encryption_context_keys(
-        mut self,
-        required_encryption_context_keys: impl IntoIterator<Item = impl Into<String>>,
-    ) -> Self {
-        self.required_encryption_context_keys = Some(
-            required_encryption_context_keys
-                .into_iter()
-                .map(Into::into)
-                .collect(),
-        );
+    pub fn required_encryption_context_keys(mut self, input: impl Into<String>) -> Self {
+        self.required_encryption_context_keys
+            .get_or_insert_with(BTreeSet::new)
+            .insert(input.into());
         self
     }
 
     /// Set or clear the required encryption context keys from an `Option`.
-    /// To set a value, use [`Self::required_encryption_context_keys`].
+    /// To add one entry, use [`Self::required_encryption_context_keys`].
     #[must_use]
     pub fn set_required_encryption_context_keys(
         mut self,
@@ -225,7 +225,7 @@ impl DecryptionMaterialsBuilder {
     }
 
     /// Set or clear the plaintext data key from an `Option`.
-    /// To set a value, use [`Self::plaintext_data_key`].
+    /// To add one entry, use [`Self::plaintext_data_key`].
     #[must_use]
     pub fn set_plaintext_data_key(mut self, plaintext_data_key: Option<PlaintextDataKey>) -> Self {
         self.plaintext_data_key = plaintext_data_key;
@@ -246,7 +246,7 @@ impl DecryptionMaterialsBuilder {
     }
 
     /// Set or clear the verification key from an `Option`.
-    /// To set a value, use [`Self::verification_key`].
+    /// To add one entry, use [`Self::verification_key`].
     #[must_use]
     pub fn set_verification_key(mut self, verification_key: Option<VerificationKey>) -> Self {
         self.verification_key = verification_key;
@@ -270,7 +270,7 @@ impl DecryptionMaterialsBuilder {
     }
 
     /// Set or clear the symmetric signing key from an `Option`.
-    /// To set a value, use [`Self::symmetric_signing_key`].
+    /// To add one entry, use [`Self::symmetric_signing_key`].
     #[must_use]
     pub fn set_symmetric_signing_key(
         mut self,

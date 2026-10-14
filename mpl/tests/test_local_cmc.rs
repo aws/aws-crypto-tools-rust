@@ -118,7 +118,7 @@ fn make_branch_key_materials() -> BranchKeyMaterials {
         .branch_key([0u8; 32])
         .branch_key_id("test-branch-key-id".to_string())
         .branch_key_version("00000000-0000-4000-8000-000000000000".to_string())
-        .encryption_context(EncryptionContext::new())
+        .set_encryption_context(Some(EncryptionContext::new()))
         .build()
         .expect("constructing branch key materials")
 }
@@ -126,7 +126,7 @@ fn make_branch_key_materials() -> BranchKeyMaterials {
 fn make_beacon_key_materials() -> BeaconKeyMaterials {
     BeaconKeyMaterials::builder()
         .beacon_key_id("test-beacon-key-id".to_string())
-        .encryption_context(EncryptionContext::new())
+        .set_encryption_context(Some(EncryptionContext::new()))
         .build()
         .unwrap()
 }

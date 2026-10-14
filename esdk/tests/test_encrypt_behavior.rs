@@ -238,7 +238,7 @@ async fn test_cmm_request_encryption_context() {
     let output = Client::default()
         .encrypt()
         .plaintext(b"ec test")
-        .encryption_context(ec.clone())
+        .set_encryption_context(Some(ec.clone()))
         .keyring(keyring.clone())
         .send()
         .await
@@ -551,7 +551,7 @@ async fn test_output_includes_encryption_context() {
     let output = Client::default()
         .encrypt()
         .plaintext(b"output ec test")
-        .encryption_context(ec)
+        .set_encryption_context(Some(ec))
         .keyring(keyring)
         .send()
         .await
@@ -597,7 +597,7 @@ async fn test_reserved_encryption_context_prefix_must_fail() {
     let result = Client::default()
         .encrypt()
         .plaintext(b"should fail")
-        .encryption_context(ec)
+        .set_encryption_context(Some(ec))
         .keyring(keyring)
         .send()
         .await;
@@ -622,7 +622,7 @@ async fn test_reserved_encryption_context_prefix_boundary_no_dash() {
     let result = Client::default()
         .encrypt()
         .plaintext(b"should succeed")
-        .encryption_context(ec)
+        .set_encryption_context(Some(ec))
         .keyring(keyring)
         .send()
         .await;

@@ -201,7 +201,7 @@ impl Keyring for ShortDataKeyKeyring {
         let short = m.algorithm_suite().encryption_key_length() / 2;
         let err = EncryptionMaterials::builder()
             .algorithm_suite_id(m.algorithm_suite_id())
-            .encryption_context(m.encryption_context().clone())
+            .set_encryption_context(Some(m.encryption_context().clone()))
             .plaintext_data_key(PlaintextDataKey::new(vec![0; short]))
             .build()
             .expect_err("build must reject a short plaintext data key");
@@ -213,7 +213,7 @@ impl Keyring for ShortDataKeyKeyring {
         let short = m.algorithm_suite().encryption_key_length() / 2;
         let err = DecryptionMaterials::builder()
             .algorithm_suite_id(m.algorithm_suite_id())
-            .encryption_context(m.encryption_context().clone())
+            .set_encryption_context(Some(m.encryption_context().clone()))
             .plaintext_data_key(PlaintextDataKey::new(vec![0; short]))
             .build()
             .expect_err("build must reject a short plaintext data key");

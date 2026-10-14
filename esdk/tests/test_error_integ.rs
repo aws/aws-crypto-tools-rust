@@ -215,7 +215,7 @@ async fn integ_create_key_with_an_existing_id_is_an_already_exists_conflict() {
         .await
         .create_key()
         .branch_key_id(BRANCH_KEY_ID)
-        .encryption_context(EncryptionContext::from_iter([("purpose", "test")]))
+        .set_encryption_context(Some(EncryptionContext::from_iter([("purpose", "test")])))
         .send()
         .await
         .unwrap_err();

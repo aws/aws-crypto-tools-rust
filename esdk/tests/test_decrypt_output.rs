@@ -19,7 +19,7 @@ async fn test_decrypt_output_includes_encryption_context() {
     let ct = Client::default()
         .encrypt()
         .plaintext(b"ec test")
-        .encryption_context(ec.clone())
+        .set_encryption_context(Some(ec.clone()))
         .keyring(keyring.clone())
         .send()
         .await
@@ -29,7 +29,7 @@ async fn test_decrypt_output_includes_encryption_context() {
     let result = Client::default()
         .decrypt()
         .ciphertext(&ct)
-        .encryption_context(ec.clone())
+        .set_encryption_context(Some(ec.clone()))
         .keyring(keyring.clone())
         .send()
         .await

@@ -38,7 +38,7 @@ impl Cmm for SuiteOverrideCmm {
         // bound to the overridden suite.
         self.inner
             .get_encryption_materials()
-            .encryption_context(request.encryption_context().clone())
+            .set_encryption_context(Some(request.encryption_context().clone()))
             .commitment_policy(request.commitment_policy())
             .algorithm_suite_id(aws_crypto_mpl::structures::AlgorithmSuiteId::Esdk(
                 self.suite,

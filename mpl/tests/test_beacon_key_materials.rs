@@ -10,7 +10,7 @@ fn test_construction_required_fields_only() {
     // Type-system enforcement (implication in source); test exists for regression coverage.
     let mat = BeaconKeyMaterials::builder()
         .beacon_key_id("beacon-id".to_string())
-        .encryption_context(EncryptionContext::new())
+        .set_encryption_context(Some(EncryptionContext::new()))
         .build()
         .unwrap();
     assert_eq!(mat.beacon_key_id(), "beacon-id");
@@ -26,9 +26,9 @@ fn test_construction_with_optional_fields() {
     // Type-system enforcement (implication in source); test exists for regression coverage.
     let mat = BeaconKeyMaterials::builder()
         .beacon_key_id("beacon-id".to_string())
-        .encryption_context(EncryptionContext::new())
+        .set_encryption_context(Some(EncryptionContext::new()))
         .beacon_key(b"beacon-key-bytes".to_vec())
-        .hmac_keys(hmac_keys)
+        .set_hmac_keys(Some(hmac_keys))
         .build()
         .unwrap();
     assert_eq!(mat.beacon_key().unwrap(), b"beacon-key-bytes");
@@ -42,9 +42,9 @@ fn test_debug_redacts_secret_material() {
 
     let mat = BeaconKeyMaterials::builder()
         .beacon_key_id("id".to_string())
-        .encryption_context(EncryptionContext::new())
+        .set_encryption_context(Some(EncryptionContext::new()))
         .beacon_key(b"secret-beacon".to_vec())
-        .hmac_keys(hmac_keys)
+        .set_hmac_keys(Some(hmac_keys))
         .build()
         .unwrap();
     let debug_output = format!("{:?}", mat);
@@ -57,7 +57,7 @@ fn test_debug_redacts_secret_material() {
 fn test_beacon_key_getter_none_path() {
     let mat = BeaconKeyMaterials::builder()
         .beacon_key_id("beacon-none".to_string())
-        .encryption_context(EncryptionContext::new())
+        .set_encryption_context(Some(EncryptionContext::new()))
         .build()
         .unwrap();
     assert!(mat.beacon_key().is_none());
@@ -67,7 +67,7 @@ fn test_beacon_key_getter_none_path() {
 fn test_beacon_key_getter_some_path() {
     let mat = BeaconKeyMaterials::builder()
         .beacon_key_id("beacon-some".to_string())
-        .encryption_context(EncryptionContext::new())
+        .set_encryption_context(Some(EncryptionContext::new()))
         .beacon_key(b"test-key-data".to_vec())
         .build()
         .unwrap();
@@ -80,7 +80,7 @@ fn test_beacon_encryption_context_getter() {
     ec.insert("k", "v");
     let mat = BeaconKeyMaterials::builder()
         .beacon_key_id("id".to_string())
-        .encryption_context(ec)
+        .set_encryption_context(Some(ec))
         .build()
         .unwrap();
     assert_eq!(mat.encryption_context().len(), 1);
@@ -90,7 +90,7 @@ fn test_beacon_encryption_context_getter() {
 fn build_rejects_an_empty_beacon_key_id() {
     let err = BeaconKeyMaterials::builder()
         .beacon_key_id("")
-        .encryption_context(EncryptionContext::new())
+        .set_encryption_context(Some(EncryptionContext::new()))
         .build()
         .unwrap_err();
     assert!(err.is_validation(), "{err:?}");

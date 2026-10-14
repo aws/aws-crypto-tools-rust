@@ -50,7 +50,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let result = esdk
         .encrypt()
         .plaintext(plaintext)
-        .encryption_context(encryption_context.clone())
+        .set_encryption_context(Some(encryption_context.clone()))
         .keyring(keyring.clone())
         .send()
         .await;
@@ -78,7 +78,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let decrypted = esdk
         .decrypt()
         .ciphertext(encrypted.ciphertext())
-        .encryption_context(encryption_context)
+        .set_encryption_context(Some(encryption_context))
         .keyring(keyring)
         .send()
         .await?;

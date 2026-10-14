@@ -23,7 +23,7 @@ async fn test_encrypt_decrypt() {
     let encrypt_output = esdk
         .encrypt()
         .plaintext(plaintext)
-        .encryption_context(ec.clone())
+        .set_encryption_context(Some(ec.clone()))
         .keyring(keyring.clone())
         .send()
         .await
@@ -36,7 +36,7 @@ async fn test_encrypt_decrypt() {
     let decrypt_output = esdk
         .decrypt()
         .ciphertext(encrypt_output.ciphertext())
-        .encryption_context(ec)
+        .set_encryption_context(Some(ec))
         .keyring(keyring)
         .send()
         .await
@@ -73,7 +73,7 @@ async fn test_encrypt_decrypt_short() {
     let esdk_ciphertext = esdk
         .encrypt()
         .plaintext(plaintext)
-        .encryption_context(ec.clone())
+        .set_encryption_context(Some(ec.clone()))
         .keyring(keyring.clone())
         .send()
         .await
@@ -90,7 +90,7 @@ async fn test_encrypt_decrypt_short() {
     let err = esdk
         .decrypt()
         .ciphertext(&esdk_ciphertext[..cipher_len - 1])
-        .encryption_context(ec)
+        .set_encryption_context(Some(ec))
         .keyring(keyring)
         .send()
         .await
@@ -114,7 +114,7 @@ async fn test_encrypt_decrypt_ec() {
     let esdk_ciphertext = esdk
         .encrypt()
         .plaintext(plaintext)
-        .encryption_context(encryption_context)
+        .set_encryption_context(Some(encryption_context))
         .keyring(keyring.clone())
         .send()
         .await
@@ -123,7 +123,7 @@ async fn test_encrypt_decrypt_ec() {
     let decrypt_output = esdk
         .decrypt()
         .ciphertext(&esdk_ciphertext)
-        .encryption_context(EncryptionContext::new())
+        .set_encryption_context(Some(EncryptionContext::new()))
         .keyring(keyring)
         .send()
         .await
@@ -146,7 +146,7 @@ async fn test_encrypt_decrypt_bad_ec() {
     let encrypt_output = Client::default()
         .encrypt()
         .plaintext(plaintext)
-        .encryption_context(encryption_context)
+        .set_encryption_context(Some(encryption_context))
         .keyring(keyring)
         .send()
         .await;
@@ -200,7 +200,7 @@ async fn test_encrypt_decrypt_varied_frame_lengths() {
         let esdk_ciphertext = esdk
             .encrypt()
             .plaintext(plaintext)
-            .encryption_context(ec.clone())
+            .set_encryption_context(Some(ec.clone()))
             .keyring(keyring.clone())
             .frame_length(frame_length)
             .send()
@@ -210,7 +210,7 @@ async fn test_encrypt_decrypt_varied_frame_lengths() {
         let decrypt_output = esdk
             .decrypt()
             .ciphertext(&esdk_ciphertext)
-            .encryption_context(ec.clone())
+            .set_encryption_context(Some(ec.clone()))
             .keyring(keyring.clone())
             .send()
             .await

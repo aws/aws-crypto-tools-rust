@@ -37,7 +37,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let branch_key_context = EncryptionContext::from([("purpose", "example")]);
     let branch_key_id = key_store
         .create_key()
-        .encryption_context(branch_key_context)
+        .set_encryption_context(Some(branch_key_context))
         .send()
         .await?
         .into_branch_key_id();
@@ -56,7 +56,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let encrypt_with = async |keyring: HierarchicalKeyring| {
         esdk.encrypt()
             .plaintext(plaintext)
-            .encryption_context(encryption_context.clone())
+            .set_encryption_context(Some(encryption_context.clone()))
             .keyring(keyring)
             .send()
             .await
@@ -80,7 +80,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let decrypted = esdk
             .decrypt()
             .ciphertext(encrypted.ciphertext())
-            .encryption_context(encryption_context.clone())
+            .set_encryption_context(Some(encryption_context.clone()))
             .keyring(keyring.clone())
             .send()
             .await?;

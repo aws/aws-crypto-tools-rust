@@ -79,16 +79,20 @@ pub struct GetEncryptionMaterialsInputBuilder {
 }
 
 impl GetEncryptionMaterialsInputBuilder {
-    /// Set the encryption context the caller supplied.
+    /// Adds a key-value pair to the encryption context the caller supplied.
+    ///
+    /// To override the contents of this collection use [`set_encryption_context`](Self::set_encryption_context).
     /// Required, and may be empty.
     #[must_use]
-    pub fn encryption_context(mut self, encryption_context: impl Into<EncryptionContext>) -> Self {
-        self.encryption_context = Some(encryption_context.into());
+    pub fn encryption_context(mut self, k: impl Into<String>, v: impl Into<String>) -> Self {
+        self.encryption_context
+            .get_or_insert_with(Default::default)
+            .insert(k, v);
         self
     }
 
     /// Set or clear the encryption context from an `Option`.
-    /// To set a value, use [`Self::encryption_context`].
+    /// To add one entry, use [`Self::encryption_context`].
     #[must_use]
     pub fn set_encryption_context(mut self, encryption_context: Option<EncryptionContext>) -> Self {
         self.encryption_context = encryption_context;
@@ -110,7 +114,7 @@ impl GetEncryptionMaterialsInputBuilder {
     }
 
     /// Set or clear the commitment policy from an `Option`.
-    /// To set a value, use [`Self::commitment_policy`].
+    /// To add one entry, use [`Self::commitment_policy`].
     #[must_use]
     pub fn set_commitment_policy(mut self, commitment_policy: Option<CommitmentPolicy>) -> Self {
         self.commitment_policy = commitment_policy;
@@ -132,7 +136,7 @@ impl GetEncryptionMaterialsInputBuilder {
     }
 
     /// Set or clear the algorithm suite from an `Option`.
-    /// To set a value, use [`Self::algorithm_suite_id`].
+    /// To add one entry, use [`Self::algorithm_suite_id`].
     #[must_use]
     pub fn set_algorithm_suite_id(mut self, algorithm_suite_id: Option<AlgorithmSuiteId>) -> Self {
         self.algorithm_suite_id = algorithm_suite_id;
@@ -145,23 +149,19 @@ impl GetEncryptionMaterialsInputBuilder {
         &self.algorithm_suite_id
     }
 
-    /// Set the encryption context keys that must be supplied again at decrypt time.
+    /// Appends an item to the encryption context keys that must be supplied again at decrypt time.
+    ///
+    /// To override the contents of this collection use [`set_required_encryption_context_keys`](Self::set_required_encryption_context_keys).
     #[must_use]
-    pub fn required_encryption_context_keys(
-        mut self,
-        required_encryption_context_keys: impl IntoIterator<Item = impl Into<String>>,
-    ) -> Self {
-        self.required_encryption_context_keys = Some(
-            required_encryption_context_keys
-                .into_iter()
-                .map(Into::into)
-                .collect(),
-        );
+    pub fn required_encryption_context_keys(mut self, input: impl Into<String>) -> Self {
+        self.required_encryption_context_keys
+            .get_or_insert_with(Default::default)
+            .insert(input.into());
         self
     }
 
     /// Set or clear the required encryption context keys from an `Option`.
-    /// To set a value, use [`Self::required_encryption_context_keys`].
+    /// To add one entry, use [`Self::required_encryption_context_keys`].
     #[must_use]
     pub fn set_required_encryption_context_keys(
         mut self,
@@ -186,7 +186,7 @@ impl GetEncryptionMaterialsInputBuilder {
     }
 
     /// Set or clear the maximum plaintext length from an `Option`.
-    /// To set a value, use [`Self::max_plaintext_length`].
+    /// To add one entry, use [`Self::max_plaintext_length`].
     #[must_use]
     pub fn set_max_plaintext_length(mut self, max_plaintext_length: Option<u64>) -> Self {
         self.max_plaintext_length = max_plaintext_length;
@@ -261,7 +261,7 @@ impl GetEncryptionMaterialsOutputBuilder {
     }
 
     /// Set or clear the encryption materials from an `Option`.
-    /// To set a value, use [`Self::encryption_materials`].
+    /// To add one entry, use [`Self::encryption_materials`].
     #[must_use]
     pub fn set_encryption_materials(
         mut self,
@@ -359,7 +359,7 @@ impl DecryptMaterialsInputBuilder {
     }
 
     /// Set or clear the algorithm suite from an `Option`.
-    /// To set a value, use [`Self::algorithm_suite_id`].
+    /// To add one entry, use [`Self::algorithm_suite_id`].
     #[must_use]
     pub fn set_algorithm_suite_id(mut self, algorithm_suite_id: Option<AlgorithmSuiteId>) -> Self {
         self.algorithm_suite_id = algorithm_suite_id;
@@ -381,7 +381,7 @@ impl DecryptMaterialsInputBuilder {
     }
 
     /// Set or clear the commitment policy from an `Option`.
-    /// To set a value, use [`Self::commitment_policy`].
+    /// To add one entry, use [`Self::commitment_policy`].
     #[must_use]
     pub fn set_commitment_policy(mut self, commitment_policy: Option<CommitmentPolicy>) -> Self {
         self.commitment_policy = commitment_policy;
@@ -394,19 +394,20 @@ impl DecryptMaterialsInputBuilder {
         &self.commitment_policy
     }
 
-    /// Set the encrypted data keys in the message header.
+    /// Appends an item to the encrypted data keys in the message header.
+    ///
+    /// To override the contents of this collection use [`set_encrypted_data_keys`](Self::set_encrypted_data_keys).
     /// Required.
     #[must_use]
-    pub fn encrypted_data_keys(
-        mut self,
-        encrypted_data_keys: impl Into<Vec<EncryptedDataKey>>,
-    ) -> Self {
-        self.encrypted_data_keys = Some(encrypted_data_keys.into());
+    pub fn encrypted_data_keys(mut self, input: EncryptedDataKey) -> Self {
+        self.encrypted_data_keys
+            .get_or_insert_with(Default::default)
+            .push(input);
         self
     }
 
     /// Set or clear the encrypted data keys from an `Option`.
-    /// To set a value, use [`Self::encrypted_data_keys`].
+    /// To add one entry, use [`Self::encrypted_data_keys`].
     #[must_use]
     pub fn set_encrypted_data_keys(
         mut self,
@@ -422,16 +423,20 @@ impl DecryptMaterialsInputBuilder {
         &self.encrypted_data_keys
     }
 
-    /// Set the encryption context in the message header.
+    /// Adds a key-value pair to the encryption context in the message header.
+    ///
+    /// To override the contents of this collection use [`set_encryption_context`](Self::set_encryption_context).
     /// Required, and may be empty.
     #[must_use]
-    pub fn encryption_context(mut self, encryption_context: impl Into<EncryptionContext>) -> Self {
-        self.encryption_context = Some(encryption_context.into());
+    pub fn encryption_context(mut self, k: impl Into<String>, v: impl Into<String>) -> Self {
+        self.encryption_context
+            .get_or_insert_with(Default::default)
+            .insert(k, v);
         self
     }
 
     /// Set or clear the encryption context from an `Option`.
-    /// To set a value, use [`Self::encryption_context`].
+    /// To add one entry, use [`Self::encryption_context`].
     #[must_use]
     pub fn set_encryption_context(mut self, encryption_context: Option<EncryptionContext>) -> Self {
         self.encryption_context = encryption_context;
@@ -455,7 +460,7 @@ impl DecryptMaterialsInputBuilder {
     }
 
     /// Set or clear the reproduced encryption context from an `Option`.
-    /// To set a value, use [`Self::reproduced_encryption_context`].
+    /// To add one entry, use [`Self::reproduced_encryption_context`].
     #[must_use]
     pub fn set_reproduced_encryption_context(
         mut self,
@@ -533,7 +538,7 @@ impl DecryptMaterialsOutputBuilder {
     }
 
     /// Set or clear the decryption materials from an `Option`.
-    /// To set a value, use [`Self::decryption_materials`].
+    /// To add one entry, use [`Self::decryption_materials`].
     #[must_use]
     pub fn set_decryption_materials(
         mut self,

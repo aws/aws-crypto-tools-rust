@@ -1262,7 +1262,9 @@ fn encrypt(input: &ffi::EncryptInput) -> Result<ffi::EncryptOutput, String> {
         //= spec/shim/esdk-shim.md#encrypt-inputs
         //# - MUST provide the target-supplied encryption context to the core ESDK,
         //# converted as defined in [Encryption context](#encryption-context).
-        .encryption_context(encryption_context_target_to_core(&input.encryption_context))
+        .set_encryption_context(Some(encryption_context_target_to_core(
+            &input.encryption_context,
+        )))
         //= spec/shim/esdk-shim.md#materials-source
         //= type=implication
         //= reason=The shim sets exactly one materials-source field (keyring) and never sets the cmm field.
@@ -1302,7 +1304,9 @@ fn decrypt(input: &ffi::DecryptInput) -> Result<ffi::DecryptOutput, String> {
         //= spec/shim/esdk-shim.md#decrypt-inputs
         //# - MUST provide the target-supplied encryption context to the core ESDK,
         //# converted as defined in [Encryption context](#encryption-context).
-        .encryption_context(encryption_context_target_to_core(&input.encryption_context))
+        .set_encryption_context(Some(encryption_context_target_to_core(
+            &input.encryption_context,
+        )))
         .keyring(keyring.inner.clone())
         .send();
     let output = TOKIO_RUNTIME.block_on(output).map_err(core_err)?;
@@ -1892,7 +1896,9 @@ fn create_encrypt_stream(input: &ffi::EncryptInput) -> Result<Box<EncryptStream>
         .esdk
         .encrypt_stream()
         .keyring(keyring.inner.clone())
-        .encryption_context(encryption_context_target_to_core(&input.encryption_context))
+        .set_encryption_context(Some(encryption_context_target_to_core(
+            &input.encryption_context,
+        )))
         .set_algorithm_suite_id(settings.algorithm_suite_id)
         .set_frame_length(settings.frame_length);
     Ok(Box::new(EncryptStream {
@@ -1925,7 +1931,9 @@ fn create_decrypt_stream(input: &ffi::DecryptInput) -> Result<Box<DecryptStream>
     let builder = decrypt_client(input)?
         .decrypt_stream()
         .keyring(keyring.inner.clone())
-        .encryption_context(encryption_context_target_to_core(&input.encryption_context));
+        .set_encryption_context(Some(encryption_context_target_to_core(
+            &input.encryption_context,
+        )));
     Ok(Box::new(DecryptStream {
         state: StreamState::spawn("decrypt_stream", move |mut reader, mut writer| {
             let output = TOKIO_RUNTIME

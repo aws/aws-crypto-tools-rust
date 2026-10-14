@@ -82,7 +82,7 @@ impl BranchKeyMaterialsBuilder {
     }
 
     /// Set or clear the branch key from an `Option`.
-    /// To set a value, use [`Self::branch_key`].
+    /// To add one entry, use [`Self::branch_key`].
     #[must_use]
     pub const fn set_branch_key(mut self, branch_key: Option<[u8; 32]>) -> Self {
         self.branch_key = branch_key;
@@ -104,7 +104,7 @@ impl BranchKeyMaterialsBuilder {
     }
 
     /// Set or clear the branch key identifier from an `Option`.
-    /// To set a value, use [`Self::branch_key_id`].
+    /// To add one entry, use [`Self::branch_key_id`].
     #[must_use]
     pub fn set_branch_key_id(mut self, branch_key_id: Option<String>) -> Self {
         self.branch_key_id = branch_key_id;
@@ -126,7 +126,7 @@ impl BranchKeyMaterialsBuilder {
     }
 
     /// Set or clear the branch key version from an `Option`.
-    /// To set a value, use [`Self::branch_key_version`].
+    /// To add one entry, use [`Self::branch_key_version`].
     #[must_use]
     pub fn set_branch_key_version(mut self, branch_key_version: Option<String>) -> Self {
         self.branch_key_version = branch_key_version;
@@ -139,16 +139,20 @@ impl BranchKeyMaterialsBuilder {
         &self.branch_key_version
     }
 
-    /// Set the custom encryption context of the branch key.
+    /// Adds a key-value pair to the custom encryption context of the branch key.
+    ///
+    /// To override the contents of this collection use [`set_encryption_context`](Self::set_encryption_context).
     /// Required.
     #[must_use]
-    pub fn encryption_context(mut self, encryption_context: impl Into<EncryptionContext>) -> Self {
-        self.encryption_context = Some(encryption_context.into());
+    pub fn encryption_context(mut self, k: impl Into<String>, v: impl Into<String>) -> Self {
+        self.encryption_context
+            .get_or_insert_with(Default::default)
+            .insert(k, v);
         self
     }
 
     /// Set or clear the encryption context from an `Option`.
-    /// To set a value, use [`Self::encryption_context`].
+    /// To add one entry, use [`Self::encryption_context`].
     #[must_use]
     pub fn set_encryption_context(mut self, encryption_context: Option<EncryptionContext>) -> Self {
         self.encryption_context = encryption_context;

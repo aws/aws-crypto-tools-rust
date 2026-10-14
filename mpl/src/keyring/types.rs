@@ -50,7 +50,7 @@ impl OnEncryptInputBuilder {
     }
 
     /// Set or clear the materials from an `Option`.
-    /// To set a value, use [`Self::materials`].
+    /// To add one entry, use [`Self::materials`].
     #[must_use]
     pub fn set_materials(mut self, materials: Option<EncryptionMaterials>) -> Self {
         self.materials = materials;
@@ -118,7 +118,7 @@ impl OnEncryptOutputBuilder {
     }
 
     /// Set or clear the materials from an `Option`.
-    /// To set a value, use [`Self::materials`].
+    /// To add one entry, use [`Self::materials`].
     #[must_use]
     pub fn set_materials(mut self, materials: Option<EncryptionMaterials>) -> Self {
         self.materials = materials;
@@ -200,7 +200,7 @@ impl OnDecryptInputBuilder {
     }
 
     /// Set or clear the materials from an `Option`.
-    /// To set a value, use [`Self::materials`].
+    /// To add one entry, use [`Self::materials`].
     #[must_use]
     pub fn set_materials(mut self, materials: Option<DecryptionMaterials>) -> Self {
         self.materials = materials;
@@ -213,19 +213,20 @@ impl OnDecryptInputBuilder {
         &self.materials
     }
 
-    /// Set the encrypted data keys to try.
+    /// Appends an item to the encrypted data keys to try.
+    ///
+    /// To override the contents of this collection use [`set_encrypted_data_keys`](Self::set_encrypted_data_keys).
     /// Required.
     #[must_use]
-    pub fn encrypted_data_keys(
-        mut self,
-        encrypted_data_keys: impl Into<Vec<EncryptedDataKey>>,
-    ) -> Self {
-        self.encrypted_data_keys = Some(encrypted_data_keys.into());
+    pub fn encrypted_data_keys(mut self, input: EncryptedDataKey) -> Self {
+        self.encrypted_data_keys
+            .get_or_insert_with(Default::default)
+            .push(input);
         self
     }
 
     /// Set or clear the encrypted data keys from an `Option`.
-    /// To set a value, use [`Self::encrypted_data_keys`].
+    /// To add one entry, use [`Self::encrypted_data_keys`].
     #[must_use]
     pub fn set_encrypted_data_keys(
         mut self,
@@ -297,7 +298,7 @@ impl OnDecryptOutputBuilder {
     }
 
     /// Set or clear the materials from an `Option`.
-    /// To set a value, use [`Self::materials`].
+    /// To add one entry, use [`Self::materials`].
     #[must_use]
     pub fn set_materials(mut self, materials: Option<DecryptionMaterials>) -> Self {
         self.materials = materials;

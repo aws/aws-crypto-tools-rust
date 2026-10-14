@@ -385,7 +385,7 @@ async fn test_cmm_decrypt_call_receives_header_edks_and_ec() {
     let ct = Client::default()
         .encrypt()
         .plaintext(pt)
-        .encryption_context(ec)
+        .set_encryption_context(Some(ec))
         .keyring(keyring.clone())
         .send()
         .await

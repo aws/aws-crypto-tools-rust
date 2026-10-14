@@ -240,7 +240,7 @@ async fn test_streamed_release_parsed_header_after_verification() {
     let ct = Client::default()
         .encrypt()
         .plaintext(plaintext)
-        .encryption_context(ec)
+        .set_encryption_context(Some(ec))
         .keyring(keyring.clone())
         .send()
         .await

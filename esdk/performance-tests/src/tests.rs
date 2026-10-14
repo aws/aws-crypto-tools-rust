@@ -33,7 +33,7 @@ impl EsdkBenchmark {
         let encrypt_request = esdk_client
             .encrypt()
             .plaintext(data)
-            .encryption_context(Self::benchmark_encryption_context(data.len()))
+            .set_encryption_context(Some(Self::benchmark_encryption_context(data.len())))
             .keyring(keyring.clone());
 
         let encrypt_start = Instant::now();

@@ -55,16 +55,20 @@ pub struct GetBranchKeyIdInputBuilder {
 }
 
 impl GetBranchKeyIdInputBuilder {
-    /// Set the encryption context of the message being encrypted or decrypted.
+    /// Adds a key-value pair to the encryption context of the message being encrypted or decrypted.
+    ///
+    /// To override the contents of this collection use [`set_encryption_context`](Self::set_encryption_context).
     /// Required.
     #[must_use]
-    pub fn encryption_context(mut self, encryption_context: impl Into<EncryptionContext>) -> Self {
-        self.encryption_context = Some(encryption_context.into());
+    pub fn encryption_context(mut self, k: impl Into<String>, v: impl Into<String>) -> Self {
+        self.encryption_context
+            .get_or_insert_with(Default::default)
+            .insert(k, v);
         self
     }
 
     /// Set or clear the encryption context from an `Option`.
-    /// To set a value, use [`Self::encryption_context`].
+    /// To add one entry, use [`Self::encryption_context`].
     #[must_use]
     pub fn set_encryption_context(mut self, encryption_context: Option<EncryptionContext>) -> Self {
         self.encryption_context = encryption_context;
@@ -132,7 +136,7 @@ impl GetBranchKeyIdOutputBuilder {
     }
 
     /// Set or clear the branch key identifier from an `Option`.
-    /// To set a value, use [`Self::branch_key_id`].
+    /// To add one entry, use [`Self::branch_key_id`].
     #[must_use]
     pub fn set_branch_key_id(mut self, branch_key_id: Option<String>) -> Self {
         self.branch_key_id = branch_key_id;
@@ -232,15 +236,17 @@ impl GetBranchKeyIdFluentBuilder {
         &self.inner
     }
 
-    /// Set the encryption context of the message being encrypted or decrypted.
+    /// Adds a key-value pair to the encryption context of the message being encrypted or decrypted.
+    ///
+    /// To override the contents of this collection use [`set_encryption_context`](Self::set_encryption_context).
     /// Required.
-    pub fn encryption_context(mut self, encryption_context: impl Into<EncryptionContext>) -> Self {
-        self.inner = self.inner.encryption_context(encryption_context);
+    pub fn encryption_context(mut self, k: impl Into<String>, v: impl Into<String>) -> Self {
+        self.inner = self.inner.encryption_context(k, v);
         self
     }
 
     /// Set or clear the encryption context from an `Option`.
-    /// To set a value, use [`Self::encryption_context`].
+    /// To add one entry, use [`Self::encryption_context`].
     pub fn set_encryption_context(mut self, encryption_context: Option<EncryptionContext>) -> Self {
         self.inner = self.inner.set_encryption_context(encryption_context);
         self
@@ -382,7 +388,7 @@ impl HierarchicalKeyringBuilder {
     }
 
     /// Set or clear the key store from an `Option`.
-    /// To set a value, use [`Self::key_store`].
+    /// To add one entry, use [`Self::key_store`].
     #[must_use]
     pub fn set_key_store(mut self, key_store: Option<KeyStoreClient>) -> Self {
         self.key_store = key_store;
@@ -404,7 +410,7 @@ impl HierarchicalKeyringBuilder {
     }
 
     /// Set or clear the TTL from an `Option`.
-    /// To set a value, use [`Self::ttl`].
+    /// To add one entry, use [`Self::ttl`].
     #[must_use]
     pub fn set_ttl(mut self, ttl: Option<Duration>) -> Self {
         self.ttl = ttl;
@@ -426,7 +432,7 @@ impl HierarchicalKeyringBuilder {
     }
 
     /// Set or clear the static branch key id from an `Option`.
-    /// To set a value, use [`Self::branch_key_id`].
+    /// To add one entry, use [`Self::branch_key_id`].
     #[must_use]
     pub fn set_branch_key_id(mut self, branch_key_id: Option<String>) -> Self {
         self.branch_key_id = branch_key_id;
@@ -448,7 +454,7 @@ impl HierarchicalKeyringBuilder {
     }
 
     /// Set or clear the branch key id supplier from an `Option`.
-    /// To set a value, use [`Self::branch_key_id_supplier`].
+    /// To add one entry, use [`Self::branch_key_id_supplier`].
     #[must_use]
     pub fn set_branch_key_id_supplier(mut self, supplier: Option<SharedBranchKeySupplier>) -> Self {
         self.branch_key_id_supplier = supplier;
@@ -474,7 +480,7 @@ impl HierarchicalKeyringBuilder {
     }
 
     /// Set or clear the cache from an `Option`.
-    /// To set a value, use [`Self::cache`].
+    /// To add one entry, use [`Self::cache`].
     #[must_use]
     pub fn set_cache(mut self, cache: Option<SharedCmc>) -> Self {
         self.cache = cache;
@@ -496,7 +502,7 @@ impl HierarchicalKeyringBuilder {
     }
 
     /// Set or clear the partition id from an `Option`.
-    /// To set a value, use [`Self::partition_id`].
+    /// To add one entry, use [`Self::partition_id`].
     #[must_use]
     pub fn set_partition_id(mut self, partition_id: Option<String>) -> Self {
         self.partition_id = partition_id;
@@ -828,7 +834,7 @@ impl HierarchicalKeyring {
         // the supplier path — a static branch key id never pays for it.
         Ok(supplier
             .get_branch_key_id()
-            .encryption_context(encryption_context.clone())
+            .set_encryption_context(Some(encryption_context.clone()))
             .send()
             .await?
             .into_branch_key_id())

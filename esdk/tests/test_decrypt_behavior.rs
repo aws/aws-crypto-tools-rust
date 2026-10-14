@@ -22,7 +22,7 @@ async fn test_decrypt_skips_signature_step_for_non_signing_algorithm() {
     let ct = Client::default()
         .encrypt()
         .plaintext(plaintext)
-        .encryption_context(ec.clone())
+        .set_encryption_context(Some(ec.clone()))
         .keyring(keyring.clone())
         .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
         .send()
@@ -46,7 +46,7 @@ async fn test_decrypt_skips_signature_step_for_non_signing_algorithm() {
     let decrypt_output = Client::default()
         .decrypt()
         .ciphertext(&ct)
-        .encryption_context(ec)
+        .set_encryption_context(Some(ec))
         .keyring(keyring)
         .send()
         .await

@@ -211,7 +211,7 @@ impl Client {
     ///
     /// - The fluent builder is configurable:
     ///   - [`plaintext(&[u8])`](EncryptFluentBuilder::plaintext) / [`set_plaintext(Option<&[u8]>)`](EncryptFluentBuilder::set_plaintext):<br>required: **true**<br>The data to encrypt.<br>
-    ///   - [`encryption_context(impl Into<EncryptionContext>)`](EncryptFluentBuilder::encryption_context) / [`set_encryption_context(Option<EncryptionContext>)`](EncryptFluentBuilder::set_encryption_context):<br>required: **false**<br>Key-value pairs bound to the message. They are authenticated, not encrypted, so never put secrets in them.<br>
+    ///   - [`encryption_context(impl Into<String>, impl Into<String>)`](EncryptFluentBuilder::encryption_context) / [`set_encryption_context(Option<EncryptionContext>)`](EncryptFluentBuilder::set_encryption_context):<br>required: **false**<br>Key-value pairs bound to the message. They are authenticated, not encrypted, so never put secrets in them.<br>
     ///   - [`algorithm_suite_id(AlgorithmSuiteId)`](EncryptFluentBuilder::algorithm_suite_id) / [`set_algorithm_suite_id(Option<AlgorithmSuiteId>)`](EncryptFluentBuilder::set_algorithm_suite_id):<br>required: **false**<br>The algorithm suite to encrypt with. Unset uses the default suite for the client's commitment policy.<br>
     ///   - [`frame_length(NonZeroU32)`](EncryptFluentBuilder::frame_length) / [`set_frame_length(Option<NonZeroU32>)`](EncryptFluentBuilder::set_frame_length):<br>required: **false**<br>Bytes of plaintext per frame. Default is 4096.<br>
     ///   - [`keyring(impl Keyring)`](EncryptFluentBuilder::keyring) / [`set_keyring(Option<SharedKeyring>)`](EncryptFluentBuilder::set_keyring):<br>required: **one of keyring or cmm**<br>The keyring that protects the message's data key. Set exactly one of a keyring or a CMM.<br>
@@ -238,7 +238,7 @@ impl Client {
     ///
     /// - The fluent builder is configurable:
     ///   - [`ciphertext(&[u8])`](DecryptFluentBuilder::ciphertext) / [`set_ciphertext(Option<&[u8]>)`](DecryptFluentBuilder::set_ciphertext):<br>required: **true**<br>The encrypted message to decrypt.<br>
-    ///   - [`encryption_context(impl Into<EncryptionContext>)`](DecryptFluentBuilder::encryption_context) / [`set_encryption_context(Option<EncryptionContext>)`](DecryptFluentBuilder::set_encryption_context):<br>required: **false**<br>Key-value pairs the message's encryption context must contain. Decrypt fails if a pair is missing from the message or has a different value.<br>
+    ///   - [`encryption_context(impl Into<String>, impl Into<String>)`](DecryptFluentBuilder::encryption_context) / [`set_encryption_context(Option<EncryptionContext>)`](DecryptFluentBuilder::set_encryption_context):<br>required: **false**<br>Key-value pairs the message's encryption context must contain. Decrypt fails if a pair is missing from the message or has a different value.<br>
     ///   - [`keyring(impl Keyring)`](DecryptFluentBuilder::keyring) / [`set_keyring(Option<SharedKeyring>)`](DecryptFluentBuilder::set_keyring):<br>required: **one of keyring or cmm**<br>The keyring that protects the message's data key. Set exactly one of a keyring or a CMM.<br>
     ///   - [`cmm(impl Cmm)`](DecryptFluentBuilder::cmm) / [`set_cmm(Option<SharedCmm>)`](DecryptFluentBuilder::set_cmm):<br>required: **one of keyring or cmm**<br>The cryptographic materials manager (CMM) that supplies the message's data key. Set exactly one of a keyring or a CMM.<br>
     /// - On success, responds with [`DecryptOutput`] with field(s):
@@ -262,7 +262,7 @@ impl Client {
     /// Finish with [`send(plaintext, ciphertext)`](EncryptStreamFluentBuilder::send).
     ///
     /// - The fluent builder is configurable:
-    ///   - [`encryption_context(impl Into<EncryptionContext>)`](EncryptStreamFluentBuilder::encryption_context) / [`set_encryption_context(Option<EncryptionContext>)`](EncryptStreamFluentBuilder::set_encryption_context):<br>required: **false**<br>Key-value pairs bound to the message. They are authenticated, not encrypted, so never put secrets in them.<br>
+    ///   - [`encryption_context(impl Into<String>, impl Into<String>)`](EncryptStreamFluentBuilder::encryption_context) / [`set_encryption_context(Option<EncryptionContext>)`](EncryptStreamFluentBuilder::set_encryption_context):<br>required: **false**<br>Key-value pairs bound to the message. They are authenticated, not encrypted, so never put secrets in them.<br>
     ///   - [`algorithm_suite_id(AlgorithmSuiteId)`](EncryptStreamFluentBuilder::algorithm_suite_id) / [`set_algorithm_suite_id(Option<AlgorithmSuiteId>)`](EncryptStreamFluentBuilder::set_algorithm_suite_id):<br>required: **false**<br>The algorithm suite to encrypt with. Unset uses the default suite for the client's commitment policy.<br>
     ///   - [`frame_length(NonZeroU32)`](EncryptStreamFluentBuilder::frame_length) / [`set_frame_length(Option<NonZeroU32>)`](EncryptStreamFluentBuilder::set_frame_length):<br>required: **false**<br>Bytes of plaintext per frame. Default is 4096.<br>
     ///   - [`keyring(impl Keyring)`](EncryptStreamFluentBuilder::keyring) / [`set_keyring(Option<SharedKeyring>)`](EncryptStreamFluentBuilder::set_keyring):<br>required: **one of keyring or cmm**<br>The keyring that protects the message's data key. Set exactly one of a keyring or a CMM.<br>
@@ -285,7 +285,7 @@ impl Client {
     /// Finish with [`send(ciphertext, plaintext)`](DecryptStreamFluentBuilder::send).
     ///
     /// - The fluent builder is configurable:
-    ///   - [`encryption_context(impl Into<EncryptionContext>)`](DecryptStreamFluentBuilder::encryption_context) / [`set_encryption_context(Option<EncryptionContext>)`](DecryptStreamFluentBuilder::set_encryption_context):<br>required: **false**<br>Key-value pairs the message's encryption context must contain. Decrypt fails if a pair is missing from the message or has a different value.<br>
+    ///   - [`encryption_context(impl Into<String>, impl Into<String>)`](DecryptStreamFluentBuilder::encryption_context) / [`set_encryption_context(Option<EncryptionContext>)`](DecryptStreamFluentBuilder::set_encryption_context):<br>required: **false**<br>Key-value pairs the message's encryption context must contain. Decrypt fails if a pair is missing from the message or has a different value.<br>
     ///   - [`keyring(impl Keyring)`](DecryptStreamFluentBuilder::keyring) / [`set_keyring(Option<SharedKeyring>)`](DecryptStreamFluentBuilder::set_keyring):<br>required: **one of keyring or cmm**<br>The keyring that protects the message's data key. Set exactly one of a keyring or a CMM.<br>
     ///   - [`cmm(impl Cmm)`](DecryptStreamFluentBuilder::cmm) / [`set_cmm(Option<SharedCmm>)`](DecryptStreamFluentBuilder::set_cmm):<br>required: **one of keyring or cmm**<br>The cryptographic materials manager (CMM) that supplies the message's data key. Set exactly one of a keyring or a CMM.<br>
     /// - On success, responds with [`DecryptStreamOutput`] with field(s):
@@ -303,6 +303,33 @@ impl Client {
 /// Add a member's setter, `set_` setter and getter, each documented with `doc`,
 /// all forwarding to the wrapped input builder.
 macro_rules! member {
+    (
+        $(#[doc = $doc:expr])+
+        map $name:ident, $set:ident, $get:ident -> $ty:ty
+    ) => {
+        $(#[doc = $doc])+
+        ///
+        /// Adds one pair. To replace the whole map, use the `set_` setter.
+        pub fn $name(mut self, k: impl Into<String>, v: impl Into<String>) -> Self {
+            let mut map = self.inner.$get().clone().unwrap_or_default();
+            map.insert(k, v);
+            self.inner = self.inner.$set(Some(map));
+            self
+        }
+
+        $(#[doc = $doc])+
+        pub fn $set(mut self, input: Option<$ty>) -> Self {
+            self.inner = self.inner.$set(input);
+            self
+        }
+
+        $(#[doc = $doc])+
+        #[must_use]
+        #[allow(clippy::ref_option, clippy::ref_option_ref)] // AWS SDK for Rust getter shape
+        pub const fn $get(&self) -> &Option<$ty> {
+            self.inner.$get()
+        }
+    };
     (
         $(#[doc = $doc:expr])+
         $name:ident($arg:ty), $set:ident, $get:ident -> $ty:ty
@@ -351,7 +378,7 @@ macro_rules! encrypt_members {
             /// Key-value pairs bound to the message.
             /// They are authenticated, not encrypted, so never put secrets in them.
             /// Default is empty.
-            encryption_context(impl Into<EncryptionContext>),
+            map encryption_context,
             set_encryption_context,
             get_encryption_context -> EncryptionContext
         );
@@ -376,7 +403,7 @@ macro_rules! decrypt_members {
             /// Key-value pairs the message's encryption context must contain.
             /// Decrypt fails if a pair is missing from the message or has a different value.
             /// Default is empty.
-            encryption_context(impl Into<EncryptionContext>),
+            map encryption_context,
             set_encryption_context,
             get_encryption_context -> EncryptionContext
         );
