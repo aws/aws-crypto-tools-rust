@@ -157,7 +157,7 @@ impl EncryptionMaterials {
 #[derive(Debug, Default)]
 pub struct EncryptionMaterialsBuilder {
     algorithm_suite_id: Option<AlgorithmSuiteId>,
-    encrypted_data_keys: Vec<EncryptedDataKey>,
+    encrypted_data_keys: Option<Vec<EncryptedDataKey>>,
     encryption_context: Option<EncryptionContext>,
     required_encryption_context_keys: Option<BTreeSet<String>>,
     plaintext_data_key: Option<PlaintextDataKey>,
@@ -198,7 +198,7 @@ impl EncryptionMaterialsBuilder {
         mut self,
         encrypted_data_keys: impl Into<Vec<EncryptedDataKey>>,
     ) -> Self {
-        self.encrypted_data_keys = encrypted_data_keys.into();
+        self.encrypted_data_keys = Some(encrypted_data_keys.into());
         self
     }
 
@@ -209,13 +209,13 @@ impl EncryptionMaterialsBuilder {
         mut self,
         encrypted_data_keys: Option<Vec<EncryptedDataKey>>,
     ) -> Self {
-        self.encrypted_data_keys = encrypted_data_keys.unwrap_or_default();
+        self.encrypted_data_keys = encrypted_data_keys;
         self
     }
 
     /// The encrypted data keys set so far.
     #[must_use]
-    pub const fn get_encrypted_data_keys(&self) -> &Vec<EncryptedDataKey> {
+    pub const fn get_encrypted_data_keys(&self) -> &Option<Vec<EncryptedDataKey>> {
         &self.encrypted_data_keys
     }
 
@@ -377,7 +377,12 @@ impl EncryptionMaterialsBuilder {
         }
 
         // If no plaintext data key, encrypted data keys must be empty
-        if self.plaintext_data_key.is_none() && !self.encrypted_data_keys.is_empty() {
+        if self.plaintext_data_key.is_none()
+            && self
+                .encrypted_data_keys
+                .as_ref()
+                .is_some_and(|k| !k.is_empty())
+        {
             return Err(Error::new(
                 Kind::InvalidMaterials,
                 "encrypted data keys must be empty when plaintext data key is not present",
@@ -414,7 +419,7 @@ impl EncryptionMaterialsBuilder {
 
         Ok(EncryptionMaterials {
             algorithm_suite_id,
-            encrypted_data_keys: self.encrypted_data_keys,
+            encrypted_data_keys: self.encrypted_data_keys.unwrap_or_default(),
             encryption_context,
             required_encryption_context_keys,
             plaintext_data_key: self.plaintext_data_key,
