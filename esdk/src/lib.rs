@@ -22,7 +22,7 @@
 //!
 //! ```
 //! use aws_crypto_mpl::{AesGcm, RawAesKeyring};
-//! use aws_esdk::{Client, EncryptionContext};
+//! use aws_esdk::EncryptionContext;
 //!
 //! # #[tokio::main(flavor = "current_thread")]
 //! # async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -37,7 +37,7 @@
 //! let mut encryption_context = EncryptionContext::new();
 //! encryption_context.insert("purpose", "example");
 //!
-//! let esdk = Client::default();
+//! let esdk = aws_esdk::Client::default();
 //! let encrypted = esdk
 //!     .encrypt()
 //!     .plaintext(b"Hello World")
@@ -67,13 +67,13 @@
 //! [`Config`] and pass it to [`Client::from_conf`]:
 //!
 //! ```
-//! use aws_esdk::{Client, CommitmentPolicy, Config};
+//! use aws_esdk::CommitmentPolicy;
 //!
 //! # fn main() -> Result<(), aws_esdk::Error> {
-//! let config = Config::builder()
+//! let config = aws_esdk::Config::builder()
 //!     .commitment_policy(CommitmentPolicy::RequireEncryptRequireDecrypt)
 //!     .build()?;
-//! let esdk = Client::from_conf(config);
+//! let esdk = aws_esdk::Client::from_conf(config);
 //! # Ok(())
 //! # }
 //! ```
