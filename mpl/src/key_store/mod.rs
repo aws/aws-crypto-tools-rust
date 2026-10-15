@@ -22,18 +22,22 @@
 //! # }
 //! ```
 
-#[cfg(all(feature = "kms", feature = "ddb"))]
+// The DynamoDB key store needs both SDK clients.
+// The modules it builds on are gated only on what they use themselves.
+// It is their only caller today, so without it they are unused.
+#[cfg_attr(not(all(feature = "kms", feature = "ddb")), allow(dead_code))]
 mod attributes;
 #[cfg(all(feature = "kms", feature = "ddb"))]
 mod branch_key_store;
 mod client;
 pub mod config;
-#[cfg(all(feature = "kms", feature = "ddb"))]
+#[cfg_attr(not(all(feature = "kms", feature = "ddb")), allow(dead_code))]
 mod encryption_context;
 mod kms_config;
-#[cfg(all(feature = "kms", feature = "ddb"))]
+#[cfg(feature = "kms")]
+#[cfg_attr(not(all(feature = "kms", feature = "ddb")), allow(dead_code))]
 mod kms_ops;
-#[cfg(all(feature = "kms", feature = "ddb"))]
+#[cfg_attr(not(all(feature = "kms", feature = "ddb")), allow(dead_code))]
 mod record;
 mod types;
 

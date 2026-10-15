@@ -86,6 +86,7 @@ jobs:
           BACKEND: ${{ inputs.project == 'esdk' && 'aws-lc-rs/aws-lc-sys,' || '' }}
         run: |
           cargo clippy --lib --no-default-features --features "${BACKEND}" -- -D warnings
+          cargo clippy --lib --no-default-features --features "${BACKEND}kms" -- -D warnings
           cargo clippy --lib --no-default-features --features "${BACKEND}kms,ddb" -- -D warnings
           cargo clippy --lib --no-default-features --features "${BACKEND}rt-tokio" -- -D warnings
 
