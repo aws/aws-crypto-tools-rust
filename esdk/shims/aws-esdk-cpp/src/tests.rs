@@ -915,7 +915,9 @@ fn create_keystore_forwards_id_and_grant_tokens() {
     let ddb = create_ddb_client(&unset_client_config()).expect("ddb client");
 
     let unset = create_keystore(&keystore_config_with_clients(&kms, &ddb)).expect("key store");
-    let info = unset.inner.get_key_store_info().send().expect("info");
+    let info = TOKIO_RUNTIME
+        .block_on(unset.inner.get_key_store_info().send())
+        .expect("info");
     assert!(info.grant_tokens().is_empty());
 
     let mut cfg = keystore_config_with_clients(&kms, &ddb);
@@ -925,7 +927,9 @@ fn create_keystore_forwards_id_and_grant_tokens() {
     };
     cfg.grant_tokens = vec!["g1".to_string(), "g2".to_string()];
     let store = create_keystore(&cfg).expect("key store");
-    let info = store.inner.get_key_store_info().send().expect("info");
+    let info = TOKIO_RUNTIME
+        .block_on(store.inner.get_key_store_info().send())
+        .expect("info");
     assert_eq!(info.key_store_id(), "the-id");
     assert_eq!(info.grant_tokens(), ["g1", "g2"]);
 }

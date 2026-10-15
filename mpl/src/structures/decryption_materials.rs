@@ -182,22 +182,18 @@ impl DecryptionMaterialsBuilder {
         &self.encryption_context
     }
 
-    /// Set the required encryption context keys.
+    /// Appends an item to the required encryption context keys.
+    ///
+    /// To override the contents of this collection use [`set_required_encryption_context_keys`](Self::set_required_encryption_context_keys).
     /// Defaults to none.
     #[must_use]
-    pub fn required_encryption_context_keys(
-        mut self,
-        required_encryption_context_keys: impl IntoIterator<Item = impl Into<String>>,
-    ) -> Self {
-        self.required_encryption_context_keys = required_encryption_context_keys
-            .into_iter()
-            .map(Into::into)
-            .collect();
+    pub fn required_encryption_context_keys(mut self, input: impl Into<String>) -> Self {
+        self.required_encryption_context_keys.insert(input.into());
         self
     }
 
     /// Set or clear the required encryption context keys from an `Option`.
-    /// To set a value, use [`Self::required_encryption_context_keys`].
+    /// To add one entry, use [`Self::required_encryption_context_keys`].
     #[must_use]
     pub fn set_required_encryption_context_keys(
         mut self,
