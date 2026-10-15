@@ -301,8 +301,7 @@ async fn test_streaming_round_trip_through_pending_partial_io() {
     assert_eq!(decrypted, plaintext);
 }
 
-// On a single-threaded runtime, another task runs only when this one yields.
-// A large one-shot encrypt and decrypt must let it run, at the default frame length and with large frames.
+// On a single-threaded runtime, another task should run when the encrypt/decrypt task yields.
 #[tokio::test(flavor = "current_thread")]
 async fn test_large_message_yields_to_other_tasks() {
     use std::num::NonZeroU32;
@@ -314,6 +313,7 @@ async fn test_large_message_yields_to_other_tasks() {
         let ticks = ticks.clone();
         async move {
             loop {
+                // The ticker should advance when encryption/decryption yields between frames.
                 ticks.fetch_add(1, Ordering::Relaxed);
                 tokio::task::yield_now().await;
             }
