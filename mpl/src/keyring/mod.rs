@@ -9,7 +9,7 @@
 //!
 //! # Errors for keyring and CMM authors
 //!
-//! The AWS Encryption SDK passes the [`Error`] variant your [`Keyring`] or [`Cmm`](crate::Cmm) returns
+//! The AWS Encryption SDK passes the [`Error`] variant your [`Keyring`] or [`Cmm`](crate::cmm::Cmm) returns
 //! on to its caller, so pick the variant that tells the caller what to do:
 //!
 //! - **[`NoMatchingDataKey`](Error::NoMatchingDataKey)** when no encrypted data key belongs to this keyring.
@@ -32,7 +32,7 @@
 //! let err = Error::cryptographic("encrypted data key 0 did not decrypt").with_source(io_error);
 //! assert!(err.is_cryptographic());
 //!
-//! # let encrypted_data_keys: Vec<aws_crypto_mpl::structures::EncryptedDataKey> = Vec::new();
+//! # let encrypted_data_keys: Vec<aws_crypto_mpl::types::EncryptedDataKey> = Vec::new();
 //! use aws_crypto_mpl::error::DataKeyInfo;
 //!
 //! let err = Error::no_matching_data_key("no encrypted data key belongs to this keyring")
@@ -47,7 +47,8 @@
 //!
 //! ```no_run
 //! use aws_crypto_mpl::Error;
-//! use aws_crypto_mpl::aws_sdk_kms::{Client, primitives::Blob};
+//! use aws_crypto_mpl::aws_sdk_kms::Client;
+//! use aws_crypto_mpl::aws_sdk_kms::primitives::Blob;
 //! use aws_crypto_mpl::error::{KmsKey, Resource, Service};
 //!
 //! async fn kms_decrypt(kms: &Client, key_arn: &str, ciphertext: &[u8]) -> Result<Option<Blob>, Error> {
@@ -86,9 +87,14 @@ use std::borrow::Cow;
 use async_trait::async_trait;
 
 mod fluent_builders;
-pub mod raw_aes_keyring;
+mod raw_aes_keyring;
 mod types;
 
+pub use crate::aws_kms::hierarchical_keyring::{
+    BranchKeySupplier, GetBranchKeyIdFluentBuilder, GetBranchKeyIdInput,
+    GetBranchKeyIdInputBuilder, GetBranchKeyIdOutput, GetBranchKeyIdOutputBuilder,
+    HierarchicalKeyring, HierarchicalKeyringBuilder, SharedBranchKeySupplier,
+};
 pub use fluent_builders::{OnDecryptFluentBuilder, OnEncryptFluentBuilder};
 pub use raw_aes_keyring::{RawAesKeyring, RawAesKeyringBuilder};
 pub use types::{
@@ -102,8 +108,9 @@ pub use types::{
 ///
 /// ```
 /// use aws_crypto_mpl::keyring::{OnDecryptInput, OnDecryptOutput, OnEncryptInput, OnEncryptOutput};
-/// use aws_crypto_mpl::structures::{EncryptedDataKey, PlaintextDataKey};
-/// use aws_crypto_mpl::{Error, Keyring, async_trait};
+/// use aws_crypto_mpl::types::{EncryptedDataKey, PlaintextDataKey};
+/// use aws_crypto_mpl::{Error, async_trait};
+/// use aws_crypto_mpl::keyring::Keyring;
 ///
 /// struct MyKeyring;
 ///

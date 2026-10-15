@@ -126,13 +126,14 @@
 //# the shim library SHOULD support it as well.
 use aws_config::{AppName, BehaviorVersion, Region, SdkConfig};
 use aws_crypto_mpl::aws_config;
-use aws_crypto_mpl::aws_kms::hierarchical_keyring::HierarchicalKeyring;
 use aws_crypto_mpl::cmc::{
     DefaultCmc, LocalCmc, SharedCmc, StormTrackingCmc, StormTrackingCmcBuilder,
 };
-use aws_crypto_mpl::key_store::{Discovery, KeyStoreClient, KmsConfiguration, MrDiscovery};
+use aws_crypto_mpl::key_store::Client as KeyStoreClient;
+use aws_crypto_mpl::key_store::types::{Discovery, KmsConfiguration, MrDiscovery};
+use aws_crypto_mpl::keyring::HierarchicalKeyring;
 use aws_crypto_mpl::keyring::{RawAesKeyring, SharedKeyring};
-use aws_crypto_mpl::structures::{EsdkAlgorithmSuiteId, EsdkCommitmentPolicy};
+use aws_crypto_mpl::types::{EsdkAlgorithmSuiteId, EsdkCommitmentPolicy};
 use aws_crypto_mpl::{aws_sdk_dynamodb, aws_sdk_kms};
 use aws_esdk::Client;
 use aws_esdk::error::{Resource, RetryKind, Service};
@@ -1536,16 +1537,22 @@ fn non_empty(tokens: &[String]) -> Option<Vec<String>> {
 //# wrapping algorithm of the same meaning.
 fn wrapping_alg_target_to_core(
     alg: ffi::AesWrappingAlg,
-) -> Result<aws_mpl_primitives::AesGcm, String> {
+) -> Result<aws_crypto_mpl::types::AesWrappingAlg, String> {
     match alg {
         ffi::AesWrappingAlg::Unset => Err(shim_err(
             ffi::ShimErrorKind::Validation,
             "create_raw_aes_keyring",
             "wrapping_alg is unset",
         )),
-        ffi::AesWrappingAlg::AlgAes128GcmIv12Tag16 => Ok(aws_mpl_primitives::AesGcm::Aes128Gcm),
-        ffi::AesWrappingAlg::AlgAes192GcmIv12Tag16 => Ok(aws_mpl_primitives::AesGcm::Aes192Gcm),
-        ffi::AesWrappingAlg::AlgAes256GcmIv12Tag16 => Ok(aws_mpl_primitives::AesGcm::Aes256Gcm),
+        ffi::AesWrappingAlg::AlgAes128GcmIv12Tag16 => {
+            Ok(aws_crypto_mpl::types::AesWrappingAlg::AlgAes128GcmIv12Tag16)
+        }
+        ffi::AesWrappingAlg::AlgAes192GcmIv12Tag16 => {
+            Ok(aws_crypto_mpl::types::AesWrappingAlg::AlgAes192GcmIv12Tag16)
+        }
+        ffi::AesWrappingAlg::AlgAes256GcmIv12Tag16 => {
+            Ok(aws_crypto_mpl::types::AesWrappingAlg::AlgAes256GcmIv12Tag16)
+        }
         //= spec/shim/esdk-shim.md#aes-wrapping-algorithm
         //# - The shim MUST return an error when the target wrapping algorithm is not a
         //# supported value.

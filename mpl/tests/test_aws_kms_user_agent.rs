@@ -6,7 +6,8 @@
 use std::sync::{Arc, Mutex};
 
 use aws_config::FrameworkMetadata;
-use aws_crypto_mpl::{KeyStoreClient, KmsConfiguration};
+use aws_crypto_mpl::key_store::Client as KeyStoreClient;
+use aws_crypto_mpl::key_store::types::KmsConfiguration;
 use aws_sdk_dynamodb::Client as DynamoDbClient;
 use aws_sdk_kms::Client as KmsClient;
 use aws_smithy_runtime_api::client::http::{

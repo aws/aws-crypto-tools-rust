@@ -5,7 +5,7 @@
 
 #![cfg(feature = "test-utils")]
 
-use aws_crypto_mpl::aws_kms::__test_internals::aws_kms_mrk_match_for_decrypt;
+use aws_crypto_mpl::__test_internals::aws_kms::aws_kms_mrk_match_for_decrypt;
 
 const MRK_EAST: &str =
     "arn:aws:kms:us-east-1:111122223333:key/mrk-1234abcd-12ab-34cd-56ef-1234567890ab";

@@ -14,7 +14,7 @@ use super::v2_header_body::{
 use super::{DigestWriter, Error, header_auth, ser_err, serialize_functions};
 use crate::error::{Kind, err, val_err};
 use crate::shapes::{EncryptionContext, Sink, Source, Tee};
-use aws_crypto_mpl::structures::AlgorithmSuite;
+use aws_crypto_mpl::types::AlgorithmSuite;
 use aws_lc_rs::constant_time;
 
 pub(crate) const START_SEQUENCE_NUMBER: u32 = 1;
@@ -150,7 +150,7 @@ pub(crate) const fn header_version_supports_commitment(
 
 pub(crate) fn validate_max_encrypted_data_keys(
     max_encrypted_data_keys: Option<std::num::NonZeroUsize>,
-    edks: &[aws_crypto_mpl::structures::EncryptedDataKey],
+    edks: &[aws_crypto_mpl::types::EncryptedDataKey],
 ) -> Result<(), Error> {
     if edks.is_empty() {
         //= spec/data-format/message-header.md#encrypted-data-key-count

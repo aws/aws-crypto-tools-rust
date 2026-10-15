@@ -9,10 +9,11 @@ use crate::error::{DataKeyInfo, Kind};
 use std::borrow::Cow;
 use std::sync::Arc;
 
+use crate::structures::AesWrappingAlg;
 use async_trait::async_trait;
-use aws_mpl_primitives::{AesGcm, aes_decrypt, aes_encrypt, generate_random_bytes};
+use aws_mpl_primitives::{aes_decrypt, aes_encrypt, generate_random_bytes};
 
-use crate::Keyring;
+use crate::keyring::Keyring;
 use crate::keyring::{OnDecryptInput, OnDecryptOutput, OnEncryptInput, OnEncryptOutput};
 use crate::structures::{AlgorithmSuite, EncryptedDataKey, PlaintextDataKey};
 
@@ -64,7 +65,7 @@ struct RawAesKeyringInner {
     key_namespace: String,
     key_name: String,
     wrapping_key: Vec<u8>,
-    wrapping_alg: AesGcm,
+    wrapping_alg: AesWrappingAlg,
 }
 
 impl std::fmt::Debug for RawAesKeyring {
@@ -104,7 +105,7 @@ impl RawAesKeyring {
 
     /// The configured wrapping algorithm.
     #[must_use]
-    pub fn wrapping_alg(&self) -> AesGcm {
+    pub fn wrapping_alg(&self) -> AesWrappingAlg {
         self.inner.wrapping_alg
     }
 
@@ -145,7 +146,7 @@ impl RawAesKeyring {
         // authentication tag, which is the EDK ciphertext structure.
         let mut ciphertext = Vec::new();
         aes_encrypt(
-            self.inner.wrapping_alg,
+            self.inner.wrapping_alg.primitive(),
             &iv,
             &self.inner.wrapping_key,
             plaintext_dk.as_bytes(),
@@ -209,7 +210,7 @@ pub struct RawAesKeyringBuilder {
     key_namespace: Option<String>,
     key_name: Option<String>,
     wrapping_key: Option<Vec<u8>>,
-    wrapping_alg: Option<AesGcm>,
+    wrapping_alg: Option<AesWrappingAlg>,
 }
 
 impl std::fmt::Debug for RawAesKeyringBuilder {
@@ -295,7 +296,7 @@ impl RawAesKeyringBuilder {
     /// Set the wrapping algorithm.
     /// Required.
     #[must_use]
-    pub const fn wrapping_alg(mut self, wrapping_alg: AesGcm) -> Self {
+    pub const fn wrapping_alg(mut self, wrapping_alg: AesWrappingAlg) -> Self {
         self.wrapping_alg = Some(wrapping_alg);
         self
     }
@@ -303,14 +304,14 @@ impl RawAesKeyringBuilder {
     /// Set or clear the wrapping algorithm from an `Option`.
     /// To set a value, use [`Self::wrapping_alg`].
     #[must_use]
-    pub const fn set_wrapping_alg(mut self, wrapping_alg: Option<AesGcm>) -> Self {
+    pub const fn set_wrapping_alg(mut self, wrapping_alg: Option<AesWrappingAlg>) -> Self {
         self.wrapping_alg = wrapping_alg;
         self
     }
 
     /// The wrapping algorithm, if set.
     #[must_use]
-    pub const fn get_wrapping_alg(&self) -> &Option<AesGcm> {
+    pub const fn get_wrapping_alg(&self) -> &Option<AesWrappingAlg> {
         &self.wrapping_alg
     }
 
@@ -340,7 +341,7 @@ impl RawAesKeyringBuilder {
             ));
         }
 
-        let expected_key_len = usize::from(wrapping_alg.key_len());
+        let expected_key_len = usize::from(wrapping_alg.primitive().key_len());
         if wrapping_key.len() != expected_key_len {
             return Err(Error::new(
                 Kind::Validation,
@@ -446,7 +447,7 @@ impl Keyring for RawAesKeyring {
 
             let mut plaintext_dk = vec![0u8; encrypted_key.len()];
             if let Err(e) = aes_decrypt(
-                self.inner.wrapping_alg,
+                self.inner.wrapping_alg.primitive(),
                 &self.inner.wrapping_key,
                 encrypted_key,
                 auth_tag,

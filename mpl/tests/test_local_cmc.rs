@@ -35,13 +35,14 @@ use std::time::{Duration, SystemTime};
 use aws_crypto_mpl::Error;
 
 use aws_crypto_mpl::cmc::{
-    BytesUsage, CacheEntry, CachedMaterials, Cmc, DeleteCacheEntryInput, GetCacheEntryInput,
-    LocalCmc, MessageUsage, PutCacheEntryInput, UpdateUsageMetadataInput, UsageMetadata,
+    Cmc, DeleteCacheEntryInput, GetCacheEntryInput, LocalCmc, PutCacheEntryInput,
+    UpdateUsageMetadataInput,
 };
-use aws_crypto_mpl::structures::{
+use aws_crypto_mpl::types::{
     AlgorithmSuiteId, BeaconKeyMaterials, BranchKeyMaterials, DecryptionMaterials,
     EncryptionContext, EncryptionMaterials, EsdkAlgorithmSuiteId,
 };
+use aws_crypto_mpl::types::{BytesUsage, CacheEntry, CachedMaterials, MessageUsage, UsageMetadata};
 
 /// Positional shorthand for the `Cmc` operations.
 #[async_trait]

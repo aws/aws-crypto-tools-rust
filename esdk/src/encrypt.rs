@@ -22,9 +22,9 @@ use crate::shapes::{
     EncryptStreamOutput, EncryptionContext, MaterialSource, Sink, Source,
 };
 use crate::suites::{algorithm_suite_id_from_bytes, get_ecdsa_alg, get_esdk_algorithm_suite_id};
-use aws_crypto_mpl::structures::AlgorithmSuite;
-use aws_crypto_mpl::structures::EncryptedDataKey;
-use aws_crypto_mpl::structures::EncryptionMaterials;
+use aws_crypto_mpl::types::AlgorithmSuite;
+use aws_crypto_mpl::types::EncryptedDataKey;
+use aws_crypto_mpl::types::EncryptionMaterials;
 use aws_mpl_primitives::{aes_encrypt, ecdsa_sign_digest};
 use std::collections::BTreeSet;
 
@@ -333,8 +333,8 @@ async fn step_get_encryption_materials(
         //# If an [input algorithm suite](#algorithm-suite) is provided
         //# that is not supported by the [commitment policy](client.md#commitment-policy)
         //# configured in the [client](client.md) encrypt MUST yield an error.
-        let policy = aws_crypto_mpl::structures::CommitmentPolicy::Esdk(commitment_policy);
-        if !policy.allows_for_encrypt(aws_crypto_mpl::structures::AlgorithmSuiteId::Esdk(id)) {
+        let policy = aws_crypto_mpl::types::CommitmentPolicy::Esdk(commitment_policy);
+        if !policy.allows_for_encrypt(aws_crypto_mpl::types::AlgorithmSuiteId::Esdk(id)) {
             return Err(val_err(
                 "input algorithm suite is not supported by the configured commitment policy for encryption",
             ));

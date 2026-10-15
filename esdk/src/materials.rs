@@ -10,7 +10,7 @@ use crate::shapes::{AlgorithmSuiteId, CommitmentPolicy, EncryptionContext, Mater
 use aws_crypto_mpl::cmm::DefaultCmm;
 use aws_crypto_mpl::cmm::{Cmm, SharedCmm};
 use aws_crypto_mpl::keyring::Keyring;
-use aws_crypto_mpl::structures::{
+use aws_crypto_mpl::types::{
     AlgorithmSuiteId as MplAlgorithmSuiteId, CommitmentPolicy as MplCommitmentPolicy,
     DecryptionMaterials, EncryptedDataKey, EncryptionMaterials,
 };
