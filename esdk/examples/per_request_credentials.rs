@@ -5,6 +5,7 @@
 //!
 //! Requires an existing key store with a provisioned branch key.
 //! The request credentials are read from AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and AWS_SESSION_TOKEN.
+//! Each KMS call also carries a header naming the request.
 
 use std::time::{Duration, SystemTime};
 
@@ -27,6 +28,30 @@ fn credentials_for_request() -> Result<Credentials, Box<dyn std::error::Error>> 
     ))
 }
 
+/// Adds fixed headers to every KMS request.
+#[derive(Debug)]
+struct RequestHeaders(Vec<(String, String)>);
+
+impl aws_sdk_kms::config::Intercept for RequestHeaders {
+    fn name(&self) -> &'static str {
+        "RequestHeaders"
+    }
+
+    // Before signing, so SigV4 signs the headers.
+    fn modify_before_signing(
+        &self,
+        context: &mut aws_sdk_kms::config::interceptors::BeforeTransmitInterceptorContextMut<'_>,
+        _runtime_components: &aws_sdk_kms::config::RuntimeComponents,
+        _cfg: &mut aws_sdk_kms::config::ConfigBag,
+    ) -> Result<(), aws_sdk_kms::error::BoxError> {
+        let headers = context.request_mut().headers_mut();
+        for (name, value) in &self.0 {
+            headers.try_insert(name.clone(), value.clone())?;
+        }
+        Ok(())
+    }
+}
+
 /// Handles one request: every KMS call it makes uses that request's credentials.
 async fn handle_request(
     base_kms: &aws_sdk_kms::Client,
@@ -34,13 +59,18 @@ async fn handle_request(
     esdk: &aws_esdk::Client,
     credentials: Credentials,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    // A copy of the base client that signs with this request's credentials.
+    // A copy of the base client that signs with this request's credentials
+    // and sends this request's headers.
     // It keeps the base client's HTTP client, so it reuses the same connections.
     let kms = aws_sdk_kms::Client::from_conf(
         base_kms
             .config()
             .to_builder()
             .credentials_provider(credentials)
+            .interceptor(RequestHeaders(vec![(
+                "x-example-request-id".to_string(),
+                "request-1".to_string(),
+            )]))
             .build(),
     );
 
