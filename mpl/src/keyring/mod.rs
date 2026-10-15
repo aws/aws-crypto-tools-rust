@@ -40,6 +40,30 @@
 //! assert!(err.is_no_matching_data_key());
 //! ```
 //!
+//! When a call to an AWS service fails, return [`Error::from_sdk`].
+//! It picks the variant (such as `AccessDenied` or `Throttling`) and the retry kind from the SDK error,
+//! the same way this library's own keyrings do,
+//! so callers can match on the variant and [`service`](Error::service) instead of the message:
+//!
+//! ```no_run
+//! use aws_crypto_mpl::Error;
+//! use aws_crypto_mpl::aws_sdk_kms::{Client, primitives::Blob};
+//! use aws_crypto_mpl::error::{KmsKey, Resource, Service};
+//!
+//! async fn kms_decrypt(kms: &Client, key_arn: &str, ciphertext: &[u8]) -> Result<Option<Blob>, Error> {
+//!     let response = kms
+//!         .decrypt()
+//!         .key_id(key_arn)
+//!         .ciphertext_blob(Blob::new(ciphertext))
+//!         .send()
+//!         .await
+//!         .map_err(|e| {
+//!             Error::from_sdk(Service::Kms, "AWS KMS Decrypt", Some(Resource::KmsKey(KmsKey::new(key_arn))), e)
+//!         })?;
+//!     Ok(response.plaintext)
+//! }
+//! ```
+//!
 //! To report several failures as one error:
 //!
 //! - [`Error::all_failed`] when you tried several encrypted data keys and each failed.
