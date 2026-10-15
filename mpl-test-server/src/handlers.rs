@@ -78,9 +78,7 @@ impl AppState {
         let materials = EncryptionMaterials::builder()
             .algorithm_suite_id(map_algorithm_suite_id(req.algorithm_suite_id))
             .encryption_context(map_encryption_context(&req.encryption_context))
-            .set_required_encryption_context_keys(Some(
-                req.required_encryption_context_keys.into_iter().collect(),
-            ))
+            .required_encryption_context_keys(req.required_encryption_context_keys)
             .build()
             .map_err(|e| ServerError::mpl(e.to_string()))?;
         Ok(InitializeEncryptionMaterialsResponse {
@@ -95,9 +93,7 @@ impl AppState {
         let materials = DecryptionMaterials::builder()
             .algorithm_suite_id(map_algorithm_suite_id(req.algorithm_suite_id))
             .encryption_context(map_encryption_context(&req.encryption_context))
-            .set_required_encryption_context_keys(Some(
-                req.required_encryption_context_keys.into_iter().collect(),
-            ))
+            .required_encryption_context_keys(req.required_encryption_context_keys)
             .build()
             .map_err(|e| ServerError::mpl(e.to_string()))?;
         Ok(InitializeDecryptionMaterialsResponse {
@@ -129,7 +125,7 @@ impl AppState {
         let output = keyring
             .on_decrypt()
             .materials(shape_to_decryption_materials(req.materials)?)
-            .set_encrypted_data_keys(Some(map_edks(req.encrypted_data_keys)?))
+            .encrypted_data_keys(map_edks(req.encrypted_data_keys)?)
             .send()
             .await
             .map_err(|e| ServerError::mpl(e.to_string()))?;
@@ -192,7 +188,7 @@ impl AppState {
             .decrypt_materials()
             .algorithm_suite_id(map_algorithm_suite_id(req.algorithm_suite_id))
             .commitment_policy(map_commitment_policy(req.commitment_policy))
-            .set_encrypted_data_keys(Some(map_edks(req.encrypted_data_keys)?))
+            .encrypted_data_keys(map_edks(req.encrypted_data_keys)?)
             .encryption_context(map_encryption_context(&req.encryption_context))
             .set_reproduced_encryption_context(
                 req.reproduced_encryption_context
@@ -287,11 +283,9 @@ fn shape_to_encryption_materials(
 ) -> Result<EncryptionMaterials, ServerError> {
     EncryptionMaterials::builder()
         .algorithm_suite_id(map_algorithm_suite_id(shape.algorithm_suite_id))
-        .set_encrypted_data_keys(Some(map_edks(shape.encrypted_data_keys)?))
+        .encrypted_data_keys(map_edks(shape.encrypted_data_keys)?)
         .encryption_context(map_encryption_context(&shape.encryption_context))
-        .set_required_encryption_context_keys(Some(
-            shape.required_encryption_context_keys.into_iter().collect(),
-        ))
+        .required_encryption_context_keys(shape.required_encryption_context_keys)
         .set_plaintext_data_key(shape.plaintext_data_key.map(PlaintextDataKey::new))
         .set_signing_key(shape.signing_key.map(SigningKey::new))
         .set_symmetric_signing_keys(shape.symmetric_signing_keys.map(|keys| {
@@ -309,9 +303,7 @@ fn shape_to_decryption_materials(
     DecryptionMaterials::builder()
         .algorithm_suite_id(map_algorithm_suite_id(shape.algorithm_suite_id))
         .encryption_context(map_encryption_context(&shape.encryption_context))
-        .set_required_encryption_context_keys(Some(
-            shape.required_encryption_context_keys.into_iter().collect(),
-        ))
+        .required_encryption_context_keys(shape.required_encryption_context_keys)
         .set_plaintext_data_key(shape.plaintext_data_key.map(PlaintextDataKey::new))
         .set_verification_key(shape.verification_key.map(VerificationKey::new))
         .set_symmetric_signing_key(shape.symmetric_signing_key.map(SymmetricSigningKey::new))
