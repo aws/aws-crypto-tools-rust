@@ -19,12 +19,25 @@ using Aws::Esdk::CommitmentPolicy;
 using Aws::Esdk::DdbClient;
 using Aws::Esdk::DecryptOptions;
 using Aws::Esdk::DecryptResult;
-using Aws::Esdk::EncryptionSDK;
+using Aws::Esdk::Client;
+using Aws::Esdk::Config;
 using Aws::Esdk::EncryptOptions;
 using Aws::Esdk::EncryptResult;
 using Aws::Esdk::AesWrappingAlgorithm;
 using Aws::Esdk::HierarchicalKeyring;
 using Aws::Esdk::KmsClient;
+
+namespace {
+// The client-wide settings each call carries, as a Client.
+Client client_for(uint8_t commitment_policy, uint32_t max_encrypted_data_keys) {
+    Config config;
+    config.with_commitment_policy(static_cast<CommitmentPolicy>(commitment_policy));
+    if (max_encrypted_data_keys != 0) {
+        config.with_max_encrypted_data_keys(max_encrypted_data_keys);
+    }
+    return Client(config);
+}
+}  // namespace
 using Aws::Esdk::RawAesKeyring;
 // Aws::Esdk::KeyStore and Aws::Esdk::Keyring are referenced fully qualified: the
 // generated cxx header declares global ::KeyStore and ::Keyring, so importing the
@@ -85,7 +98,7 @@ int esdk_cpp_create_hierarchical_client(const char* region,
                                         void** out_client,
                                         char** out_err) {
     try {
-        Aws::Esdk::ClientConfig config;
+        Aws::Esdk::AwsSdkClientConfig config;
         if (region && region[0] != '\0') {
             config.with_region(region);
         }
@@ -150,20 +163,16 @@ int esdk_cpp_encrypt(void* client,
     try {
         auto* keyring = reinterpret_cast<Aws::Esdk::Keyring*>(client);
         EncryptOptions options;
-        options.with_commitment_policy(static_cast<CommitmentPolicy>(commitment_policy));
         if (algorithm_suite_id != 0) {
             options.with_algorithm_suite(static_cast<AlgorithmSuiteId>(algorithm_suite_id));
         }
         if (frame_length != 0) {
             options.with_frame_length(frame_length);
         }
-        if (max_encrypted_data_keys != 0) {
-            options.with_max_encrypted_data_keys(max_encrypted_data_keys);
-        }
         options.with_encryption_context(to_map(ec_keys, ec_vals, ec_len));
 
         std::vector<uint8_t> input(plaintext, plaintext + plaintext_len);
-        EncryptionSDK sdk;
+        Client sdk = client_for(commitment_policy, max_encrypted_data_keys);
         EncryptResult result = sdk.encrypt(input, *keyring, options);
         *out_buf = dup_bytes(result.ciphertext);
         *out_len = result.ciphertext.size();
@@ -191,14 +200,10 @@ int esdk_cpp_decrypt(void* client,
     try {
         auto* keyring = reinterpret_cast<Aws::Esdk::Keyring*>(client);
         DecryptOptions options;
-        options.with_commitment_policy(static_cast<CommitmentPolicy>(commitment_policy));
-        if (max_encrypted_data_keys != 0) {
-            options.with_max_encrypted_data_keys(max_encrypted_data_keys);
-        }
         options.with_encryption_context(to_map(ec_keys, ec_vals, ec_len));
 
         std::vector<uint8_t> input(ciphertext, ciphertext + ciphertext_len);
-        EncryptionSDK sdk;
+        Client sdk = client_for(commitment_policy, max_encrypted_data_keys);
         DecryptResult result = sdk.decrypt(input, *keyring, options);
         *out_buf = dup_bytes(result.plaintext);
         *out_len = result.plaintext.size();
@@ -234,22 +239,18 @@ int esdk_cpp_encrypt_stream(void* client,
     try {
         auto* keyring = reinterpret_cast<Aws::Esdk::Keyring*>(client);
         EncryptOptions options;
-        options.with_commitment_policy(static_cast<CommitmentPolicy>(commitment_policy));
         if (algorithm_suite_id != 0) {
             options.with_algorithm_suite(static_cast<AlgorithmSuiteId>(algorithm_suite_id));
         }
         if (frame_length != 0) {
             options.with_frame_length(frame_length);
         }
-        if (max_encrypted_data_keys != 0) {
-            options.with_max_encrypted_data_keys(max_encrypted_data_keys);
-        }
         if (has_plaintext_length_bound != 0) {
             options.with_plaintext_length_bound(plaintext_length_bound);
         }
         options.with_encryption_context(to_map(ec_keys, ec_vals, ec_len));
 
-        EncryptionSDK sdk;
+        Client sdk = client_for(commitment_policy, max_encrypted_data_keys);
         Aws::Esdk::EncryptStream stream = sdk.create_encrypt_stream(*keyring, options);
         std::vector<uint8_t> ciphertext;
         for (size_t offset = 0; offset < plaintext_len; offset += kStreamChunk) {
@@ -286,13 +287,9 @@ int esdk_cpp_decrypt_stream(void* client,
     try {
         auto* keyring = reinterpret_cast<Aws::Esdk::Keyring*>(client);
         DecryptOptions options;
-        options.with_commitment_policy(static_cast<CommitmentPolicy>(commitment_policy));
-        if (max_encrypted_data_keys != 0) {
-            options.with_max_encrypted_data_keys(max_encrypted_data_keys);
-        }
         options.with_encryption_context(to_map(ec_keys, ec_vals, ec_len));
 
-        EncryptionSDK sdk;
+        Client sdk = client_for(commitment_policy, max_encrypted_data_keys);
         Aws::Esdk::DecryptStream stream = sdk.create_decrypt_stream(*keyring, options);
         std::vector<uint8_t> plaintext;
         for (size_t offset = 0; offset < ciphertext_len; offset += kStreamChunk) {

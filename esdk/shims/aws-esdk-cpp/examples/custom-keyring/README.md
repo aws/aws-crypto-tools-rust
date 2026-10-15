@@ -19,7 +19,7 @@ This example demonstrates creating a Rust keyring and using it from C++ code.
 1. Create a Rust crate for your keyring.
    This crate must depend on `aws-esdk-cpp` with `crate-type = ["staticlib"]`.
    See this directory's `Cargo.toml` for an example.
-2. In Rust, define your keyring. See `src/lib.rs`' `build_keyring` for an example.
+2. In Rust, define your keyring. See `src/lib.rs`' `AuditKeyring` for an example: it wraps a raw AES keyring and logs which key providers each call uses.
 3. In Rust, export your keyring.
    Convert it with `aws_esdk_cpp::into_keyring_handle` and return the pointer from an `extern "C"` function.
    See `src/lib.rs`' `custom_keyring_create` for an example.

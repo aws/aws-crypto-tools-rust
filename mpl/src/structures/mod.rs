@@ -18,10 +18,10 @@ pub use algorithm_suite::{
     PlaintextDataKey, SigningKey, SymmetricSignatureAlgorithm, SymmetricSigningKey,
     VerificationKey,
 };
-pub use beacon_key_materials::BeaconKeyMaterials;
-pub use branch_key_materials::BranchKeyMaterials;
+pub use beacon_key_materials::{BeaconKeyMaterials, BeaconKeyMaterialsBuilder};
+pub use branch_key_materials::{BranchKeyMaterials, BranchKeyMaterialsBuilder};
 pub use commitment_policy::{CommitmentPolicy, EsdkCommitmentPolicy};
-pub use decryption_materials::DecryptionMaterials;
-pub use encrypted_data_key::EncryptedDataKey;
+pub use decryption_materials::{DecryptionMaterials, DecryptionMaterialsBuilder};
+pub use encrypted_data_key::{EncryptedDataKey, EncryptedDataKeyBuilder};
 pub use encryption_context::EncryptionContext;
-pub use encryption_materials::EncryptionMaterials;
+pub use encryption_materials::{EncryptionMaterials, EncryptionMaterialsBuilder};

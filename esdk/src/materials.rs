@@ -8,7 +8,7 @@ use crate::message::header_types::HeaderBody;
 use crate::message::serializable_types::{is_esdk_encrypted_data_keys, is_esdk_encryption_context};
 use crate::types::{AlgorithmSuiteId, CommitmentPolicy, EncryptionContext, MaterialSource};
 use aws_crypto_mpl::cmm::DefaultCmm;
-use aws_crypto_mpl::cmm::{Cmm, DecryptMaterialsRequest, EncryptionMaterialsRequest, SharedCmm};
+use aws_crypto_mpl::cmm::{Cmm, SharedCmm};
 use aws_crypto_mpl::keyring::Keyring;
 use aws_crypto_mpl::structures::{
     AlgorithmSuiteId as MplAlgorithmSuiteId, CommitmentPolicy as MplCommitmentPolicy,
@@ -96,17 +96,17 @@ pub(crate) async fn get_decryption_materials(
     //
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
     //# - Commitment Policy: This MUST be the commitment policy configured on the client.
-    let mut request = DecryptMaterialsRequest::new(
-        MplAlgorithmSuiteId::Esdk(algorithm_suite_id),
-        policy,
-        edks,
-        encryption_context,
-    );
+    let mut request = cmm
+        .decrypt_materials()
+        .algorithm_suite_id(MplAlgorithmSuiteId::Esdk(algorithm_suite_id))
+        .commitment_policy(policy)
+        .encrypted_data_keys(edks)
+        .encryption_context(encryption_context);
 
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
     //# - Reproduced Encryption Context: This MUST be the [input](#input) encryption context.
     if !reproduced_encryption_context.is_empty() {
-        request = request.with_reproduced_encryption_context(reproduced_encryption_context.clone());
+        request = request.reproduced_encryption_context(reproduced_encryption_context.clone());
     }
 
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
@@ -118,10 +118,11 @@ pub(crate) async fn get_decryption_materials(
     //
     //= spec/client-apis/decrypt.md#keyring
     //# This default CMM constructed from the keyring MUST obtain the decryption materials required for decryption.
-    let materials = cmm
-        .decrypt_materials(request)
+    let materials = request
+        .send()
         .await
-        .map_err(|e| Error::from_mpl("decrypt could not get decryption materials", e))?;
+        .map_err(|e| Error::from_mpl("decrypt could not get decryption materials", e))?
+        .into_decryption_materials();
 
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
     //# If the algorithm suite is not supported by the [commitment policy](client.md#commitment-policy)
@@ -133,20 +134,11 @@ pub(crate) async fn get_decryption_materials(
         ));
     }
 
-    let Some(plaintext_data_key) = materials.plaintext_data_key() else {
+    // The materials builders reject a plaintext data key of the wrong length.
+    if materials.plaintext_data_key().is_none() {
         return Err(err(
             Kind::InvalidMaterials,
             "decryption materials are missing a plaintext data key",
-        ));
-    };
-    let expected_len = materials.algorithm_suite().encryption_key_length();
-    if plaintext_data_key.len() != expected_len {
-        return Err(err(
-            Kind::InvalidMaterials,
-            format!(
-                "decryption materials have a {}-byte plaintext data key, expected {expected_len} for the algorithm suite",
-                plaintext_data_key.len()
-            ),
         ));
     }
 
@@ -178,13 +170,16 @@ pub(crate) async fn get_encryption_materials(
     //= spec/client-apis/encrypt.md#get-the-encryption-materials
     //= reason=Encryption context is empty by default
     //# Otherwise, this MUST be an empty encryption context.
-    let mut request = EncryptionMaterialsRequest::new(encryption_context, policy);
+    let mut request = cmm
+        .get_encryption_materials()
+        .encryption_context(encryption_context)
+        .commitment_policy(policy);
 
     //= spec/client-apis/encrypt.md#get-the-encryption-materials
     //= reason=algorithm_suite_id is Option; None means the field is not set on the request
     //# If no Algorithm Suite is provided, this field MUST NOT be included.
     if let Some(id) = algorithm_suite_id {
-        request = request.with_algorithm_suite_id(MplAlgorithmSuiteId::Esdk(id));
+        request = request.algorithm_suite_id(MplAlgorithmSuiteId::Esdk(id));
     }
 
     //= spec/client-apis/encrypt.md#get-the-encryption-materials
@@ -200,13 +195,14 @@ pub(crate) async fn get_encryption_materials(
     //= reason=max_plaintext_length is Option; None means the field is not set on the request
     //# If no Plaintext Length Bound is provided, this field MUST NOT be included.
     if let Some(len) = max_plaintext_length {
-        request = request.with_max_plaintext_length(len as u64);
+        request = request.max_plaintext_length(len as u64);
     }
 
-    let materials = cmm
-        .get_encryption_materials(request)
+    let materials = request
+        .send()
         .await
-        .map_err(|e| Error::from_mpl("encrypt could not get encryption materials", e))?;
+        .map_err(|e| Error::from_mpl("encrypt could not get encryption materials", e))?
+        .into_encryption_materials();
 
     //= spec/client-apis/encrypt.md#get-the-encryption-materials
     //# If this [algorithm suite](../framework/algorithm-suites.md) is not supported by the [commitment policy](client.md#commitment-policy)
@@ -218,20 +214,11 @@ pub(crate) async fn get_encryption_materials(
         ));
     }
 
-    let Some(plaintext_data_key) = materials.plaintext_data_key() else {
+    // The materials builders reject a plaintext data key of the wrong length.
+    if materials.plaintext_data_key().is_none() {
         return Err(err(
             Kind::InvalidMaterials,
             "encryption materials are missing a plaintext data key",
-        ));
-    };
-    let expected_len = materials.algorithm_suite().encryption_key_length();
-    if plaintext_data_key.len() != expected_len {
-        return Err(err(
-            Kind::InvalidMaterials,
-            format!(
-                "encryption materials have a {}-byte plaintext data key, expected {expected_len} for the algorithm suite",
-                plaintext_data_key.len()
-            ),
         ));
     }
 

@@ -58,27 +58,28 @@ fn concurrent_round_trips(
                     for i in 0..ITERS_PER_THREAD {
                         // Encrypt and record the message ID from the header.
                         let plaintext = format!("thread {t} message {i}").into_bytes();
-                        let mut builder = EncryptInput::builder()
+                        let esdk = test_helpers::esdk_with(policy);
+                        let out = esdk
+                            .encrypt()
                             .plaintext(&plaintext)
                             .keyring(keyring.clone())
-                            .commitment_policy(policy);
-                        if let Some(suite) = suite {
-                            builder = builder.algorithm_suite_id(suite);
-                        }
-                        let enc_input = builder.build().unwrap();
-                        let out = encrypt(&enc_input).await.unwrap();
-                        ids.lock().unwrap().push(extract_id(&out.ciphertext));
+                            .set_algorithm_suite_id(suite)
+                            .send()
+                            .await
+                            .unwrap();
+                        ids.lock().unwrap().push(extract_id(out.ciphertext()));
 
                         // Decrypt and verify the round trip.
-                        let dec_input = DecryptInput::builder()
-                            .ciphertext(&out.ciphertext)
+                        let dec = esdk
+                            .decrypt()
+                            .ciphertext(out.ciphertext())
                             .keyring(keyring.clone())
-                            .commitment_policy(policy)
-                            .build()
+                            .send()
+                            .await
                             .unwrap();
-                        let dec = decrypt(&dec_input).await.unwrap();
                         assert_eq!(
-                            dec.plaintext, plaintext,
+                            dec.plaintext(),
+                            plaintext,
                             "round trip must return the plaintext"
                         );
                     }

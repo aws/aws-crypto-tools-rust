@@ -4,10 +4,8 @@
 use anyhow::Result;
 use std::time::Duration;
 
-use aws_crypto_mpl::{
-    BranchKeyStore, CacheType, DefaultCache, HierarchicalKeyring, KmsConfiguration,
-};
-use aws_esdk::{CommitmentPolicy, Esdk};
+use aws_crypto_mpl::{HierarchicalKeyring, KeyStoreClient, KmsConfiguration, cmc::DefaultCmc};
+use aws_esdk::{Client, CommitmentPolicy};
 use log::info;
 use sysinfo::System;
 
@@ -27,7 +25,7 @@ const LOGICAL_KEY_STORE_NAME: &str = BRANCH_KEY_STORE_NAME;
 const BRANCH_KEY_ID: &str = "3f43a9af-08c5-4317-b694-3d3e883dcaef";
 
 pub struct EsdkBenchmark {
-    pub esdk_client: Esdk,
+    pub esdk_client: Client,
     pub keyring: HierarchicalKeyring,
     pub config: TestConfig,
     pub results: Vec<BenchmarkResult>,
@@ -61,19 +59,19 @@ impl EsdkBenchmark {
         })
     }
 
-    async fn setup_esdk() -> Result<(Esdk, HierarchicalKeyring)> {
-        let esdk_client = Esdk::builder()
+    async fn setup_esdk() -> Result<(Client, HierarchicalKeyring)> {
+        let esdk_client = Client::builder()
             .commitment_policy(CommitmentPolicy::RequireEncryptRequireDecrypt)
-            .build();
+            .build()?;
 
         let sdk_config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
 
-        let key_store = BranchKeyStore::builder()
+        let key_store = KeyStoreClient::builder()
             .kms_client(aws_sdk_kms::Client::new(&sdk_config))
             .ddb_client(aws_sdk_dynamodb::Client::new(&sdk_config))
             .ddb_table_name(BRANCH_KEY_STORE_NAME)
-            .logical_keystore_name(LOGICAL_KEY_STORE_NAME)
-            .kms_configuration(KmsConfiguration::KmsKeyArn(HIERARCHY_KEY_ARN.to_string()))
+            .logical_key_store_name(LOGICAL_KEY_STORE_NAME)
+            .kms_configuration(KmsConfiguration::KmsKeyArn(HIERARCHY_KEY_ARN.into()))
             .build()
             .await
             .map_err(|e| anyhow::anyhow!("failed to build the key store: {e}"))?;
@@ -82,8 +80,14 @@ impl EsdkBenchmark {
             .key_store(key_store)
             .branch_key_id(BRANCH_KEY_ID)
             .ttl(Duration::from_secs(600_000))
-            .cache(CacheType::Default(DefaultCache::new(1000)))
+            .cache(
+                DefaultCmc::builder()
+                    .entry_capacity(1000)
+                    .build()
+                    .map_err(|e| anyhow::anyhow!("failed to build the cache: {e}"))?,
+            )
             .build()
+            .await
             .map_err(|e| anyhow::anyhow!("failed to create the hierarchical keyring: {e}"))?;
 
         Ok((esdk_client, keyring))

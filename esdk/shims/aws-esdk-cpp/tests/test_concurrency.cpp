@@ -44,11 +44,12 @@ struct Collected {
     std::vector<std::string> errors;
 };
 
-Collected concurrent_round_trips(Aws::Esdk::EncryptionSDK& sdk,
-                                 const Aws::Esdk::Keyring& keyring,
+Collected concurrent_round_trips(const Aws::Esdk::Keyring& keyring,
                                  std::optional<Aws::Esdk::AlgorithmSuiteId> suite,
                                  Aws::Esdk::CommitmentPolicy policy,
                                  ExtractId extract_id) {
+    // One client shared by every thread.
+    const Aws::Esdk::Client sdk(Aws::Esdk::Config().with_commitment_policy(policy));
     Collected collected;
     std::mutex mu;
     std::vector<std::thread> threads;
@@ -62,15 +63,12 @@ Collected concurrent_round_trips(Aws::Esdk::EncryptionSDK& sdk,
                         "thread " + std::to_string(t) + " message " + std::to_string(i));
 
                     Aws::Esdk::EncryptOptions enc_options;
-                    enc_options.with_commitment_policy(policy);
                     if (suite) {
                         enc_options.with_algorithm_suite(*suite);
                     }
                     auto encrypted = sdk.encrypt(plaintext, keyring, enc_options);
 
-                    Aws::Esdk::DecryptOptions dec_options;
-                    dec_options.with_commitment_policy(policy);
-                    auto decrypted = sdk.decrypt(encrypted.ciphertext, keyring, dec_options);
+                    auto decrypted = sdk.decrypt(encrypted.ciphertext, keyring);
 
                     std::lock_guard<std::mutex> lock(mu);
                     collected.message_ids.push_back(extract_id(encrypted.ciphertext));
@@ -90,12 +88,12 @@ Collected concurrent_round_trips(Aws::Esdk::EncryptionSDK& sdk,
     return collected;
 }
 
-void run_case(const char* label, Aws::Esdk::EncryptionSDK& sdk,
+void run_case(const char* label,
               const Aws::Esdk::Keyring& keyring,
               std::optional<Aws::Esdk::AlgorithmSuiteId> suite,
               Aws::Esdk::CommitmentPolicy policy, ExtractId extract_id,
               std::size_t id_len) {
-    auto collected = concurrent_round_trips(sdk, keyring, suite, policy, extract_id);
+    auto collected = concurrent_round_trips(keyring, suite, policy, extract_id);
 
     for (const auto& error : collected.errors) {
         std::cerr << label << ": " << error << "\n";
@@ -124,16 +122,15 @@ int main(int argc, char** argv) {
         std::vector<std::uint8_t> key(32, 0x2A);
         Aws::Esdk::RawAesKeyring keyring("test-ns", "test-key", key,
                                          Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16);
-        Aws::Esdk::EncryptionSDK sdk;
         try {
             //= spec/shim/shim.md#concurrency
             //= type=test
             //# If a core library resource or operation supports concurrent use from multiple threads,
             //# the shim library SHOULD support it as well.
-            run_case("raw-aes v2", sdk, keyring, std::nullopt,
+            run_case("raw-aes v2", keyring, std::nullopt,
                      Aws::Esdk::CommitmentPolicy::RequireEncryptRequireDecrypt,
                      v2_message_id, 32);
-            run_case("raw-aes v1", sdk, keyring,
+            run_case("raw-aes v1", keyring,
                      Aws::Esdk::AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256,
                      Aws::Esdk::CommitmentPolicy::ForbidEncryptAllowDecrypt,
                      v1_message_id, 16);
@@ -149,15 +146,14 @@ int main(int argc, char** argv) {
         return esdk_test::report("test_concurrency");
     }
 
-    Aws::Esdk::EncryptionSDK sdk;
     try {
         auto keyring = esdk_test::make_hierarchical_keyring(*cfg);
 
-        run_case("v2", sdk, keyring, std::nullopt,
+        run_case("v2", keyring, std::nullopt,
                  Aws::Esdk::CommitmentPolicy::RequireEncryptRequireDecrypt,
                  v2_message_id, 32);
 
-        run_case("v1", sdk, keyring,
+        run_case("v1", keyring,
                  Aws::Esdk::AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256,
                  Aws::Esdk::CommitmentPolicy::ForbidEncryptAllowDecrypt,
                  v1_message_id, 16);
