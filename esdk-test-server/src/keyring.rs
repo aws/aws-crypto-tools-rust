@@ -123,6 +123,7 @@ async fn build_hierarchical(
         .ttl(Duration::from_secs(ttl_seconds))
         .branch_key_id(config.branch_key_id.clone())
         .build()
+        .await
         .map_err(|e| ServerError::esdk(e.to_string()))?;
     Ok(SharedKeyring::new(keyring))
 }
