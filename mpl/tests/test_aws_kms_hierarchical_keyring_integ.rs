@@ -69,15 +69,18 @@ use aws_sdk_kms::Client as KmsClient;
 use aws_sdk_kms::error::SdkError;
 use aws_sdk_kms::operation::decrypt::DecryptError;
 
+use aws_crypto_mpl::__test_internals::aws_kms::unwrap as branch_key_unwrap;
 use aws_crypto_mpl::Error;
-use aws_crypto_mpl::aws_kms::__test_internals::unwrap as branch_key_unwrap;
-use aws_crypto_mpl::aws_kms::hierarchical_keyring::HierarchicalKeyring;
-use aws_crypto_mpl::key_store::{Discovery, KeyStoreClient, MrDiscovery};
-use aws_crypto_mpl::structures::{
+use aws_crypto_mpl::cmc::{Cmc, LocalCmc, SharedCmc};
+use aws_crypto_mpl::key_store::Client as KeyStoreClient;
+use aws_crypto_mpl::key_store::types::KmsConfiguration;
+use aws_crypto_mpl::key_store::types::{Discovery, MrDiscovery};
+use aws_crypto_mpl::keyring::HierarchicalKeyring;
+use aws_crypto_mpl::keyring::SharedKeyring;
+use aws_crypto_mpl::types::{
     AlgorithmSuiteId, BranchKeyMaterials, DecryptionMaterials, EncryptionContext,
     EncryptionMaterials, EsdkAlgorithmSuiteId,
 };
-use aws_crypto_mpl::{Cmc, KmsConfiguration, LocalCmc, SharedCmc, SharedKeyring};
 
 // ─── Fixtures (mirror Dafny Fixtures.dfy) ──────────────────────────────────
 
@@ -414,9 +417,7 @@ async fn integ_on_encrypt_with_pre_existing_pdk_round_trips() {
     let materials_in = EncryptionMaterials::builder()
         .algorithm_suite_id(suite)
         .encryption_context(ec)
-        .plaintext_data_key(aws_crypto_mpl::structures::PlaintextDataKey::new(
-            zeroed.clone(),
-        ))
+        .plaintext_data_key(aws_crypto_mpl::types::PlaintextDataKey::new(zeroed.clone()))
         .build()
         .unwrap();
 

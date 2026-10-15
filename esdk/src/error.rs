@@ -84,7 +84,8 @@
 //! ```no_run
 //! # fn record_throttle(_: &str) {}
 //! # async fn example(esdk: aws_esdk::Client, keyring: aws_esdk::types::SharedKeyring) {
-//! use aws_esdk::error::{Error, Resource, Service};
+//! use aws_esdk::Error;
+//! use aws_esdk::error::{Resource, Service};
 //!
 //! if let Err(Error::Throttling(e)) = esdk.encrypt().plaintext(b"data").keyring(keyring).send().await {
 //!     match e.service() {
@@ -113,7 +114,8 @@
 //!
 //! ```no_run
 //! # async fn example(esdk: aws_esdk::Client, keyring: aws_esdk::types::SharedKeyring, ciphertext: &[u8]) {
-//! use aws_esdk::error::{Error, Resource, Service};
+//! use aws_esdk::Error;
+//! use aws_esdk::error::{Resource, Service};
 //!
 //! if let Err(e) = esdk.decrypt().ciphertext(ciphertext).keyring(keyring).send().await {
 //!     for attempt in e.failures() {
@@ -139,7 +141,8 @@
 //! so you can construct the errors this crate returns, for example from a fake keyring or CMM:
 //!
 //! ```
-//! use aws_esdk::error::{AccessDeniedError, Error, KmsKey, Resource, Service};
+//! use aws_esdk::error::{AccessDeniedError, KmsKey, Resource, Service};
+//! use aws_esdk::Error;
 //!
 //! let err = Error::from(
 //!     AccessDeniedError::builder()
@@ -153,9 +156,15 @@
 //! ```
 
 // `cargo xtask gen-errors` writes `generated.rs` from `errors.toml` at the repository root.
-mod generated;
+pub(crate) mod generated;
 
-pub use generated::*;
+pub use generated::{
+    AccessDeniedError, ConflictError, CryptographicError, DispatchError,
+    EncryptionContextMismatchError, ErrorParts, InternalError, InvalidMaterialsError, IoError,
+    NoMatchingDataKeyError, ResourceNotFoundError, SerializationError, ServiceError,
+    ThrottlingError, ValidationError, builders,
+};
+pub(crate) use generated::{Error, Kind};
 
 pub use aws_mpl_primitives::error::{
     BranchKey, Cache, CmmResource, Collection, ConflictReason, DataKeyInfo, DynamoDbTable,

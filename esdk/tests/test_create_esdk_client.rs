@@ -3,8 +3,8 @@
 
 use aws_crypto_mpl::cmm::DefaultCmm;
 use aws_crypto_mpl::keyring::RawAesKeyring;
+use aws_crypto_mpl::types::AesWrappingAlg;
 use aws_esdk::types::EncryptionContext;
-use aws_mpl_primitives::AesGcm;
 use std::num::{NonZeroU32, NonZeroUsize};
 
 #[allow(clippy::duplicate_mod)]
@@ -50,7 +50,7 @@ async fn test_net_v400_message_is_not_readable() {
         .key_namespace("Some managed raw keys")
         .key_name("My 256-bit AES wrapping key")
         .wrapping_key(vec![0u8; 32])
-        .wrapping_alg(AesGcm::Aes256Gcm)
+        .wrapping_alg(AesWrappingAlg::AlgAes256GcmIv12Tag16)
         .build()
         .expect("raw AES keyring construction must succeed for the .NET v4.0.0 regression key");
 

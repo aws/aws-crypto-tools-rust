@@ -5,7 +5,8 @@
 mod fixtures;
 mod test_helpers;
 
-use aws_esdk::{Client, types::EncryptionContext};
+use aws_esdk::Client;
+use aws_esdk::types::EncryptionContext;
 use test_helpers::{multi_frame_signed_for_stream, multi_frame_unsigned_for_stream, test_keyring};
 
 #[tokio::test(flavor = "multi_thread")]

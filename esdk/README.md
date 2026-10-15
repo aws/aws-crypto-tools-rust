@@ -28,7 +28,8 @@ Building needs:
 Encrypt and decrypt a message with a raw AES keyring:
 
 ```rust
-use aws_crypto_mpl::{AesGcm, RawAesKeyring};
+use aws_crypto_mpl::keyring::RawAesKeyring;
+use aws_crypto_mpl::types::AesWrappingAlg;
 use aws_esdk::types::EncryptionContext;
 
 #[tokio::main]
@@ -39,7 +40,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .key_namespace("my-key-namespace")
         .key_name("my-key-name")
         .wrapping_key(vec![0x01u8; 32])
-        .wrapping_alg(AesGcm::Aes256Gcm)
+        .wrapping_alg(AesWrappingAlg::AlgAes256GcmIv12Tag16)
         .build()?;
 
     // The encryption context is authenticated, not encrypted, and is bound to the message.

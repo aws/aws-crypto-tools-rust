@@ -4,10 +4,10 @@
 //! Shared handles for the pluggable-component traits.
 //!
 //! A trait is not a type, so an API cannot store "some keyring" by value.
-//! Each trait has a handle that can be stored: [`SharedKeyring`](crate::SharedKeyring),
-//! [`SharedCmm`](crate::SharedCmm), [`SharedCmc`](crate::SharedCmc), and
-//! [`SharedBranchKeySupplier`](crate::SharedBranchKeySupplier).
-//! [`KeyStoreClient`](crate::KeyStoreClient) holds a key store instead.
+//! Each trait has a handle that can be stored: [`SharedKeyring`](crate::keyring::SharedKeyring),
+//! [`SharedCmm`](crate::cmm::SharedCmm), [`SharedCmc`](crate::cmc::SharedCmc), and
+//! [`SharedBranchKeySupplier`](crate::keyring::SharedBranchKeySupplier).
+//! A [`key_store::Client`](crate::key_store::Client) holds a key store instead.
 //!
 //! Each handle implements its own trait, so a handle works anywhere a component does.
 //! APIs take `impl Keyring + 'static` and convert with [`IntoShared`]:

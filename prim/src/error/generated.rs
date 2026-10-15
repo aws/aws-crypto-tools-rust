@@ -631,7 +631,7 @@ impl Error {
     /// The first error of type `T` in the source chain, starting with `self`.
     ///
     /// ```
-    /// use aws_mpl_primitives::error::Error;
+    /// use aws_mpl_primitives::Error;
     ///
     /// fn handle(err: &Error) {
     ///     if let Some(io) = err.find_source::<std::io::Error>() {
@@ -692,7 +692,7 @@ impl std::error::Error for Error {
 /// # Example
 ///
 /// ```
-/// use aws_mpl_primitives::error::Error;
+/// use aws_mpl_primitives::Error;
 ///
 /// fn handle(err: &Error) {
 ///     match err {
@@ -785,7 +785,7 @@ impl From<CryptographicError> for Error {
 /// # Example
 ///
 /// ```
-/// use aws_mpl_primitives::error::Error;
+/// use aws_mpl_primitives::Error;
 ///
 /// fn handle(err: &Error) {
 ///     match err {
