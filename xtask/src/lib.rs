@@ -645,7 +645,7 @@ pub struct ErrorParts {{
             let path = if i == 0 {
                 "Error".to_owned()
             } else {
-                format!("{}::error::Error", lib.crate_name)
+                format!("{}::Error", lib.crate_name)
             };
             match data_keys_variant(self.spec, lib) {
                 Some(v) => {
@@ -976,7 +976,7 @@ fn write_error(f: &mut fmt::Formatter<'_>, data: &ErrorData, name: &'static str,
             let source = self.library(&conv.library);
             let _ = write!(
                 failures_from,
-                "            if let Some(e) = e.downcast_ref::<{path}::error::Error>()\n                && !e.collected().is_empty()\n            {{\n                return e\n                    .collected()\n                    .iter()\n                    .flat_map(|c| Self::from_{lib}_parts(c).failures())\n                    .collect();\n            }}\n",
+                "            if let Some(e) = e.downcast_ref::<{path}::Error>()\n                && !e.collected().is_empty()\n            {{\n                return e\n                    .collected()\n                    .iter()\n                    .flat_map(|c| Self::from_{lib}_parts(c).failures())\n                    .collect();\n            }}\n",
                 path = source.crate_name,
                 lib = source.name,
             );
@@ -1233,7 +1233,7 @@ fn write_error(f: &mut fmt::Formatter<'_>, data: &ErrorData, name: &'static str,
     /// The first error of type `T` in the source chain, starting with `self`.
     ///
     /// ```
-    /// use {crate_name}::error::Error;
+    /// use {crate_name}::Error;
     ///
     /// fn handle(err: &Error) {{
     ///     if let Some(io) = err.find_source::<std::io::Error>() {{
@@ -1331,7 +1331,7 @@ impl std::error::Error for Error {{
         let mut s = String::new();
         for conv in &self.lib.from {
             let source = self.library(&conv.library);
-            let path = format!("{}::error::Error", source.crate_name);
+            let path = format!("{}::Error", source.crate_name);
             let mut arms = String::new();
             let mut name_arms = String::new();
             for v in &source.variants {

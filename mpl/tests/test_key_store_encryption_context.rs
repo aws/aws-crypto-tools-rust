@@ -14,7 +14,7 @@ use aws_crypto_mpl::key_store::__test_internals::encryption_context::{
     EncryptionContextInput, active_encryption_context, beacon_key_encryption_context,
     decrypt_only_encryption_context,
 };
-use aws_crypto_mpl::structures::EncryptionContext;
+use aws_crypto_mpl::types::EncryptionContext;
 
 fn sample_input() -> EncryptionContextInput<'static> {
     EncryptionContextInput {

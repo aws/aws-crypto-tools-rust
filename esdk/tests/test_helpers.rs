@@ -24,9 +24,9 @@ pub enum Version {
 pub const VERSIONS: [Version; 2] = [Version::V1, Version::V2];
 
 use aws_crypto_mpl::keyring::RawAesKeyring;
+use aws_crypto_mpl::types::AesWrappingAlg;
 use aws_esdk::types::AlgorithmSuiteId;
 use aws_esdk::types::CommitmentPolicy;
-use aws_mpl_primitives::AesGcm;
 
 /// Build a native raw-AES keyring.
 fn raw_aes(ns: String, name: String, key: [u8; 32]) -> RawAesKeyring {
@@ -34,7 +34,7 @@ fn raw_aes(ns: String, name: String, key: [u8; 32]) -> RawAesKeyring {
         .key_namespace(ns)
         .key_name(name)
         .wrapping_key(key.to_vec())
-        .wrapping_alg(AesGcm::Aes256Gcm)
+        .wrapping_alg(AesWrappingAlg::AlgAes256GcmIv12Tag16)
         .build()
         .expect("raw AES keyring construction must succeed for test key material")
 }

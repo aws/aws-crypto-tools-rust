@@ -6,7 +6,7 @@
 //! decode end to end.
 
 use super::*;
-use aws_crypto_mpl::Cmc as _;
+use aws_crypto_mpl::cmc::Cmc as _;
 use ffi::EsdkAlgorithmSuiteId as F;
 use ffi::EsdkCommitmentPolicy as P;
 
@@ -356,7 +356,7 @@ fn max_edks_zero_is_no_limit_positive_is_limit() {
 
 #[test]
 fn make_kms_config_accepts_key_arn() {
-    use aws_crypto_mpl::key_store::KmsConfiguration;
+    use aws_crypto_mpl::key_store::types::KmsConfiguration;
     //= spec/shim/esdk-shim.md#kms-configuration
     //= type=test
     //# - The shim MUST translate a KMS key ARN configuration.
@@ -368,7 +368,7 @@ fn make_kms_config_accepts_key_arn() {
 
 #[test]
 fn make_kms_config_accepts_mr_key_arn() {
-    use aws_crypto_mpl::key_store::KmsConfiguration;
+    use aws_crypto_mpl::key_store::types::KmsConfiguration;
     //= spec/shim/esdk-shim.md#kms-configuration
     //= type=test
     //# - The shim MUST translate a KMS multi-Region-key ARN configuration.
@@ -380,7 +380,7 @@ fn make_kms_config_accepts_mr_key_arn() {
 
 #[test]
 fn make_kms_config_accepts_discovery() {
-    use aws_crypto_mpl::key_store::KmsConfiguration;
+    use aws_crypto_mpl::key_store::types::KmsConfiguration;
     //= spec/shim/esdk-shim.md#kms-configuration
     //= type=test
     //# - The shim MUST translate a discovery configuration.
@@ -392,7 +392,7 @@ fn make_kms_config_accepts_discovery() {
 
 #[test]
 fn make_kms_config_accepts_mr_discovery() {
-    use aws_crypto_mpl::key_store::KmsConfiguration;
+    use aws_crypto_mpl::key_store::types::KmsConfiguration;
     //= spec/shim/esdk-shim.md#kms-configuration
     //= type=test
     //# - The shim MUST translate a multi-Region-key discovery configuration.

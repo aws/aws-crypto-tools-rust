@@ -9,23 +9,20 @@
 //! so a keyring can hold a cache whose type is chosen at runtime.
 
 #[cfg(feature = "rt-tokio")]
-pub mod default;
-pub mod entry;
+mod default;
+pub(crate) mod entry;
 mod fluent_builders;
-pub mod local;
+mod local;
 mod operation;
 #[cfg(feature = "rt-tokio")]
-pub mod storm_tracking;
+mod storm_tracking;
 
 use crate::Error;
 use async_trait::async_trait;
 
 #[cfg(feature = "rt-tokio")]
 pub use default::{DefaultCmc, DefaultCmcBuilder};
-pub use entry::{
-    BytesUsage, CacheEntry, CacheEntryBuilder, CachedMaterials, MessageUsage, UsageMetadata,
-    UsageMetadataBuilder,
-};
+pub(crate) use entry::{CacheEntry, CachedMaterials};
 pub use fluent_builders::{
     DeleteCacheEntryFluentBuilder, GetCacheEntryFluentBuilder, PutCacheEntryFluentBuilder,
     UpdateUsageMetadataFluentBuilder,
@@ -141,4 +138,10 @@ impl Cmc for SharedCmc {
     fn grace_period(&self) -> Option<Duration> {
         self.0.grace_period()
     }
+}
+
+#[cfg(feature = "test-utils")]
+#[doc(hidden)]
+pub mod __test_internals {
+    pub use super::storm_tracking::__test_internals::*;
 }

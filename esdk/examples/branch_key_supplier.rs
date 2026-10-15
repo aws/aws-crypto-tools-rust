@@ -17,12 +17,12 @@
 
 use std::time::Duration;
 
-use aws_crypto_mpl::Error as MplError;
-use aws_crypto_mpl::async_trait;
-use aws_crypto_mpl::key_store::{KeyStoreClient, KmsConfiguration};
+use aws_crypto_mpl::key_store::types::KmsConfiguration;
+use aws_crypto_mpl::keyring::{
+    BranchKeySupplier, GetBranchKeyIdInput, GetBranchKeyIdOutput, HierarchicalKeyring,
+};
 use aws_crypto_mpl::{
-    BranchKeySupplier, GetBranchKeyIdInput, GetBranchKeyIdOutput, HierarchicalKeyring, aws_config,
-    aws_sdk_dynamodb, aws_sdk_kms,
+    Error as MplError, async_trait, aws_config, aws_sdk_dynamodb, aws_sdk_kms, key_store,
 };
 use aws_esdk::Error;
 use aws_esdk::types::EncryptionContext;
@@ -57,7 +57,7 @@ fn tenant_context(tenant: &str) -> EncryptionContext {
 }
 
 async fn fixed_keyring(
-    key_store: &KeyStoreClient,
+    key_store: &key_store::Client,
     branch_key_id: &str,
 ) -> Result<HierarchicalKeyring, MplError> {
     HierarchicalKeyring::builder()
@@ -74,7 +74,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // The AWS Crypto Tools CI test key store.
     // Replace these with your own key store's table, name, and KMS key ARN.
-    let key_store = KeyStoreClient::builder()
+    let key_store = key_store::Client::builder()
         .ddb_table_name("KeyStoreDdbTable")
         .logical_key_store_name("KeyStoreDdbTable")
         .kms_configuration(KmsConfiguration::KmsKeyArn(
