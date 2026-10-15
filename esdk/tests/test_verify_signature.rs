@@ -7,7 +7,7 @@
 mod fixtures;
 mod test_helpers;
 
-use aws_esdk::AlgorithmSuiteId;
+use aws_esdk::types::AlgorithmSuiteId;
 use aws_esdk::*;
 use test_helpers::*;
 

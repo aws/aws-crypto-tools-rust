@@ -7,7 +7,7 @@ use super::Error;
 use super::serialize_functions::{read_u16, read_vec, write_bytes, write_u16};
 use crate::error::err;
 use crate::error::{Kind, err_with_cause};
-use crate::types::{EncryptionContext, Source, Tee};
+use crate::shapes::{EncryptionContext, Source, Tee};
 
 /// Read the header's AAD encryption context sub-section.
 pub(crate) async fn read_encryption_context(

@@ -22,7 +22,7 @@
 //!
 //! ```
 //! use aws_crypto_mpl::{AesGcm, RawAesKeyring};
-//! use aws_esdk::EncryptionContext;
+//! use aws_esdk::types::EncryptionContext;
 //!
 //! # #[tokio::main(flavor = "current_thread")]
 //! # async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -67,7 +67,7 @@
 //! [`Config`] and pass it to [`Client::from_conf`]:
 //!
 //! ```
-//! use aws_esdk::CommitmentPolicy;
+//! use aws_esdk::types::CommitmentPolicy;
 //!
 //! # fn main() -> Result<(), aws_esdk::Error> {
 //! let config = aws_esdk::Config::builder()
@@ -80,21 +80,26 @@
 //!
 //! | Operation | Fluent builder | Output |
 //! |---|---|---|
-//! | [`Client::encrypt`] | [`EncryptFluentBuilder`] | [`EncryptOutput`] |
-//! | [`Client::decrypt`] | [`DecryptFluentBuilder`] | [`DecryptOutput`] |
-//! | [`Client::encrypt_stream`] | [`EncryptStreamFluentBuilder`] | [`EncryptStreamOutput`] |
-//! | [`Client::decrypt_stream`] | [`DecryptStreamFluentBuilder`] | [`DecryptStreamOutput`] |
+//! | [`Client::encrypt`] | [`EncryptFluentBuilder`](operation::encrypt::builders::EncryptFluentBuilder) | [`EncryptOutput`](operation::encrypt::EncryptOutput) |
+//! | [`Client::decrypt`] | [`DecryptFluentBuilder`](operation::decrypt::builders::DecryptFluentBuilder) | [`DecryptOutput`](operation::decrypt::DecryptOutput) |
+//! | [`Client::encrypt_stream`] | [`EncryptStreamFluentBuilder`](operation::encrypt_stream::builders::EncryptStreamFluentBuilder) | [`EncryptStreamOutput`](operation::encrypt_stream::EncryptStreamOutput) |
+//! | [`Client::decrypt_stream`] | [`DecryptStreamFluentBuilder`](operation::decrypt_stream::builders::DecryptStreamFluentBuilder) | [`DecryptStreamOutput`](operation::decrypt_stream::DecryptStreamOutput) |
 //!
 //! Keyrings and cryptographic materials managers (CMMs) come from `aws_crypto_mpl`.
-//! To write your own, implement [`Keyring`] or [`Cmm`].
+//! To write your own, implement [`Keyring`](types::Keyring) or [`Cmm`](types::Cmm).
 //!
 //! Every operation fails with an [`Error`]; see the [`error`] module for how to handle each kind.
 //!
 //! ## Crate organization
 //!
-//! - The crate root holds the [`Client`], its [`Config`], the fluent builders and their outputs,
-//!   and the types they take: [`EncryptionContext`], [`AlgorithmSuiteId`], [`CommitmentPolicy`],
-//!   and the [`Keyring`] and [`Cmm`] traits.
+//! The layout follows the AWS SDK for Rust:
+//!
+//! - The crate root holds [`Client`], [`Config`], and [`Error`].
+//! - [`config`] holds [`Config`] and its [`Builder`](config::Builder).
+//! - [`operation`] has a module per operation, holding its output and, under `builders`, its fluent builder.
+//! - [`types`] holds the types the operations take:
+//!   [`EncryptionContext`](types::EncryptionContext), [`AlgorithmSuiteId`](types::AlgorithmSuiteId),
+//!   [`CommitmentPolicy`](types::CommitmentPolicy), and the [`Keyring`](types::Keyring) and [`Cmm`](types::Cmm) traits.
 //! - [`error`] holds [`Error`] and the details each error carries.
 //!
 //! The SDK reads and writes framed and nonframed message bodies, and message format versions 1 and 2
@@ -186,19 +191,20 @@
 #![allow(unused_crate_dependencies)] // false positives across workspace dev-deps
 
 mod builder;
-pub mod error;
-pub use error::Error;
+pub mod client;
+pub mod config;
 mod decrypt;
 mod encrypt;
+pub mod error;
+pub mod operation;
+mod shapes;
 mod suites;
-mod types;
-pub use types::{
-    AlgorithmSuiteId, Cmm, CommitmentPolicy, DecryptOutput, DecryptStreamOutput, EncryptOutput,
-    EncryptStreamOutput, EncryptionContext, IntoShared, Keyring, SharedCmm, SharedKeyring,
-    async_trait,
-};
-mod client;
-pub use client::*;
+pub mod types;
+
+pub use client::Client;
+pub use config::Config;
+pub use error::Error;
+pub use shapes::async_trait;
 
 pub(crate) mod key_derivation;
 pub(crate) mod materials;
@@ -218,9 +224,9 @@ pub mod __test_internals {
     pub use crate::message::header::{HeaderInfo, generate_message_id, read_header_body};
     pub use crate::message::header_auth::read_header_auth_tag;
     pub use crate::message::header_types::HeaderBody;
+    pub use crate::shapes::{Sink, Source, Tee};
     pub use crate::suites::{
         algorithm_suite_from_bytes, algorithm_suite_id_from_bytes, get_ecdsa_alg,
         get_esdk_algorithm_suite_id,
     };
-    pub use crate::types::{Sink, Source, Tee};
 }

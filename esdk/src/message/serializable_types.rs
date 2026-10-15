@@ -3,7 +3,7 @@
 
 //! Type aliases and helper functions for message serialization.
 
-use crate::types::EncryptionContext;
+use crate::shapes::EncryptionContext;
 use aws_crypto_mpl::structures::AlgorithmSuite;
 use aws_crypto_mpl::structures::EncryptedDataKey;
 
