@@ -24,8 +24,8 @@ use aws_crypto_mpl::{
     BranchKeySupplier, GetBranchKeyIdInput, GetBranchKeyIdOutput, HierarchicalKeyring, aws_config,
     aws_sdk_dynamodb, aws_sdk_kms,
 };
-use aws_esdk::EncryptionContext;
 use aws_esdk::Error;
+use aws_esdk::types::EncryptionContext;
 
 /// Maps the `tenant` value in the encryption context to that tenant's branch key ID.
 struct TenantBranchKeySupplier {

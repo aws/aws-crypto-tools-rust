@@ -3,7 +3,7 @@
 
 use aws_crypto_mpl::cmm::DefaultCmm;
 use aws_crypto_mpl::keyring::RawAesKeyring;
-use aws_esdk::EncryptionContext;
+use aws_esdk::types::EncryptionContext;
 use aws_mpl_primitives::AesGcm;
 use std::num::{NonZeroU32, NonZeroUsize};
 
@@ -374,8 +374,8 @@ async fn test_decrypt_rejects_neither_and_both_sources() {
 
 // Client tests
 
-use aws_esdk::AlgorithmSuiteId;
-use aws_esdk::CommitmentPolicy;
+use aws_esdk::types::AlgorithmSuiteId;
+use aws_esdk::types::CommitmentPolicy;
 use aws_esdk::{Client, Config};
 
 #[test]

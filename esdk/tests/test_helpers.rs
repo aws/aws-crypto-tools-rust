@@ -4,6 +4,9 @@
 
 mod fixtures;
 
+use aws_esdk::operation::decrypt::DecryptOutput;
+use aws_esdk::operation::encrypt::EncryptOutput;
+use aws_esdk::types::*;
 use aws_esdk::*;
 use fixtures::*;
 use std::num::NonZeroU32;
@@ -21,8 +24,8 @@ pub enum Version {
 pub const VERSIONS: [Version; 2] = [Version::V1, Version::V2];
 
 use aws_crypto_mpl::keyring::RawAesKeyring;
-use aws_esdk::AlgorithmSuiteId;
-use aws_esdk::CommitmentPolicy;
+use aws_esdk::types::AlgorithmSuiteId;
+use aws_esdk::types::CommitmentPolicy;
 use aws_mpl_primitives::AesGcm;
 
 /// Build a native raw-AES keyring.

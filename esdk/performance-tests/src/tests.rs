@@ -4,7 +4,7 @@
 use crate::alloc;
 use anyhow::Result;
 use aws_crypto_mpl::HierarchicalKeyring;
-use aws_esdk::{Client, EncryptionContext};
+use aws_esdk::{Client, types::EncryptionContext};
 use chrono::Utc;
 use futures::future::join_all;
 use indicatif::{ProgressBar, ProgressStyle};

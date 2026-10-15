@@ -20,7 +20,7 @@ use super::{
     DecryptMaterialsInput, DecryptMaterialsOutput, GetEncryptionMaterialsInput,
     GetEncryptionMaterialsOutput,
 };
-use crate::keyring::{Keyring, SharedKeyring};
+use crate::keyring::SharedKeyring;
 use crate::shared::IntoShared;
 use crate::structures::{
     AsymmetricSignatureAlgorithm, DecryptionMaterials, EncryptionContext, EncryptionMaterials,
@@ -63,7 +63,7 @@ pub struct DefaultCmm {
 
 impl DefaultCmm {
     /// Construct a `DefaultCmm` wrapping the given keyring.
-    pub fn new(keyring: impl Keyring + 'static) -> Self {
+    pub fn new(keyring: impl IntoShared<SharedKeyring>) -> Self {
         Self {
             keyring: keyring.into_shared(),
         }

@@ -804,7 +804,7 @@ fn commitment_policy_target_to_core(
 //# the exact key and value of each.
 fn encryption_context_target_to_core(
     x: &[ffi::EncryptionContextItem],
-) -> aws_esdk::EncryptionContext {
+) -> aws_esdk::types::EncryptionContext {
     x.iter().map(|i| (i.key.clone(), i.value.clone())).collect()
 }
 
@@ -814,7 +814,7 @@ fn encryption_context_target_to_core(
 //# key-value map, to the target's list of key-value pairs, preserving every pair
 //# and the exact key and value of each.
 fn encryption_context_core_to_target(
-    x: &aws_esdk::EncryptionContext,
+    x: &aws_esdk::types::EncryptionContext,
 ) -> Vec<ffi::EncryptionContextItem> {
     x.iter()
         .map(|(key, value)| ffi::EncryptionContextItem {
@@ -1988,10 +1988,10 @@ fn decrypt_stream_finish(stream: &mut DecryptStream) -> Result<ffi::StreamFinish
 /// Pass this to C++ via `Aws::Esdk::Keyring::adopt`.
 /// Ownership transfers to the returned pointer; consumers MUST NOT `adopt` this handle more than once.
 pub fn into_keyring_handle(
-    keyring: impl aws_crypto_mpl::keyring::Keyring + 'static,
+    keyring: impl aws_crypto_mpl::IntoShared<SharedKeyring>,
 ) -> *mut std::ffi::c_void {
     Box::into_raw(Box::new(Keyring {
-        inner: SharedKeyring::new(keyring),
+        inner: keyring.into_shared(),
     }))
     .cast()
 }

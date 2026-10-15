@@ -8,21 +8,49 @@ authors = ["AWS-CryptoTools"]
 
 [dependencies]
 async-trait = "0.1.92"
-aws-config = "1.12.0"
+aws-config = { version = "1.12.0", default-features = false, optional = true }
 aws-mpl-primitives = { path = "../prim" }
-aws-sdk-dynamodb = "1.130.0"
-aws-sdk-kms = "1.123.0"
+aws-sdk-dynamodb = { version = "1.130.0", default-features = false, optional = true }
+aws-sdk-kms = { version = "1.123.0", default-features = false, optional = true }
+aws-smithy-runtime-api = { version = "1.19.0", features = ["client"] }
 aws-smithy-types = "1.8.1"
+aws-types = "1.6.0"
 base64 = "0.23.1"
 lru = "0.18.5"
 time = { version = "0.3.55", default-features = false, features = ["std", "formatting", "macros"] }
-tokio = { version = "1.49", features = ["rt", "time"], default-features = false }
+tokio = { version = "1.49", default-features = false, optional = true }
 uuid = { version = "1.27.0", features = ["v4"] }
 zeroize = { version = "1.9.0", features = ["derive"] }
 
 [features]
-default = []
-test-utils = []
+default = ["kms", "ddb", "default-config", "rt-tokio"]
+# The AWS KMS client. The hierarchical keyring and key store need `kms` and `ddb`.
+kms = ["dep:aws-sdk-kms"]
+# The Amazon DynamoDB client. The hierarchical keyring and key store need `kms` and `ddb`.
+ddb = ["dep:aws-sdk-dynamodb"]
+# Builds any KMS or DynamoDB client the key store is not given from the default AWS config chain,
+# with the AWS SDK's default HTTPS client and tokio sleep.
+# Without it, pass both clients to `KeyStoreClientBuilder`.
+default-config = [
+    "rt-tokio",
+    "dep:aws-config",
+    "aws-config/default-https-client",
+    "aws-config/credentials-process",
+    "aws-config/sso",
+    "aws-sdk-kms?/default-https-client",
+    "aws-sdk-dynamodb?/default-https-client",
+]
+# The tokio runtime, as the AWS SDK's `rt-tokio` feature.
+# `StormTrackingCmc` and `DefaultCmc` sleep with tokio, so they need it.
+# Without it, pass a cache to `HierarchicalKeyringBuilder::cache`.
+rt-tokio = [
+    "dep:tokio",
+    "tokio/time",
+    "aws-config?/rt-tokio",
+    "aws-sdk-kms?/rt-tokio",
+    "aws-sdk-dynamodb?/rt-tokio",
+]
+test-utils = ["kms", "ddb"]
 
 [dev-dependencies]
 # Used only to construct AWS SDK errors for the classifier unit tests.

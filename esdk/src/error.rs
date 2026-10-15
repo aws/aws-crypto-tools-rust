@@ -83,7 +83,7 @@
 //!
 //! ```no_run
 //! # fn record_throttle(_: &str) {}
-//! # async fn example(esdk: aws_esdk::Client, keyring: aws_esdk::SharedKeyring) {
+//! # async fn example(esdk: aws_esdk::Client, keyring: aws_esdk::types::SharedKeyring) {
 //! use aws_esdk::error::{Error, Resource, Service};
 //!
 //! if let Err(Error::Throttling(e)) = esdk.encrypt().plaintext(b"data").keyring(keyring).send().await {
@@ -112,7 +112,7 @@
 //! An error with no collection yields itself.
 //!
 //! ```no_run
-//! # async fn example(esdk: aws_esdk::Client, keyring: aws_esdk::SharedKeyring, ciphertext: &[u8]) {
+//! # async fn example(esdk: aws_esdk::Client, keyring: aws_esdk::types::SharedKeyring, ciphertext: &[u8]) {
 //! use aws_esdk::error::{Error, Resource, Service};
 //!
 //! if let Err(e) = esdk.decrypt().ciphertext(ciphertext).keyring(keyring).send().await {
@@ -161,10 +161,10 @@ pub use aws_mpl_primitives::error::{
     BranchKey, Cache, CmmResource, Collection, ConflictReason, DataKeyInfo, DynamoDbTable,
     KeyringResource, KmsKey, Resource, RetryKind, Service,
 };
-pub use aws_sdk_kms::operation::RequestId;
 pub use aws_smithy_types::error::display::DisplayErrorContext;
 pub use aws_smithy_types::error::metadata::{ErrorMetadata, ProvideErrorMetadata};
 pub use aws_smithy_types::retry::{ErrorKind as RetryErrorKind, ProvideErrorKind};
+pub use aws_types::request_id::RequestId;
 
 #[track_caller]
 pub(crate) fn val_err(msg: impl Into<String>) -> Error {
