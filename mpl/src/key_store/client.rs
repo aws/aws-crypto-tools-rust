@@ -202,9 +202,7 @@ impl CreateKeyFluentBuilder {
         self.inner.get_branch_key_id()
     }
 
-    /// Adds a key-value pair to the custom encryption context for the new branch key.
-    ///
-    /// To override the contents of this collection use [`set_encryption_context`](Self::set_encryption_context).
+    /// Set the custom encryption context for the new branch key.
     /// Required when `branch_key_id` is set.
     pub fn encryption_context(mut self, k: impl Into<String>, v: impl Into<String>) -> Self {
         self.inner = self.inner.encryption_context(k, v);
