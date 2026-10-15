@@ -5,7 +5,7 @@
 //!
 //! Requires an existing key store with a provisioned branch key.
 //! The request credentials are read from AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and AWS_SESSION_TOKEN.
-//! Each KMS call also carries a header naming the request.
+//! Each KMS call also carries this request's headers.
 
 use std::time::{Duration, SystemTime};
 
@@ -67,10 +67,10 @@ async fn handle_request(
             .config()
             .to_builder()
             .credentials_provider(credentials)
-            .interceptor(RequestHeaders(vec![(
-                "x-example-request-id".to_string(),
-                "request-1".to_string(),
-            )]))
+            .interceptor(RequestHeaders(vec![
+                ("header-name-1".to_string(), "header-value-1".to_string()),
+                ("header-name-2".to_string(), "header-value-2".to_string()),
+            ]))
             .build(),
     );
 
