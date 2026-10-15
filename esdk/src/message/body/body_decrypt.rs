@@ -11,7 +11,7 @@ use crate::message::serialize_functions::{
     read_bytes, read_seq_u32_bounded, read_u32, write_to_sink,
 };
 use crate::message::{Error, header, ser_err, serialize_functions};
-use crate::types::{Sink, Source, Tee};
+use crate::shapes::{Sink, Source, Tee};
 use aws_mpl_primitives::aes_decrypt;
 
 /// Write the previous frame's plaintext to the output, or fail if streaming a signed message.

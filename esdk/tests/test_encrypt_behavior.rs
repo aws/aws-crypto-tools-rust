@@ -15,6 +15,7 @@ use aws_crypto_mpl::cmm::{
     DecryptMaterialsInput, DecryptMaterialsOutput, GetEncryptionMaterialsInput,
     GetEncryptionMaterialsOutput,
 };
+use aws_esdk::types::*;
 use aws_esdk::*;
 use std::num::NonZeroU32;
 use std::sync::Arc;

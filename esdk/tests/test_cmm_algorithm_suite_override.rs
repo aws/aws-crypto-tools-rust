@@ -16,6 +16,7 @@ use aws_crypto_mpl::cmm::{
     GetEncryptionMaterialsOutput,
 };
 use aws_crypto_mpl::keyring::RawAesKeyring;
+use aws_esdk::types::*;
 use aws_esdk::*;
 use aws_mpl_primitives::AesGcm;
 use fixtures::*;
@@ -43,9 +44,9 @@ impl Cmm for SuiteOverrideCmm {
             .algorithm_suite_id(aws_crypto_mpl::structures::AlgorithmSuiteId::Esdk(
                 self.suite,
             ))
-            .set_required_encryption_context_keys(
-                request.required_encryption_context_keys().cloned(),
-            )
+            .set_required_encryption_context_keys(Some(
+                request.required_encryption_context_keys().clone(),
+            ))
             .set_max_plaintext_length(request.max_plaintext_length())
             .send()
             .await
@@ -55,7 +56,15 @@ impl Cmm for SuiteOverrideCmm {
         &self,
         request: DecryptMaterialsInput,
     ) -> Result<DecryptMaterialsOutput, MplError> {
-        Cmm::decrypt_materials(&self.inner, request).await
+        self.inner
+            .decrypt_materials()
+            .algorithm_suite_id(request.algorithm_suite_id())
+            .commitment_policy(request.commitment_policy())
+            .encrypted_data_keys(request.encrypted_data_keys().to_vec())
+            .encryption_context(request.encryption_context().clone())
+            .set_reproduced_encryption_context(request.reproduced_encryption_context().cloned())
+            .send()
+            .await
     }
 }
 

@@ -13,11 +13,11 @@ use crate::message::{
     DigestWriter, NoopWriter, body, encryption_context, footer, header, header_auth, header_types,
     serialize_functions, v2_header_body,
 };
-use crate::suites::{algorithm_suite_id_from_bytes, get_ecdsa_alg, get_esdk_algorithm_suite_id};
-use crate::types::{
+use crate::shapes::{
     CommitmentPolicy, DecryptInput, DecryptOutput, DecryptStreamInput, DecryptStreamOutput,
     EncryptionContext, MaterialSource, Sink, Source, Tee,
 };
+use crate::suites::{algorithm_suite_id_from_bytes, get_ecdsa_alg, get_esdk_algorithm_suite_id};
 use aws_crypto_mpl::structures::DecryptionMaterials;
 use aws_mpl_primitives::{DigestContext, aes_decrypt, ecdsa_verify_context};
 

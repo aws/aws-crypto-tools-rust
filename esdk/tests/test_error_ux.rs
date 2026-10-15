@@ -281,7 +281,7 @@ async fn a_tampered_frame_is_cryptographic() {
     let mut ciphertext = Client::default()
         .encrypt()
         .plaintext(b"hello")
-        .algorithm_suite_id(aws_esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
+        .algorithm_suite_id(aws_esdk::types::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
         .keyring(keyring.clone())
         .send()
         .await
@@ -644,7 +644,11 @@ impl aws_crypto_mpl::Keyring for Both {
         &self,
         input: OnEncryptInput,
     ) -> Result<OnEncryptOutput, aws_crypto_mpl::Error> {
-        let materials = aws_crypto_mpl::Keyring::on_encrypt(&self.0, input)
+        let materials = self
+            .0
+            .on_encrypt()
+            .materials(input.into_materials())
+            .send()
             .await?
             .into_materials();
         self.1.on_encrypt().materials(materials).send().await

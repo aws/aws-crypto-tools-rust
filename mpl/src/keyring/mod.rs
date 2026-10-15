@@ -171,7 +171,7 @@ pub trait Keyring: Send + Sync {
 crate::shared::shared_handle!(
     /// A keyring whose concrete type is chosen at runtime.
     ///
-    /// It implements [`Keyring`], so it can be passed anywhere a keyring is accepted.
+    /// Pass it anywhere a keyring is accepted.
     /// Callers that know their keyring's type pass it directly and never need this one.
     ///
     /// Each operation returns a fluent builder: set the input, then call `send`.
@@ -179,18 +179,11 @@ crate::shared::shared_handle!(
     Keyring
 );
 
-#[async_trait]
-impl Keyring for SharedKeyring {
-    fn name(&self) -> Cow<'_, str> {
+impl SharedKeyring {
+    /// The keyring's [`name`](Keyring::name).
+    #[must_use]
+    pub fn name(&self) -> Cow<'_, str> {
         self.0.name()
-    }
-
-    async fn on_encrypt(&self, input: OnEncryptInput) -> Result<OnEncryptOutput, Error> {
-        Keyring::on_encrypt(&*self.0, input).await
-    }
-
-    async fn on_decrypt(&self, input: OnDecryptInput) -> Result<OnDecryptOutput, Error> {
-        Keyring::on_decrypt(&*self.0, input).await
     }
 }
 

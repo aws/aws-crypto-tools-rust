@@ -20,7 +20,7 @@ use super::{
     DecryptMaterialsInput, DecryptMaterialsOutput, GetEncryptionMaterialsInput,
     GetEncryptionMaterialsOutput,
 };
-use crate::keyring::{Keyring, SharedKeyring};
+use crate::keyring::SharedKeyring;
 use crate::shared::IntoShared;
 use crate::structures::{
     AsymmetricSignatureAlgorithm, DecryptionMaterials, EncryptionContext, EncryptionMaterials,
@@ -63,7 +63,7 @@ pub struct DefaultCmm {
 
 impl DefaultCmm {
     /// Construct a `DefaultCmm` wrapping the given keyring.
-    pub fn new(keyring: impl Keyring + 'static) -> Self {
+    pub fn new(keyring: impl IntoShared<SharedKeyring>) -> Self {
         Self {
             keyring: keyring.into_shared(),
         }
@@ -144,11 +144,7 @@ impl Cmm for DefaultCmm {
             None
         };
 
-        // Required-encryption-context-keys come from the request (or empty).
-        let reck = input
-            .required_encryption_context_keys()
-            .cloned()
-            .unwrap_or_default();
+        let reck = input.required_encryption_context_keys().clone();
 
         // Build empty materials carrying the resolved suite, the (possibly
         // signing-key-augmented) EC, the input's RECK, and the freshly

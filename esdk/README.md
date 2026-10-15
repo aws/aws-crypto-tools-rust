@@ -29,7 +29,7 @@ Encrypt and decrypt a message with a raw AES keyring:
 
 ```rust
 use aws_crypto_mpl::{AesGcm, RawAesKeyring};
-use aws_esdk::EncryptionContext;
+use aws_esdk::types::EncryptionContext;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -76,7 +76,7 @@ the commitment policy, and the maximum number of encrypted data keys in a messag
 To set them, use `Client::builder()`:
 
 ```rust
-use aws_esdk::CommitmentPolicy;
+use aws_esdk::types::CommitmentPolicy;
 
 let esdk = aws_esdk::Client::builder()
     .commitment_policy(CommitmentPolicy::RequireEncryptRequireDecrypt)
@@ -87,7 +87,7 @@ let encrypted = esdk.encrypt().plaintext(plaintext).keyring(keyring).send().awai
 Or build a `Config` and pass it to `Client::from_conf`, as with `aws_sdk_kms::Client::from_conf`:
 
 ```rust
-use aws_esdk::CommitmentPolicy;
+use aws_esdk::types::CommitmentPolicy;
 
 let config = aws_esdk::Config::builder()
     .commitment_policy(CommitmentPolicy::RequireEncryptRequireDecrypt)

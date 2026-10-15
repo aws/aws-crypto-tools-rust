@@ -5,7 +5,7 @@ use anyhow::Result;
 use std::time::Duration;
 
 use aws_crypto_mpl::{HierarchicalKeyring, KeyStoreClient, KmsConfiguration, cmc::DefaultCmc};
-use aws_esdk::{Client, CommitmentPolicy};
+use aws_esdk::{Client, types::CommitmentPolicy};
 use log::info;
 use sysinfo::System;
 

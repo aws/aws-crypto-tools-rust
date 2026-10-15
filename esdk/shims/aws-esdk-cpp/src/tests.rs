@@ -295,7 +295,7 @@ fn commitment_policy_target_to_core_accepts_exactly_known_reprs() {
 
 #[test]
 fn encryption_context_round_trips() {
-    let mut m = aws_esdk::EncryptionContext::new();
+    let mut m = aws_esdk::types::EncryptionContext::new();
     m.insert("k1", "v1");
     m.insert("k2", "\u{1F600}");
     let list = encryption_context_core_to_target(&m);
@@ -322,7 +322,7 @@ fn encryption_context_round_trips() {
 
 #[test]
 fn encryption_context_empty() {
-    let empty = aws_esdk::EncryptionContext::new();
+    let empty = aws_esdk::types::EncryptionContext::new();
     assert!(encryption_context_core_to_target(&empty).is_empty());
     assert!(encryption_context_target_to_core(&[]).is_empty());
 }

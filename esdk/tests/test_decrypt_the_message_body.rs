@@ -7,6 +7,7 @@
 mod fixtures;
 mod test_helpers;
 
+use aws_esdk::types::*;
 use aws_esdk::*;
 use std::num::NonZeroU32;
 use test_helpers::*;
