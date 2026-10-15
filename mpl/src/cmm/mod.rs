@@ -11,7 +11,7 @@
 //! See [Errors for keyring and CMM authors](crate::keyring#errors-for-keyring-and-cmm-authors)
 //! for which error variant to return.
 
-pub mod default_cmm;
+mod default_cmm;
 mod fluent_builders;
 mod types;
 

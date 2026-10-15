@@ -6,15 +6,18 @@
 
 use aws_crypto_mpl::Error;
 use aws_crypto_mpl::async_trait;
-use aws_crypto_mpl::aws_kms::hierarchical_keyring::{GetBranchKeyIdInput, GetBranchKeyIdOutput};
-use aws_crypto_mpl::cmc::{CacheEntry, CachedMaterials};
-use aws_crypto_mpl::structures::{
+use aws_crypto_mpl::cmc::{LocalCmc, SharedCmc};
+use aws_crypto_mpl::cmm::{Cmm, DefaultCmm, SharedCmm};
+use aws_crypto_mpl::keyring::{
+    BranchKeySupplier, Keyring, RawAesKeyring, SharedBranchKeySupplier, SharedKeyring,
+};
+use aws_crypto_mpl::keyring::{GetBranchKeyIdInput, GetBranchKeyIdOutput};
+use aws_crypto_mpl::shared::IntoShared;
+use aws_crypto_mpl::types::AesWrappingAlg;
+use aws_crypto_mpl::types::{
     AlgorithmSuiteId, EncryptionContext, EncryptionMaterials, EsdkAlgorithmSuiteId,
 };
-use aws_crypto_mpl::{
-    AesGcm, BranchKeySupplier, Cmm, DefaultCmm, IntoShared, Keyring, LocalCmc, RawAesKeyring,
-    SharedBranchKeySupplier, SharedCmc, SharedCmm, SharedKeyring,
-};
+use aws_crypto_mpl::types::{CacheEntry, CachedMaterials};
 use std::time::{Duration, SystemTime};
 
 fn keyring() -> RawAesKeyring {
@@ -22,7 +25,7 @@ fn keyring() -> RawAesKeyring {
         .key_namespace("namespace")
         .key_name("name")
         .wrapping_key(vec![0; 32])
-        .wrapping_alg(AesGcm::Aes256Gcm)
+        .wrapping_alg(AesWrappingAlg::AlgAes256GcmIv12Tag16)
         .build()
         .unwrap()
 }

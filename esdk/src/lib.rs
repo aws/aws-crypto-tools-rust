@@ -21,7 +21,8 @@
 //! Then create a [`Client`], and encrypt and decrypt with a keyring:
 //!
 //! ```
-//! use aws_crypto_mpl::{AesGcm, RawAesKeyring};
+//! use aws_crypto_mpl::types::AesWrappingAlg;
+//! use aws_crypto_mpl::keyring::RawAesKeyring;
 //! use aws_esdk::types::EncryptionContext;
 //!
 //! # #[tokio::main(flavor = "current_thread")]
@@ -31,7 +32,7 @@
 //!     .key_namespace("my-key-namespace")
 //!     .key_name("my-key-name")
 //!     .wrapping_key(vec![0x2A; 32])
-//!     .wrapping_alg(AesGcm::Aes256Gcm)
+//!     .wrapping_alg(AesWrappingAlg::AlgAes256GcmIv12Tag16)
 //!     .build()?;
 //!
 //! let mut encryption_context = EncryptionContext::new();
@@ -203,7 +204,7 @@ pub mod types;
 
 pub use client::Client;
 pub use config::Config;
-pub use error::Error;
+pub use error::generated::Error;
 pub use shapes::async_trait;
 
 pub(crate) mod key_derivation;

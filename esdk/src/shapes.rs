@@ -105,9 +105,9 @@ pub type Tee = dyn std::io::Write + Send;
 ///
 /// This is the Material Providers Library's ESDK algorithm suite enum, re-exported.
 /// It is wrapped in the MPL
-/// [`AlgorithmSuiteId`](aws_crypto_mpl::structures::AlgorithmSuiteId) union at
+/// [`AlgorithmSuiteId`](aws_crypto_mpl::types::AlgorithmSuiteId) union at
 /// the materials boundary.
-pub use aws_crypto_mpl::structures::EsdkAlgorithmSuiteId as AlgorithmSuiteId;
+pub use aws_crypto_mpl::types::EsdkAlgorithmSuiteId as AlgorithmSuiteId;
 
 /// The Material Providers Library's shared keyring handle, re-exported.
 /// The `keyring` input of every operation holds one.
@@ -130,7 +130,7 @@ pub use aws_crypto_mpl::async_trait;
 
 /// The Material Providers Library's conversion into a shared handle, re-exported.
 /// `keyring.into_shared()` returns a [`SharedKeyring`], reusing it if it already is one.
-pub use aws_crypto_mpl::IntoShared;
+pub use aws_crypto_mpl::shared::IntoShared;
 
 /// Key-Value pairs to associate with the encrypted data.
 ///
@@ -138,15 +138,15 @@ pub use aws_crypto_mpl::IntoShared;
 /// so no conversion happens at the CMM boundary. The specification defines its
 /// entries as UTF-8 encoded strings; that is enforced where the header is
 /// serialized, and on the read side by the parser.
-pub use aws_crypto_mpl::structures::EncryptionContext;
+pub use aws_crypto_mpl::types::EncryptionContext;
 
 /// Commitment policies governing key commitment behavior.
 ///
 /// This is the Material Providers Library's own ESDK commitment-policy enum,
 /// re-exported. It is wrapped in the MPL
-/// [`CommitmentPolicy`](aws_crypto_mpl::structures::CommitmentPolicy) union at
+/// [`CommitmentPolicy`](aws_crypto_mpl::types::CommitmentPolicy) union at
 /// the materials boundary.
-pub use aws_crypto_mpl::structures::EsdkCommitmentPolicy as CommitmentPolicy;
+pub use aws_crypto_mpl::types::EsdkCommitmentPolicy as CommitmentPolicy;
 
 /// Commitment policy used when the caller provides none.
 //= spec/client-apis/client.md#initialization

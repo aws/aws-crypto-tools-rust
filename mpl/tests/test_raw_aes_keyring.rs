@@ -18,10 +18,10 @@
 //! cover the on-wire shape of the encrypted data key, the two constructor
 //! validations, and the negative paths Dafny leaves to its proofs.
 
-use aws_crypto_mpl::{RawAesKeyring, SharedKeyring};
-use aws_mpl_primitives::AesGcm;
+use aws_crypto_mpl::keyring::{RawAesKeyring, SharedKeyring};
+use aws_crypto_mpl::types::AesWrappingAlg;
 
-use aws_crypto_mpl::structures::{
+use aws_crypto_mpl::types::{
     AlgorithmSuiteId, DecryptionMaterials, EncryptedDataKey, EncryptionContext,
     EncryptionMaterials, EsdkAlgorithmSuiteId, PlaintextDataKey,
 };
@@ -67,7 +67,7 @@ fn keyring_with(name: &str, wrapping_key_byte: u8) -> RawAesKeyring {
         .key_namespace(namespace)
         .key_name(name.to_string())
         .wrapping_key(vec![wrapping_key_byte; 32])
-        .wrapping_alg(AesGcm::Aes256Gcm)
+        .wrapping_alg(AesWrappingAlg::AlgAes256GcmIv12Tag16)
         .build()
         .expect("constructing a 256-bit raw AES keyring")
 }
@@ -463,7 +463,11 @@ async fn test_encrypted_data_key_wire_format() {
 
 #[tokio::test]
 async fn test_round_trip_every_wrapping_algorithm() {
-    for alg in [AesGcm::Aes128Gcm, AesGcm::Aes192Gcm, AesGcm::Aes256Gcm] {
+    for alg in [
+        AesWrappingAlg::AlgAes128GcmIv12Tag16,
+        AesWrappingAlg::AlgAes192GcmIv12Tag16,
+        AesWrappingAlg::AlgAes256GcmIv12Tag16,
+    ] {
         let (namespace, name) = namespace_and_name();
         let keyring = SharedKeyring::new(
             RawAesKeyring::builder()
@@ -732,7 +736,7 @@ fn test_build_rejects_wrapping_key_length_mismatch() {
         .key_namespace(namespace)
         .key_name(name)
         .wrapping_key(vec![0u8; 16])
-        .wrapping_alg(AesGcm::Aes256Gcm)
+        .wrapping_alg(AesWrappingAlg::AlgAes256GcmIv12Tag16)
         .build()
         .expect_err("a wrapping key that does not match the algorithm must be rejected");
     assert!(err.is_validation(), "{:?}", err);
@@ -742,9 +746,9 @@ fn test_build_rejects_wrapping_key_length_mismatch() {
 fn test_build_accepts_every_wrapping_key_length() {
     let (namespace, name) = namespace_and_name();
     for (alg, expected_len) in [
-        (AesGcm::Aes128Gcm, 16),
-        (AesGcm::Aes192Gcm, 24),
-        (AesGcm::Aes256Gcm, 32),
+        (AesWrappingAlg::AlgAes128GcmIv12Tag16, 16),
+        (AesWrappingAlg::AlgAes192GcmIv12Tag16, 24),
+        (AesWrappingAlg::AlgAes256GcmIv12Tag16, 32),
     ] {
         assert_eq!(
             usize::from(alg.key_len()),
@@ -768,7 +772,7 @@ fn test_build_rejects_reserved_aws_kms_key_namespace() {
         .key_namespace("aws-kms")
         .key_name(name)
         .wrapping_key(vec![0u8; 32])
-        .wrapping_alg(AesGcm::Aes256Gcm)
+        .wrapping_alg(AesWrappingAlg::AlgAes256GcmIv12Tag16)
         .build()
         .expect_err("the reserved `aws-kms` key namespace must be rejected");
     assert!(err.is_validation(), "{:?}", err);
@@ -794,7 +798,7 @@ fn test_build_rejects_key_provider_ids_of_the_aws_kms_keyrings() {
             .key_namespace(namespace)
             .key_name(name.clone())
             .wrapping_key(vec![0u8; 32])
-            .wrapping_alg(AesGcm::Aes256Gcm)
+            .wrapping_alg(AesWrappingAlg::AlgAes256GcmIv12Tag16)
             .build()
         else {
             panic!("`{namespace}` must be rejected as reserved");
@@ -814,7 +818,7 @@ fn test_build_accepts_the_raw_ecdh_key_provider_id() {
         .key_namespace("raw-ecdh")
         .key_name(name)
         .wrapping_key(vec![0u8; 32])
-        .wrapping_alg(AesGcm::Aes256Gcm)
+        .wrapping_alg(AesWrappingAlg::AlgAes256GcmIv12Tag16)
         .build()
         .expect("`raw-ecdh` is not reserved against the raw AES keyring");
 }
@@ -827,7 +831,7 @@ fn test_debug_does_not_leak_the_wrapping_key() {
         .key_namespace(namespace)
         .key_name(name)
         .wrapping_key(vec![0xAB; 32])
-        .wrapping_alg(AesGcm::Aes256Gcm)
+        .wrapping_alg(AesWrappingAlg::AlgAes256GcmIv12Tag16)
         .build()
         .expect("constructing a keyring");
 
@@ -895,21 +899,21 @@ fn test_build_requires_every_field() {
             RawAesKeyring::builder()
                 .key_name("n")
                 .wrapping_key(key())
-                .wrapping_alg(AesGcm::Aes256Gcm),
+                .wrapping_alg(AesWrappingAlg::AlgAes256GcmIv12Tag16),
             "key namespace",
         ),
         (
             RawAesKeyring::builder()
                 .key_namespace("ns")
                 .wrapping_key(key())
-                .wrapping_alg(AesGcm::Aes256Gcm),
+                .wrapping_alg(AesWrappingAlg::AlgAes256GcmIv12Tag16),
             "key name",
         ),
         (
             RawAesKeyring::builder()
                 .key_namespace("ns")
                 .key_name("n")
-                .wrapping_alg(AesGcm::Aes256Gcm),
+                .wrapping_alg(AesWrappingAlg::AlgAes256GcmIv12Tag16),
             "wrapping key",
         ),
         (

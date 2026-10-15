@@ -4,9 +4,10 @@
 //! An MPL error keeps its variant, retry kind, and details when it becomes an ESDK error.
 
 use aws_crypto_mpl::error as mpl;
-use aws_esdk::error::{BranchKey, Cache, ConflictReason, Error, Resource, RetryKind, Service};
+use aws_esdk::Error;
+use aws_esdk::error::{BranchKey, Cache, ConflictReason, Resource, RetryKind, Service};
 
-fn every_mpl_variant() -> Vec<mpl::Error> {
+fn every_mpl_variant() -> Vec<aws_crypto_mpl::Error> {
     vec![
         mpl::ValidationError::new("v").into(),
         mpl::InvalidMaterialsError::new("im").into(),
@@ -47,7 +48,7 @@ fn every_mpl_variant_keeps_its_name() {
                 | (Error::Internal(_), "Internal")
         );
         assert!(same, "{name} became {}", outer.name());
-        assert!(outer.find_source::<mpl::Error>().is_some());
+        assert!(outer.find_source::<aws_crypto_mpl::Error>().is_some());
     }
 }
 
@@ -61,7 +62,7 @@ fn the_conversion_keeps_retry_kind_details_and_reason() {
         .resource(Resource::BranchKey(BranchKey::new("my-branch-key")))
         .service(Service::DynamoDb)
         .build();
-    let Error::Conflict(e) = Error::from(mpl::Error::from(inner)) else {
+    let Error::Conflict(e) = Error::from(aws_crypto_mpl::Error::from(inner)) else {
         panic!("expected Conflict");
     };
     assert_eq!(e.service(), Some(&Service::DynamoDb));
@@ -74,7 +75,7 @@ fn the_conversion_keeps_retry_kind_details_and_reason() {
     assert_eq!(e.reason(), Some(&ConflictReason::ConcurrentModification));
     assert!(!e.is_retryable());
 
-    let throttled = Error::from(mpl::Error::from(
+    let throttled = Error::from(aws_crypto_mpl::Error::from(
         mpl::ThrottlingError::builder()
             .resource(Resource::Cache(Cache::new()))
             .build(),

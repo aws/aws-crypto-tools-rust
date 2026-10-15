@@ -27,6 +27,7 @@
 #[allow(clippy::duplicate_mod)]
 mod fixtures;
 mod test_helpers;
+use aws_crypto_mpl::types::AesWrappingAlg;
 use aws_esdk::*;
 use aws_esdk::types::*;
 use fixtures::*;

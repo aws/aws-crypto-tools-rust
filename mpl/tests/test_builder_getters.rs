@@ -7,11 +7,11 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
-use aws_crypto_mpl::aws_kms::hierarchical_keyring::*;
 use aws_crypto_mpl::aws_sdk_dynamodb::Client as DynamoDbClient;
 use aws_crypto_mpl::aws_sdk_kms::Client as KmsClient;
 use aws_crypto_mpl::cmc::*;
 use aws_crypto_mpl::cmm::*;
+use aws_crypto_mpl::key_store::Client as KeyStoreClient;
 use aws_crypto_mpl::key_store::operation::create_key::{CreateKeyInput, CreateKeyOutput};
 use aws_crypto_mpl::key_store::operation::create_key_store::CreateKeyStoreOutput;
 use aws_crypto_mpl::key_store::operation::get_active_branch_key::{
@@ -23,10 +23,11 @@ use aws_crypto_mpl::key_store::operation::get_branch_key_version::{
 };
 use aws_crypto_mpl::key_store::operation::get_key_store_info::GetKeyStoreInfoOutput;
 use aws_crypto_mpl::key_store::operation::version_key::VersionKeyInput;
-use aws_crypto_mpl::key_store::*;
+use aws_crypto_mpl::key_store::types::*;
 use aws_crypto_mpl::keyring::*;
-use aws_crypto_mpl::structures::*;
-use aws_crypto_mpl::{AesGcm, Error, async_trait};
+use aws_crypto_mpl::types::AesWrappingAlg;
+use aws_crypto_mpl::types::*;
+use aws_crypto_mpl::{Error, async_trait};
 
 /// Set one field, check its getter sees it, clear it, check the getter is empty.
 macro_rules! check {
@@ -124,7 +125,7 @@ fn keyring() -> RawAesKeyring {
         .key_namespace("ns")
         .key_name("name")
         .wrapping_key(vec![0u8; 32])
-        .wrapping_alg(AesGcm::Aes256Gcm)
+        .wrapping_alg(AesWrappingAlg::AlgAes256GcmIv12Tag16)
         .build()
         .unwrap()
 }
@@ -794,7 +795,7 @@ async fn every_builder_getter_tracks_its_setter() {
         wrapping_alg,
         set_wrapping_alg,
         get_wrapping_alg,
-        AesGcm::Aes256Gcm
+        AesWrappingAlg::AlgAes256GcmIv12Tag16
     );
     check!(
         OnEncryptInput::builder(),

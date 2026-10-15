@@ -6,9 +6,11 @@
 
 use std::ffi::c_void;
 
-use aws_crypto_mpl::keyring::{OnDecryptInput, OnDecryptOutput, OnEncryptInput, OnEncryptOutput};
-use aws_crypto_mpl::structures::EncryptedDataKey;
-use aws_crypto_mpl::{AesGcm, Error, Keyring, RawAesKeyring, async_trait};
+use aws_crypto_mpl::keyring::{
+    Keyring, OnDecryptInput, OnDecryptOutput, OnEncryptInput, OnEncryptOutput, RawAesKeyring,
+};
+use aws_crypto_mpl::types::{AesWrappingAlg, EncryptedDataKey};
+use aws_crypto_mpl::{Error, async_trait};
 
 /// Step 2: define your keyring.
 ///
@@ -50,7 +52,7 @@ pub extern "C" fn custom_keyring_create() -> *mut c_void {
         .key_namespace("my-key-namespace")
         .key_name("my-key-name")
         .wrapping_key(vec![0x2A; 32])
-        .wrapping_alg(AesGcm::Aes256Gcm)
+        .wrapping_alg(AesWrappingAlg::AlgAes256GcmIv12Tag16)
         .build()
     else {
         return std::ptr::null_mut();
