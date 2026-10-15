@@ -7,9 +7,11 @@
 //!
 //! Runs offline.
 
-use aws_crypto_mpl::keyring::{OnDecryptInput, OnDecryptOutput, OnEncryptInput, OnEncryptOutput};
-use aws_crypto_mpl::structures::EncryptedDataKey;
-use aws_crypto_mpl::{AesGcm, Error as MplError, Keyring, RawAesKeyring, async_trait};
+use aws_crypto_mpl::keyring::{
+    Keyring, OnDecryptInput, OnDecryptOutput, OnEncryptInput, OnEncryptOutput, RawAesKeyring,
+};
+use aws_crypto_mpl::types::{AesWrappingAlg, EncryptedDataKey};
+use aws_crypto_mpl::{Error as MplError, async_trait};
 use aws_esdk::types::EncryptionContext;
 
 /// Wraps another keyring and logs the key providers of the encrypted data keys each call writes or tries.
@@ -50,7 +52,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .key_namespace("my-key-namespace")
         .key_name("my-key-name")
         .wrapping_key(vec![0x2A; 32])
-        .wrapping_alg(AesGcm::Aes256Gcm)
+        .wrapping_alg(AesWrappingAlg::AlgAes256GcmIv12Tag16)
         .build()?;
     let keyring = AuditKeyring { inner };
 

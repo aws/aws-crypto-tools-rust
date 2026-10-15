@@ -9,7 +9,7 @@ use crate::message::serializable_types::{is_esdk_encrypted_data_keys, is_esdk_en
 use crate::shapes::{AlgorithmSuiteId, CommitmentPolicy, EncryptionContext, MaterialSource};
 use aws_crypto_mpl::cmm::DefaultCmm;
 use aws_crypto_mpl::cmm::SharedCmm;
-use aws_crypto_mpl::structures::{
+use aws_crypto_mpl::types::{
     AlgorithmSuiteId as MplAlgorithmSuiteId, CommitmentPolicy as MplCommitmentPolicy,
     DecryptionMaterials, EncryptedDataKey, EncryptionMaterials,
 };

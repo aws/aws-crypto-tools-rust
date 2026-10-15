@@ -7,7 +7,7 @@ use super::serialize_functions::{read_seq_u16, read_str_u16, read_u16, write_byt
 use super::{Error, ser_err};
 use crate::error::{Kind, err};
 use crate::shapes::{Source, Tee};
-use aws_crypto_mpl::structures::EncryptedDataKey;
+use aws_crypto_mpl::types::EncryptedDataKey;
 
 pub(crate) fn write_edks(w: &mut Tee, edks: &[EncryptedDataKey]) -> Result<(), Error> {
     //= spec/data-format/message-header.md#encrypted-data-keys

@@ -12,10 +12,13 @@ use aws_crypto_mpl::aws_sdk_dynamodb;
 use aws_crypto_mpl::aws_sdk_kms;
 use aws_crypto_mpl::cmc::DefaultCmc;
 use aws_crypto_mpl::error::ConflictReason;
-use aws_crypto_mpl::structures::EncryptionContext;
-use aws_crypto_mpl::{Discovery, HierarchicalKeyring, KeyStoreClient, KmsConfiguration};
+use aws_crypto_mpl::key_store::Client as KeyStoreClient;
+use aws_crypto_mpl::key_store::types::{Discovery, KmsConfiguration};
+use aws_crypto_mpl::keyring::HierarchicalKeyring;
+use aws_crypto_mpl::types::EncryptionContext;
 use aws_esdk::Client;
-use aws_esdk::error::{BranchKey, DynamoDbTable, Error, KmsKey, Resource, Service};
+use aws_esdk::Error;
+use aws_esdk::error::{BranchKey, DynamoDbTable, KmsKey, Resource, Service};
 
 const TABLE: &str = "KeyStoreDdbTable";
 const KMS_KEY_ARN: &str =

@@ -3,7 +3,7 @@
 
 use std::collections::BTreeSet;
 
-use aws_crypto_mpl::structures::{
+use aws_crypto_mpl::types::{
     AlgorithmSuiteId, DecryptionMaterials, EncryptionContext, EsdkAlgorithmSuiteId,
     PlaintextDataKey, SymmetricSigningKey, VerificationKey,
 };
