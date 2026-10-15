@@ -20,6 +20,7 @@ use aws_esdk::error::Error;
 use aws_esdk::{AlgorithmSuiteId, EncryptionContext};
 
 /// Passes requests to a [`DefaultCmm`] and fails any that would use an algorithm suite without a signature.
+#[derive(Clone)]
 struct SigningSuiteOnlyCmm {
     inner: DefaultCmm,
 }
@@ -69,8 +70,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .wrapping_key(vec![0x01u8; 32])
         .wrapping_alg(AesGcm::Aes256Gcm)
         .build()?;
-    // An `Arc` shares one CMM across calls without the CMM being `Clone`.
-    let cmm = std::sync::Arc::new(SigningSuiteOnlyCmm::new(keyring));
+    let cmm = SigningSuiteOnlyCmm::new(keyring);
 
     let plaintext = b"Hello World";
 
