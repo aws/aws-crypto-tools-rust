@@ -213,20 +213,19 @@ impl OnDecryptInputBuilder {
         &self.materials
     }
 
-    /// Appends an item to the encrypted data keys to try.
-    ///
-    /// To override the contents of this collection use [`set_encrypted_data_keys`](Self::set_encrypted_data_keys).
+    /// Set the encrypted data keys to try.
     /// Required.
     #[must_use]
-    pub fn encrypted_data_keys(mut self, input: EncryptedDataKey) -> Self {
-        self.encrypted_data_keys
-            .get_or_insert_with(Default::default)
-            .push(input);
+    pub fn encrypted_data_keys(
+        mut self,
+        encrypted_data_keys: impl Into<Vec<EncryptedDataKey>>,
+    ) -> Self {
+        self.encrypted_data_keys = Some(encrypted_data_keys.into());
         self
     }
 
     /// Set or clear the encrypted data keys from an `Option`.
-    /// To add one entry, use [`Self::encrypted_data_keys`].
+    /// To set a value, use [`Self::encrypted_data_keys`].
     #[must_use]
     pub fn set_encrypted_data_keys(
         mut self,

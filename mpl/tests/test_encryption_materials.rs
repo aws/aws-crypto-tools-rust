@@ -60,7 +60,7 @@ fn test_valid_construction_minimal() {
     let result = EncryptionMaterials::builder()
         .algorithm_suite_id(NO_SIGN_SUITE)
         .set_encryption_context(Some(ec))
-        .set_required_encryption_context_keys(Some(reck))
+        .required_encryption_context_keys(reck)
         .build();
     assert!(result.is_ok());
 }
@@ -76,9 +76,9 @@ fn test_valid_construction_with_all_optional_fields() {
     // ESDK signing suite: asymmetric signing only (no symmetric_signing_keys).
     let result = EncryptionMaterials::builder()
         .algorithm_suite_id(SIGN_SUITE)
-        .set_encrypted_data_keys(Some(vec![edk]))
+        .encrypted_data_keys(vec![edk])
         .set_encryption_context(Some(ec))
-        .set_required_encryption_context_keys(Some(reck))
+        .required_encryption_context_keys(reck)
         .plaintext_data_key(pdk)
         .signing_key(sk)
         .build();
@@ -93,7 +93,7 @@ fn test_required_ec_keys_must_be_subset() {
     let result = EncryptionMaterials::builder()
         .algorithm_suite_id(NO_SIGN_SUITE)
         .set_encryption_context(Some(ec))
-        .set_required_encryption_context_keys(Some(reck))
+        .required_encryption_context_keys(reck)
         .build();
     assert!(result.is_err());
     assert!(result.unwrap_err().is_encryption_context_mismatch());
@@ -107,9 +107,9 @@ fn test_edks_must_be_empty_without_pdk() {
 
     let result = EncryptionMaterials::builder()
         .algorithm_suite_id(NO_SIGN_SUITE)
-        .set_encrypted_data_keys(Some(vec![edk]))
+        .encrypted_data_keys(vec![edk])
         .set_encryption_context(Some(ec))
-        .set_required_encryption_context_keys(Some(reck))
+        .required_encryption_context_keys(reck)
         .build();
     assert!(result.is_err());
     assert!(result.unwrap_err().is_invalid_materials());
@@ -124,7 +124,7 @@ fn test_signing_key_rejected_without_asymmetric_signing() {
     let result = EncryptionMaterials::builder()
         .algorithm_suite_id(NO_SIGN_SUITE)
         .set_encryption_context(Some(ec))
-        .set_required_encryption_context_keys(Some(reck))
+        .required_encryption_context_keys(reck)
         .signing_key(sk)
         .build();
     assert!(result.is_err());
@@ -154,9 +154,9 @@ fn test_signing_key_accepted_regardless_of_length() {
 
         let result = EncryptionMaterials::builder()
             .algorithm_suite_id(suite_id)
-            .set_encrypted_data_keys(Some(vec![edk]))
+            .encrypted_data_keys(vec![edk])
             .set_encryption_context(Some(ec))
-            .set_required_encryption_context_keys(Some(reck))
+            .required_encryption_context_keys(reck)
             .plaintext_data_key(pdk)
             .signing_key(sk)
             .build();
@@ -178,11 +178,11 @@ fn test_symmetric_keys_rejected_without_symmetric_signing() {
 
     let result = EncryptionMaterials::builder()
         .algorithm_suite_id(NO_SIGN_SUITE)
-        .set_encrypted_data_keys(Some(vec![edk]))
+        .encrypted_data_keys(vec![edk])
         .set_encryption_context(Some(ec))
-        .set_required_encryption_context_keys(Some(reck))
+        .required_encryption_context_keys(reck)
         .plaintext_data_key(pdk)
-        .set_symmetric_signing_keys(Some(ssk))
+        .symmetric_signing_keys(ssk)
         .build();
     assert!(result.is_err());
     assert!(result.unwrap_err().is_invalid_materials());
@@ -198,9 +198,9 @@ fn test_validate_aws_crypto_public_key_happy_path() {
 
     let mat = EncryptionMaterials::builder()
         .algorithm_suite_id(SIGN_SUITE)
-        .set_encrypted_data_keys(Some(vec![edk]))
+        .encrypted_data_keys(vec![edk])
         .set_encryption_context(Some(ec))
-        .set_required_encryption_context_keys(Some(reck))
+        .required_encryption_context_keys(reck)
         .plaintext_data_key(pdk)
         .signing_key(sk)
         .build()
@@ -216,7 +216,7 @@ fn test_validate_aws_crypto_public_key_should_not_include_without_signing() {
     let mat = EncryptionMaterials::builder()
         .algorithm_suite_id(NO_SIGN_SUITE)
         .set_encryption_context(Some(ec))
-        .set_required_encryption_context_keys(Some(reck))
+        .required_encryption_context_keys(reck)
         .build()
         .unwrap();
     assert!(
@@ -236,7 +236,7 @@ fn test_plaintext_data_key_immutability() {
     let mat = EncryptionMaterials::builder()
         .algorithm_suite_id(NO_SIGN_SUITE)
         .set_encryption_context(Some(ec))
-        .set_required_encryption_context_keys(Some(reck))
+        .required_encryption_context_keys(reck)
         .plaintext_data_key(pdk)
         .build()
         .unwrap();
@@ -278,9 +278,9 @@ fn test_field_getters_return_constructed_values() {
 
     let mat = EncryptionMaterials::builder()
         .algorithm_suite_id(SIGN_SUITE)
-        .set_encrypted_data_keys(Some(vec![edk]))
+        .encrypted_data_keys(vec![edk])
         .set_encryption_context(Some(ec.clone()))
-        .set_required_encryption_context_keys(Some(reck.clone()))
+        .required_encryption_context_keys(reck.clone())
         .plaintext_data_key(pdk)
         .signing_key(sk)
         .build()
@@ -302,7 +302,7 @@ fn test_field_getters_return_none_for_omitted_optional_fields() {
     let mat = EncryptionMaterials::builder()
         .algorithm_suite_id(NO_SIGN_SUITE)
         .set_encryption_context(Some(ec))
-        .set_required_encryption_context_keys(Some(reck))
+        .required_encryption_context_keys(reck)
         .build()
         .unwrap();
 
@@ -321,9 +321,9 @@ fn test_debug_format_includes_all_fields() {
 
     let mat = EncryptionMaterials::builder()
         .algorithm_suite_id(SIGN_SUITE)
-        .set_encrypted_data_keys(Some(vec![edk]))
+        .encrypted_data_keys(vec![edk])
         .set_encryption_context(Some(ec))
-        .set_required_encryption_context_keys(Some(reck))
+        .required_encryption_context_keys(reck)
         .plaintext_data_key(pdk)
         .signing_key(sk)
         .build()
@@ -350,9 +350,9 @@ fn test_validate_aws_crypto_public_key_should_include_with_signing() {
 
     let mat = EncryptionMaterials::builder()
         .algorithm_suite_id(SIGN_SUITE)
-        .set_encrypted_data_keys(Some(vec![edk]))
+        .encrypted_data_keys(vec![edk])
         .set_encryption_context(Some(ec))
-        .set_required_encryption_context_keys(Some(reck))
+        .required_encryption_context_keys(reck)
         .plaintext_data_key(pdk)
         .signing_key(sk)
         .build()
@@ -379,9 +379,9 @@ fn test_algorithm_suite_accessor_returns_matching_specification() {
         };
         let mat = EncryptionMaterials::builder()
             .algorithm_suite_id(suite_id)
-            .set_encrypted_data_keys(Some(edks))
+            .encrypted_data_keys(edks)
             .set_encryption_context(Some(ec))
-            .set_required_encryption_context_keys(Some(reck))
+            .required_encryption_context_keys(reck)
             .set_signing_key(sk)
             .build()
             .unwrap();

@@ -108,16 +108,19 @@ impl GetEncryptionMaterialsFluentBuilder {
         self.inner.get_algorithm_suite_id()
     }
 
-    /// Appends an item to the encryption context keys that must be supplied again at decrypt time.
-    ///
-    /// To override the contents of this collection use [`set_required_encryption_context_keys`](Self::set_required_encryption_context_keys).
-    pub fn required_encryption_context_keys(mut self, input: impl Into<String>) -> Self {
-        self.inner = self.inner.required_encryption_context_keys(input);
+    /// Set the encryption context keys that must be supplied again at decrypt time.
+    pub fn required_encryption_context_keys(
+        mut self,
+        required_encryption_context_keys: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        self.inner = self
+            .inner
+            .required_encryption_context_keys(required_encryption_context_keys);
         self
     }
 
     /// Set or clear the required encryption context keys from an `Option`.
-    /// To add one entry, use [`Self::required_encryption_context_keys`].
+    /// To set a value, use [`Self::required_encryption_context_keys`].
     pub fn set_required_encryption_context_keys(
         mut self,
         required_encryption_context_keys: Option<BTreeSet<String>>,
@@ -222,17 +225,18 @@ impl DecryptMaterialsFluentBuilder {
         self.inner.get_commitment_policy()
     }
 
-    /// Appends an item to the encrypted data keys in the message header.
-    ///
-    /// To override the contents of this collection use [`set_encrypted_data_keys`](Self::set_encrypted_data_keys).
+    /// Set the encrypted data keys in the message header.
     /// Required.
-    pub fn encrypted_data_keys(mut self, input: EncryptedDataKey) -> Self {
-        self.inner = self.inner.encrypted_data_keys(input);
+    pub fn encrypted_data_keys(
+        mut self,
+        encrypted_data_keys: impl Into<Vec<EncryptedDataKey>>,
+    ) -> Self {
+        self.inner = self.inner.encrypted_data_keys(encrypted_data_keys);
         self
     }
 
     /// Set or clear the encrypted data keys from an `Option`.
-    /// To add one entry, use [`Self::encrypted_data_keys`].
+    /// To set a value, use [`Self::encrypted_data_keys`].
     pub fn set_encrypted_data_keys(
         mut self,
         encrypted_data_keys: Option<Vec<EncryptedDataKey>>,
