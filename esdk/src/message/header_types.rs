@@ -6,8 +6,8 @@
 use super::serialize_functions::{read_bytes, read_u8, read_vec, write_bytes, write_u8};
 use super::{Error, ser_err};
 use crate::error::{Kind, err_with_cause};
+use crate::shapes::{EncryptionContext, Source, Tee};
 use crate::suites::algorithm_suite_from_bytes;
-use crate::types::{EncryptionContext, Source, Tee};
 use aws_crypto_mpl::structures::AlgorithmSuite;
 use aws_crypto_mpl::structures::EncryptedDataKey;
 

@@ -14,7 +14,7 @@ use super::serializable_types::get_iv_length;
 use super::serialize_functions::{read_bytes, read_u8, read_u32, write_bytes, write_u8, write_u32};
 use super::{Error, ser_err};
 use crate::error::{Kind, err};
-use crate::types::{Source, Tee};
+use crate::shapes::{Source, Tee};
 use aws_crypto_mpl::structures::AlgorithmSuite;
 
 //= spec/data-format/message-header.md#reserved

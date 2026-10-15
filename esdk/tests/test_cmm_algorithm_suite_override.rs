@@ -16,6 +16,7 @@ use aws_crypto_mpl::cmm::{
     GetEncryptionMaterialsOutput,
 };
 use aws_crypto_mpl::keyring::RawAesKeyring;
+use aws_esdk::types::*;
 use aws_esdk::*;
 use aws_mpl_primitives::AesGcm;
 use fixtures::*;

@@ -281,7 +281,7 @@ async fn a_tampered_frame_is_cryptographic() {
     let mut ciphertext = Client::default()
         .encrypt()
         .plaintext(b"hello")
-        .algorithm_suite_id(aws_esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
+        .algorithm_suite_id(aws_esdk::types::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
         .keyring(keyring.clone())
         .send()
         .await

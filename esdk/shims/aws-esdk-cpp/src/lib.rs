@@ -804,7 +804,7 @@ fn commitment_policy_target_to_core(
 //# the exact key and value of each.
 fn encryption_context_target_to_core(
     x: &[ffi::EncryptionContextItem],
-) -> aws_esdk::EncryptionContext {
+) -> aws_esdk::types::EncryptionContext {
     x.iter().map(|i| (i.key.clone(), i.value.clone())).collect()
 }
 
@@ -814,7 +814,7 @@ fn encryption_context_target_to_core(
 //# key-value map, to the target's list of key-value pairs, preserving every pair
 //# and the exact key and value of each.
 fn encryption_context_core_to_target(
-    x: &aws_esdk::EncryptionContext,
+    x: &aws_esdk::types::EncryptionContext,
 ) -> Vec<ffi::EncryptionContextItem> {
     x.iter()
         .map(|(key, value)| ffi::EncryptionContextItem {

@@ -7,7 +7,7 @@ use super::header_types::HeaderAuth;
 use super::serializable_types::{get_iv_length, get_tag_length};
 use super::serialize_functions::{read_vec, write_bytes};
 use super::{Error, ser_err};
-use crate::types::{Source, Tee};
+use crate::shapes::{Source, Tee};
 use aws_crypto_mpl::structures::AlgorithmSuite;
 
 pub(crate) fn write_header_auth_tag(
