@@ -67,7 +67,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Same cache, partition ID, logical key store name, and branch key ID,
     // so the keyrings reuse each other's entries.
-    let make_keyring = |key_store: KeyStoreClient| {
+    let make_keyring = async |key_store: KeyStoreClient| {
         HierarchicalKeyring::builder()
             .key_store(key_store)
             .ttl(Duration::from_secs(600))
@@ -75,9 +75,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .cache(cache.clone())
             .partition_id("shared-partition")
             .build()
+            .await
     };
-    let keyring_a = make_keyring(key_store_a)?;
-    let keyring_b = make_keyring(key_store_b)?;
+    let keyring_a = make_keyring(key_store_a).await?;
+    let keyring_b = make_keyring(key_store_b).await?;
 
     let plaintext = b"Hello World";
 

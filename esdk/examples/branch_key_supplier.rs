@@ -56,7 +56,7 @@ fn tenant_context(tenant: &str) -> EncryptionContext {
     EncryptionContext::from([("tenant", tenant), ("purpose", "example")])
 }
 
-fn fixed_keyring(
+async fn fixed_keyring(
     key_store: &KeyStoreClient,
     branch_key_id: &str,
 ) -> Result<HierarchicalKeyring, MplError> {
@@ -65,6 +65,7 @@ fn fixed_keyring(
         .ttl(Duration::from_secs(600))
         .branch_key_id(branch_key_id)
         .build()
+        .await
 }
 
 #[tokio::main]
@@ -103,7 +104,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             tenant_a: branch_key_a.clone(),
             tenant_b: branch_key_b.clone(),
         })
-        .build()?;
+        .build()
+        .await?;
 
     let plaintext = b"Hello World";
 
@@ -124,8 +126,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .send()
         .await?;
 
-    let keyring_a = fixed_keyring(&key_store, &branch_key_a)?;
-    let keyring_b = fixed_keyring(&key_store, &branch_key_b)?;
+    let keyring_a = fixed_keyring(&key_store, &branch_key_a).await?;
+    let keyring_b = fixed_keyring(&key_store, &branch_key_b).await?;
 
     // Tenant B's branch key cannot decrypt tenant A's message.
     let result = esdk

@@ -50,7 +50,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .key_store(key_store.clone())
         .ttl(Duration::from_secs(600))
         .branch_key_id(BRANCH_KEY_ID)
-        .build()?;
+        .build()
+        .await?;
 
     // Encrypt, handling errors from coarse to fine.
     // The hierarchical keyring reads the branch key from DynamoDB and decrypts it with AWS KMS,

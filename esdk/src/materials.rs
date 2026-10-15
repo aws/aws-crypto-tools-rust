@@ -100,7 +100,7 @@ pub(crate) async fn get_decryption_materials(
         .decrypt_materials()
         .algorithm_suite_id(MplAlgorithmSuiteId::Esdk(algorithm_suite_id))
         .commitment_policy(policy)
-        .encrypted_data_keys(edks)
+        .set_encrypted_data_keys(Some(edks))
         .encryption_context(encryption_context);
 
     //= spec/client-apis/decrypt.md#get-the-decryption-materials

@@ -277,10 +277,14 @@ impl KeyStoreClientBuilder {
         &self.id
     }
 
-    /// Set the AWS KMS grant tokens. Defaults to none.
+    /// Appends an item to the AWS KMS grant tokens. Defaults to none.
+    ///
+    /// To override the contents of this collection use [`set_grant_tokens`](Self::set_grant_tokens).
     #[must_use]
-    pub fn grant_tokens(mut self, tokens: impl IntoIterator<Item = impl Into<String>>) -> Self {
-        self.grant_tokens = Some(tokens.into_iter().map(Into::into).collect());
+    pub fn grant_tokens(mut self, input: impl Into<String>) -> Self {
+        self.grant_tokens
+            .get_or_insert_with(Default::default)
+            .push(input.into());
         self
     }
 
@@ -411,7 +415,7 @@ impl KeyStore for DynamoDbKeyStore {
     /// # Errors
     ///
     /// Does not return an error.
-    fn get_key_store_info(
+    async fn get_key_store_info(
         &self,
         _input: GetKeyStoreInfoInput,
     ) -> Result<GetKeyStoreInfoOutput, Error> {
@@ -419,7 +423,7 @@ impl KeyStore for DynamoDbKeyStore {
             .key_store_id(&self.inner.key_store_id)
             .key_store_name(&self.inner.ddb_table_name)
             .logical_key_store_name(&self.inner.logical_key_store_name)
-            .grant_tokens(&self.inner.grant_tokens)
+            .set_grant_tokens(Some(self.inner.grant_tokens.clone()))
             .kms_configuration(self.inner.kms_configuration.clone())
             .build()
     }
