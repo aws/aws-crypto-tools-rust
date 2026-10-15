@@ -11,6 +11,7 @@ pub(crate) mod cache_entry_identifier;
 
 pub mod hierarchical_keyring;
 
+#[cfg(all(feature = "kms", feature = "ddb"))]
 pub(crate) mod user_agent;
 
 /// Internals that integration tests reach.

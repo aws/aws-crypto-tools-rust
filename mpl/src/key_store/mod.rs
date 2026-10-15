@@ -22,19 +22,25 @@
 //! # }
 //! ```
 
+#[cfg(all(feature = "kms", feature = "ddb"))]
 mod attributes;
+#[cfg(all(feature = "kms", feature = "ddb"))]
 mod branch_key_store;
 mod client;
 pub mod config;
+#[cfg(all(feature = "kms", feature = "ddb"))]
 mod encryption_context;
 mod kms_config;
+#[cfg(all(feature = "kms", feature = "ddb"))]
 mod kms_ops;
+#[cfg(all(feature = "kms", feature = "ddb"))]
 mod record;
 mod types;
 
 use crate::Error;
 use async_trait::async_trait;
 
+#[cfg(all(feature = "kms", feature = "ddb"))]
 pub use branch_key_store::KeyStoreClientBuilder;
 pub use client::{
     CreateKeyFluentBuilder, CreateKeyStoreFluentBuilder, GetActiveBranchKeyFluentBuilder,
