@@ -7,7 +7,7 @@
 
 use aws_crypto_mpl::{AesGcm, RawAesKeyring};
 use aws_esdk::EncryptionContext;
-use aws_esdk::error::Error;
+use aws_esdk::Error;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
