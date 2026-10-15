@@ -1031,9 +1031,7 @@ fn create_sdk_config(input: &ffi::MplAwsClientConfig) -> Result<SdkConfig, Strin
 
 // ESDK/MPL Client Operations
 
-/// An `ffi::EncryptInput`'s settings, converted for the core ESDK:
-/// the C++ `Client`'s commitment policy and encrypted data key cap as a `Client`,
-/// and the per-call algorithm suite and frame length for its encrypt builder.
+/// An `ffi::EncryptInput`'s settings converted for the Rust ESDK.
 struct EncryptSettings {
     esdk: Client,
     algorithm_suite_id: Option<EsdkAlgorithmSuiteId>,
