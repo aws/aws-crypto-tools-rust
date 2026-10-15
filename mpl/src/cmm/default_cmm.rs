@@ -152,7 +152,7 @@ impl Cmm for DefaultCmm {
         let empty_materials = EncryptionMaterials::builder()
             .algorithm_suite_id(suite_id)
             .set_encryption_context(Some(ec))
-            .required_encryption_context_keys(reck)
+            .set_required_encryption_context_keys(Some(reck))
             .set_signing_key(signing_key)
             .build()?;
 
@@ -231,7 +231,7 @@ impl Cmm for DefaultCmm {
         let empty_materials = DecryptionMaterials::builder()
             .algorithm_suite_id(suite_id)
             .set_encryption_context(Some(ec))
-            .required_encryption_context_keys(required_encryption_context_keys)
+            .set_required_encryption_context_keys(Some(required_encryption_context_keys))
             .set_verification_key(verification_key)
             .build()?;
 
@@ -239,7 +239,7 @@ impl Cmm for DefaultCmm {
             .keyring
             .on_decrypt()
             .materials(empty_materials)
-            .encrypted_data_keys(input.encrypted_data_keys)
+            .set_encrypted_data_keys(Some(input.encrypted_data_keys))
             .send()
             .await?
             .into_materials();
