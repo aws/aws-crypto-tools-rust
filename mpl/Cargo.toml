@@ -2,8 +2,11 @@
 name = "aws-crypto-mpl"
 version = "0.1.0"
 edition = "2024"
+keywords = ["cryptography", "security", "encryption"]
+categories = ["cryptography"]
 license = "Apache-2.0"
-description = "aws-cryptographic-material-providers-library is a low level library for implementing client side encryption."
+description = "AWS Cryptographic Material Providers Library for Rust: keyrings, cryptographic materials managers, and caches for client-side encryption."
+repository = "https://github.com/aws/aws-crypto-tools-rust"
 authors = ["AWS-CryptoTools"]
 
 [dependencies]
