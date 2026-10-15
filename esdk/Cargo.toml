@@ -43,7 +43,6 @@ rustdoc-args = [
 [features]
 default = ["aws-lc-rs/aws-lc-sys", "kms", "ddb", "default-config", "rt-tokio"]
 fips = ["aws-lc-rs/fips"]
-track = []
 # The AWS KMS client, for the MPL's hierarchical keyring and key store.
 kms = ["aws-crypto-mpl/kms"]
 # The Amazon DynamoDB client, for the MPL's hierarchical keyring and key store.
