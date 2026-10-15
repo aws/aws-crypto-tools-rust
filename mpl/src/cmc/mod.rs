@@ -8,16 +8,19 @@
 //! The macro rewrites each `async fn` to return a boxed future,
 //! so a keyring can hold a cache whose type is chosen at runtime.
 
+#[cfg(feature = "rt-tokio")]
 pub mod default;
 pub mod entry;
 mod fluent_builders;
 pub mod local;
 mod operation;
+#[cfg(feature = "rt-tokio")]
 pub mod storm_tracking;
 
 use crate::Error;
 use async_trait::async_trait;
 
+#[cfg(feature = "rt-tokio")]
 pub use default::{DefaultCmc, DefaultCmcBuilder};
 pub use entry::{
     BytesUsage, CacheEntry, CacheEntryBuilder, CachedMaterials, MessageUsage, UsageMetadata,
@@ -35,6 +38,7 @@ pub use operation::{
     PutCacheEntryOutput, PutCacheEntryOutputBuilder, UpdateUsageMetadataInput,
     UpdateUsageMetadataInputBuilder, UpdateUsageMetadataOutput, UpdateUsageMetadataOutputBuilder,
 };
+#[cfg(feature = "rt-tokio")]
 pub use storm_tracking::{StormTrackingCmc, StormTrackingCmcBuilder};
 
 use std::time::Duration;

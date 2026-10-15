@@ -15,9 +15,8 @@ readme = "README.md"
 tokio = { version = "1.49", default-features = false, features = ["io-util", "rt"] }
 
 aws-smithy-types = "1.8.1"
-aws-sdk-kms = "1.123.0"
-aws-sdk-dynamodb = "1.130.0"
-aws-crypto-mpl = { path = "../mpl" }
+aws-types = "1.6.0"
+aws-crypto-mpl = { path = "../mpl", default-features = false }
 aws-mpl-primitives = { path = "../prim" }
 aws-lc-rs = { version = "1.18.1", default-features = false }
 zeroize = "1.9.0"
@@ -42,8 +41,13 @@ rustdoc-args = [
 ]
 
 [features]
-default = ["aws-lc-rs/aws-lc-sys"]
+default = ["aws-lc-rs/aws-lc-sys", "kms", "ddb", "default-config", "rt-tokio"]
 fips = ["aws-lc-rs/fips"]
-track = []
-kms = []
-ddb = []
+# The AWS KMS client, for the MPL's hierarchical keyring and key store.
+kms = ["aws-crypto-mpl/kms"]
+# The Amazon DynamoDB client, for the MPL's hierarchical keyring and key store.
+ddb = ["aws-crypto-mpl/ddb"]
+# Lets the MPL key store build default KMS and DynamoDB clients from the default AWS config chain.
+default-config = ["aws-crypto-mpl/default-config"]
+# The tokio runtime, for the MPL's `StormTrackingCmc` and `DefaultCmc`.
+rt-tokio = ["aws-crypto-mpl/rt-tokio"]

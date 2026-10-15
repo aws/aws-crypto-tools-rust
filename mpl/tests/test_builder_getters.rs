@@ -12,6 +12,17 @@ use aws_crypto_mpl::aws_sdk_dynamodb::Client as DynamoDbClient;
 use aws_crypto_mpl::aws_sdk_kms::Client as KmsClient;
 use aws_crypto_mpl::cmc::*;
 use aws_crypto_mpl::cmm::*;
+use aws_crypto_mpl::key_store::operation::create_key::{CreateKeyInput, CreateKeyOutput};
+use aws_crypto_mpl::key_store::operation::create_key_store::CreateKeyStoreOutput;
+use aws_crypto_mpl::key_store::operation::get_active_branch_key::{
+    GetActiveBranchKeyInput, GetActiveBranchKeyOutput,
+};
+use aws_crypto_mpl::key_store::operation::get_beacon_key::{GetBeaconKeyInput, GetBeaconKeyOutput};
+use aws_crypto_mpl::key_store::operation::get_branch_key_version::{
+    GetBranchKeyVersionInput, GetBranchKeyVersionOutput,
+};
+use aws_crypto_mpl::key_store::operation::get_key_store_info::GetKeyStoreInfoOutput;
+use aws_crypto_mpl::key_store::operation::version_key::VersionKeyInput;
 use aws_crypto_mpl::key_store::*;
 use aws_crypto_mpl::keyring::*;
 use aws_crypto_mpl::structures::*;

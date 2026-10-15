@@ -7,7 +7,8 @@
 mod fixtures;
 mod test_helpers;
 
-use aws_esdk::AlgorithmSuiteId;
+use aws_esdk::types::AlgorithmSuiteId;
+use aws_esdk::types::*;
 use aws_esdk::*;
 use std::num::NonZeroU32;
 // TODO(native-mpl): re-enable with test_verify_header_encryption_context_to_only_authenticate

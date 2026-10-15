@@ -14,7 +14,7 @@
 //! Its other helpers map MPL suite fields to the types the ESDK needs.
 
 use crate::error::{Error, Kind, err};
-use crate::types::AlgorithmSuiteId;
+use crate::shapes::AlgorithmSuiteId;
 use aws_crypto_mpl::structures::{
     AlgorithmSuite, AlgorithmSuiteId as MplAlgorithmSuiteId, AsymmetricSignatureAlgorithm,
     KeyDerivationAlgorithm,

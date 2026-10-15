@@ -6,7 +6,7 @@ use crate::error::{CmmResource, Error, KeyringResource, Resource, val_err};
 use crate::error::{Kind, err};
 use crate::message::header_types::HeaderBody;
 use crate::message::serializable_types::{is_esdk_encrypted_data_keys, is_esdk_encryption_context};
-use crate::types::{AlgorithmSuiteId, CommitmentPolicy, EncryptionContext, MaterialSource};
+use crate::shapes::{AlgorithmSuiteId, CommitmentPolicy, EncryptionContext, MaterialSource};
 use aws_crypto_mpl::cmm::DefaultCmm;
 use aws_crypto_mpl::cmm::SharedCmm;
 use aws_crypto_mpl::structures::{

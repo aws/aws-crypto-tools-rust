@@ -10,7 +10,7 @@
 use aws_crypto_mpl::keyring::{OnDecryptInput, OnDecryptOutput, OnEncryptInput, OnEncryptOutput};
 use aws_crypto_mpl::structures::EncryptedDataKey;
 use aws_crypto_mpl::{AesGcm, Error as MplError, Keyring, RawAesKeyring, async_trait};
-use aws_esdk::EncryptionContext;
+use aws_esdk::types::EncryptionContext;
 
 /// Wraps another keyring and logs the key providers of the encrypted data keys each call writes or tries.
 #[derive(Clone)]
