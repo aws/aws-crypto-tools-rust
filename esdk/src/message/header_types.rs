@@ -8,8 +8,8 @@ use super::{Error, ser_err};
 use crate::error::{Kind, err_with_cause};
 use crate::shapes::{EncryptionContext, Source, Tee};
 use crate::suites::algorithm_suite_from_bytes;
-use aws_crypto_mpl::structures::AlgorithmSuite;
-use aws_crypto_mpl::structures::EncryptedDataKey;
+use aws_crypto_mpl::types::AlgorithmSuite;
+use aws_crypto_mpl::types::EncryptedDataKey;
 
 pub(crate) type MessageId = Vec<u8>;
 

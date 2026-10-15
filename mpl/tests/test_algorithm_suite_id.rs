@@ -9,7 +9,7 @@
 
 use std::collections::HashSet;
 
-use aws_crypto_mpl::structures::{
+use aws_crypto_mpl::types::{
     AsymmetricSignatureAlgorithm, EncryptionAlgorithm, EncryptionAlgorithmMode,
     EsdkAlgorithmSuiteId, Format, KeyDerivationAlgorithm,
 };

@@ -10,12 +10,13 @@ use aws_crypto_mpl::async_trait;
 use aws_crypto_mpl::keyring::OnEncryptInput;
 use aws_crypto_mpl::keyring::{OnDecryptInput, OnDecryptOutput, OnEncryptOutput};
 use aws_crypto_mpl::keyring::{RawAesKeyring, SharedKeyring};
-use aws_crypto_mpl::structures::EncryptionContext;
+use aws_crypto_mpl::types::AesWrappingAlg;
+use aws_crypto_mpl::types::EncryptionContext;
 use aws_esdk::Client;
+use aws_esdk::Error;
 use aws_esdk::error::{
-    BranchKey, Cache, DynamoDbTable, Error, KeyringResource, KmsKey, Resource, RetryKind, Service,
+    BranchKey, Cache, DynamoDbTable, KeyringResource, KmsKey, Resource, RetryKind, Service,
 };
-use aws_mpl_primitives::AesGcm;
 use fake_aws::{BRANCH_KEY_ID, FakeAws, KEY_ARN, Reply, TABLE, VERSION};
 
 fn context() -> EncryptionContext {
@@ -24,7 +25,7 @@ fn context() -> EncryptionContext {
     ec
 }
 
-async fn encrypt_with(keyring: impl aws_crypto_mpl::Keyring + 'static) -> Vec<u8> {
+async fn encrypt_with(keyring: impl aws_crypto_mpl::keyring::Keyring + 'static) -> Vec<u8> {
     Client::default()
         .encrypt()
         .plaintext(b"hello")
@@ -38,7 +39,7 @@ async fn encrypt_with(keyring: impl aws_crypto_mpl::Keyring + 'static) -> Vec<u8
 
 async fn decrypt_with(
     ciphertext: &[u8],
-    keyring: impl aws_crypto_mpl::Keyring + 'static,
+    keyring: impl aws_crypto_mpl::keyring::Keyring + 'static,
 ) -> Result<Vec<u8>, Error> {
     Client::default()
         .decrypt()
@@ -102,7 +103,7 @@ async fn a_wrong_raw_aes_keyring_names_the_keyring_used() {
             .key_namespace(ns)
             .key_name(name)
             .wrapping_key(vec![byte; 32])
-            .wrapping_alg(AesGcm::Aes256Gcm)
+            .wrapping_alg(AesWrappingAlg::AlgAes256GcmIv12Tag16)
             .build()
             .unwrap()
     };
@@ -224,9 +225,9 @@ async fn kms_throttling_is_throttling_about_the_kms_key() {
 
 #[tokio::test]
 async fn the_materials_cache_timing_out_is_throttling_about_the_cache() {
-    use aws_crypto_mpl::HierarchicalKeyring;
-    use aws_crypto_mpl::aws_kms::__test_internals::{SCOPE_ID_ENCRYPT, build_cache_identifier};
+    use aws_crypto_mpl::__test_internals::aws_kms::{SCOPE_ID_ENCRYPT, build_cache_identifier};
     use aws_crypto_mpl::cmc::{SharedCmc, StormTrackingCmc};
+    use aws_crypto_mpl::keyring::HierarchicalKeyring;
     use std::time::{Duration, SystemTime};
 
     let now = SystemTime::now();
@@ -275,7 +276,7 @@ async fn a_tampered_frame_is_cryptographic() {
         .key_namespace("ns")
         .key_name("name")
         .wrapping_key(vec![7; 32])
-        .wrapping_alg(AesGcm::Aes256Gcm)
+        .wrapping_alg(AesWrappingAlg::AlgAes256GcmIv12Tag16)
         .build()
         .unwrap();
     let mut ciphertext = Client::default()
@@ -301,7 +302,7 @@ async fn an_encryption_context_mismatch_names_the_key_not_the_value() {
         .key_namespace("ns")
         .key_name("name")
         .wrapping_key(vec![7; 32])
-        .wrapping_alg(AesGcm::Aes256Gcm)
+        .wrapping_alg(AesWrappingAlg::AlgAes256GcmIv12Tag16)
         .build()
         .unwrap();
     let ciphertext = encrypt_with(keyring.clone()).await;
@@ -534,7 +535,7 @@ async fn a_truncated_message_is_serialization() {
         .key_namespace("ns")
         .key_name("name")
         .wrapping_key(vec![7; 32])
-        .wrapping_alg(AesGcm::Aes256Gcm)
+        .wrapping_alg(AesWrappingAlg::AlgAes256GcmIv12Tag16)
         .build()
         .unwrap();
     let ciphertext = encrypt_with(keyring.clone()).await;
@@ -639,7 +640,7 @@ async fn version_key_without_an_active_branch_key_names_the_branch_key() {
 struct Both(SharedKeyring, SharedKeyring);
 
 #[async_trait]
-impl aws_crypto_mpl::Keyring for Both {
+impl aws_crypto_mpl::keyring::Keyring for Both {
     async fn on_encrypt(
         &self,
         input: OnEncryptInput,
@@ -669,14 +670,14 @@ async fn failures_lists_every_attempt_behind_a_keyring_error() {
         .key_namespace("other")
         .key_name("key")
         .wrapping_key(vec![1; 32])
-        .wrapping_alg(AesGcm::Aes256Gcm)
+        .wrapping_alg(AesWrappingAlg::AlgAes256GcmIv12Tag16)
         .build()
         .unwrap();
     let same_name_other_key = RawAesKeyring::builder()
         .key_namespace("ns")
         .key_name("key")
         .wrapping_key(vec![2; 32])
-        .wrapping_alg(AesGcm::Aes256Gcm)
+        .wrapping_alg(AesWrappingAlg::AlgAes256GcmIv12Tag16)
         .build()
         .unwrap();
     let ciphertext = encrypt_with(Both(
@@ -688,7 +689,7 @@ async fn failures_lists_every_attempt_behind_a_keyring_error() {
         .key_namespace("ns")
         .key_name("key")
         .wrapping_key(vec![3; 32])
-        .wrapping_alg(AesGcm::Aes256Gcm)
+        .wrapping_alg(AesWrappingAlg::AlgAes256GcmIv12Tag16)
         .build()
         .unwrap();
     let err = decrypt_with(&ciphertext, keyring).await.unwrap_err();
@@ -783,19 +784,23 @@ async fn a_clone_keeps_the_sdk_error_and_prints_the_same() {
 const RECORD_KEY_ARN: &str = "arn:aws:kms:us-west-2:444455556666:key/5678efgh";
 
 /// A hierarchical keyring over a discovery key store: the KMS key comes from each branch key record.
-async fn discovery_keyring(fake: &FakeAws) -> aws_crypto_mpl::HierarchicalKeyring {
-    let key_store = aws_crypto_mpl::KeyStoreClient::builder()
+async fn discovery_keyring(fake: &FakeAws) -> aws_crypto_mpl::keyring::HierarchicalKeyring {
+    let key_store = aws_crypto_mpl::key_store::Client::builder()
         .ddb_table_name(TABLE)
         .logical_key_store_name(TABLE)
-        .kms_configuration(aws_crypto_mpl::KmsConfiguration::Discovery(
-            aws_crypto_mpl::Discovery::builder().build().unwrap(),
-        ))
+        .kms_configuration(
+            aws_crypto_mpl::key_store::types::KmsConfiguration::Discovery(
+                aws_crypto_mpl::key_store::types::Discovery::builder()
+                    .build()
+                    .unwrap(),
+            ),
+        )
         .kms_client(fake.kms_client())
         .ddb_client(fake.ddb_client())
         .build()
         .await
         .unwrap();
-    aws_crypto_mpl::HierarchicalKeyring::builder()
+    aws_crypto_mpl::keyring::HierarchicalKeyring::builder()
         .key_store(key_store)
         .branch_key_id(BRANCH_KEY_ID)
         .ttl(std::time::Duration::from_secs(600))

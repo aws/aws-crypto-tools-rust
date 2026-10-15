@@ -11,7 +11,9 @@ use crate::shapes::{
     EncryptOutput, EncryptStreamInput, EncryptStreamInputBuilder, EncryptStreamOutput,
     EncryptionContext,
 };
-use aws_crypto_mpl::{IntoShared, SharedCmm, SharedKeyring};
+use aws_crypto_mpl::cmm::SharedCmm;
+use aws_crypto_mpl::keyring::SharedKeyring;
+use aws_crypto_mpl::shared::IntoShared;
 use std::fmt;
 use std::num::NonZeroU32;
 use tokio::io::{AsyncRead, AsyncWrite};

@@ -15,7 +15,7 @@ use aws_crypto_mpl::cmm::{DefaultCmm, SharedCmm};
 use aws_crypto_mpl::keyring::{
     Keyring, OnDecryptInput, OnDecryptOutput, OnEncryptInput, OnEncryptOutput,
 };
-use aws_crypto_mpl::structures::{
+use aws_crypto_mpl::types::{
     AlgorithmSuiteId, CommitmentPolicy, DecryptionMaterials, EncryptedDataKey, EncryptionContext,
     EsdkAlgorithmSuiteId, EsdkCommitmentPolicy, PlaintextDataKey,
 };

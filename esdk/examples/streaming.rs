@@ -13,8 +13,9 @@
 
 use tokio::fs::{self, File};
 
-use aws_crypto_mpl::{AesGcm, RawAesKeyring};
-use aws_esdk::{types::AlgorithmSuiteId, types::EncryptionContext};
+use aws_crypto_mpl::keyring::RawAesKeyring;
+use aws_crypto_mpl::types::AesWrappingAlg;
+use aws_esdk::types::{AlgorithmSuiteId, EncryptionContext};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -35,7 +36,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .key_namespace("my-key-namespace")
         .key_name("my-key-name")
         .wrapping_key(wrapping_key)
-        .wrapping_alg(AesGcm::Aes256Gcm)
+        .wrapping_alg(AesWrappingAlg::AlgAes256GcmIv12Tag16)
         .build()?;
 
     // The encryption context is authenticated, not encrypted, and is bound to the message.

@@ -3,9 +3,7 @@
 
 //! Tests for algorithm_suite key type accessors and Debug impls.
 
-use aws_crypto_mpl::structures::{
-    PlaintextDataKey, SigningKey, SymmetricSigningKey, VerificationKey,
-};
+use aws_crypto_mpl::types::{PlaintextDataKey, SigningKey, SymmetricSigningKey, VerificationKey};
 
 #[test]
 fn test_plaintext_data_key_accessors() {
