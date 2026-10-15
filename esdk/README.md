@@ -118,7 +118,7 @@ Run one with `cargo run --example <name>`:
 | `custom_keyring` | no |
 | `set_algorithm_suite` | no |
 | `set_commitment_policy` | no |
-| `signing_only_cmm` | no |
+| `custom_cmm` | no |
 | `hierarchical_keyring` | KMS + DynamoDB |
 | `branch_key_supplier` | KMS + DynamoDB |
 | `rotate_branch_key` | KMS + DynamoDB |
