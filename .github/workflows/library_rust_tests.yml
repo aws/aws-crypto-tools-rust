@@ -82,10 +82,12 @@ jobs:
       # `aws-lc-rs/aws-lc-sys` restores the crypto backend that `esdk`'s `default` carries.
       - name: Clippy without default features
         if: inputs.project == 'mpl' || inputs.project == 'esdk'
+        env:
+          BACKEND: ${{ inputs.project == 'esdk' && 'aws-lc-rs/aws-lc-sys,' || '' }}
         run: |
-          backend=${{ inputs.project == 'esdk' && '--features aws-lc-rs/aws-lc-sys' || '' }}
-          cargo clippy --lib --no-default-features $backend -- -D warnings
-          cargo clippy --lib --no-default-features $backend --features kms,ddb -- -D warnings
+          cargo clippy --lib --no-default-features --features "${BACKEND}" -- -D warnings
+          cargo clippy --lib --no-default-features --features "${BACKEND}kms,ddb" -- -D warnings
+          cargo clippy --lib --no-default-features --features "${BACKEND}rt-tokio" -- -D warnings
 
       - name: Build
         run: cargo build --verbose

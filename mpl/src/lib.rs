@@ -39,10 +39,11 @@ pub use aws_sdk_dynamodb;
 pub use aws_sdk_kms;
 
 pub use cmc::{
-    BytesUsage, CacheEntry, CachedMaterials, Cmc, DefaultCmc, DefaultCmcBuilder, LocalCmc,
-    LocalCmcBuilder, MessageUsage, SharedCmc, StormTrackingCmc, StormTrackingCmcBuilder,
-    UsageMetadata,
+    BytesUsage, CacheEntry, CachedMaterials, Cmc, LocalCmc, LocalCmcBuilder, MessageUsage,
+    SharedCmc, UsageMetadata,
 };
+#[cfg(feature = "rt-tokio")]
+pub use cmc::{DefaultCmc, DefaultCmcBuilder, StormTrackingCmc, StormTrackingCmcBuilder};
 pub use cmm::{Cmm, DefaultCmm, SharedCmm};
 #[cfg(all(feature = "kms", feature = "ddb"))]
 pub use key_store::KeyStoreClientBuilder;

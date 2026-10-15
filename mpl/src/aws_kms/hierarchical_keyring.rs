@@ -18,7 +18,9 @@ use async_trait::async_trait;
 use crate::Keyring;
 use crate::aws_kms::branch_key_wrap;
 use crate::aws_kms::cache_entry_identifier;
-use crate::cmc::{CacheEntry, CachedMaterials, Cmc, DefaultCmc, SharedCmc};
+#[cfg(feature = "rt-tokio")]
+use crate::cmc::DefaultCmc;
+use crate::cmc::{CacheEntry, CachedMaterials, Cmc, SharedCmc};
 use crate::key_store::KeyStoreClient;
 use crate::keyring::{OnDecryptInput, OnDecryptOutput, OnEncryptInput, OnEncryptOutput};
 use crate::shared::IntoShared;
@@ -346,6 +348,7 @@ impl HierarchicalKeyring {
 }
 
 /// Entry capacity of the [`DefaultCmc`] a keyring builds when no cache is set.
+#[cfg(feature = "rt-tokio")]
 const DEFAULT_CACHE_ENTRY_CAPACITY: usize = 1000;
 
 /// Builder for [`HierarchicalKeyring`], returned by
@@ -464,6 +467,7 @@ impl HierarchicalKeyringBuilder {
     /// The cache for branch key materials.
     /// Pass clones of one cache to several keyrings to share its entries.
     /// When unset, the keyring builds its own [`DefaultCmc`] with an entry capacity of 1000.
+    /// Without the `rt-tokio` feature, it is required.
     ///
     /// The cache's [grace period](Cmc::grace_period), if it has one, must be less than the [TTL](Self::ttl).
     /// The default cache's grace period is 10 seconds.
@@ -513,7 +517,7 @@ impl HierarchicalKeyringBuilder {
     ///
     /// # Errors
     ///
-    /// - [`Validation`](crate::Error::Validation): no key store or TTL is set, the TTL is zero, both or neither of a branch key id and a branch key id supplier are set, a storm-tracking grace period is not less than the TTL, or the materials cache rejects its parameters.
+    /// - [`Validation`](crate::Error::Validation): no key store or TTL is set, the TTL is zero, both or neither of a branch key id and a branch key id supplier are set, no cache is set without the `rt-tokio` feature, a storm-tracking grace period is not less than the TTL, or the materials cache rejects its parameters.
     /// - [`Cryptographic`](crate::Error::Cryptographic): the random number generator failed while creating the default partition id.
     ///
     /// If the key store's [`get_key_store_info`](crate::KeyStore::get_key_store_info) fails, returns that error unchanged.
@@ -552,12 +556,20 @@ impl HierarchicalKeyringBuilder {
 
         let cache = match cache {
             Some(cache) => cache,
+            #[cfg(feature = "rt-tokio")]
             None => SharedCmc::new(
                 DefaultCmc::builder()
                     .entry_capacity(DEFAULT_CACHE_ENTRY_CAPACITY)
                     .build()
                     .map_err(|e| Error::wrap("could not create the default materials cache", e))?,
             ),
+            #[cfg(not(feature = "rt-tokio"))]
+            None => {
+                return Err(Error::new(
+                    Kind::Validation,
+                    "cache is required without the `rt-tokio` feature",
+                ));
+            }
         };
 
         if let Some(grace_period) = cache.grace_period()
