@@ -23,7 +23,8 @@ use aws_crypto_mpl::error::ConflictReason;
 use aws_crypto_mpl::key_store::{KeyStoreClient, KmsConfiguration};
 use aws_crypto_mpl::{HierarchicalKeyring, aws_config, aws_sdk_dynamodb, aws_sdk_kms};
 use aws_esdk::EncryptionContext;
-use aws_esdk::error::{Error, Resource, Service};
+use aws_esdk::Error;
+use aws_esdk::error::{Resource, Service};
 
 // The AWS Crypto Tools CI test key store.
 // Replace these with your own key store's table, name, KMS key ARN, and branch key ID.
