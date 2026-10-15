@@ -92,7 +92,7 @@ pub trait Cmc: Send + Sync {
 crate::shared::shared_handle!(
     /// A cache whose concrete type is chosen at runtime.
     ///
-    /// It implements [`Cmc`], so it can be passed anywhere a cache is accepted.
+    /// Pass it anywhere a cache is accepted.
     /// Callers that know their cache's type pass it directly and never need this one.
     ///
     /// Each operation returns a fluent builder: set the input, then call `send`.
@@ -104,37 +104,10 @@ crate::shared::shared_handle!(
     Cmc
 );
 
-#[async_trait]
-impl Cmc for SharedCmc {
-    async fn put_cache_entry(
-        &self,
-        input: PutCacheEntryInput,
-    ) -> Result<PutCacheEntryOutput, Error> {
-        Cmc::put_cache_entry(&*self.0, input).await
-    }
-
-    async fn get_cache_entry(
-        &self,
-        input: GetCacheEntryInput,
-    ) -> Result<GetCacheEntryOutput, Error> {
-        Cmc::get_cache_entry(&*self.0, input).await
-    }
-
-    async fn delete_cache_entry(
-        &self,
-        input: DeleteCacheEntryInput,
-    ) -> Result<DeleteCacheEntryOutput, Error> {
-        Cmc::delete_cache_entry(&*self.0, input).await
-    }
-
-    async fn update_usage_metadata(
-        &self,
-        input: UpdateUsageMetadataInput,
-    ) -> Result<UpdateUsageMetadataOutput, Error> {
-        Cmc::update_usage_metadata(&*self.0, input).await
-    }
-
-    fn grace_period(&self) -> Option<Duration> {
+impl SharedCmc {
+    /// The cache's [`grace_period`](Cmc::grace_period).
+    #[must_use]
+    pub fn grace_period(&self) -> Option<Duration> {
         self.0.grace_period()
     }
 }

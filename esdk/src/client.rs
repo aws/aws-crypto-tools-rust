@@ -23,7 +23,7 @@ use crate::types::{
     EncryptionContext,
 };
 use crate::types::{CommitmentPolicy, DEFAULT_COMMITMENT_POLICY};
-use aws_crypto_mpl::{Cmm, Keyring, SharedCmm, SharedKeyring};
+use aws_crypto_mpl::{IntoShared, SharedCmm, SharedKeyring};
 use std::fmt;
 use std::num::{NonZeroU32, NonZeroUsize};
 use tokio::io::{AsyncRead, AsyncWrite};
@@ -393,12 +393,12 @@ macro_rules! material_source_members {
         member!(
             /// The keyring that protects the message's data key.
             /// Set exactly one of a keyring or a CMM.
-            keyring(impl Keyring + 'static), set_keyring, get_keyring -> SharedKeyring
+            keyring(impl IntoShared<SharedKeyring>), set_keyring, get_keyring -> SharedKeyring
         );
         member!(
             /// The cryptographic materials manager (CMM) that supplies the message's data key.
             /// Set exactly one of a keyring or a CMM.
-            cmm(impl Cmm + 'static), set_cmm, get_cmm -> SharedCmm
+            cmm(impl IntoShared<SharedCmm>), set_cmm, get_cmm -> SharedCmm
         );
     };
 }

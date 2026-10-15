@@ -49,7 +49,7 @@ use aws_crypto_mpl::structures::{
     AlgorithmSuiteId, BranchKeyMaterials, DecryptionMaterials, EncryptionContext,
     EncryptionMaterials, EsdkAlgorithmSuiteId,
 };
-use aws_crypto_mpl::{Cmc, LocalCmc, SharedCmc, SharedKeyring, StormTrackingCmc};
+use aws_crypto_mpl::{LocalCmc, SharedCmc, SharedKeyring, StormTrackingCmc};
 
 /// Construct a pair of zero-config AWS SDK clients suitable for tests that
 /// never invoke a remote operation. `BehaviorVersion::latest()` is required by

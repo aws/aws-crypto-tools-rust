@@ -18,7 +18,7 @@ use async_trait::async_trait;
 use crate::Keyring;
 use crate::aws_kms::branch_key_wrap;
 use crate::aws_kms::cache_entry_identifier;
-use crate::cmc::{CacheEntry, CachedMaterials, Cmc, DefaultCmc, SharedCmc};
+use crate::cmc::{CacheEntry, CachedMaterials, DefaultCmc, SharedCmc};
 use crate::key_store::KeyStoreClient;
 use crate::keyring::{OnDecryptInput, OnDecryptOutput, OnEncryptInput, OnEncryptOutput};
 use crate::shared::IntoShared;
@@ -189,23 +189,13 @@ pub trait BranchKeySupplier: Send + Sync {
 crate::shared::shared_handle!(
     /// A branch key supplier whose concrete type is chosen at runtime.
     ///
-    /// It implements [`BranchKeySupplier`], so it can be passed anywhere a branch key supplier is accepted.
+    /// Pass it anywhere a branch key supplier is accepted.
     /// Callers that know their branch key supplier's type pass it directly and never need this one.
     ///
     /// Its operation returns a fluent builder: set the input, then call `send`.
     SharedBranchKeySupplier,
     BranchKeySupplier
 );
-
-#[async_trait::async_trait]
-impl BranchKeySupplier for SharedBranchKeySupplier {
-    async fn get_branch_key_id(
-        &self,
-        input: GetBranchKeyIdInput,
-    ) -> Result<GetBranchKeyIdOutput, Error> {
-        BranchKeySupplier::get_branch_key_id(&*self.0, input).await
-    }
-}
 
 impl SharedBranchKeySupplier {
     /// Start a [`BranchKeySupplier::get_branch_key_id`] call.
@@ -442,7 +432,10 @@ impl HierarchicalKeyringBuilder {
     /// A [`BranchKeySupplier`].
     /// Set this or [`branch_key_id`](Self::branch_key_id), not both.
     #[must_use]
-    pub fn branch_key_id_supplier(mut self, supplier: impl BranchKeySupplier + 'static) -> Self {
+    pub fn branch_key_id_supplier(
+        mut self,
+        supplier: impl IntoShared<SharedBranchKeySupplier>,
+    ) -> Self {
         self.branch_key_id_supplier = Some(supplier.into_shared());
         self
     }
@@ -465,10 +458,10 @@ impl HierarchicalKeyringBuilder {
     /// Pass clones of one cache to several keyrings to share its entries.
     /// When unset, the keyring builds its own [`DefaultCmc`] with an entry capacity of 1000.
     ///
-    /// The cache's [grace period](Cmc::grace_period), if it has one, must be less than the [TTL](Self::ttl).
+    /// The cache's [grace period](crate::Cmc::grace_period), if it has one, must be less than the [TTL](Self::ttl).
     /// The default cache's grace period is 10 seconds.
     #[must_use]
-    pub fn cache(mut self, cache: impl Cmc + 'static) -> Self {
+    pub fn cache(mut self, cache: impl IntoShared<SharedCmc>) -> Self {
         self.cache = Some(cache.into_shared());
         self
     }

@@ -496,7 +496,7 @@ impl<'a> EncryptInputBuilder<'a> {
     //= spec/client-apis/encrypt.md#input
     //# - Encrypt operation input MUST accept an optional [keyring](../framework/keyring-interface.md) argument.
     #[must_use]
-    pub(crate) fn keyring(mut self, keyring: impl Keyring + 'static) -> Self {
+    pub(crate) fn keyring(mut self, keyring: impl IntoShared<SharedKeyring>) -> Self {
         self.keyring = Some(keyring.into_shared());
         self
     }
@@ -515,7 +515,7 @@ impl<'a> EncryptInputBuilder<'a> {
     //= spec/client-apis/encrypt.md#input
     //# - Encrypt operation input MUST accept an optional [cryptographic Materials Manager (CMM)](../framework/cmm-interface.md) argument.
     #[must_use]
-    pub(crate) fn cmm(mut self, cmm: impl Cmm + 'static) -> Self {
+    pub(crate) fn cmm(mut self, cmm: impl IntoShared<SharedCmm>) -> Self {
         self.cmm = Some(cmm.into_shared());
         self
     }
@@ -705,7 +705,7 @@ impl EncryptStreamInputBuilder {
     /// Set the keyring.
     /// Provide exactly one of a keyring or a CMM.
     #[must_use]
-    pub(crate) fn keyring(mut self, keyring: impl Keyring + 'static) -> Self {
+    pub(crate) fn keyring(mut self, keyring: impl IntoShared<SharedKeyring>) -> Self {
         self.keyring = Some(keyring.into_shared());
         self
     }
@@ -722,7 +722,7 @@ impl EncryptStreamInputBuilder {
     /// Set the cryptographic materials manager (CMM).
     /// Provide exactly one of a keyring or a CMM.
     #[must_use]
-    pub(crate) fn cmm(mut self, cmm: impl Cmm + 'static) -> Self {
+    pub(crate) fn cmm(mut self, cmm: impl IntoShared<SharedCmm>) -> Self {
         self.cmm = Some(cmm.into_shared());
         self
     }
@@ -891,7 +891,7 @@ impl<'a> DecryptInputBuilder<'a> {
     //= spec/client-apis/decrypt.md#input
     //# - Decrypt operation input MUST accept an optional [Keyring](../framework/keyring-interface.md) argument.
     #[must_use]
-    pub(crate) fn keyring(mut self, keyring: impl Keyring + 'static) -> Self {
+    pub(crate) fn keyring(mut self, keyring: impl IntoShared<SharedKeyring>) -> Self {
         self.keyring = Some(keyring.into_shared());
         self
     }
@@ -910,7 +910,7 @@ impl<'a> DecryptInputBuilder<'a> {
     //= spec/client-apis/decrypt.md#input
     //# - Decrypt operation input MUST accept an optional [Cryptographic Materials Manager (CMM)](../framework/cmm-interface.md) argument.
     #[must_use]
-    pub(crate) fn cmm(mut self, cmm: impl Cmm + 'static) -> Self {
+    pub(crate) fn cmm(mut self, cmm: impl IntoShared<SharedCmm>) -> Self {
         self.cmm = Some(cmm.into_shared());
         self
     }
@@ -1037,7 +1037,7 @@ impl DecryptStreamInputBuilder {
     /// Set the keyring.
     /// Provide exactly one of a keyring or a CMM.
     #[must_use]
-    pub(crate) fn keyring(mut self, keyring: impl Keyring + 'static) -> Self {
+    pub(crate) fn keyring(mut self, keyring: impl IntoShared<SharedKeyring>) -> Self {
         self.keyring = Some(keyring.into_shared());
         self
     }
@@ -1054,7 +1054,7 @@ impl DecryptStreamInputBuilder {
     /// Set the cryptographic materials manager (CMM).
     /// Provide exactly one of a keyring or a CMM.
     #[must_use]
-    pub(crate) fn cmm(mut self, cmm: impl Cmm + 'static) -> Self {
+    pub(crate) fn cmm(mut self, cmm: impl IntoShared<SharedCmm>) -> Self {
         self.cmm = Some(cmm.into_shared());
         self
     }

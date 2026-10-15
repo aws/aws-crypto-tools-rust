@@ -86,7 +86,13 @@ impl Keyring for KnownDataKey {
         &self,
         input: OnDecryptInput,
     ) -> Result<OnDecryptOutput, aws_crypto_mpl::Error> {
-        Keyring::on_decrypt(&self.0, input).await
+        let (materials, encrypted_data_keys) = input.into_parts();
+        self.0
+            .on_decrypt()
+            .materials(materials)
+            .encrypted_data_keys(encrypted_data_keys)
+            .send()
+            .await
     }
 }
 

@@ -77,7 +77,7 @@ use aws_crypto_mpl::structures::{
     AlgorithmSuiteId, BranchKeyMaterials, DecryptionMaterials, EncryptionContext,
     EncryptionMaterials, EsdkAlgorithmSuiteId,
 };
-use aws_crypto_mpl::{Cmc, KmsConfiguration, LocalCmc, SharedCmc, SharedKeyring};
+use aws_crypto_mpl::{IntoShared, KmsConfiguration, LocalCmc, SharedCmc, SharedKeyring};
 
 // ─── Fixtures (mirror Dafny Fixtures.dfy) ──────────────────────────────────
 
@@ -134,7 +134,7 @@ async fn keyring_with_cache(
     key_store: impl Into<KeyStoreClient>,
     branch_key_id: &str,
     partition: &str,
-    cache: impl Cmc + 'static,
+    cache: impl IntoShared<SharedCmc>,
 ) -> SharedKeyring {
     SharedKeyring::new(
         HierarchicalKeyring::builder()
@@ -691,14 +691,12 @@ async fn integ_discovery_key_store_wraps_under_the_records_own_kms_key() {
     // KEY_ARN. Discovery must pick that ARN up from the record, so
     // on_encrypt succeeds and the EDK is unwrappable with the same
     // record's materials.
-    let keyring = SharedKeyring::new(
-        keyring_for(
-            build_discovery_key_store().await,
-            DISCOVERY_BRANCH_KEY_ID,
-            "partition-id-integ-discovery",
-        )
-        .await,
-    );
+    let keyring = keyring_for(
+        build_discovery_key_store().await,
+        DISCOVERY_BRANCH_KEY_ID,
+        "partition-id-integ-discovery",
+    )
+    .await;
 
     let materials_in = fresh_materials();
     let ec = materials_in.encryption_context().clone();
@@ -743,14 +741,12 @@ async fn integ_pinned_key_store_rejects_a_branch_key_under_another_kms_key() {
     // through a key store pinned to KEY_ARN MUST fail, because the record's
     // kms-arn disagrees with the configured one. Without this, the Discovery
     // test would pass even if Discovery were silently ignoring the record.
-    let keyring = SharedKeyring::new(
-        keyring_for(
-            build_key_store().await,
-            DISCOVERY_BRANCH_KEY_ID,
-            "partition-id-integ-discovery-negative",
-        )
-        .await,
-    );
+    let keyring = keyring_for(
+        build_key_store().await,
+        DISCOVERY_BRANCH_KEY_ID,
+        "partition-id-integ-discovery-negative",
+    )
+    .await;
 
     let err = keyring
         .on_encrypt()
@@ -850,14 +846,12 @@ async fn integ_mr_discovery_key_store_reaches_an_mrk_replica_in_the_configured_r
     // build_clients() pins KMS to us-west-2, and MrDiscovery rewrites the
     // record's us-east-1 ARN to us-west-2, so the decrypt lands on the
     // replica that client can reach.
-    let keyring = SharedKeyring::new(
-        keyring_for(
-            build_mr_discovery_key_store("us-west-2").await,
-            EAST_BRANCH_KEY,
-            "partition-id-integ-mrdiscovery",
-        )
-        .await,
-    );
+    let keyring = keyring_for(
+        build_mr_discovery_key_store("us-west-2").await,
+        EAST_BRANCH_KEY,
+        "partition-id-integ-mrdiscovery",
+    )
+    .await;
 
     let materials_out = keyring.on_encrypt().materials(fresh_materials()).send().await.expect(
         "MrDiscovery MUST rewrite the record's us-east-1 ARN into us-west-2 and reach the replica",
@@ -874,14 +868,12 @@ async fn integ_discovery_key_store_cannot_reach_an_out_of_region_mrk() {
     // The contrast half of Dafny's TestGetKeysForMrk: plain Discovery does no
     // region rewrite, so the us-east-1 ARN from the record goes to the
     // us-west-2 client and KMS rejects it.
-    let keyring = SharedKeyring::new(
-        keyring_for(
-            build_discovery_key_store().await,
-            EAST_BRANCH_KEY,
-            "partition-id-integ-mrdiscovery-negative",
-        )
-        .await,
-    );
+    let keyring = keyring_for(
+        build_discovery_key_store().await,
+        EAST_BRANCH_KEY,
+        "partition-id-integ-mrdiscovery-negative",
+    )
+    .await;
 
     let err = keyring
         .on_encrypt()
