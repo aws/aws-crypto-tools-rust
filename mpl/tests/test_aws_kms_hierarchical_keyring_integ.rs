@@ -252,7 +252,7 @@ async fn integ_on_decrypt_round_trips_through_real_key_store_and_kms() {
     let dm_out = keyring
         .on_decrypt()
         .materials(dm_in)
-        .set_encrypted_data_keys(Some(edks.to_vec()))
+        .encrypted_data_keys(edks.to_vec())
         .send()
         .await
         .expect("on_decrypt against real key store must succeed for an EDK we just produced")
@@ -379,7 +379,7 @@ async fn run_round_trip(
     let dm_out = keyring
         .on_decrypt()
         .materials(dm_in)
-        .set_encrypted_data_keys(Some(edks.to_vec()))
+        .encrypted_data_keys(edks.to_vec())
         .send()
         .await
         .expect("on_decrypt against real key store must succeed for an EDK we just produced")
