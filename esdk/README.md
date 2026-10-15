@@ -3,30 +3,29 @@
 A native Rust implementation of the AWS Encryption SDK.
 
 The AWS Encryption SDK is a client-side encryption library.
-It uses envelope encryption: a data key encrypts your data, and one or more wrapping keys in a _keyring_ encrypt that data key.
-The encrypted message carries the encrypted data keys, so you don't track them separately.
+It encrypts your data with a data key, and encrypts that data key with one or more wrapping keys from a _keyring_.
+The encrypted message stores the encrypted data keys next to the ciphertext, so you don't keep track of them yourself.
 
-Every operation starts on a [`Client`](#the-client).
-The two primary operations are `encrypt` and `decrypt`.
-Each has a streaming variant (`encrypt_stream` / `decrypt_stream`) for data too large to hold in memory.
+Every operation starts from a [`Client`](#the-client):
+`encrypt` and `decrypt` for data in memory,
+and `encrypt_stream` and `decrypt_stream` for data too large to hold in memory.
+Keyrings come from the `aws-crypto-mpl` crate in this repository.
 
 ## Prerequisites
 
-`aws-esdk` is not yet published to crates.io.
-Build it from this repository, which also holds the crates it depends on.
+This version of `aws-esdk` is not on crates.io yet.
+The `aws-esdk` 1.x on crates.io is a different implementation with a different API.
+Build this one from this repository, which also holds `aws-crypto-mpl` and the other crates it depends on.
 
-Building from source needs:
+Building needs:
 
-- Rust and `cargo`.
-- A C/C++ compiler and CMake, to build the default `aws-lc-sys` crypto backend.
-- Go, only for the optional `fips` feature.
-  It switches the backend to `aws-lc-fips-sys`, which builds the FIPS module from source with CMake and Go.
-
-The examples that use the hierarchical keyring also need AWS credentials, a KMS key, and a DynamoDB table (see [Examples](#examples)).
+- Rust and `cargo`
+- a C/C++ compiler and CMake, for the default `aws-lc-sys` crypto backend
+- Go, only for the `fips` feature, which builds the FIPS backend (`aws-lc-fips-sys`) from source
 
 ## Quickstart
 
-A one-shot encrypt/decrypt round trip with a raw AES keyring:
+Encrypt and decrypt a message with a raw AES keyring:
 
 ```rust
 use aws_crypto_mpl::{AesGcm, RawAesKeyring};
@@ -71,9 +70,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ## The `Client`
 
-A `Client` holds the commitment policy and the cap on encrypted data keys, and applies them to every operation it starts.
-`Client::default()` uses the `RequireEncryptRequireDecrypt` policy and no cap.
-Set either one with `Client::builder()`:
+A `Client` holds two settings that apply to every operation it starts:
+the commitment policy, and the maximum number of encrypted data keys in a message.
+`Client::default()` uses the `RequireEncryptRequireDecrypt` commitment policy and no maximum.
+To set them, use `Client::builder()`:
 
 ```rust
 use aws_esdk::CommitmentPolicy;
@@ -84,7 +84,7 @@ let esdk = aws_esdk::Client::builder()
 let encrypted = esdk.encrypt().plaintext(plaintext).keyring(keyring).send().await?;
 ```
 
-To keep the settings separate from the client, as `aws_sdk_kms::Client::from_conf` does, build a `Config` and pass it to `Client::from_conf`:
+Or build a `Config` and pass it to `Client::from_conf`, as with `aws_sdk_kms::Client::from_conf`:
 
 ```rust
 use aws_esdk::CommitmentPolicy;
@@ -97,39 +97,40 @@ let esdk = aws_esdk::Client::from_conf(config);
 
 ## Streaming
 
-`encrypt_stream` / `decrypt_stream` read from any tokio `AsyncRead` and write to any `AsyncWrite`, so memory use stays bounded however large the input is.
+`encrypt_stream` and `decrypt_stream` read from a tokio `AsyncRead` and write to an `AsyncWrite`,
+so memory use stays bounded however large the input is.
 
-Streamed decrypt writes plaintext to the sink before it has verified the whole message.
-It returns `Ok` only if the message authenticates.
+`decrypt_stream` writes plaintext before it has verified the whole message.
+Act on that output only after it returns `Ok`.
 If it returns an error, discard everything it wrote.
 
-Streamed decrypt rejects a multi-frame message under a signing suite.
-Encrypt such messages under a non-signing suite, or decrypt them with the one-shot `decrypt`.
+`decrypt_stream` rejects a signed message with more than one frame, and the default algorithm suite signs.
+To stream such a message, encrypt it with an algorithm suite that doesn't sign.
+Otherwise, decrypt it with `decrypt`.
 
 ## Examples
 
 Runnable examples live under [`examples/`](examples/).
 Run one with `cargo run --example <name>`:
 
-| Example | Needs AWS |
-|---|---|
-| `raw_aes_keyring` | no |
-| `streaming` | no |
-| `custom_keyring` | no |
-| `set_algorithm_suite` | no |
-| `set_commitment_policy` | no |
-| `custom_cmm` | no |
-| `hierarchical_keyring` | KMS + DynamoDB |
-| `branch_key_supplier` | KMS + DynamoDB |
-| `rotate_branch_key` | KMS + DynamoDB |
-| `shared_storm_tracking_cache` | KMS + DynamoDB |
-| `handling_errors` | KMS + DynamoDB |
-| `per_request_credentials` | KMS + DynamoDB |
+| Example | Shows | Needs AWS |
+|---|---|---|
+| `raw_aes_keyring` | encrypt and decrypt with a raw AES keyring | no |
+| `streaming` | encrypt and decrypt a file with `encrypt_stream` and `decrypt_stream` | no |
+| `custom_keyring` | implement your own keyring | no |
+| `custom_cmm` | implement your own cryptographic materials manager (CMM) | no |
+| `set_algorithm_suite` | encrypt with a non-default algorithm suite | no |
+| `set_commitment_policy` | encrypt and decrypt under a non-default commitment policy | no |
+| `hierarchical_keyring` | encrypt and decrypt with a hierarchical keyring | KMS + DynamoDB |
+| `branch_key_supplier` | pick a branch key per tenant | KMS + DynamoDB |
+| `rotate_branch_key` | create a branch key and rotate it | KMS + DynamoDB |
+| `shared_storm_tracking_cache` | share one cache across two hierarchical keyrings | KMS + DynamoDB |
+| `handling_errors` | handle the errors a hierarchical keyring and its key store return | KMS + DynamoDB |
+| `per_request_credentials` | call AWS KMS with credentials issued for one request | KMS + DynamoDB |
 
-`make examples` runs every example.
-`make examples LOCAL_ONLY=--local-only` runs only the ones that don't need AWS.
+The examples that need AWS also need credentials, a KMS key, and a key store table in DynamoDB.
 
-## Build, test, and development
+## Development
 
 Run these in the `esdk/` directory:
 
@@ -138,12 +139,14 @@ cargo build              # build the library
 cargo build --examples   # build every example
 cargo test               # run the test suite
 make test                # run the test suite across feature combinations
-make examples            # run every example (LOCAL_ONLY=--local-only to skip the AWS ones)
 make clippy              # lint across feature combinations
+make examples            # run every example
+make examples LOCAL_ONLY=--local-only   # run only the examples that don't need AWS
 ```
 
-The library carries [Duvet](https://github.com/awslabs/duvet) citations (the `//=` / `//#` comments) that tie each specification requirement to the code and tests that satisfy it.
-`make duvet` generates the compliance report as HTML under `.duvet/reports`.
+The `//=` and `//#` comments are [Duvet](https://github.com/awslabs/duvet) citations.
+Each one ties a specification requirement to the code or test that satisfies it.
+`make duvet` writes the compliance report as HTML under `.duvet/reports`.
 
 ## Security
 
