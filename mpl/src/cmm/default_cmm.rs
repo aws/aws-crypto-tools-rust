@@ -169,9 +169,7 @@ impl Cmm for DefaultCmm {
             .into_materials();
 
         // on_encrypt populates PDK; returning materials passes it through unchanged.
-        GetEncryptionMaterialsOutput::builder()
-            .encryption_materials(materials)
-            .build()
+        Ok(materials.into())
     }
 
     async fn decrypt_materials(
@@ -249,9 +247,7 @@ impl Cmm for DefaultCmm {
             .into_materials();
 
         // on_decrypt populates PDK; returning materials passes it through unchanged.
-        DecryptMaterialsOutput::builder()
-            .decryption_materials(materials)
-            .build()
+        Ok(materials.into())
     }
 }
 

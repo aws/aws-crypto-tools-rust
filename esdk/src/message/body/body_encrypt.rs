@@ -307,6 +307,7 @@ pub(crate) async fn encrypt_and_serialize_body(
     //= reason=START_SEQUENCE_NUMBER is defined as 1
     //# If this is the first frame sequentially, the sequence number value MUST be 1.
     let mut sequence_number = START_SEQUENCE_NUMBER;
+    let mut yielder = super::FrameYielder::new(frame_length);
     let alg_suite = get_alg_suite(&header.suite)?;
 
     let mut iv = vec![0; iv_len];
@@ -320,6 +321,7 @@ pub(crate) async fn encrypt_and_serialize_body(
     //# this operation MUST process as much of the consumable bytes as possible
     //# by [constructing regular frames](#construct-a-frame).
     loop {
+        yielder.next_frame().await;
         in_size = read_up_to_peek(plaintext, &mut plaintext_frame, next_char).await?;
 
         //= spec/client-apis/encrypt.md#construct-the-body

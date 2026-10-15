@@ -556,3 +556,19 @@ impl DecryptMaterialsOutputBuilder {
         })
     }
 }
+
+impl From<EncryptionMaterials> for GetEncryptionMaterialsOutput {
+    fn from(encryption_materials: EncryptionMaterials) -> Self {
+        Self {
+            encryption_materials,
+        }
+    }
+}
+
+impl From<DecryptionMaterials> for DecryptMaterialsOutput {
+    fn from(decryption_materials: DecryptionMaterials) -> Self {
+        Self {
+            decryption_materials,
+        }
+    }
+}
