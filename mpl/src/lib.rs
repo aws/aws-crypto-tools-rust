@@ -6,7 +6,8 @@ mod builder;
 pub mod cmc;
 pub mod cmm;
 pub mod error;
-pub mod error_chain;
+#[cfg(feature = "test-utils")]
+mod error_chain;
 pub mod key_store;
 pub mod keyring;
 pub mod shared;
@@ -44,3 +45,11 @@ pub use key_store::{
     Discovery, KeyStore, KeyStoreClient, KeyStoreClientBuilder, KmsConfiguration, MrDiscovery,
 };
 pub use keyring::{Keyring, RawAesKeyring, RawAesKeyringBuilder, SharedKeyring};
+
+#[cfg(feature = "test-utils")]
+#[doc(hidden)]
+pub mod __test_internals {
+    pub mod error_chain {
+        pub use crate::error_chain::*;
+    }
+}

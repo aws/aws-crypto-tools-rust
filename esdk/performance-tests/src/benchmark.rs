@@ -87,6 +87,7 @@ impl EsdkBenchmark {
                     .map_err(|e| anyhow::anyhow!("failed to build the cache: {e}"))?,
             )
             .build()
+            .await
             .map_err(|e| anyhow::anyhow!("failed to create the hierarchical keyring: {e}"))?;
 
         Ok((esdk_client, keyring))

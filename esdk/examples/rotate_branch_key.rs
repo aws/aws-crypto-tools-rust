@@ -42,12 +42,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?
         .into_branch_key_id();
 
-    let make_keyring = || {
+    let make_keyring = async || {
         HierarchicalKeyring::builder()
             .key_store(key_store.clone())
             .ttl(Duration::from_secs(600))
             .branch_key_id(&branch_key_id)
             .build()
+            .await
     };
 
     let plaintext = b"Hello World";
@@ -62,7 +63,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .await
     };
 
-    let before_rotation = encrypt_with(make_keyring()?).await?;
+    let before_rotation = encrypt_with(make_keyring().await?).await?;
 
     key_store
         .version_key()
@@ -72,7 +73,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // A keyring keeps using the version it cached until its TTL expires.
     // This keyring is new, so it fetches the version that is active now.
-    let keyring = make_keyring()?;
+    let keyring = make_keyring().await?;
     let after_rotation = encrypt_with(keyring.clone()).await?;
 
     // Both messages decrypt: the first one under the earlier version, the new one under the active version.

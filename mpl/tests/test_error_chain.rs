@@ -10,8 +10,8 @@
 use std::error::Error as _;
 use std::io::{Error as IoError, ErrorKind as IoErrorKind};
 
+use aws_crypto_mpl::__test_internals::error_chain::{aws_service_error_code, find_in_error_chain};
 use aws_crypto_mpl::Error;
-use aws_crypto_mpl::error_chain::{aws_service_error_code, find_in_error_chain};
 
 /// A three-link chain `Error -> Error -> io::Error`,
 /// the shape a keyring produces when the key store fails beneath it.

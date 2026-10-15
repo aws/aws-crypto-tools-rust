@@ -131,14 +131,13 @@ impl GetKeyStoreInfoFluentBuilder {
     }
 
     /// Send the request.
-    /// The key store answers from its own configuration, so this is synchronous.
     ///
     /// # Errors
     ///
     /// The errors [`KeyStore::get_key_store_info`] documents.
-    pub fn send(self) -> Result<GetKeyStoreInfoOutput, Error> {
+    pub async fn send(self) -> Result<GetKeyStoreInfoOutput, Error> {
         let input = self.inner.build()?;
-        self.client.inner.get_key_store_info(input)
+        self.client.inner.get_key_store_info(input).await
     }
 }
 
@@ -197,6 +196,12 @@ impl CreateKeyFluentBuilder {
         self
     }
 
+    /// The branch key id, if set.
+    #[must_use]
+    pub const fn get_branch_key_id(&self) -> &Option<String> {
+        self.inner.get_branch_key_id()
+    }
+
     /// Adds a key-value pair to the custom encryption context for the new branch key.
     ///
     /// To override the contents of this collection use [`set_encryption_context`](Self::set_encryption_context).
@@ -211,6 +216,12 @@ impl CreateKeyFluentBuilder {
     pub fn set_encryption_context(mut self, encryption_context: Option<EncryptionContext>) -> Self {
         self.inner = self.inner.set_encryption_context(encryption_context);
         self
+    }
+
+    /// The encryption context, if set.
+    #[must_use]
+    pub const fn get_encryption_context(&self) -> &Option<EncryptionContext> {
+        self.inner.get_encryption_context()
     }
 
     /// Send the request.
@@ -251,6 +262,12 @@ impl VersionKeyFluentBuilder {
     pub fn set_branch_key_id(mut self, branch_key_id: Option<String>) -> Self {
         self.inner = self.inner.set_branch_key_id(branch_key_id);
         self
+    }
+
+    /// The branch key id, if set.
+    #[must_use]
+    pub const fn get_branch_key_id(&self) -> &Option<String> {
+        self.inner.get_branch_key_id()
     }
 
     /// Send the request.
@@ -295,6 +312,12 @@ impl GetActiveBranchKeyFluentBuilder {
         self
     }
 
+    /// The branch key id, if set.
+    #[must_use]
+    pub const fn get_branch_key_id(&self) -> &Option<String> {
+        self.inner.get_branch_key_id()
+    }
+
     /// Send the request.
     ///
     /// # Errors
@@ -337,6 +360,12 @@ impl GetBranchKeyVersionFluentBuilder {
         self
     }
 
+    /// The branch key id, if set.
+    #[must_use]
+    pub const fn get_branch_key_id(&self) -> &Option<String> {
+        self.inner.get_branch_key_id()
+    }
+
     /// Set the branch key version.
     /// Required.
     pub fn branch_key_version(mut self, branch_key_version: impl Into<String>) -> Self {
@@ -349,6 +378,12 @@ impl GetBranchKeyVersionFluentBuilder {
     pub fn set_branch_key_version(mut self, branch_key_version: Option<String>) -> Self {
         self.inner = self.inner.set_branch_key_version(branch_key_version);
         self
+    }
+
+    /// The branch key version, if set.
+    #[must_use]
+    pub const fn get_branch_key_version(&self) -> &Option<String> {
+        self.inner.get_branch_key_version()
     }
 
     /// Send the request.
@@ -391,6 +426,12 @@ impl GetBeaconKeyFluentBuilder {
     pub fn set_branch_key_id(mut self, branch_key_id: Option<String>) -> Self {
         self.inner = self.inner.set_branch_key_id(branch_key_id);
         self
+    }
+
+    /// The branch key id, if set.
+    #[must_use]
+    pub const fn get_branch_key_id(&self) -> &Option<String> {
+        self.inner.get_branch_key_id()
     }
 
     /// Send the request.

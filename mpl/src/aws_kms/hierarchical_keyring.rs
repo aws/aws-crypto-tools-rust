@@ -524,7 +524,7 @@ impl HierarchicalKeyringBuilder {
     ///
     /// If the key store's [`get_key_store_info`](crate::KeyStore::get_key_store_info) fails, returns that error unchanged.
     /// The key store [`KeyStoreClient::builder`] builds does not fail it.
-    pub fn build(self) -> Result<HierarchicalKeyring, Error> {
+    pub async fn build(self) -> Result<HierarchicalKeyring, Error> {
         let Self {
             key_store,
             ttl,
@@ -585,6 +585,7 @@ impl HierarchicalKeyringBuilder {
         let logical_key_store_name = key_store
             .get_key_store_info()
             .send()
+            .await
             .map_err(|e| Error::wrap("could not read the key store info", e))?
             .logical_key_store_name;
 

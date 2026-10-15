@@ -76,6 +76,7 @@ async fn encrypt_error(key_store: impl Into<KeyStoreClient>, branch_key_id: &str
                 .expect("a valid capacity"),
         )
         .build()
+        .await
         .expect("the keyring configuration is valid");
     Client::default()
         .encrypt()

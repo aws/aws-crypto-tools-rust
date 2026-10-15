@@ -1636,7 +1636,7 @@ fn create_hierarchical_keyring(
     if let Some(partition_id) = partition_id {
         builder = builder.partition_id(partition_id);
     }
-    let keyring = builder.build().map_err(core_err)?;
+    let keyring = TOKIO_RUNTIME.block_on(builder.build()).map_err(core_err)?;
 
     Ok(Box::new(Keyring {
         inner: SharedKeyring::new(keyring),

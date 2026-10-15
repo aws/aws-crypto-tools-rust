@@ -244,6 +244,7 @@ async fn the_materials_cache_timing_out_is_throttling_about_the_cache() {
         .partition_id("p")
         .cache(SharedCmc::new(cache))
         .build()
+        .await
         .unwrap();
     let err = Client::default()
         .encrypt()
@@ -795,6 +796,7 @@ async fn discovery_keyring(fake: &FakeAws) -> aws_crypto_mpl::HierarchicalKeyrin
         .branch_key_id(BRANCH_KEY_ID)
         .ttl(std::time::Duration::from_secs(600))
         .build()
+        .await
         .unwrap()
 }
 

@@ -150,6 +150,7 @@ impl FakeAws {
                     .expect("a valid capacity"),
             )
             .build()
+            .await
             .expect("the keyring configuration is valid")
     }
 }

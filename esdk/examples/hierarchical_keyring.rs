@@ -37,7 +37,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // How long the keyring reuses cached branch key material.
         .ttl(Duration::from_secs(600))
         .branch_key_id("3f43a9af-08c5-4317-b694-3d3e883dcaef")
-        .build()?;
+        .build()
+        .await?;
 
     let plaintext = b"Hello World";
 
