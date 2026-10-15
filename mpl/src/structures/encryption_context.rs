@@ -263,6 +263,12 @@ impl From<HashMap<String, String>> for EncryptionContext {
     }
 }
 
+impl From<&HashMap<String, String>> for EncryptionContext {
+    fn from(map: &HashMap<String, String>) -> Self {
+        Self(map.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
+    }
+}
+
 impl From<EncryptionContext> for HashMap<String, String> {
     fn from(ec: EncryptionContext) -> Self {
         ec.0.into_iter().collect()
