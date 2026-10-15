@@ -6,7 +6,7 @@
 use super::Error;
 use super::serialize_functions::{read_u16, read_vec, write_bytes, write_u16};
 use crate::error::{Kind, err};
-use crate::types::{Source, Tee};
+use crate::shapes::{Source, Tee};
 
 /// Write a message footer (signature length + signature bytes).
 ///

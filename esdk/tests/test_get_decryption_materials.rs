@@ -16,6 +16,7 @@ use aws_crypto_mpl::cmm::{
 };
 use aws_crypto_mpl::keyring::RawAesKeyring;
 use aws_crypto_mpl::structures::KeyDerivationAlgorithm;
+use aws_esdk::types::*;
 use aws_esdk::*;
 use aws_mpl_primitives::AesGcm;
 use fixtures::*;

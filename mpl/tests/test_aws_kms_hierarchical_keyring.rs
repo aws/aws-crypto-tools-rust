@@ -39,11 +39,18 @@ use aws_crypto_mpl::aws_kms::hierarchical_keyring::{
     HierarchicalKeyringBuilder,
 };
 use aws_crypto_mpl::key_store::{
-    CreateKeyInput, CreateKeyOutput, CreateKeyStoreInput, CreateKeyStoreOutput, Discovery,
-    GetActiveBranchKeyInput, GetActiveBranchKeyOutput, GetBeaconKeyInput, GetBeaconKeyOutput,
-    GetBranchKeyVersionInput, GetBranchKeyVersionOutput, GetKeyStoreInfoInput,
-    GetKeyStoreInfoOutput, KeyStore, KeyStoreClient, KeyStoreClientBuilder, KmsConfiguration,
-    VersionKeyInput, VersionKeyOutput,
+    Discovery, KeyStore, KeyStoreClient, KeyStoreClientBuilder, KmsConfiguration,
+    operation::create_key::CreateKeyInput, operation::create_key::CreateKeyOutput,
+    operation::create_key_store::CreateKeyStoreInput,
+    operation::create_key_store::CreateKeyStoreOutput,
+    operation::get_active_branch_key::GetActiveBranchKeyInput,
+    operation::get_active_branch_key::GetActiveBranchKeyOutput,
+    operation::get_beacon_key::GetBeaconKeyInput, operation::get_beacon_key::GetBeaconKeyOutput,
+    operation::get_branch_key_version::GetBranchKeyVersionInput,
+    operation::get_branch_key_version::GetBranchKeyVersionOutput,
+    operation::get_key_store_info::GetKeyStoreInfoInput,
+    operation::get_key_store_info::GetKeyStoreInfoOutput, operation::version_key::VersionKeyInput,
+    operation::version_key::VersionKeyOutput,
 };
 use aws_crypto_mpl::structures::{
     AlgorithmSuiteId, BranchKeyMaterials, DecryptionMaterials, EncryptionContext,

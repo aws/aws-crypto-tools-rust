@@ -11,7 +11,7 @@ use super::header_types::{
 };
 use super::serialize_functions::{read_u32, read_vec, write_bytes, write_u32};
 use super::{Error, ser_err};
-use crate::types::{Source, Tee};
+use crate::shapes::{Source, Tee};
 use aws_crypto_mpl::structures::AlgorithmSuite;
 
 pub(crate) fn write_v2_header_body(w: &mut Tee, body: &V2HeaderBody) -> Result<(), Error> {

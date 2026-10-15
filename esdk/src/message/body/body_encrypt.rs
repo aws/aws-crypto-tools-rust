@@ -10,7 +10,7 @@ use crate::message::serialize_functions::{
     read_opt_u8, read_up_to_peek, write_bytes, write_to_sink, write_u32,
 };
 use crate::message::{DigestWriter, Error, ser_err};
-use crate::types::{Sink, Source};
+use crate::shapes::{Sink, Source};
 use aws_mpl_primitives::{AesGcm, aes_encrypt};
 
 /// Maximum plaintext bytes per message: 2^36 - 32 (AES-GCM safety bound).

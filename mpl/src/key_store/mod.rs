@@ -36,23 +36,113 @@ use crate::Error;
 use async_trait::async_trait;
 
 pub use branch_key_store::KeyStoreClientBuilder;
-pub use client::{
-    CreateKeyFluentBuilder, CreateKeyStoreFluentBuilder, GetActiveBranchKeyFluentBuilder,
-    GetBeaconKeyFluentBuilder, GetBranchKeyVersionFluentBuilder, GetKeyStoreInfoFluentBuilder,
-    KeyStoreClient, VersionKeyFluentBuilder,
-};
+pub use client::KeyStoreClient;
 pub use config::{Discovery, DiscoveryBuilder, KmsConfiguration, MrDiscovery, MrDiscoveryBuilder};
-pub use types::{
-    CreateKeyInput, CreateKeyInputBuilder, CreateKeyOutput, CreateKeyOutputBuilder,
-    CreateKeyStoreInput, CreateKeyStoreInputBuilder, CreateKeyStoreOutput,
-    CreateKeyStoreOutputBuilder, GetActiveBranchKeyInput, GetActiveBranchKeyInputBuilder,
-    GetActiveBranchKeyOutput, GetActiveBranchKeyOutputBuilder, GetBeaconKeyInput,
-    GetBeaconKeyInputBuilder, GetBeaconKeyOutput, GetBeaconKeyOutputBuilder,
-    GetBranchKeyVersionInput, GetBranchKeyVersionInputBuilder, GetBranchKeyVersionOutput,
-    GetBranchKeyVersionOutputBuilder, GetKeyStoreInfoInput, GetKeyStoreInfoInputBuilder,
-    GetKeyStoreInfoOutput, GetKeyStoreInfoOutputBuilder, VersionKeyInput, VersionKeyInputBuilder,
-    VersionKeyOutput, VersionKeyOutputBuilder,
-};
+pub(crate) use types::*;
+
+/// Each [`KeyStoreClient`] operation's input, output, and builders, laid out as in an AWS SDK for Rust crate.
+pub mod operation {
+    pub mod get_key_store_info {
+        //! The [`get_key_store_info`](crate::key_store::KeyStore::get_key_store_info) operation.
+
+        pub use crate::key_store::types::{GetKeyStoreInfoInput, GetKeyStoreInfoOutput};
+
+        pub mod builders {
+            //! The builders for the [`get_key_store_info`](crate::key_store::KeyStore::get_key_store_info) operation.
+
+            pub use crate::key_store::client::GetKeyStoreInfoFluentBuilder;
+            pub use crate::key_store::types::{
+                GetKeyStoreInfoInputBuilder, GetKeyStoreInfoOutputBuilder,
+            };
+        }
+    }
+
+    pub mod create_key_store {
+        //! The [`create_key_store`](crate::key_store::KeyStore::create_key_store) operation.
+
+        pub use crate::key_store::types::{CreateKeyStoreInput, CreateKeyStoreOutput};
+
+        pub mod builders {
+            //! The builders for the [`create_key_store`](crate::key_store::KeyStore::create_key_store) operation.
+
+            pub use crate::key_store::client::CreateKeyStoreFluentBuilder;
+            pub use crate::key_store::types::{
+                CreateKeyStoreInputBuilder, CreateKeyStoreOutputBuilder,
+            };
+        }
+    }
+
+    pub mod create_key {
+        //! The [`create_key`](crate::key_store::KeyStore::create_key) operation.
+
+        pub use crate::key_store::types::{CreateKeyInput, CreateKeyOutput};
+
+        pub mod builders {
+            //! The builders for the [`create_key`](crate::key_store::KeyStore::create_key) operation.
+
+            pub use crate::key_store::client::CreateKeyFluentBuilder;
+            pub use crate::key_store::types::{CreateKeyInputBuilder, CreateKeyOutputBuilder};
+        }
+    }
+
+    pub mod version_key {
+        //! The [`version_key`](crate::key_store::KeyStore::version_key) operation.
+
+        pub use crate::key_store::types::{VersionKeyInput, VersionKeyOutput};
+
+        pub mod builders {
+            //! The builders for the [`version_key`](crate::key_store::KeyStore::version_key) operation.
+
+            pub use crate::key_store::client::VersionKeyFluentBuilder;
+            pub use crate::key_store::types::{VersionKeyInputBuilder, VersionKeyOutputBuilder};
+        }
+    }
+
+    pub mod get_active_branch_key {
+        //! The [`get_active_branch_key`](crate::key_store::KeyStore::get_active_branch_key) operation.
+
+        pub use crate::key_store::types::{GetActiveBranchKeyInput, GetActiveBranchKeyOutput};
+
+        pub mod builders {
+            //! The builders for the [`get_active_branch_key`](crate::key_store::KeyStore::get_active_branch_key) operation.
+
+            pub use crate::key_store::client::GetActiveBranchKeyFluentBuilder;
+            pub use crate::key_store::types::{
+                GetActiveBranchKeyInputBuilder, GetActiveBranchKeyOutputBuilder,
+            };
+        }
+    }
+
+    pub mod get_branch_key_version {
+        //! The [`get_branch_key_version`](crate::key_store::KeyStore::get_branch_key_version) operation.
+
+        pub use crate::key_store::types::{GetBranchKeyVersionInput, GetBranchKeyVersionOutput};
+
+        pub mod builders {
+            //! The builders for the [`get_branch_key_version`](crate::key_store::KeyStore::get_branch_key_version) operation.
+
+            pub use crate::key_store::client::GetBranchKeyVersionFluentBuilder;
+            pub use crate::key_store::types::{
+                GetBranchKeyVersionInputBuilder, GetBranchKeyVersionOutputBuilder,
+            };
+        }
+    }
+
+    pub mod get_beacon_key {
+        //! The [`get_beacon_key`](crate::key_store::KeyStore::get_beacon_key) operation.
+
+        pub use crate::key_store::types::{GetBeaconKeyInput, GetBeaconKeyOutput};
+
+        pub mod builders {
+            //! The builders for the [`get_beacon_key`](crate::key_store::KeyStore::get_beacon_key) operation.
+
+            pub use crate::key_store::client::GetBeaconKeyFluentBuilder;
+            pub use crate::key_store::types::{
+                GetBeaconKeyInputBuilder, GetBeaconKeyOutputBuilder,
+            };
+        }
+    }
+}
 
 /// A key store: the storage and AWS KMS protection of branch keys and beacon keys.
 ///
