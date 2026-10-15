@@ -16,7 +16,7 @@ use aws_crypto_mpl::cmm::{
     GetEncryptionMaterialsOutput,
 };
 use aws_crypto_mpl::{AesGcm, Cmm, DefaultCmm, Error as MplError, Keyring, RawAesKeyring};
-use aws_esdk::error::Error;
+use aws_esdk::Error;
 use aws_esdk::{AlgorithmSuiteId, EncryptionContext};
 
 /// Passes requests to a [`DefaultCmm`] and fails any that would use an algorithm suite without a signature.

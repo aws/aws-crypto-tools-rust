@@ -25,7 +25,7 @@ use aws_crypto_mpl::{
     aws_sdk_dynamodb, aws_sdk_kms,
 };
 use aws_esdk::EncryptionContext;
-use aws_esdk::error::Error;
+use aws_esdk::Error;
 
 /// Maps the `tenant` value in the encryption context to that tenant's branch key ID.
 struct TenantBranchKeySupplier {
