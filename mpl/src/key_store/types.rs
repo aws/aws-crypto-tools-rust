@@ -162,20 +162,19 @@ impl GetKeyStoreInfoOutputBuilder {
         &self.logical_key_store_name
     }
 
-    /// Appends an item to the AWS KMS grant tokens the key store uses.
-    ///
-    /// To override the contents of this collection use [`set_grant_tokens`](Self::set_grant_tokens).
+    /// Set the AWS KMS grant tokens the key store uses.
     /// Required.
     #[must_use]
-    pub fn grant_tokens(mut self, input: impl Into<String>) -> Self {
-        self.grant_tokens
-            .get_or_insert_with(Default::default)
-            .push(input.into());
+    pub fn grant_tokens(
+        mut self,
+        grant_tokens: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        self.grant_tokens = Some(grant_tokens.into_iter().map(Into::into).collect());
         self
     }
 
     /// Set or clear the grant tokens from an `Option`.
-    /// To add one entry, use [`Self::grant_tokens`].
+    /// To set a value, use [`Self::grant_tokens`].
     #[must_use]
     pub fn set_grant_tokens(mut self, grant_tokens: Option<Vec<String>>) -> Self {
         self.grant_tokens = grant_tokens;

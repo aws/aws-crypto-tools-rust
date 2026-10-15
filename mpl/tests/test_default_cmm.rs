@@ -315,7 +315,7 @@ async fn test_decrypt_materials_signing_suite_extracts_verification_key() {
         .decrypt_materials()
         .algorithm_suite_id(signing_suite())
         .commitment_policy(allow_policy())
-        .set_encrypted_data_keys(Some(vec![]))
+        .encrypted_data_keys(vec![])
         .encryption_context(ec);
     let materials = request.send().await.unwrap().into_decryption_materials();
     let vk = materials
@@ -332,7 +332,7 @@ async fn test_decrypt_materials_signing_suite_missing_public_key_fails() {
         .decrypt_materials()
         .algorithm_suite_id(signing_suite())
         .commitment_policy(allow_policy())
-        .set_encrypted_data_keys(Some(vec![]))
+        .encrypted_data_keys(vec![])
         .encryption_context(EncryptionContext::new());
     let err = request.send().await.expect_err("must fail");
     assert!(err.is_validation(), "{:?}", err);
@@ -348,7 +348,7 @@ async fn test_decrypt_materials_non_signing_suite_with_public_key_fails() {
         .decrypt_materials()
         .algorithm_suite_id(non_signing_suite())
         .commitment_policy(allow_policy())
-        .set_encrypted_data_keys(Some(vec![]))
+        .encrypted_data_keys(vec![])
         .encryption_context(ec);
     let err = request.send().await.expect_err("must fail");
     assert!(err.is_validation(), "{:?}", err);
@@ -367,7 +367,7 @@ async fn test_decrypt_materials_unsupported_suite_for_policy_fails() {
         .commitment_policy(CommitmentPolicy::Esdk(
             EsdkCommitmentPolicy::RequireEncryptRequireDecrypt,
         ))
-        .set_encrypted_data_keys(Some(vec![]))
+        .encrypted_data_keys(vec![])
         .encryption_context(EncryptionContext::new());
     let err = request.send().await.expect_err("must fail");
     assert!(err.is_validation(), "{:?}", err);
@@ -381,7 +381,7 @@ async fn test_decrypt_materials_calls_keyring_on_decrypt_once() {
         .decrypt_materials()
         .algorithm_suite_id(non_signing_suite())
         .commitment_policy(allow_policy())
-        .set_encrypted_data_keys(Some(vec![]))
+        .encrypted_data_keys(vec![])
         .encryption_context(EncryptionContext::new());
     request.send().await.unwrap();
     assert_eq!(keyring.decrypt_calls.load(Ordering::SeqCst), 1);
@@ -395,7 +395,7 @@ async fn test_decrypt_materials_returns_pdk_set_by_keyring() {
         .decrypt_materials()
         .algorithm_suite_id(non_signing_suite())
         .commitment_policy(allow_policy())
-        .set_encrypted_data_keys(Some(vec![]))
+        .encrypted_data_keys(vec![])
         .encryption_context(EncryptionContext::new());
     let materials = request.send().await.unwrap().into_decryption_materials();
     // Mock keyring sets sentinel 0xAA PDK; assertion proves CMM passed it through unchanged.
@@ -439,7 +439,7 @@ async fn test_decrypt_materials_malformed_base64_public_key_fails() {
         .decrypt_materials()
         .algorithm_suite_id(signing_suite())
         .commitment_policy(allow_policy())
-        .set_encrypted_data_keys(Some(vec![]))
+        .encrypted_data_keys(vec![])
         .encryption_context(ec);
     let err = request
         .send()
@@ -462,7 +462,7 @@ async fn test_decrypt_materials_wrong_verification_key_length_fails() {
         .decrypt_materials()
         .algorithm_suite_id(signing_suite())
         .commitment_policy(allow_policy())
-        .set_encrypted_data_keys(Some(vec![]))
+        .encrypted_data_keys(vec![])
         .encryption_context(ec);
     let err = request
         .send()
@@ -487,7 +487,7 @@ async fn test_decrypt_materials_reproduced_ec_matching_values_succeeds() {
         .decrypt_materials()
         .algorithm_suite_id(non_signing_suite())
         .commitment_policy(allow_policy())
-        .set_encrypted_data_keys(Some(vec![]))
+        .encrypted_data_keys(vec![])
         .encryption_context(message_ec)
         .reproduced_encryption_context(reproduced_ec);
     let materials = request
@@ -526,7 +526,7 @@ async fn test_decrypt_materials_reproduced_ec_mismatched_values_fails() {
         .decrypt_materials()
         .algorithm_suite_id(non_signing_suite())
         .commitment_policy(allow_policy())
-        .set_encrypted_data_keys(Some(vec![]))
+        .encrypted_data_keys(vec![])
         .encryption_context(message_ec)
         .reproduced_encryption_context(reproduced_ec);
     let err = request
@@ -556,7 +556,7 @@ async fn test_decrypt_materials_reproduced_ec_key_only_in_reproduced_is_appended
         .decrypt_materials()
         .algorithm_suite_id(non_signing_suite())
         .commitment_policy(allow_policy())
-        .set_encrypted_data_keys(Some(vec![]))
+        .encrypted_data_keys(vec![])
         .encryption_context(message_ec)
         .reproduced_encryption_context(reproduced_ec);
     let materials = request
@@ -622,7 +622,7 @@ async fn test_decrypt_materials_appends_reproduced_only_pairs_to_the_keyring_con
         .decrypt_materials()
         .algorithm_suite_id(non_signing_suite())
         .commitment_policy(allow_policy())
-        .set_encrypted_data_keys(Some(vec![]))
+        .encrypted_data_keys(vec![])
         .encryption_context(ec_of(&[("b", "b")]))
         .reproduced_encryption_context(ec_of(&[("a", "a"), ("b", "b")]));
 
@@ -653,7 +653,7 @@ async fn test_decrypt_materials_appends_when_reproduced_context_is_disjoint() {
         .decrypt_materials()
         .algorithm_suite_id(non_signing_suite())
         .commitment_policy(allow_policy())
-        .set_encrypted_data_keys(Some(vec![]))
+        .encrypted_data_keys(vec![])
         .encryption_context(ec_of(&[("a", "a")]))
         .reproduced_encryption_context(ec_of(&[("b", "b")]));
 
@@ -681,7 +681,7 @@ async fn test_decrypt_materials_appends_every_pair_when_message_context_is_empty
         .decrypt_materials()
         .algorithm_suite_id(non_signing_suite())
         .commitment_policy(allow_policy())
-        .set_encrypted_data_keys(Some(vec![]))
+        .encrypted_data_keys(vec![])
         .encryption_context(EncryptionContext::new())
         .reproduced_encryption_context(ec_of(&[("a", "a"), ("b", "b")]));
 
@@ -712,7 +712,7 @@ async fn test_decrypt_materials_conflicting_reproduced_value_does_not_call_the_k
         .decrypt_materials()
         .algorithm_suite_id(non_signing_suite())
         .commitment_policy(allow_policy())
-        .set_encrypted_data_keys(Some(vec![]))
+        .encrypted_data_keys(vec![])
         .encryption_context(ec_of(&[("a", "a")]))
         .reproduced_encryption_context(ec_of(&[("a", "different")]));
 
@@ -739,7 +739,7 @@ async fn test_decrypt_materials_without_reproduced_context_is_unchanged() {
         .decrypt_materials()
         .algorithm_suite_id(non_signing_suite())
         .commitment_policy(allow_policy())
-        .set_encrypted_data_keys(Some(vec![]))
+        .encrypted_data_keys(vec![])
         .encryption_context(ec_of(&[("a", "a")]));
 
     let materials = request
@@ -768,7 +768,7 @@ async fn test_decrypt_materials_signing_suite_public_key_from_reproduced_context
         .decrypt_materials()
         .algorithm_suite_id(signing_suite())
         .commitment_policy(allow_policy())
-        .set_encrypted_data_keys(Some(vec![]))
+        .encrypted_data_keys(vec![])
         .encryption_context(EncryptionContext::new())
         .reproduced_encryption_context(reproduced);
 
@@ -799,7 +799,7 @@ async fn test_decrypt_materials_non_signing_suite_rejects_public_key_from_reprod
         .decrypt_materials()
         .algorithm_suite_id(non_signing_suite())
         .commitment_policy(allow_policy())
-        .set_encrypted_data_keys(Some(vec![]))
+        .encrypted_data_keys(vec![])
         .encryption_context(EncryptionContext::new())
         .reproduced_encryption_context(reproduced);
 
