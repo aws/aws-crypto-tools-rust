@@ -5,9 +5,9 @@
 // They return their output payloads as Aws::Esdk::Ciphertext and Aws::Esdk::Plaintext.
 //
 // Why not std::vector everywhere, like a normal C++ API?
-// Because every conversion to or from std::vector is a full copy of your payload
-// to/from the Rust library, which can be expensive in memory and compute.
-// The alternative types provide options for improved performance.
+// Passing a std::vector as input is free: the ESDK reads its bytes in place.
+// But your data often isn't in a vector, and output can't become one without a copy.
+// The alternative types avoid those copies.
 //
 // On input: your data usually isn't in a vector; it's in a file, or you're reading it from a socket.
 // A vector-only API would force you to copy it into a vector first.
