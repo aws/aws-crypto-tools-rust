@@ -9,7 +9,8 @@ The encrypted message stores the encrypted data keys next to the ciphertext, so 
 Every operation starts from a [`Client`](#the-client):
 `encrypt` and `decrypt` for data in memory,
 and `encrypt_stream` and `decrypt_stream` for data too large to hold in memory.
-Keyrings come from the `aws-crypto-mpl` crate in this repository.
+Keyrings, cryptographic materials managers (CMMs), and caches are in the `keyring`, `cmm`, and `cmc` modules.
+They come from the Material Providers Library, which `aws_esdk::mpl` re-exports.
 
 ## Prerequisites
 
@@ -28,9 +29,8 @@ Building needs:
 Encrypt and decrypt a message with a raw AES keyring:
 
 ```rust
-use aws_crypto_mpl::keyring::RawAesKeyring;
-use aws_crypto_mpl::types::AesWrappingAlg;
-use aws_esdk::types::EncryptionContext;
+use aws_esdk::keyring::RawAesKeyring;
+use aws_esdk::types::{AesWrappingAlg, EncryptionContext};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

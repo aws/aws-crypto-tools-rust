@@ -7,12 +7,13 @@
 //!
 //! Runs offline.
 
-use aws_crypto_mpl::keyring::{
+use aws_esdk::async_trait;
+use aws_esdk::keyring::{
     Keyring, OnDecryptInput, OnDecryptOutput, OnEncryptInput, OnEncryptOutput, RawAesKeyring,
 };
-use aws_crypto_mpl::types::{AesWrappingAlg, EncryptedDataKey};
-use aws_crypto_mpl::{Error as MplError, async_trait};
-use aws_esdk::types::EncryptionContext;
+use aws_esdk::mpl::Error as MplError;
+use aws_esdk::mpl::types::EncryptedDataKey;
+use aws_esdk::types::{AesWrappingAlg, EncryptionContext};
 
 /// Wraps another keyring and logs the key providers of the encrypted data keys each call writes or tries.
 #[derive(Clone)]

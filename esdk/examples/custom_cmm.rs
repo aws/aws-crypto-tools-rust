@@ -10,15 +10,14 @@
 //!
 //! Runs offline.
 
-use aws_crypto_mpl::cmm::{
+use aws_esdk::cmm::{
     Cmm, DecryptMaterialsInput, DecryptMaterialsOutput, DefaultCmm, GetEncryptionMaterialsInput,
     GetEncryptionMaterialsOutput,
 };
-use aws_crypto_mpl::keyring::{Keyring, RawAesKeyring};
-use aws_crypto_mpl::types::AesWrappingAlg;
-use aws_crypto_mpl::{Error as MplError, async_trait};
-use aws_esdk::Error;
-use aws_esdk::types::{AlgorithmSuiteId, EncryptionContext};
+use aws_esdk::keyring::{Keyring, RawAesKeyring};
+use aws_esdk::mpl::Error as MplError;
+use aws_esdk::types::{AesWrappingAlg, AlgorithmSuiteId, EncryptionContext};
+use aws_esdk::{Error, async_trait};
 
 /// Passes requests to a [`DefaultCmm`] and fails any that would use an algorithm suite without a signature.
 #[derive(Clone)]

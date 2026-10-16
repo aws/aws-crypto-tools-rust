@@ -13,9 +13,8 @@
 
 use tokio::fs::{self, File};
 
-use aws_crypto_mpl::keyring::RawAesKeyring;
-use aws_crypto_mpl::types::AesWrappingAlg;
-use aws_esdk::types::{AlgorithmSuiteId, EncryptionContext};
+use aws_esdk::keyring::RawAesKeyring;
+use aws_esdk::types::{AesWrappingAlg, AlgorithmSuiteId, EncryptionContext};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
