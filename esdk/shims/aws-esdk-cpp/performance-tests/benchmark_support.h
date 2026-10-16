@@ -87,7 +87,7 @@ inline std::optional<KeyStoreEnv> load_env() {
 // long TTL keeps the branch key cached for the whole run, so measured latency
 // reflects the SDK crypto path rather than a KMS round trip.
 inline Aws::Esdk::HierarchicalKeyring make_keyring(const KeyStoreEnv& env) {
-    auto client_config = Aws::Esdk::ClientConfig().with_max_retry_attempts(5);
+    auto client_config = Aws::Esdk::AwsSdkClientConfig().with_max_retry_attempts(5);
     if (!env.region.empty()) {
         client_config.with_region(env.region);
     }

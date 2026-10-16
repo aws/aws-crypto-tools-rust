@@ -461,6 +461,7 @@ enum class AesWrappingAlgorithm : std::uint8_t {
 // Deliberately left incomplete here so no consumer can construct, copy, or inspect them.
 namespace detail {
 struct ClientConfigImpl;
+struct HttpClientImpl;
 struct EncryptStreamImpl;
 struct DecryptStreamImpl;
 struct KmsClientImpl;
@@ -469,6 +470,7 @@ struct KeyStoreImpl;
 struct KeyringImpl;
 struct CryptographicMaterialsCacheImpl;
 struct BytesFactory;
+struct CredentialsAccess;
 
 // Every duration parameter accepts any integer std::chrono::duration.
 template <class Rep, class Period>
@@ -480,42 +482,98 @@ std::chrono::nanoseconds to_nanoseconds(std::chrono::duration<Rep, Period> d) {
 }
 }  // namespace detail
 
+/// Static AWS credentials, such as temporary credentials issued for a single request.
+/// The library never puts the secret access key or session token in an exception message.
+class Credentials {
+    std::string access_key_id_;
+    std::string secret_access_key_;
+    std::optional<std::string> session_token_;
+    std::optional<std::chrono::system_clock::time_point> expiration_;
+    friend struct detail::CredentialsAccess;
+
+public:
+    /// A client built with an empty access key id or secret access key throws ValidationException.
+    Credentials(std::string access_key_id, std::string secret_access_key)
+        : access_key_id_(std::move(access_key_id)),
+          secret_access_key_(std::move(secret_access_key)) {}
+    /// The session token that temporary credentials require.
+    Credentials& with_session_token(std::string token) { session_token_ = std::move(token); return *this; }
+    /// When the credentials expire.
+    Credentials& with_expiration(std::chrono::system_clock::time_point t) { expiration_ = t; return *this; }
+};
+
+/// An HTTP client and its connection pool.
+/// Pass one to several AwsSdkClientConfigs to make their service clients share connections.
+class HttpClient {
+    std::shared_ptr<detail::HttpClientImpl> impl_;
+    friend class AwsSdkClientConfig;
+
+public:
+    HttpClient();
+};
+
 /// AWS service-client configuration for AWS SDK clients.
 /// A field left unset defers to the ESDK Rust's default configuration resolution.
-/// One ClientConfig may configure multiple clients.
-class ClientConfig {
+/// One AwsSdkClientConfig may configure multiple clients.
+class AwsSdkClientConfig {
     std::shared_ptr<detail::ClientConfigImpl> impl_;
     friend class KmsClient;
     friend class DdbClient;
 
 public:
-    ClientConfig();
+    AwsSdkClientConfig();
     /// Maximum request attempts (1 = no retries).
-    ClientConfig& with_max_retry_attempts(std::uint32_t n);
+    AwsSdkClientConfig& with_max_retry_attempts(std::uint32_t n);
     /// Selects adaptive retry mode instead of the standard one.
-    ClientConfig& with_adaptive_retry(bool a);
+    AwsSdkClientConfig& with_adaptive_retry(bool a);
     /// AWS region for the client (ex. "us-west-2").
-    ClientConfig& with_region(const std::string& r);
+    AwsSdkClientConfig& with_region(const std::string& r);
+    /// Credentials the client signs every request with, in place of the default credential chain.
+    /// Throws ValidationException if the expiration is before the Unix epoch.
+    AwsSdkClientConfig& with_credentials(const Credentials& credentials);
+    /// HTTP client the service client sends requests through.
+    /// Unset gives each service client its own connection pool.
+    AwsSdkClientConfig& with_http_client(const HttpClient& http_client);
 };
 
 /// KMS Client.
+/// Each client has its own connection pool unless its AwsSdkClientConfig sets an HttpClient.
+/// Clients without explicit credentials share one default credential chain.
 class KmsClient {
     std::shared_ptr<detail::KmsClientImpl> impl_;
     friend class KeyStore;
+    explicit KmsClient(std::shared_ptr<detail::KmsClientImpl> impl) : impl_(std::move(impl)) {}
 
 public:
     /// Creates a KMS client.
-    explicit KmsClient(const ClientConfig& cfg = {});
+    explicit KmsClient(const AwsSdkClientConfig& cfg = {});
+    /// Returns a copy of this client that signs requests with `credentials`.
+    /// The copy keeps this client's configuration and connection pool, so it is cheap to make per request.
+    /// This client is unchanged.
+    KmsClient with_credentials(const Credentials& credentials) const;
+    /// Returns a copy of this client that adds `headers` (name, value) to every request.
+    /// The headers are signed with the request.
+    /// The copy keeps this client's configuration and connection pool, so it is cheap to make per request.
+    /// This client is unchanged.
+    /// Throws ValidationException if `headers` is empty, or a name or value is empty, invalid, or repeated.
+    KmsClient with_headers(const std::vector<std::pair<std::string, std::string>>& headers) const;
 };
 
 /// DynamoDB client.
+/// Each client has its own connection pool unless its AwsSdkClientConfig sets an HttpClient.
+/// Clients without explicit credentials share one default credential chain.
 class DdbClient {
     std::shared_ptr<detail::DdbClientImpl> impl_;
     friend class KeyStore;
+    explicit DdbClient(std::shared_ptr<detail::DdbClientImpl> impl) : impl_(std::move(impl)) {}
 
 public:
     /// Creates a DynamoDB client.
-    explicit DdbClient(const ClientConfig& cfg = {});
+    explicit DdbClient(const AwsSdkClientConfig& cfg = {});
+    /// Returns a copy of this client that signs requests with `credentials`.
+    /// The copy keeps this client's configuration and connection pool, so it is cheap to make per request.
+    /// This client is unchanged.
+    DdbClient with_credentials(const Credentials& credentials) const;
 };
 
 /// Optional Key Store parameters.
