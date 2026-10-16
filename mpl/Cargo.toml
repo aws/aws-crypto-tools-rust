@@ -22,7 +22,7 @@ tokio = { version = "1.49", default-features = false, optional = true }
 uuid = { version = "1.27.0", features = ["v4"] }
 
 [features]
-default = ["kms", "ddb", "default-config", "rt-tokio"]
+default = ["kms", "ddb", "default-aws-sdk-clients", "rt-tokio"]
 # The AWS KMS SDK. The built-in key store needs `kms` and `ddb`.
 kms = ["dep:aws-sdk-kms"]
 # The Amazon DynamoDB SDK. The built-in key store needs `kms` and `ddb`.
@@ -31,7 +31,7 @@ ddb = ["dep:aws-sdk-dynamodb"]
 # when you don't pass them in, from your AWS credentials and region.
 # That pulls in `aws-config` and the AWS SDK's HTTPS and TLS client.
 # Turn it off to drop them; then always pass `kms_client` and `ddb_client`.
-default-config = [
+default-aws-sdk-clients = [
     "rt-tokio",
     "dep:aws-config",
     "aws-config/default-https-client",

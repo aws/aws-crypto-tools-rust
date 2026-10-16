@@ -41,11 +41,11 @@ rustdoc-args = [
 ]
 
 [features]
-default = ["aws-lc-rs/aws-lc-sys", "kms", "ddb", "default-config", "rt-tokio"]
+default = ["aws-lc-rs/aws-lc-sys", "kms", "ddb", "default-aws-sdk-clients", "rt-tokio"]
 fips = ["aws-lc-rs/fips"]
 # These turn on the Material Providers Library's features of the same name.
 # See its Cargo.toml, or the README's "Cargo features" section.
 kms = ["aws-crypto-mpl/kms"]
 ddb = ["aws-crypto-mpl/ddb"]
-default-config = ["aws-crypto-mpl/default-config"]
+default-aws-sdk-clients = ["aws-crypto-mpl/default-aws-sdk-clients"]
 rt-tokio = ["aws-crypto-mpl/rt-tokio"]

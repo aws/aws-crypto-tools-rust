@@ -138,7 +138,7 @@ All of these are on by default.
 | Feature | What it adds | Without it |
 |---|---|---|
 | `kms`, `ddb` | the AWS KMS and DynamoDB SDKs, for the built-in key store | use your own key store, or a keyring that doesn't need one |
-| `default-config` | the key store builder creates its own KMS and DynamoDB clients from your AWS credentials and region (this pulls in `aws-config` and the AWS SDK's HTTPS and TLS client) | create the clients yourself and pass them with `kms_client` and `ddb_client` |
+| `default-aws-sdk-clients` | the key store builder creates its own KMS and DynamoDB clients from your AWS credentials and region (this pulls in `aws-config` and the AWS SDK's HTTPS and TLS client) | create the clients yourself and pass them with `kms_client` and `ddb_client` |
 | `rt-tokio` | the tokio-based caches, which the hierarchical keyring uses by default | pass the hierarchical keyring a `cache`, such as `LocalCmc` |
 | `fips` | the FIPS crypto backend instead of the default one | |
 
