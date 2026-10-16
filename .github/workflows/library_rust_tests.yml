@@ -89,6 +89,9 @@ jobs:
           --at-least-one-of aws-lc-sys,fips
           -- -D warnings
 
+      - name: Clippy with default features plus fips
+        run: cargo clippy --lib --features fips -- -D warnings
+
       - name: Build
         run: cargo build --verbose
 
