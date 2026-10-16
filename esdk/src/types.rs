@@ -7,3 +7,4 @@ pub use crate::shapes::{
     AlgorithmSuiteId, Cmm, CommitmentPolicy, EncryptionContext, IntoShared, Keyring, SharedCmm,
     SharedKeyring,
 };
+pub use aws_crypto_mpl::types::AesWrappingAlg;
