@@ -21,17 +21,6 @@ aws-mpl-primitives = { path = "../prim", default-features = false }
 aws-lc-rs = { version = "1.18.1", default-features = false }
 zeroize = "1.9.0"
 
-# Necessary for examples
-[dev-dependencies]
-aws-crypto-mpl = { path = "../mpl", features = ["test-utils"] }
-aws-smithy-runtime-api = { version = "1.19.0", features = ["http-1x"] }
-tokio = { version = "1.49", features = ["rt", "macros", "rt-multi-thread", "fs"] }
-pem = "4.0.0"
-aws-config = "1.12.0"
-aws-smithy-http-client = { version = "1.5.0", features = ["rustls-aws-lc"] }
-aws-lc-rs = {version = "1.18.1"}
-rand = "0.10.3"
-
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = [
@@ -43,7 +32,7 @@ rustdoc-args = [
 [features]
 default = ["aws-lc-sys", "kms", "ddb", "default-aws-sdk-clients", "rt-tokio"]
 # The crypto backend. Turn on exactly one: `aws-lc-sys` (the default), or `fips` for AWS-LC's FIPS module.
-aws-lc-sys = ["aws-lc-rs/aws-lc-sys", "aws-mpl-primitives/default", "aws-crypto-mpl/aws-lc-sys"]
+aws-lc-sys = ["aws-lc-rs/aws-lc-sys", "aws-mpl-primitives/aws-lc-sys", "aws-crypto-mpl/aws-lc-sys"]
 fips = ["aws-lc-rs/fips", "aws-mpl-primitives/fips", "aws-crypto-mpl/fips"]
 # These turn on the Material Providers Library's features of the same name.
 # See its Cargo.toml, or the README's "Cargo features" section.

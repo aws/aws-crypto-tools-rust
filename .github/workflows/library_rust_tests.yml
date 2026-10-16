@@ -51,7 +51,6 @@ jobs:
         uses: taiki-e/install-action@cargo-llvm-cov
 
       - name: Install cargo-hack
-        if: inputs.project == 'mpl' || inputs.project == 'esdk'
         uses: taiki-e/install-action@cargo-hack
 
       # KMS-backed integration tests (e.g. tests/test_encrypt_decrypt.rs) call
@@ -80,27 +79,14 @@ jobs:
 
       # Match the coverage step's features so clippy lints feature-gated tests.
       - name: Clippy
-        run: cargo clippy --all-targets ${{ inputs.project == 'mpl' && '--features test-utils' || '' }} -- -D warnings
+        run: cargo clippy --all-targets -- -D warnings
 
-      # The library must build with every combination of its optional features.
-      # cargo-hack reads the features from Cargo.toml, so a new feature is covered
-      # without editing this step. The backend is fixed to `aws-lc-sys` here and
-      # `fips` gets its own step, because `aws-lc-rs` treats `fips` as an override
-      # and building `aws-lc-fips-sys` in every combination is slow.
       - name: Clippy every feature combination
-        if: inputs.project == 'mpl' || inputs.project == 'esdk'
-        env:
-          EXCLUDE: ${{ inputs.project == 'mpl' && 'default,fips,test-utils' || 'default,fips' }}
         run: >-
           cargo hack clippy --lib --feature-powerset --no-dev-deps
-          --features aws-lc-sys --exclude-features "${EXCLUDE}"
-          -- -D warnings
-
-      - name: Clippy with the FIPS backend
-        if: inputs.project == 'mpl' || inputs.project == 'esdk'
-        run: >-
-          cargo clippy --lib --no-default-features
-          --features fips,kms,ddb,default-aws-sdk-clients,rt-tokio
+          --exclude-features default
+          --mutually-exclusive-features aws-lc-sys,fips
+          --at-least-one-of aws-lc-sys,fips
           -- -D warnings
 
       - name: Build
@@ -115,11 +101,8 @@ jobs:
       # coverage-instrumented); dropping debug info keeps the ubuntu link within
       # the hosted runner's memory. Harmless on macOS.
       #
-      # Coverage runs on the default features, never `--all-features`: every
-      # crate has a `fips` feature, and `aws-lc-rs` treats `fips` as an
-      # override rather than an addition, so `--all-features` would measure the
-      # FIPS backend and leave the default backend that ships untested. `mpl`
-      # adds `test-utils` for its feature-gated tests.
+      # Default features, not `--all-features`: `--all-features` turns on `fips`,
+      # which replaces the default backend.
       #
       # TODO(esdk): esdk line-coverage gate is temporarily 80% (esdk is ~81%
       # today); raise it toward 100 as coverage fills in.
@@ -128,7 +111,7 @@ jobs:
       - name: Test + line coverage gate
         env:
           RUSTFLAGS: "-C debuginfo=0"
-        run: cargo llvm-cov ${{ inputs.project == 'mpl' && '--features test-utils' || '' }} --workspace --fail-under-lines ${{ inputs.project == 'esdk' && '80' || '80' }} --verbose
+        run: cargo llvm-cov --workspace --fail-under-lines 80 --verbose
 
       # FIPS parity check for `prim`. `--no-default-features` is required to get
       # a FIPS-only build: `--features fips` alone leaves `default` enabled, so
