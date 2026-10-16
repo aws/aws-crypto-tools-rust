@@ -335,7 +335,8 @@ async fn test_large_message_yields_to_other_tasks() {
             .send()
             .await
             .unwrap()
-            .into_ciphertext();
+            .into_ciphertext()
+            .into_inner();
         let after_encrypt = ticks.load(Ordering::Relaxed);
         assert!(
             after_encrypt > before_encrypt,

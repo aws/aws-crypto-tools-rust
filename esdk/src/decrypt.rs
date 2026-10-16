@@ -15,7 +15,7 @@ use crate::message::{
 };
 use crate::shapes::{
     CommitmentPolicy, DecryptInput, DecryptOutput, DecryptStreamInput, DecryptStreamOutput,
-    EncryptionContext, MaterialSource, Sink, Source, Tee,
+    EncryptionContext, MaterialSource, Plaintext, Sink, Source, Tee,
 };
 use crate::suites::{algorithm_suite_id_from_bytes, get_ecdsa_alg, get_esdk_algorithm_suite_id};
 use aws_crypto_mpl::types::DecryptionMaterials;
@@ -163,7 +163,7 @@ pub(crate) async fn decrypt(input: &DecryptInput<'_>) -> Result<DecryptOutput, E
         //= type=implication
         //= reason=DecryptOutput struct always contains plaintext field
         //# - Decrypt operation output MUST include a [Plaintext](#plaintext) value.
-        plaintext,
+        plaintext: Plaintext::new(plaintext),
         //= spec/client-apis/decrypt.md#output
         //# - Decrypt operation output MUST include an [encryption context](#encryption-context) value.
         //

@@ -79,7 +79,7 @@ fn concurrent_round_trips(
                             .unwrap();
                         assert_eq!(
                             dec.plaintext(),
-                            plaintext,
+                            &plaintext,
                             "round trip must return the plaintext"
                         );
                     }

@@ -257,7 +257,8 @@ async fn test_decrypt_setters_take_effect() {
         .send()
         .await
         .unwrap()
-        .into_ciphertext();
+        .into_ciphertext()
+        .into_inner();
 
     let out = esdk
         .decrypt()
@@ -328,7 +329,8 @@ async fn test_decrypt_stream_setters_take_effect() {
         .send()
         .await
         .unwrap()
-        .into_ciphertext();
+        .into_ciphertext()
+        .into_inner();
 
     let mut pt = Vec::new();
     esdk.decrypt_stream()

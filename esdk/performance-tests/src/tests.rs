@@ -58,7 +58,7 @@ impl EsdkBenchmark {
             .map_err(|e| anyhow::anyhow!("decrypt failed: {e}"))?;
         let decrypt_duration = decrypt_start.elapsed().as_secs_f64() * 1000.0;
 
-        if data != decrypt_output.plaintext() {
+        if decrypt_output.plaintext() != data {
             return Err(anyhow::anyhow!("data integrity check failed"));
         }
 

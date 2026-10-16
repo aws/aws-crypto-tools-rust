@@ -108,6 +108,7 @@ async fn ciphertext() -> Vec<u8> {
         .await
         .unwrap()
         .into_ciphertext()
+        .into_inner()
 }
 
 async fn decrypt_error(
@@ -206,7 +207,8 @@ async fn hierarchical_decrypt_error(fake: FakeAws) -> Error {
         .send()
         .await
         .unwrap()
-        .into_ciphertext();
+        .into_ciphertext()
+        .into_inner();
     Client::default()
         .decrypt()
         .ciphertext(&ciphertext)
@@ -265,6 +267,10 @@ async fn debug_hides_the_plaintext() {
         .await
         .unwrap();
     assert_eq!(decrypted.plaintext(), PLAINTEXT.as_bytes());
+    assert_eq!(
+        format!("{:?}", decrypted.plaintext()),
+        r#"Plaintext("*** Sensitive Data Redacted ***")"#
+    );
     let output_debug = format!("{decrypted:?}");
 
     // `{:?}` of a `&[u8]` prints decimal bytes; the first three of PLAINTEXT are "SEC".

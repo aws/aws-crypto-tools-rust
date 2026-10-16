@@ -29,7 +29,8 @@ async fn test_decrypt_skips_signature_step_for_non_signing_algorithm() {
         .send()
         .await
         .unwrap()
-        .into_ciphertext();
+        .into_ciphertext()
+        .into_inner();
 
     // Prove the ciphertext has no footer — so if decrypt tried to run the
     // signature step, it would attempt to read footer bytes from the body
@@ -66,7 +67,8 @@ async fn test_decrypt_halts_on_incomplete_message() {
         .send()
         .await
         .unwrap()
-        .into_ciphertext();
+        .into_ciphertext()
+        .into_inner();
 
     // Truncate to ~60% of the message — enough for the header but not the full body.
     let truncated_ct = valid_ct[..valid_ct.len() * 3 / 5].to_vec();
@@ -111,7 +113,8 @@ async fn test_decrypt_fails_with_trailing_bytes_after_message() {
         .send()
         .await
         .unwrap()
-        .into_ciphertext();
+        .into_ciphertext()
+        .into_inner();
 
     // Append extra bytes after the valid message.
     let mut trailing_ct = valid_ct.clone();
@@ -163,7 +166,8 @@ async fn test_streaming_fails_for_multi_frame_signed() {
         .send()
         .await
         .unwrap()
-        .into_ciphertext();
+        .into_ciphertext()
+        .into_inner();
 
     let mut cursor = std::io::Cursor::new(ct.as_slice());
     let mut output = Vec::new();
@@ -200,7 +204,8 @@ async fn test_signing_suite_must_perform_signature_step() {
         .send()
         .await
         .unwrap()
-        .into_ciphertext();
+        .into_ciphertext()
+        .into_inner();
 
     // Tamper with the footer (signature area) to prove the signature step runs.
     // If the step were skipped, tampering the footer would not cause failure.

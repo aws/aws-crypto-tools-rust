@@ -2,7 +2,7 @@
 //
 // The ESDK's encrypt/decrypt methods accept their input payloads (plaintext/ciphertext, respectively)
 // as either an std::vector or a pointer.
-// They return their output payloads as Aws::Esdk::Bytes.
+// They return their output payloads as Aws::Esdk::Ciphertext and Aws::Esdk::Plaintext.
 //
 // Why not std::vector everywhere, like a normal C++ API?
 // Because every conversion to or from std::vector is a full copy of your payload
@@ -15,7 +15,7 @@
 //
 // On output: the C++ shim produces ciphertext in a buffer owned by the Rust ESDK.
 // That buffer cannot become a std::vector without copying every byte; but usually, it doesn't need to.
-// Output sinks (fwrite, sockets, etc.) can read from Aws::Esdk::Bytes directly
+// Output sinks (fwrite, sockets, etc.) can read from these types directly
 // without needing to pay for a copy to std::vector.
 // You only need to copy the output to an std::vector if you must modify the bytes
 // or feed an API that insists on owning a vector.
@@ -91,7 +91,7 @@ int main() {
         esdk.decrypt(static_cast<const std::uint8_t*>(mapped), file_size, keyring);
     munmap(mapped, file_size);
 
-    // Consume the plaintext directly through the returned Aws::Esdk::Bytes.
+    // Consume the plaintext directly through the returned Aws::Esdk::Plaintext.
     // No to_vector() needed.
     if (decrypted.plaintext.size() != PAYLOAD_BYTES ||
         std::memcmp(decrypted.plaintext.data(), data, PAYLOAD_BYTES) != 0) {

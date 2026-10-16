@@ -4,6 +4,6 @@
 //! The types operations take and return.
 
 pub use crate::shapes::{
-    AlgorithmSuiteId, Cmm, CommitmentPolicy, EncryptionContext, IntoShared, Keyring, SharedCmm,
-    SharedKeyring,
+    AlgorithmSuiteId, Ciphertext, Cmm, CommitmentPolicy, EncryptionContext, IntoShared, Keyring,
+    Plaintext, SharedCmm, SharedKeyring,
 };
