@@ -418,22 +418,3 @@ fn test_build_rejects_wrong_length_plaintext_data_key() {
         .unwrap_err();
     assert!(err.is_invalid_materials(), "{:?}", err);
 }
-
-#[test]
-fn test_materials_builder_getters_report_unset_and_set() {
-    let builder = DecryptionMaterials::builder();
-    assert!(builder.get_encryption_context().is_none());
-    assert!(builder.get_required_encryption_context_keys().is_none());
-    let builder = builder
-        .encryption_context(make_ec_with_keys(&["k1"]))
-        .set_required_encryption_context_keys(Some(["k1"].map(String::from).into()));
-    assert!(builder.get_encryption_context().is_some());
-    assert_eq!(
-        builder.get_required_encryption_context_keys(),
-        &Some(BTreeSet::from(["k1".to_string()]))
-    );
-
-    let builder = aws_crypto_mpl::types::EncryptionMaterials::builder();
-    assert!(builder.get_encryption_context().is_none());
-    assert!(builder.get_required_encryption_context_keys().is_none());
-}

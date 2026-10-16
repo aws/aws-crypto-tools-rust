@@ -51,13 +51,9 @@ impl GetEncryptionMaterialsInput {
     }
 
     /// The encryption context keys that must be supplied again at decrypt time.
-    /// Empty when unset.
     #[must_use]
-    pub fn required_encryption_context_keys(&self) -> &BTreeSet<String> {
-        static EMPTY: BTreeSet<String> = BTreeSet::new();
-        self.required_encryption_context_keys
-            .as_ref()
-            .unwrap_or(&EMPTY)
+    pub fn required_encryption_context_keys(&self) -> Option<&BTreeSet<String>> {
+        self.required_encryption_context_keys.as_ref()
     }
 
     /// The maximum plaintext length the materials are for.

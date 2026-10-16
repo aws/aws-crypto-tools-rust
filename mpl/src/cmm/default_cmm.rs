@@ -144,7 +144,11 @@ impl Cmm for DefaultCmm {
             None
         };
 
-        let reck = input.required_encryption_context_keys().clone();
+        // Required-encryption-context-keys come from the request (or empty).
+        let reck = input
+            .required_encryption_context_keys()
+            .cloned()
+            .unwrap_or_default();
 
         // Build empty materials carrying the resolved suite, the (possibly
         // signing-key-augmented) EC, the input's RECK, and the freshly
