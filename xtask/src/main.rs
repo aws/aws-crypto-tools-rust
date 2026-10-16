@@ -6,6 +6,7 @@
 //! ```text
 //! cargo xtask gen-errors          write each library's src/error/generated.rs from errors.toml
 //! cargo xtask gen-errors --check  fail if any generated file is stale
+//! cargo xtask check-public-paths  fail if a public item has two public paths (needs nightly)
 //! ```
 
 use std::path::{Path, PathBuf};
@@ -21,7 +22,8 @@ fn main() -> ExitCode {
     {
         ["gen-errors"] => gen_errors(false),
         ["gen-errors", "--check"] => gen_errors(true),
-        _ => Err("usage: cargo xtask gen-errors [--check]".to_owned()),
+        ["check-public-paths"] => xtask::public_paths::check(&repo_root()),
+        _ => Err("usage: cargo xtask gen-errors [--check] | check-public-paths".to_owned()),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,

@@ -3,6 +3,8 @@
 
 //! Generates each library's error types from `errors.toml`.
 
+pub mod public_paths;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::io::Write as _;
