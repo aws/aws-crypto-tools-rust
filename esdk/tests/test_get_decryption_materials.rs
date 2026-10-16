@@ -357,7 +357,7 @@ impl cmm::Cmm for DecryptSpyCmm {
         &self,
         request: GetEncryptionMaterialsInput,
     ) -> Result<GetEncryptionMaterialsOutput, MplError> {
-        Cmm::get_encryption_materials(&self.inner, request).await
+        cmm::Cmm::get_encryption_materials(&self.inner, request).await
     }
 
     async fn decrypt_materials(
@@ -373,7 +373,7 @@ impl cmm::Cmm for DecryptSpyCmm {
             .collect();
         *self.observed_ec_keys.lock().unwrap() = Some(keys);
         // Delegate to the inner default CMM so real materials are returned.
-        Cmm::decrypt_materials(&self.inner, request).await
+        cmm::Cmm::decrypt_materials(&self.inner, request).await
     }
 }
 

@@ -17,15 +17,13 @@
 
 use std::time::Duration;
 
-use aws_crypto_mpl::key_store::types::KmsConfiguration;
-use aws_crypto_mpl::keyring::{
+use aws_esdk::key_store::types::KmsConfiguration;
+use aws_esdk::keyring::{
     BranchKeySupplier, GetBranchKeyIdInput, GetBranchKeyIdOutput, HierarchicalKeyring,
 };
-use aws_crypto_mpl::{
-    Error as MplError, async_trait, aws_config, aws_sdk_dynamodb, aws_sdk_kms, key_store,
-};
-use aws_esdk::Error;
+use aws_esdk::mpl::Error as MplError;
 use aws_esdk::types::EncryptionContext;
+use aws_esdk::{Error, async_trait, aws_config, aws_sdk_dynamodb, aws_sdk_kms, key_store};
 
 /// Maps the `tenant` value in the encryption context to that tenant's branch key ID.
 struct TenantBranchKeySupplier {

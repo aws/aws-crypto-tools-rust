@@ -9,21 +9,19 @@
 //!
 //! ## Getting started
 //!
-//! Add the SDK, the Material Providers Library (for keyrings) and an async runtime to your `Cargo.toml`:
+//! Add the SDK and an async runtime to your `Cargo.toml`:
 //!
 //! ```toml
 //! [dependencies]
 //! aws-esdk = "2"
-//! aws-crypto-mpl = "0.1"
 //! tokio = { version = "1", features = ["full"] }
 //! ```
 //!
 //! Then create a [`Client`], and encrypt and decrypt with a keyring:
 //!
 //! ```
-//! use aws_crypto_mpl::types::AesWrappingAlg;
-//! use aws_crypto_mpl::keyring::RawAesKeyring;
-//! use aws_esdk::types::EncryptionContext;
+//! use aws_esdk::keyring::RawAesKeyring;
+//! use aws_esdk::types::{AesWrappingAlg, EncryptionContext};
 //!
 //! # #[tokio::main(flavor = "current_thread")]
 //! # async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -86,8 +84,8 @@
 //! | [`Client::encrypt_stream`] | [`EncryptStreamFluentBuilder`](operation::encrypt_stream::builders::EncryptStreamFluentBuilder) | [`EncryptStreamOutput`](operation::encrypt_stream::EncryptStreamOutput) |
 //! | [`Client::decrypt_stream`] | [`DecryptStreamFluentBuilder`](operation::decrypt_stream::builders::DecryptStreamFluentBuilder) | [`DecryptStreamOutput`](operation::decrypt_stream::DecryptStreamOutput) |
 //!
-//! Keyrings and cryptographic materials managers (CMMs) come from `aws_crypto_mpl`.
-//! To write your own, implement [`Keyring`](types::Keyring) or [`Cmm`](types::Cmm).
+//! Keyrings and cryptographic materials managers (CMMs) are in [`keyring`] and [`cmm`].
+//! To write your own, implement [`Keyring`](keyring::Keyring) or [`Cmm`](cmm::Cmm).
 //!
 //! Every operation fails with an [`Error`]; see the [`error`] module for how to handle each kind.
 //!
@@ -100,8 +98,13 @@
 //! - [`operation`] has a module per operation, holding its output and, under `builders`, its fluent builder.
 //! - [`types`] holds the types the operations take:
 //!   [`EncryptionContext`](types::EncryptionContext), [`AlgorithmSuiteId`](types::AlgorithmSuiteId),
-//!   [`CommitmentPolicy`](types::CommitmentPolicy), and the [`Keyring`](types::Keyring) and [`Cmm`](types::Cmm) traits.
+//!   [`CommitmentPolicy`](types::CommitmentPolicy), and [`AesWrappingAlg`](types::AesWrappingAlg).
 //! - [`error`] holds [`Error`] and the details each error carries.
+//! - [`keyring`], [`cmm`], [`cmc`], and [`key_store`] are the Material Providers Library's resources:
+//!   keyrings, cryptographic materials managers, caches, and the branch key store.
+//! - [`aws_config`], [`aws_sdk_kms`], and [`aws_sdk_dynamodb`] are the AWS SDK crates those resources take clients from.
+//! - [`mpl`] is the whole Material Providers Library.
+//!   Code that implements a keyring, CMM, cache, or key store uses its [`Error`](mpl::Error) and [`types`](mpl::types).
 //!
 //! The SDK reads and writes framed and nonframed message bodies, and message format versions 1 and 2
 //! (version 2 adds key commitment).
@@ -206,6 +209,13 @@ pub use client::Client;
 pub use config::Config;
 pub use error::generated::Error;
 pub use shapes::async_trait;
+
+/// The Material Providers Library, which this crate is built on.
+/// Its resource modules and AWS SDK clients are also re-exported below,
+/// so most code never names it.
+pub use aws_crypto_mpl as mpl;
+pub use aws_crypto_mpl::{aws_config, aws_sdk_dynamodb, aws_sdk_kms};
+pub use aws_crypto_mpl::{cmc, cmm, key_store, keyring};
 
 pub(crate) mod key_derivation;
 pub(crate) mod materials;
