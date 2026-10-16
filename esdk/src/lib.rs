@@ -85,7 +85,7 @@
 //! | [`Client::decrypt_stream`] | [`DecryptStreamFluentBuilder`](operation::decrypt_stream::builders::DecryptStreamFluentBuilder) | [`DecryptStreamOutput`](operation::decrypt_stream::DecryptStreamOutput) |
 //!
 //! Keyrings and cryptographic materials managers (CMMs) are in [`keyring`] and [`cmm`].
-//! To write your own, implement [`Keyring`](types::Keyring) or [`Cmm`](types::Cmm).
+//! To write your own, implement [`Keyring`](keyring::Keyring) or [`Cmm`](cmm::Cmm).
 //!
 //! Every operation fails with an [`Error`]; see the [`error`] module for how to handle each kind.
 //!
@@ -98,7 +98,7 @@
 //! - [`operation`] has a module per operation, holding its output and, under `builders`, its fluent builder.
 //! - [`types`] holds the types the operations take:
 //!   [`EncryptionContext`](types::EncryptionContext), [`AlgorithmSuiteId`](types::AlgorithmSuiteId),
-//!   [`CommitmentPolicy`](types::CommitmentPolicy), and the [`Keyring`](types::Keyring) and [`Cmm`](types::Cmm) traits.
+//!   [`CommitmentPolicy`](types::CommitmentPolicy), and [`AesWrappingAlg`](types::AesWrappingAlg).
 //! - [`error`] holds [`Error`] and the details each error carries.
 //! - [`keyring`], [`cmm`], [`cmc`], and [`key_store`] are the Material Providers Library's resources:
 //!   keyrings, cryptographic materials managers, caches, and the branch key store.
