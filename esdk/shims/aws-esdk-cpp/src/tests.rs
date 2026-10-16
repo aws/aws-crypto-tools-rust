@@ -73,16 +73,6 @@ fn unset_storm_tracking_options() -> ffi::StormTrackingCmcOptions {
     }
 }
 
-fn test_keyring() -> Box<Keyring> {
-    create_raw_aes_keyring(&ffi::RawAesKeyringInput {
-        key_namespace: "test-ns".to_string(),
-        key_name: "test-key".to_string(),
-        wrapping_key: &[0x2A; 32],
-        wrapping_alg: ffi::AesWrappingAlg::AlgAes256GcmIv12Tag16,
-    })
-    .expect("raw AES keyring should build")
-}
-
 fn unset_encrypt_input() -> ffi::EncryptInput<'static> {
     ffi::EncryptInput {
         algorithm_suite_id: unset_alg_id(),
@@ -274,7 +264,7 @@ fn encryption_context_round_trips() {
     let mut m = aws_esdk::EncryptionContext::new();
     m.insert("k1", "v1");
     m.insert("k2", "\u{1F600}");
-    let list = encryption_context_core_to_target(m.clone());
+    let list = encryption_context_core_to_target(&m);
     assert_eq!(list.len(), 2);
     //= spec/shim/esdk-shim.md#encryption-context
     //= type=test
@@ -299,7 +289,7 @@ fn encryption_context_round_trips() {
 #[test]
 fn encryption_context_empty() {
     let empty = aws_esdk::EncryptionContext::new();
-    assert!(encryption_context_core_to_target(empty).is_empty());
+    assert!(encryption_context_core_to_target(&empty).is_empty());
     assert!(encryption_context_target_to_core(&[]).is_empty());
 }
 
@@ -938,7 +928,7 @@ fn create_raw_aes_keyring_rejects_unsupported_wrapping_alg() {
 // Options forwarding
 
 #[test]
-fn apply_encrypt_options_forwards_every_optional_input() {
+fn encrypt_settings_forwards_every_optional_input() {
     use super::EsdkCommitmentPolicy as C;
     let input = ffi::EncryptInput {
         algorithm_suite_id: set_alg_id(F { repr: 0x0578 }),
@@ -949,13 +939,8 @@ fn apply_encrypt_options_forwards_every_optional_input() {
         max_encrypted_data_keys: set_u32(5),
         commitment_policy: set_policy(P::ForbidEncryptAllowDecrypt),
     };
-    let builder = aws_esdk::EncryptInput::builder()
-        .plaintext(&[])
-        .keyring(test_keyring().inner.clone());
-    let core = apply_encrypt_options(builder, &input)
-        .expect("options apply")
-        .build()
-        .expect("input builds");
+    let settings = encrypt_settings(&input).expect("settings convert");
+    let config = settings.esdk.config();
 
     //= spec/shim/esdk-shim.md#encrypt-inputs
     //= type=test
@@ -963,7 +948,7 @@ fn apply_encrypt_options_forwards_every_optional_input() {
     //# the core ESDK, converted as defined in
     //# [Maximum encrypted data keys](#maximum-encrypted-data-keys).
     assert_eq!(
-        core.max_encrypted_data_keys(),
+        config.max_encrypted_data_keys(),
         std::num::NonZeroUsize::new(5)
     );
 
@@ -971,44 +956,39 @@ fn apply_encrypt_options_forwards_every_optional_input() {
     //= type=test
     //# - MUST provide the target-supplied frame length to the core ESDK,
     //# converted as defined in [Frame length](#frame-length).
-    assert_eq!(core.frame_length().get(), 1024);
+    assert_eq!(settings.frame_length, NonZeroU32::new(1024));
 
     //= spec/shim/esdk-shim.md#encrypt-inputs
     //= type=test
     //# - MUST provide the target-supplied commitment policy to the core ESDK,
     //# converted as defined in [Commitment policy](#commitment-policy).
-    assert_eq!(core.commitment_policy(), C::ForbidEncryptAllowDecrypt);
+    assert_eq!(config.commitment_policy(), C::ForbidEncryptAllowDecrypt);
 
     //= spec/shim/esdk-shim.md#encrypt-inputs
     //= type=test
     //# - MUST provide the target-supplied algorithm suite to the core ESDK,
     //# converted as defined in [Algorithm suite identifier](#algorithm-suite-identifier).
     assert_eq!(
-        core.algorithm_suite_id(),
+        settings.algorithm_suite_id,
         Some(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
     );
 }
 
 #[test]
-fn apply_encrypt_options_leaves_unset_inputs_defaulted() {
-    let builder = aws_esdk::EncryptInput::builder()
-        .plaintext(&[])
-        .keyring(test_keyring().inner.clone());
-    let core = apply_encrypt_options(builder, &unset_encrypt_input())
-        .expect("options apply")
-        .build()
-        .expect("input builds");
-    assert_eq!(core.max_encrypted_data_keys(), None);
-    assert_eq!(core.frame_length().get(), 4096);
+fn encrypt_settings_leaves_unset_inputs_defaulted() {
+    let settings = encrypt_settings(&unset_encrypt_input()).expect("settings convert");
+    let config = settings.esdk.config();
+    assert_eq!(config.max_encrypted_data_keys(), None);
+    assert_eq!(settings.frame_length, None);
     assert_eq!(
-        core.commitment_policy(),
+        config.commitment_policy(),
         EsdkCommitmentPolicy::RequireEncryptRequireDecrypt
     );
-    assert_eq!(core.algorithm_suite_id(), None);
+    assert_eq!(settings.algorithm_suite_id, None);
 }
 
 #[test]
-fn apply_decrypt_options_forwards_every_optional_input() {
+fn decrypt_client_forwards_every_optional_input() {
     use super::EsdkCommitmentPolicy as C;
     let input = ffi::DecryptInput {
         ciphertext: &[],
@@ -1017,13 +997,8 @@ fn apply_decrypt_options_forwards_every_optional_input() {
         max_encrypted_data_keys: set_u32(7),
         commitment_policy: set_policy(P::RequireEncryptAllowDecrypt),
     };
-    let builder = aws_esdk::DecryptInput::builder()
-        .ciphertext(&[])
-        .keyring(test_keyring().inner.clone());
-    let core = apply_decrypt_options(builder, &input)
-        .expect("options apply")
-        .build()
-        .expect("input builds");
+    let esdk = decrypt_client(&input).expect("settings convert");
+    let config = esdk.config();
 
     //= spec/shim/esdk-shim.md#decrypt-inputs
     //= type=test
@@ -1031,7 +1006,7 @@ fn apply_decrypt_options_forwards_every_optional_input() {
     //# the core ESDK, converted as defined in
     //# [Maximum encrypted data keys](#maximum-encrypted-data-keys).
     assert_eq!(
-        core.max_encrypted_data_keys(),
+        config.max_encrypted_data_keys(),
         std::num::NonZeroUsize::new(7)
     );
 
@@ -1039,7 +1014,7 @@ fn apply_decrypt_options_forwards_every_optional_input() {
     //= type=test
     //# - MUST provide the target-supplied commitment policy to the core ESDK,
     //# converted as defined in [Commitment policy](#commitment-policy).
-    assert_eq!(core.commitment_policy(), C::RequireEncryptAllowDecrypt);
+    assert_eq!(config.commitment_policy(), C::RequireEncryptAllowDecrypt);
 }
 
 #[test]

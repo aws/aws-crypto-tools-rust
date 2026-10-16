@@ -5,7 +5,7 @@ use anyhow::Result;
 use std::time::Duration;
 
 use aws_crypto_mpl::{HierarchicalKeyring, KeyStoreClient, KmsConfiguration, cmc::DefaultCmc};
-use aws_esdk::{CommitmentPolicy, Esdk};
+use aws_esdk::{Client, CommitmentPolicy};
 use log::info;
 use sysinfo::System;
 
@@ -25,7 +25,7 @@ const LOGICAL_KEY_STORE_NAME: &str = BRANCH_KEY_STORE_NAME;
 const BRANCH_KEY_ID: &str = "3f43a9af-08c5-4317-b694-3d3e883dcaef";
 
 pub struct EsdkBenchmark {
-    pub esdk_client: Esdk,
+    pub esdk_client: Client,
     pub keyring: HierarchicalKeyring,
     pub config: TestConfig,
     pub results: Vec<BenchmarkResult>,
@@ -59,10 +59,10 @@ impl EsdkBenchmark {
         })
     }
 
-    async fn setup_esdk() -> Result<(Esdk, HierarchicalKeyring)> {
-        let esdk_client = Esdk::builder()
+    async fn setup_esdk() -> Result<(Client, HierarchicalKeyring)> {
+        let esdk_client = Client::builder()
             .commitment_policy(CommitmentPolicy::RequireEncryptRequireDecrypt)
-            .build();
+            .build()?;
 
         let sdk_config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
 

@@ -83,10 +83,10 @@
 //!
 //! ```no_run
 //! # fn record_throttle(_: &str) {}
-//! # async fn example(input: aws_esdk::EncryptInput<'_>) {
+//! # async fn example(esdk: aws_esdk::Client, keyring: aws_esdk::SharedKeyring) {
 //! use aws_esdk::error::{Error, Resource, Service};
 //!
-//! if let Err(Error::Throttling(e)) = aws_esdk::encrypt(&input).await {
+//! if let Err(Error::Throttling(e)) = esdk.encrypt().plaintext(b"data").keyring(keyring).send().await {
 //!     match e.service() {
 //!         Some(Service::Kms) => record_throttle("kms"),
 //!         Some(Service::DynamoDb) => record_throttle("dynamodb"),
@@ -112,10 +112,10 @@
 //! An error with no collection yields itself.
 //!
 //! ```no_run
-//! # async fn example(input: aws_esdk::DecryptInput<'_>) {
+//! # async fn example(esdk: aws_esdk::Client, keyring: aws_esdk::SharedKeyring, ciphertext: &[u8]) {
 //! use aws_esdk::error::{Error, Resource, Service};
 //!
-//! if let Err(e) = aws_esdk::decrypt(&input).await {
+//! if let Err(e) = esdk.decrypt().ciphertext(ciphertext).keyring(keyring).send().await {
 //!     for attempt in e.failures() {
 //!         match attempt {
 //!             Error::AccessDenied(a) => match a.service() {

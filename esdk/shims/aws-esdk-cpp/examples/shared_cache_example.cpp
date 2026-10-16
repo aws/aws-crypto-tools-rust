@@ -52,7 +52,7 @@ int main() {
         auto keyring_a = make_keyring(keystore_a);
         auto keyring_b = make_keyring(keystore_b);
 
-        Aws::Esdk::EncryptionSDK esdk;
+        Aws::Esdk::Client esdk;
         const std::string plaintext = "Hello";
 
         // Encrypt with A, decrypt with B: both go through the same cache.

@@ -4,7 +4,7 @@
 use crate::alloc;
 use anyhow::Result;
 use aws_crypto_mpl::HierarchicalKeyring;
-use aws_esdk::{DecryptInput, EncryptInput, EncryptionContext, Esdk};
+use aws_esdk::{Client, EncryptionContext};
 use chrono::Utc;
 use futures::future::join_all;
 use indicatif::{ProgressBar, ProgressStyle};
@@ -26,40 +26,38 @@ impl EsdkBenchmark {
 
     /// Runs one encrypt+decrypt cycle and returns (encrypt_ms, decrypt_ms).
     async fn encrypt_decrypt(
-        esdk_client: &Esdk,
+        esdk_client: &Client,
         keyring: &HierarchicalKeyring,
         data: &[u8],
     ) -> Result<(f64, f64)> {
-        let encrypt_input = EncryptInput::builder()
+        let encrypt_request = esdk_client
+            .encrypt()
             .plaintext(data)
             .encryption_context(Self::benchmark_encryption_context(data.len()))
-            .keyring(keyring.clone())
-            .build()
-            .map_err(|e| anyhow::anyhow!("invalid encrypt input: {e}"))?;
+            .keyring(keyring.clone());
 
         let encrypt_start = Instant::now();
-        let encrypt_output = esdk_client
-            .encrypt(&encrypt_input)
+        let encrypt_output = encrypt_request
+            .send()
             .await
             .map_err(|e| anyhow::anyhow!("encrypt failed: {e}"))?;
         let encrypt_duration = encrypt_start.elapsed().as_secs_f64() * 1000.0;
 
-        let ciphertext = encrypt_output.ciphertext;
+        let ciphertext = encrypt_output.ciphertext();
 
-        let decrypt_input = DecryptInput::builder()
-            .ciphertext(&ciphertext)
-            .keyring(keyring.clone())
-            .build()
-            .map_err(|e| anyhow::anyhow!("invalid decrypt input: {e}"))?;
+        let decrypt_request = esdk_client
+            .decrypt()
+            .ciphertext(ciphertext)
+            .keyring(keyring.clone());
 
         let decrypt_start = Instant::now();
-        let decrypt_output = esdk_client
-            .decrypt(&decrypt_input)
+        let decrypt_output = decrypt_request
+            .send()
             .await
             .map_err(|e| anyhow::anyhow!("decrypt failed: {e}"))?;
         let decrypt_duration = decrypt_start.elapsed().as_secs_f64() * 1000.0;
 
-        if data != decrypt_output.plaintext.as_slice() {
+        if data != decrypt_output.plaintext() {
             return Err(anyhow::anyhow!("data integrity check failed"));
         }
 
@@ -200,7 +198,7 @@ impl EsdkBenchmark {
             let operation_start = Instant::now();
 
             let data_clone = data.clone();
-            let esdk_client = self.esdk_client;
+            let esdk_client = self.esdk_client.clone();
             let keyring = self.keyring.clone();
 
             let operation_task = tokio::spawn(async move {
@@ -312,7 +310,7 @@ impl EsdkBenchmark {
 
         let mut tasks = Vec::new();
         for worker_id in 0..concurrency {
-            let esdk_client = self.esdk_client;
+            let esdk_client = self.esdk_client.clone();
             let keyring = self.keyring.clone();
 
             let task = tokio::spawn(async move {

@@ -11,7 +11,7 @@ use aws_crypto_mpl::keyring::{Keyring, RawAesKeyring, SharedKeyring};
 use aws_crypto_mpl::keyring::{OnDecryptInput, OnEncryptInput};
 use aws_crypto_mpl::keyring::{OnDecryptOutput, OnEncryptOutput};
 use aws_crypto_mpl::structures::{EncryptionContext, EncryptionMaterials, PlaintextDataKey};
-use aws_esdk::{AlgorithmSuiteId, DecryptInput, EncryptInput, Error, decrypt, encrypt};
+use aws_esdk::{AlgorithmSuiteId, Client, Error};
 use aws_mpl_primitives::AesGcm;
 use fake_aws::{BRANCH_KEY_ID, FakeAws, KEY_ARN, Reply};
 
@@ -91,14 +91,16 @@ impl Keyring for KnownDataKey {
 }
 
 async fn ciphertext() -> Vec<u8> {
-    let input = EncryptInput::builder()
+    Client::default()
+        .encrypt()
         .plaintext(PLAINTEXT.as_bytes())
         .encryption_context(context(EC_VALUE))
         .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
         .keyring(KnownDataKey(SharedKeyring::new(raw("name"))))
-        .build()
-        .unwrap();
-    encrypt(&input).await.unwrap().ciphertext
+        .send()
+        .await
+        .unwrap()
+        .into_ciphertext()
 }
 
 async fn decrypt_error(
@@ -106,13 +108,14 @@ async fn decrypt_error(
     ec: Option<&str>,
     keyring: impl Keyring + 'static,
 ) -> Error {
-    let mut input = DecryptInput::builder()
+    Client::default()
+        .decrypt()
         .ciphertext(ciphertext)
-        .keyring(keyring);
-    if let Some(value) = ec {
-        input = input.encryption_context(context(value));
-    }
-    decrypt(&input.build().unwrap()).await.unwrap_err()
+        .keyring(keyring)
+        .set_encryption_context(ec.map(context))
+        .send()
+        .await
+        .unwrap_err()
 }
 
 #[tokio::test]
@@ -151,13 +154,14 @@ async fn malformed_branch_key_records_contain_no_attribute_values() {
         let fake = FakeAws::new(move |op, _| {
             (op == "DynamoDB_20120810.GetItem").then(|| Reply::ok(item.clone()))
         });
-        let input = EncryptInput::builder()
+        let err = Client::default()
+            .encrypt()
             .plaintext(PLAINTEXT.as_bytes())
             .encryption_context(context(EC_VALUE))
             .keyring(fake.keyring().await)
-            .build()
-            .unwrap();
-        let err = encrypt(&input).await.unwrap_err();
+            .send()
+            .await
+            .unwrap_err();
         assert!(err.is_invalid_materials(), "{err:?}");
         assert_no_secrets(&err);
     }
@@ -173,32 +177,36 @@ async fn kms_failures_contain_no_branch_key_bytes() {
             ))
         })
     });
-    let input = EncryptInput::builder()
+    let err = Client::default()
+        .encrypt()
         .plaintext(PLAINTEXT.as_bytes())
         .encryption_context(context(EC_VALUE))
         .keyring(fake.keyring().await)
-        .build()
-        .unwrap();
-    let err = encrypt(&input).await.unwrap_err();
+        .send()
+        .await
+        .unwrap_err();
     assert!(err.is_invalid_materials(), "{err:?}");
     assert_no_secrets(&err);
 }
 
 /// The error from decrypting, against `fake`, a message encrypted under the fake's branch key.
 async fn hierarchical_decrypt_error(fake: FakeAws) -> Error {
-    let input = EncryptInput::builder()
+    let ciphertext = Client::default()
+        .encrypt()
         .plaintext(PLAINTEXT.as_bytes())
         .encryption_context(context(EC_VALUE))
         .keyring(FakeAws::ok().keyring().await)
-        .build()
-        .unwrap();
-    let ciphertext = encrypt(&input).await.unwrap().ciphertext;
-    let input = DecryptInput::builder()
+        .send()
+        .await
+        .unwrap()
+        .into_ciphertext();
+    Client::default()
+        .decrypt()
         .ciphertext(&ciphertext)
         .keyring(fake.keyring().await)
-        .build()
-        .unwrap();
-    decrypt(&input).await.unwrap_err()
+        .send()
+        .await
+        .unwrap_err()
 }
 
 #[tokio::test]
@@ -229,4 +237,34 @@ async fn an_unparseable_dynamodb_response_does_not_reach_the_error() {
     let err = hierarchical_decrypt_error(fake).await;
     assert!(err.is_service(), "{err:?}");
     assert_no_secrets(&err);
+}
+
+/// `Debug` of the encrypt builder and the decrypt output hides the plaintext, as the AWS SDK for Rust does.
+#[tokio::test]
+async fn debug_hides_the_plaintext() {
+    let esdk = Client::default();
+    let builder = esdk
+        .encrypt()
+        .plaintext(PLAINTEXT.as_bytes())
+        .keyring(raw("k"));
+    let builder_debug = format!("{builder:?}");
+
+    let encrypted = builder.send().await.unwrap();
+    let decrypted = esdk
+        .decrypt()
+        .ciphertext(encrypted.ciphertext())
+        .keyring(raw("k"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(decrypted.plaintext(), PLAINTEXT.as_bytes());
+    let output_debug = format!("{decrypted:?}");
+
+    // `{:?}` of a `&[u8]` prints decimal bytes; the first three of PLAINTEXT are "SEC".
+    let plaintext_bytes = format!("{:?}", &PLAINTEXT.as_bytes()[..3]).replace(['[', ']'], "");
+    for text in [&builder_debug, &output_debug] {
+        assert!(text.contains("*** Sensitive Data Redacted ***"), "{text}");
+        assert!(!text.contains(PLAINTEXT), "{text}");
+        assert!(!text.contains(&plaintext_bytes), "{text}");
+    }
 }

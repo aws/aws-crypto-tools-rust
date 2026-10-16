@@ -570,7 +570,7 @@ public:
 ///  - Handling its own thread safety
 class Keyring {
     std::shared_ptr<detail::KeyringImpl> impl_;
-    friend class EncryptionSDK;
+    friend class Client;
 
 protected:
     explicit Keyring(std::shared_ptr<detail::KeyringImpl> impl) : impl_(std::move(impl)) {}
@@ -750,46 +750,30 @@ public:
 /// A field left unset keeps the ESDK Rust's default.
 class EncryptOptions {
     std::optional<AlgorithmSuiteId> algorithm_suite_;
-    std::optional<CommitmentPolicy> commitment_policy_;
     std::map<std::string, std::string> encryption_context_;
     std::optional<std::uint32_t> frame_length_;
-    std::optional<std::uint32_t> max_encrypted_data_keys_;
-    friend class EncryptionSDK;
+    friend class Client;
 
 public:
     /// Algorithm suite for encryption, identified by the two-byte ID from the ESDK message format. 
     /// <https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/supported-algorithms.html>
     EncryptOptions& with_algorithm_suite(AlgorithmSuiteId a) { algorithm_suite_ = a; return *this; }
-    /// Governs whether messages are encrypted with, and are required to carry, key commitment.
-    /// <https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/migrate-commitment-policy.html>
-    /// Default is CommitmentPolicy::RequireEncryptRequireDecrypt.
-    EncryptOptions& with_commitment_policy(CommitmentPolicy p) { commitment_policy_ = p; return *this; }
     /// Key-value pairs to associate with the encrypted data.
     /// <https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/concepts.html#encryption-context>
     EncryptOptions& with_encryption_context(const std::map<std::string, std::string>& ec) { encryption_context_ = ec; return *this; }
     /// Length of each frame of framed data in bytes. Default 4096.
     EncryptOptions& with_frame_length(std::uint32_t n) { frame_length_ = n; return *this; }
-    /// Limit to number of encrypted data keys on a message.
-    /// 0 means no limit.
-    /// <https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/configure.html#config-limit-keys>
-    EncryptOptions& with_max_encrypted_data_keys(std::uint32_t n) { max_encrypted_data_keys_ = n; return *this; }
 };
 
 /// Optional decrypt parameters.
 /// A field left unset keeps the ESDK Rust's default.
 class DecryptOptions {
-    std::optional<CommitmentPolicy> commitment_policy_;
     std::map<std::string, std::string> encryption_context_;
-    std::optional<std::uint32_t> max_encrypted_data_keys_;
-    friend class EncryptionSDK;
+    friend class Client;
 
 public:
-    /// Default is CommitmentPolicy::RequireEncryptRequireDecrypt.
-    DecryptOptions& with_commitment_policy(CommitmentPolicy p) { commitment_policy_ = p; return *this; }
     /// Encryption context to verify against the encrypted message; every entry must be present in the message's context.
     DecryptOptions& with_encryption_context(const std::map<std::string, std::string>& ec) { encryption_context_ = ec; return *this; }
-    /// 0 means no limit.
-    DecryptOptions& with_max_encrypted_data_keys(std::uint32_t n) { max_encrypted_data_keys_ = n; return *this; }
 };
 
 /// Read-only byte buffer returned by encrypt and decrypt.
@@ -877,10 +861,10 @@ struct EncryptResult {
     /// The encrypted message.
     Bytes ciphertext;
     /// Encryption context associated with the encrypted message.
-    /// This can differ from the value provided to EncryptInput.
+    /// This can differ from the value set in EncryptOptions.
     std::map<std::string, std::string> encryption_context;
     /// Algorithm suite used for encryption.
-    /// This can differ from the value provided to EncryptInput.
+    /// This can differ from the value set in EncryptOptions.
     AlgorithmSuiteId algorithm_suite_id;
 };
 
@@ -894,26 +878,28 @@ struct DecryptResult {
     AlgorithmSuiteId algorithm_suite_id;
 };
 
-/// Client-level configuration for EncryptionSDK.
+/// Configuration for Client.
 ///
-/// A field set both here and on a per-call EncryptOptions/DecryptOptions is rejected with ValidationException.
-/// Each field must be set in exactly one place.
-/// A field unset in both defers to the core library's default.
+/// A field left unset defers to the core library's default.
 //
 //= spec/shim/esdk-shim.md#client-configuration
 //# The ESDK shim MAY expose a client-level configuration mirroring the core
 //# ESDK's client configuration, applied to every operation of that client.
-class EncryptionSDKConfig {
+class Config {
     std::optional<CommitmentPolicy> commitment_policy_;
     std::optional<std::uint32_t> max_encrypted_data_keys_;
-    friend class EncryptionSDK;
+    friend class Client;
 
 public:
     /// Commitment policy applied to every operation on this client.
-    EncryptionSDKConfig& with_commitment_policy(CommitmentPolicy p) { commitment_policy_ = p; return *this; }
+    /// Governs whether messages are encrypted with, and are required to carry, key commitment.
+    /// <https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/migrate-commitment-policy.html>
+    /// Default is CommitmentPolicy::RequireEncryptRequireDecrypt.
+    Config& with_commitment_policy(CommitmentPolicy p) { commitment_policy_ = p; return *this; }
     /// Cap on the number of encrypted data keys per message, applied to every
     /// operation on this client. 0 means no limit.
-    EncryptionSDKConfig& with_max_encrypted_data_keys(std::uint32_t n) { max_encrypted_data_keys_ = n; return *this; }
+    /// <https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/configure.html#config-limit-keys>
+    Config& with_max_encrypted_data_keys(std::uint32_t n) { max_encrypted_data_keys_ = n; return *this; }
 };
 
 /// Result of finishing a stream
@@ -929,11 +915,11 @@ struct StreamResult {
 
 /// Streaming encrypt. Feed plaintext in chunks, receive ciphertext as it is produced.
 /// `finish()` flushes the final frame (and signature footer, for signing suites).
-/// Create via EncryptionSDK::create_encrypt_stream.
+/// Create via Client::create_encrypt_stream.
 /// One stream is single-threaded; different streams may run on different threads.
 class EncryptStream {
     std::shared_ptr<detail::EncryptStreamImpl> impl_;
-    friend class EncryptionSDK;
+    friend class Client;
     explicit EncryptStream(std::shared_ptr<detail::EncryptStreamImpl> impl) : impl_(std::move(impl)) {}
 
 public:
@@ -962,10 +948,10 @@ public:
 ///
 /// Streamed decrypt cannot be used to decrypt messages
 /// that were encrypted with signing suites and have multiple frames.
-/// Decrypt these messages with Aws::Esdk::decrypt instead.
+/// Decrypt these messages with Client::decrypt instead.
 class DecryptStream {
     std::shared_ptr<detail::DecryptStreamImpl> impl_;
-    friend class EncryptionSDK;
+    friend class Client;
     explicit DecryptStream(std::shared_ptr<detail::DecryptStreamImpl> impl) : impl_(std::move(impl)) {}
 
 public:
@@ -982,6 +968,10 @@ public:
     /// \copydoc write(const std::uint8_t*, std::size_t)
     Bytes write(const std::vector<std::uint8_t>& chunk) { return write(chunk.data(), chunk.size()); }
     /// \copydoc write(const std::uint8_t*, std::size_t)
+    Bytes write(std::string_view chunk) {
+        return write(reinterpret_cast<const std::uint8_t*>(chunk.data()), chunk.size());
+    }
+    /// \copydoc write(const std::uint8_t*, std::size_t)
     Bytes write(const Bytes& chunk) { return write(chunk.data(), chunk.size()); }
     /// Ends the ciphertext input and completes decryption, including signature
     /// verification for signing suites.
@@ -991,20 +981,20 @@ public:
 };
 
 /// ESDK client interface.
-class EncryptionSDK {
+class Client {
     std::optional<CommitmentPolicy> commitment_policy_;
     std::optional<std::uint32_t> max_encrypted_data_keys_;
 
 public:
-    EncryptionSDK() = default;
-    explicit EncryptionSDK(const EncryptionSDKConfig& options)
+    Client() = default;
+    explicit Client(const Config& options)
         : commitment_policy_(options.commitment_policy_),
           max_encrypted_data_keys_(options.max_encrypted_data_keys_) {}
 
     EncryptResult encrypt(
         const std::vector<std::uint8_t>& plaintext,
         const Keyring& keyring,
-        const EncryptOptions& options = {});
+        const EncryptOptions& options = {}) const;
 
     /// Encrypts a plaintext held in any contiguous buffer
     /// (e.g. an mmap'd file or another library's buffer)
@@ -1020,18 +1010,18 @@ public:
         const std::uint8_t* plaintext,
         std::size_t plaintext_len,
         const Keyring& keyring,
-        const EncryptOptions& options = {});
+        const EncryptOptions& options = {}) const;
 
     DecryptResult decrypt(
         const std::vector<std::uint8_t>& ciphertext,
         const Keyring& keyring,
-        const DecryptOptions& options = {});
+        const DecryptOptions& options = {}) const;
 
     /// Decrypts a ciphertext held in a Aws::Esdk::Bytes without copying it.
     DecryptResult decrypt(
         const Bytes& ciphertext,
         const Keyring& keyring,
-        const DecryptOptions& options = {});
+        const DecryptOptions& options = {}) const;
 
     /// Decrypts a ciphertext held in any contiguous buffer without copying it into a std::vector first.
     /// The buffer must stay valid for the duration of the call.
@@ -1040,28 +1030,38 @@ public:
         const std::uint8_t* ciphertext,
         std::size_t ciphertext_len,
         const Keyring& keyring,
-        const DecryptOptions& options = {});
+        const DecryptOptions& options = {}) const;
 
     /// Encrypts a text payload viewed through a std::string_view without copying it.
     /// The view must stay valid for the duration of the call.
     EncryptResult encrypt(
         std::string_view plaintext,
         const Keyring& keyring,
-        const EncryptOptions& options = {}) {
+        const EncryptOptions& options = {}) const {
         return encrypt(reinterpret_cast<const std::uint8_t*>(plaintext.data()),
                        plaintext.size(), keyring, options);
+    }
+
+    /// Decrypts a ciphertext viewed through a std::string_view without copying it.
+    /// The view must stay valid for the duration of the call.
+    DecryptResult decrypt(
+        std::string_view ciphertext,
+        const Keyring& keyring,
+        const DecryptOptions& options = {}) const {
+        return decrypt(reinterpret_cast<const std::uint8_t*>(ciphertext.data()),
+                       ciphertext.size(), keyring, options);
     }
 
     /// Creates a streaming encrypt operation.
     EncryptStream create_encrypt_stream(
         const Keyring& keyring,
-        const EncryptOptions& options = {});
+        const EncryptOptions& options = {}) const;
 
     /// Creates a streaming decrypt operation.
     /// See DecryptStream documentation for the verification semantics of streamed plaintext.
     DecryptStream create_decrypt_stream(
         const Keyring& keyring,
-        const DecryptOptions& options = {});
+        const DecryptOptions& options = {}) const;
 
     /// Encrypts a whole stream: reads plaintext from `source` in chunks, encrypts
     /// each, and writes the ciphertext to `sink` until `source` is exhausted,
@@ -1073,7 +1073,7 @@ public:
         std::istream& source,
         std::ostream& sink,
         const Keyring& keyring,
-        const EncryptOptions& options = {});
+        const EncryptOptions& options = {}) const;
 
     /// Decrypts a whole stream: reads ciphertext from `source`, writes plaintext
     /// to `sink`, and returns the message metadata.
@@ -1086,7 +1086,7 @@ public:
         std::istream& source,
         std::ostream& sink,
         const Keyring& keyring,
-        const DecryptOptions& options = {});
+        const DecryptOptions& options = {}) const;
 
 #if defined(__cpp_lib_span)
     /// Encrypts a plaintext viewed through a std::span without copying it.
@@ -1094,7 +1094,7 @@ public:
     EncryptResult encrypt(
         std::span<const std::uint8_t> plaintext,
         const Keyring& keyring,
-        const EncryptOptions& options = {}) {
+        const EncryptOptions& options = {}) const {
         return encrypt(plaintext.data(), plaintext.size(), keyring, options);
     }
 
@@ -1103,7 +1103,7 @@ public:
     DecryptResult decrypt(
         std::span<const std::uint8_t> ciphertext,
         const Keyring& keyring,
-        const DecryptOptions& options = {}) {
+        const DecryptOptions& options = {}) const {
         return decrypt(ciphertext.data(), ciphertext.size(), keyring, options);
     }
 #endif

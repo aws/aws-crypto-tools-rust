@@ -62,7 +62,7 @@ using TestConfig = esdk_test::TestConfig;
 
 void test_round_trip(const TestConfig& cfg) {
     auto keyring = make_hierarchical_keyring(cfg);
-    Aws::Esdk::EncryptionSDK esdk;
+    Aws::Esdk::Client esdk;
     auto plaintext = to_bytes("Hello World");
     auto ciphertext = esdk.encrypt(plaintext, keyring).ciphertext;
     ESDK_CHECK(ciphertext != plaintext);
@@ -92,13 +92,12 @@ void test_round_trip(const TestConfig& cfg) {
 
 void test_round_trip_with_encryption_context(const TestConfig& cfg) {
     auto keyring = make_hierarchical_keyring(cfg);
-    Aws::Esdk::EncryptionSDK sdk;
+    Aws::Esdk::Client sdk;
     auto plaintext = to_bytes("context matters");
     std::map<std::string, std::string> ec = {{"purpose", "test"}, {"origin", "cxx"}};
     auto encrypted = sdk.encrypt(plaintext, keyring,
                                  Aws::Esdk::EncryptOptions()
                                      .with_algorithm_suite(Aws::Esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
-                                     .with_commitment_policy(Aws::Esdk::CommitmentPolicy::RequireEncryptRequireDecrypt)
                                      .with_encryption_context(ec));
     ESDK_CHECK(encrypted.algorithm_suite_id ==
           Aws::Esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384);
@@ -129,7 +128,7 @@ void test_round_trip_with_encryption_context(const TestConfig& cfg) {
 
 void test_decrypt_garbage_throws(const TestConfig& cfg) {
     auto keyring = make_hierarchical_keyring(cfg);
-    Aws::Esdk::EncryptionSDK sdk;
+    Aws::Esdk::Client sdk;
     auto garbage = to_bytes("this is not a valid ESDK ciphertext");
     // Assert decrypting garbage raises SerializationException
     CHECK_THROWS_TYPE(Aws::Esdk::SerializationException, sdk.decrypt(garbage, keyring));
@@ -137,7 +136,7 @@ void test_decrypt_garbage_throws(const TestConfig& cfg) {
 
 void test_tampered_ciphertext_throws(const TestConfig& cfg) {
     auto keyring = make_hierarchical_keyring(cfg);
-    Aws::Esdk::EncryptionSDK sdk;
+    Aws::Esdk::Client sdk;
     auto ciphertext = sdk.encrypt(to_bytes("tamper me"), keyring).ciphertext.to_vector();
     ESDK_CHECK(!ciphertext.empty());
     ciphertext[ciphertext.size() / 2] ^= 0xFF;  // flip a byte mid-message
@@ -161,7 +160,7 @@ void test_raw_aes_round_trip() {
         //# - The shim MUST provide an operation that creates a raw AES keyring backed by
         //# the core ESDK.
         Aws::Esdk::RawAesKeyring keyring("test-ns", "test-key", key, c.alg);
-        Aws::Esdk::EncryptionSDK sdk;
+        Aws::Esdk::Client sdk;
         auto plaintext = to_bytes("raw aes through the facade");
         auto ciphertext = sdk.encrypt(plaintext, keyring).ciphertext;
         ESDK_CHECK(ciphertext != plaintext);
@@ -174,7 +173,7 @@ void test_raw_aes_non_ascii_encryption_context_round_trips() {
     std::vector<std::uint8_t> key(32, 0x2A);
     Aws::Esdk::RawAesKeyring keyring("test-ns", "test-key", key,
                                      Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16);
-    Aws::Esdk::EncryptionSDK sdk;
+    Aws::Esdk::Client sdk;
     const std::map<std::string, std::string> ec = {
         {"\xEF\xBD\x9E", "caf\xC3\xA9"},              // U+FF5E -> "cafe" with U+00E9
         {"\xF0\x9F\x98\x80", "\xF0\x9F\xA6\x80"},  // U+1F600 -> U+1F980
@@ -197,7 +196,7 @@ void test_non_utf8_encryption_context_throws_invalid_argument() {
     std::vector<std::uint8_t> key(32, 0x2A);
     Aws::Esdk::RawAesKeyring keyring("test-ns", "test-key", key,
                                      Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16);
-    Aws::Esdk::EncryptionSDK sdk;
+    Aws::Esdk::Client sdk;
     const std::map<std::string, std::string> bad_key = {{"\xFF", "value"}};
     const std::map<std::string, std::string> bad_value = {{"key", "\xC3"}};
     auto plaintext = to_bytes("non-utf-8 ec");
@@ -233,7 +232,7 @@ void test_raw_aes_wrong_keyring_fails() {
                                        Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16);
     Aws::Esdk::RawAesKeyring keyring_b("test-ns", "test-key", key_b,
                                        Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16);
-    Aws::Esdk::EncryptionSDK sdk;
+    Aws::Esdk::Client sdk;
     auto ciphertext = sdk.encrypt(to_bytes("keyed to A"), keyring_a).ciphertext;
     CHECK_THROWS_TYPE(Aws::Esdk::CryptographicException, sdk.decrypt(ciphertext, keyring_b));
     try {
@@ -250,7 +249,7 @@ void test_no_matching_data_key_names_the_keyring() {
                                         Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16);
     Aws::Esdk::RawAesKeyring decrypting("test-ns", "other-key", key,
                                         Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16);
-    Aws::Esdk::EncryptionSDK sdk;
+    Aws::Esdk::Client sdk;
     auto ciphertext = sdk.encrypt(to_bytes("keyed to test-key"), encrypting).ciphertext;
     CHECK_THROWS_TYPE(Aws::Esdk::NoMatchingDataKeyException, sdk.decrypt(ciphertext, decrypting));
     try {
@@ -351,7 +350,7 @@ void test_error_kinds() {
     std::vector<std::uint8_t> key(32, 0x2A);
     Aws::Esdk::RawAesKeyring keyring("test-ns", "test-key", key,
                                      Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16);
-    Aws::Esdk::EncryptionSDK sdk;
+    Aws::Esdk::Client sdk;
 
     //= spec/shim/shim.md#error-classification
     //= type=test
@@ -424,7 +423,7 @@ void test_client_configuration() {
                                      Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16);
 
     // ForbidEncryptAllowDecrypt must forward ESDK Rust's behavior of rejecting committing policy in config
-    Aws::Esdk::EncryptionSDK forbid_sdk(Aws::Esdk::EncryptionSDKConfig().with_commitment_policy(
+    Aws::Esdk::Client forbid_sdk(Aws::Esdk::Config().with_commitment_policy(
         Aws::Esdk::CommitmentPolicy::ForbidEncryptAllowDecrypt));
     CHECK_THROWS_ESDK(forbid_sdk.encrypt(
         to_bytes("client policy applies"), keyring,
@@ -433,19 +432,9 @@ void test_client_configuration() {
 
     //= spec/shim/esdk-shim.md#client-configuration
     //= type=test
-    //# - A configuration value the target supplies on both the client and a
-    //# per-operation input MUST be rejected as invalid input.
-    CHECK_THROWS_TYPE(
-        Aws::Esdk::ValidationException,
-        forbid_sdk.encrypt(to_bytes("set in two places"), keyring,
-                           Aws::Esdk::EncryptOptions().with_commitment_policy(
-                               Aws::Esdk::CommitmentPolicy::RequireEncryptRequireDecrypt)));
-
-    //= spec/shim/esdk-shim.md#client-configuration
-    //= type=test
     //# - A configuration value the target supplies on neither the client nor the
     //# operation MUST defer to the core ESDK's default.
-    Aws::Esdk::EncryptionSDK default_sdk;
+    Aws::Esdk::Client default_sdk;
     auto rt = default_sdk.encrypt(to_bytes("defaults"), keyring);
     auto pt = default_sdk.decrypt(rt.ciphertext, keyring);
     ESDK_CHECK(pt.plaintext == to_bytes("defaults"));
@@ -456,7 +445,7 @@ void test_bytes_and_string_ergonomics() {
     std::vector<std::uint8_t> key(32, 0x2A);
     Aws::Esdk::RawAesKeyring keyring("test-ns", "test-key", key,
                                      Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16);
-    Aws::Esdk::EncryptionSDK sdk;
+    Aws::Esdk::Client sdk;
 
     // Text payload in, text payload out.
     //= spec/shim/shim.md#bulk-data
@@ -499,12 +488,42 @@ void test_bytes_and_string_ergonomics() {
     ESDK_CHECK(plain.plaintext.as_string_view() == "outlives original");
 }
 
+void test_decrypt_string_view() {
+    Aws::Esdk::RawAesKeyring keyring("test-ns", "test-key", std::vector<std::uint8_t>(32, 0x2A),
+                                     Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16);
+    Aws::Esdk::Client esdk;
+    auto encrypted = esdk.encrypt(std::string_view("string_view decrypt"), keyring);
+    const std::string ciphertext(encrypted.ciphertext.as_string_view());
+    auto decrypted = esdk.decrypt(std::string_view(ciphertext), keyring);
+    ESDK_CHECK(decrypted.plaintext.as_string_view() == "string_view decrypt");
+}
+
+void test_decrypt_stream_write_string_view() {
+    Aws::Esdk::RawAesKeyring keyring("test-ns", "test-key", std::vector<std::uint8_t>(32, 0x2A),
+                                     Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16);
+    Aws::Esdk::Client esdk;
+    auto encrypted = esdk.encrypt(
+        std::string_view("string_view stream write"), keyring,
+        Aws::Esdk::EncryptOptions().with_algorithm_suite(
+            Aws::Esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey));
+    const std::string ciphertext(encrypted.ciphertext.as_string_view());
+    auto dec = esdk.create_decrypt_stream(keyring);
+    std::string recovered;
+    auto out = dec.write(std::string_view(ciphertext));
+    recovered.append(out.as_string_view());
+    auto fin = dec.finish();
+    recovered.append(fin.trailing_output.as_string_view());
+    ESDK_CHECK(recovered == "string_view stream write");
+}
+
 // Streaming RTT
 void test_streaming() {
     std::vector<std::uint8_t> key(32, 0x2A);
     Aws::Esdk::RawAesKeyring keyring("test-ns", "test-key", key,
                                      Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16);
-    Aws::Esdk::EncryptionSDK sdk;
+    Aws::Esdk::Client sdk(Aws::Esdk::Config()
+                                     .with_max_encrypted_data_keys(3)
+                                     .with_commitment_policy(Aws::Esdk::CommitmentPolicy::RequireEncryptRequireDecrypt));
     // MUST be a non-signing suite to test round-trip here.
     // Streamed decrypt of multi-frame signed messages is refused by any ESDK.
     //
@@ -516,9 +535,7 @@ void test_streaming() {
     //# target supplies incrementally.
     auto opts = Aws::Esdk::EncryptOptions()
                     .with_algorithm_suite(Aws::Esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
-                    .with_frame_length(4096)
-                    .with_max_encrypted_data_keys(3)
-                    .with_commitment_policy(Aws::Esdk::CommitmentPolicy::RequireEncryptRequireDecrypt);
+                    .with_frame_length(4096);
 
     std::vector<std::uint8_t> plaintext(20000);
     for (std::size_t i = 0; i < plaintext.size(); ++i) plaintext[i] = static_cast<std::uint8_t>(i % 251);
@@ -569,10 +586,7 @@ void test_streaming() {
     ESDK_CHECK(sdk.decrypt(ciphertext, keyring).plaintext == plaintext);
 
     // Streamed decrypt recovers the plaintext.
-    auto dec = sdk.create_decrypt_stream(
-        keyring, Aws::Esdk::DecryptOptions()
-                     .with_max_encrypted_data_keys(3)
-                     .with_commitment_policy(Aws::Esdk::CommitmentPolicy::RequireEncryptRequireDecrypt));
+    auto dec = sdk.create_decrypt_stream(keyring);
     std::vector<std::uint8_t> recovered;
     for (std::size_t off = 0; off < ciphertext.size(); off += 1517) {
         auto n = std::min<std::size_t>(1517, ciphertext.size() - off);
@@ -706,7 +720,7 @@ void test_full_resource_chain(const TestConfig& cfg) {
             //# the core ESDK when present; an unset value is omitted.
             .with_partition_id("shim-partition"));
 
-    Aws::Esdk::EncryptionSDK sdk;
+    Aws::Esdk::Client sdk;
     auto plaintext = to_bytes("Hello from the C++ integration test");
     std::map<std::string, std::string> ec = {{"purpose", "integration-test"}};
 
@@ -757,7 +771,7 @@ void test_streaming_signed_message_refused() {
     std::vector<std::uint8_t> key(32, 0x2A);
     Aws::Esdk::RawAesKeyring keyring("test-ns", "test-key", key,
                                      Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16);
-    Aws::Esdk::EncryptionSDK sdk;
+    Aws::Esdk::Client sdk;
 
     // Multi-frame message under the default (signing) suite.
     std::vector<std::uint8_t> plaintext(10000, 0x5A);
@@ -794,7 +808,7 @@ void test_streaming_pump() {
     std::vector<std::uint8_t> key(32, 0x2A);
     Aws::Esdk::RawAesKeyring keyring("test-ns", "test-key", key,
                                      Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16);
-    Aws::Esdk::EncryptionSDK sdk;
+    Aws::Esdk::Client sdk;
     const std::string message = "stream pump round trip";
 
     // Encrypt: stream the plaintext source into the ciphertext sink.
@@ -833,7 +847,7 @@ void test_streaming_pump_io_failure() {
     std::vector<std::uint8_t> key(32, 0x2A);
     Aws::Esdk::RawAesKeyring keyring("test-ns", "test-key", key,
                                      Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16);
-    Aws::Esdk::EncryptionSDK sdk;
+    Aws::Esdk::Client sdk;
 
     // Assert source fails to read
     FailingReadBuf buf("partial plaintext");
@@ -869,6 +883,8 @@ int main(int argc, char** argv) {
         test_values_this_library_does_not_know();
         test_client_configuration();
         test_bytes_and_string_ergonomics();
+        test_decrypt_string_view();
+        test_decrypt_stream_write_string_view();
         test_streaming();
         test_streaming_signed_message_refused();
         test_streaming_pump();

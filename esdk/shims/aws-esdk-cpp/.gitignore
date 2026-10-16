@@ -35,3 +35,4 @@ Cargo.lock
 /streaming_example
 /streaming_chunks_example
 /shared_cache_example
+/enum_parity_test
