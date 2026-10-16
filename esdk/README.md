@@ -131,6 +131,25 @@ Run one with `cargo run --example <name>`:
 
 The examples that need AWS also need credentials, a KMS key, and a key store table in DynamoDB.
 
+## Cargo features
+
+All of these are on by default.
+
+| Feature | What it adds | Without it |
+|---|---|---|
+| `kms`, `ddb` | the AWS KMS and DynamoDB SDKs, for the built-in key store | use your own key store, or a keyring that doesn't need one |
+| `default-config` | the key store builder creates its own KMS and DynamoDB clients from your AWS credentials and region (this pulls in `aws-config` and the AWS SDK's HTTPS and TLS client) | create the clients yourself and pass them with `kms_client` and `ddb_client` |
+| `rt-tokio` | the tokio-based caches, which the hierarchical keyring uses by default | pass the hierarchical keyring a `cache`, such as `LocalCmc` |
+| `fips` | the FIPS crypto backend instead of the default one | |
+
+To pick features, turn off the defaults and list the ones you want.
+Keep a crypto backend: `aws-lc-rs/aws-lc-sys`, or `fips`.
+
+```toml
+# Bring your own KMS and DynamoDB clients, without aws-config or the default HTTPS client
+aws-esdk = { version = "2", default-features = false, features = ["aws-lc-rs/aws-lc-sys", "kms", "ddb", "rt-tokio"] }
+```
+
 ## Development
 
 Run these in the `esdk/` directory:
