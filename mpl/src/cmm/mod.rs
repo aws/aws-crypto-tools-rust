@@ -11,7 +11,7 @@
 //! See [Errors for keyring and CMM authors](crate::keyring#errors-for-keyring-and-cmm-authors)
 //! for which error variant to return.
 
-pub mod default_cmm;
+mod default_cmm;
 mod fluent_builders;
 mod types;
 
@@ -62,7 +62,7 @@ pub trait Cmm: Send + Sync {
 crate::shared::shared_handle!(
     /// A CMM whose concrete type is chosen at runtime.
     ///
-    /// It implements [`Cmm`], so it can be passed anywhere a CMM is accepted.
+    /// Pass it anywhere a CMM is accepted.
     /// Callers that know their CMM's type pass it directly and never need this one.
     ///
     /// Each operation returns a fluent builder: set the input, then call `send`.
@@ -70,24 +70,11 @@ crate::shared::shared_handle!(
     Cmm
 );
 
-#[async_trait]
-impl Cmm for SharedCmm {
-    fn name(&self) -> Cow<'_, str> {
+impl SharedCmm {
+    /// The CMM's [`name`](Cmm::name).
+    #[must_use]
+    pub fn name(&self) -> Cow<'_, str> {
         self.0.name()
-    }
-
-    async fn get_encryption_materials(
-        &self,
-        input: GetEncryptionMaterialsInput,
-    ) -> Result<GetEncryptionMaterialsOutput, Error> {
-        Cmm::get_encryption_materials(&*self.0, input).await
-    }
-
-    async fn decrypt_materials(
-        &self,
-        input: DecryptMaterialsInput,
-    ) -> Result<DecryptMaterialsOutput, Error> {
-        Cmm::decrypt_materials(&*self.0, input).await
     }
 }
 

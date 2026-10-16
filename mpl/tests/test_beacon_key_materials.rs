@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 
-use aws_crypto_mpl::structures::{BeaconKeyMaterials, EncryptionContext};
+use aws_crypto_mpl::types::{BeaconKeyMaterials, EncryptionContext};
 
 #[test]
 fn test_construction_required_fields_only() {

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! The [`KeyStore`] implementation backed by AWS KMS and Amazon DynamoDB,
-//! built with [`KeyStoreClient::builder`].
+//! built with [`Client::builder`].
 
 use crate::Error;
 use crate::error::{BranchKey, ConflictReason, DynamoDbTable, Kind, Resource, RetryKind, Service};
@@ -10,6 +10,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
 use async_trait::async_trait;
+#[cfg(feature = "default-config")]
 use aws_config::{BehaviorVersion, Region};
 use aws_sdk_dynamodb::Client as DynamoDbClient;
 use aws_sdk_dynamodb::config::http::HttpResponse;
@@ -37,6 +38,7 @@ use crate::key_store::encryption_context::{
     EncryptionContextInput, active_encryption_context, beacon_key_encryption_context,
     decrypt_only_encryption_context,
 };
+#[cfg(feature = "default-config")]
 use crate::key_store::kms_config::parse_arn;
 use crate::key_store::kms_ops::{
     decrypt_branch_key, generate_wrapped_key, reencrypt_wrapped_key, resolve_key_store_arn,
@@ -46,10 +48,10 @@ use crate::key_store::record::{
     custom_encryption_context_from_authenticated_encryption_context,
 };
 use crate::key_store::{
-    CreateKeyInput, CreateKeyOutput, CreateKeyStoreInput, CreateKeyStoreOutput,
+    Client, CreateKeyInput, CreateKeyOutput, CreateKeyStoreInput, CreateKeyStoreOutput,
     GetActiveBranchKeyInput, GetActiveBranchKeyOutput, GetBeaconKeyInput, GetBeaconKeyOutput,
     GetBranchKeyVersionInput, GetBranchKeyVersionOutput, GetKeyStoreInfoInput,
-    GetKeyStoreInfoOutput, KeyStore, KeyStoreClient, VersionKeyInput, VersionKeyOutput,
+    GetKeyStoreInfoOutput, KeyStore, VersionKeyInput, VersionKeyOutput,
 };
 use crate::structures::BeaconKeyMaterials;
 
@@ -76,11 +78,11 @@ struct DynamoDbKeyStoreInner {
 const DDB_TABLE_NAME_MIN_LEN: usize = 3;
 const DDB_TABLE_NAME_MAX_LEN: usize = 255;
 
-impl KeyStoreClient {
+impl Client {
     /// Start a builder for a key store backed by AWS KMS and Amazon DynamoDB.
     #[must_use]
-    pub fn builder() -> KeyStoreClientBuilder {
-        KeyStoreClientBuilder::default()
+    pub fn builder() -> Builder {
+        Builder::default()
     }
 }
 
@@ -173,12 +175,12 @@ impl DynamoDbKeyStore {
     }
 }
 
-/// Builder for a [`KeyStoreClient`] backed by AWS KMS and Amazon DynamoDB.
+/// Builder for a [`Client`] backed by AWS KMS and Amazon DynamoDB.
 ///
 /// `ddb_table_name`, `logical_key_store_name`, and `kms_configuration` are required.
 /// Everything else is optional.
 #[derive(Debug, Clone, Default)]
-pub struct KeyStoreClientBuilder {
+pub struct Builder {
     ddb_table_name: Option<String>,
     logical_key_store_name: Option<String>,
     kms_configuration: Option<KmsConfiguration>,
@@ -188,7 +190,7 @@ pub struct KeyStoreClientBuilder {
     ddb_client: Option<DynamoDbClient>,
 }
 
-impl KeyStoreClientBuilder {
+impl Builder {
     /// Set the DynamoDB table name that backs this key store.
     /// Required.
     #[must_use]
@@ -304,7 +306,7 @@ impl KeyStoreClientBuilder {
 
     /// Set the AWS KMS client. Defaults to a client for the Region parsed
     /// from the KMS configuration (the SDK's default region provider chain
-    /// for `Discovery`).
+    /// for `Discovery`). Without the `default-config` feature, it is required.
     #[must_use]
     pub fn kms_client(mut self, client: impl Into<KmsClient>) -> Self {
         self.kms_client = Some(client.into());
@@ -327,7 +329,7 @@ impl KeyStoreClientBuilder {
 
     /// Set the Amazon DynamoDB client. Defaults to a client for the Region
     /// parsed from the KMS configuration (the SDK's default region provider
-    /// chain for `Discovery`).
+    /// chain for `Discovery`). Without the `default-config` feature, it is required.
     #[must_use]
     pub fn ddb_client(mut self, client: impl Into<DynamoDbClient>) -> Self {
         self.ddb_client = Some(client.into());
@@ -352,12 +354,13 @@ impl KeyStoreClientBuilder {
     ///
     /// Building a default client is the only reason this is `async`.
     /// With both clients supplied it does no IO and completes on the first poll.
+    /// Default clients need the `default-config` feature, which is on by default.
     ///
     /// # Errors
     ///
-    /// - [`Validation`](crate::Error::Validation): a required field is unset, the table name is not 3 to 255 characters long, or the KMS configuration is invalid (malformed ARN, alias, or non-`kms` service).
-    pub async fn build(self) -> Result<KeyStoreClient, Error> {
-        self.build_store().await.map(KeyStoreClient::new)
+    /// - [`Validation`](crate::Error::Validation): a required field is unset, a client is unset without the `default-config` feature, the table name is not 3 to 255 characters long, or the KMS configuration is invalid (malformed ARN, alias, or non-`kms` service).
+    pub async fn build(self) -> Result<Client, Error> {
+        self.build_store().await.map(Client::new)
     }
 
     async fn build_store(self) -> Result<DynamoDbKeyStore, Error> {
@@ -385,12 +388,20 @@ impl KeyStoreClientBuilder {
 
         let (kms_client, ddb_client) = match (self.kms_client, self.ddb_client) {
             (Some(kms), Some(ddb)) => (kms, ddb),
+            #[cfg(feature = "default-config")]
             (kms, ddb) => {
                 let sdk_config = default_sdk_config(&kms_configuration).await;
                 (
                     kms.unwrap_or_else(|| KmsClient::new(&sdk_config)),
                     ddb.unwrap_or_else(|| DynamoDbClient::new(&sdk_config)),
                 )
+            }
+            #[cfg(not(feature = "default-config"))]
+            _ => {
+                return Err(Error::new(
+                    Kind::Validation,
+                    "kms_client and ddb_client are required without the `default-config` feature",
+                ));
             }
         };
 
@@ -1098,6 +1109,7 @@ fn item_from_ec_and_enc(
 /// the Region in the KMS ARN for the ARN-based variants, the explicit
 /// region for `MrDiscovery`, and `None` for `Discovery` (in which case the
 /// SDK's default region provider chain is used).
+#[cfg(feature = "default-config")]
 fn region_from_kms_config(config: &KmsConfiguration) -> Option<String> {
     match config {
         KmsConfiguration::KmsKeyArn(arn) => parse_arn(arn.as_str()).ok().map(|parts| parts.region),
@@ -1112,6 +1124,7 @@ fn region_from_kms_config(config: &KmsConfiguration) -> Option<String> {
 /// Build a default [`aws_config::SdkConfig`] for constructing KMS / DynamoDB
 /// clients, pinning the Region parsed from the KMS configuration when
 /// available.
+#[cfg(feature = "default-config")]
 async fn default_sdk_config(config: &KmsConfiguration) -> aws_config::SdkConfig {
     let loader = aws_config::defaults(BehaviorVersion::latest());
     match region_from_kms_config(config) {
@@ -1189,12 +1202,12 @@ fn record_from_ddb_item(
 /// Not part of the public API and may change in any release.
 #[cfg(feature = "test-utils")]
 pub mod __test_internals {
-    use super::KeyStoreClientBuilder;
+    use super::Builder;
     use crate::Error;
 
     /// Build the key store and return its KMS and DynamoDB clients.
     pub async fn build_clients(
-        builder: KeyStoreClientBuilder,
+        builder: Builder,
     ) -> Result<(aws_sdk_kms::Client, aws_sdk_dynamodb::Client), Error> {
         let store = builder.build_store().await?;
         Ok((store.kms_client().clone(), store.ddb_client().clone()))

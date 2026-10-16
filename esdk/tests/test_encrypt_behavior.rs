@@ -15,6 +15,7 @@ use aws_crypto_mpl::cmm::{
     DecryptMaterialsInput, DecryptMaterialsOutput, GetEncryptionMaterialsInput,
     GetEncryptionMaterialsOutput,
 };
+use aws_esdk::types::*;
 use aws_esdk::*;
 use std::num::NonZeroU32;
 use std::sync::Arc;
@@ -668,7 +669,7 @@ async fn test_algorithm_suite_used_for_encryption() {
 struct SpyCmm {
     inner: DefaultCmm,
     observed_algorithm_suite_id:
-        Arc<std::sync::Mutex<Option<Option<aws_crypto_mpl::structures::AlgorithmSuiteId>>>>,
+        Arc<std::sync::Mutex<Option<Option<aws_crypto_mpl::types::AlgorithmSuiteId>>>>,
     observed_max_plaintext_length: Arc<std::sync::Mutex<Option<Option<i64>>>>,
 }
 

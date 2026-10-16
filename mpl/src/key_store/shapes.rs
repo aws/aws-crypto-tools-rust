@@ -5,7 +5,7 @@
 
 use crate::Error;
 use crate::builder::required;
-use crate::key_store::KmsConfiguration;
+use crate::key_store::config::KmsConfiguration;
 use crate::structures::{BeaconKeyMaterials, BranchKeyMaterials, EncryptionContext};
 
 /// Input for [`KeyStore::get_key_store_info`](super::KeyStore::get_key_store_info).

@@ -12,7 +12,7 @@ pub(crate) use body_encrypt::*;
 
 use crate::error::Error;
 use crate::error::{Kind, err};
-use aws_crypto_mpl::structures::AlgorithmSuite;
+use aws_crypto_mpl::types::AlgorithmSuite;
 use aws_mpl_primitives::AesGcm;
 
 pub(crate) fn get_alg_suite(info: &AlgorithmSuite) -> Result<AesGcm, Error> {

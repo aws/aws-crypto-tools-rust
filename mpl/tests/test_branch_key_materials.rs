@@ -1,7 +1,7 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-use aws_crypto_mpl::structures::{BranchKeyMaterials, EncryptionContext};
+use aws_crypto_mpl::types::{BranchKeyMaterials, EncryptionContext};
 
 #[test]
 fn test_valid_construction() {

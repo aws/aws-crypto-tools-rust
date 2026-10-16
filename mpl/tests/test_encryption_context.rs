@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use aws_crypto_mpl::structures::EncryptionContext;
+use aws_crypto_mpl::types::EncryptionContext;
 
 #[test]
 fn test_empty_serializes_to_empty_bytes() {

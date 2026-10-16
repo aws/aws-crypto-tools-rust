@@ -21,9 +21,9 @@ use std::sync::Arc;
 use aws_mpl_primitives::error::{
     Collection, ConflictReason, DataKeyInfo, Resource, RetryKind, Service,
 };
-use aws_sdk_kms::operation::RequestId;
 use aws_smithy_types::error::metadata::{ErrorMetadata, ProvideErrorMetadata};
 use aws_smithy_types::retry::{ErrorKind, ProvideErrorKind};
+use aws_types::request_id::RequestId;
 
 type ArcError = Arc<dyn std::error::Error + Send + Sync + 'static>;
 
@@ -396,7 +396,7 @@ fn level_of<'a>(e: &'a (dyn std::error::Error + 'static)) -> Option<Level<'a>> {
         }
         return Some(level);
     }
-    if let Some(e) = e.downcast_ref::<aws_mpl_primitives::error::Error>() {
+    if let Some(e) = e.downcast_ref::<aws_mpl_primitives::Error>() {
         return Some(level!(e));
     }
     None
@@ -848,7 +848,7 @@ impl Error {
             {
                 return e.failures();
             }
-            if let Some(e) = e.downcast_ref::<aws_mpl_primitives::error::Error>()
+            if let Some(e) = e.downcast_ref::<aws_mpl_primitives::Error>()
                 && !e.collected().is_empty()
             {
                 return e
@@ -896,7 +896,7 @@ impl Error {
     /// The first error of type `T` in the source chain, starting with `self`.
     ///
     /// ```
-    /// use aws_crypto_mpl::error::Error;
+    /// use aws_crypto_mpl::Error;
     ///
     /// fn handle(err: &Error) {
     ///     if let Some(io) = err.find_source::<std::io::Error>() {
@@ -1073,13 +1073,10 @@ impl Error {
     /// The variant is the one with the same name, or the fallback in `errors.toml`.
     /// Keeps the retry kind and details, and keeps `inner` as the source.
     #[track_caller]
-    pub(crate) fn from_prim(
-        message: impl Into<String>,
-        inner: aws_mpl_primitives::error::Error,
-    ) -> Self {
+    pub(crate) fn from_prim(message: impl Into<String>, inner: aws_mpl_primitives::Error) -> Self {
         let kind = match &inner {
-            aws_mpl_primitives::error::Error::Cryptographic(_) => Kind::Cryptographic,
-            aws_mpl_primitives::error::Error::Internal(_) => Kind::Internal,
+            aws_mpl_primitives::Error::Cryptographic(_) => Kind::Cryptographic,
+            aws_mpl_primitives::Error::Internal(_) => Kind::Internal,
             // Unreachable: gen-errors checks that every `prim` variant maps to a variant here.
             _ => Kind::Internal,
         };
@@ -1099,7 +1096,7 @@ impl Error {
     ///
     /// Keeps every field: the variant by name (or the fallback in `errors.toml`),
     /// the message, retry kind, details, collected errors, source, and backtrace.
-    pub(crate) fn from_prim_parts(inner: &aws_mpl_primitives::error::Error) -> Self {
+    pub(crate) fn from_prim_parts(inner: &aws_mpl_primitives::Error) -> Self {
         let parts = inner.__parts();
         let kind = match parts.name {
             "Cryptographic" => Kind::Cryptographic,
@@ -1162,7 +1159,7 @@ impl RequestId for Error {
 /// # Example
 ///
 /// ```
-/// use aws_crypto_mpl::error::Error;
+/// use aws_crypto_mpl::Error;
 ///
 /// fn handle(err: &Error) {
 ///     match err {
@@ -1258,7 +1255,8 @@ impl From<ValidationError> for Error {
 /// # Example
 ///
 /// ```
-/// use aws_crypto_mpl::error::{Error, Resource};
+/// use aws_crypto_mpl::Error;
+/// use aws_crypto_mpl::error::Resource;
 ///
 /// fn handle(err: &Error) {
 ///     match err {
@@ -1385,7 +1383,7 @@ impl From<InvalidMaterialsError> for Error {
 /// # Example
 ///
 /// ```
-/// use aws_crypto_mpl::error::Error;
+/// use aws_crypto_mpl::Error;
 ///
 /// fn handle(err: &Error) {
 ///     match err {
@@ -1480,7 +1478,7 @@ impl From<EncryptionContextMismatchError> for Error {
 /// # Example
 ///
 /// ```
-/// use aws_crypto_mpl::error::Error;
+/// use aws_crypto_mpl::Error;
 ///
 /// fn handle(err: &Error) {
 ///     match err {
@@ -1615,7 +1613,7 @@ impl From<NoMatchingDataKeyError> for Error {
 /// # Example
 ///
 /// ```
-/// use aws_crypto_mpl::error::Error;
+/// use aws_crypto_mpl::Error;
 ///
 /// fn handle(err: &Error) {
 ///     match err {
@@ -1708,7 +1706,8 @@ impl From<CryptographicError> for Error {
 /// # Example
 ///
 /// ```
-/// use aws_crypto_mpl::error::{Error, Resource, Service};
+/// use aws_crypto_mpl::Error;
+/// use aws_crypto_mpl::error::{Resource, Service};
 ///
 /// fn handle(err: &Error) {
 ///     match err {
@@ -1859,7 +1858,8 @@ impl From<AccessDeniedError> for Error {
 /// # Example
 ///
 /// ```
-/// use aws_crypto_mpl::error::{Error, Resource, Service};
+/// use aws_crypto_mpl::Error;
+/// use aws_crypto_mpl::error::{Resource, Service};
 ///
 /// fn handle(err: &Error) {
 ///     match err {
@@ -1993,7 +1993,8 @@ impl From<ResourceNotFoundError> for Error {
 /// # Example
 ///
 /// ```
-/// use aws_crypto_mpl::error::{Error, Resource, Service};
+/// use aws_crypto_mpl::Error;
+/// use aws_crypto_mpl::error::{Resource, Service};
 ///
 /// fn handle(err: &Error) {
 ///     if err.is_retryable() {
@@ -2127,7 +2128,8 @@ impl From<ThrottlingError> for Error {
 /// # Example
 ///
 /// ```
-/// use aws_crypto_mpl::error::{ConflictReason, Error};
+/// use aws_crypto_mpl::Error;
+/// use aws_crypto_mpl::error::ConflictReason;
 ///
 /// fn handle(err: &Error) {
 ///     match err {
@@ -2261,7 +2263,7 @@ impl From<ConflictError> for Error {
 /// # Example
 ///
 /// ```
-/// use aws_crypto_mpl::error::Error;
+/// use aws_crypto_mpl::Error;
 ///
 /// fn handle(err: &Error) {
 ///     match err {
@@ -2385,7 +2387,7 @@ impl From<ServiceError> for Error {
 /// # Example
 ///
 /// ```
-/// use aws_crypto_mpl::error::Error;
+/// use aws_crypto_mpl::Error;
 ///
 /// fn handle(err: &Error) {
 ///     match err {
@@ -2509,7 +2511,7 @@ impl From<DispatchError> for Error {
 /// # Example
 ///
 /// ```
-/// use aws_crypto_mpl::error::Error;
+/// use aws_crypto_mpl::Error;
 ///
 /// fn handle(err: &Error) {
 ///     match err {

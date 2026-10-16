@@ -4,6 +4,9 @@
 
 mod fixtures;
 
+use aws_esdk::operation::decrypt::DecryptOutput;
+use aws_esdk::operation::encrypt::EncryptOutput;
+use aws_esdk::types::*;
 use aws_esdk::*;
 use fixtures::*;
 use std::num::NonZeroU32;
@@ -21,9 +24,9 @@ pub enum Version {
 pub const VERSIONS: [Version; 2] = [Version::V1, Version::V2];
 
 use aws_crypto_mpl::keyring::RawAesKeyring;
-use aws_esdk::AlgorithmSuiteId;
-use aws_esdk::CommitmentPolicy;
-use aws_mpl_primitives::AesGcm;
+use aws_crypto_mpl::types::AesWrappingAlg;
+use aws_esdk::types::AlgorithmSuiteId;
+use aws_esdk::types::CommitmentPolicy;
 
 /// Build a native raw-AES keyring.
 fn raw_aes(ns: String, name: String, key: [u8; 32]) -> RawAesKeyring {
@@ -31,7 +34,7 @@ fn raw_aes(ns: String, name: String, key: [u8; 32]) -> RawAesKeyring {
         .key_namespace(ns)
         .key_name(name)
         .wrapping_key(key.to_vec())
-        .wrapping_alg(AesGcm::Aes256Gcm)
+        .wrapping_alg(AesWrappingAlg::AlgAes256GcmIv12Tag16)
         .build()
         .expect("raw AES keyring construction must succeed for test key material")
 }

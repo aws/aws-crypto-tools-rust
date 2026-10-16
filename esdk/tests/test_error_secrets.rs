@@ -10,9 +10,10 @@ use aws_crypto_mpl::async_trait;
 use aws_crypto_mpl::keyring::{Keyring, RawAesKeyring, SharedKeyring};
 use aws_crypto_mpl::keyring::{OnDecryptInput, OnEncryptInput};
 use aws_crypto_mpl::keyring::{OnDecryptOutput, OnEncryptOutput};
-use aws_crypto_mpl::structures::{EncryptionContext, EncryptionMaterials, PlaintextDataKey};
-use aws_esdk::{AlgorithmSuiteId, Client, Error};
-use aws_mpl_primitives::AesGcm;
+use aws_crypto_mpl::types::AesWrappingAlg;
+use aws_crypto_mpl::types::{EncryptionContext, EncryptionMaterials, PlaintextDataKey};
+use aws_esdk::types::AlgorithmSuiteId;
+use aws_esdk::{Client, Error};
 use fake_aws::{BRANCH_KEY_ID, FakeAws, KEY_ARN, Reply};
 
 const PLAINTEXT: &str = "SECRET-PLAINTEXT-7f3a";
@@ -55,7 +56,7 @@ fn raw(name: &str) -> RawAesKeyring {
         .key_namespace("ns")
         .key_name(name)
         .wrapping_key(vec![KEY_BYTE; 32])
-        .wrapping_alg(AesGcm::Aes256Gcm)
+        .wrapping_alg(AesWrappingAlg::AlgAes256GcmIv12Tag16)
         .build()
         .unwrap()
 }
@@ -88,7 +89,13 @@ impl Keyring for KnownDataKey {
         &self,
         input: OnDecryptInput,
     ) -> Result<OnDecryptOutput, aws_crypto_mpl::Error> {
-        Keyring::on_decrypt(&self.0, input).await
+        let (materials, encrypted_data_keys) = input.into_parts();
+        self.0
+            .on_decrypt()
+            .materials(materials)
+            .set_encrypted_data_keys(Some(encrypted_data_keys))
+            .send()
+            .await
     }
 }
 

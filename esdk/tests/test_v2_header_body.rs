@@ -5,7 +5,7 @@
 
 mod test_helpers;
 
-use aws_esdk::*;
+use aws_esdk::types::*;
 use test_helpers::*;
 
 /// V2 header fixed-offset fields.

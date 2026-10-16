@@ -20,11 +20,12 @@
 use std::time::Duration;
 
 use aws_crypto_mpl::error::ConflictReason;
-use aws_crypto_mpl::key_store::{KeyStoreClient, KmsConfiguration};
-use aws_crypto_mpl::{HierarchicalKeyring, aws_config, aws_sdk_dynamodb, aws_sdk_kms};
-use aws_esdk::EncryptionContext;
+use aws_crypto_mpl::key_store::types::KmsConfiguration;
+use aws_crypto_mpl::keyring::HierarchicalKeyring;
+use aws_crypto_mpl::{aws_config, aws_sdk_dynamodb, aws_sdk_kms, key_store};
 use aws_esdk::Error;
 use aws_esdk::error::{Resource, Service};
+use aws_esdk::types::EncryptionContext;
 
 // The AWS Crypto Tools CI test key store.
 // Replace these with your own key store's table, name, KMS key ARN, and branch key ID.
@@ -39,7 +40,7 @@ const PLAINTEXT: &[u8] = b"Hello World";
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let sdk_config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
-    let key_store = KeyStoreClient::builder()
+    let key_store = key_store::Client::builder()
         .ddb_table_name(TABLE_NAME)
         .logical_key_store_name(LOGICAL_KEY_STORE_NAME)
         .kms_configuration(KmsConfiguration::KmsKeyArn(KMS_KEY_ARN.into()))

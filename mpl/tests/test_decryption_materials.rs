@@ -3,7 +3,7 @@
 
 use std::collections::BTreeSet;
 
-use aws_crypto_mpl::structures::{
+use aws_crypto_mpl::types::{
     AlgorithmSuiteId, DecryptionMaterials, EncryptionContext, EsdkAlgorithmSuiteId,
     PlaintextDataKey, SymmetricSigningKey, VerificationKey,
 };
@@ -433,7 +433,7 @@ fn test_materials_builder_getters_report_unset_and_set() {
         &Some(BTreeSet::from(["k1".to_string()]))
     );
 
-    let builder = aws_crypto_mpl::structures::EncryptionMaterials::builder();
+    let builder = aws_crypto_mpl::types::EncryptionMaterials::builder();
     assert!(builder.get_encryption_context().is_none());
     assert!(builder.get_required_encryption_context_keys().is_none());
 }

@@ -8,7 +8,7 @@
 
 use super::{Error, ser_err};
 use crate::error::{Kind, err_with_cause};
-use crate::types::{Sink, Source, Tee};
+use crate::shapes::{Sink, Source, Tee};
 use std::io::Write;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 

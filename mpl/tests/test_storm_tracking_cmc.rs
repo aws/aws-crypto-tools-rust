@@ -16,14 +16,14 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use aws_crypto_mpl::cmc::{
-    BytesUsage, CacheEntry, CachedMaterials, Cmc, DeleteCacheEntryInput, GetCacheEntryInput,
-    LocalCmc, MessageUsage, PutCacheEntryInput, StormTrackingCmc, StormTrackingCmcBuilder,
-    UsageMetadata,
+    Cmc, DeleteCacheEntryInput, GetCacheEntryInput, LocalCmc, PutCacheEntryInput, StormTrackingCmc,
+    StormTrackingCmcBuilder,
 };
-use aws_crypto_mpl::structures::{
+use aws_crypto_mpl::types::{
     AlgorithmSuiteId, BeaconKeyMaterials, BranchKeyMaterials, DecryptionMaterials,
     EncryptionContext, EncryptionMaterials, EsdkAlgorithmSuiteId,
 };
+use aws_crypto_mpl::types::{BytesUsage, CacheEntry, CachedMaterials, MessageUsage, UsageMetadata};
 
 /// Positional shorthand for the `Cmc` operations.
 #[async_trait]
@@ -509,7 +509,7 @@ async fn test_put_clears_inflight_bit() {
 
 #[tokio::test]
 async fn test_within_grace_period_matches_spec_formula() {
-    use aws_crypto_mpl::cmc::storm_tracking::__test_internals::within_grace_period;
+    use aws_crypto_mpl::cmc::__test_internals::within_grace_period;
 
     let anchor = anchor_now();
     let gp = Duration::from_secs(10);
@@ -542,7 +542,7 @@ async fn test_within_grace_period_matches_spec_formula() {
 
 #[tokio::test]
 async fn test_within_grace_interval_matches_spec_formula() {
-    use aws_crypto_mpl::cmc::storm_tracking::__test_internals::within_grace_interval;
+    use aws_crypto_mpl::cmc::__test_internals::within_grace_interval;
 
     let inflight = anchor_now();
     let gi = Duration::from_secs(5);

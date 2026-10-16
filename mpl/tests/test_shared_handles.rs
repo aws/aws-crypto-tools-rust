@@ -1,20 +1,23 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Converting an existing `Shared*` handle reuses it instead of nesting it,
+//! Converting an existing `Shared*` handle with `into_shared` reuses it instead of nesting it,
 //! and a handle's fluent builders reach the component it wraps.
 
 use aws_crypto_mpl::Error;
 use aws_crypto_mpl::async_trait;
-use aws_crypto_mpl::aws_kms::hierarchical_keyring::{GetBranchKeyIdInput, GetBranchKeyIdOutput};
-use aws_crypto_mpl::cmc::{CacheEntry, CachedMaterials};
-use aws_crypto_mpl::structures::{
+use aws_crypto_mpl::cmc::{LocalCmc, SharedCmc};
+use aws_crypto_mpl::cmm::{Cmm, DefaultCmm, SharedCmm};
+use aws_crypto_mpl::keyring::{
+    BranchKeySupplier, Keyring, RawAesKeyring, SharedBranchKeySupplier, SharedKeyring,
+};
+use aws_crypto_mpl::keyring::{GetBranchKeyIdInput, GetBranchKeyIdOutput};
+use aws_crypto_mpl::shared::IntoShared;
+use aws_crypto_mpl::types::AesWrappingAlg;
+use aws_crypto_mpl::types::{
     AlgorithmSuiteId, EncryptionContext, EncryptionMaterials, EsdkAlgorithmSuiteId,
 };
-use aws_crypto_mpl::{
-    AesGcm, BranchKeySupplier, Cmc, Cmm, DefaultCmm, IntoShared, Keyring, LocalCmc, RawAesKeyring,
-    SharedBranchKeySupplier, SharedCmc, SharedCmm, SharedKeyring,
-};
+use aws_crypto_mpl::types::{CacheEntry, CachedMaterials};
 use std::time::{Duration, SystemTime};
 
 fn keyring() -> RawAesKeyring {
@@ -22,7 +25,7 @@ fn keyring() -> RawAesKeyring {
         .key_namespace("namespace")
         .key_name("name")
         .wrapping_key(vec![0; 32])
-        .wrapping_alg(AesGcm::Aes256Gcm)
+        .wrapping_alg(AesWrappingAlg::AlgAes256GcmIv12Tag16)
         .build()
         .unwrap()
 }
@@ -51,27 +54,21 @@ impl BranchKeySupplier for Supplier {
     }
 }
 
-/// Asserts that `new` and `into_shared` reuse an existing handle instead of nesting it.
+/// Asserts that `into_shared` reuses an existing handle instead of nesting it.
 macro_rules! assert_reuses_handle {
-    ($handle:ident, $trait:ident, $make:expr) => {{
-        fn into_handle(component: impl $trait + 'static) -> $handle {
+    ($handle:ident, $make:expr) => {{
+        fn into_handle(component: impl IntoShared<$handle>) -> $handle {
             component.into_shared()
         }
 
-        let original = $handle::new($make);
+        let original = into_handle($make);
         assert!(
             $handle::ptr_eq(&original, &into_handle(original.clone())),
             "into_shared on a {} must reuse it",
             stringify!($handle),
         );
         assert!(
-            $handle::ptr_eq(&original, &$handle::new(original.clone())),
-            "{}::new on a {} must reuse it",
-            stringify!($handle),
-            stringify!($handle),
-        );
-        assert!(
-            !$handle::ptr_eq(&original, &$handle::new($make)),
+            !$handle::ptr_eq(&original, &into_handle($make)),
             "separately built components must not compare equal",
         );
     }};
@@ -79,22 +76,22 @@ macro_rules! assert_reuses_handle {
 
 #[test]
 fn shared_keyring_reuses_handle() {
-    assert_reuses_handle!(SharedKeyring, Keyring, keyring());
+    assert_reuses_handle!(SharedKeyring, keyring());
 }
 
 #[test]
 fn shared_cmm_reuses_handle() {
-    assert_reuses_handle!(SharedCmm, Cmm, DefaultCmm::new(keyring()));
+    assert_reuses_handle!(SharedCmm, DefaultCmm::new(keyring()));
 }
 
 #[test]
 fn shared_cmc_reuses_handle() {
-    assert_reuses_handle!(SharedCmc, Cmc, cache());
+    assert_reuses_handle!(SharedCmc, cache());
 }
 
 #[test]
 fn shared_branch_key_supplier_reuses_handle() {
-    assert_reuses_handle!(SharedBranchKeySupplier, BranchKeySupplier, Supplier);
+    assert_reuses_handle!(SharedBranchKeySupplier, Supplier);
 }
 
 #[test]

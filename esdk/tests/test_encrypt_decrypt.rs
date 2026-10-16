@@ -5,7 +5,7 @@
 mod fixtures;
 mod test_helpers;
 
-use aws_esdk::{Client, EncryptionContext};
+use aws_esdk::{Client, types::EncryptionContext};
 use std::num::NonZeroU32;
 use test_helpers::test_keyring;
 

@@ -126,13 +126,14 @@
 //# the shim library SHOULD support it as well.
 use aws_config::{AppName, BehaviorVersion, Region, SdkConfig};
 use aws_crypto_mpl::aws_config;
-use aws_crypto_mpl::aws_kms::hierarchical_keyring::HierarchicalKeyring;
 use aws_crypto_mpl::cmc::{
     DefaultCmc, LocalCmc, SharedCmc, StormTrackingCmc, StormTrackingCmcBuilder,
 };
-use aws_crypto_mpl::key_store::{Discovery, KeyStoreClient, KmsConfiguration, MrDiscovery};
+use aws_crypto_mpl::key_store::Client as KeyStoreClient;
+use aws_crypto_mpl::key_store::types::{Discovery, KmsConfiguration, MrDiscovery};
+use aws_crypto_mpl::keyring::HierarchicalKeyring;
 use aws_crypto_mpl::keyring::{RawAesKeyring, SharedKeyring};
-use aws_crypto_mpl::structures::{EsdkAlgorithmSuiteId, EsdkCommitmentPolicy};
+use aws_crypto_mpl::types::{EsdkAlgorithmSuiteId, EsdkCommitmentPolicy};
 use aws_crypto_mpl::{aws_sdk_dynamodb, aws_sdk_kms};
 use aws_esdk::Client;
 use aws_esdk::error::{Resource, RetryKind, Service};
@@ -804,7 +805,7 @@ fn commitment_policy_target_to_core(
 //# the exact key and value of each.
 fn encryption_context_target_to_core(
     x: &[ffi::EncryptionContextItem],
-) -> aws_esdk::EncryptionContext {
+) -> aws_esdk::types::EncryptionContext {
     x.iter().map(|i| (i.key.clone(), i.value.clone())).collect()
 }
 
@@ -814,7 +815,7 @@ fn encryption_context_target_to_core(
 //# key-value map, to the target's list of key-value pairs, preserving every pair
 //# and the exact key and value of each.
 fn encryption_context_core_to_target(
-    x: &aws_esdk::EncryptionContext,
+    x: &aws_esdk::types::EncryptionContext,
 ) -> Vec<ffi::EncryptionContextItem> {
     x.iter()
         .map(|(key, value)| ffi::EncryptionContextItem {
@@ -1540,16 +1541,22 @@ fn non_empty(tokens: &[String]) -> Option<Vec<String>> {
 //# wrapping algorithm of the same meaning.
 fn wrapping_alg_target_to_core(
     alg: ffi::AesWrappingAlg,
-) -> Result<aws_mpl_primitives::AesGcm, String> {
+) -> Result<aws_crypto_mpl::types::AesWrappingAlg, String> {
     match alg {
         ffi::AesWrappingAlg::Unset => Err(shim_err(
             ffi::ShimErrorKind::Validation,
             "create_raw_aes_keyring",
             "wrapping_alg is unset",
         )),
-        ffi::AesWrappingAlg::AlgAes128GcmIv12Tag16 => Ok(aws_mpl_primitives::AesGcm::Aes128Gcm),
-        ffi::AesWrappingAlg::AlgAes192GcmIv12Tag16 => Ok(aws_mpl_primitives::AesGcm::Aes192Gcm),
-        ffi::AesWrappingAlg::AlgAes256GcmIv12Tag16 => Ok(aws_mpl_primitives::AesGcm::Aes256Gcm),
+        ffi::AesWrappingAlg::AlgAes128GcmIv12Tag16 => {
+            Ok(aws_crypto_mpl::types::AesWrappingAlg::AlgAes128GcmIv12Tag16)
+        }
+        ffi::AesWrappingAlg::AlgAes192GcmIv12Tag16 => {
+            Ok(aws_crypto_mpl::types::AesWrappingAlg::AlgAes192GcmIv12Tag16)
+        }
+        ffi::AesWrappingAlg::AlgAes256GcmIv12Tag16 => {
+            Ok(aws_crypto_mpl::types::AesWrappingAlg::AlgAes256GcmIv12Tag16)
+        }
         //= spec/shim/esdk-shim.md#aes-wrapping-algorithm
         //# - The shim MUST return an error when the target wrapping algorithm is not a
         //# supported value.
@@ -1996,10 +2003,10 @@ fn decrypt_stream_finish(stream: &mut DecryptStream) -> Result<ffi::StreamFinish
 /// Pass this to C++ via `Aws::Esdk::Keyring::adopt`.
 /// Ownership transfers to the returned pointer; consumers MUST NOT `adopt` this handle more than once.
 pub fn into_keyring_handle(
-    keyring: impl aws_crypto_mpl::keyring::Keyring + 'static,
+    keyring: impl aws_crypto_mpl::shared::IntoShared<SharedKeyring>,
 ) -> *mut std::ffi::c_void {
     Box::into_raw(Box::new(Keyring {
-        inner: SharedKeyring::new(keyring),
+        inner: keyring.into_shared(),
     }))
     .cast()
 }

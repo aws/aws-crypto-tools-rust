@@ -9,8 +9,9 @@
 
 use std::time::{Duration, SystemTime};
 
-use aws_crypto_mpl::key_store::{KeyStoreClient, KmsConfiguration};
-use aws_crypto_mpl::{HierarchicalKeyring, aws_config, aws_sdk_dynamodb, aws_sdk_kms};
+use aws_crypto_mpl::key_store::types::KmsConfiguration;
+use aws_crypto_mpl::keyring::HierarchicalKeyring;
+use aws_crypto_mpl::{aws_config, aws_sdk_dynamodb, aws_sdk_kms, key_store};
 use aws_sdk_kms::config::Credentials;
 use aws_smithy_http_client::tls::{Provider, rustls_provider::CryptoMode};
 
@@ -76,7 +77,7 @@ async fn handle_request(
 
     // The AWS Crypto Tools CI test key store.
     // Replace these with your own key store's table, name, and KMS key ARN.
-    let key_store = KeyStoreClient::builder()
+    let key_store = key_store::Client::builder()
         .ddb_table_name("KeyStoreDdbTable")
         .logical_key_store_name("KeyStoreDdbTable")
         .kms_configuration(KmsConfiguration::KmsKeyArn(

@@ -21,9 +21,9 @@ use std::sync::Arc;
 use aws_mpl_primitives::error::{
     Collection, ConflictReason, DataKeyInfo, Resource, RetryKind, Service,
 };
-use aws_sdk_kms::operation::RequestId;
 use aws_smithy_types::error::metadata::{ErrorMetadata, ProvideErrorMetadata};
 use aws_smithy_types::retry::{ErrorKind, ProvideErrorKind};
+use aws_types::request_id::RequestId;
 
 type ArcError = Arc<dyn std::error::Error + Send + Sync + 'static>;
 
@@ -410,14 +410,14 @@ fn level_of<'a>(e: &'a (dyn std::error::Error + 'static)) -> Option<Level<'a>> {
         }
         return Some(level);
     }
-    if let Some(e) = e.downcast_ref::<aws_crypto_mpl::error::Error>() {
+    if let Some(e) = e.downcast_ref::<aws_crypto_mpl::Error>() {
         let mut level = level!(e);
-        if let aws_crypto_mpl::error::Error::NoMatchingDataKey(e) = e {
+        if let aws_crypto_mpl::Error::NoMatchingDataKey(e) = e {
             level.data_keys = provider_ids(e.encrypted_data_keys());
         }
         return Some(level);
     }
-    if let Some(e) = e.downcast_ref::<aws_mpl_primitives::error::Error>() {
+    if let Some(e) = e.downcast_ref::<aws_mpl_primitives::Error>() {
         return Some(level!(e));
     }
     None
@@ -879,7 +879,7 @@ impl Error {
             {
                 return e.failures();
             }
-            if let Some(e) = e.downcast_ref::<aws_crypto_mpl::error::Error>()
+            if let Some(e) = e.downcast_ref::<aws_crypto_mpl::Error>()
                 && !e.collected().is_empty()
             {
                 return e
@@ -888,7 +888,7 @@ impl Error {
                     .flat_map(|c| Self::from_mpl_parts(c).failures())
                     .collect();
             }
-            if let Some(e) = e.downcast_ref::<aws_mpl_primitives::error::Error>()
+            if let Some(e) = e.downcast_ref::<aws_mpl_primitives::Error>()
                 && !e.collected().is_empty()
             {
                 return e
@@ -936,7 +936,7 @@ impl Error {
     /// The first error of type `T` in the source chain, starting with `self`.
     ///
     /// ```
-    /// use aws_esdk::error::Error;
+    /// use aws_esdk::Error;
     ///
     /// fn handle(err: &Error) {
     ///     if let Some(io) = err.find_source::<std::io::Error>() {
@@ -1067,25 +1067,20 @@ impl Error {
     /// The variant is the one with the same name, or the fallback in `errors.toml`.
     /// Keeps the retry kind and details, and keeps `inner` as the source.
     #[track_caller]
-    pub(crate) fn from_mpl(
-        message: impl Into<String>,
-        inner: aws_crypto_mpl::error::Error,
-    ) -> Self {
+    pub(crate) fn from_mpl(message: impl Into<String>, inner: aws_crypto_mpl::Error) -> Self {
         let kind = match &inner {
-            aws_crypto_mpl::error::Error::Validation(_) => Kind::Validation,
-            aws_crypto_mpl::error::Error::InvalidMaterials(_) => Kind::InvalidMaterials,
-            aws_crypto_mpl::error::Error::EncryptionContextMismatch(_) => {
-                Kind::EncryptionContextMismatch
-            }
-            aws_crypto_mpl::error::Error::NoMatchingDataKey(_) => Kind::NoMatchingDataKey,
-            aws_crypto_mpl::error::Error::Cryptographic(_) => Kind::Cryptographic,
-            aws_crypto_mpl::error::Error::AccessDenied(_) => Kind::AccessDenied,
-            aws_crypto_mpl::error::Error::ResourceNotFound(_) => Kind::ResourceNotFound,
-            aws_crypto_mpl::error::Error::Throttling(_) => Kind::Throttling,
-            aws_crypto_mpl::error::Error::Conflict(_) => Kind::Conflict,
-            aws_crypto_mpl::error::Error::Service(_) => Kind::Service,
-            aws_crypto_mpl::error::Error::Dispatch(_) => Kind::Dispatch,
-            aws_crypto_mpl::error::Error::Internal(_) => Kind::Internal,
+            aws_crypto_mpl::Error::Validation(_) => Kind::Validation,
+            aws_crypto_mpl::Error::InvalidMaterials(_) => Kind::InvalidMaterials,
+            aws_crypto_mpl::Error::EncryptionContextMismatch(_) => Kind::EncryptionContextMismatch,
+            aws_crypto_mpl::Error::NoMatchingDataKey(_) => Kind::NoMatchingDataKey,
+            aws_crypto_mpl::Error::Cryptographic(_) => Kind::Cryptographic,
+            aws_crypto_mpl::Error::AccessDenied(_) => Kind::AccessDenied,
+            aws_crypto_mpl::Error::ResourceNotFound(_) => Kind::ResourceNotFound,
+            aws_crypto_mpl::Error::Throttling(_) => Kind::Throttling,
+            aws_crypto_mpl::Error::Conflict(_) => Kind::Conflict,
+            aws_crypto_mpl::Error::Service(_) => Kind::Service,
+            aws_crypto_mpl::Error::Dispatch(_) => Kind::Dispatch,
+            aws_crypto_mpl::Error::Internal(_) => Kind::Internal,
             // Unreachable: gen-errors checks that every `mpl` variant maps to a variant here.
             _ => Kind::Internal,
         };
@@ -1098,11 +1093,11 @@ impl Error {
             request_id: inner.request_id().map(str::to_owned),
         };
         data.reason = match &inner {
-            aws_crypto_mpl::error::Error::Conflict(e) => e.reason().cloned(),
+            aws_crypto_mpl::Error::Conflict(e) => e.reason().cloned(),
             _ => None,
         };
         if kind == Kind::NoMatchingDataKey
-            && let aws_crypto_mpl::error::Error::NoMatchingDataKey(e) = &inner
+            && let aws_crypto_mpl::Error::NoMatchingDataKey(e) = &inner
         {
             data.data_keys = e.encrypted_data_keys().to_vec();
         }
@@ -1118,7 +1113,7 @@ impl Error {
     ///
     /// Keeps every field: the variant by name (or the fallback in `errors.toml`),
     /// the message, retry kind, details, collected errors, source, and backtrace.
-    pub(crate) fn from_mpl_parts(inner: &aws_crypto_mpl::error::Error) -> Self {
+    pub(crate) fn from_mpl_parts(inner: &aws_crypto_mpl::Error) -> Self {
         let parts = inner.__parts();
         let kind = match parts.name {
             "Validation" => Kind::Validation,
@@ -1165,13 +1160,10 @@ impl Error {
     /// The variant is the one with the same name, or the fallback in `errors.toml`.
     /// Keeps the retry kind and details, and keeps `inner` as the source.
     #[track_caller]
-    pub(crate) fn from_prim(
-        message: impl Into<String>,
-        inner: aws_mpl_primitives::error::Error,
-    ) -> Self {
+    pub(crate) fn from_prim(message: impl Into<String>, inner: aws_mpl_primitives::Error) -> Self {
         let kind = match &inner {
-            aws_mpl_primitives::error::Error::Cryptographic(_) => Kind::Cryptographic,
-            aws_mpl_primitives::error::Error::Internal(_) => Kind::Internal,
+            aws_mpl_primitives::Error::Cryptographic(_) => Kind::Cryptographic,
+            aws_mpl_primitives::Error::Internal(_) => Kind::Internal,
             // Unreachable: gen-errors checks that every `prim` variant maps to a variant here.
             _ => Kind::Internal,
         };
@@ -1191,7 +1183,7 @@ impl Error {
     ///
     /// Keeps every field: the variant by name (or the fallback in `errors.toml`),
     /// the message, retry kind, details, collected errors, source, and backtrace.
-    pub(crate) fn from_prim_parts(inner: &aws_mpl_primitives::error::Error) -> Self {
+    pub(crate) fn from_prim_parts(inner: &aws_mpl_primitives::Error) -> Self {
         let parts = inner.__parts();
         let kind = match parts.name {
             "Cryptographic" => Kind::Cryptographic,
@@ -1254,7 +1246,7 @@ impl RequestId for Error {
 /// # Example
 ///
 /// ```
-/// use aws_esdk::error::Error;
+/// use aws_esdk::Error;
 ///
 /// fn handle(err: &Error) {
 ///     match err {
@@ -1350,7 +1342,8 @@ impl From<ValidationError> for Error {
 /// # Example
 ///
 /// ```
-/// use aws_esdk::error::{Error, Resource};
+/// use aws_esdk::Error;
+/// use aws_esdk::error::Resource;
 ///
 /// fn handle(err: &Error) {
 ///     match err {
@@ -1477,7 +1470,7 @@ impl From<InvalidMaterialsError> for Error {
 /// # Example
 ///
 /// ```
-/// use aws_esdk::error::Error;
+/// use aws_esdk::Error;
 ///
 /// fn handle(err: &Error) {
 ///     match err {
@@ -1572,7 +1565,7 @@ impl From<EncryptionContextMismatchError> for Error {
 /// # Example
 ///
 /// ```
-/// use aws_esdk::error::Error;
+/// use aws_esdk::Error;
 ///
 /// fn handle(err: &Error) {
 ///     match err {
@@ -1707,7 +1700,7 @@ impl From<NoMatchingDataKeyError> for Error {
 /// # Example
 ///
 /// ```
-/// use aws_esdk::error::Error;
+/// use aws_esdk::Error;
 ///
 /// fn handle(err: &Error) {
 ///     match err {
@@ -1800,7 +1793,8 @@ impl From<CryptographicError> for Error {
 /// # Example
 ///
 /// ```
-/// use aws_esdk::error::{Error, Resource, Service};
+/// use aws_esdk::Error;
+/// use aws_esdk::error::{Resource, Service};
 ///
 /// fn handle(err: &Error) {
 ///     match err {
@@ -1951,7 +1945,8 @@ impl From<AccessDeniedError> for Error {
 /// # Example
 ///
 /// ```
-/// use aws_esdk::error::{Error, Resource, Service};
+/// use aws_esdk::Error;
+/// use aws_esdk::error::{Resource, Service};
 ///
 /// fn handle(err: &Error) {
 ///     match err {
@@ -2085,7 +2080,8 @@ impl From<ResourceNotFoundError> for Error {
 /// # Example
 ///
 /// ```
-/// use aws_esdk::error::{Error, Resource, Service};
+/// use aws_esdk::Error;
+/// use aws_esdk::error::{Resource, Service};
 ///
 /// fn handle(err: &Error) {
 ///     if err.is_retryable() {
@@ -2219,7 +2215,8 @@ impl From<ThrottlingError> for Error {
 /// # Example
 ///
 /// ```
-/// use aws_esdk::error::{ConflictReason, Error};
+/// use aws_esdk::Error;
+/// use aws_esdk::error::ConflictReason;
 ///
 /// fn handle(err: &Error) {
 ///     match err {
@@ -2353,7 +2350,7 @@ impl From<ConflictError> for Error {
 /// # Example
 ///
 /// ```
-/// use aws_esdk::error::Error;
+/// use aws_esdk::Error;
 ///
 /// fn handle(err: &Error) {
 ///     match err {
@@ -2477,7 +2474,7 @@ impl From<ServiceError> for Error {
 /// # Example
 ///
 /// ```
-/// use aws_esdk::error::Error;
+/// use aws_esdk::Error;
 ///
 /// fn handle(err: &Error) {
 ///     match err {
@@ -2601,7 +2598,7 @@ impl From<DispatchError> for Error {
 /// # Example
 ///
 /// ```
-/// use aws_esdk::error::Error;
+/// use aws_esdk::Error;
 ///
 /// fn handle(err: &Error) {
 ///     match err {
@@ -2694,7 +2691,7 @@ impl From<SerializationError> for Error {
 /// # Example
 ///
 /// ```
-/// use aws_esdk::error::Error;
+/// use aws_esdk::Error;
 ///
 /// fn handle(err: &Error) {
 ///     if let Error::Io(_) = err {
@@ -2788,7 +2785,7 @@ impl From<IoError> for Error {
 /// # Example
 ///
 /// ```
-/// use aws_esdk::error::Error;
+/// use aws_esdk::Error;
 ///
 /// fn handle(err: &Error) {
 ///     match err {

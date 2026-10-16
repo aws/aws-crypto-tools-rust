@@ -24,6 +24,7 @@ mod fixtures;
 mod test_helpers;
 
 use aws_crypto_mpl::Error as MplError;
+use aws_esdk::types::*;
 use aws_esdk::*;
 use std::error::Error as _;
 use test_helpers::*;
