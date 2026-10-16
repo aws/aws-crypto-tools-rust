@@ -169,6 +169,24 @@ jobs:
       - name: Check the generated files
         run: cargo xtask gen-errors --check
 
+  # Check that every public item in aws-esdk and aws-crypto-mpl has one public path.
+  public-paths:
+    name: Each public item has one path
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: 'true'
+
+      # rustdoc's JSON output is nightly-only.
+      - name: Install nightly toolchain
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Check public paths
+        run: cargo xtask check-public-paths
+
   # Single stable required status check for branch protection. It passes when
   # every needed job either succeeded or was legitimately skipped. `pr-ci-rust`
   # is allowed to skip so that PRs touching no project still pass this gate.
@@ -179,6 +197,7 @@ jobs:
       - pr-ci-rust
       - pr-ci-duvet
       - gen-errors
+      - public-paths
     runs-on: ubuntu-22.04
     steps:
       - name: Verify all required jobs passed
