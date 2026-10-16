@@ -53,7 +53,7 @@ rt-tokio = [
     "aws-sdk-kms?/rt-tokio",
     "aws-sdk-dynamodb?/rt-tokio",
 ]
-test-utils = ["kms", "ddb"]
+test-utils = ["kms", "ddb", "rt-tokio"]
 
 [dev-dependencies]
 # Used only to construct AWS SDK errors for the classifier unit tests.
