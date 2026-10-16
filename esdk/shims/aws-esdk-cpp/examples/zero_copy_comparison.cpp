@@ -9,9 +9,10 @@
 // But your data often isn't in a vector, and output can't become one without a copy.
 // The alternative types avoid those copies.
 //
-// On input: your data usually isn't in a vector; it's in a file, or you're reading it from a socket.
-// A vector-only API would force you to copy it into a vector first.
-// The pointer overload borrows your buffer where it is instead, saving you copy cost.
+// On input: if your data is already in a std::vector, pass the vector. Nothing is copied.
+// If it isn't (an mmap'd file, a socket buffer, another library's buffer), don't copy it
+// into a vector just to call the ESDK. Pass a pointer and length instead; nothing is copied either.
+// This example does that: it decrypts straight from an mmap'd file.
 //
 // On output: the C++ shim produces ciphertext in a buffer owned by the Rust ESDK.
 // That buffer cannot become a std::vector without copying every byte; but usually, it doesn't need to.
