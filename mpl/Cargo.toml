@@ -9,7 +9,7 @@ authors = ["AWS-CryptoTools"]
 [dependencies]
 async-trait = "0.1.92"
 aws-config = { version = "1.12.0", default-features = false, optional = true }
-aws-mpl-primitives = { path = "../prim" }
+aws-mpl-primitives = { path = "../prim", default-features = false }
 aws-sdk-dynamodb = { version = "1.130.0", default-features = false, optional = true }
 aws-sdk-kms = { version = "1.123.0", default-features = false, optional = true }
 aws-smithy-runtime-api = { version = "1.19.0", features = ["client"] }
@@ -22,7 +22,10 @@ tokio = { version = "1.49", default-features = false, optional = true }
 uuid = { version = "1.27.0", features = ["v4"] }
 
 [features]
-default = ["kms", "ddb", "default-aws-sdk-clients", "rt-tokio"]
+default = ["aws-lc-sys", "kms", "ddb", "default-aws-sdk-clients", "rt-tokio"]
+# The crypto backend. Turn on exactly one: `aws-lc-sys` (the default), or `fips` for AWS-LC's FIPS module.
+aws-lc-sys = ["aws-mpl-primitives/default"]
+fips = ["aws-mpl-primitives/fips"]
 # The AWS KMS SDK. The built-in key store needs `kms` and `ddb`.
 kms = ["dep:aws-sdk-kms"]
 # The Amazon DynamoDB SDK. The built-in key store needs `kms` and `ddb`.

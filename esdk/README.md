@@ -133,21 +133,25 @@ The examples that need AWS also need credentials, a KMS key, and a key store tab
 
 ## Cargo features
 
-All of these are on by default.
+All of these except `fips` are on by default.
 
 | Feature | What it adds | Without it |
 |---|---|---|
 | `kms`, `ddb` | the AWS KMS and DynamoDB SDKs, for the built-in key store | use your own key store, or a keyring that doesn't need one |
 | `default-aws-sdk-clients` | the key store builder creates its own KMS and DynamoDB clients from your AWS credentials and region (this pulls in `aws-config` and the AWS SDK's HTTPS and TLS client) | create the clients yourself and pass them with `kms_client` and `ddb_client` |
 | `rt-tokio` | the tokio-based caches, which the hierarchical keyring uses by default | pass the hierarchical keyring a `cache`, such as `LocalCmc` |
-| `fips` | the FIPS crypto backend instead of the default one | |
+| `aws-lc-sys` | the default crypto backend, AWS-LC | turn on `fips` instead |
+| `fips` (off by default) | AWS-LC's FIPS module as the crypto backend | |
 
 To pick features, turn off the defaults and list the ones you want.
-Keep a crypto backend: `aws-lc-rs/aws-lc-sys`, or `fips`.
+Keep exactly one crypto backend: `aws-lc-sys` or `fips`.
 
 ```toml
 # Bring your own KMS and DynamoDB clients, without aws-config or the default HTTPS client
-aws-esdk = { version = "2", default-features = false, features = ["aws-lc-rs/aws-lc-sys", "kms", "ddb", "rt-tokio"] }
+aws-esdk = { version = "2", default-features = false, features = ["aws-lc-sys", "kms", "ddb", "rt-tokio"] }
+
+# FIPS, with everything else on
+aws-esdk = { version = "2", default-features = false, features = ["fips", "kms", "ddb", "default-aws-sdk-clients", "rt-tokio"] }
 ```
 
 ## Development

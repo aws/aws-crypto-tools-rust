@@ -17,7 +17,7 @@ tokio = { version = "1.49", default-features = false, features = ["io-util", "rt
 aws-smithy-types = "1.8.1"
 aws-types = "1.6.0"
 aws-crypto-mpl = { path = "../mpl", default-features = false }
-aws-mpl-primitives = { path = "../prim" }
+aws-mpl-primitives = { path = "../prim", default-features = false }
 aws-lc-rs = { version = "1.18.1", default-features = false }
 zeroize = "1.9.0"
 
@@ -41,8 +41,10 @@ rustdoc-args = [
 ]
 
 [features]
-default = ["aws-lc-rs/aws-lc-sys", "kms", "ddb", "default-aws-sdk-clients", "rt-tokio"]
-fips = ["aws-lc-rs/fips"]
+default = ["aws-lc-sys", "kms", "ddb", "default-aws-sdk-clients", "rt-tokio"]
+# The crypto backend. Turn on exactly one: `aws-lc-sys` (the default), or `fips` for AWS-LC's FIPS module.
+aws-lc-sys = ["aws-lc-rs/aws-lc-sys", "aws-mpl-primitives/default", "aws-crypto-mpl/aws-lc-sys"]
+fips = ["aws-lc-rs/fips", "aws-mpl-primitives/fips", "aws-crypto-mpl/fips"]
 # These turn on the Material Providers Library's features of the same name.
 # See its Cargo.toml, or the README's "Cargo features" section.
 kms = ["aws-crypto-mpl/kms"]
