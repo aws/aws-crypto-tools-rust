@@ -9,7 +9,8 @@ The encrypted message stores the encrypted data keys next to the ciphertext, so 
 Every operation starts from a [`Client`](#the-client):
 `encrypt` and `decrypt` for data in memory,
 and `encrypt_stream` and `decrypt_stream` for data too large to hold in memory.
-Keyrings come from the `aws-crypto-mpl` crate in this repository.
+Keyrings, cryptographic materials managers (CMMs), and caches are in the `keyring`, `cmm`, and `cmc` modules.
+They come from the Material Providers Library, which `aws_esdk::mpl` re-exports.
 
 ## Prerequisites
 
@@ -28,9 +29,8 @@ Building needs:
 Encrypt and decrypt a message with a raw AES keyring:
 
 ```rust
-use aws_crypto_mpl::keyring::RawAesKeyring;
-use aws_crypto_mpl::types::AesWrappingAlg;
-use aws_esdk::types::EncryptionContext;
+use aws_esdk::keyring::RawAesKeyring;
+use aws_esdk::types::{AesWrappingAlg, EncryptionContext};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -130,6 +130,34 @@ Run one with `cargo run --example <name>`:
 | `per_request_credentials` | call AWS KMS with credentials issued for one request | KMS + DynamoDB |
 
 The examples that need AWS also need credentials, a KMS key, and a key store table in DynamoDB.
+
+## Cargo features
+
+All of these except `fips` are on by default.
+
+| Feature | What it adds | Without it |
+|---|---|---|
+| `kms`, `ddb` | the AWS KMS and DynamoDB SDKs, for the built-in key store | use your own key store, or a keyring that doesn't need one |
+| `default-aws-sdk-clients` | the key store builder creates its own KMS and DynamoDB clients from your AWS credentials and region (this pulls in `aws-config` and the AWS SDK's HTTPS and TLS client) | create the clients yourself and pass them with `kms_client` and `ddb_client` |
+| `rt-tokio` | the tokio-based caches, which the hierarchical keyring uses by default | pass the hierarchical keyring a `cache`, such as `LocalCmc` |
+| `aws-lc-sys` | the default crypto backend, AWS-LC | turn on `fips` instead |
+| `fips` (off by default) | AWS-LC's FIPS module as the crypto backend; takes precedence over `aws-lc-sys` | |
+
+To use FIPS, add `fips`. It takes precedence over the default backend:
+
+```toml
+aws-esdk = { version = "2", features = ["fips"] }
+```
+
+This still compiles the default backend. To stop compiling it, turn off the defaults and list the features you want, with exactly one crypto backend:
+
+```toml
+# Bring your own KMS and DynamoDB clients, without aws-config or the default HTTPS client
+aws-esdk = { version = "2", default-features = false, features = ["aws-lc-sys", "kms", "ddb", "rt-tokio"] }
+
+# FIPS only, with everything else on
+aws-esdk = { version = "2", default-features = false, features = ["fips", "kms", "ddb", "default-aws-sdk-clients", "rt-tokio"] }
+```
 
 ## Development
 

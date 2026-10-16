@@ -7,9 +7,9 @@ mod test_helpers;
 
 use aws_crypto_mpl::cmm::DefaultCmm;
 use aws_esdk::Client;
-use aws_esdk::types::{
-    AlgorithmSuiteId, CommitmentPolicy, EncryptionContext, SharedCmm, SharedKeyring,
-};
+use aws_esdk::cmm::SharedCmm;
+use aws_esdk::keyring::SharedKeyring;
+use aws_esdk::types::{AlgorithmSuiteId, CommitmentPolicy, EncryptionContext};
 use std::num::{NonZeroU32, NonZeroUsize};
 use test_helpers::{count_frames, esdk_with, test_keyring};
 

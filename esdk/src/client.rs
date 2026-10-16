@@ -7,7 +7,7 @@
 //! Each operation's fluent builder takes both settings from the client and has no setters for them:
 //!
 //! ```no_run
-//! # use aws_esdk::{types::CommitmentPolicy, types::SharedKeyring};
+//! # use aws_esdk::{types::CommitmentPolicy, keyring::SharedKeyring};
 //! # async fn example(policy: CommitmentPolicy, plaintext: &[u8], keyring: SharedKeyring) -> Result<(), aws_esdk::Error> {
 //! let esdk = aws_esdk::Client::builder().commitment_policy(policy).build()?;
 //! let output = esdk.encrypt().plaintext(plaintext).keyring(keyring).send().await?;
@@ -35,7 +35,7 @@ use std::num::NonZeroUsize;
 /// # Example
 ///
 /// ```no_run
-/// # use aws_esdk::{types::CommitmentPolicy, types::EncryptionContext, types::SharedKeyring};
+/// # use aws_esdk::{types::CommitmentPolicy, types::EncryptionContext, keyring::SharedKeyring};
 /// # async fn example(plaintext: &[u8], ec: EncryptionContext, keyring: SharedKeyring) -> Result<(), aws_esdk::Error> {
 /// let esdk = aws_esdk::Client::builder()
 ///     .commitment_policy(CommitmentPolicy::RequireEncryptRequireDecrypt)
