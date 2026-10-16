@@ -62,15 +62,13 @@ pub use types::{
 pub trait KeyStore: Send + Sync {
     /// Returns the configuration of this key store.
     ///
-    /// The configuration is fixed when the key store is constructed,
-    /// so this method is synchronous and performs no IO.
     /// The Hierarchical Keyring reads it once, when the keyring is built.
     ///
     /// # Errors
     ///
     /// The key store [`KeyStoreClient::builder`] builds does not return an error.
     /// Other implementations may return any variant.
-    fn get_key_store_info(
+    async fn get_key_store_info(
         &self,
         input: GetKeyStoreInfoInput,
     ) -> Result<GetKeyStoreInfoOutput, Error>;

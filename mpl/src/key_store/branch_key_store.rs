@@ -411,7 +411,7 @@ impl KeyStore for DynamoDbKeyStore {
     /// # Errors
     ///
     /// Does not return an error.
-    fn get_key_store_info(
+    async fn get_key_store_info(
         &self,
         _input: GetKeyStoreInfoInput,
     ) -> Result<GetKeyStoreInfoOutput, Error> {

@@ -19,14 +19,15 @@ use aws_sdk_dynamodb::operation::describe_table::DescribeTableError;
 use aws_sdk_dynamodb::operation::get_item::GetItemError;
 use aws_sdk_kms::Client as KmsClient;
 
-use aws_crypto_mpl::error_chain::{aws_service_error_code, find_in_error_chain};
+use aws_crypto_mpl::__test_internals::error_chain::{aws_service_error_code, find_in_error_chain};
 use aws_crypto_mpl::key_store::{Discovery, MrDiscovery};
 use aws_crypto_mpl::{KeyStoreClient, KeyStoreClientBuilder, KmsConfiguration};
 
-fn key_store_id(store: &KeyStoreClient) -> String {
+async fn key_store_id(store: &KeyStoreClient) -> String {
     store
         .get_key_store_info()
         .send()
+        .await
         .expect("get_key_store_info must succeed")
         .key_store_id()
         .to_owned()
@@ -111,8 +112,8 @@ async fn build_without_kms_configuration_returns_configuration_error() {
     assert!(err.is_validation(), "{:?}", err);
 }
 
-#[test]
-fn build_with_both_clients_is_ready_on_first_poll() {
+#[tokio::test]
+async fn build_with_both_clients_is_ready_on_first_poll() {
     use std::future::Future;
     use std::task::{Context, Poll, Waker};
 
@@ -121,7 +122,7 @@ fn build_with_both_clients_is_ready_on_first_poll() {
         panic!("build with both clients supplied must not await");
     };
     let store = result.expect("build must succeed");
-    assert_eq!(key_store_id(&store), "supplied-clients");
+    assert_eq!(key_store_id(&store).await, "supplied-clients");
 }
 
 #[cfg(feature = "test-utils")]
@@ -157,7 +158,7 @@ async fn new_with_caller_supplied_key_store_id_records_it_verbatim() {
         .build()
         .await
         .expect("construction with valid config must succeed");
-    assert_eq!(key_store_id(&store), "caller-id");
+    assert_eq!(key_store_id(&store).await, "caller-id");
 }
 
 #[tokio::test]
@@ -167,7 +168,7 @@ async fn new_without_key_store_id_generates_v4_uuid() {
         .await
         .expect("construction with valid config must succeed");
 
-    let id = key_store_id(&store);
+    let id = key_store_id(&store).await;
     assert_eq!(id.len(), 36, "v4 UUID canonical form is 36 chars");
     let bytes = id.as_bytes();
     assert_eq!(bytes[8], b'-');
@@ -200,8 +201,8 @@ async fn new_without_key_store_id_two_calls_produce_distinct_uuids() {
     let store1 = fixture_config_no_id().build().await.unwrap();
     let store2 = fixture_config_no_id().build().await.unwrap();
     assert_ne!(
-        key_store_id(&store1),
-        key_store_id(&store2),
+        key_store_id(&store1).await,
+        key_store_id(&store2).await,
         "fresh v4 UUIDs MUST be distinct with overwhelming probability"
     );
 }
@@ -262,7 +263,7 @@ async fn get_key_store_info_returns_configured_values() {
         .kms_client(kms);
     let store = cfg.build().await.unwrap();
 
-    let info = store.get_key_store_info().send().unwrap();
+    let info = store.get_key_store_info().send().await.unwrap();
     assert_eq!(info.key_store_id(), "my-id");
     assert_eq!(info.key_store_name(), "my-table");
     assert_eq!(info.logical_key_store_name(), "my-logical");
@@ -276,7 +277,7 @@ async fn get_key_store_info_returns_configured_values() {
 #[tokio::test]
 async fn get_key_store_info_returns_empty_grant_tokens_when_none() {
     let store = fixture_config_with_id("id-x").build().await.unwrap();
-    let info = store.get_key_store_info().send().unwrap();
+    let info = store.get_key_store_info().send().await.unwrap();
     assert!(info.grant_tokens().is_empty());
 }
 
