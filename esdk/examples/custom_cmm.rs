@@ -14,7 +14,7 @@ use aws_esdk::cmm::{
     Cmm, DecryptMaterialsInput, DecryptMaterialsOutput, DefaultCmm, GetEncryptionMaterialsInput,
     GetEncryptionMaterialsOutput,
 };
-use aws_esdk::keyring::{Keyring, RawAesKeyring};
+use aws_esdk::keyring::RawAesKeyring;
 use aws_esdk::mpl::Error as MplError;
 use aws_esdk::types::{AesWrappingAlg, AlgorithmSuiteId, EncryptionContext};
 use aws_esdk::{Error, async_trait};
@@ -26,7 +26,7 @@ struct SigningSuiteOnlyCmm {
 }
 
 impl SigningSuiteOnlyCmm {
-    fn new(keyring: impl Keyring + 'static) -> Self {
+    fn new(keyring: RawAesKeyring) -> Self {
         Self {
             inner: DefaultCmm::new(keyring),
         }
@@ -41,7 +41,16 @@ impl Cmm for SigningSuiteOnlyCmm {
     ) -> Result<GetEncryptionMaterialsOutput, MplError> {
         // The caller may leave the suite unset and let the default CMM choose,
         // so check the suite on the materials it returns.
-        let output = Cmm::get_encryption_materials(&self.inner, input).await?;
+        let output = self
+            .inner
+            .get_encryption_materials()
+            .encryption_context(input.encryption_context().clone())
+            .commitment_policy(input.commitment_policy())
+            .set_algorithm_suite_id(input.algorithm_suite_id())
+            .set_required_encryption_context_keys(input.required_encryption_context_keys().cloned())
+            .set_max_plaintext_length(input.max_plaintext_length())
+            .send()
+            .await?;
         let suite = output.encryption_materials().algorithm_suite();
         if suite.asymmetric_signature_algorithm().is_none() {
             return Err(MplError::validation("algorithm suite must use signing"));
@@ -56,7 +65,15 @@ impl Cmm for SigningSuiteOnlyCmm {
         if !input.algorithm_suite_id().has_asymmetric_signing() {
             return Err(MplError::validation("algorithm suite must use signing"));
         }
-        Cmm::decrypt_materials(&self.inner, input).await
+        self.inner
+            .decrypt_materials()
+            .algorithm_suite_id(input.algorithm_suite_id())
+            .commitment_policy(input.commitment_policy())
+            .encrypted_data_keys(input.encrypted_data_keys().to_vec())
+            .encryption_context(input.encryption_context().clone())
+            .set_reproduced_encryption_context(input.reproduced_encryption_context().cloned())
+            .send()
+            .await
     }
 }
 

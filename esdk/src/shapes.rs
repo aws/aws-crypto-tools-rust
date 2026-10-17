@@ -113,10 +113,6 @@ pub(crate) use aws_crypto_mpl::keyring::SharedKeyring;
 
 pub(crate) use aws_crypto_mpl::cmm::SharedCmm;
 
-pub(crate) use aws_crypto_mpl::keyring::Keyring;
-
-pub(crate) use aws_crypto_mpl::cmm::Cmm;
-
 /// Put `#[async_trait]` on an `impl` of a [`Keyring`](crate::keyring::Keyring) or [`Cmm`](crate::cmm::Cmm).
 pub use aws_crypto_mpl::async_trait;
 

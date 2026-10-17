@@ -10,7 +10,9 @@
 //! A [`key_store::Client`](crate::key_store::Client) holds a key store instead.
 //!
 //! A handle is called like an AWS SDK client: each operation returns a fluent builder.
-//! The trait is what an implementation writes; the handle does not implement it.
+//! The trait is what an implementation writes. Neither the handle nor a built-in component
+//! such as [`RawAesKeyring`](crate::keyring::RawAesKeyring) implements it, so each has one
+//! method per operation: the fluent one.
 //! APIs take `impl IntoShared<SharedKeyring>`, which accepts a component or an existing handle:
 //!
 //! ```ignore
@@ -64,9 +66,9 @@ macro_rules! shared_handle {
         pub struct $name(::std::sync::Arc<dyn $trait>);
 
         impl $name {
-            /// Wrap `component` in a handle.
-            pub fn new(component: impl $trait + 'static) -> Self {
-                Self(::std::sync::Arc::new(component))
+            /// Wrap `component` in a handle. An existing handle is returned as-is.
+            pub fn new(component: impl $crate::shared::IntoShared<Self>) -> Self {
+                component.into_shared()
             }
 
             /// Whether both handles refer to the same component.
@@ -86,7 +88,7 @@ macro_rules! shared_handle {
 
         impl<T: $trait + 'static> $crate::shared::FromUnshared<T> for $name {
             fn from_unshared(value: T) -> Self {
-                Self::new(value)
+                Self(::std::sync::Arc::new(value))
             }
         }
 
@@ -100,3 +102,17 @@ macro_rules! shared_handle {
 }
 
 pub(crate) use shared_handle;
+
+/// A built-in component as an implementation of its trait.
+///
+/// The built-in types have only the fluent calls, so the trait is implemented here instead.
+#[derive(Clone, Debug)]
+pub(crate) struct Builtin<T>(pub(crate) T);
+
+impl<T> std::ops::Deref for Builtin<T> {
+    type Target = T;
+
+    fn deref(&self) -> &T {
+        &self.0
+    }
+}
