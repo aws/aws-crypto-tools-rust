@@ -5,8 +5,8 @@ use anyhow::Result;
 use std::time::Duration;
 
 use aws_crypto_mpl::cmc::DefaultCmc;
-use aws_crypto_mpl::key_store::types::KmsConfiguration;
 use aws_crypto_mpl::key_store::DynamoDbKeyStore;
+use aws_crypto_mpl::key_store::types::KmsConfiguration;
 use aws_crypto_mpl::keyring::HierarchicalKeyring;
 use aws_esdk::Client;
 use aws_esdk::types::CommitmentPolicy;

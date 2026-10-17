@@ -425,6 +425,7 @@ impl GetBeaconKeyFluentBuilder {
 }
 
 /// Add the [`SharedKeyStore`] fluent calls to a built-in key store.
+#[cfg(all(feature = "kms", feature = "ddb"))]
 macro_rules! fluent_key_store {
     ($($ty:ty),+) => {$(
         impl $ty {

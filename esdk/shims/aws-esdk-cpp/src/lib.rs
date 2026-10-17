@@ -129,8 +129,8 @@ use aws_crypto_mpl::aws_config;
 use aws_crypto_mpl::cmc::{
     DefaultCmc, LocalCmc, SharedCmc, StormTrackingCmc, StormTrackingCmcBuilder,
 };
-use aws_crypto_mpl::key_store::types::{Discovery, KmsConfiguration, MrDiscovery};
 use aws_crypto_mpl::key_store::DynamoDbKeyStore;
+use aws_crypto_mpl::key_store::types::{Discovery, KmsConfiguration, MrDiscovery};
 use aws_crypto_mpl::keyring::HierarchicalKeyring;
 use aws_crypto_mpl::keyring::{RawAesKeyring, SharedKeyring};
 use aws_crypto_mpl::types::{EsdkAlgorithmSuiteId, EsdkCommitmentPolicy};
