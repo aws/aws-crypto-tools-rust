@@ -20,12 +20,12 @@ use aws_sdk_dynamodb::operation::get_item::GetItemError;
 use aws_sdk_kms::Client as KmsClient;
 
 use aws_crypto_mpl::__test_internals::error_chain::{aws_service_error_code, find_in_error_chain};
-use aws_crypto_mpl::key_store::Client as KeyStoreClient;
-use aws_crypto_mpl::key_store::client::Builder as KeyStoreClientBuilder;
+use aws_crypto_mpl::key_store::DynamoDbKeyStore;
+use aws_crypto_mpl::key_store::DynamoDbKeyStoreBuilder;
 use aws_crypto_mpl::key_store::types::KmsConfiguration;
 use aws_crypto_mpl::key_store::types::{Discovery, MrDiscovery};
 
-async fn key_store_id(store: &KeyStoreClient) -> String {
+async fn key_store_id(store: &DynamoDbKeyStore) -> String {
     store
         .get_key_store_info()
         .send()
@@ -51,8 +51,8 @@ const KMS_KEY_ARN: &str =
 
 /// A builder with every required field, the simplest
 /// `KmsConfiguration::KmsKeyArn` variant, and no optional fields.
-fn required_only() -> KeyStoreClientBuilder {
-    KeyStoreClient::builder()
+fn required_only() -> DynamoDbKeyStoreBuilder {
+    DynamoDbKeyStore::builder()
         .ddb_table_name("test-table")
         .kms_configuration(KmsConfiguration::KmsKeyArn(KMS_KEY_ARN.into()))
         .logical_key_store_name("test-logical")
@@ -60,18 +60,18 @@ fn required_only() -> KeyStoreClientBuilder {
 
 /// `required_only` plus a key store id and the dummy clients,
 /// so construction never builds a default client.
-fn fixture_config_with_id(id: &str) -> KeyStoreClientBuilder {
+fn fixture_config_with_id(id: &str) -> DynamoDbKeyStoreBuilder {
     let (kms, ddb) = dummy_clients();
     required_only().id(id).ddb_client(ddb).kms_client(kms)
 }
 
 /// Same as `fixture_config_with_id` but with no id, so construction
 /// exercises the v4-UUID fallback.
-fn fixture_config_no_id() -> KeyStoreClientBuilder {
+fn fixture_config_no_id() -> DynamoDbKeyStoreBuilder {
     fixture_config_with_id("placeholder").set_id(None)
 }
 
-async fn build_err(builder: KeyStoreClientBuilder) -> aws_crypto_mpl::Error {
+async fn build_err(builder: DynamoDbKeyStoreBuilder) -> aws_crypto_mpl::Error {
     match builder.build().await {
         Ok(_) => panic!("build must fail"),
         Err(e) => e,
@@ -81,7 +81,7 @@ async fn build_err(builder: KeyStoreClientBuilder) -> aws_crypto_mpl::Error {
 #[tokio::test]
 async fn build_without_ddb_table_name_returns_configuration_error() {
     let (kms, ddb) = dummy_clients();
-    let builder = KeyStoreClient::builder()
+    let builder = DynamoDbKeyStore::builder()
         .kms_configuration(KmsConfiguration::KmsKeyArn(KMS_KEY_ARN.into()))
         .logical_key_store_name("test-logical")
         .kms_client(kms)
@@ -93,7 +93,7 @@ async fn build_without_ddb_table_name_returns_configuration_error() {
 #[tokio::test]
 async fn build_without_logical_key_store_name_returns_configuration_error() {
     let (kms, ddb) = dummy_clients();
-    let builder = KeyStoreClient::builder()
+    let builder = DynamoDbKeyStore::builder()
         .ddb_table_name("test-table")
         .kms_configuration(KmsConfiguration::KmsKeyArn(KMS_KEY_ARN.into()))
         .kms_client(kms)
@@ -105,7 +105,7 @@ async fn build_without_logical_key_store_name_returns_configuration_error() {
 #[tokio::test]
 async fn build_without_kms_configuration_returns_configuration_error() {
     let (kms, ddb) = dummy_clients();
-    let builder = KeyStoreClient::builder()
+    let builder = DynamoDbKeyStore::builder()
         .ddb_table_name("test-table")
         .logical_key_store_name("test-logical")
         .kms_client(kms)
@@ -255,7 +255,7 @@ async fn new_with_mr_discovery_config_succeeds() {
 #[tokio::test]
 async fn get_key_store_info_returns_configured_values() {
     let (kms, ddb) = dummy_clients();
-    let cfg = KeyStoreClient::builder()
+    let cfg = DynamoDbKeyStore::builder()
         .ddb_table_name("my-table")
         .kms_configuration(KmsConfiguration::KmsKeyArn(KMS_KEY_ARN.into()))
         .logical_key_store_name("my-logical")

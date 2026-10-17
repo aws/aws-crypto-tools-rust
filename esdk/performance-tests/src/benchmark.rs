@@ -5,8 +5,8 @@ use anyhow::Result;
 use std::time::Duration;
 
 use aws_crypto_mpl::cmc::DefaultCmc;
-use aws_crypto_mpl::key_store::Client as KeyStoreClient;
 use aws_crypto_mpl::key_store::types::KmsConfiguration;
+use aws_crypto_mpl::key_store::DynamoDbKeyStore;
 use aws_crypto_mpl::keyring::HierarchicalKeyring;
 use aws_esdk::Client;
 use aws_esdk::types::CommitmentPolicy;
@@ -70,7 +70,7 @@ impl EsdkBenchmark {
 
         let sdk_config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
 
-        let key_store = KeyStoreClient::builder()
+        let key_store = DynamoDbKeyStore::builder()
             .kms_client(aws_sdk_kms::Client::new(&sdk_config))
             .ddb_client(aws_sdk_dynamodb::Client::new(&sdk_config))
             .ddb_table_name(BRANCH_KEY_STORE_NAME)
