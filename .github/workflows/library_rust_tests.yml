@@ -79,7 +79,7 @@ jobs:
 
       # Match the coverage step's features so clippy lints feature-gated tests.
       - name: Clippy
-        run: cargo clippy --all-targets ${{ inputs.project != 'prim' && '--all-features' || '' }} -- -D warnings
+        run: cargo clippy --all-targets -- -D warnings
 
       - name: Clippy every feature combination
         run: >-
