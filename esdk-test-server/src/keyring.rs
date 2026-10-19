@@ -1,9 +1,9 @@
 //! Translate the modeled CMM/Keyring configuration into an `aws-esdk`
-//! [`SharedKeyring`](aws_esdk::SharedKeyring).
+//! [`SharedKeyring`](aws_esdk::keyring::SharedKeyring).
 //!
 //! Both keyrings are built from the MPL ([`aws_crypto_mpl`]):
 //! - Raw AES via [`RawAesKeyring`].
-//! - AWS KMS Hierarchical via [`HierarchicalKeyring`] over the key store [`KeyStoreClient::builder`](aws_crypto_mpl::KeyStoreClient::builder) builds.
+//! - AWS KMS Hierarchical via [`HierarchicalKeyring`] over the key store [`KeyStoreClient::builder`](aws_crypto_mpl::key_store::Client::builder) builds.
 //!
 //! Enforces the "exactly one variant member set" invariant that the Smithy
 //! tagged-union-via-optional-members shapes cannot express in the type system.
@@ -14,9 +14,10 @@ use crate::error::ServerError;
 use crate::model::{
     AwsKmsHierarchicalKeyringConfig, CryptographicMaterialsManager, Keyring, RawAesKeyringConfig,
 };
-use aws_crypto_mpl::key_store::{KeyStoreClient, KmsConfiguration};
-use aws_crypto_mpl::{AesGcm, HierarchicalKeyring, RawAesKeyring};
-use aws_esdk::SharedKeyring;
+use aws_crypto_mpl::key_store::types::KmsConfiguration;
+use aws_crypto_mpl::key_store::Client as KeyStoreClient;
+use aws_crypto_mpl::keyring::{HierarchicalKeyring, RawAesKeyring};
+use aws_esdk::keyring::SharedKeyring;
 
 /// Resolve a CMM configuration to the keyring the ESDK client will use.
 ///
@@ -47,7 +48,7 @@ pub async fn keyring_for_cmm(
     ))
 }
 
-/// Build an `aws-esdk` [`SharedKeyring`](aws_esdk::SharedKeyring) from a modeled `Keyring`.
+/// Build an `aws-esdk` [`SharedKeyring`](aws_esdk::keyring::SharedKeyring) from a modeled `Keyring`.
 pub async fn keyring_for_config(keyring: &Keyring) -> Result<SharedKeyring, ServerError> {
     let set = [
         keyring.aws_kms.is_some(),
@@ -82,9 +83,15 @@ pub async fn keyring_for_config(keyring: &Keyring) -> Result<SharedKeyring, Serv
 
 async fn build_raw_aes(config: &RawAesKeyringConfig) -> Result<SharedKeyring, ServerError> {
     let wrapping_alg = match config.wrapping_alg {
-        crate::model::AesWrappingAlg::Alg128 => AesGcm::Aes128Gcm,
-        crate::model::AesWrappingAlg::Alg192 => AesGcm::Aes192Gcm,
-        crate::model::AesWrappingAlg::Alg256 => AesGcm::Aes256Gcm,
+        crate::model::AesWrappingAlg::Alg128 => {
+            aws_crypto_mpl::types::AesWrappingAlg::AlgAes128GcmIv12Tag16
+        }
+        crate::model::AesWrappingAlg::Alg192 => {
+            aws_crypto_mpl::types::AesWrappingAlg::AlgAes192GcmIv12Tag16
+        }
+        crate::model::AesWrappingAlg::Alg256 => {
+            aws_crypto_mpl::types::AesWrappingAlg::AlgAes256GcmIv12Tag16
+        }
     };
     let keyring = RawAesKeyring::builder()
         .key_namespace(config.key_namespace.clone())

@@ -13,12 +13,12 @@ use crate::message::{
     DigestWriter, NoopWriter, body, encryption_context, footer, header, header_auth, header_types,
     serialize_functions, v2_header_body,
 };
-use crate::suites::{algorithm_suite_id_from_bytes, get_ecdsa_alg, get_esdk_algorithm_suite_id};
-use crate::types::{
+use crate::shapes::{
     CommitmentPolicy, DecryptInput, DecryptOutput, DecryptStreamInput, DecryptStreamOutput,
     EncryptionContext, MaterialSource, Sink, Source, Tee,
 };
-use aws_crypto_mpl::structures::DecryptionMaterials;
+use crate::suites::{algorithm_suite_id_from_bytes, get_ecdsa_alg, get_esdk_algorithm_suite_id};
+use aws_crypto_mpl::types::DecryptionMaterials;
 use aws_mpl_primitives::{DigestContext, aes_decrypt, ecdsa_verify_context};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -398,8 +398,8 @@ async fn step_get_decryption_materials(
     //# is not supported by the [commitment policy](client.md#commitment-policy)
     //# configured in the [client](client.md) decrypt MUST yield an error.
     let algorithm_suite_id = algorithm_suite_id_from_bytes(header_body.algorithm_suite().id())?;
-    let policy = aws_crypto_mpl::structures::CommitmentPolicy::Esdk(commitment_policy);
-    if !policy.allows_for_decrypt(aws_crypto_mpl::structures::AlgorithmSuiteId::Esdk(
+    let policy = aws_crypto_mpl::types::CommitmentPolicy::Esdk(commitment_policy);
+    if !policy.allows_for_decrypt(aws_crypto_mpl::types::AlgorithmSuiteId::Esdk(
         algorithm_suite_id,
     )) {
         return Err(val_err(

@@ -1,7 +1,7 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Tests for `aws_kms::hierarchical_keyring`.
+//! Tests for `keyring::HierarchicalKeyring`.
 //!
 //! Covers, in order: construction and configuration validation (TTL,
 //! partition id, cache wiring), the cache entry identifier formulas, the
@@ -29,27 +29,39 @@ use aws_crypto_mpl::async_trait;
 use aws_sdk_dynamodb::Client as DynamoDbClient;
 use aws_sdk_kms::Client as KmsClient;
 
-use aws_crypto_mpl::Error;
-use aws_crypto_mpl::aws_kms::__test_internals::{
+use aws_crypto_mpl::__test_internals::aws_kms::{
     SCOPE_ID_DECRYPT, SCOPE_ID_ENCRYPT, build_cache_identifier, cache, compute_aad,
     partition_id_bytes, unwrap as branch_key_unwrap, wrap as branch_key_wrap,
 };
-use aws_crypto_mpl::aws_kms::hierarchical_keyring::{
+use aws_crypto_mpl::Error;
+use aws_crypto_mpl::cmc::{Cmc, LocalCmc, SharedCmc, StormTrackingCmc};
+use aws_crypto_mpl::key_store::client::Builder as KeyStoreClientBuilder;
+use aws_crypto_mpl::key_store::operation::create_key::{CreateKeyInput, CreateKeyOutput};
+use aws_crypto_mpl::key_store::operation::create_key_store::{
+    CreateKeyStoreInput, CreateKeyStoreOutput,
+};
+use aws_crypto_mpl::key_store::operation::get_active_branch_key::{
+    GetActiveBranchKeyInput, GetActiveBranchKeyOutput,
+};
+use aws_crypto_mpl::key_store::operation::get_beacon_key::{GetBeaconKeyInput, GetBeaconKeyOutput};
+use aws_crypto_mpl::key_store::operation::get_branch_key_version::{
+    GetBranchKeyVersionInput, GetBranchKeyVersionOutput,
+};
+use aws_crypto_mpl::key_store::operation::get_key_store_info::{
+    GetKeyStoreInfoInput, GetKeyStoreInfoOutput,
+};
+use aws_crypto_mpl::key_store::operation::version_key::{VersionKeyInput, VersionKeyOutput};
+use aws_crypto_mpl::key_store::types::{Discovery, KmsConfiguration};
+use aws_crypto_mpl::key_store::{Client as KeyStoreClient, KeyStore};
+use aws_crypto_mpl::keyring::SharedKeyring;
+use aws_crypto_mpl::keyring::{
     BranchKeySupplier, GetBranchKeyIdInput, GetBranchKeyIdOutput, HierarchicalKeyring,
     HierarchicalKeyringBuilder,
 };
-use aws_crypto_mpl::key_store::{
-    CreateKeyInput, CreateKeyOutput, CreateKeyStoreInput, CreateKeyStoreOutput, Discovery,
-    GetActiveBranchKeyInput, GetActiveBranchKeyOutput, GetBeaconKeyInput, GetBeaconKeyOutput,
-    GetBranchKeyVersionInput, GetBranchKeyVersionOutput, GetKeyStoreInfoInput,
-    GetKeyStoreInfoOutput, KeyStore, KeyStoreClient, KeyStoreClientBuilder, KmsConfiguration,
-    VersionKeyInput, VersionKeyOutput,
-};
-use aws_crypto_mpl::structures::{
+use aws_crypto_mpl::types::{
     AlgorithmSuiteId, BranchKeyMaterials, DecryptionMaterials, EncryptionContext,
     EncryptionMaterials, EsdkAlgorithmSuiteId,
 };
-use aws_crypto_mpl::{Cmc, LocalCmc, SharedCmc, SharedKeyring, StormTrackingCmc};
 
 /// Construct a pair of zero-config AWS SDK clients suitable for tests that
 /// never invoke a remote operation. `BehaviorVersion::latest()` is required by
@@ -1479,7 +1491,7 @@ mod onencrypt {
     /// whose cache already holds its entry, created `age` ago.
     /// The entry's own expiry is an hour out, so only the keyring's TTL check can reject it.
     async fn on_encrypt_consults_key_store_for_entry_aged(age: Duration) -> bool {
-        use aws_crypto_mpl::cmc::{CacheEntry, CachedMaterials};
+        use aws_crypto_mpl::types::{CacheEntry, CachedMaterials};
         use std::time::SystemTime;
 
         const PARTITION: &str = "partition-id";
@@ -1656,7 +1668,7 @@ mod onencrypt {
 mod ondecrypt {
     use super::*;
     use aws_crypto_mpl::error::{BranchKey, DataKeyInfo, Resource};
-    use aws_crypto_mpl::structures::{EncryptedDataKey, PlaintextDataKey};
+    use aws_crypto_mpl::types::{EncryptedDataKey, PlaintextDataKey};
 
     /// The 16-byte representation of `FAKE_BRANCH_KEY_VERSION`. Hard-
     /// coded so the on-wire-byte tests below don't depend on the

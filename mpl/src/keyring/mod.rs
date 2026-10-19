@@ -9,7 +9,7 @@
 //!
 //! # Errors for keyring and CMM authors
 //!
-//! The AWS Encryption SDK passes the [`Error`] variant your [`Keyring`] or [`Cmm`](crate::Cmm) returns
+//! The AWS Encryption SDK passes the [`Error`] variant your [`Keyring`] or [`Cmm`](crate::cmm::Cmm) returns
 //! on to its caller, so pick the variant that tells the caller what to do:
 //!
 //! - **[`NoMatchingDataKey`](Error::NoMatchingDataKey)** when no encrypted data key belongs to this keyring.
@@ -32,12 +32,37 @@
 //! let err = Error::cryptographic("encrypted data key 0 did not decrypt").with_source(io_error);
 //! assert!(err.is_cryptographic());
 //!
-//! # let encrypted_data_keys: Vec<aws_crypto_mpl::structures::EncryptedDataKey> = Vec::new();
+//! # let encrypted_data_keys: Vec<aws_crypto_mpl::types::EncryptedDataKey> = Vec::new();
 //! use aws_crypto_mpl::error::DataKeyInfo;
 //!
 //! let err = Error::no_matching_data_key("no encrypted data key belongs to this keyring")
 //!     .with_encrypted_data_keys(encrypted_data_keys.iter().map(DataKeyInfo::from));
 //! assert!(err.is_no_matching_data_key());
+//! ```
+//!
+//! When a call to an AWS service fails, return [`Error::from_sdk`].
+//! It picks the variant (such as `AccessDenied` or `Throttling`) and the retry kind from the SDK error,
+//! the same way this library's own keyrings do,
+//! so callers can match on the variant and [`service`](Error::service) instead of the message:
+//!
+//! ```no_run
+//! use aws_crypto_mpl::Error;
+//! use aws_crypto_mpl::aws_sdk_kms::Client;
+//! use aws_crypto_mpl::aws_sdk_kms::primitives::Blob;
+//! use aws_crypto_mpl::error::{KmsKey, Resource, Service};
+//!
+//! async fn kms_decrypt(kms: &Client, key_arn: &str, ciphertext: &[u8]) -> Result<Option<Blob>, Error> {
+//!     let response = kms
+//!         .decrypt()
+//!         .key_id(key_arn)
+//!         .ciphertext_blob(Blob::new(ciphertext))
+//!         .send()
+//!         .await
+//!         .map_err(|e| {
+//!             Error::from_sdk(Service::Kms, "AWS KMS Decrypt", Some(Resource::KmsKey(KmsKey::new(key_arn))), e)
+//!         })?;
+//!     Ok(response.plaintext)
+//! }
 //! ```
 //!
 //! To report several failures as one error:
@@ -62,9 +87,14 @@ use std::borrow::Cow;
 use async_trait::async_trait;
 
 mod fluent_builders;
-pub mod raw_aes_keyring;
+mod raw_aes_keyring;
 mod types;
 
+pub use crate::aws_kms::hierarchical_keyring::{
+    BranchKeySupplier, GetBranchKeyIdFluentBuilder, GetBranchKeyIdInput,
+    GetBranchKeyIdInputBuilder, GetBranchKeyIdOutput, GetBranchKeyIdOutputBuilder,
+    HierarchicalKeyring, HierarchicalKeyringBuilder, SharedBranchKeySupplier,
+};
 pub use fluent_builders::{OnDecryptFluentBuilder, OnEncryptFluentBuilder};
 pub use raw_aes_keyring::{RawAesKeyring, RawAesKeyringBuilder};
 pub use types::{
@@ -78,8 +108,9 @@ pub use types::{
 ///
 /// ```
 /// use aws_crypto_mpl::keyring::{OnDecryptInput, OnDecryptOutput, OnEncryptInput, OnEncryptOutput};
-/// use aws_crypto_mpl::structures::{EncryptedDataKey, PlaintextDataKey};
-/// use aws_crypto_mpl::{Error, Keyring, async_trait};
+/// use aws_crypto_mpl::types::{EncryptedDataKey, PlaintextDataKey};
+/// use aws_crypto_mpl::{Error, async_trait};
+/// use aws_crypto_mpl::keyring::Keyring;
 ///
 /// struct MyKeyring;
 ///

@@ -63,9 +63,7 @@ impl DigestWriter {
     /// Create a `DigestWriter` from an algorithm suite.
     /// If the suite is a signing (ECDSA) suite, initializes the digest context.
     /// Otherwise, returns a writer that does nothing (context = None).
-    pub(crate) fn from_suite(
-        suite: &aws_crypto_mpl::structures::AlgorithmSuite,
-    ) -> Result<Self, Error> {
+    pub(crate) fn from_suite(suite: &aws_crypto_mpl::types::AlgorithmSuite) -> Result<Self, Error> {
         if suite.asymmetric_signature_algorithm().is_some() {
             let alg = get_ecdsa_alg(suite)?;
             let context = Some(DigestContext::new_from_ecdsa(alg)?);
