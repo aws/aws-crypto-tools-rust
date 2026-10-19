@@ -149,14 +149,11 @@ To use FIPS, add `fips`. It takes precedence over the default backend:
 aws-esdk = { version = "2", features = ["fips"] }
 ```
 
-This still compiles the default backend. To stop compiling it, turn off the defaults and list the features you want, with exactly one crypto backend:
+To pick features, turn off the defaults and list the ones you want, with a crypto backend:
 
 ```toml
 # Bring your own KMS and DynamoDB clients, without aws-config or the default HTTPS client
 aws-esdk = { version = "2", default-features = false, features = ["aws-lc-sys", "kms", "ddb", "rt-tokio"] }
-
-# FIPS only, with everything else on
-aws-esdk = { version = "2", default-features = false, features = ["fips", "kms", "ddb", "default-aws-sdk-clients", "rt-tokio"] }
 ```
 
 ## Development

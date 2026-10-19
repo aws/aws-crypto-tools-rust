@@ -24,8 +24,7 @@ uuid = { version = "1.27.0", features = ["v4"] }
 [features]
 default = ["aws-lc-sys", "kms", "ddb", "default-aws-sdk-clients", "rt-tokio"]
 # The crypto backend: `aws-lc-sys` (the default), or `fips` for AWS-LC's FIPS module.
-# `fips` wins when both are on, so `features = ["fips"]` is enough; turn off the
-# default features as well to stop compiling `aws-lc-sys`.
+# To use AWS-LC FIPS with MPL, simply set `features = ["fips"]`.
 aws-lc-sys = ["aws-mpl-primitives/aws-lc-sys"]
 fips = ["aws-mpl-primitives/fips"]
 # The AWS KMS SDK. The built-in key store needs `kms` and `ddb`.
