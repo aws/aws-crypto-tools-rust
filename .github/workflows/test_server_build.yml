@@ -2,8 +2,8 @@
 # `builds` is a JSON array of {name, server, prebuild, os}:
 #   name      job name
 #   server    crate directory
-#   prebuild  crate to `cargo build` first, for a server that links its output ("" for none)
-#   os        runner
+#   prebuild  optional crate to `cargo build` first, for a server that links its output
+#   os        optional runner, default ubuntu-latest
 name: TestServer Build
 
 on:
@@ -21,7 +21,7 @@ jobs:
       fail-fast: false
       matrix:
         include: ${{ fromJSON(inputs.builds) }}
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.os || 'ubuntu-latest' }}
     permissions:
       contents: read
     defaults:
@@ -41,7 +41,7 @@ jobs:
 
       # A separate step keeps the two heavy Rust builds from running at once.
       - name: Build ${{ matrix.prebuild }}
-        if: matrix.prebuild != ''
+        if: matrix.prebuild
         working-directory: ${{ matrix.prebuild }}
         run: cargo build
 
