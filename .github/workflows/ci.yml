@@ -75,8 +75,8 @@ jobs:
               - 'esdk-cpp-test-server/**'
             shared:
               - '.github/**'
-              - 'spec'
-              - '.gitmodules'
+              - 'scripts/spec-source.json'
+              - 'scripts/resolve-spec.sh'
               - 'errors.toml'
               - 'xtask/**'
 

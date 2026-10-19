@@ -1,6 +1,7 @@
 // Encrypts and decrypts a message with a raw AES keyring.
 
 #include <iostream>
+#include <string>
 #include <vector>
 #include <aws/esdk/EncryptionSDK.h>
 
@@ -19,15 +20,26 @@ int main() {
             Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16
         );
 
-        Aws::Esdk::Client sdk;
+        Aws::Esdk::Client esdk;
 
-        std::vector<uint8_t> plaintext = {'H', 'e', 'l', 'l', 'o', ' ', 'W', 'o', 'r', 'l', 'd'};
-        auto encrypted = sdk.encrypt(plaintext, keyring);
+        const std::string plaintext = "Hello World";
+        // This uses the string API; the bytes APIs take a std::vector, a pointer and length, or a std::span (C++20).
+        auto encrypted = esdk.encrypt(plaintext, keyring);
 
-        auto decrypted = sdk.decrypt(encrypted.ciphertext, keyring);
-
-        if (plaintext != decrypted.plaintext) {
-            std::cerr << "Decryption failed: plaintext mismatch\n";
+        try {
+            auto decrypted = esdk.decrypt(encrypted.ciphertext, keyring);
+            if (decrypted.plaintext.as_string_view() != plaintext) {
+                std::cerr << "Decryption failed: plaintext mismatch\n";
+                return 1;
+            }
+        } catch (const Aws::Esdk::NoMatchingDataKeyException&) {
+            std::cerr << "the message was encrypted under a different keyring\n";
+            return 1;
+        } catch (const Aws::Esdk::CryptographicException&) {
+            std::cerr << "the message is corrupt or was tampered with\n";
+            return 1;
+        } catch (const Aws::Esdk::SerializationException&) {
+            std::cerr << "the message is corrupt or was tampered with\n";
             return 1;
         }
 

@@ -3,8 +3,8 @@
 
 //! User agent identification for AWS KMS requests.
 
-use aws_config::FrameworkMetadata;
 use aws_sdk_kms::config::Builder as KmsConfigBuilder;
+use aws_types::sdk_ua_metadata::FrameworkMetadata;
 
 const MPL_FRAMEWORK_NAME: &str = "AwsCryptographicMPL-Rust";
 
