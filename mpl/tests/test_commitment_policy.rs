@@ -17,7 +17,7 @@
 
 use std::collections::HashSet;
 
-use aws_crypto_mpl::structures::{
+use aws_crypto_mpl::types::{
     AlgorithmSuiteId, CommitmentPolicy, EsdkAlgorithmSuiteId, EsdkCommitmentPolicy,
 };
 

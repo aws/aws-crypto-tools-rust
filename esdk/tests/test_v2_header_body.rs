@@ -5,7 +5,7 @@
 
 mod test_helpers;
 
-use aws_esdk::*;
+use aws_esdk::types::*;
 use test_helpers::*;
 
 /// V2 header fixed-offset fields.
@@ -33,7 +33,7 @@ impl<'a> V2FixedFields<'a> {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_v2_header_version() {
     let pt = b"test v2 header version";
-    let ct = encrypt_default(pt).await.ciphertext;
+    let ct = encrypt_default(pt).await.into_ciphertext();
     let hdr = V2FixedFields::parse(&ct);
     //= spec/client-apis/encrypt.md#v2-header
     //= type=test
@@ -57,7 +57,7 @@ async fn test_v2_header_version() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_v2_header_algorithm_suite_id() {
-    let ct = encrypt_default(b"suite test").await.ciphertext;
+    let ct = encrypt_default(b"suite test").await.into_ciphertext();
     let hdr = V2FixedFields::parse(&ct);
 
     //= spec/client-apis/encrypt.md#v2-header
@@ -84,8 +84,8 @@ async fn test_v2_header_algorithm_suite_id() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_v2_header_message_id() {
-    let ct1 = encrypt_default(b"msg id v2 test").await.ciphertext;
-    let ct2 = encrypt_default(b"msg id v2 test").await.ciphertext;
+    let ct1 = encrypt_default(b"msg id v2 test").await.into_ciphertext();
+    let ct2 = encrypt_default(b"msg id v2 test").await.into_ciphertext();
     let hdr1 = V2FixedFields::parse(&ct1);
     let hdr2 = V2FixedFields::parse(&ct2);
 
@@ -117,7 +117,7 @@ async fn test_v2_header_message_id() {
 
 // TODO(native-mpl): relies on the smithy `mpl()` client + required-encryption-context
 // CMM (create_required_encryption_context_cmm), not yet implemented in native
-// aws-crypto-mpl (no RequiredEncryptionContextCmm type; EncryptInput exposes no
+// aws-crypto-mpl (no RequiredEncryptionContextCmm type; the encrypt builder exposes no
 // required_encryption_context_keys). The AAD "required EC keys excluded from header"
 // assertion needs a native required-EC CMM to be re-covered.
 /*
@@ -156,8 +156,16 @@ async fn test_v2_header_aad() {
         .unwrap();
 
     let pt = b"aad required ec test v2";
-    let enc_input = EncryptInput::with_legacy_cmm(pt, ec.clone(), req_cmm);
-    let ct = encrypt(&enc_input).await.unwrap().ciphertext;
+    let esdk = Client::default();
+    let ct = esdk
+        .encrypt()
+        .plaintext(pt)
+        .encryption_context(ec.clone())
+        .cmm(req_cmm)
+        .send()
+        .await
+        .unwrap()
+        .ciphertext;
 
     // AAD starts at offset 35 (after Version(1) + AlgSuiteID(2) + MessageID(32))
     let aad_byte_len = u16::from_be_bytes([ct[35], ct[36]]) as usize;
@@ -183,12 +191,17 @@ async fn test_v2_header_aad() {
     );
 
     // Round-trip proves the message is still valid when required EC is supplied on decrypt
-    let dec_input = DecryptInput::with_legacy_keyring(
-        &ct,
-        std::collections::HashMap::from([("required_key".to_string(), "required_val".to_string())]),
-        keyring,
-    );
-    let result = decrypt(&dec_input).await.unwrap();
+    let result = esdk
+        .decrypt()
+        .ciphertext(&ct)
+        .encryption_context(std::collections::HashMap::from([(
+            "required_key".to_string(),
+            "required_val".to_string(),
+        )]))
+        .keyring(keyring)
+        .send()
+        .await
+        .unwrap();
     assert_eq!(
         result.plaintext, pt,
         "round-trip with required EC proves correctness"
@@ -199,7 +212,7 @@ async fn test_v2_header_aad() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_v2_header_encrypted_data_keys() {
     let pt = b"edk test";
-    let ct = encrypt_default(pt).await.ciphertext;
+    let ct = encrypt_default(pt).await.into_ciphertext();
     let edk_section = parse_edk_section(&ct, Version::V2);
     //= spec/client-apis/encrypt.md#v2-header
     //= type=test
@@ -218,7 +231,9 @@ async fn test_v2_header_encrypted_data_keys() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_v2_header_content_type() {
-    let ct = encrypt_default(b"content type test").await.ciphertext;
+    let ct = encrypt_default(b"content type test")
+        .await
+        .into_ciphertext();
     let offset = content_type_offset_v2(&ct);
     //= spec/client-apis/encrypt.md#v2-header
     //= type=test
@@ -232,7 +247,9 @@ async fn test_v2_header_content_type() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_v2_header_frame_length() {
-    let ct = encrypt_default(b"frame length test").await.ciphertext;
+    let ct = encrypt_default(b"frame length test")
+        .await
+        .into_ciphertext();
     let (_, _, fl_offset) = parse_header_offsets(&ct);
     //= spec/client-apis/encrypt.md#v2-header
     //= type=test
@@ -259,7 +276,7 @@ async fn test_v2_header_frame_length() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_v2_header_algorithm_suite_data() {
-    let ct = encrypt_default(b"suite data test").await.ciphertext;
+    let ct = encrypt_default(b"suite data test").await.into_ciphertext();
     let fields = parse_v2_header_field_offsets(&ct);
     let (_, start, end) = fields
         .iter()
@@ -284,7 +301,7 @@ async fn test_v2_header_algorithm_suite_data() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_v2_header_serialization_order() {
-    let ct = encrypt_default(b"order test").await.ciphertext;
+    let ct = encrypt_default(b"order test").await.into_ciphertext();
     let fields = parse_v2_header_field_offsets(&ct);
 
     //= spec/client-apis/encrypt.md#v2-header
