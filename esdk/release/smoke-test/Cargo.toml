@@ -14,6 +14,4 @@ path = "src/main.rs"
 # crate so the harness runs from a plain checkout.
 [dependencies]
 aws-esdk = { path = "../.." }
-aws-mpl-legacy = { package = "aws-mpl-native", path = "../../../unsafe-unreviewed-mpl/mpl" }
-aws-smithy-types = "1.3.6"
 tokio = { version = "1.49.0", features = ["rt-multi-thread", "macros"] }

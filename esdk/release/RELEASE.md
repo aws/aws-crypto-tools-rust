@@ -129,8 +129,8 @@ publish (`brazil pb build`) are settled. What remains:
 2. **`Config`** — the CargoBrazil `Config` for the package (build system, major
    version, and a `cargo doc` step so docs ship in the package). Base it on an
    existing CargoBrazil package. It is part of what the sync CR lands.
-3. **Dependencies** — confirm the vendored `aws-mpl-native` resolves in the
-   version set (its own package, or the real MPL package), given the MPL is
-   being torn out.
+3. **Dependencies** — confirm the in-repo `aws-crypto-mpl` and
+   `aws-mpl-primitives` crates resolve in the version set (their own packages,
+   or bundled with `aws-esdk`).
 4. **Consumer** — how a consumer depends on the published `aws-esdk`; then
    repoint `smoke-test/Cargo.toml` off the in-repo path dep.
