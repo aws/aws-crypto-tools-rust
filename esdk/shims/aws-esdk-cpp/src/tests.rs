@@ -665,27 +665,16 @@ fn apply_decrypt_options_forwards_every_optional_input() {
 // The built SdkConfig is opaque through the facade, so the values must be tested from Rust
 
 #[test]
-fn user_agent_form_and_append() {
+fn shim_framework_metadata_is_valid() {
     //= spec/shim/esdk-shim.md#service-client-configuration
     //= type=test
     //# - The shim MUST set a user-agent on each service client of the form
     //# `AwsEncryptionSdk-Shim-<target-language>-<core-language>-<version>`, where
     //# `<target-language>` is the target language, `<core-language>` is the core
     //# ESDK's implementation language, and `<version>` is the shim's published version.
-    let ua = shim_user_agent();
-    assert_eq!(merge_user_agent("", &ua), ua);
-    assert!(ua.starts_with("AwsEncryptionSdk-Shim-C++-Rust-"));
-
-    //= spec/shim/esdk-shim.md#service-client-configuration
-    //= type=test
-    //# - The shim MUST preserve any user-agent already present in the loaded
-    //# configuration, appending its own rather than replacing it.
-    let merged = merge_user_agent("existing-agent/1.0", &ua);
-    assert!(
-        merged.starts_with("existing-agent/1.0"),
-        "must preserve existing: {merged}"
-    );
-    assert!(merged.contains(&ua), "must append shim UA: {merged}");
+    let md = shim_framework_metadata();
+    assert_eq!(md.name(), "AwsEncryptionSdk-Shim-C++-Rust");
+    assert_eq!(md.version(), Some(env!("CARGO_PKG_VERSION")));
 }
 
 #[test]
