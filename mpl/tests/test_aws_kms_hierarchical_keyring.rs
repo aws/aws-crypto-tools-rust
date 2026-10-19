@@ -1,7 +1,7 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Tests for `aws_kms::hierarchical_keyring`.
+//! Tests for `keyring::HierarchicalKeyring`.
 //!
 //! Covers, in order: construction and configuration validation (TTL,
 //! partition id, cache wiring), the cache entry identifier formulas, the

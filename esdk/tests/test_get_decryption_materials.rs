@@ -359,7 +359,17 @@ impl cmm::Cmm for DecryptSpyCmm {
         &self,
         request: GetEncryptionMaterialsInput,
     ) -> Result<GetEncryptionMaterialsOutput, MplError> {
-        Cmm::get_encryption_materials(&self.inner, request).await
+        self.inner
+            .get_encryption_materials()
+            .encryption_context(request.encryption_context().clone())
+            .commitment_policy(request.commitment_policy())
+            .set_algorithm_suite_id(request.algorithm_suite_id())
+            .set_required_encryption_context_keys(
+                request.required_encryption_context_keys().cloned(),
+            )
+            .set_max_plaintext_length(request.max_plaintext_length())
+            .send()
+            .await
     }
 
     async fn decrypt_materials(
@@ -375,7 +385,15 @@ impl cmm::Cmm for DecryptSpyCmm {
             .collect();
         *self.observed_ec_keys.lock().unwrap() = Some(keys);
         // Delegate to the inner default CMM so real materials are returned.
-        Cmm::decrypt_materials(&self.inner, request).await
+        self.inner
+            .decrypt_materials()
+            .algorithm_suite_id(request.algorithm_suite_id())
+            .commitment_policy(request.commitment_policy())
+            .encrypted_data_keys(request.encrypted_data_keys().to_vec())
+            .encryption_context(request.encryption_context().clone())
+            .set_reproduced_encryption_context(request.reproduced_encryption_context().cloned())
+            .send()
+            .await
     }
 }
 

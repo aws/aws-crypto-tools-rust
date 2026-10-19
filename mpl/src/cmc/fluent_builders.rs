@@ -275,22 +275,28 @@ macro_rules! fluent_cmc {
         impl $ty {
             /// Start a [`Cmc::put_cache_entry`] call.
             pub fn put_cache_entry(&self) -> PutCacheEntryFluentBuilder {
-                SharedCmc::new(self.clone()).put_cache_entry()
+                SharedCmc::new(crate::shared::Builtin(self.clone())).put_cache_entry()
             }
 
             /// Start a [`Cmc::get_cache_entry`] call.
             pub fn get_cache_entry(&self) -> GetCacheEntryFluentBuilder {
-                SharedCmc::new(self.clone()).get_cache_entry()
+                SharedCmc::new(crate::shared::Builtin(self.clone())).get_cache_entry()
             }
 
             /// Start a [`Cmc::delete_cache_entry`] call.
             pub fn delete_cache_entry(&self) -> DeleteCacheEntryFluentBuilder {
-                SharedCmc::new(self.clone()).delete_cache_entry()
+                SharedCmc::new(crate::shared::Builtin(self.clone())).delete_cache_entry()
             }
 
             /// Start a [`Cmc::update_usage_metadata`] call.
             pub fn update_usage_metadata(&self) -> UpdateUsageMetadataFluentBuilder {
-                SharedCmc::new(self.clone()).update_usage_metadata()
+                SharedCmc::new(crate::shared::Builtin(self.clone())).update_usage_metadata()
+            }
+        }
+
+        impl crate::shared::FromUnshared<$ty> for SharedCmc {
+            fn from_unshared(value: $ty) -> Self {
+                SharedCmc::new(crate::shared::Builtin(value))
             }
         }
     )+};

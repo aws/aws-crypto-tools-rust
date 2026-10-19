@@ -9,9 +9,9 @@
 
 use std::time::{Duration, SystemTime};
 
-use aws_crypto_mpl::key_store::types::KmsConfiguration;
-use aws_crypto_mpl::keyring::HierarchicalKeyring;
-use aws_crypto_mpl::{aws_config, aws_sdk_dynamodb, aws_sdk_kms, key_store};
+use aws_esdk::key_store::types::KmsConfiguration;
+use aws_esdk::keyring::HierarchicalKeyring;
+use aws_esdk::{aws_config, aws_sdk_dynamodb, aws_sdk_kms, key_store};
 use aws_sdk_kms::config::Credentials;
 use aws_smithy_http_client::tls::{Provider, rustls_provider::CryptoMode};
 

@@ -157,9 +157,9 @@ impl EncryptionMaterials {
 #[derive(Debug, Default)]
 pub struct EncryptionMaterialsBuilder {
     algorithm_suite_id: Option<AlgorithmSuiteId>,
-    encrypted_data_keys: Option<Vec<EncryptedDataKey>>,
-    encryption_context: Option<EncryptionContext>,
-    required_encryption_context_keys: Option<BTreeSet<String>>,
+    encrypted_data_keys: Vec<EncryptedDataKey>,
+    encryption_context: EncryptionContext,
+    required_encryption_context_keys: BTreeSet<String>,
     plaintext_data_key: Option<PlaintextDataKey>,
     signing_key: Option<SigningKey>,
     symmetric_signing_keys: Option<Vec<SymmetricSigningKey>>,
@@ -198,7 +198,7 @@ impl EncryptionMaterialsBuilder {
         mut self,
         encrypted_data_keys: impl Into<Vec<EncryptedDataKey>>,
     ) -> Self {
-        self.encrypted_data_keys = Some(encrypted_data_keys.into());
+        self.encrypted_data_keys = encrypted_data_keys.into();
         self
     }
 
@@ -209,13 +209,13 @@ impl EncryptionMaterialsBuilder {
         mut self,
         encrypted_data_keys: Option<Vec<EncryptedDataKey>>,
     ) -> Self {
-        self.encrypted_data_keys = encrypted_data_keys;
+        self.encrypted_data_keys = encrypted_data_keys.unwrap_or_default();
         self
     }
 
     /// The encrypted data keys set so far.
     #[must_use]
-    pub const fn get_encrypted_data_keys(&self) -> &Option<Vec<EncryptedDataKey>> {
+    pub const fn get_encrypted_data_keys(&self) -> &Vec<EncryptedDataKey> {
         &self.encrypted_data_keys
     }
 
@@ -223,7 +223,7 @@ impl EncryptionMaterialsBuilder {
     /// Defaults to empty.
     #[must_use]
     pub fn encryption_context(mut self, encryption_context: impl Into<EncryptionContext>) -> Self {
-        self.encryption_context = Some(encryption_context.into());
+        self.encryption_context = encryption_context.into();
         self
     }
 
@@ -231,14 +231,13 @@ impl EncryptionMaterialsBuilder {
     /// To set a value, use [`Self::encryption_context`].
     #[must_use]
     pub fn set_encryption_context(mut self, encryption_context: Option<EncryptionContext>) -> Self {
-        self.encryption_context = encryption_context;
+        self.encryption_context = encryption_context.unwrap_or_default();
         self
     }
 
     /// The encryption context set so far.
     #[must_use]
-    #[allow(clippy::ref_option)] // AWS SDK for Rust getter shape
-    pub const fn get_encryption_context(&self) -> &Option<EncryptionContext> {
+    pub const fn get_encryption_context(&self) -> &EncryptionContext {
         &self.encryption_context
     }
 
@@ -249,12 +248,10 @@ impl EncryptionMaterialsBuilder {
         mut self,
         required_encryption_context_keys: impl IntoIterator<Item = impl Into<String>>,
     ) -> Self {
-        self.required_encryption_context_keys = Some(
-            required_encryption_context_keys
-                .into_iter()
-                .map(Into::into)
-                .collect(),
-        );
+        self.required_encryption_context_keys = required_encryption_context_keys
+            .into_iter()
+            .map(Into::into)
+            .collect();
         self
     }
 
@@ -265,14 +262,14 @@ impl EncryptionMaterialsBuilder {
         mut self,
         required_encryption_context_keys: Option<BTreeSet<String>>,
     ) -> Self {
-        self.required_encryption_context_keys = required_encryption_context_keys;
+        self.required_encryption_context_keys =
+            required_encryption_context_keys.unwrap_or_default();
         self
     }
 
     /// The required encryption context keys set so far.
     #[must_use]
-    #[allow(clippy::ref_option)] // AWS SDK for Rust getter shape
-    pub const fn get_required_encryption_context_keys(&self) -> &Option<BTreeSet<String>> {
+    pub const fn get_required_encryption_context_keys(&self) -> &BTreeSet<String> {
         &self.required_encryption_context_keys
     }
 
@@ -356,17 +353,14 @@ impl EncryptionMaterialsBuilder {
     ///   or the signing key or symmetric signing keys do not suit the algorithm suite.
     pub fn build(self) -> Result<EncryptionMaterials, Error> {
         let algorithm_suite_id = required(self.algorithm_suite_id, "algorithm_suite_id")?;
-        let encryption_context = self.encryption_context.unwrap_or_default();
-        let required_encryption_context_keys =
-            self.required_encryption_context_keys.unwrap_or_default();
 
         if let Some(key) = &self.plaintext_data_key {
             check_data_key_length(&algorithm_suite_id.specification(), key)?;
         }
 
         // Required encryption context keys must be a subset of encryption context keys
-        for key in &required_encryption_context_keys {
-            if !encryption_context.contains_key(key) {
+        for key in &self.required_encryption_context_keys {
+            if !self.encryption_context.contains_key(key) {
                 return Err(Error::new(
                     Kind::EncryptionContextMismatch,
                     format!(
@@ -377,12 +371,7 @@ impl EncryptionMaterialsBuilder {
         }
 
         // If no plaintext data key, encrypted data keys must be empty
-        if self.plaintext_data_key.is_none()
-            && self
-                .encrypted_data_keys
-                .as_ref()
-                .is_some_and(|k| !k.is_empty())
-        {
+        if self.plaintext_data_key.is_none() && !self.encrypted_data_keys.is_empty() {
             return Err(Error::new(
                 Kind::InvalidMaterials,
                 "encrypted data keys must be empty when plaintext data key is not present",
@@ -419,9 +408,9 @@ impl EncryptionMaterialsBuilder {
 
         Ok(EncryptionMaterials {
             algorithm_suite_id,
-            encrypted_data_keys: self.encrypted_data_keys.unwrap_or_default(),
-            encryption_context,
-            required_encryption_context_keys,
+            encrypted_data_keys: self.encrypted_data_keys,
+            encryption_context: self.encryption_context,
+            required_encryption_context_keys: self.required_encryption_context_keys,
             plaintext_data_key: self.plaintext_data_key,
             signing_key: self.signing_key,
             symmetric_signing_keys: self.symmetric_signing_keys,

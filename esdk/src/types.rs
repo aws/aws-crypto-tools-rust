@@ -4,6 +4,6 @@
 //! The types operations take and return.
 
 pub use crate::shapes::{
-    AlgorithmSuiteId, Ciphertext, Cmm, CommitmentPolicy, EncryptionContext, IntoShared, Keyring,
-    Plaintext, SharedCmm, SharedKeyring,
+    AlgorithmSuiteId, Ciphertext, CommitmentPolicy, EncryptionContext, Plaintext,
 };
+pub use aws_crypto_mpl::types::AesWrappingAlg;
