@@ -15,8 +15,6 @@
 //! `AwsCryptographicMaterialProviders/dafny/AwsCryptographyKeyStore/test/`
 //! (`Fixtures.dfy` and `TestGetKeys.dfy`).
 
-#![cfg(feature = "test-utils")]
-
 use std::error::Error as _;
 
 use aws_config::{BehaviorVersion, Region};
@@ -27,7 +25,6 @@ use aws_sdk_kms::Client as KmsClient;
 use aws_sdk_kms::error::SdkError;
 use aws_sdk_kms::operation::decrypt::DecryptError;
 
-use aws_crypto_mpl::__test_internals::error_chain::aws_service_error_code;
 use aws_crypto_mpl::key_store::Client as KeyStoreClient;
 use aws_crypto_mpl::key_store::types::KmsConfiguration;
 
@@ -430,11 +427,11 @@ async fn integ_get_active_key_wrong_logical_name_fails_at_kms() {
 
     // The same exception is reachable without knowing which KMS operation
     // failed, via the error code the SDK prescribes for forward-compatible
-    // matching. This is the `Some(code)` half of `aws_service_error_code`;
+    // matching. This is the `Some(code)` half of `Error::code`;
     // the `None` half (a dispatch failure carries no service metadata) is
     // covered in `tests/test_key_store_branch_key_store.rs`.
     assert_eq!(
-        aws_service_error_code(&err),
+        err.code(),
         Some("InvalidCiphertextException"),
         "the service error code must be reachable from the top of the chain",
     );
