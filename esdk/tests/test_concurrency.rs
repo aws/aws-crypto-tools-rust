@@ -163,21 +163,25 @@ fn oversubscribed_round_trips(rt: tokio::runtime::Runtime, tasks: usize, iters: 
             set.spawn(async move {
                 for i in 0..iters {
                     let plaintext = format!("task {t} message {i}").into_bytes();
-                    let enc_input = EncryptInput::builder()
+                    let esdk = aws_esdk::Client::default();
+                    let out = esdk
+                        .encrypt()
                         .plaintext(&plaintext)
                         .keyring(keyring.clone())
-                        .build()
+                        .send()
+                        .await
                         .unwrap();
-                    let out = encrypt(&enc_input).await.unwrap();
 
-                    let dec_input = DecryptInput::builder()
-                        .ciphertext(&out.ciphertext)
+                    let dec = esdk
+                        .decrypt()
+                        .ciphertext(out.ciphertext())
                         .keyring(keyring.clone())
-                        .build()
+                        .send()
+                        .await
                         .unwrap();
-                    let dec = decrypt(&dec_input).await.unwrap();
                     assert_eq!(
-                        dec.plaintext, plaintext,
+                        dec.plaintext(),
+                        plaintext,
                         "round trip must return the plaintext"
                     );
                 }
