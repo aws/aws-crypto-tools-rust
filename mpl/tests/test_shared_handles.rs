@@ -7,9 +7,9 @@
 use aws_crypto_mpl::Error;
 use aws_crypto_mpl::async_trait;
 use aws_crypto_mpl::cmc::{LocalCmc, SharedCmc};
-use aws_crypto_mpl::cmm::{Cmm, DefaultCmm, SharedCmm};
+use aws_crypto_mpl::cmm::{DefaultCmm, SharedCmm};
 use aws_crypto_mpl::keyring::{
-    BranchKeySupplier, Keyring, RawAesKeyring, SharedBranchKeySupplier, SharedKeyring,
+    BranchKeySupplier, RawAesKeyring, SharedBranchKeySupplier, SharedKeyring,
 };
 use aws_crypto_mpl::keyring::{GetBranchKeyIdInput, GetBranchKeyIdOutput};
 use aws_crypto_mpl::shared::IntoShared;
@@ -95,14 +95,14 @@ fn shared_branch_key_supplier_reuses_handle() {
 }
 
 #[test]
-fn an_arc_keyring_and_cmm_keep_the_inner_name() {
+fn a_handle_keeps_the_built_in_name() {
     let raw = keyring();
     let name = raw.name().into_owned();
-    assert_eq!(std::sync::Arc::new(raw).name(), name);
+    assert_eq!(SharedKeyring::new(raw).name(), name);
 
     let cmm = DefaultCmm::new(keyring());
     let name = cmm.name().into_owned();
-    assert_eq!(std::sync::Arc::new(cmm).name(), name);
+    assert_eq!(SharedCmm::new(cmm).name(), name);
 }
 
 #[tokio::test]

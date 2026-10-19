@@ -338,7 +338,17 @@ impl Cmm for DuplicateEdkCmm {
         &self,
         request: GetEncryptionMaterialsInput,
     ) -> Result<GetEncryptionMaterialsOutput, MplError> {
-        let materials = Cmm::get_encryption_materials(&self.inner, request)
+        let materials = self
+            .inner
+            .get_encryption_materials()
+            .encryption_context(request.encryption_context().clone())
+            .commitment_policy(request.commitment_policy())
+            .set_algorithm_suite_id(request.algorithm_suite_id())
+            .set_required_encryption_context_keys(
+                request.required_encryption_context_keys().cloned(),
+            )
+            .set_max_plaintext_length(request.max_plaintext_length())
+            .send()
             .await?
             .into_encryption_materials();
         let Some(first) = materials.encrypted_data_keys().first().cloned() else {
@@ -356,7 +366,15 @@ impl Cmm for DuplicateEdkCmm {
         &self,
         request: DecryptMaterialsInput,
     ) -> Result<DecryptMaterialsOutput, MplError> {
-        Cmm::decrypt_materials(&self.inner, request).await
+        self.inner
+            .decrypt_materials()
+            .algorithm_suite_id(request.algorithm_suite_id())
+            .commitment_policy(request.commitment_policy())
+            .encrypted_data_keys(request.encrypted_data_keys().to_vec())
+            .encryption_context(request.encryption_context().clone())
+            .set_reproduced_encryption_context(request.reproduced_encryption_context().cloned())
+            .send()
+            .await
     }
 }
 
@@ -684,14 +702,32 @@ impl Cmm for SpyCmm {
         *self.observed_max_plaintext_length.lock().unwrap() =
             Some(request.max_plaintext_length().map(|len| len as i64));
 
-        Cmm::get_encryption_materials(&self.inner, request).await
+        self.inner
+            .get_encryption_materials()
+            .encryption_context(request.encryption_context().clone())
+            .commitment_policy(request.commitment_policy())
+            .set_algorithm_suite_id(request.algorithm_suite_id())
+            .set_required_encryption_context_keys(
+                request.required_encryption_context_keys().cloned(),
+            )
+            .set_max_plaintext_length(request.max_plaintext_length())
+            .send()
+            .await
     }
 
     async fn decrypt_materials(
         &self,
         request: DecryptMaterialsInput,
     ) -> Result<DecryptMaterialsOutput, MplError> {
-        Cmm::decrypt_materials(&self.inner, request).await
+        self.inner
+            .decrypt_materials()
+            .algorithm_suite_id(request.algorithm_suite_id())
+            .commitment_policy(request.commitment_policy())
+            .encrypted_data_keys(request.encrypted_data_keys().to_vec())
+            .encryption_context(request.encryption_context().clone())
+            .set_reproduced_encryption_context(request.reproduced_encryption_context().cloned())
+            .send()
+            .await
     }
 }
 

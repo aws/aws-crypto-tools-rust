@@ -62,6 +62,12 @@ pub struct DefaultCmm {
 }
 
 impl DefaultCmm {
+    /// `"default"`.
+    #[must_use]
+    pub fn name(&self) -> Cow<'_, str> {
+        Cow::Borrowed("default")
+    }
+
     /// Construct a `DefaultCmm` wrapping the given keyring.
     pub fn new(keyring: impl IntoShared<SharedKeyring>) -> Self {
         Self {
@@ -71,9 +77,9 @@ impl DefaultCmm {
 }
 
 #[async_trait]
-impl Cmm for DefaultCmm {
+impl Cmm for crate::shared::Builtin<DefaultCmm> {
     fn name(&self) -> Cow<'_, str> {
-        Cow::Borrowed("default")
+        self.0.name()
     }
 
     async fn get_encryption_materials(

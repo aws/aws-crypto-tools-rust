@@ -1,5 +1,5 @@
 //! Translate the modeled CMM/Keyring configuration into an `aws-esdk`
-//! [`SharedKeyring`](aws_esdk::types::SharedKeyring).
+//! [`SharedKeyring`](aws_esdk::keyring::SharedKeyring).
 //!
 //! Both keyrings are built from the MPL ([`aws_crypto_mpl`]):
 //! - Raw AES via [`RawAesKeyring`].
@@ -17,7 +17,7 @@ use crate::model::{
 use aws_crypto_mpl::key_store::types::KmsConfiguration;
 use aws_crypto_mpl::key_store::Client as KeyStoreClient;
 use aws_crypto_mpl::keyring::{HierarchicalKeyring, RawAesKeyring};
-use aws_esdk::types::SharedKeyring;
+use aws_esdk::keyring::SharedKeyring;
 
 /// Resolve a CMM configuration to the keyring the ESDK client will use.
 ///
@@ -48,7 +48,7 @@ pub async fn keyring_for_cmm(
     ))
 }
 
-/// Build an `aws-esdk` [`SharedKeyring`](aws_esdk::types::SharedKeyring) from a modeled `Keyring`.
+/// Build an `aws-esdk` [`SharedKeyring`](aws_esdk::keyring::SharedKeyring) from a modeled `Keyring`.
 pub async fn keyring_for_config(keyring: &Keyring) -> Result<SharedKeyring, ServerError> {
     let set = [
         keyring.aws_kms.is_some(),

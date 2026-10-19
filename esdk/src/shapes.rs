@@ -109,28 +109,14 @@ pub type Tee = dyn std::io::Write + Send;
 /// the materials boundary.
 pub use aws_crypto_mpl::types::EsdkAlgorithmSuiteId as AlgorithmSuiteId;
 
-/// The Material Providers Library's shared keyring handle, re-exported.
-/// The `keyring` input of every operation holds one.
-pub use aws_crypto_mpl::keyring::SharedKeyring;
+pub(crate) use aws_crypto_mpl::keyring::SharedKeyring;
 
-/// The Material Providers Library's shared CMM handle, re-exported.
-/// The `cmm` input of every operation holds one.
-pub use aws_crypto_mpl::cmm::SharedCmm;
+pub(crate) use aws_crypto_mpl::cmm::SharedCmm;
 
-/// The Material Providers Library's keyring trait, re-exported.
-/// Implement it to supply a custom keyring.
-pub use aws_crypto_mpl::keyring::Keyring;
-
-/// The Material Providers Library's CMM trait, re-exported.
-/// Implement it to supply a custom CMM.
-pub use aws_crypto_mpl::cmm::Cmm;
-
-/// Put `#[async_trait]` on an `impl` of [`Keyring`] or [`Cmm`].
+/// Put `#[async_trait]` on an `impl` of a [`Keyring`](crate::keyring::Keyring) or [`Cmm`](crate::cmm::Cmm).
 pub use aws_crypto_mpl::async_trait;
 
-/// The Material Providers Library's conversion into a shared handle, re-exported.
-/// `keyring.into_shared()` returns a [`SharedKeyring`], reusing it if it already is one.
-pub use aws_crypto_mpl::shared::IntoShared;
+pub(crate) use aws_crypto_mpl::shared::IntoShared;
 
 /// Key-Value pairs to associate with the encrypted data.
 ///

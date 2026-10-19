@@ -13,7 +13,7 @@ use crate::model::{
 };
 use aws_esdk::types::AlgorithmSuiteId as MplAlgorithmSuiteId;
 use aws_esdk::types::CommitmentPolicy as MplCommitmentPolicy;
-use aws_esdk::{types::EncryptionContext, types::SharedKeyring, Client};
+use aws_esdk::{keyring::SharedKeyring, types::EncryptionContext, Client};
 use std::collections::HashMap;
 use std::num::NonZeroUsize;
 use std::sync::Mutex;

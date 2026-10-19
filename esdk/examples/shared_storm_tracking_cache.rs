@@ -18,11 +18,11 @@
 
 use std::time::Duration;
 
-use aws_crypto_mpl::cmc::StormTrackingCmc;
-use aws_crypto_mpl::key_store::types::KmsConfiguration;
-use aws_crypto_mpl::keyring::HierarchicalKeyring;
-use aws_crypto_mpl::{aws_config, aws_sdk_dynamodb, aws_sdk_kms, key_store};
+use aws_esdk::cmc::StormTrackingCmc;
+use aws_esdk::key_store::types::KmsConfiguration;
+use aws_esdk::keyring::HierarchicalKeyring;
 use aws_esdk::types::EncryptionContext;
+use aws_esdk::{aws_config, aws_sdk_dynamodb, aws_sdk_kms, key_store};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
