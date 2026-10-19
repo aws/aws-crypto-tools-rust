@@ -1,0 +1,73 @@
+name: MPL TestServer (Rust)
+
+on:
+  pull_request:
+    paths:
+      - "mpl-test-server/**"
+      - "mpl/**"
+      - ".github/workflows/mpl-test-server.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "mpl-test-server/**"
+      - "mpl/**"
+      - ".github/workflows/mpl-test-server.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rust-language-server:
+    name: build + test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mpl-test-server
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "stable"
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache cargo build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: mpl-test-server
+
+      - name: Format check
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Build
+        run: cargo build --verbose
+
+      - name: Test
+        run: cargo test --verbose
+
+  # The cross-language TestServer run, from the shared commons workflow. This
+  # checkout supplies the rust server; every other server comes from its
+  # configured branch. Only the pairs involving rust run; the full matrix runs in commons.
+  test-server:
+    name: TestServer
+    permissions:
+      contents: read
+      actions: read
+    uses: aws/aws-crypto-tools-commons/.github/workflows/mpl-test-server-reusable.yml@main
+    with:
+      focus: rust
+      checkout-languages: rust
+    secrets:
+      repo-pat: ${{ secrets.COMMONS_REPO_PAT }}

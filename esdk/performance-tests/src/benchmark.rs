@@ -4,11 +4,13 @@
 use anyhow::Result;
 use std::time::Duration;
 
-use aws_crypto_mpl::{
-    AesGcm, BranchKeyStore, CacheType, DefaultCache, HierarchicalKeyring, KmsConfiguration,
-    RawAesKeyring, SharedKeyring,
-};
-use aws_esdk::{CommitmentPolicy, Esdk};
+use aws_crypto_mpl::cmc::DefaultCmc;
+use aws_crypto_mpl::key_store::Client as KeyStoreClient;
+use aws_crypto_mpl::key_store::types::KmsConfiguration;
+use aws_crypto_mpl::keyring::{HierarchicalKeyring, RawAesKeyring, SharedKeyring};
+use aws_crypto_mpl::types::AesWrappingAlg;
+use aws_esdk::Client;
+use aws_esdk::types::CommitmentPolicy;
 use log::info;
 use sysinfo::System;
 
@@ -50,7 +52,7 @@ impl KeyringChoice {
 }
 
 pub struct EsdkBenchmark {
-    pub esdk_client: Esdk,
+    pub esdk_client: Client,
     pub keyring: SharedKeyring,
     pub keyring_name: &'static str,
     pub config: TestConfig,
@@ -88,10 +90,10 @@ impl EsdkBenchmark {
         })
     }
 
-    async fn setup_esdk(keyring_choice: KeyringChoice) -> Result<(Esdk, SharedKeyring)> {
-        let esdk_client = Esdk::builder()
+    async fn setup_esdk(keyring_choice: KeyringChoice) -> Result<(Client, SharedKeyring)> {
+        let esdk_client = Client::builder()
             .commitment_policy(CommitmentPolicy::RequireEncryptRequireDecrypt)
-            .build();
+            .build()?;
 
         let keyring = match keyring_choice {
             KeyringChoice::Hierarchical => SharedKeyring::new(Self::hierarchical_keyring().await?),
@@ -102,14 +104,15 @@ impl EsdkBenchmark {
     }
 
     async fn hierarchical_keyring() -> Result<HierarchicalKeyring> {
+
         let sdk_config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
 
-        let key_store = BranchKeyStore::builder()
+        let key_store = KeyStoreClient::builder()
             .kms_client(aws_sdk_kms::Client::new(&sdk_config))
             .ddb_client(aws_sdk_dynamodb::Client::new(&sdk_config))
             .ddb_table_name(BRANCH_KEY_STORE_NAME)
-            .logical_keystore_name(LOGICAL_KEY_STORE_NAME)
-            .kms_configuration(KmsConfiguration::KmsKeyArn(HIERARCHY_KEY_ARN.to_string()))
+            .logical_key_store_name(LOGICAL_KEY_STORE_NAME)
+            .kms_configuration(KmsConfiguration::KmsKeyArn(HIERARCHY_KEY_ARN.into()))
             .build()
             .await
             .map_err(|e| anyhow::anyhow!("failed to build the key store: {e}"))?;
@@ -118,21 +121,27 @@ impl EsdkBenchmark {
             .key_store(key_store)
             .branch_key_id(BRANCH_KEY_ID)
             .ttl(Duration::from_secs(600_000))
-            .cache(CacheType::Default(DefaultCache::new(1000)))
+            .cache(
+                DefaultCmc::builder()
+                    .entry_capacity(1000)
+                    .build()
+                    .map_err(|e| anyhow::anyhow!("failed to build the cache: {e}"))?,
+            )
             .build()
+            .await
             .map_err(|e| anyhow::anyhow!("failed to create the hierarchical keyring: {e}"))
     }
 
     /// Raw AES keyring with a fixed 256-bit wrapping key. Wraps data keys
     /// locally, so it needs no AWS resources or credentials.
     fn raw_aes_keyring() -> Result<RawAesKeyring> {
-        RawAesKeyring::new(
-            RAW_AES_KEY_NAMESPACE,
-            RAW_AES_KEY_NAME,
-            vec![0u8; 32],
-            AesGcm::Aes256Gcm,
-        )
-        .map_err(|e| anyhow::anyhow!("failed to create raw AES keyring: {e}"))
+        RawAesKeyring::builder()
+            .key_namespace(RAW_AES_KEY_NAMESPACE)
+            .key_name(RAW_AES_KEY_NAME)
+            .wrapping_key(vec![0u8; 32])
+            .wrapping_alg(AesWrappingAlg::AlgAes256GcmIv12Tag16)
+            .build()
+            .map_err(|e| anyhow::anyhow!("failed to create raw AES keyring: {e}"))
     }
 
     pub fn save_results(&self, output_path: &str) -> Result<()> {

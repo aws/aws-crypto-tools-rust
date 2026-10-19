@@ -1,7 +1,7 @@
 # ESDK C++ Performance Benchmark
 
 Performance benchmark for the C++ shim over the native Rust AWS Encryption SDK,
-exercising encrypt/decrypt through `Aws::Esdk::EncryptionSDK` with a selectable
+exercising encrypt/decrypt through `Aws::Esdk::Client` with a selectable
 keyring.
 
 ## What it measures

@@ -1,7 +1,7 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 #![allow(dead_code)]
-use aws_esdk::*;
+use aws_esdk::types::*;
 
 // The following are test resources that exist in tests accounts:
 

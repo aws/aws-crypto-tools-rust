@@ -19,7 +19,7 @@ use std::sync::Arc;
 /// Build the router. Shared with tests so they can drive the real wire in-process.
 pub fn app(state: Arc<CppBackend>) -> Router {
     Router::new()
-        .route("/service/:service/operation/:operation", post(dispatch))
+        .route("/service/{service}/operation/{operation}", post(dispatch))
         .with_state(state)
 }
 

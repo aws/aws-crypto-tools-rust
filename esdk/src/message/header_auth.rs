@@ -7,11 +7,11 @@ use super::header_types::HeaderAuth;
 use super::serializable_types::{get_iv_length, get_tag_length};
 use super::serialize_functions::{read_vec, write_bytes};
 use super::{Error, ser_err};
-use crate::types::{SafeRead, SafeWrite};
-use aws_crypto_mpl::structures::AlgorithmSuite;
+use crate::shapes::{Source, Tee};
+use aws_crypto_mpl::types::AlgorithmSuite;
 
 pub(crate) fn write_header_auth_tag(
-    w: &mut dyn SafeWrite,
+    w: &mut Tee,
     header_auth: &HeaderAuth,
     suite: &AlgorithmSuite,
 ) -> Result<(), Error> {
@@ -30,10 +30,7 @@ pub(crate) fn write_header_auth_tag(
     }
 }
 
-pub(crate) fn write_header_auth_tag_v1(
-    w: &mut dyn SafeWrite,
-    header_auth: &HeaderAuth,
-) -> Result<(), Error> {
+pub(crate) fn write_header_auth_tag_v1(w: &mut Tee, header_auth: &HeaderAuth) -> Result<(), Error> {
     match header_auth {
         HeaderAuth::AESMac {
             header_iv,
@@ -77,10 +74,7 @@ pub(crate) fn write_header_auth_tag_v1(
         }
     }
 }
-pub(crate) fn write_header_auth_tag_v2(
-    w: &mut dyn SafeWrite,
-    header_auth: &HeaderAuth,
-) -> Result<(), Error> {
+pub(crate) fn write_header_auth_tag_v2(w: &mut Tee, header_auth: &HeaderAuth) -> Result<(), Error> {
     match header_auth {
         HeaderAuth::AESMac {
             header_auth_tag, ..
@@ -107,27 +101,27 @@ pub(crate) fn write_header_auth_tag_v2(
 ///
 /// Returns an error if the message format version is unsupported or if the
 /// stream ends before the IV and authentication tag are fully read.
-pub fn read_header_auth_tag(
-    r: &mut dyn SafeRead,
+pub async fn read_header_auth_tag(
+    r: &mut dyn Source,
     suite: &AlgorithmSuite,
-    raw: &mut dyn SafeWrite,
+    raw: &mut Tee,
 ) -> Result<HeaderAuth, Error> {
     match suite.message_format_version() {
         //= spec/client-apis/decrypt.md#v1-header-deserialization
         //# The Decrypt operation MUST then deserialize the
         //# [Header Authentication Version 1.0](../data-format/message-header.md#header-authentication-version-10):
-        1 => read_header_auth_tag_v1(r, suite, raw),
+        1 => read_header_auth_tag_v1(r, suite, raw).await,
         //= spec/client-apis/decrypt.md#v2-header-deserialization
         //# The Decrypt operation MUST then deserialize the
         //# [Header Authentication Version 2.0](../data-format/message-header.md#header-authentication-version-20):
-        2 => read_header_auth_tag_v2(r, suite, raw),
+        2 => read_header_auth_tag_v2(r, suite, raw).await,
         _ => ser_err("unexpected message version"),
     }
 }
-pub(crate) fn read_header_auth_tag_v1(
-    r: &mut dyn SafeRead,
+pub(crate) async fn read_header_auth_tag_v1(
+    r: &mut dyn Source,
     suite: &AlgorithmSuite,
-    raw: &mut dyn SafeWrite,
+    raw: &mut Tee,
 ) -> Result<HeaderAuth, Error> {
     //= spec/data-format/message-header.md#header-authentication-version-1-0
     //# The V1 Header Authentication MUST consist of, in order,
@@ -146,7 +140,7 @@ pub(crate) fn read_header_auth_tag_v1(
     //= spec/data-format/message-header.md#iv
     //= type=implication
     //# The IV MUST be interpreted as bytes.
-    let header_iv = read_vec(r, iv_len, raw)?;
+    let header_iv = read_vec(r, iv_len, raw).await?;
 
     // Authentication Tag
 
@@ -157,17 +151,17 @@ pub(crate) fn read_header_auth_tag_v1(
     //= spec/data-format/message-header.md#authentication-tag
     //= type=implication
     //# The authentication tag MUST be interpreted as bytes.
-    let header_auth_tag = read_vec(r, tag_len, raw)?;
+    let header_auth_tag = read_vec(r, tag_len, raw).await?;
     Ok(HeaderAuth::AESMac {
         header_iv,
         header_auth_tag,
     })
 }
 
-pub(crate) fn read_header_auth_tag_v2(
-    r: &mut dyn SafeRead,
+pub(crate) async fn read_header_auth_tag_v2(
+    r: &mut dyn Source,
     suite: &AlgorithmSuite,
-    raw: &mut dyn SafeWrite,
+    raw: &mut Tee,
 ) -> Result<HeaderAuth, Error> {
     //= spec/data-format/message-header.md#header-authentication-version-2-0
     //# The V2 Header Authentication MUST consist of the Authentication Tag only.
@@ -176,7 +170,7 @@ pub(crate) fn read_header_auth_tag_v2(
 
     let tag_len = get_tag_length(suite);
 
-    let header_auth_tag = read_vec(r, tag_len, raw)?;
+    let header_auth_tag = read_vec(r, tag_len, raw).await?;
     //= spec/client-apis/decrypt.md#verify-the-header
     //= type=implication
     //= reason=Cannot be tested externally because verifying the IV value requires the derived data key (not exposed by the public API). The literal `vec![0u8; ...]` here is the proof.

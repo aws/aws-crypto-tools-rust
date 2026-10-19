@@ -1,25 +1,22 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Tests for the operation input builders.
+//! Tests for the operation fluent builders' setters.
 
 mod test_helpers;
 
 use aws_crypto_mpl::cmm::DefaultCmm;
-use aws_esdk::{
-    AlgorithmSuiteId, CommitmentPolicy, DecryptInput, DecryptStreamInput, EncryptInput,
-    EncryptStreamInput, EncryptionContext, SharedCmm, SharedKeyring,
-};
-use std::num::NonZeroU32;
-use std::num::NonZeroUsize;
-use test_helpers::test_keyring;
+use aws_esdk::Client;
+use aws_esdk::cmm::SharedCmm;
+use aws_esdk::keyring::SharedKeyring;
+use aws_esdk::types::{AlgorithmSuiteId, CommitmentPolicy, EncryptionContext};
+use std::num::{NonZeroU32, NonZeroUsize};
+use test_helpers::{count_frames, esdk_with, test_keyring};
 
 const SUITE: AlgorithmSuiteId = AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256;
 const POLICY: CommitmentPolicy = CommitmentPolicy::ForbidEncryptAllowDecrypt;
-
-fn cap() -> NonZeroUsize {
-    NonZeroUsize::new(3).unwrap()
-}
+const DEFAULT_SUITE: AlgorithmSuiteId = AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384;
+const FRAME_LENGTH: u32 = 1024;
 
 fn ec() -> EncryptionContext {
     let mut ec = EncryptionContext::new();
@@ -27,300 +24,467 @@ fn ec() -> EncryptionContext {
     ec
 }
 
+fn conflicting_ec() -> EncryptionContext {
+    let mut ec = EncryptionContext::new();
+    ec.insert("k", "other");
+    ec
+}
+
 fn frame_length() -> NonZeroU32 {
-    NonZeroU32::new(1024).unwrap()
+    NonZeroU32::new(FRAME_LENGTH).unwrap()
 }
 
-fn same_keyring(a: Option<&SharedKeyring>, b: &SharedKeyring) -> bool {
-    a.is_some_and(|a| SharedKeyring::ptr_eq(a, b))
-}
-
-fn same_cmm(a: Option<&SharedCmm>, b: &SharedCmm) -> bool {
-    a.is_some_and(|a| SharedCmm::ptr_eq(a, b))
+/// Two full frames plus a one-byte final frame at `FRAME_LENGTH`.
+fn plaintext() -> Vec<u8> {
+    vec![0x42; 2 * FRAME_LENGTH as usize + 1]
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn test_build_requires_plaintext_and_ciphertext() {
+async fn test_send_requires_plaintext_and_ciphertext() {
     let keyring = SharedKeyring::new(test_keyring().await);
-    let err = EncryptInput::builder()
+    let esdk = Client::default();
+
+    let err = esdk
+        .encrypt()
         .keyring(keyring.clone())
-        .build()
-        .expect_err("EncryptInput build must fail without a plaintext");
+        .send()
+        .await
+        .expect_err("encrypt must fail without a plaintext");
     assert!(err.is_validation(), "{:?}", err);
 
-    let err = DecryptInput::builder()
+    let err = esdk
+        .decrypt()
         .keyring(keyring)
-        .build()
-        .expect_err("DecryptInput build must fail without a ciphertext");
+        .send()
+        .await
+        .expect_err("decrypt must fail without a ciphertext");
     assert!(err.is_validation(), "{:?}", err);
 }
 
+// The non-committing SUITE encrypts only under POLICY, so success shows the suite was set.
+// The frame count shows the frame length was set.
 #[tokio::test(flavor = "multi_thread")]
-async fn test_encrypt_input_setters_round_trip() {
+async fn test_encrypt_setters_take_effect() {
     let keyring = SharedKeyring::new(test_keyring().await);
-    let ec = ec();
-    let plaintext = b"plaintext";
+    let esdk = esdk_with(POLICY);
+    let plaintext = plaintext();
 
-    let input = EncryptInput::builder()
-        .plaintext(plaintext)
-        .encryption_context(ec.clone())
+    let out = esdk
+        .encrypt()
+        .plaintext(&plaintext)
+        .encryption_context(ec())
         .keyring(keyring.clone())
         .algorithm_suite_id(SUITE)
         .frame_length(frame_length())
-        .max_encrypted_data_keys(cap())
-        .commitment_policy(POLICY)
-        .build()
+        .send()
+        .await
         .unwrap();
-    assert_eq!(input.plaintext(), plaintext);
-    assert_eq!(input.encryption_context(), &ec);
-    assert!(same_keyring(input.keyring(), &keyring));
-    assert!(input.cmm().is_none());
-    assert_eq!(input.algorithm_suite_id(), Some(SUITE));
-    assert_eq!(input.frame_length(), frame_length());
-    assert_eq!(input.max_encrypted_data_keys(), Some(cap()));
-    assert_eq!(input.commitment_policy(), POLICY);
+    assert_eq!(out.algorithm_suite_id(), SUITE);
+    assert_eq!(*out.encryption_context(), ec());
+    assert_eq!(count_frames(out.ciphertext(), FRAME_LENGTH), (2, 1));
 
-    let input = EncryptInput::builder()
-        .plaintext(plaintext)
-        .set_encryption_context(Some(ec.clone()))
+    let out = esdk
+        .encrypt()
+        .plaintext(&plaintext)
+        .set_encryption_context(Some(ec()))
         .set_keyring(Some(keyring.clone()))
         .set_algorithm_suite_id(Some(SUITE))
         .set_frame_length(Some(frame_length()))
-        .set_max_encrypted_data_keys(Some(cap()))
-        .set_commitment_policy(Some(POLICY))
-        .build()
+        .send()
+        .await
         .unwrap();
-    assert_eq!(input.encryption_context(), &ec);
-    assert!(same_keyring(input.keyring(), &keyring));
-    assert_eq!(input.algorithm_suite_id(), Some(SUITE));
-    assert_eq!(input.frame_length(), frame_length());
-    assert_eq!(input.max_encrypted_data_keys(), Some(cap()));
-    assert_eq!(input.commitment_policy(), POLICY);
+    assert_eq!(out.algorithm_suite_id(), SUITE);
+    assert_eq!(*out.encryption_context(), ec());
+    assert_eq!(count_frames(out.ciphertext(), FRAME_LENGTH), (2, 1));
 
-    let input = EncryptInput::builder()
-        .plaintext(plaintext)
+    let out = Client::default()
+        .encrypt()
+        .plaintext(&plaintext)
         .keyring(keyring.clone())
         .algorithm_suite_id(SUITE)
         .set_algorithm_suite_id(None)
         .frame_length(frame_length())
         .set_frame_length(None)
-        .max_encrypted_data_keys(cap())
-        .set_max_encrypted_data_keys(None)
-        .commitment_policy(POLICY)
-        .set_commitment_policy(None)
-        .encryption_context(ec)
+        .encryption_context(ec())
         .set_encryption_context(None)
-        .build()
+        .send()
+        .await
         .unwrap();
-    assert_eq!(input.algorithm_suite_id(), None);
-    assert_eq!(input.frame_length().get(), 4096);
-    assert_eq!(input.max_encrypted_data_keys(), None);
-    assert_eq!(
-        input.commitment_policy(),
-        CommitmentPolicy::RequireEncryptRequireDecrypt
-    );
-    assert!(input.encryption_context().is_empty());
+    assert_eq!(out.algorithm_suite_id(), DEFAULT_SUITE);
+    assert_eq!(count_frames(out.ciphertext(), 4096), (0, 1));
+    assert!(!out.encryption_context().contains_key("k"));
 
     let cmm = SharedCmm::new(DefaultCmm::new(keyring.clone()));
-    let input = EncryptInput::builder()
-        .plaintext(plaintext)
+    Client::default()
+        .encrypt()
+        .plaintext(&plaintext)
         .cmm(cmm.clone())
-        .build()
-        .unwrap();
-    assert!(same_cmm(input.cmm(), &cmm));
-    assert!(input.keyring().is_none());
+        .send()
+        .await
+        .expect("encrypt with only a CMM must succeed");
 
-    let input = EncryptInput::builder()
-        .plaintext(plaintext)
+    Client::default()
+        .encrypt()
+        .plaintext(&plaintext)
         .keyring(keyring)
         .set_keyring(None)
-        .set_cmm(Some(cmm.clone()))
-        .build()
-        .unwrap();
-    assert!(same_cmm(input.cmm(), &cmm));
-    assert!(input.keyring().is_none());
+        .set_cmm(Some(cmm))
+        .send()
+        .await
+        .expect("set_keyring(None) must leave only the CMM");
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn test_encrypt_stream_input_setters_round_trip() {
+async fn test_encrypt_stream_setters_take_effect() {
     let keyring = SharedKeyring::new(test_keyring().await);
-    let ec = ec();
+    let esdk = esdk_with(POLICY);
+    let plaintext = plaintext();
 
-    let input = EncryptStreamInput::builder()
-        .encryption_context(ec.clone())
+    let mut ct = Vec::new();
+    let out = esdk
+        .encrypt_stream()
+        .encryption_context(ec())
         .keyring(keyring.clone())
         .algorithm_suite_id(SUITE)
         .frame_length(frame_length())
-        .data_size(42)
-        .max_encrypted_data_keys(cap())
-        .commitment_policy(POLICY)
-        .build()
+        .data_size(plaintext.len())
+        .plaintext(plaintext.as_slice())
+        .ciphertext(&mut ct)
+        .send()
+        .await
         .unwrap();
-    assert_eq!(input.encryption_context(), &ec);
-    assert!(same_keyring(input.keyring(), &keyring));
-    assert_eq!(input.algorithm_suite_id(), Some(SUITE));
-    assert_eq!(input.frame_length(), frame_length());
-    assert_eq!(input.data_size(), Some(42));
-    assert_eq!(input.max_encrypted_data_keys(), Some(cap()));
-    assert_eq!(input.commitment_policy(), POLICY);
+    assert_eq!(out.algorithm_suite_id(), SUITE);
+    assert_eq!(*out.encryption_context(), ec());
+    assert_eq!(count_frames(&ct, FRAME_LENGTH), (2, 1));
 
-    let input = EncryptStreamInput::builder()
-        .set_encryption_context(Some(ec))
+    let mut ct = Vec::new();
+    let out = esdk
+        .encrypt_stream()
+        .set_encryption_context(Some(ec()))
         .set_keyring(Some(keyring.clone()))
         .set_algorithm_suite_id(Some(SUITE))
         .set_frame_length(Some(frame_length()))
-        .set_data_size(Some(42))
-        .set_max_encrypted_data_keys(Some(cap()))
-        .set_commitment_policy(Some(POLICY))
-        .build()
+        .set_data_size(Some(plaintext.len()))
+        .plaintext(plaintext.as_slice())
+        .ciphertext(&mut ct)
+        .send()
+        .await
         .unwrap();
-    assert!(same_keyring(input.keyring(), &keyring));
-    assert_eq!(input.algorithm_suite_id(), Some(SUITE));
-    assert_eq!(input.frame_length(), frame_length());
-    assert_eq!(input.data_size(), Some(42));
-    assert_eq!(input.max_encrypted_data_keys(), Some(cap()));
-    assert_eq!(input.commitment_policy(), POLICY);
+    assert_eq!(out.algorithm_suite_id(), SUITE);
+    assert_eq!(*out.encryption_context(), ec());
+    assert_eq!(count_frames(&ct, FRAME_LENGTH), (2, 1));
 
-    let input = EncryptStreamInput::builder()
+    let err = Client::default()
+        .encrypt_stream()
         .keyring(keyring.clone())
-        .data_size(42)
+        .data_size(1)
+        .plaintext(plaintext.as_slice())
+        .ciphertext(Vec::new())
+        .send()
+        .await
+        .expect_err("plaintext longer than data_size must fail");
+    assert!(err.is_validation(), "{:?}", err);
+
+    Client::default()
+        .encrypt_stream()
+        .keyring(keyring.clone())
+        .data_size(1)
         .set_data_size(None)
-        .build()
-        .unwrap();
-    assert_eq!(input.data_size(), None);
+        .plaintext(plaintext.as_slice())
+        .ciphertext(Vec::new())
+        .send()
+        .await
+        .expect("set_data_size(None) must clear the bound");
 
-    let cmm = SharedCmm::new(DefaultCmm::new(keyring));
-    let input = EncryptStreamInput::builder()
+    let cmm = SharedCmm::new(DefaultCmm::new(keyring.clone()));
+    Client::default()
+        .encrypt_stream()
         .cmm(cmm.clone())
-        .build()
-        .unwrap();
-    assert!(same_cmm(input.cmm(), &cmm));
-    let input = EncryptStreamInput::builder()
-        .set_cmm(Some(cmm.clone()))
-        .build()
-        .unwrap();
-    assert!(same_cmm(input.cmm(), &cmm));
+        .plaintext(plaintext.as_slice())
+        .ciphertext(Vec::new())
+        .send()
+        .await
+        .expect("encrypt_stream with cmm must succeed");
+    Client::default()
+        .encrypt_stream()
+        .set_cmm(Some(cmm))
+        .plaintext(plaintext.as_slice())
+        .ciphertext(Vec::new())
+        .send()
+        .await
+        .expect("encrypt_stream with set_cmm must succeed");
+
+    let mut ct = Vec::new();
+    Client::default()
+        .encrypt_stream()
+        .keyring(keyring.clone())
+        .set_plaintext(Some(Box::new(plaintext.as_slice())))
+        .set_ciphertext(Some(Box::new(&mut ct)))
+        .send()
+        .await
+        .expect("set_plaintext and set_ciphertext must set the streams");
+    assert!(!ct.is_empty());
+
+    let no_plaintext = Client::default()
+        .encrypt_stream()
+        .keyring(keyring.clone())
+        .ciphertext(Vec::new())
+        .send()
+        .await;
+    let no_ciphertext = Client::default()
+        .encrypt_stream()
+        .keyring(keyring)
+        .plaintext(plaintext.as_slice())
+        .send()
+        .await;
+    for (case, result) in [("plaintext", no_plaintext), ("ciphertext", no_ciphertext)] {
+        let err = result.expect_err("a missing stream must fail");
+        assert!(err.is_validation(), "{case}: {err:?}");
+    }
 }
 
+// A matching reproduced encryption context succeeds and a conflicting one fails.
 #[tokio::test(flavor = "multi_thread")]
-async fn test_decrypt_input_setters_round_trip() {
+async fn test_decrypt_setters_take_effect() {
     let keyring = SharedKeyring::new(test_keyring().await);
-    let ec = ec();
-    let ciphertext = b"ciphertext";
-
-    let input = DecryptInput::builder()
-        .ciphertext(ciphertext)
-        .encryption_context(ec.clone())
+    let esdk = esdk_with(POLICY);
+    let ct = esdk
+        .encrypt()
+        .plaintext(b"plaintext")
+        .encryption_context(ec())
         .keyring(keyring.clone())
-        .max_encrypted_data_keys(cap())
-        .commitment_policy(POLICY)
-        .build()
-        .unwrap();
-    assert_eq!(input.ciphertext(), ciphertext);
-    assert_eq!(input.encryption_context(), &ec);
-    assert!(same_keyring(input.keyring(), &keyring));
-    assert!(input.cmm().is_none());
-    assert_eq!(input.max_encrypted_data_keys(), Some(cap()));
-    assert_eq!(input.commitment_policy(), POLICY);
+        .algorithm_suite_id(SUITE)
+        .send()
+        .await
+        .unwrap()
+        .into_ciphertext();
 
-    let input = DecryptInput::builder()
-        .ciphertext(ciphertext)
-        .set_encryption_context(Some(ec))
+    let out = esdk
+        .decrypt()
+        .ciphertext(&ct)
+        .encryption_context(ec())
+        .keyring(keyring.clone())
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(out.plaintext(), b"plaintext");
+    assert_eq!(out.algorithm_suite_id(), SUITE);
+
+    let err = esdk
+        .decrypt()
+        .ciphertext(&ct)
+        .encryption_context(conflicting_ec())
+        .keyring(keyring.clone())
+        .send()
+        .await
+        .expect_err("conflicting encryption context must fail");
+    assert!(err.is_encryption_context_mismatch(), "{:?}", err);
+
+    let err = esdk
+        .decrypt()
+        .ciphertext(&ct)
+        .set_encryption_context(Some(conflicting_ec()))
         .set_keyring(Some(keyring.clone()))
-        .set_max_encrypted_data_keys(Some(cap()))
-        .set_commitment_policy(Some(POLICY))
-        .build()
-        .unwrap();
-    assert!(same_keyring(input.keyring(), &keyring));
-    assert_eq!(input.max_encrypted_data_keys(), Some(cap()));
-    assert_eq!(input.commitment_policy(), POLICY);
+        .send()
+        .await
+        .expect_err("conflicting encryption context must fail");
+    assert!(err.is_encryption_context_mismatch(), "{:?}", err);
 
-    let cmm = SharedCmm::new(DefaultCmm::new(keyring));
-    let input = DecryptInput::builder()
-        .ciphertext(ciphertext)
+    esdk.decrypt()
+        .ciphertext(&ct)
+        .keyring(keyring.clone())
+        .encryption_context(conflicting_ec())
+        .set_encryption_context(None)
+        .send()
+        .await
+        .expect("set_encryption_context(None) must clear the reproduced context");
+
+    let cmm = SharedCmm::new(DefaultCmm::new(keyring.clone()));
+    esdk.decrypt()
+        .ciphertext(&ct)
         .cmm(cmm.clone())
-        .build()
-        .unwrap();
-    assert!(same_cmm(input.cmm(), &cmm));
-    let input = DecryptInput::builder()
-        .ciphertext(ciphertext)
-        .set_cmm(Some(cmm.clone()))
-        .build()
-        .unwrap();
-    assert!(same_cmm(input.cmm(), &cmm));
+        .send()
+        .await
+        .expect("decrypt with only a CMM must succeed");
+    esdk.decrypt()
+        .ciphertext(&ct)
+        .keyring(keyring)
+        .set_keyring(None)
+        .set_cmm(Some(cmm))
+        .send()
+        .await
+        .expect("set_keyring(None) must leave only the CMM");
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn test_decrypt_stream_input_setters_round_trip() {
+async fn test_decrypt_stream_setters_take_effect() {
     let keyring = SharedKeyring::new(test_keyring().await);
-    let ec = ec();
-
-    let input = DecryptStreamInput::builder()
-        .encryption_context(ec.clone())
+    let esdk = Client::default();
+    let ct = esdk
+        .encrypt()
+        .plaintext(b"plaintext")
+        .encryption_context(ec())
         .keyring(keyring.clone())
-        .max_encrypted_data_keys(cap())
-        .commitment_policy(POLICY)
-        .build()
-        .unwrap();
-    assert_eq!(input.encryption_context(), &ec);
-    assert!(same_keyring(input.keyring(), &keyring));
-    assert_eq!(input.max_encrypted_data_keys(), Some(cap()));
-    assert_eq!(input.commitment_policy(), POLICY);
+        .send()
+        .await
+        .unwrap()
+        .into_ciphertext();
 
-    let input = DecryptStreamInput::builder()
-        .set_encryption_context(Some(ec))
+    let mut pt = Vec::new();
+    esdk.decrypt_stream()
+        .encryption_context(ec())
+        .keyring(keyring.clone())
+        .ciphertext(ct.as_slice())
+        .plaintext(&mut pt)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(pt, b"plaintext");
+
+    let err = esdk
+        .decrypt_stream()
+        .encryption_context(conflicting_ec())
+        .keyring(keyring.clone())
+        .ciphertext(ct.as_slice())
+        .plaintext(Vec::new())
+        .send()
+        .await
+        .expect_err("conflicting encryption context must fail");
+    assert!(err.is_encryption_context_mismatch(), "{:?}", err);
+
+    let err = esdk
+        .decrypt_stream()
+        .set_encryption_context(Some(conflicting_ec()))
         .set_keyring(Some(keyring.clone()))
-        .set_max_encrypted_data_keys(Some(cap()))
-        .set_commitment_policy(Some(POLICY))
-        .build()
-        .unwrap();
-    assert!(same_keyring(input.keyring(), &keyring));
-    assert_eq!(input.max_encrypted_data_keys(), Some(cap()));
-    assert_eq!(input.commitment_policy(), POLICY);
+        .ciphertext(ct.as_slice())
+        .plaintext(Vec::new())
+        .send()
+        .await
+        .expect_err("conflicting encryption context must fail");
+    assert!(err.is_encryption_context_mismatch(), "{:?}", err);
 
-    let cmm = SharedCmm::new(DefaultCmm::new(keyring));
-    let input = DecryptStreamInput::builder()
+    let cmm = SharedCmm::new(DefaultCmm::new(keyring.clone()));
+    esdk.decrypt_stream()
         .cmm(cmm.clone())
-        .build()
-        .unwrap();
-    assert!(same_cmm(input.cmm(), &cmm));
-    let input = DecryptStreamInput::builder()
-        .set_cmm(Some(cmm.clone()))
-        .build()
-        .unwrap();
-    assert!(same_cmm(input.cmm(), &cmm));
+        .ciphertext(ct.as_slice())
+        .plaintext(Vec::new())
+        .send()
+        .await
+        .expect("decrypt_stream with cmm must succeed");
+    esdk.decrypt_stream()
+        .set_cmm(Some(cmm))
+        .ciphertext(ct.as_slice())
+        .plaintext(Vec::new())
+        .send()
+        .await
+        .expect("decrypt_stream with set_cmm must succeed");
+
+    let mut pt = Vec::new();
+    esdk.decrypt_stream()
+        .keyring(keyring.clone())
+        .set_ciphertext(Some(Box::new(ct.as_slice())))
+        .set_plaintext(Some(Box::new(&mut pt)))
+        .send()
+        .await
+        .expect("set_ciphertext and set_plaintext must set the streams");
+    assert_eq!(pt, b"plaintext");
+
+    let no_ciphertext = esdk
+        .decrypt_stream()
+        .keyring(keyring.clone())
+        .plaintext(Vec::new())
+        .send()
+        .await;
+    let no_plaintext = esdk
+        .decrypt_stream()
+        .keyring(keyring)
+        .ciphertext(ct.as_slice())
+        .send()
+        .await;
+    for (case, result) in [("ciphertext", no_ciphertext), ("plaintext", no_plaintext)] {
+        let err = result.expect_err("a missing stream must fail");
+        assert!(err.is_validation(), "{case}: {err:?}");
+    }
 }
 
-// The builder_from_encrypt helpers carry every shared field of the
-// encrypt input over.
 #[tokio::test(flavor = "multi_thread")]
-async fn test_builder_from_encrypt_copies_shared_fields() {
+async fn test_getters_return_set_values() {
     let keyring = SharedKeyring::new(test_keyring().await);
-    let ec = ec();
-    let enc = EncryptInput::builder()
-        .plaintext(b"pt")
-        .encryption_context(ec.clone())
+    let cmm = SharedCmm::new(DefaultCmm::new(keyring.clone()));
+    let bytes = plaintext();
+    let edks = NonZeroUsize::new(3).unwrap();
+    let esdk = Client::default();
+
+    let b = Client::builder();
+    assert_eq!(
+        (b.get_commitment_policy(), b.get_max_encrypted_data_keys()),
+        (&None, &None)
+    );
+    let b = b.commitment_policy(POLICY).max_encrypted_data_keys(edks);
+    assert_eq!(b.get_commitment_policy(), &Some(POLICY));
+    assert_eq!(b.get_max_encrypted_data_keys(), &Some(edks));
+
+    let b = esdk.encrypt();
+    assert!(b.get_plaintext().is_none() && b.get_encryption_context().is_none());
+    assert!(b.get_keyring().is_none() && b.get_cmm().is_none());
+    assert!(b.get_algorithm_suite_id().is_none() && b.get_frame_length().is_none());
+    let b = b
+        .plaintext(&bytes)
+        .encryption_context(ec())
         .keyring(keyring.clone())
-        .max_encrypted_data_keys(cap())
-        .commitment_policy(POLICY)
-        .build()
-        .unwrap();
+        .cmm(cmm.clone())
+        .algorithm_suite_id(SUITE)
+        .frame_length(frame_length());
+    assert_eq!(b.get_plaintext(), &Some(bytes.as_slice()));
+    assert_eq!(b.get_encryption_context(), &Some(ec()));
+    assert!(b.get_keyring().is_some() && b.get_cmm().is_some());
+    assert_eq!(b.get_algorithm_suite_id(), &Some(SUITE));
+    assert_eq!(b.get_frame_length(), &Some(frame_length()));
 
-    let dec = DecryptInput::builder_from_encrypt(&enc)
-        .ciphertext(b"ct")
-        .build()
-        .unwrap();
-    assert_eq!(dec.ciphertext(), b"ct");
-    assert_eq!(dec.encryption_context(), &ec);
-    assert!(same_keyring(dec.keyring(), &keyring));
-    assert_eq!(dec.max_encrypted_data_keys(), Some(cap()));
-    assert_eq!(dec.commitment_policy(), POLICY);
+    let b = esdk.encrypt_stream();
+    assert!(b.get_plaintext().is_none() && b.get_ciphertext().is_none());
+    assert!(b.get_encryption_context().is_none() && b.get_data_size().is_none());
+    assert!(b.get_keyring().is_none() && b.get_cmm().is_none());
+    assert!(b.get_algorithm_suite_id().is_none() && b.get_frame_length().is_none());
+    let b = b
+        .plaintext(bytes.as_slice())
+        .ciphertext(Vec::new())
+        .encryption_context(ec())
+        .keyring(keyring.clone())
+        .cmm(cmm.clone())
+        .algorithm_suite_id(SUITE)
+        .frame_length(frame_length())
+        .data_size(bytes.len());
+    assert_eq!(b.get_encryption_context(), &Some(ec()));
+    assert!(b.get_keyring().is_some() && b.get_cmm().is_some());
+    assert_eq!(b.get_algorithm_suite_id(), &Some(SUITE));
+    assert_eq!(b.get_frame_length(), &Some(frame_length()));
+    assert_eq!(b.get_data_size(), &Some(bytes.len()));
+    assert!(b.get_plaintext().is_some() && b.get_ciphertext().is_some());
 
-    let dec = DecryptStreamInput::builder_from_encrypt(&enc)
-        .build()
-        .unwrap();
-    assert_eq!(dec.encryption_context(), &ec);
-    assert!(same_keyring(dec.keyring(), &keyring));
-    assert_eq!(dec.max_encrypted_data_keys(), Some(cap()));
-    assert_eq!(dec.commitment_policy(), POLICY);
+    let b = esdk.decrypt();
+    assert!(b.get_ciphertext().is_none() && b.get_encryption_context().is_none());
+    assert!(b.get_keyring().is_none() && b.get_cmm().is_none());
+    let b = b
+        .ciphertext(&bytes)
+        .encryption_context(ec())
+        .keyring(keyring.clone())
+        .cmm(cmm.clone());
+    assert_eq!(b.get_ciphertext(), &Some(bytes.as_slice()));
+    assert_eq!(b.get_encryption_context(), &Some(ec()));
+    assert!(b.get_keyring().is_some() && b.get_cmm().is_some());
+
+    let b = esdk.decrypt_stream();
+    assert!(b.get_ciphertext().is_none() && b.get_plaintext().is_none());
+    assert!(b.get_encryption_context().is_none());
+    assert!(b.get_keyring().is_none() && b.get_cmm().is_none());
+    let b = b
+        .ciphertext(bytes.as_slice())
+        .plaintext(Vec::new())
+        .encryption_context(ec())
+        .keyring(keyring)
+        .cmm(cmm);
+    assert!(b.get_ciphertext().is_some() && b.get_plaintext().is_some());
+    assert_eq!(b.get_encryption_context(), &Some(ec()));
+    assert!(b.get_keyring().is_some() && b.get_cmm().is_some());
 }

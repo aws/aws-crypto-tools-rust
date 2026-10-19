@@ -7,22 +7,22 @@ use super::Error;
 use super::serialize_functions::{read_u16, read_vec, write_bytes, write_u16};
 use crate::error::err;
 use crate::error::{Kind, err_with_cause};
-use crate::types::{EncryptionContext, SafeRead, SafeWrite};
+use crate::shapes::{EncryptionContext, Source, Tee};
 
 /// Read the header's AAD encryption context sub-section.
-pub(crate) fn read_encryption_context(
-    r: &mut dyn SafeRead,
-    raw: &mut dyn SafeWrite,
+pub(crate) async fn read_encryption_context(
+    r: &mut dyn Source,
+    raw: &mut Tee,
 ) -> Result<EncryptionContext, Error> {
-    let len = usize::from(read_u16(r, raw)?);
-    let bytes = read_vec(r, len, raw)?;
+    let len = usize::from(read_u16(r, raw).await?);
+    let bytes = read_vec(r, len, raw).await?;
     EncryptionContext::deserialize(&bytes)
         .map_err(|e| err_with_cause(Kind::Serialization, "invalid encryption context", e))
 }
 
 /// Write canonical EC bytes for signing/AES-GCM AAD; empty EC writes nothing.
 pub(crate) fn write_empty_ec_or_write_aad(
-    w: &mut dyn SafeWrite,
+    w: &mut Tee,
     data: &EncryptionContext,
 ) -> Result<(), Error> {
     if data.is_empty() {
@@ -46,10 +46,7 @@ fn get_length(data: &EncryptionContext) -> usize {
 }
 
 /// Write the header's AAD EC sub-section: length + key-value pairs.
-pub(crate) fn write_aad_section(
-    w: &mut dyn SafeWrite,
-    data: &EncryptionContext,
-) -> Result<(), Error> {
+pub(crate) fn write_aad_section(w: &mut Tee, data: &EncryptionContext) -> Result<(), Error> {
     if data.is_empty() {
         //= spec/data-format/message-header.md#key-value-pairs-length
         //# When the [encryption context](../framework/structures.md#encryption-context) is empty, the value of this field MUST be 0.
@@ -87,7 +84,7 @@ pub(crate) fn write_aad_section(
 }
 
 /// Write the key-value-pairs body: count, then (key, value) pairs.
-pub(crate) fn write_aad(w: &mut dyn SafeWrite, data: &EncryptionContext) -> Result<(), Error> {
+pub(crate) fn write_aad(w: &mut Tee, data: &EncryptionContext) -> Result<(), Error> {
     // Count.
     let Ok(data_len) = u16::try_from(data.len()) else {
         return Err(err(

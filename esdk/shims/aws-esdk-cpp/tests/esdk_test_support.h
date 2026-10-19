@@ -116,7 +116,7 @@ inline std::optional<TestConfig> integration_config_or_gate(int argc, char** arg
 }
 
 inline Aws::Esdk::HierarchicalKeyring make_hierarchical_keyring(const TestConfig& cfg) {
-    auto client_config = Aws::Esdk::ClientConfig().with_max_retry_attempts(3);
+    auto client_config = Aws::Esdk::AwsSdkClientConfig().with_max_retry_attempts(3);
     if (!cfg.region.empty()) {
         client_config.with_region(cfg.region);
     }
@@ -128,15 +128,8 @@ inline Aws::Esdk::HierarchicalKeyring make_hierarchical_keyring(const TestConfig
                                      .with_ddb_client(ddb));
     return Aws::Esdk::HierarchicalKeyring(
         std::move(keystore), cfg.branch_key_id, std::chrono::seconds{600},
-        Aws::Esdk::HierarchicalKeyringOptions().with_cache(
-            Aws::Esdk::CacheType::StormTracking(
-                /*entry_capacity=*/ 100,
-                /*entry_pruning_tail_size=*/ 1,
-                /*grace_period=*/ std::chrono::seconds{10},
-                /*grace_interval=*/ std::chrono::seconds{1},
-                /*fan_out=*/ 20,
-                /*inflight_ttl=*/ std::chrono::seconds{10},
-                /*sleep=*/ std::chrono::milliseconds{20})));
+        Aws::Esdk::HierarchicalKeyringOptions().with_cache(Aws::Esdk::StormTrackingCmc(
+            Aws::Esdk::StormTrackingCmcOptions().with_entry_capacity(100))));
 }
 
 inline std::vector<std::uint8_t> to_bytes(const std::string& s) {
