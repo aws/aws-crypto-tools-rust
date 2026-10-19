@@ -15,6 +15,8 @@
 //! `AwsCryptographicMaterialProviders/dafny/AwsCryptographyKeyStore/test/`
 //! (`Fixtures.dfy` and `TestGetKeys.dfy`).
 
+#![cfg(feature = "test-utils")]
+
 use std::error::Error as _;
 
 use aws_config::{BehaviorVersion, Region};

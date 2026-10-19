@@ -7,6 +7,8 @@
 //! `tests/test_key_store_branch_key_store.rs`, which has the fixtures to
 //! produce one; a real service code is asserted in the integration suites.
 
+#![cfg(feature = "test-utils")]
+
 use std::error::Error as _;
 use std::io::{Error as IoError, ErrorKind as IoErrorKind};
 

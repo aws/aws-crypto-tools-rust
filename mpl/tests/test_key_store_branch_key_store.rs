@@ -19,6 +19,7 @@ use aws_sdk_dynamodb::operation::describe_table::DescribeTableError;
 use aws_sdk_dynamodb::operation::get_item::GetItemError;
 use aws_sdk_kms::Client as KmsClient;
 
+#[cfg(feature = "test-utils")]
 use aws_crypto_mpl::__test_internals::error_chain::{aws_service_error_code, find_in_error_chain};
 use aws_crypto_mpl::key_store::Client as KeyStoreClient;
 use aws_crypto_mpl::key_store::client::Builder as KeyStoreClientBuilder;
@@ -499,6 +500,7 @@ async fn the_message_does_not_render_the_sdk_errors_display() {
     );
 }
 
+#[cfg(feature = "test-utils")]
 #[tokio::test]
 async fn find_in_error_chain_recovers_the_sdk_error_by_type() {
     let store = fixture_config_with_id("id-x").build().await.unwrap();
@@ -522,6 +524,7 @@ async fn find_in_error_chain_recovers_the_sdk_error_by_type() {
     );
 }
 
+#[cfg(feature = "test-utils")]
 #[tokio::test]
 async fn a_dispatch_failure_has_no_service_error_code() {
     // Only `SdkError::ServiceError` carries service metadata; construction,
