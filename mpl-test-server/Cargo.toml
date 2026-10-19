@@ -1,0 +1,26 @@
+# Lives at the repo top level (not under mpl/) so it is not swept into the
+# mpl library's coverage-gated CI; it has its own workflow.
+[package]
+name = "aws-mpl-test-server"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+publish = false
+description = "Hand-rolled rpcv2Cbor Language_Server for the MPL TestServer, delegating to aws-crypto-mpl."
+
+[[bin]]
+name = "mpl-test-server"
+path = "src/main.rs"
+
+[dependencies]
+aws-crypto-mpl = { path = "../mpl" }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal"] }
+axum = "0.7"
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
+ciborium = "0.2"
+serde = { version = "1", features = ["derive"] }
+serde_bytes = "0.11"
+uuid = { version = "1", features = ["v4"] }
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }

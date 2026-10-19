@@ -13,8 +13,8 @@ use super::v2_header_body::{
 };
 use super::{DigestWriter, Error, header_auth, ser_err, serialize_functions};
 use crate::error::{Kind, err, val_err};
-use crate::types::{EncryptionContext, SafeRead, SafeWrite};
-use aws_crypto_mpl::structures::AlgorithmSuite;
+use crate::shapes::{EncryptionContext, Sink, Source, Tee};
+use aws_crypto_mpl::types::AlgorithmSuite;
 use aws_lc_rs::constant_time;
 
 pub(crate) const START_SEQUENCE_NUMBER: u32 = 1;
@@ -40,7 +40,7 @@ pub struct HeaderInfo {
     pub(crate) header_auth: HeaderAuth,
 }
 
-pub(crate) fn write_header_body(w: &mut dyn SafeWrite, body: &HeaderBody) -> Result<(), Error> {
+pub(crate) fn write_header_body(w: &mut Tee, body: &HeaderBody) -> Result<(), Error> {
     // The body variant must agree with its embedded suite's message format version.
     // Construction sites in encrypt.rs pick V1Body/V2Body based on the suite, so this
     // is a dev-time guard against future drift; the invariant is enforced at the call site.
@@ -75,10 +75,10 @@ pub(crate) fn write_header_body(w: &mut dyn SafeWrite, body: &HeaderBody) -> Res
 /// Returns an error if the bytes are malformed, specify an unsupported message
 /// format version or algorithm suite, or declare more encrypted data keys than
 /// `max_edks` permits.
-pub fn read_header_body(
-    ciphertext: &mut dyn SafeRead,
+pub async fn read_header_body(
+    ciphertext: &mut dyn Source,
     max_edks: Option<std::num::NonZeroUsize>,
-    raw_header: &mut dyn SafeWrite,
+    raw_header: &mut Tee,
 ) -> Result<HeaderBody, Error> {
     //= spec/client-apis/decrypt.md#parse-the-header
     //# This operation MUST attempt to deserialize all consumable encrypted message bytes until it has
@@ -93,7 +93,7 @@ pub fn read_header_body(
     //= type=implication
     //= reason=read_msg_format_version reads the version from the cursor first; the match on its result dispatches the remaining field reads
     //# The [Version](../data-format/message-header.md#version) field MUST be deserialized first.
-    let version = read_msg_format_version(ciphertext, raw_header)?;
+    let version = read_msg_format_version(ciphertext, raw_header).await?;
 
     //= spec/client-apis/decrypt.md#parse-the-header
     //# The header deserialization order MUST follow the [Header Body Version 1.0](../data-format/message-header.md#header-body-version-10)
@@ -105,7 +105,7 @@ pub fn read_header_body(
         //# the remaining header fields MUST be deserialized according to the
         //# [Header Body Version 1.0](../data-format/message-header.md#header-body-version-10) specification:
         MessageFormatVersion::V1 => {
-            let body = read_v1_header_body(ciphertext, max_edks, raw_header)?;
+            let body = read_v1_header_body(ciphertext, max_edks, raw_header).await?;
             HeaderBody::V1Body(body)
         }
 
@@ -114,7 +114,7 @@ pub fn read_header_body(
         //# the remaining header fields MUST be deserialized according to the
         //# [Header Body Version 2.0](../data-format/message-header.md#header-body-version-20) specification:
         MessageFormatVersion::V2 => {
-            let body = read_v2_header_body(ciphertext, max_edks, raw_header)?;
+            let body = read_v2_header_body(ciphertext, max_edks, raw_header).await?;
             HeaderBody::V2Body(body)
         }
     };
@@ -150,7 +150,7 @@ pub(crate) const fn header_version_supports_commitment(
 
 pub(crate) fn validate_max_encrypted_data_keys(
     max_encrypted_data_keys: Option<std::num::NonZeroUsize>,
-    edks: &[aws_crypto_mpl::structures::EncryptedDataKey],
+    edks: &[aws_crypto_mpl::types::EncryptedDataKey],
 ) -> Result<(), Error> {
     if edks.is_empty() {
         //= spec/data-format/message-header.md#encrypted-data-key-count
@@ -241,9 +241,9 @@ pub(crate) fn validate_suite_data(
 /// Header bytes are streamed directly to both the ciphertext output and the
 /// signature digest without buffering, so the serialized header is not
 /// required to remain in memory for later signature construction.
-pub(crate) fn write_header(
+pub(crate) async fn write_header(
     header: &HeaderInfo,
-    ciphertext: &mut dyn SafeWrite,
+    ciphertext: &mut dyn Sink,
     sig_digest: &mut DigestWriter,
 ) -> Result<(), Error> {
     //= spec/data-format/message-header.md#structure
@@ -260,14 +260,14 @@ pub(crate) fn write_header(
     //# this operation is [streaming](streaming.md) the encrypted message output to the caller,
     //# this operation MUST input the serialized header to the signature algorithm as soon as it is serialized,
     //# such that the serialized header isn't required to remain in memory to [construct the signature](#construct-the-signature).
-    serialize_functions::write_bytes(ciphertext, &header.raw_header)?;
+    serialize_functions::write_to_sink(ciphertext, &header.raw_header).await?;
     serialize_functions::write_bytes(sig_digest, &header.raw_header)?;
 
     // Header Authentication
 
     let mut auth_buf = Vec::new();
     header_auth::write_header_auth_tag(&mut auth_buf, &header.header_auth, &header.suite)?;
-    serialize_functions::write_bytes(ciphertext, &auth_buf)?;
+    serialize_functions::write_to_sink(ciphertext, &auth_buf).await?;
     serialize_functions::write_bytes(sig_digest, &auth_buf)?;
     Ok(())
 }

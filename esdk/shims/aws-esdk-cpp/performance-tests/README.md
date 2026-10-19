@@ -2,7 +2,7 @@
 
 Performance benchmark for the C++ shim over the native Rust AWS Encryption SDK,
 exercising encrypt/decrypt through an AWS KMS Hierarchical Keyring
-(`Aws::Esdk::EncryptionSDK` and `Aws::Esdk::HierarchicalKeyring`).
+(`Aws::Esdk::Client` and `Aws::Esdk::HierarchicalKeyring`).
 
 ## What it measures
 
