@@ -1,4 +1,3 @@
-# unsafe-unreviewed-mpl is excluded: it is vendored legacy code slated for removal.
 version: 2
 updates:
   - package-ecosystem: "cargo"
