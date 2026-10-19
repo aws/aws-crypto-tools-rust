@@ -32,13 +32,6 @@ allow = [
     "OpenSSL",
 ]
 
-# `timeout` is the only package using MPL-2.0 license,
-# but we'll remove it once we remove the legacy Dafny MPL.
-# TODO: remove this exception when removing Dafny MPL
-[[licenses.exceptions]]
-allow = ["MPL-2.0"]
-crate = "timeout"
-
 [bans]
 # Dependency graphs legitimately resolve several crates at multiple versions (e.g. http 0.2 and 1.x).
 # Report duplicates without failing CI.

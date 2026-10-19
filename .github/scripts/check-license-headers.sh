@@ -27,9 +27,6 @@ COPYRIGHT_TEXT="Copyright Amazon.com Inc. or its affiliates. All Rights Reserved
 SPDX_TEXT="SPDX-License-Identifier: Apache-2.0"
 # Source-file extensions this check applies to.
 EXTENSIONS=(rs c cc cpp cxx h hpp hh hxx)
-# Path prefixes (repo-root-relative) excluded from the check.
-# TODO: Remove once this project is removed
-EXCLUDES=(unsafe-unreviewed-mpl/)
 
 repo_root="$(git rev-parse --show-toplevel)"
 
@@ -54,14 +51,6 @@ is_source() {
     return 1
 }
 
-is_excluded() {
-    local prefix
-    for prefix in "${EXCLUDES[@]}"; do
-        [[ "$1" == "$prefix"* ]] && return 0
-    done
-    return 1
-}
-
 candidates=()
 if [[ ${#explicit[@]} -gt 0 ]]; then
     candidates=("${explicit[@]}")
@@ -77,7 +66,6 @@ missing=()
 if [[ ${#candidates[@]} -gt 0 ]]; then
     for f in "${candidates[@]}"; do
         is_source "$f" || continue
-        is_excluded "$f" && continue
         path="$f"
         [[ -f "$path" ]] || path="$repo_root/$f"
         [[ -f "$path" ]] || continue
