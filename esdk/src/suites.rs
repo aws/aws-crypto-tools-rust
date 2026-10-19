@@ -4,18 +4,18 @@
 //! Algorithm-suite helpers shared by the encrypt, decrypt, and message layers.
 //!
 //! The Material Providers Library (`aws_crypto_mpl`) exposes the ESDK suites as
-//! [`EsdkAlgorithmSuiteId`](aws_crypto_mpl::structures::EsdkAlgorithmSuiteId),
+//! [`EsdkAlgorithmSuiteId`](aws_crypto_mpl::types::EsdkAlgorithmSuiteId),
 //! which the ESDK re-exports as [`AlgorithmSuiteId`].
 //! Materials carry the MPL's format-generic
-//! [`AlgorithmSuiteId`](aws_crypto_mpl::structures::AlgorithmSuiteId) union instead.
+//! [`AlgorithmSuiteId`](aws_crypto_mpl::types::AlgorithmSuiteId) union instead.
 //! Each suite's parameters come from an opaque
-//! [`AlgorithmSuite`](aws_crypto_mpl::structures::AlgorithmSuite) specification.
+//! [`AlgorithmSuite`](aws_crypto_mpl::types::AlgorithmSuite) specification.
 //! This module wraps the MPL's `bytes -> id` lookup in the ESDK error type.
 //! Its other helpers map MPL suite fields to the types the ESDK needs.
 
 use crate::error::{Error, Kind, err};
-use crate::types::AlgorithmSuiteId;
-use aws_crypto_mpl::structures::{
+use crate::shapes::AlgorithmSuiteId;
+use aws_crypto_mpl::types::{
     AlgorithmSuite, AlgorithmSuiteId as MplAlgorithmSuiteId, AsymmetricSignatureAlgorithm,
     KeyDerivationAlgorithm,
 };

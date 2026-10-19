@@ -15,9 +15,10 @@ use aws_crypto_mpl::cmm::{
     DecryptMaterialsOutput, GetEncryptionMaterialsInput, GetEncryptionMaterialsOutput,
 };
 use aws_crypto_mpl::keyring::RawAesKeyring;
-use aws_crypto_mpl::structures::KeyDerivationAlgorithm;
+use aws_crypto_mpl::types::AesWrappingAlg;
+use aws_crypto_mpl::types::KeyDerivationAlgorithm;
+use aws_esdk::types::*;
 use aws_esdk::*;
-use aws_mpl_primitives::AesGcm;
 use fixtures::*;
 use std::sync::{Arc, Mutex};
 use test_helpers::*;
@@ -42,7 +43,7 @@ async fn test_decrypt_fails_with_wrong_keyring() {
         .key_namespace(ns)
         .key_name(name)
         .wrapping_key(vec![1u8; 32])
-        .wrapping_alg(AesGcm::Aes256Gcm)
+        .wrapping_alg(AesWrappingAlg::AlgAes256GcmIv12Tag16)
         .build()
         .expect("raw AES keyring construction must succeed for test key material");
 
@@ -356,7 +357,7 @@ impl cmm::Cmm for DecryptSpyCmm {
         &self,
         request: GetEncryptionMaterialsInput,
     ) -> Result<GetEncryptionMaterialsOutput, MplError> {
-        Cmm::get_encryption_materials(&self.inner, request).await
+        cmm::Cmm::get_encryption_materials(&self.inner, request).await
     }
 
     async fn decrypt_materials(
@@ -372,7 +373,7 @@ impl cmm::Cmm for DecryptSpyCmm {
             .collect();
         *self.observed_ec_keys.lock().unwrap() = Some(keys);
         // Delegate to the inner default CMM so real materials are returned.
-        Cmm::decrypt_materials(&self.inner, request).await
+        cmm::Cmm::decrypt_materials(&self.inner, request).await
     }
 }
 

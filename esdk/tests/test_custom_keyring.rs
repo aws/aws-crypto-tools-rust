@@ -22,7 +22,7 @@ use aws_crypto_mpl::async_trait;
 use aws_crypto_mpl::keyring::{
     Keyring, OnDecryptInput, OnDecryptOutput, OnEncryptInput, OnEncryptOutput,
 };
-use aws_crypto_mpl::structures::{
+use aws_crypto_mpl::types::{
     DecryptionMaterials, EncryptedDataKey, EncryptionMaterials, PlaintextDataKey,
 };
 use aws_mpl_primitives::{AesGcm, aes_decrypt, aes_encrypt, generate_random_bytes};
