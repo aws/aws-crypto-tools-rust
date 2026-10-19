@@ -1,36 +1,32 @@
-# Reusable workflow that runs fmt, clippy, build, and unit tests for one
-# TestServer crate (the language server this repo contributes to the
-# cross-language TestServer). The cross-language run itself is called from
-# ci.yml.
+# Reusable workflow that runs fmt, clippy, build, and unit tests for TestServer
+# crates (the language servers this repo contributes to the cross-language
+# TestServer). Callers pass a JSON array of {name, server, prebuild, os}
+# objects via the `builds` input: `server` is the crate directory, `prebuild`
+# a crate to `cargo build` first for a server that links its build output (or
+# ""), and `os` the runner.
 name: TestServer Build
 
 on:
   workflow_call:
     inputs:
-      server:
-        description: "TestServer crate directory (e.g. esdk-test-server)."
+      builds:
+        description: "JSON array of {name, server, prebuild, os} objects."
         required: true
         type: string
-      prebuild:
-        description: "Crate directory to `cargo build` before the server, for a server that links its build output."
-        required: false
-        type: string
-        default: ""
-      os:
-        description: "Runner to build on."
-        required: false
-        type: string
-        default: ubuntu-latest
 
 jobs:
   build:
-    name: ${{ inputs.server }} (${{ inputs.os }})
-    runs-on: ${{ inputs.os }}
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(inputs.builds) }}
+    runs-on: ${{ matrix.os }}
     permissions:
       contents: read
     defaults:
       run:
-        working-directory: ${{ inputs.server }}
+        working-directory: ${{ matrix.server }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -40,13 +36,13 @@ jobs:
         with:
           components: clippy, rustfmt
           cache-workspaces: |
-            ${{ inputs.server }}
-            ${{ inputs.prebuild }}
+            ${{ matrix.server }}
+            ${{ matrix.prebuild }}
 
       # A separate step keeps the two heavy Rust builds from running at once.
-      - name: Build ${{ inputs.prebuild }}
-        if: inputs.prebuild != ''
-        working-directory: ${{ inputs.prebuild }}
+      - name: Build ${{ matrix.prebuild }}
+        if: matrix.prebuild != ''
+        working-directory: ${{ matrix.prebuild }}
         run: cargo build
 
       - name: Format check

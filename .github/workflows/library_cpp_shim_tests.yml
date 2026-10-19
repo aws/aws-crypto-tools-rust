@@ -8,7 +8,7 @@ on:
 
 jobs:
   shim:
-    name: build + test (${{ matrix.os }})
+    name: build + test (${{ startsWith(matrix.os, 'ubuntu') && 'ubuntu' || 'macos' }})
     strategy:
       fail-fast: false
       matrix:
