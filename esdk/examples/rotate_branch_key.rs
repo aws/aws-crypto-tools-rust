@@ -12,9 +12,10 @@
 
 use std::time::Duration;
 
-use aws_crypto_mpl::key_store::{KeyStoreClient, KmsConfiguration};
-use aws_crypto_mpl::{HierarchicalKeyring, aws_config, aws_sdk_dynamodb, aws_sdk_kms};
-use aws_esdk::EncryptionContext;
+use aws_esdk::key_store::types::KmsConfiguration;
+use aws_esdk::keyring::HierarchicalKeyring;
+use aws_esdk::types::EncryptionContext;
+use aws_esdk::{aws_config, aws_sdk_dynamodb, aws_sdk_kms, key_store};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -22,7 +23,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // The AWS Crypto Tools CI test key store.
     // Replace these with your own key store's table, name, and KMS key ARN.
-    let key_store = KeyStoreClient::builder()
+    let key_store = key_store::Client::builder()
         .ddb_table_name("KeyStoreDdbTable")
         .logical_key_store_name("KeyStoreDdbTable")
         .kms_configuration(KmsConfiguration::KmsKeyArn(
@@ -34,8 +35,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
 
     // The branch key's encryption context is bound to every version of it.
-    let mut branch_key_context = EncryptionContext::new();
-    branch_key_context.insert("purpose", "example");
+    let branch_key_context = EncryptionContext::from([("purpose", "example")]);
     let branch_key_id = key_store
         .create_key()
         .encryption_context(branch_key_context)
@@ -43,17 +43,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?
         .into_branch_key_id();
 
-    let make_keyring = || {
+    let make_keyring = async || {
         HierarchicalKeyring::builder()
             .key_store(key_store.clone())
             .ttl(Duration::from_secs(600))
             .branch_key_id(&branch_key_id)
             .build()
+            .await
     };
 
     let plaintext = b"Hello World";
-    let mut encryption_context = EncryptionContext::new();
-    encryption_context.insert("purpose", "example");
+    let encryption_context = EncryptionContext::from([("purpose", "example")]);
     let esdk = aws_esdk::Client::default();
     let encrypt_with = async |keyring: HierarchicalKeyring| {
         esdk.encrypt()
@@ -64,7 +64,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .await
     };
 
-    let before_rotation = encrypt_with(make_keyring()?).await?;
+    let before_rotation = encrypt_with(make_keyring().await?).await?;
 
     key_store
         .version_key()
@@ -74,20 +74,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // A keyring keeps using the version it cached until its TTL expires.
     // This keyring is new, so it fetches the version that is active now.
-    let keyring = make_keyring()?;
+    let keyring = make_keyring().await?;
     let after_rotation = encrypt_with(keyring.clone()).await?;
 
     // Both messages decrypt: the first one under the earlier version, the new one under the active version.
     for encrypted in [before_rotation, after_rotation] {
         let decrypted = esdk
             .decrypt()
-            .ciphertext(&encrypted.ciphertext)
+            .ciphertext(encrypted.ciphertext())
             .encryption_context(encryption_context.clone())
             .keyring(keyring.clone())
             .send()
             .await?;
         assert_eq!(
-            decrypted.plaintext, plaintext,
+            decrypted.plaintext(),
+            plaintext,
             "Decryption failed: plaintext mismatch"
         );
     }

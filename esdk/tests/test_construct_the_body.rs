@@ -151,7 +151,9 @@ async fn test_plaintext_length_bound_must_not_encrypt_longer() {
         .encrypt_stream()
         .keyring(keyring)
         .data_size(5)
-        .send(&mut reader, &mut output)
+        .plaintext(&mut reader)
+        .ciphertext(&mut output)
+        .send()
         .await;
 
     //= spec/client-apis/encrypt.md#plaintext-length-bound
@@ -174,7 +176,9 @@ async fn test_construct_body_plaintext_length_bound_runtime_enforcement() {
         .keyring(keyring)
         .data_size(10)
         .frame_length(NonZeroU32::new(10).unwrap())
-        .send(&mut reader, &mut output)
+        .plaintext(&mut reader)
+        .ciphertext(&mut output)
+        .send()
         .await;
 
     //= spec/client-apis/encrypt.md#construct-the-body

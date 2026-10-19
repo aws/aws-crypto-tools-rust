@@ -127,7 +127,9 @@ async fn test_encrypted_data_key_count_greater_than_zero() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_suite_data_length_matches_algorithm_suite() {
-    let ct = encrypt_default(b"suite data length test").await.ciphertext;
+    let ct = encrypt_default(b"suite data length test")
+        .await
+        .into_ciphertext();
     let fields = parse_v2_header_field_offsets(&ct);
     let (_, start, end) = fields
         .iter()

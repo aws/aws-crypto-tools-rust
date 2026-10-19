@@ -3,17 +3,14 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Mutex;
 
-use aws_crypto_mpl::AesGcm;
 use aws_crypto_mpl::cmm::{DefaultCmm, SharedCmm};
 use aws_crypto_mpl::keyring::SharedKeyring;
-use aws_crypto_mpl::structures::algorithm_suite::{
-    PlaintextDataKey, SigningKey, SymmetricSigningKey, VerificationKey,
-};
-use aws_crypto_mpl::structures::{
+use aws_crypto_mpl::types::{
     AlgorithmSuiteId as MplSuiteId, CommitmentPolicy as MplCommitmentPolicy, DecryptionMaterials,
     EncryptedDataKey, EncryptionContext, EncryptionMaterials,
     EsdkAlgorithmSuiteId as MplAlgorithmSuiteId, EsdkCommitmentPolicy,
 };
+use aws_crypto_mpl::types::{PlaintextDataKey, SigningKey, SymmetricSigningKey, VerificationKey};
 
 use crate::error::ServerError;
 use crate::model::*;
@@ -35,12 +32,12 @@ impl AppState {
         req: CreateRawAesKeyringRequest,
     ) -> Result<CreateRawAesKeyringResponse, ServerError> {
         let alg = match req.wrapping_alg {
-            AesWrappingAlg::Aes128 => AesGcm::Aes128Gcm,
-            AesWrappingAlg::Aes192 => AesGcm::Aes192Gcm,
-            AesWrappingAlg::Aes256 => AesGcm::Aes256Gcm,
+            AesWrappingAlg::Aes128 => aws_crypto_mpl::types::AesWrappingAlg::AlgAes128GcmIv12Tag16,
+            AesWrappingAlg::Aes192 => aws_crypto_mpl::types::AesWrappingAlg::AlgAes192GcmIv12Tag16,
+            AesWrappingAlg::Aes256 => aws_crypto_mpl::types::AesWrappingAlg::AlgAes256GcmIv12Tag16,
         };
 
-        let keyring = aws_crypto_mpl::RawAesKeyring::builder()
+        let keyring = aws_crypto_mpl::keyring::RawAesKeyring::builder()
             .key_namespace(req.key_namespace)
             .key_name(req.key_name)
             .wrapping_key(req.wrapping_key)

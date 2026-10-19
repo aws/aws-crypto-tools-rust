@@ -502,9 +502,6 @@ public:
     Credentials& with_expiration(std::chrono::system_clock::time_point t) { expiration_ = t; return *this; }
 };
 
-/// AWS service-client configuration for AWS SDK clients.
-/// A field left unset defers to the ESDK Rust's default configuration resolution.
-/// One AwsSdkClientConfig may configure multiple clients.
 /// An HTTP client and its connection pool.
 /// Pass one to several AwsSdkClientConfigs to make their service clients share connections.
 class HttpClient {
@@ -515,6 +512,9 @@ public:
     HttpClient();
 };
 
+/// AWS service-client configuration for AWS SDK clients.
+/// A field left unset defers to the ESDK Rust's default configuration resolution.
+/// One AwsSdkClientConfig may configure multiple clients.
 class AwsSdkClientConfig {
     std::shared_ptr<detail::ClientConfigImpl> impl_;
     friend class KmsClient;
@@ -938,9 +938,7 @@ struct DecryptResult {
 
 /// Configuration for Client.
 ///
-/// A field set both here and on a per-call EncryptOptions/DecryptOptions is rejected with ValidationException.
-/// Each field must be set in exactly one place.
-/// A field unset in both defers to the core library's default.
+/// A field left unset defers to the core library's default.
 //
 //= spec/shim/esdk-shim.md#client-configuration
 //# The ESDK shim MAY expose a client-level configuration mirroring the core
@@ -1008,7 +1006,7 @@ public:
 ///
 /// Streamed decrypt cannot be used to decrypt messages
 /// that were encrypted with signing suites and have multiple frames.
-/// Decrypt these messages with Aws::Esdk::decrypt instead.
+/// Decrypt these messages with Client::decrypt instead.
 class DecryptStream {
     std::shared_ptr<detail::DecryptStreamImpl> impl_;
     friend class Client;
@@ -1027,6 +1025,10 @@ public:
     Bytes write(const std::uint8_t* data, std::size_t size);
     /// \copydoc write(const std::uint8_t*, std::size_t)
     Bytes write(const std::vector<std::uint8_t>& chunk) { return write(chunk.data(), chunk.size()); }
+    /// \copydoc write(const std::uint8_t*, std::size_t)
+    Bytes write(std::string_view chunk) {
+        return write(reinterpret_cast<const std::uint8_t*>(chunk.data()), chunk.size());
+    }
     /// \copydoc write(const std::uint8_t*, std::size_t)
     Bytes write(const Bytes& chunk) { return write(chunk.data(), chunk.size()); }
     /// Ends the ciphertext input and completes decryption, including signature
@@ -1050,7 +1052,7 @@ public:
     EncryptResult encrypt(
         const std::vector<std::uint8_t>& plaintext,
         const Keyring& keyring,
-        const EncryptOptions& options = {});
+        const EncryptOptions& options = {}) const;
 
     /// Encrypts a plaintext held in any contiguous buffer
     /// (e.g. an mmap'd file or another library's buffer)
@@ -1066,18 +1068,18 @@ public:
         const std::uint8_t* plaintext,
         std::size_t plaintext_len,
         const Keyring& keyring,
-        const EncryptOptions& options = {});
+        const EncryptOptions& options = {}) const;
 
     DecryptResult decrypt(
         const std::vector<std::uint8_t>& ciphertext,
         const Keyring& keyring,
-        const DecryptOptions& options = {});
+        const DecryptOptions& options = {}) const;
 
     /// Decrypts a ciphertext held in a Aws::Esdk::Bytes without copying it.
     DecryptResult decrypt(
         const Bytes& ciphertext,
         const Keyring& keyring,
-        const DecryptOptions& options = {});
+        const DecryptOptions& options = {}) const;
 
     /// Decrypts a ciphertext held in any contiguous buffer without copying it into a std::vector first.
     /// The buffer must stay valid for the duration of the call.
@@ -1086,28 +1088,38 @@ public:
         const std::uint8_t* ciphertext,
         std::size_t ciphertext_len,
         const Keyring& keyring,
-        const DecryptOptions& options = {});
+        const DecryptOptions& options = {}) const;
 
     /// Encrypts a text payload viewed through a std::string_view without copying it.
     /// The view must stay valid for the duration of the call.
     EncryptResult encrypt(
         std::string_view plaintext,
         const Keyring& keyring,
-        const EncryptOptions& options = {}) {
+        const EncryptOptions& options = {}) const {
         return encrypt(reinterpret_cast<const std::uint8_t*>(plaintext.data()),
                        plaintext.size(), keyring, options);
+    }
+
+    /// Decrypts a ciphertext viewed through a std::string_view without copying it.
+    /// The view must stay valid for the duration of the call.
+    DecryptResult decrypt(
+        std::string_view ciphertext,
+        const Keyring& keyring,
+        const DecryptOptions& options = {}) const {
+        return decrypt(reinterpret_cast<const std::uint8_t*>(ciphertext.data()),
+                       ciphertext.size(), keyring, options);
     }
 
     /// Creates a streaming encrypt operation.
     EncryptStream create_encrypt_stream(
         const Keyring& keyring,
-        const EncryptOptions& options = {});
+        const EncryptOptions& options = {}) const;
 
     /// Creates a streaming decrypt operation.
     /// See DecryptStream documentation for the verification semantics of streamed plaintext.
     DecryptStream create_decrypt_stream(
         const Keyring& keyring,
-        const DecryptOptions& options = {});
+        const DecryptOptions& options = {}) const;
 
     /// Encrypts a whole stream: reads plaintext from `source` in chunks, encrypts
     /// each, and writes the ciphertext to `sink` until `source` is exhausted,
@@ -1119,7 +1131,7 @@ public:
         std::istream& source,
         std::ostream& sink,
         const Keyring& keyring,
-        const EncryptOptions& options = {});
+        const EncryptOptions& options = {}) const;
 
     /// Decrypts a whole stream: reads ciphertext from `source`, writes plaintext
     /// to `sink`, and returns the message metadata.
@@ -1132,7 +1144,7 @@ public:
         std::istream& source,
         std::ostream& sink,
         const Keyring& keyring,
-        const DecryptOptions& options = {});
+        const DecryptOptions& options = {}) const;
 
 #if defined(__cpp_lib_span)
     /// Encrypts a plaintext viewed through a std::span without copying it.
@@ -1140,7 +1152,7 @@ public:
     EncryptResult encrypt(
         std::span<const std::uint8_t> plaintext,
         const Keyring& keyring,
-        const EncryptOptions& options = {}) {
+        const EncryptOptions& options = {}) const {
         return encrypt(plaintext.data(), plaintext.size(), keyring, options);
     }
 
@@ -1149,7 +1161,7 @@ public:
     DecryptResult decrypt(
         std::span<const std::uint8_t> ciphertext,
         const Keyring& keyring,
-        const DecryptOptions& options = {}) {
+        const DecryptOptions& options = {}) const {
         return decrypt(ciphertext.data(), ciphertext.size(), keyring, options);
     }
 #endif

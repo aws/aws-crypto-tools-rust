@@ -32,18 +32,18 @@ async fn test_encryption_context_on_decrypt() {
         .await
         .unwrap();
 
-    let esdk_ciphertext = encrypt_output.ciphertext;
+    let esdk_ciphertext = encrypt_output.ciphertext();
 
     let decrypt_output = esdk
         .decrypt()
-        .ciphertext(&esdk_ciphertext)
+        .ciphertext(esdk_ciphertext)
         .encryption_context(encryption_context)
         .keyring(raw_aes_keyring)
         .send()
         .await
         .unwrap();
 
-    assert_eq!(decrypt_output.plaintext, asdf);
+    assert_eq!(decrypt_output.plaintext(), asdf);
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -66,11 +66,11 @@ async fn test_mismatched_encryption_context_on_decrypt() {
         .await
         .unwrap();
 
-    let esdk_ciphertext = encrypt_output.ciphertext;
+    let esdk_ciphertext = encrypt_output.ciphertext();
 
     let decrypt_builder = esdk
         .decrypt()
-        .ciphertext(&esdk_ciphertext)
+        .ciphertext(esdk_ciphertext)
         .keyring(raw_aes_keyring);
     let err = decrypt_builder
         .clone()

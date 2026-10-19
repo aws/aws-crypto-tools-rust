@@ -2,6 +2,7 @@
 //
 // Requires an existing key store with a provisioned branch key.
 // The request credentials are read from AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and AWS_SESSION_TOKEN.
+// Each KMS call also carries this request's headers.
 
 #include <chrono>
 #include <cstdlib>
@@ -31,7 +32,7 @@ Aws::Esdk::Credentials credentials_for_request() {
 // Handles one request: every KMS call it makes uses that request's credentials.
 void handle_request(const Aws::Esdk::KmsClient& kms,
                     const Aws::Esdk::DdbClient& ddb,
-                    Aws::Esdk::Client& esdk,
+                    const Aws::Esdk::Client& esdk,
                     const Aws::Esdk::Credentials& credentials) {
     // The AWS Crypto Tools CI test key store.
     // Replace these with your own key store's table, name, and KMS key ARN.
@@ -40,7 +41,9 @@ void handle_request(const Aws::Esdk::KmsClient& kms,
         "KeyStoreDdbTable",  // logical_key_store_name
         "arn:aws:kms:us-west-2:370957321024:key/9d989aa2-2f9c-438c-a745-cc57d3ad0126",  // kms_arn
         Aws::Esdk::KeyStoreOptions()
-            .with_kms_client(kms.with_credentials(credentials))
+            .with_kms_client(kms.with_credentials(credentials)
+                                 .with_headers({{"header-name-1", "header-value-1"},
+                                                {"header-name-2", "header-value-2"}}))
             .with_ddb_client(ddb));
 
     // A keyring with its own cache, so branch key material fetched with one request's

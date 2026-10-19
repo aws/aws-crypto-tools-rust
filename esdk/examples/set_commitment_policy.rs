@@ -11,8 +11,8 @@
 //!
 //! Runs offline.
 
-use aws_crypto_mpl::{AesGcm, RawAesKeyring};
-use aws_esdk::{CommitmentPolicy, EncryptionContext};
+use aws_esdk::keyring::RawAesKeyring;
+use aws_esdk::types::{AesWrappingAlg, CommitmentPolicy, EncryptionContext};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -26,13 +26,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .key_namespace("my-key-namespace")
         .key_name("my-key-name")
         .wrapping_key(vec![0x01u8; 32])
-        .wrapping_alg(AesGcm::Aes256Gcm)
+        .wrapping_alg(AesWrappingAlg::AlgAes256GcmIv12Tag16)
         .build()?;
 
     let plaintext = b"Hello World";
 
-    let mut encryption_context = EncryptionContext::new();
-    encryption_context.insert("purpose", "example");
+    let encryption_context = EncryptionContext::from([("purpose", "example")]);
 
     let encrypted = esdk
         .encrypt()
@@ -44,19 +43,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let decrypted = esdk
         .decrypt()
-        .ciphertext(&encrypted.ciphertext)
+        .ciphertext(encrypted.ciphertext())
         .encryption_context(encryption_context)
         .keyring(keyring)
         .send()
         .await?;
 
     assert_eq!(
-        decrypted.plaintext, plaintext,
+        decrypted.plaintext(),
+        plaintext,
         "Decryption failed: plaintext mismatch"
     );
     println!(
         "Success! Encrypted with {:?} under ForbidEncryptAllowDecrypt.",
-        encrypted.algorithm_suite_id
+        encrypted.algorithm_suite_id()
     );
     Ok(())
 }

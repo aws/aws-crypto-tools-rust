@@ -22,7 +22,7 @@ use aws_crypto_mpl::async_trait;
 use aws_crypto_mpl::keyring::{
     Keyring, OnDecryptInput, OnDecryptOutput, OnEncryptInput, OnEncryptOutput,
 };
-use aws_crypto_mpl::structures::{
+use aws_crypto_mpl::types::{
     DecryptionMaterials, EncryptedDataKey, EncryptionMaterials, PlaintextDataKey,
 };
 use aws_mpl_primitives::{AesGcm, aes_decrypt, aes_encrypt, generate_random_bytes};
@@ -141,7 +141,7 @@ async fn custom_keyring_round_trips_via_public_api() {
 
     // The custom keyring's EDK is serialized into the message header.
     assert!(
-        out.ciphertext
+        out.ciphertext()
             .windows(PROVIDER_ID.len())
             .any(|w| w == PROVIDER_ID.as_bytes()),
         "header must carry the custom keyring's provider ID"
@@ -150,12 +150,12 @@ async fn custom_keyring_round_trips_via_public_api() {
     // Decrypt back through the same keyring.
     let dec = Client::default()
         .decrypt()
-        .ciphertext(&out.ciphertext)
+        .ciphertext(out.ciphertext())
         .keyring(keyring)
         .send()
         .await
         .unwrap();
-    assert_eq!(dec.plaintext, plaintext);
+    assert_eq!(dec.plaintext(), plaintext);
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -173,7 +173,7 @@ async fn custom_keyring_wrong_kek_fails_decrypt() {
     let wrong_keyring = LocalKekKeyring { kek: [8u8; 32] };
     let err = Client::default()
         .decrypt()
-        .ciphertext(&out.ciphertext)
+        .ciphertext(out.ciphertext())
         .keyring(wrong_keyring)
         .send()
         .await
@@ -250,7 +250,7 @@ async fn a_decrypt_plaintext_data_key_of_the_wrong_length_is_invalid_materials()
         .unwrap();
     let err = Client::default()
         .decrypt()
-        .ciphertext(&out.ciphertext)
+        .ciphertext(out.ciphertext())
         .keyring(ShortDataKeyKeyring)
         .send()
         .await

@@ -13,8 +13,8 @@
 
 use tokio::fs::{self, File};
 
-use aws_crypto_mpl::{AesGcm, RawAesKeyring};
-use aws_esdk::{AlgorithmSuiteId, EncryptionContext};
+use aws_esdk::keyring::RawAesKeyring;
+use aws_esdk::types::{AesWrappingAlg, AlgorithmSuiteId, EncryptionContext};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -35,13 +35,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .key_namespace("my-key-namespace")
         .key_name("my-key-name")
         .wrapping_key(wrapping_key)
-        .wrapping_alg(AesGcm::Aes256Gcm)
+        .wrapping_alg(AesWrappingAlg::AlgAes256GcmIv12Tag16)
         .build()?;
 
     // The encryption context is authenticated, not encrypted, and is bound to the message.
-    let mut encryption_context = EncryptionContext::new();
-    encryption_context.insert("purpose", "streaming-example");
-    encryption_context.insert("is not", "secret");
+    let encryption_context =
+        EncryptionContext::from([("purpose", "streaming-example"), ("is not", "secret")]);
 
     let esdk = aws_esdk::Client::default();
 
@@ -52,7 +51,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .encryption_context(encryption_context.clone())
         .keyring(keyring.clone())
         .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
-        .send(input, output)
+        .plaintext(input)
+        .ciphertext(output)
+        .send()
         .await;
     if let Err(e) = result {
         // On error the ciphertext file is incomplete; delete it.
@@ -68,7 +69,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .decrypt_stream()
         .encryption_context(encryption_context)
         .keyring(keyring)
-        .send(input, output)
+        .ciphertext(input)
+        .plaintext(output)
+        .send()
         .await;
     if let Err(e) = result {
         // On error the plaintext written so far is unverified; delete it unused.

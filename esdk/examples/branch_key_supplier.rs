@@ -17,15 +17,13 @@
 
 use std::time::Duration;
 
-use aws_crypto_mpl::Error as MplError;
-use aws_crypto_mpl::async_trait;
-use aws_crypto_mpl::key_store::{KeyStoreClient, KmsConfiguration};
-use aws_crypto_mpl::{
-    BranchKeySupplier, GetBranchKeyIdInput, GetBranchKeyIdOutput, HierarchicalKeyring, aws_config,
-    aws_sdk_dynamodb, aws_sdk_kms,
+use aws_esdk::key_store::types::KmsConfiguration;
+use aws_esdk::keyring::{
+    BranchKeySupplier, GetBranchKeyIdInput, GetBranchKeyIdOutput, HierarchicalKeyring,
 };
-use aws_esdk::EncryptionContext;
-use aws_esdk::error::Error;
+use aws_esdk::mpl::Error as MplError;
+use aws_esdk::types::EncryptionContext;
+use aws_esdk::{Error, async_trait, aws_config, aws_sdk_dynamodb, aws_sdk_kms, key_store};
 
 /// Maps the `tenant` value in the encryption context to that tenant's branch key ID.
 struct TenantBranchKeySupplier {
@@ -53,14 +51,11 @@ impl BranchKeySupplier for TenantBranchKeySupplier {
 }
 
 fn tenant_context(tenant: &str) -> EncryptionContext {
-    let mut encryption_context = EncryptionContext::new();
-    encryption_context.insert("tenant", tenant);
-    encryption_context.insert("purpose", "example");
-    encryption_context
+    EncryptionContext::from([("tenant", tenant), ("purpose", "example")])
 }
 
-fn fixed_keyring(
-    key_store: &KeyStoreClient,
+async fn fixed_keyring(
+    key_store: &key_store::Client,
     branch_key_id: &str,
 ) -> Result<HierarchicalKeyring, MplError> {
     HierarchicalKeyring::builder()
@@ -68,6 +63,7 @@ fn fixed_keyring(
         .ttl(Duration::from_secs(600))
         .branch_key_id(branch_key_id)
         .build()
+        .await
 }
 
 #[tokio::main]
@@ -76,7 +72,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // The AWS Crypto Tools CI test key store.
     // Replace these with your own key store's table, name, and KMS key ARN.
-    let key_store = KeyStoreClient::builder()
+    let key_store = key_store::Client::builder()
         .ddb_table_name("KeyStoreDdbTable")
         .logical_key_store_name("KeyStoreDdbTable")
         .kms_configuration(KmsConfiguration::KmsKeyArn(
@@ -87,8 +83,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build()
         .await?;
 
-    let mut branch_key_context = EncryptionContext::new();
-    branch_key_context.insert("purpose", "example");
+    let branch_key_context = EncryptionContext::from([("purpose", "example")]);
     let create_branch_key = async || {
         key_store
             .create_key()
@@ -107,7 +102,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             tenant_a: branch_key_a.clone(),
             tenant_b: branch_key_b.clone(),
         })
-        .build()?;
+        .build()
+        .await?;
 
     let plaintext = b"Hello World";
 
@@ -128,13 +124,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .send()
         .await?;
 
-    let keyring_a = fixed_keyring(&key_store, &branch_key_a)?;
-    let keyring_b = fixed_keyring(&key_store, &branch_key_b)?;
+    let keyring_a = fixed_keyring(&key_store, &branch_key_a).await?;
+    let keyring_b = fixed_keyring(&key_store, &branch_key_b).await?;
 
     // Tenant B's branch key cannot decrypt tenant A's message.
     let result = esdk
         .decrypt()
-        .ciphertext(&encrypted_a.ciphertext)
+        .ciphertext(encrypted_a.ciphertext())
         .encryption_context(tenant_context("TenantA"))
         .keyring(keyring_b.clone())
         .send()
@@ -151,13 +147,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ] {
         let decrypted = esdk
             .decrypt()
-            .ciphertext(&encrypted.ciphertext)
+            .ciphertext(encrypted.ciphertext())
             .encryption_context(tenant_context(tenant))
             .keyring(keyring)
             .send()
             .await?;
         assert_eq!(
-            decrypted.plaintext, plaintext,
+            decrypted.plaintext(),
+            plaintext,
             "Decryption failed: plaintext mismatch"
         );
     }

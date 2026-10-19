@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use crate::Error;
 use crate::key_store::KeyStore;
-use crate::key_store::types::{
+use crate::key_store::shapes::{
     CreateKeyInput, CreateKeyInputBuilder, CreateKeyOutput, CreateKeyStoreInput,
     CreateKeyStoreInputBuilder, CreateKeyStoreOutput, GetActiveBranchKeyInput,
     GetActiveBranchKeyInputBuilder, GetActiveBranchKeyOutput, GetBeaconKeyInput,
@@ -21,7 +21,7 @@ use crate::structures::EncryptionContext;
 /// Each method returns a fluent builder: set the input, then call `send`.
 ///
 /// ```no_run
-/// # async fn example(key_store: aws_crypto_mpl::KeyStoreClient) -> Result<(), aws_crypto_mpl::Error> {
+/// # async fn example(key_store: aws_crypto_mpl::key_store::Client) -> Result<(), aws_crypto_mpl::Error> {
 /// let materials = key_store
 ///     .get_active_branch_key()
 ///     .branch_key_id("my-branch-key")
@@ -34,11 +34,11 @@ use crate::structures::EncryptionContext;
 ///
 /// Cloning is cheap: clones share one key store.
 #[derive(Clone)]
-pub struct KeyStoreClient {
+pub struct Client {
     inner: Arc<dyn KeyStore>,
 }
 
-impl KeyStoreClient {
+impl Client {
     /// Wrap `key_store` in a client.
     pub fn new(key_store: impl KeyStore + 'static) -> Self {
         Self {
@@ -103,23 +103,23 @@ impl KeyStoreClient {
     }
 }
 
-impl<T: KeyStore + 'static> From<T> for KeyStoreClient {
+impl<T: KeyStore + 'static> From<T> for Client {
     fn from(key_store: T) -> Self {
         Self::new(key_store)
     }
 }
 
-impl std::fmt::Debug for KeyStoreClient {
+impl std::fmt::Debug for Client {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("KeyStoreClient").finish_non_exhaustive()
+        f.debug_struct("Client").finish_non_exhaustive()
     }
 }
 
-/// Fluent builder for [`KeyStoreClient::get_key_store_info`].
+/// Fluent builder for [`Client::get_key_store_info`].
 #[derive(Debug, Clone)]
 #[must_use = "does nothing until `send` is called"]
 pub struct GetKeyStoreInfoFluentBuilder {
-    client: KeyStoreClient,
+    client: Client,
     inner: GetKeyStoreInfoInputBuilder,
 }
 
@@ -131,22 +131,21 @@ impl GetKeyStoreInfoFluentBuilder {
     }
 
     /// Send the request.
-    /// The key store answers from its own configuration, so this is synchronous.
     ///
     /// # Errors
     ///
     /// The errors [`KeyStore::get_key_store_info`] documents.
-    pub fn send(self) -> Result<GetKeyStoreInfoOutput, Error> {
+    pub async fn send(self) -> Result<GetKeyStoreInfoOutput, Error> {
         let input = self.inner.build()?;
-        self.client.inner.get_key_store_info(input)
+        self.client.inner.get_key_store_info(input).await
     }
 }
 
-/// Fluent builder for [`KeyStoreClient::create_key_store`].
+/// Fluent builder for [`Client::create_key_store`].
 #[derive(Debug, Clone)]
 #[must_use = "does nothing until `send` is called"]
 pub struct CreateKeyStoreFluentBuilder {
-    client: KeyStoreClient,
+    client: Client,
     inner: CreateKeyStoreInputBuilder,
 }
 
@@ -168,11 +167,11 @@ impl CreateKeyStoreFluentBuilder {
     }
 }
 
-/// Fluent builder for [`KeyStoreClient::create_key`].
+/// Fluent builder for [`Client::create_key`].
 #[derive(Debug, Clone)]
 #[must_use = "does nothing until `send` is called"]
 pub struct CreateKeyFluentBuilder {
-    client: KeyStoreClient,
+    client: Client,
     inner: CreateKeyInputBuilder,
 }
 
@@ -197,6 +196,12 @@ impl CreateKeyFluentBuilder {
         self
     }
 
+    /// The branch key id, if set.
+    #[must_use]
+    pub const fn get_branch_key_id(&self) -> &Option<String> {
+        self.inner.get_branch_key_id()
+    }
+
     /// Set the custom encryption context for the new branch key.
     /// Required when `branch_key_id` is set.
     pub fn encryption_context(mut self, encryption_context: impl Into<EncryptionContext>) -> Self {
@@ -211,6 +216,12 @@ impl CreateKeyFluentBuilder {
         self
     }
 
+    /// The encryption context, if set.
+    #[must_use]
+    pub const fn get_encryption_context(&self) -> &Option<EncryptionContext> {
+        self.inner.get_encryption_context()
+    }
+
     /// Send the request.
     ///
     /// # Errors
@@ -222,11 +233,11 @@ impl CreateKeyFluentBuilder {
     }
 }
 
-/// Fluent builder for [`KeyStoreClient::version_key`].
+/// Fluent builder for [`Client::version_key`].
 #[derive(Debug, Clone)]
 #[must_use = "does nothing until `send` is called"]
 pub struct VersionKeyFluentBuilder {
-    client: KeyStoreClient,
+    client: Client,
     inner: VersionKeyInputBuilder,
 }
 
@@ -251,6 +262,12 @@ impl VersionKeyFluentBuilder {
         self
     }
 
+    /// The branch key id, if set.
+    #[must_use]
+    pub const fn get_branch_key_id(&self) -> &Option<String> {
+        self.inner.get_branch_key_id()
+    }
+
     /// Send the request.
     ///
     /// # Errors
@@ -264,11 +281,11 @@ impl VersionKeyFluentBuilder {
     }
 }
 
-/// Fluent builder for [`KeyStoreClient::get_active_branch_key`].
+/// Fluent builder for [`Client::get_active_branch_key`].
 #[derive(Debug, Clone)]
 #[must_use = "does nothing until `send` is called"]
 pub struct GetActiveBranchKeyFluentBuilder {
-    client: KeyStoreClient,
+    client: Client,
     inner: GetActiveBranchKeyInputBuilder,
 }
 
@@ -293,6 +310,12 @@ impl GetActiveBranchKeyFluentBuilder {
         self
     }
 
+    /// The branch key id, if set.
+    #[must_use]
+    pub const fn get_branch_key_id(&self) -> &Option<String> {
+        self.inner.get_branch_key_id()
+    }
+
     /// Send the request.
     ///
     /// # Errors
@@ -306,11 +329,11 @@ impl GetActiveBranchKeyFluentBuilder {
     }
 }
 
-/// Fluent builder for [`KeyStoreClient::get_branch_key_version`].
+/// Fluent builder for [`Client::get_branch_key_version`].
 #[derive(Debug, Clone)]
 #[must_use = "does nothing until `send` is called"]
 pub struct GetBranchKeyVersionFluentBuilder {
-    client: KeyStoreClient,
+    client: Client,
     inner: GetBranchKeyVersionInputBuilder,
 }
 
@@ -335,6 +358,12 @@ impl GetBranchKeyVersionFluentBuilder {
         self
     }
 
+    /// The branch key id, if set.
+    #[must_use]
+    pub const fn get_branch_key_id(&self) -> &Option<String> {
+        self.inner.get_branch_key_id()
+    }
+
     /// Set the branch key version.
     /// Required.
     pub fn branch_key_version(mut self, branch_key_version: impl Into<String>) -> Self {
@@ -347,6 +376,12 @@ impl GetBranchKeyVersionFluentBuilder {
     pub fn set_branch_key_version(mut self, branch_key_version: Option<String>) -> Self {
         self.inner = self.inner.set_branch_key_version(branch_key_version);
         self
+    }
+
+    /// The branch key version, if set.
+    #[must_use]
+    pub const fn get_branch_key_version(&self) -> &Option<String> {
+        self.inner.get_branch_key_version()
     }
 
     /// Send the request.
@@ -362,11 +397,11 @@ impl GetBranchKeyVersionFluentBuilder {
     }
 }
 
-/// Fluent builder for [`KeyStoreClient::get_beacon_key`].
+/// Fluent builder for [`Client::get_beacon_key`].
 #[derive(Debug, Clone)]
 #[must_use = "does nothing until `send` is called"]
 pub struct GetBeaconKeyFluentBuilder {
-    client: KeyStoreClient,
+    client: Client,
     inner: GetBeaconKeyInputBuilder,
 }
 
@@ -389,6 +424,12 @@ impl GetBeaconKeyFluentBuilder {
     pub fn set_branch_key_id(mut self, branch_key_id: Option<String>) -> Self {
         self.inner = self.inner.set_branch_key_id(branch_key_id);
         self
+    }
+
+    /// The branch key id, if set.
+    #[must_use]
+    pub const fn get_branch_key_id(&self) -> &Option<String> {
+        self.inner.get_branch_key_id()
     }
 
     /// Send the request.

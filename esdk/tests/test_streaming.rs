@@ -5,7 +5,8 @@
 mod fixtures;
 mod test_helpers;
 
-use aws_esdk::{Client, EncryptionContext};
+use aws_esdk::Client;
+use aws_esdk::types::EncryptionContext;
 use test_helpers::{multi_frame_signed_for_stream, multi_frame_unsigned_for_stream, test_keyring};
 
 #[tokio::test(flavor = "multi_thread")]
@@ -30,7 +31,7 @@ async fn test_streaming_encrypt_decrypt_round_trip() {
     //
     //= spec/client-apis/streaming.md#inputs
     //= type=test
-    //= reason=encrypt_stream accepts a SafeRead (Cursor) as input; the round-trip succeeds, proving the streaming-input mechanism works
+    //= reason=encrypt_stream accepts an AsyncRead (Cursor) as input; the round-trip succeeds, proving the streaming-input mechanism works
     //# In order to support streaming, the operation MUST accept some input within a streaming framework.
     //
     //= spec/client-apis/encrypt.md#plaintext
@@ -40,7 +41,9 @@ async fn test_streaming_encrypt_decrypt_round_trip() {
     esdk.encrypt_stream()
         .encryption_context(ec.clone())
         .keyring(keyring.clone())
-        .send(&mut pt_cursor, &mut ciphertext)
+        .plaintext(&mut pt_cursor)
+        .ciphertext(&mut ciphertext)
+        .send()
         .await
         .unwrap();
 
@@ -55,17 +58,19 @@ async fn test_streaming_encrypt_decrypt_round_trip() {
 
     //= spec/client-apis/streaming.md#outputs
     //= type=test
-    //= reason=the Vec<u8> receives bytes via SafeWrite::write(), which is the mechanism for releasing output bytes
+    //= reason=the Vec<u8> receives bytes via AsyncWrite::poll_write(), which is the mechanism for releasing output bytes
     //# - There MUST be a mechanism for output bytes to be released.
     //
     //= spec/client-apis/streaming.md#outputs
     //= type=test
-    //= reason=decrypt_stream writes output to a Vec<u8> via SafeWrite; the non-empty result proves streaming output
+    //= reason=decrypt_stream writes output to a Vec<u8> via AsyncWrite; the non-empty result proves streaming output
     //# In order to support streaming, the operation MUST produce some output within a streaming framework.
     esdk.decrypt_stream()
         .encryption_context(ec)
         .keyring(keyring)
-        .send(&mut ct_cursor, &mut decrypted)
+        .ciphertext(&mut ct_cursor)
+        .plaintext(&mut decrypted)
+        .send()
         .await
         .unwrap();
 
@@ -99,7 +104,9 @@ async fn test_decrypt_stream_multi_frame_signed_rejected() {
     let err = Client::default()
         .decrypt_stream()
         .keyring(keyring)
-        .send(&mut ct_cursor, &mut output)
+        .ciphertext(&mut ct_cursor)
+        .plaintext(&mut output)
+        .send()
         .await
         .expect_err("multi-frame signed message must fail in streaming mode");
     assert!(err.is_validation(), "expected Validation, got {:?}", err);
@@ -121,7 +128,9 @@ async fn test_decrypt_stream_multi_frame_unsigned_accepted() {
     Client::default()
         .decrypt_stream()
         .keyring(keyring)
-        .send(&mut ct_cursor, &mut output)
+        .ciphertext(&mut ct_cursor)
+        .plaintext(&mut output)
+        .send()
         .await
         .unwrap();
     assert_eq!(
@@ -143,12 +152,19 @@ async fn test_streaming_rejects_neither_and_both_sources() {
     //= type=test
     //# If the caller does not provide exactly one of a keyring or CMM, the Encrypt operation MUST fail.
     let esdk = Client::default();
-    let neither = esdk.encrypt_stream().send(&b"pt"[..], Vec::new()).await;
+    let neither = esdk
+        .encrypt_stream()
+        .plaintext(&b"pt"[..])
+        .ciphertext(Vec::new())
+        .send()
+        .await;
     let both = esdk
         .encrypt_stream()
         .keyring(keyring.clone())
         .cmm(cmm.clone())
-        .send(&b"pt"[..], Vec::new())
+        .plaintext(&b"pt"[..])
+        .ciphertext(Vec::new())
+        .send()
         .await;
     for (case, result) in [("neither", neither), ("both", both)] {
         let err = result.expect_err("encrypt_stream must fail");
@@ -166,12 +182,19 @@ async fn test_streaming_rejects_neither_and_both_sources() {
     //= spec/client-apis/decrypt.md#input
     //= type=test
     //# If the caller does not provide exactly one of a keyring or CMM, the Decrypt operation MUST fail.
-    let neither = esdk.decrypt_stream().send(&b""[..], Vec::new()).await;
+    let neither = esdk
+        .decrypt_stream()
+        .ciphertext(&b""[..])
+        .plaintext(Vec::new())
+        .send()
+        .await;
     let both = esdk
         .decrypt_stream()
         .keyring(keyring)
         .cmm(cmm)
-        .send(&b""[..], Vec::new())
+        .ciphertext(&b""[..])
+        .plaintext(Vec::new())
+        .send()
         .await;
     for (case, result) in [("neither", neither), ("both", both)] {
         let err = result.expect_err("decrypt_stream must fail");
@@ -260,23 +283,75 @@ async fn test_streaming_round_trip_through_pending_partial_io() {
     let mut ciphertext = Vec::new();
     esdk.encrypt_stream()
         .keyring(keyring.clone())
-        .algorithm_suite_id(aws_esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
-        .send(
-            Trickle::new(plaintext.as_slice()),
-            Trickle::new(&mut ciphertext),
-        )
+        .algorithm_suite_id(aws_esdk::types::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
+        .plaintext(Trickle::new(plaintext.as_slice()))
+        .ciphertext(Trickle::new(&mut ciphertext))
+        .send()
         .await
         .unwrap();
 
     let mut decrypted = Vec::new();
     esdk.decrypt_stream()
         .keyring(keyring)
-        .send(
-            Trickle::new(ciphertext.as_slice()),
-            Trickle::new(&mut decrypted),
-        )
+        .ciphertext(Trickle::new(ciphertext.as_slice()))
+        .plaintext(Trickle::new(&mut decrypted))
+        .send()
         .await
         .unwrap();
 
     assert_eq!(decrypted, plaintext);
+}
+
+// On a single-threaded runtime, another task should run when the encrypt/decrypt task yields.
+#[tokio::test(flavor = "current_thread")]
+async fn test_large_message_yields_to_other_tasks() {
+    use std::num::NonZeroU32;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    let ticks = Arc::new(AtomicU64::new(0));
+    let ticker = tokio::spawn({
+        let ticks = ticks.clone();
+        async move {
+            loop {
+                // The ticker should advance when encryption/decryption yields between frames.
+                ticks.fetch_add(1, Ordering::Relaxed);
+                tokio::task::yield_now().await;
+            }
+        }
+    });
+
+    let keyring = test_keyring().await;
+    let plaintext = vec![0u8; 4 << 20];
+    let esdk = aws_esdk::Client::default();
+    for frame_length in [4096, 1 << 20] {
+        let before_encrypt = ticks.load(Ordering::Relaxed);
+        let ciphertext = esdk
+            .encrypt()
+            .plaintext(&plaintext)
+            .keyring(keyring.clone())
+            .algorithm_suite_id(aws_esdk::types::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
+            .frame_length(NonZeroU32::new(frame_length).unwrap())
+            .send()
+            .await
+            .unwrap()
+            .into_ciphertext();
+        let after_encrypt = ticks.load(Ordering::Relaxed);
+        assert!(
+            after_encrypt > before_encrypt,
+            "the ticker never ran during encrypt with {frame_length}-byte frames"
+        );
+
+        esdk.decrypt()
+            .ciphertext(&ciphertext)
+            .keyring(keyring.clone())
+            .send()
+            .await
+            .unwrap();
+        assert!(
+            ticks.load(Ordering::Relaxed) > after_encrypt,
+            "the ticker never ran during decrypt with {frame_length}-byte frames"
+        );
+    }
+    ticker.abort();
 }

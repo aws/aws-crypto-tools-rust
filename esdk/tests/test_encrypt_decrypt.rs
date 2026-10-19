@@ -5,7 +5,7 @@
 mod fixtures;
 mod test_helpers;
 
-use aws_esdk::{Client, EncryptionContext};
+use aws_esdk::{Client, types::EncryptionContext};
 use std::num::NonZeroU32;
 use test_helpers::test_keyring;
 
@@ -35,14 +35,14 @@ async fn test_encrypt_decrypt() {
     //# that adheres to [decrypt](./decrypt.md).
     let decrypt_output = esdk
         .decrypt()
-        .ciphertext(&encrypt_output.ciphertext)
+        .ciphertext(encrypt_output.ciphertext())
         .encryption_context(ec)
         .keyring(keyring)
         .send()
         .await
         .unwrap();
 
-    assert_eq!(decrypt_output.plaintext, plaintext);
+    assert_eq!(decrypt_output.plaintext(), plaintext);
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -78,7 +78,7 @@ async fn test_encrypt_decrypt_short() {
         .send()
         .await
         .unwrap()
-        .ciphertext;
+        .into_ciphertext();
     let cipher_len: usize = esdk_ciphertext.len();
     // The last byte belongs to the footer signature, so decrypt fails with a Serialization error.
     //= spec/client-apis/decrypt.md#behavior
@@ -119,7 +119,7 @@ async fn test_encrypt_decrypt_ec() {
         .send()
         .await
         .unwrap()
-        .ciphertext;
+        .into_ciphertext();
     let decrypt_output = esdk
         .decrypt()
         .ciphertext(&esdk_ciphertext)
@@ -129,12 +129,12 @@ async fn test_encrypt_decrypt_ec() {
         .await
         .unwrap();
 
-    assert_eq!(decrypt_output.plaintext, plaintext);
+    assert_eq!(decrypt_output.plaintext(), plaintext);
     assert_eq!(
-        decrypt_output.encryption_context.get("stuff"),
+        decrypt_output.encryption_context().get("stuff"),
         Some("junk"),
         "input EC pair (stuff, junk) must round-trip to the decrypt output, got: {:?}",
-        decrypt_output.encryption_context
+        decrypt_output.encryption_context()
     );
 }
 
@@ -206,7 +206,7 @@ async fn test_encrypt_decrypt_varied_frame_lengths() {
             .send()
             .await
             .unwrap_or_else(|e| panic!("encrypt failed (frame_len={i}): {e:?}"))
-            .ciphertext;
+            .into_ciphertext();
         let decrypt_output = esdk
             .decrypt()
             .ciphertext(&esdk_ciphertext)
@@ -216,7 +216,8 @@ async fn test_encrypt_decrypt_varied_frame_lengths() {
             .await
             .unwrap_or_else(|e| panic!("decrypt failed (frame_len={i}): {e:?}"));
         assert_eq!(
-            decrypt_output.plaintext, plaintext,
+            decrypt_output.plaintext(),
+            plaintext,
             "round-trip mismatch at frame_len={i}"
         );
     }

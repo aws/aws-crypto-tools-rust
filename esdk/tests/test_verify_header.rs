@@ -7,7 +7,8 @@
 mod fixtures;
 mod test_helpers;
 
-use aws_esdk::AlgorithmSuiteId;
+use aws_esdk::types::AlgorithmSuiteId;
+use aws_esdk::types::*;
 use aws_esdk::*;
 use std::num::NonZeroU32;
 // TODO(native-mpl): re-enable with test_verify_header_encryption_context_to_only_authenticate
@@ -28,7 +29,7 @@ async fn test_verify_header_fails_on_tampered_header() {
         .send()
         .await
         .unwrap()
-        .ciphertext;
+        .into_ciphertext();
 
     // Tamper with a byte in the header body (byte 10 is safely within the header body).
     let mut tampered_ct = valid_ct.clone();
@@ -191,7 +192,7 @@ async fn test_streamed_signed_output_not_signed_until_complete() {
         .send()
         .await
         .unwrap()
-        .ciphertext;
+        .into_ciphertext();
 
     let mut tampered_ct = valid_ct.clone();
     let len = tampered_ct.len();
@@ -212,7 +213,9 @@ async fn test_streamed_signed_output_not_signed_until_complete() {
     assert!(
         esdk.decrypt_stream()
             .keyring(keyring.clone())
-            .send(&mut valid_cursor, &mut valid_output)
+            .ciphertext(&mut valid_cursor)
+            .plaintext(&mut valid_output)
+            .send()
             .await
             .is_ok(),
         "valid ct must stream to Ok"
@@ -220,7 +223,9 @@ async fn test_streamed_signed_output_not_signed_until_complete() {
     assert!(
         esdk.decrypt_stream()
             .keyring(keyring)
-            .send(&mut tampered_cursor, &mut tampered_output)
+            .ciphertext(&mut tampered_cursor)
+            .plaintext(&mut tampered_output)
+            .send()
             .await
             .unwrap_err()
             .is_cryptographic(),
@@ -245,23 +250,25 @@ async fn test_streamed_release_parsed_header_after_verification() {
         .send()
         .await
         .unwrap()
-        .ciphertext;
+        .into_ciphertext();
 
     let mut cursor = std::io::Cursor::new(ct.as_slice());
     let mut output = Vec::new();
     let result = Client::default()
         .decrypt_stream()
         .keyring(keyring)
-        .send(&mut cursor, &mut output)
+        .ciphertext(&mut cursor)
+        .plaintext(&mut output)
+        .send()
         .await
         .unwrap();
     assert_eq!(output, plaintext);
     assert_eq!(
-        result.encryption_context.get("release-key"),
+        result.encryption_context().get("release-key"),
         Some("release-value"),
     );
     assert_eq!(
-        result.algorithm_suite_id,
+        result.algorithm_suite_id(),
         AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,
     );
 }

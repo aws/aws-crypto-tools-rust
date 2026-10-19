@@ -19,11 +19,11 @@
 
 use std::time::Duration;
 
-use aws_crypto_mpl::error::ConflictReason;
-use aws_crypto_mpl::key_store::{KeyStoreClient, KmsConfiguration};
-use aws_crypto_mpl::{HierarchicalKeyring, aws_config, aws_sdk_dynamodb, aws_sdk_kms};
-use aws_esdk::EncryptionContext;
-use aws_esdk::error::{Error, Resource, Service};
+use aws_esdk::error::{ConflictReason, Resource, Service};
+use aws_esdk::key_store::types::KmsConfiguration;
+use aws_esdk::keyring::HierarchicalKeyring;
+use aws_esdk::types::EncryptionContext;
+use aws_esdk::{Error, aws_config, aws_sdk_dynamodb, aws_sdk_kms, key_store};
 
 // The AWS Crypto Tools CI test key store.
 // Replace these with your own key store's table, name, KMS key ARN, and branch key ID.
@@ -38,7 +38,7 @@ const PLAINTEXT: &[u8] = b"Hello World";
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let sdk_config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
-    let key_store = KeyStoreClient::builder()
+    let key_store = key_store::Client::builder()
         .ddb_table_name(TABLE_NAME)
         .logical_key_store_name(LOGICAL_KEY_STORE_NAME)
         .kms_configuration(KmsConfiguration::KmsKeyArn(KMS_KEY_ARN.into()))
@@ -50,7 +50,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .key_store(key_store.clone())
         .ttl(Duration::from_secs(600))
         .branch_key_id(BRANCH_KEY_ID)
-        .build()?;
+        .build()
+        .await?;
 
     // Encrypt, handling errors from coarse to fine.
     // The hierarchical keyring reads the branch key from DynamoDB and decrypts it with AWS KMS,
@@ -133,7 +134,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Decrypt, handling the failures only decrypt has.
     let result = esdk
         .decrypt()
-        .ciphertext(&encrypted.ciphertext)
+        .ciphertext(encrypted.ciphertext())
         .keyring(keyring)
         .send()
         .await;
@@ -190,16 +191,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             return Err(e.into());
         }
     };
-    assert_eq!(decrypted.plaintext, PLAINTEXT);
+    assert_eq!(decrypted.plaintext(), PLAINTEXT);
     println!("decrypted the message");
 
-    // Key store operations return `aws_crypto_mpl::Error`, with the same variants and accessors.
+    // Key store operations return `aws_esdk::mpl::Error`, with the same variants and accessors.
     // A `Conflict` says why through `reason()`:
     // - `AlreadyExists`: the branch key ID is already in use
     // - `ConcurrentModification`: another caller rotated the branch key at the same time
     // This call reuses the provisioned branch key's ID, so it reaches `AlreadyExists`.
-    let mut branch_key_context = EncryptionContext::new();
-    branch_key_context.insert("purpose", "example");
+    let branch_key_context = EncryptionContext::from([("purpose", "example")]);
     match key_store
         .create_key()
         .branch_key_id(BRANCH_KEY_ID)
@@ -208,7 +208,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await
     {
         Ok(output) => println!("created branch key {}", output.branch_key_id()),
-        Err(aws_crypto_mpl::Error::Conflict(conflict)) => match conflict.reason() {
+        Err(aws_esdk::mpl::Error::Conflict(conflict)) => match conflict.reason() {
             Some(ConflictReason::AlreadyExists) => {
                 println!("branch key {BRANCH_KEY_ID} already exists; use it or pick another ID");
             }

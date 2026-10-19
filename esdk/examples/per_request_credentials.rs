@@ -5,11 +5,13 @@
 //!
 //! Requires an existing key store with a provisioned branch key.
 //! The request credentials are read from AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and AWS_SESSION_TOKEN.
+//! Each KMS call also carries this request's headers.
 
 use std::time::{Duration, SystemTime};
 
-use aws_crypto_mpl::key_store::{KeyStoreClient, KmsConfiguration};
-use aws_crypto_mpl::{HierarchicalKeyring, aws_config, aws_sdk_dynamodb, aws_sdk_kms};
+use aws_esdk::key_store::types::KmsConfiguration;
+use aws_esdk::keyring::HierarchicalKeyring;
+use aws_esdk::{aws_config, aws_sdk_dynamodb, aws_sdk_kms, key_store};
 use aws_sdk_kms::config::Credentials;
 use aws_smithy_http_client::tls::{Provider, rustls_provider::CryptoMode};
 
@@ -27,6 +29,30 @@ fn credentials_for_request() -> Result<Credentials, Box<dyn std::error::Error>> 
     ))
 }
 
+/// Adds fixed headers to every KMS request.
+#[derive(Debug)]
+struct RequestHeaders(Vec<(String, String)>);
+
+impl aws_sdk_kms::config::Intercept for RequestHeaders {
+    fn name(&self) -> &'static str {
+        "RequestHeaders"
+    }
+
+    // Before signing, so SigV4 signs the headers.
+    fn modify_before_signing(
+        &self,
+        context: &mut aws_sdk_kms::config::interceptors::BeforeTransmitInterceptorContextMut<'_>,
+        _runtime_components: &aws_sdk_kms::config::RuntimeComponents,
+        _cfg: &mut aws_sdk_kms::config::ConfigBag,
+    ) -> Result<(), aws_sdk_kms::error::BoxError> {
+        let headers = context.request_mut().headers_mut();
+        for (name, value) in &self.0 {
+            headers.try_insert(name.clone(), value.clone())?;
+        }
+        Ok(())
+    }
+}
+
 /// Handles one request: every KMS call it makes uses that request's credentials.
 async fn handle_request(
     base_kms: &aws_sdk_kms::Client,
@@ -34,19 +60,24 @@ async fn handle_request(
     esdk: &aws_esdk::Client,
     credentials: Credentials,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    // A copy of the base client that signs with this request's credentials.
+    // A copy of the base client that signs with this request's credentials
+    // and sends this request's headers.
     // It keeps the base client's HTTP client, so it reuses the same connections.
     let kms = aws_sdk_kms::Client::from_conf(
         base_kms
             .config()
             .to_builder()
             .credentials_provider(credentials)
+            .interceptor(RequestHeaders(vec![
+                ("header-name-1".to_string(), "header-value-1".to_string()),
+                ("header-name-2".to_string(), "header-value-2".to_string()),
+            ]))
             .build(),
     );
 
     // The AWS Crypto Tools CI test key store.
     // Replace these with your own key store's table, name, and KMS key ARN.
-    let key_store = KeyStoreClient::builder()
+    let key_store = key_store::Client::builder()
         .ddb_table_name("KeyStoreDdbTable")
         .logical_key_store_name("KeyStoreDdbTable")
         .kms_configuration(KmsConfiguration::KmsKeyArn(
@@ -63,7 +94,8 @@ async fn handle_request(
         .key_store(key_store)
         .branch_key_id("3ce7656b-e166-40f3-8c9b-a920ce6596cd")
         .ttl(Duration::from_secs(300))
-        .build()?;
+        .build()
+        .await?;
 
     let plaintext = b"Hello World";
     let encrypted = esdk
@@ -74,11 +106,11 @@ async fn handle_request(
         .await?;
     let decrypted = esdk
         .decrypt()
-        .ciphertext(&encrypted.ciphertext)
+        .ciphertext(encrypted.ciphertext())
         .keyring(keyring)
         .send()
         .await?;
-    assert_eq!(decrypted.plaintext, plaintext, "plaintext mismatch");
+    assert_eq!(decrypted.plaintext(), plaintext, "plaintext mismatch");
     Ok(())
 }
 

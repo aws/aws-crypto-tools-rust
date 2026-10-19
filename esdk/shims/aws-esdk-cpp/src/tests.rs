@@ -6,7 +6,7 @@
 //! decode end to end.
 
 use super::*;
-use aws_crypto_mpl::Cmc as _;
+use aws_crypto_mpl::cmc::Cmc as _;
 use ffi::EsdkAlgorithmSuiteId as F;
 use ffi::EsdkCommitmentPolicy as P;
 
@@ -295,10 +295,10 @@ fn commitment_policy_target_to_core_accepts_exactly_known_reprs() {
 
 #[test]
 fn encryption_context_round_trips() {
-    let mut m = aws_esdk::EncryptionContext::new();
+    let mut m = aws_esdk::types::EncryptionContext::new();
     m.insert("k1", "v1");
     m.insert("k2", "\u{1F600}");
-    let list = encryption_context_core_to_target(m.clone());
+    let list = encryption_context_core_to_target(&m);
     assert_eq!(list.len(), 2);
     //= spec/shim/esdk-shim.md#encryption-context
     //= type=test
@@ -322,8 +322,8 @@ fn encryption_context_round_trips() {
 
 #[test]
 fn encryption_context_empty() {
-    let empty = aws_esdk::EncryptionContext::new();
-    assert!(encryption_context_core_to_target(empty).is_empty());
+    let empty = aws_esdk::types::EncryptionContext::new();
+    assert!(encryption_context_core_to_target(&empty).is_empty());
     assert!(encryption_context_target_to_core(&[]).is_empty());
 }
 
@@ -356,7 +356,7 @@ fn max_edks_zero_is_no_limit_positive_is_limit() {
 
 #[test]
 fn make_kms_config_accepts_key_arn() {
-    use aws_crypto_mpl::key_store::KmsConfiguration;
+    use aws_crypto_mpl::key_store::types::KmsConfiguration;
     //= spec/shim/esdk-shim.md#kms-configuration
     //= type=test
     //# - The shim MUST translate a KMS key ARN configuration.
@@ -368,7 +368,7 @@ fn make_kms_config_accepts_key_arn() {
 
 #[test]
 fn make_kms_config_accepts_mr_key_arn() {
-    use aws_crypto_mpl::key_store::KmsConfiguration;
+    use aws_crypto_mpl::key_store::types::KmsConfiguration;
     //= spec/shim/esdk-shim.md#kms-configuration
     //= type=test
     //# - The shim MUST translate a KMS multi-Region-key ARN configuration.
@@ -380,7 +380,7 @@ fn make_kms_config_accepts_mr_key_arn() {
 
 #[test]
 fn make_kms_config_accepts_discovery() {
-    use aws_crypto_mpl::key_store::KmsConfiguration;
+    use aws_crypto_mpl::key_store::types::KmsConfiguration;
     //= spec/shim/esdk-shim.md#kms-configuration
     //= type=test
     //# - The shim MUST translate a discovery configuration.
@@ -392,7 +392,7 @@ fn make_kms_config_accepts_discovery() {
 
 #[test]
 fn make_kms_config_accepts_mr_discovery() {
-    use aws_crypto_mpl::key_store::KmsConfiguration;
+    use aws_crypto_mpl::key_store::types::KmsConfiguration;
     //= spec/shim/esdk-shim.md#kms-configuration
     //= type=test
     //# - The shim MUST translate a multi-Region-key discovery configuration.
@@ -915,7 +915,9 @@ fn create_keystore_forwards_id_and_grant_tokens() {
     let ddb = create_ddb_client(&unset_client_config()).expect("ddb client");
 
     let unset = create_keystore(&keystore_config_with_clients(&kms, &ddb)).expect("key store");
-    let info = unset.inner.get_key_store_info().send().expect("info");
+    let info = TOKIO_RUNTIME
+        .block_on(unset.inner.get_key_store_info().send())
+        .expect("info");
     assert!(info.grant_tokens().is_empty());
 
     let mut cfg = keystore_config_with_clients(&kms, &ddb);
@@ -925,7 +927,9 @@ fn create_keystore_forwards_id_and_grant_tokens() {
     };
     cfg.grant_tokens = vec!["g1".to_string(), "g2".to_string()];
     let store = create_keystore(&cfg).expect("key store");
-    let info = store.inner.get_key_store_info().send().expect("info");
+    let info = TOKIO_RUNTIME
+        .block_on(store.inner.get_key_store_info().send())
+        .expect("info");
     assert_eq!(info.key_store_id(), "the-id");
     assert_eq!(info.grant_tokens(), ["g1", "g2"]);
 }

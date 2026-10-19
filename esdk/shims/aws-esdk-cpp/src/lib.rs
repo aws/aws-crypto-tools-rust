@@ -126,13 +126,14 @@
 //# the shim library SHOULD support it as well.
 use aws_config::{AppName, BehaviorVersion, Region, SdkConfig};
 use aws_crypto_mpl::aws_config;
-use aws_crypto_mpl::aws_kms::hierarchical_keyring::HierarchicalKeyring;
 use aws_crypto_mpl::cmc::{
     DefaultCmc, LocalCmc, SharedCmc, StormTrackingCmc, StormTrackingCmcBuilder,
 };
-use aws_crypto_mpl::key_store::{Discovery, KeyStoreClient, KmsConfiguration, MrDiscovery};
+use aws_crypto_mpl::key_store::Client as KeyStoreClient;
+use aws_crypto_mpl::key_store::types::{Discovery, KmsConfiguration, MrDiscovery};
+use aws_crypto_mpl::keyring::HierarchicalKeyring;
 use aws_crypto_mpl::keyring::{RawAesKeyring, SharedKeyring};
-use aws_crypto_mpl::structures::{EsdkAlgorithmSuiteId, EsdkCommitmentPolicy};
+use aws_crypto_mpl::types::{EsdkAlgorithmSuiteId, EsdkCommitmentPolicy};
 use aws_crypto_mpl::{aws_sdk_dynamodb, aws_sdk_kms};
 use aws_esdk::Client;
 use aws_esdk::error::{Resource, RetryKind, Service};
@@ -804,7 +805,7 @@ fn commitment_policy_target_to_core(
 //# the exact key and value of each.
 fn encryption_context_target_to_core(
     x: &[ffi::EncryptionContextItem],
-) -> aws_esdk::EncryptionContext {
+) -> aws_esdk::types::EncryptionContext {
     x.iter().map(|i| (i.key.clone(), i.value.clone())).collect()
 }
 
@@ -814,10 +815,13 @@ fn encryption_context_target_to_core(
 //# key-value map, to the target's list of key-value pairs, preserving every pair
 //# and the exact key and value of each.
 fn encryption_context_core_to_target(
-    x: aws_esdk::EncryptionContext,
+    x: &aws_esdk::types::EncryptionContext,
 ) -> Vec<ffi::EncryptionContextItem> {
-    x.into_iter()
-        .map(|(key, value)| ffi::EncryptionContextItem { key, value })
+    x.iter()
+        .map(|(key, value)| ffi::EncryptionContextItem {
+            key: key.to_owned(),
+            value: value.to_owned(),
+        })
         .collect()
 }
 
@@ -1163,9 +1167,7 @@ fn create_sdk_config(
 
 // ESDK/MPL Client Operations
 
-/// An `ffi::EncryptInput`'s settings, converted for the core ESDK:
-/// the C++ `Client`'s commitment policy and encrypted data key cap as a `Client`,
-/// and the per-call algorithm suite and frame length for its encrypt builder.
+/// An `ffi::EncryptInput`'s settings converted for the Rust ESDK.
 struct EncryptSettings {
     esdk: Client,
     algorithm_suite_id: Option<EsdkAlgorithmSuiteId>,
@@ -1173,29 +1175,28 @@ struct EncryptSettings {
 }
 
 fn encrypt_settings(input: &ffi::EncryptInput<'_>) -> Result<EncryptSettings, String> {
-    let esdk = Client::builder()
-        //= spec/shim/esdk-shim.md#encrypt-inputs
-        //# - MUST provide the target-supplied maximum-encrypted-data-keys value to
-        //# the core ESDK, converted as defined in
-        //# [Maximum encrypted data keys](#maximum-encrypted-data-keys).
-        .set_max_encrypted_data_keys(
-            input
-                .max_encrypted_data_keys
-                .to_option()
-                .and_then(max_edks_target_to_core),
-        )
-        //= spec/shim/esdk-shim.md#encrypt-inputs
-        //# - MUST provide the target-supplied commitment policy to the core ESDK,
-        //# converted as defined in [Commitment policy](#commitment-policy).
-        .set_commitment_policy(
-            input
-                .commitment_policy
-                .to_option()
-                .map(commitment_policy_target_to_core)
-                .transpose()?,
-        )
-        .build()
-        .map_err(core_err)?;
+    let mut builder = Client::builder();
+    //= spec/shim/esdk-shim.md#encrypt-inputs
+    //# - MUST provide the target-supplied maximum-encrypted-data-keys value to
+    //# the core ESDK, converted as defined in
+    //# [Maximum encrypted data keys](#maximum-encrypted-data-keys).
+    builder.set_max_encrypted_data_keys(
+        input
+            .max_encrypted_data_keys
+            .to_option()
+            .and_then(max_edks_target_to_core),
+    );
+    //= spec/shim/esdk-shim.md#encrypt-inputs
+    //# - MUST provide the target-supplied commitment policy to the core ESDK,
+    //# converted as defined in [Commitment policy](#commitment-policy).
+    builder.set_commitment_policy(
+        input
+            .commitment_policy
+            .to_option()
+            .map(commitment_policy_target_to_core)
+            .transpose()?,
+    );
+    let esdk = builder.build().map_err(core_err)?;
     Ok(EncryptSettings {
         esdk,
         //= spec/shim/esdk-shim.md#encrypt-inputs
@@ -1218,29 +1219,28 @@ fn encrypt_settings(input: &ffi::EncryptInput<'_>) -> Result<EncryptSettings, St
 }
 
 fn decrypt_client(input: &ffi::DecryptInput<'_>) -> Result<Client, String> {
-    Client::builder()
-        //= spec/shim/esdk-shim.md#decrypt-inputs
-        //# - MUST provide the target-supplied maximum-encrypted-data-keys value to
-        //# the core ESDK, converted as defined in
-        //# [Maximum encrypted data keys](#maximum-encrypted-data-keys).
-        .set_max_encrypted_data_keys(
-            input
-                .max_encrypted_data_keys
-                .to_option()
-                .and_then(max_edks_target_to_core),
-        )
-        //= spec/shim/esdk-shim.md#decrypt-inputs
-        //# - MUST provide the target-supplied commitment policy to the core ESDK,
-        //# converted as defined in [Commitment policy](#commitment-policy).
-        .set_commitment_policy(
-            input
-                .commitment_policy
-                .to_option()
-                .map(commitment_policy_target_to_core)
-                .transpose()?,
-        )
-        .build()
-        .map_err(core_err)
+    let mut builder = Client::builder();
+    //= spec/shim/esdk-shim.md#decrypt-inputs
+    //# - MUST provide the target-supplied maximum-encrypted-data-keys value to
+    //# the core ESDK, converted as defined in
+    //# [Maximum encrypted data keys](#maximum-encrypted-data-keys).
+    builder.set_max_encrypted_data_keys(
+        input
+            .max_encrypted_data_keys
+            .to_option()
+            .and_then(max_edks_target_to_core),
+    );
+    //= spec/shim/esdk-shim.md#decrypt-inputs
+    //# - MUST provide the target-supplied commitment policy to the core ESDK,
+    //# converted as defined in [Commitment policy](#commitment-policy).
+    builder.set_commitment_policy(
+        input
+            .commitment_policy
+            .to_option()
+            .map(commitment_policy_target_to_core)
+            .transpose()?,
+    );
+    builder.build().map_err(core_err)
 }
 
 fn encrypt(input: &ffi::EncryptInput) -> Result<ffi::EncryptOutput, String> {
@@ -1274,14 +1274,14 @@ fn encrypt(input: &ffi::EncryptInput) -> Result<ffi::EncryptOutput, String> {
         //= spec/shim/esdk-shim.md#encrypt-outputs
         //# - MUST return the used algorithm suite, converted as defined in
         //# [Algorithm suite identifier](#algorithm-suite-identifier).
-        algorithm_suite_id: alg_id_core_to_target(output.algorithm_suite_id)?,
-        //= spec/shim/esdk-shim.md#encrypt-outputs
-        //# - MUST return the core ESDK's ciphertext unmodified.
-        ciphertext: output.ciphertext,
+        algorithm_suite_id: alg_id_core_to_target(output.algorithm_suite_id())?,
         //= spec/shim/esdk-shim.md#encrypt-outputs
         //# - MUST return the result encryption context, converted as defined in
         //# [Encryption context](#encryption-context).
-        encryption_context: encryption_context_core_to_target(output.encryption_context),
+        encryption_context: encryption_context_core_to_target(output.encryption_context()),
+        //= spec/shim/esdk-shim.md#encrypt-outputs
+        //# - MUST return the core ESDK's ciphertext unmodified.
+        ciphertext: output.into_ciphertext(),
     })
 }
 
@@ -1307,14 +1307,14 @@ fn decrypt(input: &ffi::DecryptInput) -> Result<ffi::DecryptOutput, String> {
         //= spec/shim/esdk-shim.md#decrypt-outputs
         //# - MUST return the used algorithm suite, converted as defined in
         //# [Algorithm suite identifier](#algorithm-suite-identifier).
-        algorithm_suite_id: alg_id_core_to_target(output.algorithm_suite_id)?,
-        //= spec/shim/esdk-shim.md#decrypt-outputs
-        //# - MUST return the core ESDK's plaintext unmodified.
-        plaintext: output.plaintext,
+        algorithm_suite_id: alg_id_core_to_target(output.algorithm_suite_id())?,
         //= spec/shim/esdk-shim.md#decrypt-outputs
         //# - MUST return the result encryption context, converted as defined in
         //# [Encryption context](#encryption-context).
-        encryption_context: encryption_context_core_to_target(output.encryption_context),
+        encryption_context: encryption_context_core_to_target(output.encryption_context()),
+        //= spec/shim/esdk-shim.md#decrypt-outputs
+        //# - MUST return the core ESDK's plaintext unmodified.
+        plaintext: output.into_plaintext(),
     })
 }
 
@@ -1537,16 +1537,22 @@ fn non_empty(tokens: &[String]) -> Option<Vec<String>> {
 //# wrapping algorithm of the same meaning.
 fn wrapping_alg_target_to_core(
     alg: ffi::AesWrappingAlg,
-) -> Result<aws_mpl_primitives::AesGcm, String> {
+) -> Result<aws_crypto_mpl::types::AesWrappingAlg, String> {
     match alg {
         ffi::AesWrappingAlg::Unset => Err(shim_err(
             ffi::ShimErrorKind::Validation,
             "create_raw_aes_keyring",
             "wrapping_alg is unset",
         )),
-        ffi::AesWrappingAlg::AlgAes128GcmIv12Tag16 => Ok(aws_mpl_primitives::AesGcm::Aes128Gcm),
-        ffi::AesWrappingAlg::AlgAes192GcmIv12Tag16 => Ok(aws_mpl_primitives::AesGcm::Aes192Gcm),
-        ffi::AesWrappingAlg::AlgAes256GcmIv12Tag16 => Ok(aws_mpl_primitives::AesGcm::Aes256Gcm),
+        ffi::AesWrappingAlg::AlgAes128GcmIv12Tag16 => {
+            Ok(aws_crypto_mpl::types::AesWrappingAlg::AlgAes128GcmIv12Tag16)
+        }
+        ffi::AesWrappingAlg::AlgAes192GcmIv12Tag16 => {
+            Ok(aws_crypto_mpl::types::AesWrappingAlg::AlgAes192GcmIv12Tag16)
+        }
+        ffi::AesWrappingAlg::AlgAes256GcmIv12Tag16 => {
+            Ok(aws_crypto_mpl::types::AesWrappingAlg::AlgAes256GcmIv12Tag16)
+        }
         //= spec/shim/esdk-shim.md#aes-wrapping-algorithm
         //# - The shim MUST return an error when the target wrapping algorithm is not a
         //# supported value.
@@ -1631,7 +1637,7 @@ fn create_hierarchical_keyring(
     if let Some(partition_id) = partition_id {
         builder = builder.partition_id(partition_id);
     }
-    let keyring = builder.build().map_err(core_err)?;
+    let keyring = TOKIO_RUNTIME.block_on(builder.build()).map_err(core_err)?;
 
     Ok(Box::new(Keyring {
         inner: SharedKeyring::new(keyring),
@@ -1895,14 +1901,19 @@ fn create_encrypt_stream(input: &ffi::EncryptInput) -> Result<Box<EncryptStream>
     Ok(Box::new(EncryptStream {
         state: StreamState::spawn("encrypt_stream", move |mut reader, mut writer| {
             let output = TOKIO_RUNTIME
-                .block_on(builder.send(&mut reader, &mut writer))
+                .block_on(
+                    builder
+                        .plaintext(&mut reader)
+                        .ciphertext(&mut writer)
+                        .send(),
+                )
                 .map_err(core_err)?;
             //= spec/shim/esdk-shim.md#encrypt-stream-and-decrypt-stream
             //# - A successful finish step MUST return the same non-payload outputs as
             //# [encrypt outputs](#encrypt-outputs) or [decrypt outputs](#decrypt-outputs).
             Ok(ffi::StreamFinishOutput {
-                algorithm_suite_id: alg_id_core_to_target(output.algorithm_suite_id)?,
-                encryption_context: encryption_context_core_to_target(output.encryption_context),
+                algorithm_suite_id: alg_id_core_to_target(output.algorithm_suite_id())?,
+                encryption_context: encryption_context_core_to_target(output.encryption_context()),
                 trailing_output: Vec::new(),
             })
         }),
@@ -1926,7 +1937,12 @@ fn create_decrypt_stream(input: &ffi::DecryptInput) -> Result<Box<DecryptStream>
     Ok(Box::new(DecryptStream {
         state: StreamState::spawn("decrypt_stream", move |mut reader, mut writer| {
             let output = TOKIO_RUNTIME
-                .block_on(builder.send(&mut reader, &mut writer))
+                .block_on(
+                    builder
+                        .ciphertext(&mut reader)
+                        .plaintext(&mut writer)
+                        .send(),
+                )
                 //= spec/shim/esdk-shim.md#encrypt-stream-and-decrypt-stream
                 //= reason=The core's refusal (and every other core error) propagates through this map_err; the shim releases only what the core's writer produced.
                 //# - Streamed decrypt MUST NOT release plaintext the core ESDK would not release,
@@ -1934,8 +1950,8 @@ fn create_decrypt_stream(input: &ffi::DecryptInput) -> Result<Box<DecryptStream>
                 //# verification cannot complete until the end of the message.
                 .map_err(core_err)?;
             Ok(ffi::StreamFinishOutput {
-                algorithm_suite_id: alg_id_core_to_target(output.algorithm_suite_id)?,
-                encryption_context: encryption_context_core_to_target(output.encryption_context),
+                algorithm_suite_id: alg_id_core_to_target(output.algorithm_suite_id())?,
+                encryption_context: encryption_context_core_to_target(output.encryption_context()),
                 trailing_output: Vec::new(),
             })
         }),

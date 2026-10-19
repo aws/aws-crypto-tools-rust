@@ -75,8 +75,9 @@
 //! and [`reason`](ConflictError::reason) says why:
 //!
 //! ```no_run
-//! # async fn example(key_store: aws_crypto_mpl::KeyStoreClient) -> Result<(), aws_crypto_mpl::Error> {
-//! use aws_crypto_mpl::error::{ConflictReason, Error};
+//! # async fn example(key_store: aws_crypto_mpl::key_store::Client) -> Result<(), aws_crypto_mpl::Error> {
+//! use aws_crypto_mpl::error::ConflictReason;
+//! use aws_crypto_mpl::Error;
 //!
 //! match key_store.version_key().branch_key_id("my-branch-key").send().await {
 //!     Ok(_) => {}
@@ -88,7 +89,7 @@
 //! let create = key_store
 //!     .create_key()
 //!     .branch_key_id("my-branch-key")
-//!     .encryption_context(aws_crypto_mpl::structures::EncryptionContext::new());
+//!     .encryption_context(aws_crypto_mpl::types::EncryptionContext::new());
 //! match create.send().await {
 //!     Ok(_) => {}
 //!     // The branch key ID is in use; use the existing key or pick another ID.
@@ -110,7 +111,8 @@
 //!
 //! ```
 //! # fn record_throttle(_: &str) {}
-//! use aws_crypto_mpl::error::{Error, Resource, Service};
+//! use aws_crypto_mpl::Error;
+//! use aws_crypto_mpl::error::{Resource, Service};
 //!
 //! fn record(err: &Error) {
 //!     if let Error::Throttling(e) = err {
@@ -134,7 +136,8 @@
 //! so you can construct the errors this crate returns, for example from a fake key store:
 //!
 //! ```
-//! use aws_crypto_mpl::error::{BranchKey, ConflictError, ConflictReason, Error, Resource, Service};
+//! use aws_crypto_mpl::error::{BranchKey, ConflictError, ConflictReason, Resource, Service};
+//! use aws_crypto_mpl::Error;
 //!
 //! let err = Error::from(
 //!     ConflictError::builder()
@@ -153,9 +156,15 @@ use aws_sdk_kms::config::http::HttpResponse;
 use aws_sdk_kms::error::SdkError;
 
 // `cargo xtask gen-errors` writes `generated.rs` from `errors.toml` at the repository root.
-mod generated;
+pub(crate) mod generated;
 
-pub use generated::*;
+pub use generated::{
+    AccessDeniedError, ConflictError, CryptographicError, DispatchError,
+    EncryptionContextMismatchError, ErrorParts, InternalError, InvalidMaterialsError,
+    NoMatchingDataKeyError, ResourceNotFoundError, ServiceError, ThrottlingError, ValidationError,
+    builders,
+};
+pub(crate) use generated::{Error, Kind};
 
 pub use aws_mpl_primitives::error::{
     BranchKey, Cache, CmmResource, Collection, ConflictReason, DataKeyInfo, DynamoDbTable,

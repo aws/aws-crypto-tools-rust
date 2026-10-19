@@ -13,8 +13,8 @@
 //!
 //! Runs offline.
 
-use aws_crypto_mpl::{AesGcm, RawAesKeyring};
-use aws_esdk::{AlgorithmSuiteId, EncryptionContext};
+use aws_esdk::keyring::RawAesKeyring;
+use aws_esdk::types::{AesWrappingAlg, AlgorithmSuiteId, EncryptionContext};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -24,13 +24,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .key_namespace("my-key-namespace")
         .key_name("my-key-name")
         .wrapping_key(vec![0x01u8; 32])
-        .wrapping_alg(AesGcm::Aes256Gcm)
+        .wrapping_alg(AesWrappingAlg::AlgAes256GcmIv12Tag16)
         .build()?;
 
     let plaintext = b"Hello World";
 
-    let mut encryption_context = EncryptionContext::new();
-    encryption_context.insert("purpose", "example");
+    let encryption_context = EncryptionContext::from([("purpose", "example")]);
 
     let esdk = aws_esdk::Client::default();
 
@@ -43,21 +42,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .send()
         .await?;
     assert_eq!(
-        encrypted.algorithm_suite_id,
+        encrypted.algorithm_suite_id(),
         AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey
     );
 
     // Decrypt reads the algorithm suite from the message, so it is not set here.
     let decrypted = esdk
         .decrypt()
-        .ciphertext(&encrypted.ciphertext)
+        .ciphertext(encrypted.ciphertext())
         .encryption_context(encryption_context)
         .keyring(keyring)
         .send()
         .await?;
 
     assert_eq!(
-        decrypted.plaintext, plaintext,
+        decrypted.plaintext(),
+        plaintext,
         "Decryption failed: plaintext mismatch"
     );
     println!("Success! Encrypted and decrypted with a non-signing algorithm suite.");

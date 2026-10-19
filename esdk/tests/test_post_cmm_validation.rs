@@ -7,7 +7,7 @@
 mod fixtures;
 mod test_helpers;
 
-use aws_esdk::*;
+use aws_esdk::types::*;
 use test_helpers::*;
 
 #[tokio::test(flavor = "multi_thread")]
@@ -30,7 +30,8 @@ async fn test_post_cmm_commitment_policy_round_trip() {
     )
     .await;
     assert_eq!(
-        result.plaintext, pt,
+        result.plaintext(),
+        pt,
         "committing suite with matching policy must decrypt successfully"
     );
 }
@@ -109,7 +110,8 @@ async fn test_identity_kdf_decrypt() {
     .await;
     let result = decrypt_with(&ct, CommitmentPolicy::ForbidEncryptAllowDecrypt, &keyring).await;
     assert_eq!(
-        result.plaintext, pt,
+        result.plaintext(),
+        pt,
         "round-trip with identity KDF suite succeeds"
     );
 }

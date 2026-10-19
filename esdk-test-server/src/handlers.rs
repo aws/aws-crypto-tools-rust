@@ -11,9 +11,9 @@ use crate::model::{
     CreateClientRequest, CreateClientResponse, DecryptRequest, DecryptResponse, EncryptRequest,
     EncryptResponse, EsdkAlgorithmSuiteId, EsdkClientConfig, EsdkCommitmentPolicy,
 };
-use aws_esdk::AlgorithmSuiteId as MplAlgorithmSuiteId;
-use aws_esdk::CommitmentPolicy as MplCommitmentPolicy;
-use aws_esdk::{Client, EncryptionContext, SharedKeyring};
+use aws_esdk::types::AlgorithmSuiteId as MplAlgorithmSuiteId;
+use aws_esdk::types::CommitmentPolicy as MplCommitmentPolicy;
+use aws_esdk::{keyring::SharedKeyring, types::EncryptionContext, Client};
 use std::collections::HashMap;
 use std::num::NonZeroUsize;
 use std::sync::Mutex;
@@ -100,9 +100,10 @@ impl AppState {
         req: CreateClientRequest,
     ) -> Result<CreateClientResponse, ServerError> {
         let keyring = keyring_for_cmm(&req.config.cmm).await?;
-        let esdk = Client::builder()
-            .commitment_policy(map_commitment(req.config.commitment_policy))
-            .set_max_encrypted_data_keys(max_edks(&req.config)?)
+        let mut builder =
+            Client::builder().commitment_policy(map_commitment(req.config.commitment_policy));
+        builder.set_max_encrypted_data_keys(max_edks(&req.config)?);
+        let esdk = builder
             .build()
             .map_err(|e| ServerError::esdk(e.to_string()))?;
         let entry = ClientEntry { esdk, keyring };
@@ -141,7 +142,7 @@ impl AppState {
             .await
             .map_err(|e| ServerError::esdk(e.to_string()))?;
         Ok(EncryptResponse {
-            ciphertext: output.ciphertext,
+            ciphertext: output.into_ciphertext(),
         })
     }
 
@@ -156,7 +157,7 @@ impl AppState {
             .await
             .map_err(|e| ServerError::esdk(e.to_string()))?;
         Ok(DecryptResponse {
-            plaintext: output.plaintext,
+            plaintext: output.into_plaintext(),
         })
     }
 
@@ -169,6 +170,6 @@ impl AppState {
         let entry = clients
             .get(client_id)
             .ok_or_else(|| ServerError::generic(format!("unknown clientId: {client_id}")))?;
-        Ok((entry.esdk, entry.keyring.clone()))
+        Ok((entry.esdk.clone(), entry.keyring.clone()))
     }
 }

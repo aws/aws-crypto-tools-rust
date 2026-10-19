@@ -16,8 +16,9 @@ use aws_crypto_mpl::cmm::{
     GetEncryptionMaterialsOutput,
 };
 use aws_crypto_mpl::keyring::RawAesKeyring;
+use aws_crypto_mpl::types::AesWrappingAlg;
+use aws_esdk::types::*;
 use aws_esdk::*;
-use aws_mpl_primitives::AesGcm;
 use fixtures::*;
 
 // Wraps a real CMM but forces a different algorithm suite on encrypt.
@@ -40,9 +41,7 @@ impl Cmm for SuiteOverrideCmm {
             .get_encryption_materials()
             .encryption_context(request.encryption_context().clone())
             .commitment_policy(request.commitment_policy())
-            .algorithm_suite_id(aws_crypto_mpl::structures::AlgorithmSuiteId::Esdk(
-                self.suite,
-            ))
+            .algorithm_suite_id(aws_crypto_mpl::types::AlgorithmSuiteId::Esdk(self.suite))
             .set_required_encryption_context_keys(
                 request.required_encryption_context_keys().cloned(),
             )
@@ -67,7 +66,7 @@ async fn test_encrypt_uses_cmm_suite_not_input_suite() {
         .key_namespace(ns)
         .key_name(name)
         .wrapping_key(vec![0u8; 32])
-        .wrapping_alg(AesGcm::Aes256Gcm)
+        .wrapping_alg(AesWrappingAlg::AlgAes256GcmIv12Tag16)
         .build()
         .expect("raw AES keyring construction must succeed for test key material");
 
@@ -95,25 +94,25 @@ async fn test_encrypt_uses_cmm_suite_not_input_suite() {
     //# Note that the algorithm suite in the retrieved encryption materials MAY be different
     //# from the [input algorithm suite](#algorithm-suite).
     assert_eq!(
-        out.algorithm_suite_id,
+        out.algorithm_suite_id(),
         AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey
     );
     assert_ne!(
-        out.algorithm_suite_id,
+        out.algorithm_suite_id(),
         AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384
     );
 
     // Round-trip to prove the ciphertext is valid.
     let dec = Client::default()
         .decrypt()
-        .ciphertext(&out.ciphertext)
+        .ciphertext(out.ciphertext())
         .keyring(keyring)
         .send()
         .await
         .unwrap();
-    assert_eq!(dec.plaintext, b"hello");
+    assert_eq!(dec.plaintext(), b"hello");
     assert_eq!(
-        dec.algorithm_suite_id,
+        dec.algorithm_suite_id(),
         AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey
     );
 }

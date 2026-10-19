@@ -5,7 +5,7 @@
 
 mod test_helpers;
 
-use aws_esdk::*;
+use aws_esdk::types::*;
 use test_helpers::*;
 
 /// V2 header fixed-offset fields.
@@ -33,7 +33,7 @@ impl<'a> V2FixedFields<'a> {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_v2_header_version() {
     let pt = b"test v2 header version";
-    let ct = encrypt_default(pt).await.ciphertext;
+    let ct = encrypt_default(pt).await.into_ciphertext();
     let hdr = V2FixedFields::parse(&ct);
     //= spec/client-apis/encrypt.md#v2-header
     //= type=test
@@ -57,7 +57,7 @@ async fn test_v2_header_version() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_v2_header_algorithm_suite_id() {
-    let ct = encrypt_default(b"suite test").await.ciphertext;
+    let ct = encrypt_default(b"suite test").await.into_ciphertext();
     let hdr = V2FixedFields::parse(&ct);
 
     //= spec/client-apis/encrypt.md#v2-header
@@ -84,8 +84,8 @@ async fn test_v2_header_algorithm_suite_id() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_v2_header_message_id() {
-    let ct1 = encrypt_default(b"msg id v2 test").await.ciphertext;
-    let ct2 = encrypt_default(b"msg id v2 test").await.ciphertext;
+    let ct1 = encrypt_default(b"msg id v2 test").await.into_ciphertext();
+    let ct2 = encrypt_default(b"msg id v2 test").await.into_ciphertext();
     let hdr1 = V2FixedFields::parse(&ct1);
     let hdr2 = V2FixedFields::parse(&ct2);
 
@@ -212,7 +212,7 @@ async fn test_v2_header_aad() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_v2_header_encrypted_data_keys() {
     let pt = b"edk test";
-    let ct = encrypt_default(pt).await.ciphertext;
+    let ct = encrypt_default(pt).await.into_ciphertext();
     let edk_section = parse_edk_section(&ct, Version::V2);
     //= spec/client-apis/encrypt.md#v2-header
     //= type=test
@@ -231,7 +231,9 @@ async fn test_v2_header_encrypted_data_keys() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_v2_header_content_type() {
-    let ct = encrypt_default(b"content type test").await.ciphertext;
+    let ct = encrypt_default(b"content type test")
+        .await
+        .into_ciphertext();
     let offset = content_type_offset_v2(&ct);
     //= spec/client-apis/encrypt.md#v2-header
     //= type=test
@@ -245,7 +247,9 @@ async fn test_v2_header_content_type() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_v2_header_frame_length() {
-    let ct = encrypt_default(b"frame length test").await.ciphertext;
+    let ct = encrypt_default(b"frame length test")
+        .await
+        .into_ciphertext();
     let (_, _, fl_offset) = parse_header_offsets(&ct);
     //= spec/client-apis/encrypt.md#v2-header
     //= type=test
@@ -272,7 +276,7 @@ async fn test_v2_header_frame_length() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_v2_header_algorithm_suite_data() {
-    let ct = encrypt_default(b"suite data test").await.ciphertext;
+    let ct = encrypt_default(b"suite data test").await.into_ciphertext();
     let fields = parse_v2_header_field_offsets(&ct);
     let (_, start, end) = fields
         .iter()
@@ -297,7 +301,7 @@ async fn test_v2_header_algorithm_suite_data() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_v2_header_serialization_order() {
-    let ct = encrypt_default(b"order test").await.ciphertext;
+    let ct = encrypt_default(b"order test").await.into_ciphertext();
     let fields = parse_v2_header_field_offsets(&ct);
 
     //= spec/client-apis/encrypt.md#v2-header

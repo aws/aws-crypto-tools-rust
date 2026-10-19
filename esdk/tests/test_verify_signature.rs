@@ -7,7 +7,7 @@
 mod fixtures;
 mod test_helpers;
 
-use aws_esdk::AlgorithmSuiteId;
+use aws_esdk::types::AlgorithmSuiteId;
 use aws_esdk::*;
 use test_helpers::*;
 
@@ -26,7 +26,7 @@ async fn test_verify_signature_fails_on_tampered_footer() {
         .send()
         .await
         .unwrap()
-        .ciphertext;
+        .into_ciphertext();
 
     // Footer layout per the Message Footer spec: [signature length: UInt16 BE (2 bytes)][signature].
     // Flip a byte inside the signature itself (past the 2-byte length prefix) so verification fails.
@@ -89,11 +89,11 @@ async fn test_verify_signature_inputs_directly_verified() {
         .send()
         .await
         .unwrap();
-    let ct = &output.ciphertext;
+    let ct = &output.ciphertext();
 
     // Verification key is base64-encoded in the output encryption context.
     let pub_key_b64 = output
-        .encryption_context
+        .encryption_context()
         .get("aws-crypto-public-key")
         .expect("signing suite must publish verification key in EC");
     let verification_key = aws_smithy_types::base64::decode(pub_key_b64).unwrap();
@@ -208,7 +208,7 @@ async fn test_footer_wait_truncated_message_fails() {
         .send()
         .await
         .unwrap()
-        .ciphertext;
+        .into_ciphertext();
 
     // Truncate the footer signature: keep sig_len but drop the signature bytes.
     let footer_offset = find_footer_offset_only(&valid_ct);

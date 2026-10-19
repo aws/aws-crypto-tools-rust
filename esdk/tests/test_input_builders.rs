@@ -6,9 +6,10 @@
 mod test_helpers;
 
 use aws_crypto_mpl::cmm::DefaultCmm;
-use aws_esdk::{
-    AlgorithmSuiteId, Client, CommitmentPolicy, EncryptionContext, SharedCmm, SharedKeyring,
-};
+use aws_esdk::Client;
+use aws_esdk::cmm::SharedCmm;
+use aws_esdk::keyring::SharedKeyring;
+use aws_esdk::types::{AlgorithmSuiteId, CommitmentPolicy, EncryptionContext};
 use std::num::{NonZeroU32, NonZeroUsize};
 use test_helpers::{count_frames, esdk_with, test_keyring};
 
@@ -78,9 +79,9 @@ async fn test_encrypt_setters_take_effect() {
         .send()
         .await
         .unwrap();
-    assert_eq!(out.algorithm_suite_id, SUITE);
-    assert_eq!(out.encryption_context, ec());
-    assert_eq!(count_frames(&out.ciphertext, FRAME_LENGTH), (2, 1));
+    assert_eq!(out.algorithm_suite_id(), SUITE);
+    assert_eq!(*out.encryption_context(), ec());
+    assert_eq!(count_frames(out.ciphertext(), FRAME_LENGTH), (2, 1));
 
     let out = esdk
         .encrypt()
@@ -92,9 +93,9 @@ async fn test_encrypt_setters_take_effect() {
         .send()
         .await
         .unwrap();
-    assert_eq!(out.algorithm_suite_id, SUITE);
-    assert_eq!(out.encryption_context, ec());
-    assert_eq!(count_frames(&out.ciphertext, FRAME_LENGTH), (2, 1));
+    assert_eq!(out.algorithm_suite_id(), SUITE);
+    assert_eq!(*out.encryption_context(), ec());
+    assert_eq!(count_frames(out.ciphertext(), FRAME_LENGTH), (2, 1));
 
     let out = Client::default()
         .encrypt()
@@ -109,9 +110,9 @@ async fn test_encrypt_setters_take_effect() {
         .send()
         .await
         .unwrap();
-    assert_eq!(out.algorithm_suite_id, DEFAULT_SUITE);
-    assert_eq!(count_frames(&out.ciphertext, 4096), (0, 1));
-    assert!(!out.encryption_context.contains_key("k"));
+    assert_eq!(out.algorithm_suite_id(), DEFAULT_SUITE);
+    assert_eq!(count_frames(out.ciphertext(), 4096), (0, 1));
+    assert!(!out.encryption_context().contains_key("k"));
 
     let cmm = SharedCmm::new(DefaultCmm::new(keyring.clone()));
     Client::default()
@@ -147,11 +148,13 @@ async fn test_encrypt_stream_setters_take_effect() {
         .algorithm_suite_id(SUITE)
         .frame_length(frame_length())
         .data_size(plaintext.len())
-        .send(plaintext.as_slice(), &mut ct)
+        .plaintext(plaintext.as_slice())
+        .ciphertext(&mut ct)
+        .send()
         .await
         .unwrap();
-    assert_eq!(out.algorithm_suite_id, SUITE);
-    assert_eq!(out.encryption_context, ec());
+    assert_eq!(out.algorithm_suite_id(), SUITE);
+    assert_eq!(*out.encryption_context(), ec());
     assert_eq!(count_frames(&ct, FRAME_LENGTH), (2, 1));
 
     let mut ct = Vec::new();
@@ -162,18 +165,22 @@ async fn test_encrypt_stream_setters_take_effect() {
         .set_algorithm_suite_id(Some(SUITE))
         .set_frame_length(Some(frame_length()))
         .set_data_size(Some(plaintext.len()))
-        .send(plaintext.as_slice(), &mut ct)
+        .plaintext(plaintext.as_slice())
+        .ciphertext(&mut ct)
+        .send()
         .await
         .unwrap();
-    assert_eq!(out.algorithm_suite_id, SUITE);
-    assert_eq!(out.encryption_context, ec());
+    assert_eq!(out.algorithm_suite_id(), SUITE);
+    assert_eq!(*out.encryption_context(), ec());
     assert_eq!(count_frames(&ct, FRAME_LENGTH), (2, 1));
 
     let err = Client::default()
         .encrypt_stream()
         .keyring(keyring.clone())
         .data_size(1)
-        .send(plaintext.as_slice(), Vec::new())
+        .plaintext(plaintext.as_slice())
+        .ciphertext(Vec::new())
+        .send()
         .await
         .expect_err("plaintext longer than data_size must fail");
     assert!(err.is_validation(), "{:?}", err);
@@ -183,23 +190,57 @@ async fn test_encrypt_stream_setters_take_effect() {
         .keyring(keyring.clone())
         .data_size(1)
         .set_data_size(None)
-        .send(plaintext.as_slice(), Vec::new())
+        .plaintext(plaintext.as_slice())
+        .ciphertext(Vec::new())
+        .send()
         .await
         .expect("set_data_size(None) must clear the bound");
 
-    let cmm = SharedCmm::new(DefaultCmm::new(keyring));
+    let cmm = SharedCmm::new(DefaultCmm::new(keyring.clone()));
     Client::default()
         .encrypt_stream()
         .cmm(cmm.clone())
-        .send(plaintext.as_slice(), Vec::new())
+        .plaintext(plaintext.as_slice())
+        .ciphertext(Vec::new())
+        .send()
         .await
         .expect("encrypt_stream with cmm must succeed");
     Client::default()
         .encrypt_stream()
         .set_cmm(Some(cmm))
-        .send(plaintext.as_slice(), Vec::new())
+        .plaintext(plaintext.as_slice())
+        .ciphertext(Vec::new())
+        .send()
         .await
         .expect("encrypt_stream with set_cmm must succeed");
+
+    let mut ct = Vec::new();
+    Client::default()
+        .encrypt_stream()
+        .keyring(keyring.clone())
+        .set_plaintext(Some(Box::new(plaintext.as_slice())))
+        .set_ciphertext(Some(Box::new(&mut ct)))
+        .send()
+        .await
+        .expect("set_plaintext and set_ciphertext must set the streams");
+    assert!(!ct.is_empty());
+
+    let no_plaintext = Client::default()
+        .encrypt_stream()
+        .keyring(keyring.clone())
+        .ciphertext(Vec::new())
+        .send()
+        .await;
+    let no_ciphertext = Client::default()
+        .encrypt_stream()
+        .keyring(keyring)
+        .plaintext(plaintext.as_slice())
+        .send()
+        .await;
+    for (case, result) in [("plaintext", no_plaintext), ("ciphertext", no_ciphertext)] {
+        let err = result.expect_err("a missing stream must fail");
+        assert!(err.is_validation(), "{case}: {err:?}");
+    }
 }
 
 // A matching reproduced encryption context succeeds and a conflicting one fails.
@@ -216,7 +257,7 @@ async fn test_decrypt_setters_take_effect() {
         .send()
         .await
         .unwrap()
-        .ciphertext;
+        .into_ciphertext();
 
     let out = esdk
         .decrypt()
@@ -226,8 +267,8 @@ async fn test_decrypt_setters_take_effect() {
         .send()
         .await
         .unwrap();
-    assert_eq!(out.plaintext, b"plaintext");
-    assert_eq!(out.algorithm_suite_id, SUITE);
+    assert_eq!(out.plaintext(), b"plaintext");
+    assert_eq!(out.algorithm_suite_id(), SUITE);
 
     let err = esdk
         .decrypt()
@@ -287,13 +328,15 @@ async fn test_decrypt_stream_setters_take_effect() {
         .send()
         .await
         .unwrap()
-        .ciphertext;
+        .into_ciphertext();
 
     let mut pt = Vec::new();
     esdk.decrypt_stream()
         .encryption_context(ec())
         .keyring(keyring.clone())
-        .send(ct.as_slice(), &mut pt)
+        .ciphertext(ct.as_slice())
+        .plaintext(&mut pt)
+        .send()
         .await
         .unwrap();
     assert_eq!(pt, b"plaintext");
@@ -302,7 +345,9 @@ async fn test_decrypt_stream_setters_take_effect() {
         .decrypt_stream()
         .encryption_context(conflicting_ec())
         .keyring(keyring.clone())
-        .send(ct.as_slice(), Vec::new())
+        .ciphertext(ct.as_slice())
+        .plaintext(Vec::new())
+        .send()
         .await
         .expect_err("conflicting encryption context must fail");
     assert!(err.is_encryption_context_mismatch(), "{:?}", err);
@@ -311,22 +356,55 @@ async fn test_decrypt_stream_setters_take_effect() {
         .decrypt_stream()
         .set_encryption_context(Some(conflicting_ec()))
         .set_keyring(Some(keyring.clone()))
-        .send(ct.as_slice(), Vec::new())
+        .ciphertext(ct.as_slice())
+        .plaintext(Vec::new())
+        .send()
         .await
         .expect_err("conflicting encryption context must fail");
     assert!(err.is_encryption_context_mismatch(), "{:?}", err);
 
-    let cmm = SharedCmm::new(DefaultCmm::new(keyring));
+    let cmm = SharedCmm::new(DefaultCmm::new(keyring.clone()));
     esdk.decrypt_stream()
         .cmm(cmm.clone())
-        .send(ct.as_slice(), Vec::new())
+        .ciphertext(ct.as_slice())
+        .plaintext(Vec::new())
+        .send()
         .await
         .expect("decrypt_stream with cmm must succeed");
     esdk.decrypt_stream()
         .set_cmm(Some(cmm))
-        .send(ct.as_slice(), Vec::new())
+        .ciphertext(ct.as_slice())
+        .plaintext(Vec::new())
+        .send()
         .await
         .expect("decrypt_stream with set_cmm must succeed");
+
+    let mut pt = Vec::new();
+    esdk.decrypt_stream()
+        .keyring(keyring.clone())
+        .set_ciphertext(Some(Box::new(ct.as_slice())))
+        .set_plaintext(Some(Box::new(&mut pt)))
+        .send()
+        .await
+        .expect("set_ciphertext and set_plaintext must set the streams");
+    assert_eq!(pt, b"plaintext");
+
+    let no_ciphertext = esdk
+        .decrypt_stream()
+        .keyring(keyring.clone())
+        .plaintext(Vec::new())
+        .send()
+        .await;
+    let no_plaintext = esdk
+        .decrypt_stream()
+        .keyring(keyring)
+        .ciphertext(ct.as_slice())
+        .send()
+        .await;
+    for (case, result) in [("ciphertext", no_ciphertext), ("plaintext", no_plaintext)] {
+        let err = result.expect_err("a missing stream must fail");
+        assert!(err.is_validation(), "{case}: {err:?}");
+    }
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -364,10 +442,13 @@ async fn test_getters_return_set_values() {
     assert_eq!(b.get_frame_length(), &Some(frame_length()));
 
     let b = esdk.encrypt_stream();
+    assert!(b.get_plaintext().is_none() && b.get_ciphertext().is_none());
     assert!(b.get_encryption_context().is_none() && b.get_data_size().is_none());
     assert!(b.get_keyring().is_none() && b.get_cmm().is_none());
     assert!(b.get_algorithm_suite_id().is_none() && b.get_frame_length().is_none());
     let b = b
+        .plaintext(bytes.as_slice())
+        .ciphertext(Vec::new())
         .encryption_context(ec())
         .keyring(keyring.clone())
         .cmm(cmm.clone())
@@ -379,6 +460,7 @@ async fn test_getters_return_set_values() {
     assert_eq!(b.get_algorithm_suite_id(), &Some(SUITE));
     assert_eq!(b.get_frame_length(), &Some(frame_length()));
     assert_eq!(b.get_data_size(), &Some(bytes.len()));
+    assert!(b.get_plaintext().is_some() && b.get_ciphertext().is_some());
 
     let b = esdk.decrypt();
     assert!(b.get_ciphertext().is_none() && b.get_encryption_context().is_none());
@@ -393,9 +475,16 @@ async fn test_getters_return_set_values() {
     assert!(b.get_keyring().is_some() && b.get_cmm().is_some());
 
     let b = esdk.decrypt_stream();
+    assert!(b.get_ciphertext().is_none() && b.get_plaintext().is_none());
     assert!(b.get_encryption_context().is_none());
     assert!(b.get_keyring().is_none() && b.get_cmm().is_none());
-    let b = b.encryption_context(ec()).keyring(keyring).cmm(cmm);
+    let b = b
+        .ciphertext(bytes.as_slice())
+        .plaintext(Vec::new())
+        .encryption_context(ec())
+        .keyring(keyring)
+        .cmm(cmm);
+    assert!(b.get_ciphertext().is_some() && b.get_plaintext().is_some());
     assert_eq!(b.get_encryption_context(), &Some(ec()));
     assert!(b.get_keyring().is_some() && b.get_cmm().is_some());
 }

@@ -24,6 +24,7 @@ mod fixtures;
 mod test_helpers;
 
 use aws_crypto_mpl::Error as MplError;
+use aws_esdk::types::*;
 use aws_esdk::*;
 use std::error::Error as _;
 use test_helpers::*;
@@ -70,13 +71,13 @@ async fn test_keyring_constructs_default_cmm_for_decrypt() {
     //# This default CMM constructed from the keyring MUST obtain the decryption materials required for decryption.
     let result = Client::default()
         .decrypt()
-        .ciphertext(&ct.ciphertext)
+        .ciphertext(ct.ciphertext())
         .encryption_context(ec)
         .keyring(keyring)
         .send()
         .await
         .expect("decrypt with keyring must succeed on explicit-default-CMM ciphertext");
-    assert_eq!(result.plaintext, pt);
+    assert_eq!(result.plaintext(), pt);
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -108,13 +109,13 @@ async fn test_keyring_constructs_default_cmm_for_encrypt() {
     //# constructed using the caller-supplied keyring as input.
     let result = Client::default()
         .decrypt()
-        .ciphertext(&ct.ciphertext)
+        .ciphertext(ct.ciphertext())
         .encryption_context(ec)
         .cmm(default_cmm)
         .send()
         .await
         .expect("decrypt with explicit default CMM must succeed on keyring-encrypted ciphertext");
-    assert_eq!(result.plaintext, pt);
+    assert_eq!(result.plaintext(), pt);
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -131,7 +132,7 @@ async fn test_decrypt_fails_with_wrong_keyring() {
         .send()
         .await
         .unwrap()
-        .ciphertext;
+        .into_ciphertext();
 
     let wrong_keyring = aes_keyring(1).await;
     let result = Client::default()

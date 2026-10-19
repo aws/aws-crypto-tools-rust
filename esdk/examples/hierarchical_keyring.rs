@@ -7,10 +7,11 @@
 
 use std::time::Duration;
 
-use aws_crypto_mpl::key_store::{KeyStoreClient, KmsConfiguration};
-use aws_crypto_mpl::{HierarchicalKeyring, aws_config, aws_sdk_dynamodb, aws_sdk_kms};
-use aws_esdk::EncryptionContext;
-use aws_esdk::error::{Error, Resource, Service};
+use aws_esdk::error::{Resource, Service};
+use aws_esdk::key_store::types::KmsConfiguration;
+use aws_esdk::keyring::HierarchicalKeyring;
+use aws_esdk::types::EncryptionContext;
+use aws_esdk::{Error, aws_config, aws_sdk_dynamodb, aws_sdk_kms, key_store};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -21,7 +22,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // The AWS Crypto Tools CI test key store.
     // Replace these with your own key store's table, name, and KMS key ARN.
-    let key_store = KeyStoreClient::builder()
+    let key_store = key_store::Client::builder()
         .ddb_table_name("KeyStoreDdbTable")
         .logical_key_store_name("KeyStoreDdbTable")
         .kms_configuration(KmsConfiguration::KmsKeyArn(
@@ -37,14 +38,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // How long the keyring reuses cached branch key material.
         .ttl(Duration::from_secs(600))
         .branch_key_id("3f43a9af-08c5-4317-b694-3d3e883dcaef")
-        .build()?;
+        .build()
+        .await?;
 
     let plaintext = b"Hello World";
 
     // The encryption context is authenticated, not encrypted, and is bound to the message.
-    let mut encryption_context = EncryptionContext::new();
-    encryption_context.insert("purpose", "example");
-    encryption_context.insert("is not", "secret");
+    let encryption_context =
+        EncryptionContext::from([("purpose", "example"), ("is not", "secret")]);
 
     let esdk = aws_esdk::Client::default();
 
@@ -78,14 +79,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let decrypted = esdk
         .decrypt()
-        .ciphertext(&encrypted.ciphertext)
+        .ciphertext(encrypted.ciphertext())
         .encryption_context(encryption_context)
         .keyring(keyring)
         .send()
         .await?;
 
     assert_eq!(
-        decrypted.plaintext, plaintext,
+        decrypted.plaintext(),
+        plaintext,
         "Decryption failed: plaintext mismatch"
     );
     println!("Success! Encryption and decryption completed successfully.");

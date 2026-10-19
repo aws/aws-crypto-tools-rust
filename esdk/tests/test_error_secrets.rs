@@ -10,9 +10,10 @@ use aws_crypto_mpl::async_trait;
 use aws_crypto_mpl::keyring::{Keyring, RawAesKeyring, SharedKeyring};
 use aws_crypto_mpl::keyring::{OnDecryptInput, OnEncryptInput};
 use aws_crypto_mpl::keyring::{OnDecryptOutput, OnEncryptOutput};
-use aws_crypto_mpl::structures::{EncryptionContext, EncryptionMaterials, PlaintextDataKey};
-use aws_esdk::{AlgorithmSuiteId, Client, Error};
-use aws_mpl_primitives::AesGcm;
+use aws_crypto_mpl::types::AesWrappingAlg;
+use aws_crypto_mpl::types::{EncryptionContext, EncryptionMaterials, PlaintextDataKey};
+use aws_esdk::types::AlgorithmSuiteId;
+use aws_esdk::{Client, Error};
 use fake_aws::{BRANCH_KEY_ID, FakeAws, KEY_ARN, Reply};
 
 const PLAINTEXT: &str = "SECRET-PLAINTEXT-7f3a";
@@ -55,7 +56,7 @@ fn raw(name: &str) -> RawAesKeyring {
         .key_namespace("ns")
         .key_name(name)
         .wrapping_key(vec![KEY_BYTE; 32])
-        .wrapping_alg(AesGcm::Aes256Gcm)
+        .wrapping_alg(AesWrappingAlg::AlgAes256GcmIv12Tag16)
         .build()
         .unwrap()
 }
@@ -100,7 +101,7 @@ async fn ciphertext() -> Vec<u8> {
         .send()
         .await
         .unwrap()
-        .ciphertext
+        .into_ciphertext()
 }
 
 async fn decrypt_error(
@@ -199,7 +200,7 @@ async fn hierarchical_decrypt_error(fake: FakeAws) -> Error {
         .send()
         .await
         .unwrap()
-        .ciphertext;
+        .into_ciphertext();
     Client::default()
         .decrypt()
         .ciphertext(&ciphertext)
@@ -237,4 +238,34 @@ async fn an_unparseable_dynamodb_response_does_not_reach_the_error() {
     let err = hierarchical_decrypt_error(fake).await;
     assert!(err.is_service(), "{err:?}");
     assert_no_secrets(&err);
+}
+
+/// `Debug` of the encrypt builder and the decrypt output hides the plaintext, as the AWS SDK for Rust does.
+#[tokio::test]
+async fn debug_hides_the_plaintext() {
+    let esdk = Client::default();
+    let builder = esdk
+        .encrypt()
+        .plaintext(PLAINTEXT.as_bytes())
+        .keyring(raw("k"));
+    let builder_debug = format!("{builder:?}");
+
+    let encrypted = builder.send().await.unwrap();
+    let decrypted = esdk
+        .decrypt()
+        .ciphertext(encrypted.ciphertext())
+        .keyring(raw("k"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(decrypted.plaintext(), PLAINTEXT.as_bytes());
+    let output_debug = format!("{decrypted:?}");
+
+    // `{:?}` of a `&[u8]` prints decimal bytes; the first three of PLAINTEXT are "SEC".
+    let plaintext_bytes = format!("{:?}", &PLAINTEXT.as_bytes()[..3]).replace(['[', ']'], "");
+    for text in [&builder_debug, &output_debug] {
+        assert!(text.contains("*** Sensitive Data Redacted ***"), "{text}");
+        assert!(!text.contains(PLAINTEXT), "{text}");
+        assert!(!text.contains(&plaintext_bytes), "{text}");
+    }
 }

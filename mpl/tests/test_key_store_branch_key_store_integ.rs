@@ -25,8 +25,9 @@ use aws_sdk_kms::Client as KmsClient;
 use aws_sdk_kms::error::SdkError;
 use aws_sdk_kms::operation::decrypt::DecryptError;
 
-use aws_crypto_mpl::error_chain::aws_service_error_code;
-use aws_crypto_mpl::{KeyStoreClient, KmsConfiguration};
+use aws_crypto_mpl::__test_internals::error_chain::aws_service_error_code;
+use aws_crypto_mpl::key_store::Client as KeyStoreClient;
+use aws_crypto_mpl::key_store::types::KmsConfiguration;
 
 // ─── Fixtures (mirror Fixtures.dfy) ─────────────────────────────────────────
 

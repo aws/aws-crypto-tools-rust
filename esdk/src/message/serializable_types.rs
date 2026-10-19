@@ -3,9 +3,9 @@
 
 //! Type aliases and helper functions for message serialization.
 
-use crate::types::EncryptionContext;
-use aws_crypto_mpl::structures::AlgorithmSuite;
-use aws_crypto_mpl::structures::EncryptedDataKey;
+use crate::shapes::EncryptionContext;
+use aws_crypto_mpl::types::AlgorithmSuite;
+use aws_crypto_mpl::types::EncryptedDataKey;
 
 /// Max total key-value-pairs body length: the outer `UInt16` length field (2 bytes)
 /// plus the count `UInt16` (2 bytes) must together still fit in a `UInt16`, leaving

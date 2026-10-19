@@ -7,6 +7,7 @@
 mod fixtures;
 mod test_helpers;
 
+use aws_esdk::types::*;
 use aws_esdk::*;
 use std::num::NonZeroU32;
 use test_helpers::*;
@@ -30,7 +31,7 @@ async fn test_construct_frame_aead_inputs_authenticated() {
         .send()
         .await
         .unwrap()
-        .ciphertext;
+        .into_ciphertext();
 
     let frames = parse_all_frames(&ct, 50);
     let first = &frames[0];
@@ -241,7 +242,7 @@ async fn test_construct_frame_plaintext_subsequence_consumed_in_order() {
         .send()
         .await
         .unwrap()
-        .ciphertext;
+        .into_ciphertext();
 
     //= spec/client-apis/encrypt.md#construct-a-frame
     //= type=test
@@ -253,7 +254,7 @@ async fn test_construct_frame_plaintext_subsequence_consumed_in_order() {
         .send()
         .await
         .unwrap()
-        .plaintext;
+        .into_plaintext();
     assert_eq!(result, pt);
 }
 
@@ -365,7 +366,9 @@ async fn test_construct_frame_streaming_frame_released() {
         .encrypt_stream()
         .keyring(keyring.clone())
         .frame_length(NonZeroU32::new(10).unwrap())
-        .send(&mut reader, &mut output)
+        .plaintext(&mut reader)
+        .ciphertext(&mut output)
+        .send()
         .await
         .expect("streaming encrypt");
 
@@ -388,5 +391,5 @@ async fn test_construct_frame_streaming_frame_released() {
         .send()
         .await
         .unwrap();
-    assert_eq!(decrypted.plaintext, plaintext);
+    assert_eq!(decrypted.plaintext(), plaintext);
 }

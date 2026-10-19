@@ -10,7 +10,7 @@ use crate::message::serialize_functions::{
     read_opt_u8, read_up_to_peek, write_bytes, write_to_sink, write_u32,
 };
 use crate::message::{DigestWriter, Error, ser_err};
-use crate::types::{Sink, Source};
+use crate::shapes::{Sink, Source};
 use aws_mpl_primitives::AesGcmKey;
 
 /// Maximum plaintext bytes per message: 2^36 - 32 (AES-GCM safety bound).
@@ -305,6 +305,7 @@ pub(crate) async fn encrypt_and_serialize_body(
     //= reason=START_SEQUENCE_NUMBER is defined as 1
     //# If this is the first frame sequentially, the sequence number value MUST be 1.
     let mut sequence_number = START_SEQUENCE_NUMBER;
+    let mut yielder = super::FrameYielder::new(frame_length);
     let key = AesGcmKey::new(get_alg_suite(&header.suite)?, key)?;
 
     let mut iv = vec![0; iv_len];
@@ -318,6 +319,7 @@ pub(crate) async fn encrypt_and_serialize_body(
     //# this operation MUST process as much of the consumable bytes as possible
     //# by [constructing regular frames](#construct-a-frame).
     loop {
+        yielder.next_frame().await;
         in_size = read_up_to_peek(plaintext, &mut plaintext_frame, next_char).await?;
 
         //= spec/client-apis/encrypt.md#construct-the-body
