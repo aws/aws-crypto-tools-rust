@@ -6,13 +6,17 @@
 
 mod fake_aws;
 
-use aws_crypto_mpl::keyring::RawAesKeyring;
-use aws_crypto_mpl::structures::EncryptionContext;
+use aws_crypto_mpl::async_trait;
+use aws_crypto_mpl::keyring::OnEncryptInput;
+use aws_crypto_mpl::keyring::{OnDecryptInput, OnDecryptOutput, OnEncryptOutput};
+use aws_crypto_mpl::keyring::{RawAesKeyring, SharedKeyring};
+use aws_crypto_mpl::types::AesWrappingAlg;
+use aws_crypto_mpl::types::EncryptionContext;
+use aws_esdk::Client;
+use aws_esdk::Error;
 use aws_esdk::error::{
-    BranchKey, Cache, DynamoDbTable, Error, KeyringResource, KmsKey, Resource, RetryKind, Service,
+    BranchKey, Cache, DynamoDbTable, KeyringResource, KmsKey, Resource, RetryKind, Service,
 };
-use aws_esdk::{DecryptInput, EncryptInput, decrypt, encrypt};
-use aws_mpl_primitives::AesGcm;
 use fake_aws::{BRANCH_KEY_ID, FakeAws, KEY_ARN, Reply, TABLE, VERSION};
 
 fn context() -> EncryptionContext {
@@ -21,26 +25,29 @@ fn context() -> EncryptionContext {
     ec
 }
 
-async fn encrypt_with(keyring: impl aws_crypto_mpl::Keyring + 'static) -> Vec<u8> {
-    let input = EncryptInput::builder()
+async fn encrypt_with(keyring: impl aws_crypto_mpl::keyring::Keyring + 'static) -> Vec<u8> {
+    Client::default()
+        .encrypt()
         .plaintext(b"hello")
         .encryption_context(context())
         .keyring(keyring)
-        .build()
-        .unwrap();
-    encrypt(&input).await.unwrap().ciphertext
+        .send()
+        .await
+        .unwrap()
+        .into_ciphertext()
 }
 
 async fn decrypt_with(
     ciphertext: &[u8],
-    keyring: impl aws_crypto_mpl::Keyring + 'static,
+    keyring: impl aws_crypto_mpl::keyring::Keyring + 'static,
 ) -> Result<Vec<u8>, Error> {
-    let input = DecryptInput::builder()
+    Client::default()
+        .decrypt()
         .ciphertext(ciphertext)
         .keyring(keyring)
-        .build()
-        .unwrap();
-    decrypt(&input).await.map(|out| out.plaintext)
+        .send()
+        .await
+        .map(|out| out.into_plaintext())
 }
 
 /// The error from decrypting, against `fake`, a message encrypted under the fake's branch key.
@@ -92,7 +99,13 @@ async fn kms_access_denied_while_decrypting_a_branch_key() {
 #[tokio::test]
 async fn a_wrong_raw_aes_keyring_names_the_keyring_used() {
     let raw = |ns: &str, name: &str, byte: u8| {
-        RawAesKeyring::new(ns, name, vec![byte; 32], AesGcm::Aes256Gcm).unwrap()
+        RawAesKeyring::builder()
+            .key_namespace(ns)
+            .key_name(name)
+            .wrapping_key(vec![byte; 32])
+            .wrapping_alg(AesWrappingAlg::AlgAes256GcmIv12Tag16)
+            .build()
+            .unwrap()
     };
     let ciphertext = encrypt_with(raw("other-namespace", "other-key", 1)).await;
     let err = decrypt_with(&ciphertext, raw("my-namespace", "my-key", 2))
@@ -212,32 +225,35 @@ async fn kms_throttling_is_throttling_about_the_kms_key() {
 
 #[tokio::test]
 async fn the_materials_cache_timing_out_is_throttling_about_the_cache() {
-    use aws_crypto_mpl::HierarchicalKeyring;
-    use aws_crypto_mpl::aws_kms::__test_internals::build_cache_identifier;
-    use aws_crypto_mpl::aws_kms::hierarchical_keyring::SCOPE_ID_ENCRYPT;
-    use aws_crypto_mpl::cmc::{CacheType, SharedCmc, StormTrackingCache, StormTrackingCmc};
+    use aws_crypto_mpl::__test_internals::aws_kms::{SCOPE_ID_ENCRYPT, build_cache_identifier};
+    use aws_crypto_mpl::cmc::{SharedCmc, StormTrackingCmc};
+    use aws_crypto_mpl::keyring::HierarchicalKeyring;
     use std::time::{Duration, SystemTime};
 
     let now = SystemTime::now();
-    let config = StormTrackingCache::builder().build().unwrap();
-    let cache = StormTrackingCmc::with_clock(&config, move || now).unwrap();
+    let cache = StormTrackingCmc::builder()
+        .clock(move || now)
+        .build()
+        .unwrap();
     // Another caller started fetching this branch key and never finished.
     let id = build_cache_identifier(SCOPE_ID_ENCRYPT, b"p", TABLE, BRANCH_KEY_ID, None);
-    cache.mark_inflight(&id, now - config.inflight_ttl() - Duration::from_secs(1));
+    cache.mark_inflight(&id, now - cache.inflight_ttl() - Duration::from_secs(1));
     let keyring = HierarchicalKeyring::builder()
         .key_store(FakeAws::ok().key_store().await)
         .branch_key_id(BRANCH_KEY_ID)
         .ttl(Duration::from_secs(600))
         .partition_id("p")
-        .cache(CacheType::Shared(SharedCmc::new(cache)))
+        .cache(SharedCmc::new(cache))
         .build()
+        .await
         .unwrap();
-    let input = EncryptInput::builder()
+    let err = Client::default()
+        .encrypt()
         .plaintext(b"hello")
         .keyring(keyring)
-        .build()
-        .unwrap();
-    let err = encrypt(&input).await.unwrap_err();
+        .send()
+        .await
+        .unwrap_err();
     let Error::Throttling(e) = &err else {
         panic!("expected Throttling, got {err:?}");
     };
@@ -256,14 +272,22 @@ async fn the_materials_cache_timing_out_is_throttling_about_the_cache() {
 
 #[tokio::test]
 async fn a_tampered_frame_is_cryptographic() {
-    let keyring = RawAesKeyring::new("ns", "name", vec![7; 32], AesGcm::Aes256Gcm).unwrap();
-    let input = EncryptInput::builder()
-        .plaintext(b"hello")
-        .algorithm_suite_id(aws_esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
-        .keyring(keyring.clone())
+    let keyring = RawAesKeyring::builder()
+        .key_namespace("ns")
+        .key_name("name")
+        .wrapping_key(vec![7; 32])
+        .wrapping_alg(AesWrappingAlg::AlgAes256GcmIv12Tag16)
         .build()
         .unwrap();
-    let mut ciphertext = encrypt(&input).await.unwrap().ciphertext;
+    let mut ciphertext = Client::default()
+        .encrypt()
+        .plaintext(b"hello")
+        .algorithm_suite_id(aws_esdk::types::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
+        .keyring(keyring.clone())
+        .send()
+        .await
+        .unwrap()
+        .into_ciphertext();
     // The last content byte of the final frame, just before its 16-byte tag.
     let i = ciphertext.len() - 17;
     ciphertext[i] ^= 1;
@@ -274,17 +298,24 @@ async fn a_tampered_frame_is_cryptographic() {
 
 #[tokio::test]
 async fn an_encryption_context_mismatch_names_the_key_not_the_value() {
-    let keyring = RawAesKeyring::new("ns", "name", vec![7; 32], AesGcm::Aes256Gcm).unwrap();
+    let keyring = RawAesKeyring::builder()
+        .key_namespace("ns")
+        .key_name("name")
+        .wrapping_key(vec![7; 32])
+        .wrapping_alg(AesWrappingAlg::AlgAes256GcmIv12Tag16)
+        .build()
+        .unwrap();
     let ciphertext = encrypt_with(keyring.clone()).await;
     let mut other = EncryptionContext::new();
     other.insert("tenant", "a-different-value");
-    let input = DecryptInput::builder()
+    let err = Client::default()
+        .decrypt()
         .ciphertext(&ciphertext)
         .encryption_context(other)
         .keyring(keyring)
-        .build()
-        .unwrap();
-    let err = decrypt(&input).await.unwrap_err();
+        .send()
+        .await
+        .unwrap_err();
     assert!(err.is_encryption_context_mismatch(), "{err:?}");
     let alternate = format!("{err:#}");
     assert!(alternate.contains("key 'tenant'"), "{alternate}");
@@ -306,7 +337,6 @@ fn transaction_canceled(reasons: &str) -> Reply {
 
 #[tokio::test]
 async fn version_key_condition_failure_is_a_concurrent_modification_conflict() {
-    use aws_crypto_mpl::Keystore;
     use aws_esdk::error::ConflictReason;
     let fake = FakeAws::new(|op, _| {
         (op == "DynamoDB_20120810.TransactWriteItems")
@@ -315,7 +345,9 @@ async fn version_key_condition_failure_is_a_concurrent_modification_conflict() {
     let err = fake
         .key_store()
         .await
-        .version_key(BRANCH_KEY_ID.into())
+        .version_key()
+        .branch_key_id(BRANCH_KEY_ID)
+        .send()
         .await
         .unwrap_err();
     let aws_crypto_mpl::Error::Conflict(e) = &err else {
@@ -348,7 +380,6 @@ async fn version_key_condition_failure_is_a_concurrent_modification_conflict() {
 
 #[tokio::test]
 async fn create_key_condition_failure_is_an_already_exists_conflict() {
-    use aws_crypto_mpl::Keystore;
     use aws_esdk::error::ConflictReason;
     let fake = FakeAws::new(|op, _| {
         (op == "DynamoDB_20120810.TransactWriteItems")
@@ -357,7 +388,10 @@ async fn create_key_condition_failure_is_an_already_exists_conflict() {
     let err = fake
         .key_store()
         .await
-        .create_key(Some(BRANCH_KEY_ID.into()), Some(EncryptionContext::new()))
+        .create_key()
+        .branch_key_id(BRANCH_KEY_ID)
+        .encryption_context(EncryptionContext::new())
+        .send()
         .await
         .unwrap_err();
     let aws_crypto_mpl::Error::Conflict(e) = &err else {
@@ -373,7 +407,6 @@ async fn create_key_condition_failure_is_an_already_exists_conflict() {
 
 #[tokio::test]
 async fn a_transaction_conflict_is_a_retryable_service_error() {
-    use aws_crypto_mpl::Keystore;
     let fake = FakeAws::new(|op, _| {
         (op == "DynamoDB_20120810.TransactWriteItems")
             .then(|| transaction_canceled(r#"{"Code":"TransactionConflict"}"#))
@@ -381,7 +414,9 @@ async fn a_transaction_conflict_is_a_retryable_service_error() {
     let err = fake
         .key_store()
         .await
-        .version_key(BRANCH_KEY_ID.into())
+        .version_key()
+        .branch_key_id(BRANCH_KEY_ID)
+        .send()
         .await
         .unwrap_err();
     assert!(err.is_service(), "{err:?}");
@@ -404,14 +439,15 @@ fn name_is_the_variant_name() {
 
 #[tokio::test]
 async fn version_key_keeps_the_kms_classification_of_the_record_check() {
-    use aws_crypto_mpl::Keystore;
     let version_key_error = |code: &'static str| async move {
         FakeAws::new(move |op, _| {
             (op == "TrentService.ReEncrypt").then(|| Reply::error(400, code, "r"))
         })
         .key_store()
         .await
-        .version_key(BRANCH_KEY_ID.into())
+        .version_key()
+        .branch_key_id(BRANCH_KEY_ID)
+        .send()
         .await
         .unwrap_err()
     };
@@ -427,12 +463,13 @@ async fn version_key_keeps_the_kms_classification_of_the_record_check() {
 
 /// The error from encrypting under the fake's hierarchical keyring.
 async fn hierarchical_encrypt_error(fake: FakeAws) -> Error {
-    let input = EncryptInput::builder()
+    Client::default()
+        .encrypt()
         .plaintext(b"hello")
         .keyring(fake.keyring().await)
-        .build()
-        .unwrap();
-    encrypt(&input).await.expect_err("the fake fails the call")
+        .send()
+        .await
+        .expect_err("the fake fails the call")
 }
 
 fn on(op: &'static str, reply: Reply) -> FakeAws {
@@ -494,7 +531,13 @@ async fn a_missing_table_names_the_table() {
 
 #[tokio::test]
 async fn a_truncated_message_is_serialization() {
-    let keyring = RawAesKeyring::new("ns", "name", vec![7; 32], AesGcm::Aes256Gcm).unwrap();
+    let keyring = RawAesKeyring::builder()
+        .key_namespace("ns")
+        .key_name("name")
+        .wrapping_key(vec![7; 32])
+        .wrapping_alg(AesWrappingAlg::AlgAes256GcmIv12Tag16)
+        .build()
+        .unwrap();
     let ciphertext = encrypt_with(keyring.clone()).await;
     let err = decrypt_with(&ciphertext[..ciphertext.len() / 2], keyring)
         .await
@@ -553,7 +596,6 @@ async fn encrypt_without_an_active_branch_key_names_the_branch_key() {
 
 #[tokio::test]
 async fn create_key_kms_access_denied_names_the_kms_key() {
-    use aws_crypto_mpl::Keystore;
     let fake = on(
         "TrentService.GenerateDataKeyWithoutPlaintext",
         Reply::error(400, "AccessDeniedException", "gdk-denied"),
@@ -561,7 +603,10 @@ async fn create_key_kms_access_denied_names_the_kms_key() {
     let err = fake
         .key_store()
         .await
-        .create_key(Some(BRANCH_KEY_ID.into()), Some(EncryptionContext::new()))
+        .create_key()
+        .branch_key_id(BRANCH_KEY_ID)
+        .encryption_context(EncryptionContext::new())
+        .send()
         .await
         .unwrap_err();
     let aws_crypto_mpl::Error::AccessDenied(e) = &err else {
@@ -574,11 +619,12 @@ async fn create_key_kms_access_denied_names_the_kms_key() {
 
 #[tokio::test]
 async fn version_key_without_an_active_branch_key_names_the_branch_key() {
-    use aws_crypto_mpl::Keystore;
     let err = on("DynamoDB_20120810.GetItem", Reply::ok("{}"))
         .key_store()
         .await
-        .version_key(BRANCH_KEY_ID.into())
+        .version_key()
+        .branch_key_id(BRANCH_KEY_ID)
+        .send()
         .await
         .unwrap_err();
     let aws_crypto_mpl::Error::ResourceNotFound(e) = &err else {
@@ -591,25 +637,24 @@ async fn version_key_without_an_active_branch_key_names_the_branch_key() {
 }
 
 /// Wraps the data key under two keyrings, so the message has two encrypted data keys.
-struct Both<A, B>(A, B);
+struct Both(SharedKeyring, SharedKeyring);
 
-#[async_trait::async_trait]
-impl<A: aws_crypto_mpl::Keyring, B: aws_crypto_mpl::Keyring> aws_crypto_mpl::Keyring
-    for Both<A, B>
-{
+#[async_trait]
+impl aws_crypto_mpl::keyring::Keyring for Both {
     async fn on_encrypt(
         &self,
-        materials: aws_crypto_mpl::structures::EncryptionMaterials,
-    ) -> Result<aws_crypto_mpl::structures::EncryptionMaterials, aws_crypto_mpl::Error> {
-        let materials = self.0.on_encrypt(materials).await?;
-        self.1.on_encrypt(materials).await
+        input: OnEncryptInput,
+    ) -> Result<OnEncryptOutput, aws_crypto_mpl::Error> {
+        let materials = aws_crypto_mpl::keyring::Keyring::on_encrypt(&self.0, input)
+            .await?
+            .into_materials();
+        self.1.on_encrypt().materials(materials).send().await
     }
 
     async fn on_decrypt(
         &self,
-        _: aws_crypto_mpl::structures::DecryptionMaterials,
-        _: &[aws_crypto_mpl::structures::EncryptedDataKey],
-    ) -> Result<aws_crypto_mpl::structures::DecryptionMaterials, aws_crypto_mpl::Error> {
+        _: OnDecryptInput,
+    ) -> Result<OnDecryptOutput, aws_crypto_mpl::Error> {
         unreachable!("the tests decrypt with another keyring")
     }
 }
@@ -617,11 +662,32 @@ impl<A: aws_crypto_mpl::Keyring, B: aws_crypto_mpl::Keyring> aws_crypto_mpl::Key
 #[tokio::test]
 async fn failures_lists_every_attempt_behind_a_keyring_error() {
     // EDK 0 is another keyring's; EDK 1 has this keyring's name but a different key.
-    let other = RawAesKeyring::new("other", "key", vec![1; 32], AesGcm::Aes256Gcm).unwrap();
-    let same_name_other_key =
-        RawAesKeyring::new("ns", "key", vec![2; 32], AesGcm::Aes256Gcm).unwrap();
-    let ciphertext = encrypt_with(Both(other, same_name_other_key)).await;
-    let keyring = RawAesKeyring::new("ns", "key", vec![3; 32], AesGcm::Aes256Gcm).unwrap();
+    let other = RawAesKeyring::builder()
+        .key_namespace("other")
+        .key_name("key")
+        .wrapping_key(vec![1; 32])
+        .wrapping_alg(AesWrappingAlg::AlgAes256GcmIv12Tag16)
+        .build()
+        .unwrap();
+    let same_name_other_key = RawAesKeyring::builder()
+        .key_namespace("ns")
+        .key_name("key")
+        .wrapping_key(vec![2; 32])
+        .wrapping_alg(AesWrappingAlg::AlgAes256GcmIv12Tag16)
+        .build()
+        .unwrap();
+    let ciphertext = encrypt_with(Both(
+        SharedKeyring::new(other),
+        SharedKeyring::new(same_name_other_key),
+    ))
+    .await;
+    let keyring = RawAesKeyring::builder()
+        .key_namespace("ns")
+        .key_name("key")
+        .wrapping_key(vec![3; 32])
+        .wrapping_alg(AesWrappingAlg::AlgAes256GcmIv12Tag16)
+        .build()
+        .unwrap();
     let err = decrypt_with(&ciphertext, keyring).await.unwrap_err();
 
     assert!(err.is_cryptographic(), "{err:?}");
@@ -663,8 +729,8 @@ async fn two_attempts_denied_and_throttled_is_retryable_throttling() {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
     let ciphertext = encrypt_with(Both(
-        FakeAws::ok().keyring().await,
-        FakeAws::ok().keyring().await,
+        SharedKeyring::new(FakeAws::ok().keyring().await),
+        SharedKeyring::new(FakeAws::ok().keyring().await),
     ))
     .await;
     let calls = Arc::new(AtomicUsize::new(0));
@@ -714,21 +780,28 @@ async fn a_clone_keeps_the_sdk_error_and_prints_the_same() {
 const RECORD_KEY_ARN: &str = "arn:aws:kms:us-west-2:444455556666:key/5678efgh";
 
 /// A hierarchical keyring over a discovery key store: the KMS key comes from each branch key record.
-async fn discovery_keyring(fake: &FakeAws) -> aws_crypto_mpl::HierarchicalKeyring {
-    let key_store = aws_crypto_mpl::BranchKeyStore::builder()
+async fn discovery_keyring(fake: &FakeAws) -> aws_crypto_mpl::keyring::HierarchicalKeyring {
+    let key_store = aws_crypto_mpl::key_store::Client::builder()
         .ddb_table_name(TABLE)
-        .logical_keystore_name(TABLE)
-        .kms_configuration(aws_crypto_mpl::KmsConfiguration::Discovery)
+        .logical_key_store_name(TABLE)
+        .kms_configuration(
+            aws_crypto_mpl::key_store::types::KmsConfiguration::Discovery(
+                aws_crypto_mpl::key_store::types::Discovery::builder()
+                    .build()
+                    .unwrap(),
+            ),
+        )
         .kms_client(fake.kms_client())
         .ddb_client(fake.ddb_client())
         .build()
         .await
         .unwrap();
-    aws_crypto_mpl::HierarchicalKeyring::builder()
+    aws_crypto_mpl::keyring::HierarchicalKeyring::builder()
         .key_store(key_store)
         .branch_key_id(BRANCH_KEY_ID)
         .ttl(std::time::Duration::from_secs(600))
         .build()
+        .await
         .unwrap()
 }
 
@@ -745,12 +818,13 @@ async fn a_discovery_key_store_names_the_kms_key_from_the_record() {
         "TrentService.Decrypt" => Some(Reply::error(400, "AccessDeniedException", "disc-req")),
         _ => None,
     });
-    let input = EncryptInput::builder()
+    let err = Client::default()
+        .encrypt()
         .plaintext(b"hello")
         .keyring(discovery_keyring(&fake).await)
-        .build()
-        .unwrap();
-    let err = encrypt(&input).await.unwrap_err();
+        .send()
+        .await
+        .unwrap_err();
     let Error::AccessDenied(e) = &err else {
         panic!("expected AccessDenied, got {err:?}");
     };

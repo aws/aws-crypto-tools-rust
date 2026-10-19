@@ -7,7 +7,7 @@ use crate::error::{Kind, err};
 use crate::message::header_types::MESSAGE_ID_LEN_V2;
 use crate::message::serializable_types::get_encrypt_key_length;
 use crate::suites::kdf_digest;
-use aws_crypto_mpl::structures::{AlgorithmSuite, KeyDerivationAlgorithm};
+use aws_crypto_mpl::types::{AlgorithmSuite, KeyDerivationAlgorithm};
 use zeroize::Zeroizing;
 
 // Holds a derived data key and an optional commitment key (the latter only for

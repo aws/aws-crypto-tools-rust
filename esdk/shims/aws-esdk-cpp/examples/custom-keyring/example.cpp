@@ -19,7 +19,7 @@ int main() {
 
         // From here on, nothing is special about your keyring.
         // Use it like any other keyring.
-        Aws::Esdk::EncryptionSDK sdk;
+        Aws::Esdk::Client sdk;
 
         std::vector<uint8_t> plaintext = {'H', 'e', 'l', 'l', 'o', ' ', 'W', 'o', 'r', 'l', 'd'};
         auto encrypted = sdk.encrypt(plaintext, keyring);

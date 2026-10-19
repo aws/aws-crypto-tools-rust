@@ -30,8 +30,8 @@ use aws_sdk_dynamodb::error::ProvideErrorMetadata;
 /// The type must be named exactly, including the `SdkError` response
 /// parameter, which defaults to the SDK's `HttpResponse`. A downcast to a
 /// type from a different version of the same SDK crate silently yields
-/// `None`; [`aws_sdk_kms`](crate::aws_sdk_kms) and
-/// [`aws_sdk_dynamodb`](crate::aws_sdk_dynamodb) are re-exported so the
+/// `None`; [`aws_sdk_kms`] and
+/// [`aws_sdk_dynamodb`] are re-exported so the
 /// version matches.
 pub fn find_in_error_chain<'a, E>(err: &'a (dyn Error + 'static)) -> Option<&'a E>
 where

@@ -83,10 +83,11 @@
 //!
 //! ```no_run
 //! # fn record_throttle(_: &str) {}
-//! # async fn example(input: aws_esdk::EncryptInput<'_>) {
-//! use aws_esdk::error::{Error, Resource, Service};
+//! # async fn example(esdk: aws_esdk::Client, keyring: aws_esdk::keyring::SharedKeyring) {
+//! use aws_esdk::Error;
+//! use aws_esdk::error::{Resource, Service};
 //!
-//! if let Err(Error::Throttling(e)) = aws_esdk::encrypt(&input).await {
+//! if let Err(Error::Throttling(e)) = esdk.encrypt().plaintext(b"data").keyring(keyring).send().await {
 //!     match e.service() {
 //!         Some(Service::Kms) => record_throttle("kms"),
 //!         Some(Service::DynamoDb) => record_throttle("dynamodb"),
@@ -112,10 +113,11 @@
 //! An error with no collection yields itself.
 //!
 //! ```no_run
-//! # async fn example(input: aws_esdk::DecryptInput<'_>) {
-//! use aws_esdk::error::{Error, Resource, Service};
+//! # async fn example(esdk: aws_esdk::Client, keyring: aws_esdk::keyring::SharedKeyring, ciphertext: &[u8]) {
+//! use aws_esdk::Error;
+//! use aws_esdk::error::{Resource, Service};
 //!
-//! if let Err(e) = aws_esdk::decrypt(&input).await {
+//! if let Err(e) = esdk.decrypt().ciphertext(ciphertext).keyring(keyring).send().await {
 //!     for attempt in e.failures() {
 //!         match attempt {
 //!             Error::AccessDenied(a) => match a.service() {
@@ -139,7 +141,8 @@
 //! so you can construct the errors this crate returns, for example from a fake keyring or CMM:
 //!
 //! ```
-//! use aws_esdk::error::{AccessDeniedError, Error, KmsKey, Resource, Service};
+//! use aws_esdk::error::{AccessDeniedError, KmsKey, Resource, Service};
+//! use aws_esdk::Error;
 //!
 //! let err = Error::from(
 //!     AccessDeniedError::builder()
@@ -153,9 +156,15 @@
 //! ```
 
 // `cargo xtask gen-errors` writes `generated.rs` from `errors.toml` at the repository root.
-mod generated;
+pub(crate) mod generated;
 
-pub use generated::*;
+pub use generated::{
+    AccessDeniedError, ConflictError, CryptographicError, DispatchError,
+    EncryptionContextMismatchError, ErrorParts, InternalError, InvalidMaterialsError, IoError,
+    NoMatchingDataKeyError, ResourceNotFoundError, SerializationError, ServiceError,
+    ThrottlingError, ValidationError, builders,
+};
+pub(crate) use generated::{Error, Kind};
 
 pub use aws_mpl_primitives::error::{
     BranchKey, Cache, CmmResource, Collection, ConflictReason, DataKeyInfo, DynamoDbTable,

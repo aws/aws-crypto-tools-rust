@@ -4,28 +4,29 @@
 //! Shared handles for the pluggable-component traits.
 //!
 //! A trait is not a type, so an API cannot store "some keyring" by value.
-//! Each trait has a handle that can be stored: [`SharedKeyring`](crate::SharedKeyring),
-//! [`SharedCmm`](crate::SharedCmm), [`SharedKeystore`](crate::SharedKeystore),
-//! [`SharedCmc`](crate::SharedCmc), and
-//! [`SharedBranchKeySupplier`](crate::SharedBranchKeySupplier).
+//! Each trait has a handle that can be stored: [`SharedKeyring`](crate::keyring::SharedKeyring),
+//! [`SharedCmm`](crate::cmm::SharedCmm), [`SharedCmc`](crate::cmc::SharedCmc), and
+//! [`SharedBranchKeySupplier`](crate::keyring::SharedBranchKeySupplier).
+//! A [`key_store::Client`](crate::key_store::Client) holds a key store instead.
 //!
 //! Each handle implements its own trait, so a handle works anywhere a component does.
 //! APIs take `impl Keyring + 'static` and convert with [`IntoShared`]:
 //!
 //! ```ignore
-//! pub fn with_keyring(pt: &[u8], ec: EncryptionContext, keyring: impl Keyring + 'static) -> Self {
-//!     Self { keyring: Some(keyring.into_shared()), ..Default::default() }
+//! pub fn keyring(mut self, keyring: impl Keyring + 'static) -> Self {
+//!     self.keyring = Some(keyring.into_shared());
+//!     self
 //! }
 //! ```
 //!
 //! Callers pass a concrete component or an existing handle:
 //!
 //! ```ignore
-//! let raw = RawAesKeyring::new(...)?;
-//! EncryptInput::with_keyring(pt, ec.clone(), raw.clone());
+//! let raw = RawAesKeyring::builder()...build()?;
+//! esdk.encrypt().plaintext(pt).keyring(raw.clone());
 //!
 //! let shared = SharedKeyring::new(raw);
-//! EncryptInput::with_keyring(pt, ec, shared);  // reuses the handle, no second Arc
+//! esdk.encrypt().plaintext(pt).keyring(shared);  // reuses the handle, no second Arc
 //! ```
 //!
 //! This matches the AWS SDK for Rust (`SharedCredentialsProvider`, `SharedHttpClient`)

@@ -7,7 +7,8 @@
 mod fixtures;
 mod test_helpers;
 
-use aws_esdk::AlgorithmSuiteId;
+use aws_esdk::types::AlgorithmSuiteId;
+use aws_esdk::types::*;
 use aws_esdk::*;
 use std::num::NonZeroU32;
 use test_helpers::*;
@@ -19,14 +20,16 @@ async fn test_decrypt_skips_signature_step_for_non_signing_algorithm() {
     let ec = EncryptionContext::new();
 
     // Encrypt with a non-signing algorithm suite
-    let encrypt_input = EncryptInput::builder()
+    let ct = Client::default()
+        .encrypt()
         .plaintext(plaintext)
-        .encryption_context(ec)
+        .encryption_context(ec.clone())
         .keyring(keyring.clone())
         .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
-        .build()
-        .unwrap();
-    let ct = encrypt(&encrypt_input).await.unwrap().ciphertext;
+        .send()
+        .await
+        .unwrap()
+        .into_ciphertext();
 
     // Prove the ciphertext has no footer — so if decrypt tried to run the
     // signature step, it would attempt to read footer bytes from the body
@@ -36,43 +39,37 @@ async fn test_decrypt_skips_signature_step_for_non_signing_algorithm() {
         "non-signing suite must not produce a footer"
     );
 
-    let decrypt_input = DecryptInput::builder_from_encrypt(&encrypt_input)
-        .ciphertext(&ct)
-        .build()
-        .unwrap();
     //= spec/client-apis/decrypt.md#behavior
     //= type=test
     //= reason=No footer on wire + decrypt succeeds → signature step was not attempted
     //# - If the message header does not contain an algorithm suite including a signature algorithm,
     //# the Decrypt operation MUST NOT perform this step.
-    let decrypt_output = decrypt(&decrypt_input).await.unwrap();
-    assert_eq!(decrypt_output.plaintext, plaintext);
+    let decrypt_output = Client::default()
+        .decrypt()
+        .ciphertext(&ct)
+        .encryption_context(ec)
+        .keyring(keyring)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(decrypt_output.plaintext(), plaintext);
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_decrypt_halts_on_incomplete_message() {
     let keyring = test_keyring().await;
     let plaintext = b"truncation test data";
-    let enc_input = EncryptInput::builder()
+    let valid_ct = Client::default()
+        .encrypt()
         .plaintext(plaintext)
         .keyring(keyring.clone())
-        .build()
-        .unwrap();
-    let valid_ct = encrypt(&enc_input).await.unwrap().ciphertext;
+        .send()
+        .await
+        .unwrap()
+        .into_ciphertext();
 
     // Truncate to ~60% of the message — enough for the header but not the full body.
     let truncated_ct = valid_ct[..valid_ct.len() * 3 / 5].to_vec();
-
-    let valid_input = DecryptInput::builder()
-        .ciphertext(&valid_ct)
-        .keyring(keyring.clone())
-        .build()
-        .unwrap();
-    let truncated_input = DecryptInput::builder()
-        .ciphertext(&truncated_ct)
-        .keyring(keyring)
-        .build()
-        .unwrap();
 
     //= spec/client-apis/decrypt.md#behavior
     //= type=test
@@ -80,9 +77,22 @@ async fn test_decrypt_halts_on_incomplete_message() {
     //# - If all bytes have been provided and this operation
     //# is unable to complete the above steps with the consumable encrypted message bytes,
     //# this operation MUST halt and indicate a failure to the caller.
-    assert!(decrypt(&valid_input).await.is_ok(), "full ct must decrypt");
     assert!(
-        decrypt(&truncated_input)
+        Client::default()
+            .decrypt()
+            .ciphertext(&valid_ct)
+            .keyring(keyring.clone())
+            .send()
+            .await
+            .is_ok(),
+        "full ct must decrypt"
+    );
+    assert!(
+        Client::default()
+            .decrypt()
+            .ciphertext(&truncated_ct)
+            .keyring(keyring)
+            .send()
             .await
             .unwrap_err()
             .is_serialization(),
@@ -94,27 +104,18 @@ async fn test_decrypt_halts_on_incomplete_message() {
 async fn test_decrypt_fails_with_trailing_bytes_after_message() {
     let keyring = test_keyring().await;
     let plaintext = b"trailing bytes test";
-    let enc_input = EncryptInput::builder()
+    let valid_ct = Client::default()
+        .encrypt()
         .plaintext(plaintext)
         .keyring(keyring.clone())
-        .build()
-        .unwrap();
-    let valid_ct = encrypt(&enc_input).await.unwrap().ciphertext;
+        .send()
+        .await
+        .unwrap()
+        .into_ciphertext();
 
     // Append extra bytes after the valid message.
     let mut trailing_ct = valid_ct.clone();
     trailing_ct.extend_from_slice(&[0xDE, 0xAD, 0xBE, 0xEF]);
-
-    let valid_input = DecryptInput::builder()
-        .ciphertext(&valid_ct)
-        .keyring(keyring.clone())
-        .build()
-        .unwrap();
-    let trailing_input = DecryptInput::builder()
-        .ciphertext(&trailing_ct)
-        .keyring(keyring)
-        .build()
-        .unwrap();
 
     //= spec/client-apis/decrypt.md#behavior
     //= type=test
@@ -122,9 +123,22 @@ async fn test_decrypt_fails_with_trailing_bytes_after_message() {
     //# - If this operation successfully completes the above steps
     //# but there are consumable bytes which are intended to be decrypted,
     //# this operation MUST fail.
-    assert!(decrypt(&valid_input).await.is_ok(), "clean ct must decrypt");
     assert!(
-        decrypt(&trailing_input)
+        Client::default()
+            .decrypt()
+            .ciphertext(&valid_ct)
+            .keyring(keyring.clone())
+            .send()
+            .await
+            .is_ok(),
+        "clean ct must decrypt"
+    );
+    assert!(
+        Client::default()
+            .decrypt()
+            .ciphertext(&trailing_ct)
+            .keyring(keyring)
+            .send()
             .await
             .unwrap_err()
             .is_serialization(),
@@ -140,25 +154,27 @@ async fn test_streaming_fails_for_multi_frame_signed() {
     let keyring = test_keyring().await;
     // 30 bytes with frame_length=10 → 3 frames (2 regular + 1 final)
     let plaintext = vec![0xAAu8; 30];
-    let enc_input = EncryptInput::builder()
+    let ct = Client::default()
+        .encrypt()
         .plaintext(&plaintext)
         .keyring(keyring.clone())
         .frame_length(NonZeroU32::new(10).unwrap())
         .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
-        .build()
-        .unwrap();
-    let ct = encrypt(&enc_input).await.unwrap().ciphertext;
-
-    let stream_input = DecryptStreamInput::builder()
-        .keyring(keyring)
-        .build()
-        .unwrap();
+        .send()
+        .await
+        .unwrap()
+        .into_ciphertext();
 
     let mut cursor = std::io::Cursor::new(ct.as_slice());
     let mut output = Vec::new();
 
     assert!(
-        decrypt_stream(&mut cursor, &mut output, &stream_input)
+        Client::default()
+            .decrypt_stream()
+            .keyring(keyring)
+            .ciphertext(&mut cursor)
+            .plaintext(&mut output)
+            .send()
             .await
             .unwrap_err()
             .is_validation(),
@@ -176,13 +192,15 @@ async fn test_signing_suite_must_perform_signature_step() {
     let plaintext = b"signing suite signature step test";
 
     // Encrypt with a signing algorithm suite (ECDSA P384)
-    let enc_input = EncryptInput::builder()
+    let valid_ct = Client::default()
+        .encrypt()
         .plaintext(plaintext)
         .keyring(keyring.clone())
         .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
-        .build()
-        .unwrap();
-    let valid_ct = encrypt(&enc_input).await.unwrap().ciphertext;
+        .send()
+        .await
+        .unwrap()
+        .into_ciphertext();
 
     // Tamper with the footer (signature area) to prove the signature step runs.
     // If the step were skipped, tampering the footer would not cause failure.
@@ -190,24 +208,28 @@ async fn test_signing_suite_must_perform_signature_step() {
     let len = tampered_ct.len();
     tampered_ct[len - 3] ^= 0xFF;
 
-    let valid_input = DecryptInput::builder_from_encrypt(&enc_input)
-        .ciphertext(&valid_ct)
-        .build()
-        .unwrap();
-    let tampered_input = DecryptInput::builder_from_encrypt(&enc_input)
-        .ciphertext(&tampered_ct)
-        .build()
-        .unwrap();
-
     //= spec/client-apis/decrypt.md#behavior
     //= type=test
     //= reason=Untampered ct decrypts; tampered footer → Cryptographic error, proving signature step runs for signing suites
     //# - If the message header contains an algorithm suite including a
     //# [signature algorithm](../framework/algorithm-suites.md#signature-algorithm),
     //# the Decrypt operation MUST perform this step.
-    assert!(decrypt(&valid_input).await.is_ok(), "valid ct must decrypt");
     assert!(
-        decrypt(&tampered_input)
+        Client::default()
+            .decrypt()
+            .ciphertext(&valid_ct)
+            .keyring(keyring.clone())
+            .send()
+            .await
+            .is_ok(),
+        "valid ct must decrypt"
+    );
+    assert!(
+        Client::default()
+            .decrypt()
+            .ciphertext(&tampered_ct)
+            .keyring(keyring.clone())
+            .send()
             .await
             .unwrap_err()
             .is_cryptographic(),

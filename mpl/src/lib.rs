@@ -1,53 +1,40 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// TODO: give every operation an input type, for consistency with the Dafny MPL
-// and the Smithy model it is generated from. `Cmm` and `BranchKeySupplier`
-// already take one (`EncryptionMaterialsRequest`, `DecryptMaterialsRequest`,
-// `GetBranchKeyIdInput`); `Keystore`, `Keyring` and `Cmc` still take their
-// members as positional parameters, so a member added to a model structure
-// upstream is a breaking change here rather than an additive one. These are
-// customer-implementable traits, so the conversion is breaking and should land
-// in one change rather than trait by trait.
-
-pub mod aws_kms;
-mod client;
+mod aws_kms;
+mod builder;
 pub mod cmc;
 pub mod cmm;
 pub mod error;
-pub mod error_chain;
+#[cfg(feature = "test-utils")]
+mod error_chain;
+pub mod key_store;
 pub mod keyring;
-pub mod keystore;
 pub mod shared;
-pub mod structures;
+mod structures;
+pub mod types;
 
-pub use client::*;
-pub use error::Error;
-pub use shared::IntoShared;
-// Re-exported because `AesGcm` appears in the public signature of
-// `RawAesKeyring::new`; without this a caller would have to depend on
-// `aws-mpl-primitives` directly just to name the wrapping algorithm.
-pub use aws_mpl_primitives::AesGcm;
+pub use error::generated::Error;
+
+/// Put `#[async_trait]` on an `impl` of a [`Keyring`](keyring::Keyring), [`Cmm`](cmm::Cmm), [`Cmc`](cmc::Cmc), [`KeyStore`](key_store::KeyStore), or [`BranchKeySupplier`](keyring::BranchKeySupplier).
+pub use async_trait::async_trait;
 
 pub use aws_config;
-pub use aws_kms::hierarchical_keyring::{
-    BranchKeySupplier, HierarchicalKeyring, HierarchicalKeyringBuilder, SharedBranchKeySupplier,
-};
 
-// Both SDK clients appear in `BranchKeyStoreBuilder`'s public signature,
+// Both SDK clients appear in the key store `Builder`'s public signature,
 // and a key store `Error` carries their SDK errors as its source.
 // Downcasting that source needs the exact SDK version this crate uses,
 // which the consumer's own dependency might not resolve to.
 pub use aws_sdk_dynamodb;
 pub use aws_sdk_kms;
 
-pub use cmc::{
-    BytesUsage, CacheEntry, CacheType, CachedMaterials, Cmc, DefaultCache, LocalCmc, MessageUsage,
-    SharedCmc, StormTrackingCache, StormTrackingCacheBuilder, StormTrackingCmc, UsageMetadata,
-};
-pub use cmm::{Cmm, DecryptMaterialsRequest, DefaultCmm, EncryptionMaterialsRequest, SharedCmm};
-pub use keyring::{Keyring, RawAesKeyring, SharedKeyring};
-pub use keystore::{
-    BranchKeyStore, BranchKeyStoreBuilder, KeyStoreInfo, Keystore, KmsConfiguration,
-    SharedKeystore, encryption_context, kms_config, record,
-};
+#[cfg(feature = "test-utils")]
+#[doc(hidden)]
+pub mod __test_internals {
+    pub mod error_chain {
+        pub use crate::error_chain::*;
+    }
+    pub mod aws_kms {
+        pub use crate::aws_kms::__test_internals::*;
+    }
+}
