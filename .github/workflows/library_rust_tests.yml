@@ -17,7 +17,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     permissions:
       id-token: write
@@ -41,6 +41,12 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: 'stable'
+
+      # aws-lc-sys / aws-lc-fips-sys build AWS-LC with NASM (Netwide Assembler) on Windows.
+      # NASM is not on the Windows runner PATH by default but Unix runners already provide an assembler.
+      - name: Install NASM (Windows)
+        if: runner.os == 'Windows'
+        uses: ilammy/setup-nasm@v1
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -113,7 +119,9 @@ jobs:
       # both `aws-lc-sys` and `aws-lc-fips-sys` get compiled and only the latter
       # is used. Test-only — the coverage gate above already covers these lines
       # against the default backend, so this step exists to prove the same code
-      # passes when linked against AWS-LC-FIPS. Needs the Go step above.
+      # passes when linked against AWS-LC-FIPS.
+      # Needs the Go step above.
+      # Windows also needs the NASM step above.
       - name: Test FIPS-only backend
         if: inputs.project == 'prim'
         env:
