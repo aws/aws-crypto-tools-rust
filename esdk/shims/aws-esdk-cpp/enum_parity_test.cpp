@@ -31,15 +31,41 @@ static_assert(eq(::aws_esdk_ffi::KmsConfigurationType{}, ::aws_esdk_ffi::KmsConf
 static_assert(eq(::aws_esdk_ffi::AesWrappingAlg{}, ::aws_esdk_ffi::AesWrappingAlg::Unset), "zero-init AesWrappingAlg is Unset");
 static_assert(!eq(::aws_esdk_ffi::EsdkCommitmentPolicy{}, ::aws_esdk_ffi::EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt), "zero-init CommitmentPolicy is not a selection");
 static_assert(!eq(::aws_esdk_ffi::EsdkAlgorithmSuiteId{}, ::aws_esdk_ffi::EsdkAlgorithmSuiteId::AlgAes128GcmIv12Tag16NoKdf), "zero-init AlgorithmSuiteId is not a selection");
-static_assert(!eq(::aws_esdk_ffi::CacheKind{}, ::aws_esdk_ffi::CacheKind::Default), "zero-init CacheKind is not a selection");
 // The facade's guard decodes these reprs from the error-message prefix; a
 // renumbering here must fail this build, not misclassify errors at runtime.
-static_assert(eq(::aws_esdk_ffi::ShimErrorKind::Esdk, 0), "ShimErrorKind::Esdk");
-static_assert(eq(::aws_esdk_ffi::ShimErrorKind::SerializationError, 1), "ShimErrorKind::SerializationError");
-static_assert(eq(::aws_esdk_ffi::ShimErrorKind::CryptographicError, 2), "ShimErrorKind::CryptographicError");
-static_assert(eq(::aws_esdk_ffi::ShimErrorKind::MplError, 3), "ShimErrorKind::MplError");
-static_assert(eq(::aws_esdk_ffi::ShimErrorKind::LegacyError, 4), "ShimErrorKind::LegacyError");
-static_assert(eq(::aws_esdk_ffi::ShimErrorKind::ValidationError, 5), "ShimErrorKind::ValidationError");
+static_assert(eq(Aws::Esdk::ErrorKind::Validation, ::aws_esdk_ffi::ShimErrorKind::Validation), "ErrorKind::Validation");
+static_assert(eq(Aws::Esdk::ErrorKind::Serialization, ::aws_esdk_ffi::ShimErrorKind::Serialization), "ErrorKind::Serialization");
+static_assert(eq(Aws::Esdk::ErrorKind::Cryptographic, ::aws_esdk_ffi::ShimErrorKind::Cryptographic), "ErrorKind::Cryptographic");
+static_assert(eq(Aws::Esdk::ErrorKind::InvalidMaterials, ::aws_esdk_ffi::ShimErrorKind::InvalidMaterials), "ErrorKind::InvalidMaterials");
+static_assert(eq(Aws::Esdk::ErrorKind::EncryptionContextMismatch, ::aws_esdk_ffi::ShimErrorKind::EncryptionContextMismatch), "ErrorKind::EncryptionContextMismatch");
+static_assert(eq(Aws::Esdk::ErrorKind::NoMatchingDataKey, ::aws_esdk_ffi::ShimErrorKind::NoMatchingDataKey), "ErrorKind::NoMatchingDataKey");
+static_assert(eq(Aws::Esdk::ErrorKind::AccessDenied, ::aws_esdk_ffi::ShimErrorKind::AccessDenied), "ErrorKind::AccessDenied");
+static_assert(eq(Aws::Esdk::ErrorKind::ResourceNotFound, ::aws_esdk_ffi::ShimErrorKind::ResourceNotFound), "ErrorKind::ResourceNotFound");
+static_assert(eq(Aws::Esdk::ErrorKind::Service, ::aws_esdk_ffi::ShimErrorKind::Service), "ErrorKind::Service");
+static_assert(eq(Aws::Esdk::ErrorKind::Dispatch, ::aws_esdk_ffi::ShimErrorKind::Dispatch), "ErrorKind::Dispatch");
+static_assert(eq(Aws::Esdk::ErrorKind::Internal, ::aws_esdk_ffi::ShimErrorKind::Internal), "ErrorKind::Internal");
+static_assert(eq(Aws::Esdk::ErrorKind::Io, ::aws_esdk_ffi::ShimErrorKind::Io), "ErrorKind::Io");
+static_assert(eq(Aws::Esdk::ErrorKind::Throttling, ::aws_esdk_ffi::ShimErrorKind::Throttling), "ErrorKind::Throttling");
+static_assert(eq(Aws::Esdk::ErrorKind::Conflict, ::aws_esdk_ffi::ShimErrorKind::Conflict), "ErrorKind::Conflict");
+// The reserved Unknown repr is not a C++ ErrorKind, so it decodes to the base exception.
+static_assert(eq(::aws_esdk_ffi::ShimErrorKind::Unknown, 255), "ShimErrorKind::Unknown");
+
+// The facade decodes these from strings; their values are part of the C++ API.
+static_assert(eq(Aws::Esdk::RetryKind::Transient, 0), "RetryKind::Transient");
+static_assert(eq(Aws::Esdk::RetryKind::Throttling, 1), "RetryKind::Throttling");
+static_assert(eq(Aws::Esdk::RetryKind::Server, 2), "RetryKind::Server");
+static_assert(eq(Aws::Esdk::RetryKind::Client, 3), "RetryKind::Client");
+static_assert(eq(Aws::Esdk::Service::Kms, 0), "Service::Kms");
+static_assert(eq(Aws::Esdk::Service::DynamoDb, 1), "Service::DynamoDb");
+static_assert(eq(Aws::Esdk::ResourceType::KmsKey, 0), "ResourceType::KmsKey");
+static_assert(eq(Aws::Esdk::ResourceType::DynamoDbTable, 1), "ResourceType::DynamoDbTable");
+static_assert(eq(Aws::Esdk::ResourceType::BranchKey, 2), "ResourceType::BranchKey");
+static_assert(eq(Aws::Esdk::ResourceType::Cache, 3), "ResourceType::Cache");
+static_assert(eq(Aws::Esdk::ResourceType::Keyring, 4), "ResourceType::Keyring");
+static_assert(eq(Aws::Esdk::ResourceType::Cmm, 5), "ResourceType::Cmm");
+static_assert(eq(Aws::Esdk::ResourceType::Unknown, 255), "ResourceType::Unknown");
+static_assert(eq(Aws::Esdk::ConflictReason::AlreadyExists, 0), "ConflictReason::AlreadyExists");
+static_assert(eq(Aws::Esdk::ConflictReason::ConcurrentModification, 1), "ConflictReason::ConcurrentModification");
 
 
 static_assert(eq(Aws::Esdk::CommitmentPolicy::ForbidEncryptAllowDecrypt, ::aws_esdk_ffi::EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt), "ForbidEncryptAllowDecrypt");
