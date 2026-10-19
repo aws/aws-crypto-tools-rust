@@ -14,8 +14,9 @@ use aws_esdk::cmm::{
     Cmm, DecryptMaterialsInput, DecryptMaterialsOutput, DefaultCmm, GetEncryptionMaterialsInput,
     GetEncryptionMaterialsOutput,
 };
-use aws_esdk::keyring::RawAesKeyring;
+use aws_esdk::keyring::{RawAesKeyring, SharedKeyring};
 use aws_esdk::mpl::Error as MplError;
+use aws_esdk::mpl::shared::IntoShared;
 use aws_esdk::types::{AesWrappingAlg, AlgorithmSuiteId, EncryptionContext};
 use aws_esdk::{Error, async_trait};
 
@@ -26,7 +27,7 @@ struct SigningSuiteOnlyCmm {
 }
 
 impl SigningSuiteOnlyCmm {
-    fn new(keyring: RawAesKeyring) -> Self {
+    fn new(keyring: impl IntoShared<SharedKeyring>) -> Self {
         Self {
             inner: DefaultCmm::new(keyring),
         }
