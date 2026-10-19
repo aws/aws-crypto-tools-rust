@@ -6,10 +6,10 @@
 use super::serialize_functions::{read_bytes, read_u8, read_vec, write_bytes, write_u8};
 use super::{Error, ser_err};
 use crate::error::{Kind, err_with_cause};
+use crate::shapes::{EncryptionContext, Source, Tee};
 use crate::suites::algorithm_suite_from_bytes;
-use crate::types::{EncryptionContext, SafeRead, SafeWrite};
-use aws_crypto_mpl::structures::AlgorithmSuite;
-use aws_crypto_mpl::structures::EncryptedDataKey;
+use aws_crypto_mpl::types::AlgorithmSuite;
+use aws_crypto_mpl::types::EncryptedDataKey;
 
 pub(crate) type MessageId = Vec<u8>;
 
@@ -20,7 +20,7 @@ pub(crate) enum MessageFormatVersion {
 }
 
 pub(crate) fn write_msg_format_version(
-    w: &mut dyn SafeWrite,
+    w: &mut Tee,
     data: MessageFormatVersion,
 ) -> Result<(), Error> {
     //= spec/data-format/message-header.md#version
@@ -28,11 +28,11 @@ pub(crate) fn write_msg_format_version(
     write_u8(w, data as u8)
 }
 
-pub(crate) fn read_msg_format_version(
-    r: &mut dyn SafeRead,
-    raw: &mut dyn SafeWrite,
+pub(crate) async fn read_msg_format_version(
+    r: &mut dyn Source,
+    raw: &mut Tee,
 ) -> Result<MessageFormatVersion, Error> {
-    let version = read_u8(r, raw)?;
+    let version = read_u8(r, raw).await?;
     //= spec/data-format/message-header.md#supported-versions
     //# The supported versions MUST be:
     //
@@ -68,19 +68,16 @@ pub(crate) enum MessageType {
     TypeCustomerAed = 0x80,
 }
 
-pub(crate) fn write_msg_type(w: &mut dyn SafeWrite, data: MessageType) -> Result<(), Error> {
+pub(crate) fn write_msg_type(w: &mut Tee, data: MessageType) -> Result<(), Error> {
     //= spec/data-format/message-header.md#type
     //# The length of the serialized type field MUST be 1 byte.
     write_u8(w, data as u8)
 }
 
-pub(crate) fn read_msg_type(
-    r: &mut dyn SafeRead,
-    raw: &mut dyn SafeWrite,
-) -> Result<MessageType, Error> {
+pub(crate) async fn read_msg_type(r: &mut dyn Source, raw: &mut Tee) -> Result<MessageType, Error> {
     //= spec/data-format/message-header.md#type
     //# The length of the serialized type field MUST be 1 byte.
-    let msg_type = read_u8(r, raw)?;
+    let msg_type = read_u8(r, raw).await?;
 
     //= spec/client-apis/decrypt.md#v1-header-deserialization
     //# The value MUST be a [supported type](../data-format/message-header.md#supported-types).
@@ -99,17 +96,17 @@ pub(crate) enum ContentType {
     Framed = 2,
 }
 
-pub(crate) fn write_content_type(w: &mut dyn SafeWrite, data: ContentType) -> Result<(), Error> {
+pub(crate) fn write_content_type(w: &mut Tee, data: ContentType) -> Result<(), Error> {
     //= spec/data-format/message-header.md#content-type
     //# The length of the serialized content type field MUST be 1 byte.
     write_u8(w, data as u8)
 }
 
-pub(crate) fn read_content_type(
-    r: &mut dyn SafeRead,
-    raw: &mut dyn SafeWrite,
+pub(crate) async fn read_content_type(
+    r: &mut dyn Source,
+    raw: &mut Tee,
 ) -> Result<ContentType, Error> {
-    let content_type = read_u8(r, raw)?;
+    let content_type = read_u8(r, raw).await?;
     //= spec/data-format/message-header.md#content-type
     //# The length of the serialized content type field MUST be 1 byte.
     //
@@ -244,14 +241,14 @@ pub(crate) const MESSAGE_ID_LEN_V2: usize = 32;
 
 // --- Shared header read/write functions (suite ID, message ID) ---
 
-pub(crate) fn read_esdk_suite_id(
-    r: &mut dyn SafeRead,
-    raw: &mut dyn SafeWrite,
+pub(crate) async fn read_esdk_suite_id(
+    r: &mut dyn Source,
+    raw: &mut Tee,
 ) -> Result<AlgorithmSuite, Error> {
     //= spec/data-format/message-header.md#algorithm-suite-id
     //# The length of the serialized algorithm suite ID field MUST be 2 bytes.
     let mut esdk_suite_id_bytes = [0; 2];
-    read_bytes(r, &mut esdk_suite_id_bytes, raw)?;
+    read_bytes(r, &mut esdk_suite_id_bytes, raw).await?;
 
     //= spec/data-format/message-header.md#algorithm-suite-id
     //# The value (hex) of this field MUST be a value that exists in the
@@ -276,33 +273,30 @@ pub(crate) fn read_esdk_suite_id(
     Ok(suite)
 }
 
-pub(crate) fn write_esdk_suite_id(
-    w: &mut dyn SafeWrite,
-    suite: &AlgorithmSuite,
-) -> Result<(), Error> {
+pub(crate) fn write_esdk_suite_id(w: &mut Tee, suite: &AlgorithmSuite) -> Result<(), Error> {
     //= spec/data-format/message-header.md#algorithm-suite-id
     //# The length of the serialized algorithm suite ID field MUST be 2 bytes.
     write_bytes(w, &suite.id()[..])
 }
 
-pub(crate) fn read_message_id_v1(
-    r: &mut dyn SafeRead,
-    raw: &mut dyn SafeWrite,
+pub(crate) async fn read_message_id_v1(
+    r: &mut dyn Source,
+    raw: &mut Tee,
 ) -> Result<MessageId, Error> {
     //= spec/data-format/message-header.md#message-id
     //# The length of the serialized message ID MUST be 16 bytes for [version 1.0](#header-body-version-10) headers.
-    read_vec(r, MESSAGE_ID_LEN_V1, raw)
+    read_vec(r, MESSAGE_ID_LEN_V1, raw).await
 }
 
-pub(crate) fn read_message_id_v2(
-    r: &mut dyn SafeRead,
-    raw: &mut dyn SafeWrite,
+pub(crate) async fn read_message_id_v2(
+    r: &mut dyn Source,
+    raw: &mut Tee,
 ) -> Result<MessageId, Error> {
     //= spec/data-format/message-header.md#message-id
     //# The length of the serialized message ID MUST be 32 bytes for [version 2.0](#header-body-version-20) headers.
-    read_vec(r, MESSAGE_ID_LEN_V2, raw)
+    read_vec(r, MESSAGE_ID_LEN_V2, raw).await
 }
 
-pub(crate) fn write_message_id(w: &mut dyn SafeWrite, message_id: &MessageId) -> Result<(), Error> {
+pub(crate) fn write_message_id(w: &mut Tee, message_id: &MessageId) -> Result<(), Error> {
     write_bytes(w, message_id)
 }

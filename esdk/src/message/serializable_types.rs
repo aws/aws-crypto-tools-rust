@@ -3,9 +3,9 @@
 
 //! Type aliases and helper functions for message serialization.
 
-use crate::types::EncryptionContext;
-use aws_crypto_mpl::structures::AlgorithmSuite;
-use aws_crypto_mpl::structures::EncryptedDataKey;
+use crate::shapes::EncryptionContext;
+use aws_crypto_mpl::types::AlgorithmSuite;
+use aws_crypto_mpl::types::EncryptedDataKey;
 
 /// Max total key-value-pairs body length: the outer `UInt16` length field (2 bytes)
 /// plus the count `UInt16` (2 bytes) must together still fit in a `UInt16`, leaving
@@ -72,9 +72,9 @@ pub(crate) fn is_esdk_encryption_context(ec: &EncryptionContext) -> bool {
 
 /// True iff every EDK field length fits in a `UInt16`.
 pub(crate) fn is_esdk_encrypted_data_key(edk: &EncryptedDataKey) -> bool {
-    u16::try_from(edk.key_provider_id.len()).is_ok()
-        && u16::try_from(edk.key_provider_info.len()).is_ok()
-        && u16::try_from(edk.ciphertext.len()).is_ok()
+    u16::try_from(edk.key_provider_id().len()).is_ok()
+        && u16::try_from(edk.key_provider_info().len()).is_ok()
+        && u16::try_from(edk.ciphertext().len()).is_ok()
 }
 
 /// True iff the EDK count and each entry fit in `UInt16`.

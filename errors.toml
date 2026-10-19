@@ -41,7 +41,7 @@ for example an input with no keyring or CMM, a zero TTL, or a wrapping key of th
 
 Fix the input; retrying cannot succeed."""
 example = """
-use {crate}::error::Error;
+use {crate}::Error;
 
 fn handle(err: &Error) {
     match err {
@@ -66,7 +66,8 @@ Usually a bug in a custom keyring or CMM, or a corrupt key store record;
 retrying cannot succeed.
 `resource()` names the branch key, keyring, or CMM."""
 example = """
-use {crate}::error::{Error, Resource};
+use {crate}::Error;
+use {crate}::error::Resource;
 
 fn handle(err: &Error) {
     match err {
@@ -93,7 +94,7 @@ for example a required key is missing, or a value passed to decrypt differs from
 
 Check the encryption context passed to the call."""
 example = """
-use {crate}::error::Error;
+use {crate}::Error;
 
 fn handle(err: &Error) {
     match err {
@@ -118,7 +119,7 @@ Decrypt with a keyring that has one of the message's keys.
 `encrypted_data_keys()` lists the message's encrypted data keys by key provider,
 and `resource()` names the keyring or CMM that was used."""
 example = """
-use {crate}::error::Error;
+use {crate}::Error;
 
 fn handle(err: &Error) {
     match err {
@@ -145,7 +146,7 @@ for example an AES-GCM authentication tag or a message signature did not verify.
 The message is corrupt or modified, or you are decrypting it with the wrong key;
 retrying cannot succeed."""
 example = """
-use {crate}::error::Error;
+use {crate}::Error;
 
 fn handle(err: &Error) {
     match err {
@@ -175,7 +176,8 @@ AWS KMS or DynamoDB denied access.
 If `is_credentials()` is true, the credentials are expired or invalid.
 Otherwise fix the permissions for `service()` on `resource()`."""
 example = """
-use {crate}::error::{Error, Resource, Service};
+use {crate}::Error;
+use {crate}::error::{Resource, Service};
 
 fn handle(err: &Error) {
     match err {
@@ -208,7 +210,8 @@ A KMS key, DynamoDB table, or branch key does not exist.
 
 Fix the configuration that names `resource()`."""
 example = """
-use {crate}::error::{Error, Resource, Service};
+use {crate}::Error;
+use {crate}::error::{Resource, Service};
 
 fn handle(err: &Error) {
     match err {
@@ -243,7 +246,8 @@ Always retryable, with [`RetryKind::Throttling`](crate::error::RetryKind::Thrott
 `service()` and `resource()` say what was throttled: AWS KMS, DynamoDB, or the materials cache,
 which is [`Resource::Cache`](crate::error::Resource::Cache) with no `service()`."""
 example = """
-use {crate}::error::{Error, Resource, Service};
+use {crate}::Error;
+use {crate}::error::{Resource, Service};
 
 fn handle(err: &Error) {
     if err.is_retryable() {
@@ -279,7 +283,8 @@ or rotating a branch key that another caller rotated at the same time.
 Not retryable: re-read the resource before acting, because repeating the same call unchanged is not safe.
 `reason()` says which conflict occurred."""
 example = """
-use {crate}::error::{ConflictReason, Error};
+use {crate}::Error;
+use {crate}::error::ConflictReason;
 
 fn handle(err: &Error) {
     match err {
@@ -307,7 +312,7 @@ for example an internal service error or a KMS `IncorrectKeyException`.
 A server-side failure is retryable.
 `code()` is the service's error code."""
 example = """
-use {crate}::error::Error;
+use {crate}::Error;
 
 fn handle(err: &Error) {
     match err {
@@ -331,7 +336,7 @@ for example because of a network error, a timeout, or missing credentials or reg
 
 Retryable for a network error or timeout."""
 example = """
-use {crate}::error::Error;
+use {crate}::Error;
 
 fn handle(err: &Error) {
     match err {
@@ -355,7 +360,7 @@ for example truncated input, an unsupported message version, or data after the f
 
 Treat the message as corrupt; retrying cannot succeed."""
 example = """
-use {crate}::error::Error;
+use {crate}::Error;
 
 fn handle(err: &Error) {
     match err {
@@ -377,7 +382,7 @@ for example a closed connection or a full disk.
 
 The [`source`](std::error::Error::source) is the [`std::io::Error`]."""
 example = """
-use {crate}::error::Error;
+use {crate}::Error;
 
 fn handle(err: &Error) {
     if let Error::Io(_) = err {
@@ -400,7 +405,7 @@ An internal invariant was violated, for example a poisoned lock.
 A bug in this library; report it.
 Never retryable."""
 example = """
-use {crate}::error::Error;
+use {crate}::Error;
 
 fn handle(err: &Error) {
     match err {

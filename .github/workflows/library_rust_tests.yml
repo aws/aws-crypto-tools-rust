@@ -74,11 +74,16 @@ jobs:
       - name: Format check
         run: cargo fmt --all -- --check
 
+      # Match the coverage step's features so clippy lints feature-gated tests.
       - name: Clippy
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --all-targets ${{ inputs.project != 'prim' && '--all-features' || '' }} -- -D warnings
 
       - name: Build
         run: cargo build --verbose
+
+      - name: Run examples
+        if: inputs.project == 'esdk'
+        run: make examples
 
       # Line coverage does not need debug info, so build the coverage binaries
       # with `-C debuginfo=0`. They are large (aws-lc-sys + aws-lc-fips-sys,
