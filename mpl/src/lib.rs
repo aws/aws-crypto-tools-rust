@@ -19,7 +19,7 @@ pub use error::generated::Error;
 /// Put `#[async_trait]` on an `impl` of a [`Keyring`](keyring::Keyring), [`Cmm`](cmm::Cmm), [`Cmc`](cmc::Cmc), [`KeyStore`](key_store::KeyStore), or [`BranchKeySupplier`](keyring::BranchKeySupplier).
 pub use async_trait::async_trait;
 
-#[cfg(feature = "default-config")]
+#[cfg(feature = "default-aws-sdk-clients")]
 pub use aws_config;
 
 // Both SDK clients appear in the key store `Builder`'s public signature,

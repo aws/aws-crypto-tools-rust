@@ -92,6 +92,12 @@ impl std::fmt::Debug for RawAesKeyring {
 }
 
 impl RawAesKeyring {
+    /// `{key_namespace}/{key_name}`.
+    #[must_use]
+    pub fn name(&self) -> Cow<'_, str> {
+        Cow::Borrowed(&self.inner.name)
+    }
+
     /// Start a builder for `RawAesKeyring`.
     /// Every field is required.
     #[must_use]
@@ -383,10 +389,9 @@ impl RawAesKeyringBuilder {
 }
 
 #[async_trait]
-impl Keyring for RawAesKeyring {
-    /// `{key_namespace}/{key_name}`.
+impl Keyring for crate::shared::Builtin<RawAesKeyring> {
     fn name(&self) -> Cow<'_, str> {
-        Cow::Borrowed(&self.inner.name)
+        self.0.name()
     }
 
     async fn on_encrypt(&self, input: OnEncryptInput) -> Result<OnEncryptOutput, Error> {

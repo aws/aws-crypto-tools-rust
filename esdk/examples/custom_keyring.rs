@@ -7,12 +7,13 @@
 //!
 //! Runs offline.
 
-use aws_crypto_mpl::keyring::{
+use aws_esdk::async_trait;
+use aws_esdk::keyring::{
     Keyring, OnDecryptInput, OnDecryptOutput, OnEncryptInput, OnEncryptOutput, RawAesKeyring,
 };
-use aws_crypto_mpl::types::{AesWrappingAlg, EncryptedDataKey};
-use aws_crypto_mpl::{Error as MplError, async_trait};
-use aws_esdk::types::EncryptionContext;
+use aws_esdk::mpl::Error as MplError;
+use aws_esdk::mpl::types::EncryptedDataKey;
+use aws_esdk::types::{AesWrappingAlg, EncryptionContext};
 
 /// Wraps another keyring and logs the key providers of the encrypted data keys each call writes or tries.
 #[derive(Clone)]
@@ -27,7 +28,12 @@ fn providers(edks: &[EncryptedDataKey]) -> Vec<&str> {
 #[async_trait]
 impl Keyring for AuditKeyring {
     async fn on_encrypt(&self, input: OnEncryptInput) -> Result<OnEncryptOutput, MplError> {
-        let output = Keyring::on_encrypt(&self.inner, input).await?;
+        let output = self
+            .inner
+            .on_encrypt()
+            .materials(input.into_materials())
+            .send()
+            .await?;
         println!(
             "audit: encrypt wrote data keys for {:?}",
             providers(output.materials().encrypted_data_keys())
@@ -40,7 +46,15 @@ impl Keyring for AuditKeyring {
             "audit: decrypt tried data keys from {:?}",
             providers(input.encrypted_data_keys())
         );
-        Keyring::on_decrypt(&self.inner, input).await
+        {
+            let (materials, encrypted_data_keys) = input.into_parts();
+            self.inner
+                .on_decrypt()
+                .materials(materials)
+                .encrypted_data_keys(encrypted_data_keys)
+                .send()
+        }
+        .await
     }
 }
 
