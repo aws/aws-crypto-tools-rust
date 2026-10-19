@@ -30,7 +30,8 @@ pub(crate) mod serializable_types;
 pub(crate) mod serialize_functions;
 pub(crate) mod v1_header_body;
 pub(crate) mod v2_header_body;
-use aws_mpl_legacy::primitives::DigestContext;
+use crate::suites::get_ecdsa_alg;
+use aws_mpl_primitives::DigestContext;
 
 pub(crate) use super::error::Error;
 pub(crate) use super::error::ser_err;
@@ -59,18 +60,16 @@ pub struct DigestWriter {
     pub(crate) context: Option<DigestContext>,
 }
 impl DigestWriter {
-    /// Create a `DigestWriter` from a signature algorithm.
-    /// If the algorithm is ECDSA, initializes the digest context.
+    /// Create a `DigestWriter` from an algorithm suite.
+    /// If the suite is a signing (ECDSA) suite, initializes the digest context.
     /// Otherwise, returns a writer that does nothing (context = None).
-    pub(crate) fn from_old_ecdsa(
-        alg: aws_mpl_legacy::suites::SignatureAlgorithm,
-    ) -> Result<Self, Error> {
-        match alg {
-            aws_mpl_legacy::suites::SignatureAlgorithm::Ecdsa(x) => {
-                let context = Some(DigestContext::new_from_ecdsa(x)?);
-                Ok(Self { context })
-            }
-            _ => Ok(Self { context: None }),
+    pub(crate) fn from_suite(suite: &aws_crypto_mpl::types::AlgorithmSuite) -> Result<Self, Error> {
+        if suite.asymmetric_signature_algorithm().is_some() {
+            let alg = get_ecdsa_alg(suite)?;
+            let context = Some(DigestContext::new_from_ecdsa(alg)?);
+            Ok(Self { context })
+        } else {
+            Ok(Self { context: None })
         }
     }
 }

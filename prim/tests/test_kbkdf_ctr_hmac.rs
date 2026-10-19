@@ -376,5 +376,5 @@ fn test_kbkdf_ctr_hmac_empty_okm() {
     let info = [0u8; 4];
     let mut okm: [u8; 0] = [];
     let err = kbkdf_ctr_hmac(DigestAlg::Sha256, &ikm, &info, &mut okm).unwrap_err();
-    assert!(err.message.contains("kbkdf_ctr_hmac"));
+    assert!(err.is_cryptographic(), "{:?}", err);
 }

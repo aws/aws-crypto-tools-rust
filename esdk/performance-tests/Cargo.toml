@@ -10,7 +10,7 @@ path = "src/main.rs"
 
 [dependencies]
 aws-esdk = { path = ".." }
-aws-mpl-legacy = { package = "aws-mpl-native", path = "../../unsafe-unreviewed-mpl/mpl" }
+aws-crypto-mpl = { path = "../../mpl" }
 
 tokio = { version = "1.49", features = ["full"] }
 
@@ -18,10 +18,10 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml = "0.9"
 
-clap = "4.5"
+clap = "4.6"
 indicatif = "0.18"
-rand = "0.9"
-sysinfo = "0.37"
+rand = "0.10"
+sysinfo = "0.39"
 anyhow = "1.0"
 log = "0.4"
 env_logger = "0.11"
@@ -29,6 +29,6 @@ chrono = { version = "0.4", features = ["serde"] }
 memory-stats = "1.2"
 futures = "0.3"
 
-aws-config = "1.8.12"
-aws-sdk-kms = "1.98.0"
-aws-sdk-dynamodb = "1.103.0"
+aws-config = "1.12.0"
+aws-sdk-kms = "1.123.0"
+aws-sdk-dynamodb = "1.130.0"

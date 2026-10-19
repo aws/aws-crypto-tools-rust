@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <chrono>
 #include <cmath>
 #include <ctime>
 #include <fstream>
@@ -86,7 +87,7 @@ inline std::optional<KeyStoreEnv> load_env() {
 // long TTL keeps the branch key cached for the whole run, so measured latency
 // reflects the SDK crypto path rather than a KMS round trip.
 inline Aws::Esdk::HierarchicalKeyring make_keyring(const KeyStoreEnv& env) {
-    auto client_config = Aws::Esdk::ClientConfig().with_max_retry_attempts(5);
+    auto client_config = Aws::Esdk::AwsSdkClientConfig().with_max_retry_attempts(5);
     if (!env.region.empty()) {
         client_config.with_region(env.region);
     }
@@ -97,9 +98,8 @@ inline Aws::Esdk::HierarchicalKeyring make_keyring(const KeyStoreEnv& env) {
                                      .with_kms_client(kms)
                                      .with_ddb_client(ddb));
     return Aws::Esdk::HierarchicalKeyring(
-        std::move(keystore), env.branch_key_id, /*ttl_seconds=*/600000,
-        Aws::Esdk::HierarchicalKeyringOptions().with_cache(
-            Aws::Esdk::CacheType::Default(100)));
+        std::move(keystore), env.branch_key_id, std::chrono::seconds{600000},
+        Aws::Esdk::HierarchicalKeyringOptions().with_cache(Aws::Esdk::DefaultCmc(100)));
 }
 
 // Resident set size in bytes from /proc/self/statm, or 0 when it cannot be read

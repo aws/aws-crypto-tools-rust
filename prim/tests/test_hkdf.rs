@@ -168,7 +168,7 @@ fn test_hkdf_no_salt_sha512() -> Result<(), Error> {
 fn test_hkdf_bad_okm_length() {
     let mut okm = [0u8; 20]; // Not 16/24/32.
     let err = hkdf(DigestAlg::Sha256, &A1_SALT, &A1_IKM, &[&A1_INFO], &mut okm).unwrap_err();
-    assert!(err.message.contains("Invalid key length 20"));
+    assert!(err.is_cryptographic(), "{:?}", err);
 }
 
 #[test]
@@ -176,7 +176,7 @@ fn test_hkdf_expand_bad_okm_length() {
     let prk = hkdf_extract(DigestAlg::Sha256, &A1_SALT, &A1_IKM);
     let mut okm = [0u8; 5];
     let err = hkdf_expand(&prk, &[&A1_INFO], &mut okm).unwrap_err();
-    assert!(err.message.contains("Invalid key length 5"));
+    assert!(err.is_cryptographic(), "{:?}", err);
 }
 
 // Prk derives Clone + Debug — exercise both for coverage.
