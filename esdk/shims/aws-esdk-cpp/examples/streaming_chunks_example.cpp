@@ -20,6 +20,7 @@
 #include <map>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <vector>
 #include <aws/esdk/EncryptionSDK.h>
 
@@ -63,7 +64,7 @@ int main() {
             {"is not", "secret"},
         };
 
-        Aws::Esdk::EncryptionSDK esdk;
+        Aws::Esdk::Client esdk;
 
         // Encrypt
         {
@@ -82,8 +83,7 @@ int main() {
                 // Feed each chunk.
                 Aws::Esdk::Bytes produced =
                     // write() returns the ciphertext produced so far, possibly empty until a frame fills.
-                    enc.write(reinterpret_cast<const std::uint8_t*>(chunk),
-                              static_cast<std::size_t>(in.gcount()));
+                    enc.write(std::string_view(chunk, static_cast<std::size_t>(in.gcount())));
                 // You can forward the ciphertext produced so far to an output stream
                 // (in contrast to plaintext, which you MUST buffer; see below).
                 out.write(reinterpret_cast<const char*>(produced.data()), produced.size());
@@ -113,8 +113,8 @@ int main() {
             std::vector<std::uint8_t> unverified;
             char chunk[1024];
             while (in.read(chunk, sizeof chunk), in.gcount() > 0) {
-                append(unverified, dec.write(reinterpret_cast<const std::uint8_t*>(chunk),
-                                             static_cast<std::size_t>(in.gcount())));
+                append(unverified,
+                       dec.write(std::string_view(chunk, static_cast<std::size_t>(in.gcount()))));
             }
             if (!in.eof() || in.bad())
                 throw std::runtime_error("failed reading ciphertext file");

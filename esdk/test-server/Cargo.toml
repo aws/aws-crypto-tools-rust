@@ -18,7 +18,7 @@ aws-esdk = { path = ".." }
 aws-crypto-mpl = { path = "../../mpl" }
 
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal"] }
-axum = "0.7"
+axum = "0.8"
 ciborium = "0.2"
 serde = { version = "1", features = ["derive"] }
 serde_bytes = "0.11"

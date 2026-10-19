@@ -8,7 +8,6 @@
 mod fixtures;
 mod test_helpers;
 
-use aws_esdk::*;
 use test_helpers::*;
 
 /// Helper: find the V1 header auth start offset (immediately after header body).
@@ -86,7 +85,8 @@ async fn test_v1_header_auth_structure() {
     //# The value MUST be the authentication tag calculated above.
     let result = decrypt_with_version(&ct, Version::V1).await;
     assert_eq!(
-        result.plaintext, b"v1 header auth structure",
+        result.plaintext(),
+        b"v1 header auth structure",
         "V1 round-trip must succeed"
     );
 }
@@ -139,7 +139,8 @@ async fn test_v2_header_auth_structure() {
     //# The value MUST be the authentication tag calculated above.
     let result = decrypt_ciphertext(&ct).await;
     assert_eq!(
-        result.plaintext, b"v2 header auth structure",
+        result.plaintext(),
+        b"v2 header auth structure",
         "V2 round-trip must succeed"
     );
 }
@@ -157,20 +158,19 @@ async fn test_corrupted_header_auth_tag_fails_decrypt() {
         };
         ct[tag_offset] ^= 0xFF;
 
-        let dec_input = DecryptInput::builder()
-            .ciphertext(&ct)
-            .keyring(keyring.clone())
-            .commitment_policy(commitment_policy_for(version))
-            .build()
-            .unwrap();
-
         //= spec/client-apis/decrypt.md#verify-the-header
         //= type=test
         //= reason=Corrupted auth tag causes AES-GCM verification failure, proving the tag is checked.
         //# If this tag verification fails, this operation MUST immediately halt and fail.
-        let err = decrypt(&dec_input).await.expect_err(&format!(
-            "{version:?}: corrupted header auth tag must fail decryption"
-        ));
+        let err = esdk_with(commitment_policy_for(version))
+            .decrypt()
+            .ciphertext(&ct)
+            .keyring(keyring.clone())
+            .send()
+            .await
+            .expect_err(&format!(
+                "{version:?}: corrupted header auth tag must fail decryption"
+            ));
         assert!(
             err.is_cryptographic(),
             "{version:?}: expected Cryptographic error, got {err:?}"

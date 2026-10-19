@@ -43,11 +43,13 @@ impl EncryptionContext {
     }
 
     /// Check if empty.
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
 
     /// Number of entries.
+    #[must_use]
     pub fn len(&self) -> usize {
         self.0.len()
     }
@@ -78,6 +80,7 @@ impl EncryptionContext {
     }
 
     /// Returns the underlying map reference.
+    #[must_use]
     pub fn as_map(&self) -> &BTreeMap<String, String> {
         &self.0
     }
@@ -257,6 +260,24 @@ impl From<BTreeMap<String, String>> for EncryptionContext {
 impl From<HashMap<String, String>> for EncryptionContext {
     fn from(map: HashMap<String, String>) -> Self {
         Self(map.into_iter().collect())
+    }
+}
+
+impl From<&HashMap<String, String>> for EncryptionContext {
+    fn from(map: &HashMap<String, String>) -> Self {
+        Self(map.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
+    }
+}
+
+impl From<EncryptionContext> for HashMap<String, String> {
+    fn from(ec: EncryptionContext) -> Self {
+        ec.0.into_iter().collect()
+    }
+}
+
+impl From<&EncryptionContext> for HashMap<String, String> {
+    fn from(ec: &EncryptionContext) -> Self {
+        ec.0.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
     }
 }
 
