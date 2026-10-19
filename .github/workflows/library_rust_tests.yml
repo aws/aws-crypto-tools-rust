@@ -49,6 +49,9 @@ jobs:
         with:
           components: clippy, rustfmt
 
+      - name: Install cargo-hack
+        uses: taiki-e/install-action@cargo-hack
+
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v6
         with:
@@ -67,7 +70,18 @@ jobs:
 
       # Match the coverage step's features so clippy lints feature-gated tests.
       - name: Clippy
-        run: cargo clippy --all-targets ${{ inputs.project != 'prim' && '--all-features' || '' }} -- -D warnings
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Clippy every feature combination
+        run: >-
+          cargo hack clippy --lib --feature-powerset --no-dev-deps
+          --exclude-features default
+          --mutually-exclusive-features aws-lc-sys,fips
+          --at-least-one-of aws-lc-sys,fips
+          -- -D warnings
+
+      - name: Clippy with default features plus fips
+        run: cargo clippy --lib --features fips -- -D warnings
 
       - name: Build
         run: cargo build --verbose
