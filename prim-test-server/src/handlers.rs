@@ -30,7 +30,7 @@ fn map_ecdsa_alg(alg: EcdsaAlgorithm) -> EcdsaSignatureAlgorithm {
 }
 
 fn prim_err(e: prim::Error) -> ServerError {
-    ServerError::primitives(e.message)
+    ServerError::primitives(e.message())
 }
 
 // ─── AES ────────────────────────────────────────────────────────────────────

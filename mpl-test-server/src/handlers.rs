@@ -1,24 +1,16 @@
 //! Operation handlers and multi-type object registry.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 
-use aws_crypto_mpl::AesGcm;
-// `DecryptMaterialsRequest` is aliased because `crate::model` defines a
-// same-named wire shape; an unaliased import would shadow the glob-imported
-// model type and bind this module's handler signatures to the MPL type.
-use aws_crypto_mpl::cmm::{
-    Cmm, DecryptMaterialsRequest as MplDecryptMaterialsRequest, DefaultCmm,
-    EncryptionMaterialsRequest,
+use aws_crypto_mpl::cmm::{DefaultCmm, SharedCmm};
+use aws_crypto_mpl::keyring::SharedKeyring;
+use aws_crypto_mpl::types::{
+    AlgorithmSuiteId as MplSuiteId, CommitmentPolicy as MplCommitmentPolicy, DecryptionMaterials,
+    EncryptedDataKey, EncryptionContext, EncryptionMaterials,
+    EsdkAlgorithmSuiteId as MplAlgorithmSuiteId, EsdkCommitmentPolicy,
 };
-use aws_crypto_mpl::keyring::Keyring;
-use aws_crypto_mpl::structures::algorithm_suite::{
-    PlaintextDataKey, SigningKey, SymmetricSigningKey, VerificationKey,
-};
-use aws_crypto_mpl::structures::{
-    AlgorithmSuiteId as MplAlgorithmSuiteId, CommitmentPolicy as MplCommitmentPolicy,
-    DecryptionMaterials, EncryptedDataKey, EncryptionContext, EncryptionMaterials,
-};
+use aws_crypto_mpl::types::{PlaintextDataKey, SigningKey, SymmetricSigningKey, VerificationKey};
 
 use crate::error::ServerError;
 use crate::model::*;
@@ -26,8 +18,8 @@ use crate::model::*;
 /// Shared server state: multi-type registry for keyrings and CMMs.
 #[derive(Default)]
 pub struct AppState {
-    keyrings: Mutex<HashMap<String, Arc<dyn Keyring>>>,
-    cmms: Mutex<HashMap<String, Arc<dyn Cmm>>>,
+    keyrings: Mutex<HashMap<String, SharedKeyring>>,
+    cmms: Mutex<HashMap<String, SharedCmm>>,
 }
 
 impl AppState {
@@ -40,24 +32,24 @@ impl AppState {
         req: CreateRawAesKeyringRequest,
     ) -> Result<CreateRawAesKeyringResponse, ServerError> {
         let alg = match req.wrapping_alg {
-            AesWrappingAlg::Aes128 => AesGcm::Aes128Gcm,
-            AesWrappingAlg::Aes192 => AesGcm::Aes192Gcm,
-            AesWrappingAlg::Aes256 => AesGcm::Aes256Gcm,
+            AesWrappingAlg::Aes128 => aws_crypto_mpl::types::AesWrappingAlg::AlgAes128GcmIv12Tag16,
+            AesWrappingAlg::Aes192 => aws_crypto_mpl::types::AesWrappingAlg::AlgAes192GcmIv12Tag16,
+            AesWrappingAlg::Aes256 => aws_crypto_mpl::types::AesWrappingAlg::AlgAes256GcmIv12Tag16,
         };
 
-        let keyring = aws_crypto_mpl::RawAesKeyring::new(
-            req.key_namespace,
-            req.key_name,
-            req.wrapping_key,
-            alg,
-        )
-        .map_err(|e| ServerError::mpl(e.to_string()))?;
+        let keyring = aws_crypto_mpl::keyring::RawAesKeyring::builder()
+            .key_namespace(req.key_namespace)
+            .key_name(req.key_name)
+            .wrapping_key(req.wrapping_key)
+            .wrapping_alg(alg)
+            .build()
+            .map_err(|e| ServerError::mpl(e.to_string()))?;
 
         let id = uuid::Uuid::new_v4().to_string();
         self.keyrings
             .lock()
             .expect("keyrings mutex")
-            .insert(id.clone(), Arc::new(keyring));
+            .insert(id.clone(), SharedKeyring::new(keyring));
         Ok(CreateRawAesKeyringResponse { keyring_id: id })
     }
 
@@ -72,7 +64,7 @@ impl AppState {
         self.cmms
             .lock()
             .expect("cmms mutex")
-            .insert(id.clone(), Arc::new(cmm));
+            .insert(id.clone(), SharedCmm::new(cmm));
         Ok(CreateDefaultCmmResponse { cmm_id: id })
     }
 
@@ -80,18 +72,14 @@ impl AppState {
         &self,
         req: InitializeEncryptionMaterialsRequest,
     ) -> Result<InitializeEncryptionMaterialsResponse, ServerError> {
-        let materials = EncryptionMaterials::new(
-            map_algorithm_suite_id(req.algorithm_suite_id),
-            Vec::new(),
-            map_encryption_context(&req.encryption_context),
-            map_required_keys(&req.required_encryption_context_keys),
-            None,
-            None,
-            None,
-        )
-        .map_err(|e| ServerError::mpl(e.to_string()))?;
+        let materials = EncryptionMaterials::builder()
+            .algorithm_suite_id(map_algorithm_suite_id(req.algorithm_suite_id))
+            .encryption_context(map_encryption_context(&req.encryption_context))
+            .required_encryption_context_keys(req.required_encryption_context_keys)
+            .build()
+            .map_err(|e| ServerError::mpl(e.to_string()))?;
         Ok(InitializeEncryptionMaterialsResponse {
-            materials: encryption_materials_to_shape(&materials),
+            materials: encryption_materials_to_shape(&materials)?,
         })
     }
 
@@ -99,17 +87,14 @@ impl AppState {
         &self,
         req: InitializeDecryptionMaterialsRequest,
     ) -> Result<InitializeDecryptionMaterialsResponse, ServerError> {
-        let materials = DecryptionMaterials::new(
-            map_algorithm_suite_id(req.algorithm_suite_id),
-            map_encryption_context(&req.encryption_context),
-            map_required_keys(&req.required_encryption_context_keys),
-            None,
-            None,
-            None,
-        )
-        .map_err(|e| ServerError::mpl(e.to_string()))?;
+        let materials = DecryptionMaterials::builder()
+            .algorithm_suite_id(map_algorithm_suite_id(req.algorithm_suite_id))
+            .encryption_context(map_encryption_context(&req.encryption_context))
+            .required_encryption_context_keys(req.required_encryption_context_keys)
+            .build()
+            .map_err(|e| ServerError::mpl(e.to_string()))?;
         Ok(InitializeDecryptionMaterialsResponse {
-            materials: decryption_materials_to_shape(&materials),
+            materials: decryption_materials_to_shape(&materials)?,
         })
     }
 
@@ -118,13 +103,14 @@ impl AppState {
         req: OnEncryptRequest,
     ) -> Result<OnEncryptResponse, ServerError> {
         let keyring = self.get_keyring(&req.keyring_id)?;
-        let materials = shape_to_encryption_materials(req.materials)?;
-        let materials = keyring
-            .on_encrypt(materials)
+        let output = keyring
+            .on_encrypt()
+            .materials(shape_to_encryption_materials(req.materials)?)
+            .send()
             .await
             .map_err(|e| ServerError::mpl(e.to_string()))?;
         Ok(OnEncryptResponse {
-            materials: encryption_materials_to_shape(&materials),
+            materials: encryption_materials_to_shape(output.materials())?,
         })
     }
 
@@ -133,14 +119,15 @@ impl AppState {
         req: OnDecryptRequest,
     ) -> Result<OnDecryptResponse, ServerError> {
         let keyring = self.get_keyring(&req.keyring_id)?;
-        let materials = shape_to_decryption_materials(req.materials)?;
-        let edks = map_edks(req.encrypted_data_keys);
-        let materials = keyring
-            .on_decrypt(materials, &edks)
+        let output = keyring
+            .on_decrypt()
+            .materials(shape_to_decryption_materials(req.materials)?)
+            .encrypted_data_keys(map_edks(req.encrypted_data_keys)?)
+            .send()
             .await
             .map_err(|e| ServerError::mpl(e.to_string()))?;
         Ok(OnDecryptResponse {
-            materials: decryption_materials_to_shape(&materials),
+            materials: decryption_materials_to_shape(output.materials())?,
         })
     }
 
@@ -150,21 +137,16 @@ impl AppState {
     ) -> Result<GetEncryptionMaterialsResponse, ServerError> {
         let cmm = self.get_cmm(&req.cmm_id)?;
 
-        let ec = map_encryption_context(&req.encryption_context);
-        let policy = map_commitment_policy(req.commitment_policy);
-
-        let mut mpl_req = EncryptionMaterialsRequest::new(ec, policy);
-        if let Some(suite) = req.algorithm_suite_id {
-            mpl_req = mpl_req.with_algorithm_suite_id(map_algorithm_suite_id(suite));
-        }
-        if let Some(len) = req.max_plaintext_length {
-            mpl_req = mpl_req.with_max_plaintext_length(len);
-        }
-
-        let materials = cmm
-            .get_encryption_materials(mpl_req)
+        let output = cmm
+            .get_encryption_materials()
+            .encryption_context(map_encryption_context(&req.encryption_context))
+            .commitment_policy(map_commitment_policy(req.commitment_policy))
+            .set_algorithm_suite_id(req.algorithm_suite_id.map(map_algorithm_suite_id))
+            .set_max_plaintext_length(req.max_plaintext_length)
+            .send()
             .await
             .map_err(|e| ServerError::mpl(e.to_string()))?;
+        let materials = output.encryption_materials();
 
         let pdk = materials
             .plaintext_data_key()
@@ -184,7 +166,7 @@ impl AppState {
         });
 
         Ok(GetEncryptionMaterialsResponse {
-            algorithm_suite_id: reverse_map_algorithm_suite_id(materials.algorithm_suite_id()),
+            algorithm_suite_id: reverse_map_algorithm_suite_id(materials.algorithm_suite_id())?,
             encryption_context: ec_out,
             encrypted_data_keys: edks,
             plaintext_data_key: pdk,
@@ -199,21 +181,21 @@ impl AppState {
     ) -> Result<DecryptMaterialsResponse, ServerError> {
         let cmm = self.get_cmm(&req.cmm_id)?;
 
-        let suite = map_algorithm_suite_id(req.algorithm_suite_id);
-        let policy = map_commitment_policy(req.commitment_policy);
-        let ec = map_encryption_context(&req.encryption_context);
-        let edks = map_edks(req.encrypted_data_keys);
-
-        let mut mpl_req = MplDecryptMaterialsRequest::new(suite, policy, edks, ec);
-        if let Some(reproduced) = req.reproduced_encryption_context {
-            mpl_req =
-                mpl_req.with_reproduced_encryption_context(map_encryption_context(&reproduced));
-        }
-
-        let materials = cmm
-            .decrypt_materials(mpl_req)
+        let output = cmm
+            .decrypt_materials()
+            .algorithm_suite_id(map_algorithm_suite_id(req.algorithm_suite_id))
+            .commitment_policy(map_commitment_policy(req.commitment_policy))
+            .encrypted_data_keys(map_edks(req.encrypted_data_keys)?)
+            .encryption_context(map_encryption_context(&req.encryption_context))
+            .set_reproduced_encryption_context(
+                req.reproduced_encryption_context
+                    .as_ref()
+                    .map(map_encryption_context),
+            )
+            .send()
             .await
             .map_err(|e| ServerError::mpl(e.to_string()))?;
+        let materials = output.decryption_materials();
 
         let pdk = materials
             .plaintext_data_key()
@@ -237,7 +219,7 @@ impl AppState {
         })
     }
 
-    fn get_cmm(&self, cmm_id: &str) -> Result<Arc<dyn Cmm>, ServerError> {
+    fn get_cmm(&self, cmm_id: &str) -> Result<SharedCmm, ServerError> {
         if cmm_id.is_empty() {
             return Err(ServerError::generic("cmmId must be non-empty"));
         }
@@ -249,7 +231,7 @@ impl AppState {
             .ok_or_else(|| ServerError::generic(format!("unknown cmmId: {cmm_id}")))
     }
 
-    fn get_keyring(&self, keyring_id: &str) -> Result<Arc<dyn Keyring>, ServerError> {
+    fn get_keyring(&self, keyring_id: &str) -> Result<SharedKeyring, ServerError> {
         if keyring_id.is_empty() {
             return Err(ServerError::generic("keyringId must be non-empty"));
         }
@@ -264,10 +246,15 @@ impl AppState {
 
 // ─── Mapping helpers ────────────────────────────────────────────────────────
 
-fn map_edks(edks: Vec<EncryptedDataKeyShape>) -> Vec<EncryptedDataKey> {
+fn map_edks(edks: Vec<EncryptedDataKeyShape>) -> Result<Vec<EncryptedDataKey>, ServerError> {
     edks.into_iter()
         .map(|edk| {
-            EncryptedDataKey::new(edk.key_provider_id, edk.key_provider_info, edk.ciphertext)
+            EncryptedDataKey::builder()
+                .key_provider_id(edk.key_provider_id)
+                .key_provider_info(edk.key_provider_info)
+                .ciphertext(edk.ciphertext)
+                .build()
+                .map_err(|e| ServerError::mpl(e.to_string()))
         })
         .collect()
 }
@@ -275,21 +262,15 @@ fn map_edks(edks: Vec<EncryptedDataKeyShape>) -> Vec<EncryptedDataKey> {
 fn edks_to_shapes(edks: &[EncryptedDataKey]) -> Vec<EncryptedDataKeyShape> {
     edks.iter()
         .map(|edk| EncryptedDataKeyShape {
-            key_provider_id: edk.key_provider_id.clone(),
-            key_provider_info: edk.key_provider_info.clone(),
-            ciphertext: edk.ciphertext.clone(),
+            key_provider_id: edk.key_provider_id().to_owned(),
+            key_provider_info: edk.key_provider_info().to_vec(),
+            ciphertext: edk.ciphertext().to_vec(),
         })
         .collect()
 }
 
-fn map_required_keys(keys: &[String]) -> BTreeSet<Vec<u8>> {
-    keys.iter().map(|k| k.as_bytes().to_vec()).collect()
-}
-
-fn required_keys_to_wire(keys: &BTreeSet<Vec<u8>>) -> Vec<String> {
-    keys.iter()
-        .map(|k| String::from_utf8_lossy(k).into_owned())
-        .collect()
+fn required_keys_to_wire(keys: &BTreeSet<String>) -> Vec<String> {
+    keys.iter().cloned().collect()
 }
 
 /// Materials a client sends must satisfy the MPL's own invariants; a rejection
@@ -297,39 +278,41 @@ fn required_keys_to_wire(keys: &BTreeSet<Vec<u8>>) -> Vec<String> {
 fn shape_to_encryption_materials(
     shape: EncryptionMaterialsShape,
 ) -> Result<EncryptionMaterials, ServerError> {
-    EncryptionMaterials::new(
-        map_algorithm_suite_id(shape.algorithm_suite_id),
-        map_edks(shape.encrypted_data_keys),
-        map_encryption_context(&shape.encryption_context),
-        map_required_keys(&shape.required_encryption_context_keys),
-        shape.plaintext_data_key.map(PlaintextDataKey::new),
-        shape.signing_key.map(SigningKey::new),
-        shape.symmetric_signing_keys.map(|keys| {
+    EncryptionMaterials::builder()
+        .algorithm_suite_id(map_algorithm_suite_id(shape.algorithm_suite_id))
+        .encrypted_data_keys(map_edks(shape.encrypted_data_keys)?)
+        .encryption_context(map_encryption_context(&shape.encryption_context))
+        .required_encryption_context_keys(shape.required_encryption_context_keys)
+        .set_plaintext_data_key(shape.plaintext_data_key.map(PlaintextDataKey::new))
+        .set_signing_key(shape.signing_key.map(SigningKey::new))
+        .set_symmetric_signing_keys(shape.symmetric_signing_keys.map(|keys| {
             keys.into_iter()
                 .map(|k| SymmetricSigningKey::new(k.into_vec()))
                 .collect()
-        }),
-    )
-    .map_err(|e| ServerError::mpl(e.to_string()))
+        }))
+        .build()
+        .map_err(|e| ServerError::mpl(e.to_string()))
 }
 
 fn shape_to_decryption_materials(
     shape: DecryptionMaterialsShape,
 ) -> Result<DecryptionMaterials, ServerError> {
-    DecryptionMaterials::new(
-        map_algorithm_suite_id(shape.algorithm_suite_id),
-        map_encryption_context(&shape.encryption_context),
-        map_required_keys(&shape.required_encryption_context_keys),
-        shape.plaintext_data_key.map(PlaintextDataKey::new),
-        shape.verification_key.map(VerificationKey::new),
-        shape.symmetric_signing_key.map(SymmetricSigningKey::new),
-    )
-    .map_err(|e| ServerError::mpl(e.to_string()))
+    DecryptionMaterials::builder()
+        .algorithm_suite_id(map_algorithm_suite_id(shape.algorithm_suite_id))
+        .encryption_context(map_encryption_context(&shape.encryption_context))
+        .required_encryption_context_keys(shape.required_encryption_context_keys)
+        .set_plaintext_data_key(shape.plaintext_data_key.map(PlaintextDataKey::new))
+        .set_verification_key(shape.verification_key.map(VerificationKey::new))
+        .set_symmetric_signing_key(shape.symmetric_signing_key.map(SymmetricSigningKey::new))
+        .build()
+        .map_err(|e| ServerError::mpl(e.to_string()))
 }
 
-fn encryption_materials_to_shape(materials: &EncryptionMaterials) -> EncryptionMaterialsShape {
-    EncryptionMaterialsShape {
-        algorithm_suite_id: reverse_map_algorithm_suite_id(materials.algorithm_suite_id()),
+fn encryption_materials_to_shape(
+    materials: &EncryptionMaterials,
+) -> Result<EncryptionMaterialsShape, ServerError> {
+    Ok(EncryptionMaterialsShape {
+        algorithm_suite_id: reverse_map_algorithm_suite_id(materials.algorithm_suite_id())?,
         encryption_context: encryption_context_to_map(materials.encryption_context()),
         encrypted_data_keys: edks_to_shapes(materials.encrypted_data_keys()),
         required_encryption_context_keys: required_keys_to_wire(
@@ -344,12 +327,14 @@ fn encryption_materials_to_shape(materials: &EncryptionMaterials) -> EncryptionM
                 .map(|k| serde_bytes::ByteBuf::from(k.as_bytes().to_vec()))
                 .collect()
         }),
-    }
+    })
 }
 
-fn decryption_materials_to_shape(materials: &DecryptionMaterials) -> DecryptionMaterialsShape {
-    DecryptionMaterialsShape {
-        algorithm_suite_id: reverse_map_algorithm_suite_id(materials.algorithm_suite_id()),
+fn decryption_materials_to_shape(
+    materials: &DecryptionMaterials,
+) -> Result<DecryptionMaterialsShape, ServerError> {
+    Ok(DecryptionMaterialsShape {
+        algorithm_suite_id: reverse_map_algorithm_suite_id(materials.algorithm_suite_id())?,
         encryption_context: encryption_context_to_map(materials.encryption_context()),
         required_encryption_context_keys: required_keys_to_wire(
             materials.required_encryption_context_keys(),
@@ -361,30 +346,25 @@ fn decryption_materials_to_shape(materials: &DecryptionMaterials) -> DecryptionM
         symmetric_signing_key: materials
             .symmetric_signing_key()
             .map(|k| k.as_bytes().to_vec()),
-    }
+    })
 }
 
 fn map_encryption_context(map: &BTreeMap<String, String>) -> EncryptionContext {
     let mut ec = EncryptionContext::new();
     for (k, v) in map {
-        ec.insert(k.as_bytes().to_vec(), v.as_bytes().to_vec());
+        ec.insert(k.as_str(), v.as_str());
     }
     ec
 }
 
 fn encryption_context_to_map(ec: &EncryptionContext) -> BTreeMap<String, String> {
     ec.iter()
-        .map(|(k, v)| {
-            (
-                String::from_utf8_lossy(k).into_owned(),
-                String::from_utf8_lossy(v).into_owned(),
-            )
-        })
+        .map(|(k, v)| (k.to_owned(), v.to_owned()))
         .collect()
 }
 
 fn map_commitment_policy(policy: CommitmentPolicy) -> MplCommitmentPolicy {
-    use aws_crypto_mpl::structures::commitment_policy::Esdk;
+    use EsdkCommitmentPolicy as Esdk;
     match policy {
         CommitmentPolicy::EsdkForbidEncryptAllowDecrypt => {
             MplCommitmentPolicy::Esdk(Esdk::ForbidEncryptAllowDecrypt)
@@ -398,8 +378,8 @@ fn map_commitment_policy(policy: CommitmentPolicy) -> MplCommitmentPolicy {
     }
 }
 
-fn map_algorithm_suite_id(id: AlgorithmSuiteId) -> MplAlgorithmSuiteId {
-    match id {
+fn map_algorithm_suite_id(id: AlgorithmSuiteId) -> MplSuiteId {
+    MplSuiteId::Esdk(match id {
         AlgorithmSuiteId::AlgAes128GcmIv12Tag16NoKdf => {
             MplAlgorithmSuiteId::AlgAes128GcmIv12Tag16NoKdf
         }
@@ -433,11 +413,16 @@ fn map_algorithm_suite_id(id: AlgorithmSuiteId) -> MplAlgorithmSuiteId {
         AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384 => {
             MplAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384
         }
-    }
+    })
 }
 
-fn reverse_map_algorithm_suite_id(id: MplAlgorithmSuiteId) -> AlgorithmSuiteId {
-    match id {
+fn reverse_map_algorithm_suite_id(id: MplSuiteId) -> Result<AlgorithmSuiteId, ServerError> {
+    let MplSuiteId::Esdk(id) = id else {
+        return Err(ServerError::mpl(format!(
+            "unsupported algorithm suite {id:?}"
+        )));
+    };
+    Ok(match id {
         MplAlgorithmSuiteId::AlgAes128GcmIv12Tag16NoKdf => {
             AlgorithmSuiteId::AlgAes128GcmIv12Tag16NoKdf
         }
@@ -471,5 +456,10 @@ fn reverse_map_algorithm_suite_id(id: MplAlgorithmSuiteId) -> AlgorithmSuiteId {
         MplAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384 => {
             AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384
         }
-    }
+        _ => {
+            return Err(ServerError::mpl(format!(
+                "unsupported algorithm suite {id:?}"
+            )));
+        }
+    })
 }

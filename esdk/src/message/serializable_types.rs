@@ -3,40 +3,25 @@
 
 //! Type aliases and helper functions for message serialization.
 
-use crate::types::EncryptionContext;
-use aws_mpl_legacy::EncryptedDataKey;
-use aws_mpl_legacy::suites::AlgorithmSuite;
-
-/// Unordered encryption context from the public API.
-pub(crate) type ESDKEncryptionContext = EncryptionContext;
-pub(crate) type ESDKEncryptionContextPair = (String, String);
-/// Sorted-by-key encryption context used for on-wire serialization.
-pub(crate) type ESDKCanonicalEncryptionContext = Vec<ESDKEncryptionContextPair>;
+use crate::shapes::EncryptionContext;
+use aws_crypto_mpl::types::AlgorithmSuite;
+use aws_crypto_mpl::types::EncryptedDataKey;
 
 /// Max total key-value-pairs body length: the outer `UInt16` length field (2 bytes)
 /// plus the count `UInt16` (2 bytes) must together still fit in a `UInt16`, leaving
 /// `u16::MAX` - 2 for the payload.
 const ESDK_CANONICAL_ENCRYPTION_CONTEXT_MAX_LENGTH: u64 = u16::MAX as u64 - 2;
 
-pub(crate) const fn get_iv_length(a: &AlgorithmSuite) -> u8 {
-    match a.encrypt {
-        aws_mpl_legacy::suites::Encrypt::AesGcm(_e) => 12,
-        _ => 0,
-    }
+pub(crate) const fn get_iv_length(a: &AlgorithmSuite) -> usize {
+    a.iv_length()
 }
 
-pub(crate) const fn get_tag_length(a: &AlgorithmSuite) -> u8 {
-    match a.encrypt {
-        aws_mpl_legacy::suites::Encrypt::AesGcm(_e) => 16,
-        _ => 0,
-    }
+pub(crate) const fn get_tag_length(a: &AlgorithmSuite) -> usize {
+    a.authentication_tag_length()
 }
 
-pub(crate) const fn get_encrypt_key_length(a: &AlgorithmSuite) -> u8 {
-    match a.encrypt {
-        aws_mpl_legacy::suites::Encrypt::AesGcm(e) => e.key_len(),
-        _ => 0,
-    }
+pub(crate) const fn get_encrypt_key_length(a: &AlgorithmSuite) -> usize {
+    a.encryption_key_length()
 }
 
 // Length properties of the Encryption Context.
@@ -57,29 +42,12 @@ pub(crate) const fn get_encrypt_key_length(a: &AlgorithmSuite) -> u8 {
 /// format, the AAD's maximum allowed length is `2^16 - 1` bytes, so a legal
 /// encryption context never produces a sum that overflows even a 16-bit
 /// accumulator — the `usize` sum and `as u64` cast are safe by construction.
-pub(crate) fn length(encryption_context: &ESDKEncryptionContext) -> u64 {
+pub(crate) fn length(encryption_context: &EncryptionContext) -> u64 {
     let mut length: usize = 0;
-    for (key, value) in encryption_context {
+    for (key, value) in encryption_context.iter() {
         length += 2 + key.len() + 2 + value.len();
     }
     length as u64
-}
-
-/// Sort by key to produce the canonical on-wire ordering.
-pub(crate) fn to_canonical_pairs(
-    encryption_context: ESDKEncryptionContext,
-) -> ESDKCanonicalEncryptionContext {
-    let mut pairs: Vec<(String, String)> = encryption_context.into_iter().collect();
-    pairs.sort_by(|a, b| a.0.cmp(&b.0));
-    pairs
-}
-
-pub(crate) fn from_canonical_pairs(pairs: ESDKCanonicalEncryptionContext) -> ESDKEncryptionContext {
-    let mut map: ESDKEncryptionContext = ESDKEncryptionContext::new();
-    for (key, value) in pairs {
-        map.insert(key, value);
-    }
-    map
 }
 
 /// True iff `ec` fits the on-wire encoding: pair count, each key/value length,
@@ -91,7 +59,7 @@ pub(crate) fn is_esdk_encryption_context(ec: &EncryptionContext) -> bool {
     if length(ec) > ESDK_CANONICAL_ENCRYPTION_CONTEXT_MAX_LENGTH {
         return false;
     }
-    for (key, value) in ec {
+    for (key, value) in ec.iter() {
         if key.len() > usize::from(u16::MAX) {
             return false;
         }
@@ -104,9 +72,9 @@ pub(crate) fn is_esdk_encryption_context(ec: &EncryptionContext) -> bool {
 
 /// True iff every EDK field length fits in a `UInt16`.
 pub(crate) fn is_esdk_encrypted_data_key(edk: &EncryptedDataKey) -> bool {
-    u16::try_from(edk.key_provider_id.len()).is_ok()
-        && u16::try_from(edk.key_provider_info.len()).is_ok()
-        && u16::try_from(edk.ciphertext.len()).is_ok()
+    u16::try_from(edk.key_provider_id().len()).is_ok()
+        && u16::try_from(edk.key_provider_info().len()).is_ok()
+        && u16::try_from(edk.ciphertext().len()).is_ok()
 }
 
 /// True iff the EDK count and each entry fit in `UInt16`.

@@ -65,13 +65,13 @@ int main() {
     RawAesKeyring keyring("example-ns", "example-key",
                           std::vector<std::uint8_t>(32, 0x42),
                           AesWrappingAlgorithm::AlgAes256GcmIv12Tag16);
-    EncryptionSDK sdk;
+    Aws::Esdk::Client esdk;
 
     auto payload = make_payload();
     const std::uint8_t* data = payload.get();
 
     // encrypt borrows your buffer; fwrite reads the result in place.
-    auto encrypted = sdk.encrypt(data, PAYLOAD_BYTES, keyring);
+    auto encrypted = esdk.encrypt(data, PAYLOAD_BYTES, keyring);
     write_file(CIPHERTEXT_FILE, encrypted.ciphertext.data(),
                 encrypted.ciphertext.size());
 
@@ -88,7 +88,7 @@ int main() {
     }
     // Then, decrypt ciphertext in place
     auto decrypted =
-        sdk.decrypt(static_cast<const std::uint8_t*>(mapped), file_size, keyring);
+        esdk.decrypt(static_cast<const std::uint8_t*>(mapped), file_size, keyring);
     munmap(mapped, file_size);
 
     // Consume the plaintext directly through the returned Aws::Esdk::Bytes.

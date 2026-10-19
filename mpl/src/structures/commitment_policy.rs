@@ -3,7 +3,7 @@
 
 //! Commitment policy enum and per-policy algorithm-suite predicates.
 
-use super::algorithm_suite::AlgorithmSuiteId;
+use super::algorithm_suite::{AlgorithmSuiteId, EsdkAlgorithmSuiteId};
 
 // Only the ESDK format is implemented. The DBE.REQUIRE_ENCRYPT_REQUIRE_DECRYPT
 // commitment policy is excluded by the same rationale that excludes DBE/S3EC
@@ -13,17 +13,19 @@ use super::algorithm_suite::AlgorithmSuiteId;
 /// tags a format and carries that format's Format Commitment Policy ENUM,
 /// matching the spec's `Format.FormatENUM` notation. For example,
 /// `ESDK.FORBID_ENCRYPT_ALLOW_DECRYPT` becomes
-/// `CommitmentPolicy::Esdk(Esdk::ForbidEncryptAllowDecrypt)`.
+/// `CommitmentPolicy::Esdk(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt)`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum CommitmentPolicy {
     /// ESDK format commitment policies.
-    Esdk(Esdk),
+    Esdk(EsdkCommitmentPolicy),
 }
 
 /// ESDK Format Commitment Policy ENUM. Its variants correspond 1:1 to the
 /// rows of the ESDK Commitment Policy ENUM table in `commitment-policy.md`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Esdk {
+#[non_exhaustive]
+pub enum EsdkCommitmentPolicy {
     /// `ESDK.FORBID_ENCRYPT_ALLOW_DECRYPT` — encrypt with non-committing suites
     /// only; decrypt any ESDK suite.
     ForbidEncryptAllowDecrypt,
@@ -39,36 +41,45 @@ impl CommitmentPolicy {
     /// Returns the algorithm suite that MUST be used for encryption when the
     /// caller does not specify one. Defined per-variant by `commitment-policy.md`.
     pub const fn default_algorithm_suite_id(self) -> AlgorithmSuiteId {
-        match self {
-            Self::Esdk(Esdk::ForbidEncryptAllowDecrypt) => {
-                AlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf
+        AlgorithmSuiteId::Esdk(match self {
+            Self::Esdk(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt) => {
+                EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf
             }
-            Self::Esdk(Esdk::RequireEncryptAllowDecrypt) => {
-                AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384
+            Self::Esdk(EsdkCommitmentPolicy::RequireEncryptAllowDecrypt) => {
+                EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384
             }
-            Self::Esdk(Esdk::RequireEncryptRequireDecrypt) => {
-                AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384
+            Self::Esdk(EsdkCommitmentPolicy::RequireEncryptRequireDecrypt) => {
+                EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384
             }
-        }
+        })
     }
 
     /// Returns true when this commitment policy permits the given algorithm
     /// suite to be used for encryption (the Get Encryption Materials path).
     pub const fn allows_for_encrypt(self, id: AlgorithmSuiteId) -> bool {
-        match self {
-            Self::Esdk(Esdk::ForbidEncryptAllowDecrypt) => !id.specification().key_commitment(),
-            Self::Esdk(Esdk::RequireEncryptAllowDecrypt) => id.specification().key_commitment(),
-            Self::Esdk(Esdk::RequireEncryptRequireDecrypt) => id.specification().key_commitment(),
+        match (self, id) {
+            (Self::Esdk(policy), AlgorithmSuiteId::Esdk(id)) => {
+                let committing = id.specification().key_commitment();
+                match policy {
+                    EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt => !committing,
+                    EsdkCommitmentPolicy::RequireEncryptAllowDecrypt => committing,
+                    EsdkCommitmentPolicy::RequireEncryptRequireDecrypt => committing,
+                }
+            }
         }
     }
 
     /// Returns true when this commitment policy permits the given algorithm
     /// suite to be used for decryption (the Decrypt Materials path).
     pub const fn allows_for_decrypt(self, id: AlgorithmSuiteId) -> bool {
-        match self {
-            Self::Esdk(Esdk::ForbidEncryptAllowDecrypt) => true,
-            Self::Esdk(Esdk::RequireEncryptAllowDecrypt) => true,
-            Self::Esdk(Esdk::RequireEncryptRequireDecrypt) => id.specification().key_commitment(),
+        match (self, id) {
+            (Self::Esdk(policy), AlgorithmSuiteId::Esdk(id)) => match policy {
+                EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt => true,
+                EsdkCommitmentPolicy::RequireEncryptAllowDecrypt => true,
+                EsdkCommitmentPolicy::RequireEncryptRequireDecrypt => {
+                    id.specification().key_commitment()
+                }
+            },
         }
     }
 }
