@@ -1625,6 +1625,11 @@ fn list_keys(client: &aws_sdk_kms::Client) {
     TOKIO_RUNTIME
         .block_on(client.list_keys().send())
         .expect("list_keys against the local server");
+    // hyper returns the connection to the pool from a background task; give it time to
+    // land so the next request can reuse it.
+    TOKIO_RUNTIME.block_on(async {
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    });
 }
 
 #[test]
