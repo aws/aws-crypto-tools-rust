@@ -154,6 +154,7 @@ test-ci-cpp: build-tests
 	$(MAKE) run-cpp
 
 duvet:
+	../../../scripts/resolve-spec.sh
 	rm -rf .duvet/reports .duvet/requirements
 	duvet report
 

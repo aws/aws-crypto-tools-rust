@@ -15,7 +15,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     permissions:
       id-token: write
@@ -37,6 +37,12 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: 'stable'
+
+      # aws-lc-sys / aws-lc-fips-sys build AWS-LC with NASM (Netwide Assembler) on Windows.
+      # NASM is not on the Windows runner PATH by default but Unix runners already provide an assembler.
+      - name: Install NASM (Windows)
+        if: runner.os == 'Windows'
+        uses: ilammy/setup-nasm@v1
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
