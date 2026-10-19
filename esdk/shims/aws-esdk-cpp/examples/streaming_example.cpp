@@ -54,7 +54,7 @@ int main() {
             {"is not", "secret"},
         };
 
-        Aws::Esdk::EncryptionSDK esdk;
+        Aws::Esdk::Client esdk;
 
         // Encrypt the plaintext file straight into the ciphertext file.
         {

@@ -6,9 +6,11 @@ use super::{BodyAADContent, body_aad, get_alg_suite, iv_seq};
 use crate::error::{Kind, err, val_err};
 use crate::message::header::{ENDFRAME_SEQUENCE_NUMBER, HeaderInfo, START_SEQUENCE_NUMBER};
 use crate::message::serializable_types::{get_iv_length, get_tag_length};
-use crate::message::serialize_functions::{read_opt_u8, read_up_to_peek, write_bytes, write_u32};
+use crate::message::serialize_functions::{
+    read_opt_u8, read_up_to_peek, write_bytes, write_to_sink, write_u32,
+};
 use crate::message::{DigestWriter, Error, ser_err};
-use crate::types::{SafeRead, SafeWrite};
+use crate::shapes::{Sink, Source};
 use aws_mpl_primitives::{AesGcm, aes_encrypt};
 
 /// Maximum plaintext bytes per message: 2^36 - 32 (AES-GCM safety bound).
@@ -26,12 +28,12 @@ pub(crate) struct ConstructFrameInput<'a> {
 }
 
 /// Construct and serialize a single frame (regular or final).
-pub(crate) fn construct_frame(
+pub(crate) async fn construct_frame(
     input: &ConstructFrameInput<'_>,
     iv: &mut [u8],
     aad: &mut Vec<u8>,
     frame_buf: &mut Vec<u8>,
-    ciphertext: &mut dyn SafeWrite,
+    ciphertext: &mut dyn Sink,
     sig_digest: &mut DigestWriter,
 ) -> Result<(), Error> {
     frame_buf.clear();
@@ -263,7 +265,7 @@ pub(crate) fn construct_frame(
     //# If the Encrypt operation is streaming the encrypted message and
     //# the entire frame has been serialized,
     //# the serialized frame MUST be released.
-    write_bytes(ciphertext, frame_buf)?;
+    write_to_sink(ciphertext, frame_buf).await?;
 
     //= spec/client-apis/encrypt.md#construct-a-frame
     //= type=implication
@@ -277,11 +279,11 @@ pub(crate) fn construct_frame(
 }
 
 /// Encrypt plaintext and serialize the message body (framed) to the output stream.
-pub(crate) fn encrypt_and_serialize_body(
-    plaintext: &mut dyn SafeRead,
+pub(crate) async fn encrypt_and_serialize_body(
+    plaintext: &mut dyn Source,
     header: &HeaderInfo,
     key: &[u8],
-    ciphertext: &mut dyn SafeWrite,
+    ciphertext: &mut dyn Sink,
     sig_digest: &mut DigestWriter,
     max_plaintext_length: Option<usize>,
 ) -> Result<(), Error> {
@@ -305,6 +307,7 @@ pub(crate) fn encrypt_and_serialize_body(
     //= reason=START_SEQUENCE_NUMBER is defined as 1
     //# If this is the first frame sequentially, the sequence number value MUST be 1.
     let mut sequence_number = START_SEQUENCE_NUMBER;
+    let mut yielder = super::FrameYielder::new(frame_length);
     let alg_suite = get_alg_suite(&header.suite)?;
 
     let mut iv = vec![0; iv_len];
@@ -318,7 +321,8 @@ pub(crate) fn encrypt_and_serialize_body(
     //# this operation MUST process as much of the consumable bytes as possible
     //# by [constructing regular frames](#construct-a-frame).
     loop {
-        in_size = read_up_to_peek(plaintext, &mut plaintext_frame, next_char)?;
+        yielder.next_frame().await;
+        in_size = read_up_to_peek(plaintext, &mut plaintext_frame, next_char).await?;
 
         //= spec/client-apis/encrypt.md#construct-the-body
         //# - If there are not enough input consumable plaintext bytes to create a new regular frame,
@@ -331,7 +335,7 @@ pub(crate) fn encrypt_and_serialize_body(
         if in_size != frame_length {
             break;
         }
-        next_char = read_opt_u8(plaintext)?;
+        next_char = read_opt_u8(plaintext).await?;
 
         //= spec/client-apis/encrypt.md#construct-the-body
         //# - If there are exactly enough consumable plaintext bytes to create one regular frame,
@@ -413,7 +417,8 @@ pub(crate) fn encrypt_and_serialize_body(
             &mut frame_buf,
             ciphertext,
             sig_digest,
-        )?;
+        )
+        .await?;
 
         //= spec/data-format/message-body.md#regular-frame-sequence-number
         //# Subsequent frames MUST be in order and MUST contain an increment of 1 from the previous frame.
@@ -484,7 +489,8 @@ pub(crate) fn encrypt_and_serialize_body(
         &mut frame_buf,
         ciphertext,
         sig_digest,
-    )?;
+    )
+    .await?;
 
     Ok(())
 }

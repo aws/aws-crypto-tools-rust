@@ -22,31 +22,28 @@ async fn test_encryption_context_on_decrypt() {
 
     let encryption_context = small_encryption_context(SmallEncryptionContextVariation::AB);
 
-    let encrypt_output = encrypt(
-        &EncryptInput::builder()
-            .plaintext(asdf)
-            .encryption_context(encryption_context.clone())
-            .keyring(raw_aes_keyring.clone())
-            .build()
-            .unwrap(),
-    )
-    .await
-    .unwrap();
+    let esdk = Client::default();
+    let encrypt_output = esdk
+        .encrypt()
+        .plaintext(asdf)
+        .encryption_context(encryption_context.clone())
+        .keyring(raw_aes_keyring.clone())
+        .send()
+        .await
+        .unwrap();
 
-    let esdk_ciphertext = encrypt_output.ciphertext;
+    let esdk_ciphertext = encrypt_output.ciphertext();
 
-    let decrypt_output = decrypt(
-        &DecryptInput::builder()
-            .ciphertext(&esdk_ciphertext)
-            .encryption_context(encryption_context)
-            .keyring(raw_aes_keyring)
-            .build()
-            .unwrap(),
-    )
-    .await
-    .unwrap();
+    let decrypt_output = esdk
+        .decrypt()
+        .ciphertext(esdk_ciphertext)
+        .encryption_context(encryption_context)
+        .keyring(raw_aes_keyring)
+        .send()
+        .await
+        .unwrap();
 
-    assert_eq!(decrypt_output.plaintext, asdf);
+    assert_eq!(decrypt_output.plaintext(), asdf);
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -59,28 +56,26 @@ async fn test_mismatched_encryption_context_on_decrypt() {
     let bad_encryption_context =
         small_mismatched_encryption_context(SmallEncryptionContextVariation::A);
 
-    let encrypt_output = encrypt(
-        &EncryptInput::builder()
-            .plaintext(asdf)
-            .encryption_context(encryption_context.clone())
-            .keyring(raw_aes_keyring.clone())
-            .build()
-            .unwrap(),
-    )
-    .await
-    .unwrap();
+    let esdk = Client::default();
+    let encrypt_output = esdk
+        .encrypt()
+        .plaintext(asdf)
+        .encryption_context(encryption_context.clone())
+        .keyring(raw_aes_keyring.clone())
+        .send()
+        .await
+        .unwrap();
 
-    let esdk_ciphertext = encrypt_output.ciphertext;
+    let esdk_ciphertext = encrypt_output.ciphertext();
 
-    let decrypt_builder = DecryptInput::builder()
-        .ciphertext(&esdk_ciphertext)
+    let decrypt_builder = esdk
+        .decrypt()
+        .ciphertext(esdk_ciphertext)
         .keyring(raw_aes_keyring);
-    let decrypt_input = decrypt_builder
+    let err = decrypt_builder
         .clone()
         .encryption_context(bad_encryption_context)
-        .build()
-        .unwrap();
-    let err = decrypt(&decrypt_input)
+        .send()
         .await
         .expect_err("decrypt must fail when reproduced encryption context has mismatched values");
 
@@ -100,16 +95,15 @@ async fn test_mismatched_encryption_context_on_decrypt() {
     //# - Reproduced Encryption Context: This MUST be the [input](#input) encryption context.
 
     // Test that if we supply the right ec we will succeed.
-    let decrypt_input = decrypt_builder
+    let _ = decrypt_builder
         .clone()
         .encryption_context(encryption_context)
-        .build()
+        .send()
+        .await
         .unwrap();
-    let _ = decrypt(&decrypt_input).await.unwrap();
 
     //= spec/client-apis/decrypt.md#input
     //= type=test
     //# - Decrypt operation input MUST accept an optional [Encryption Context](#encryption-context) argument.
-    let decrypt_input = decrypt_builder.build().unwrap();
-    let _ = decrypt(&decrypt_input).await.unwrap();
+    let _ = decrypt_builder.send().await.unwrap();
 }
