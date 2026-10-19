@@ -1,9 +1,9 @@
-# Reusable workflow that runs fmt, clippy, build, and unit tests for TestServer
-# crates (the language servers this repo contributes to the cross-language
-# TestServer). Callers pass a JSON array of {name, server, prebuild, os}
-# objects via the `builds` input: `server` is the crate directory, `prebuild`
-# a crate to `cargo build` first for a server that links its build output (or
-# ""), and `os` the runner.
+# Reusable workflow: fmt, clippy, build, and unit tests for this repo's TestServer crates.
+# `builds` is a JSON array of {name, server, prebuild, os}:
+#   name      job name
+#   server    crate directory
+#   prebuild  crate to `cargo build` first, for a server that links its output ("" for none)
+#   os        runner
 name: TestServer Build
 
 on:

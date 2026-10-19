@@ -1,7 +1,4 @@
-# Reusable workflow that builds and tests projects (subdirectories) in the
-# monorepo. Callers pass a JSON array of project directory names via the
-# `projects` input (e.g. '["mpl","esdk"]'). Each project's cargo commands run
-# scoped to its subdirectory.
+# Reusable workflow: build and test each project in `projects`, a JSON array of directories (e.g. ["mpl","esdk"]).
 name: Library Rust Tests
 
 on:

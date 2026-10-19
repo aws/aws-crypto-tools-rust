@@ -1,6 +1,4 @@
-# Reusable workflow that builds and tests the aws-esdk-cpp C++ shim: its Rust
-# unit and integration tests, plus (on Linux) the C++ facade, example, and
-# integration and local-correctness tests.
+# Reusable workflow: build and test the aws-esdk-cpp C++ shim.
 name: Library C++ Shim Tests
 
 on:

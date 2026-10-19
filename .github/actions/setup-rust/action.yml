@@ -1,7 +1,7 @@
 name: Set up Rust
 description: >
-  Install Go (aws-lc-sys and aws-lc-fips-sys build their native code with it),
-  the stable Rust toolchain, and the cargo build cache.
+  Install Go, the stable Rust toolchain, and the cargo build cache.
+  aws-lc-sys and aws-lc-fips-sys need Go to build their native code.
 
 inputs:
   components:
@@ -19,8 +19,7 @@ inputs:
 runs:
   using: composite
   steps:
-    # GHA runners run out of disk holding the statically linked aws-lc and AWS
-    # SDKs. Reclaim the large preinstalled toolchains these builds do not use.
+    # The statically linked aws-lc and AWS SDKs fill the runner's disk without this.
     - name: Free disk space
       if: runner.os == 'Linux' && inputs.free-disk-space == 'true'
       shell: bash

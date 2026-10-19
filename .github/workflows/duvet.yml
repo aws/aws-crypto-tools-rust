@@ -1,9 +1,8 @@
-# Reusable workflow that runs duvet for projects (subdirectories) and uploads
-# each HTML compliance report as a build artifact. Callers pass a JSON array of
-# {name, project, artifact} objects via the `projects` input; `project` is the
-# directory (e.g. "esdk/shims/aws-esdk-cpp") and `artifact` the artifact name,
-# which cannot contain slashes. Each project must have a `.duvet/config.toml`
-# and a `make duvet` target.
+# Reusable workflow: run duvet for each project and upload its HTML compliance report.
+# `projects` is a JSON array of {name, project, artifact}:
+#   name      job name
+#   project   directory, e.g. esdk/shims/aws-esdk-cpp; needs a .duvet/config.toml and a `make duvet` target
+#   artifact  artifact name; GitHub rejects slashes, so it can't be the directory
 name: Duvet Report
 
 on:
