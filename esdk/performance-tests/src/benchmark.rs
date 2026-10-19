@@ -104,7 +104,6 @@ impl EsdkBenchmark {
     }
 
     async fn hierarchical_keyring() -> Result<HierarchicalKeyring> {
-
         let sdk_config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
 
         let key_store = KeyStoreClient::builder()
