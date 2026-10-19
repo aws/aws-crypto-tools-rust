@@ -1,0 +1,12 @@
+{
+  "supportedFeatures": [
+    "aes-gcm",
+    "hkdf",
+    "kbkdf-ctr-hmac",
+    "digest",
+    "hmac",
+    "ecdsa",
+    "random"
+  ],
+  "unsupportedFeatures": []
+}

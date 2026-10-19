@@ -461,6 +461,7 @@ enum class AesWrappingAlgorithm : std::uint8_t {
 // Deliberately left incomplete here so no consumer can construct, copy, or inspect them.
 namespace detail {
 struct ClientConfigImpl;
+struct HttpClientImpl;
 struct EncryptStreamImpl;
 struct DecryptStreamImpl;
 struct KmsClientImpl;
@@ -468,8 +469,8 @@ struct DdbClientImpl;
 struct KeyStoreImpl;
 struct KeyringImpl;
 struct CryptographicMaterialsCacheImpl;
-struct CacheTypeLowerer;
 struct BytesFactory;
+struct CredentialsAccess;
 
 // Every duration parameter accepts any integer std::chrono::duration.
 template <class Rep, class Period>
@@ -481,42 +482,98 @@ std::chrono::nanoseconds to_nanoseconds(std::chrono::duration<Rep, Period> d) {
 }
 }  // namespace detail
 
+/// Static AWS credentials, such as temporary credentials issued for a single request.
+/// The library never puts the secret access key or session token in an exception message.
+class Credentials {
+    std::string access_key_id_;
+    std::string secret_access_key_;
+    std::optional<std::string> session_token_;
+    std::optional<std::chrono::system_clock::time_point> expiration_;
+    friend struct detail::CredentialsAccess;
+
+public:
+    /// A client built with an empty access key id or secret access key throws ValidationException.
+    Credentials(std::string access_key_id, std::string secret_access_key)
+        : access_key_id_(std::move(access_key_id)),
+          secret_access_key_(std::move(secret_access_key)) {}
+    /// The session token that temporary credentials require.
+    Credentials& with_session_token(std::string token) { session_token_ = std::move(token); return *this; }
+    /// When the credentials expire.
+    Credentials& with_expiration(std::chrono::system_clock::time_point t) { expiration_ = t; return *this; }
+};
+
+/// An HTTP client and its connection pool.
+/// Pass one to several AwsSdkClientConfigs to make their service clients share connections.
+class HttpClient {
+    std::shared_ptr<detail::HttpClientImpl> impl_;
+    friend class AwsSdkClientConfig;
+
+public:
+    HttpClient();
+};
+
 /// AWS service-client configuration for AWS SDK clients.
 /// A field left unset defers to the ESDK Rust's default configuration resolution.
-/// One ClientConfig may configure multiple clients.
-class ClientConfig {
+/// One AwsSdkClientConfig may configure multiple clients.
+class AwsSdkClientConfig {
     std::shared_ptr<detail::ClientConfigImpl> impl_;
     friend class KmsClient;
     friend class DdbClient;
 
 public:
-    ClientConfig();
+    AwsSdkClientConfig();
     /// Maximum request attempts (1 = no retries).
-    ClientConfig& with_max_retry_attempts(std::uint32_t n);
+    AwsSdkClientConfig& with_max_retry_attempts(std::uint32_t n);
     /// Selects adaptive retry mode instead of the standard one.
-    ClientConfig& with_adaptive_retry(bool a);
+    AwsSdkClientConfig& with_adaptive_retry(bool a);
     /// AWS region for the client (ex. "us-west-2").
-    ClientConfig& with_region(const std::string& r);
+    AwsSdkClientConfig& with_region(const std::string& r);
+    /// Credentials the client signs every request with, in place of the default credential chain.
+    /// Throws ValidationException if the expiration is before the Unix epoch.
+    AwsSdkClientConfig& with_credentials(const Credentials& credentials);
+    /// HTTP client the service client sends requests through.
+    /// Unset gives each service client its own connection pool.
+    AwsSdkClientConfig& with_http_client(const HttpClient& http_client);
 };
 
 /// KMS Client.
+/// Each client has its own connection pool unless its AwsSdkClientConfig sets an HttpClient.
+/// Clients without explicit credentials share one default credential chain.
 class KmsClient {
     std::shared_ptr<detail::KmsClientImpl> impl_;
     friend class KeyStore;
+    explicit KmsClient(std::shared_ptr<detail::KmsClientImpl> impl) : impl_(std::move(impl)) {}
 
 public:
     /// Creates a KMS client.
-    explicit KmsClient(const ClientConfig& cfg = {});
+    explicit KmsClient(const AwsSdkClientConfig& cfg = {});
+    /// Returns a copy of this client that signs requests with `credentials`.
+    /// The copy keeps this client's configuration and connection pool, so it is cheap to make per request.
+    /// This client is unchanged.
+    KmsClient with_credentials(const Credentials& credentials) const;
+    /// Returns a copy of this client that adds `headers` (name, value) to every request.
+    /// The headers are signed with the request.
+    /// The copy keeps this client's configuration and connection pool, so it is cheap to make per request.
+    /// This client is unchanged.
+    /// Throws ValidationException if `headers` is empty, or a name or value is empty, invalid, or repeated.
+    KmsClient with_headers(const std::vector<std::pair<std::string, std::string>>& headers) const;
 };
 
 /// DynamoDB client.
+/// Each client has its own connection pool unless its AwsSdkClientConfig sets an HttpClient.
+/// Clients without explicit credentials share one default credential chain.
 class DdbClient {
     std::shared_ptr<detail::DdbClientImpl> impl_;
     friend class KeyStore;
+    explicit DdbClient(std::shared_ptr<detail::DdbClientImpl> impl) : impl_(std::move(impl)) {}
 
 public:
     /// Creates a DynamoDB client.
-    explicit DdbClient(const ClientConfig& cfg = {});
+    explicit DdbClient(const AwsSdkClientConfig& cfg = {});
+    /// Returns a copy of this client that signs requests with `credentials`.
+    /// The copy keeps this client's configuration and connection pool, so it is cheap to make per request.
+    /// This client is unchanged.
+    DdbClient with_credentials(const Credentials& credentials) const;
 };
 
 /// Optional Key Store parameters.
@@ -571,7 +628,7 @@ public:
 ///  - Handling its own thread safety
 class Keyring {
     std::shared_ptr<detail::KeyringImpl> impl_;
-    friend class EncryptionSDK;
+    friend class Client;
 
 protected:
     explicit Keyring(std::shared_ptr<detail::KeyringImpl> impl) : impl_(std::move(impl)) {}
@@ -590,109 +647,104 @@ public:
     static Keyring adopt(void* raw_handle);
 };
 
-class CacheType;
-
-/// A constructed cryptographic materials cache.
-/// Copies share the underlying cache.
+/// Base class of the cryptographic materials caches below.
+/// A copy refers to the same cache, so keyrings given copies of one cache share its entries.
 class CryptographicMaterialsCache {
     std::shared_ptr<detail::CryptographicMaterialsCacheImpl> impl_;
-    friend class CacheType;
     friend class HierarchicalKeyring;
+
+protected:
     explicit CryptographicMaterialsCache(
         std::shared_ptr<detail::CryptographicMaterialsCacheImpl> impl)
         : impl_(std::move(impl)) {}
-
-public:
-    /// Constructs the cache described by `cache`.
-    /// \param cache Which type of local cache to use.
-    explicit CryptographicMaterialsCache(const CacheType& cache);
 };
 
-// TODO: expose remaining MPL cache kinds (No, SingleThreaded, MultiThreaded)
-/// Selects a kind of cryptographic materials cache, carrying that kind's own parameters.
-class CacheType {
+/// Optional StormTrackingCmc parameters.
+/// A field left unset keeps the ESDK Rust's default.
+class StormTrackingCmcOptions {
+    std::optional<std::uint32_t> entry_capacity_;
+    std::optional<std::uint32_t> entry_pruning_tail_size_;
+    std::optional<std::chrono::nanoseconds> grace_period_;
+    std::optional<std::chrono::nanoseconds> grace_interval_;
+    std::optional<std::uint32_t> fan_out_;
+    std::optional<std::chrono::nanoseconds> inflight_ttl_;
+    std::optional<std::chrono::nanoseconds> sleep_;
+    friend class StormTrackingCmc;
+
 public:
-    /// The best choice for most situations. Probably a StormTrackingCache.
-    /// \param entry_capacity Maximum number of entries cached.
-    static CacheType Default(std::uint32_t entry_capacity);
-    /// A cache safe for multi-threaded use that also limits redundant and
-    /// overly parallel backend calls.
-    /// For a cache with sensible defaults, use Default instead.
-    /// \param entry_capacity Maximum number of entries cached.
-    /// \param entry_pruning_tail_size Number of entries to prune at a time.
-    /// \param grace_period Time before expiration to begin refreshing.
-    /// \param grace_interval Time between refresh attempts.
-    /// \param fan_out Maximum number of simultaneous refresh attempts.
-    /// \param inflight_ttl Time until a refresh attempt is forgotten.
-    /// \param sleep Time a thread sleeps when fan_out is exceeded.
-    template <class GraceRep, class GracePeriod, class IntervalRep, class IntervalPeriod,
-              class InflightRep, class InflightPeriod, class SleepRep, class SleepPeriod>
-    static CacheType StormTracking(
-        std::uint32_t entry_capacity,
-        std::uint32_t entry_pruning_tail_size,
-        std::chrono::duration<GraceRep, GracePeriod> grace_period,
-        std::chrono::duration<IntervalRep, IntervalPeriod> grace_interval,
-        std::uint32_t fan_out,
-        std::chrono::duration<InflightRep, InflightPeriod> inflight_ttl,
-        std::chrono::duration<SleepRep, SleepPeriod> sleep) {
-        return StormTracking(entry_capacity, entry_pruning_tail_size,
-                             detail::to_nanoseconds(grace_period),
-                             detail::to_nanoseconds(grace_interval), fan_out,
-                             detail::to_nanoseconds(inflight_ttl), detail::to_nanoseconds(sleep),
-                             Tag{});
+    /// Maximum number of entries cached. Defaults to 1000.
+    StormTrackingCmcOptions& with_entry_capacity(std::uint32_t n) { entry_capacity_ = n; return *this; }
+    /// Number of least-recently-used entries checked for expiry on each lookup. Defaults to 1.
+    StormTrackingCmcOptions& with_entry_pruning_tail_size(std::uint32_t n) { entry_pruning_tail_size_ = n; return *this; }
+    /// Time before expiry at which one request starts refreshing an entry. Defaults to 10 seconds.
+    /// Must be less than the TTL of any Hierarchical Keyring using this cache.
+    template <class Rep, class Period>
+    StormTrackingCmcOptions& with_grace_period(std::chrono::duration<Rep, Period> d) {
+        grace_period_ = detail::to_nanoseconds(d);
+        return *this;
     }
-    /// Shared cache across multiple Hierarchical Keyrings. For this cache type,
-    /// the user should provide an already constructed CryptographicMaterialsCache
-    /// to the Hierarchical Keyring at initialization.
-    static CacheType Shared(const CryptographicMaterialsCache& cache);
+    /// Time one request has to refresh an entry before another request may try. Defaults to 1 second.
+    template <class Rep, class Period>
+    StormTrackingCmcOptions& with_grace_interval(std::chrono::duration<Rep, Period> d) {
+        grace_interval_ = detail::to_nanoseconds(d);
+        return *this;
+    }
+    /// Maximum number of refreshes in flight at once. Defaults to 20.
+    StormTrackingCmcOptions& with_fan_out(std::uint32_t n) { fan_out_ = n; return *this; }
+    /// Time a request waits for another request's refresh before failing. Defaults to 10 seconds.
+    template <class Rep, class Period>
+    StormTrackingCmcOptions& with_inflight_ttl(std::chrono::duration<Rep, Period> d) {
+        inflight_ttl_ = detail::to_nanoseconds(d);
+        return *this;
+    }
+    /// Time a waiting request sleeps before checking the cache again. Defaults to 20 milliseconds.
+    template <class Rep, class Period>
+    StormTrackingCmcOptions& with_sleep(std::chrono::duration<Rep, Period> d) {
+        sleep_ = detail::to_nanoseconds(d);
+        return *this;
+    }
+};
 
-private:
-    // Keeps the private overload out of overload resolution for callers,
-    // so std::chrono::nanoseconds arguments still select the public template.
-    struct Tag {};
-    static CacheType StormTracking(std::uint32_t entry_capacity,
-                                   std::uint32_t entry_pruning_tail_size,
-                                   std::chrono::nanoseconds grace_period,
-                                   std::chrono::nanoseconds grace_interval,
-                                   std::uint32_t fan_out,
-                                   std::chrono::nanoseconds inflight_ttl,
-                                   std::chrono::nanoseconds sleep,
-                                   Tag);
+/// The best choice for most situations:
+/// a StormTrackingCmc with default options and the given entry capacity.
+class DefaultCmc : public CryptographicMaterialsCache {
+public:
+    /// Creates the default cache.
+    /// \param entry_capacity Maximum number of entries cached.
+    explicit DefaultCmc(std::uint32_t entry_capacity);
+};
 
-    enum class Kind { Default, StormTracking, Shared };
-    explicit CacheType(Kind kind) : kind_(kind) {}
-    Kind kind_;
-    std::uint32_t entry_capacity_ = 0;
-    std::uint32_t entry_pruning_tail_size_ = 0;
-    std::chrono::nanoseconds grace_period_{};
-    std::chrono::nanoseconds grace_interval_{};
-    std::uint32_t fan_out_ = 0;
-    std::chrono::nanoseconds inflight_ttl_{};
-    std::chrono::nanoseconds sleep_{};
-    std::shared_ptr<detail::CryptographicMaterialsCacheImpl> shared_;
-    friend class CryptographicMaterialsCache;
-    friend class HierarchicalKeyring;
-    friend struct detail::CacheTypeLowerer;
+/// A cache safe for multi-threaded use that limits redundant and concurrent backend calls.
+/// Use it over DefaultCmc to change the storm tracking parameters.
+class StormTrackingCmc : public CryptographicMaterialsCache {
+public:
+    /// Creates a storm tracking cache.
+    /// \param options Parameters to change; unset ones keep their defaults.
+    explicit StormTrackingCmc(const StormTrackingCmcOptions& options = {});
+};
+
+/// An LRU cache with no storm tracking.
+class LocalCmc : public CryptographicMaterialsCache {
+public:
+    /// Creates a local cache.
+    /// \param entry_capacity Maximum number of entries cached. Zero caches nothing.
+    explicit LocalCmc(std::uint32_t entry_capacity);
 };
 
 /// Optional hierarchical keyring parameters.
 /// A field left unset keeps the ESDK Rust's default.
 class HierarchicalKeyringOptions {
-    std::optional<CacheType> cache_;
+    std::optional<CryptographicMaterialsCache> cache_;
     std::optional<std::string> partition_id_;
     friend class HierarchicalKeyring;
 
 public:
-    /// Sets the type of cache for this Hierarchical Keyring.
-    /// By providing an already initialized 'Shared' cache, users can determine the scope of the cache.
-    /// That is, if the cache is shared across other Cryptographic Material Providers,
-    /// for instance other Hierarchical Keyrings or Caching Cryptographic Materials Managers (Caching CMMs).
-    /// If any other type of cache in the CacheType union is provided,
-    /// the Hierarchical Keyring will initialize a cache of that type,
-    /// to be used with only this Hierarchical Keyring.
-    /// If not set, a DefaultCache is initialized to be used with only this Hierarchical Keyring
-    /// with entryCapacity = 1000.
-    HierarchicalKeyringOptions& with_cache(const CacheType& cache) {
+    /// The cache for this Hierarchical Keyring.
+    /// Give several keyrings copies of one cache to share its entries.
+    /// If not set, the keyring creates its own DefaultCmc with an entry capacity of 1000.
+    /// The cache's grace period, if it has one, must be less than the keyring's TTL;
+    /// DefaultCmc's is 10 seconds.
+    HierarchicalKeyringOptions& with_cache(const CryptographicMaterialsCache& cache) {
         cache_ = cache;
         return *this;
     }
@@ -756,46 +808,30 @@ public:
 /// A field left unset keeps the ESDK Rust's default.
 class EncryptOptions {
     std::optional<AlgorithmSuiteId> algorithm_suite_;
-    std::optional<CommitmentPolicy> commitment_policy_;
     std::map<std::string, std::string> encryption_context_;
     std::optional<std::uint32_t> frame_length_;
-    std::optional<std::uint32_t> max_encrypted_data_keys_;
-    friend class EncryptionSDK;
+    friend class Client;
 
 public:
     /// Algorithm suite for encryption, identified by the two-byte ID from the ESDK message format. 
     /// <https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/supported-algorithms.html>
     EncryptOptions& with_algorithm_suite(AlgorithmSuiteId a) { algorithm_suite_ = a; return *this; }
-    /// Governs whether messages are encrypted with, and are required to carry, key commitment.
-    /// <https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/migrate-commitment-policy.html>
-    /// Default is CommitmentPolicy::RequireEncryptRequireDecrypt.
-    EncryptOptions& with_commitment_policy(CommitmentPolicy p) { commitment_policy_ = p; return *this; }
     /// Key-value pairs to associate with the encrypted data.
     /// <https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/concepts.html#encryption-context>
     EncryptOptions& with_encryption_context(const std::map<std::string, std::string>& ec) { encryption_context_ = ec; return *this; }
     /// Length of each frame of framed data in bytes. Default 4096.
     EncryptOptions& with_frame_length(std::uint32_t n) { frame_length_ = n; return *this; }
-    /// Limit to number of encrypted data keys on a message.
-    /// 0 means no limit.
-    /// <https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/configure.html#config-limit-keys>
-    EncryptOptions& with_max_encrypted_data_keys(std::uint32_t n) { max_encrypted_data_keys_ = n; return *this; }
 };
 
 /// Optional decrypt parameters.
 /// A field left unset keeps the ESDK Rust's default.
 class DecryptOptions {
-    std::optional<CommitmentPolicy> commitment_policy_;
     std::map<std::string, std::string> encryption_context_;
-    std::optional<std::uint32_t> max_encrypted_data_keys_;
-    friend class EncryptionSDK;
+    friend class Client;
 
 public:
-    /// Default is CommitmentPolicy::RequireEncryptRequireDecrypt.
-    DecryptOptions& with_commitment_policy(CommitmentPolicy p) { commitment_policy_ = p; return *this; }
     /// Encryption context to verify against the encrypted message; every entry must be present in the message's context.
     DecryptOptions& with_encryption_context(const std::map<std::string, std::string>& ec) { encryption_context_ = ec; return *this; }
-    /// 0 means no limit.
-    DecryptOptions& with_max_encrypted_data_keys(std::uint32_t n) { max_encrypted_data_keys_ = n; return *this; }
 };
 
 /// Read-only byte buffer returned by encrypt and decrypt.
@@ -883,10 +919,10 @@ struct EncryptResult {
     /// The encrypted message.
     Bytes ciphertext;
     /// Encryption context associated with the encrypted message.
-    /// This can differ from the value provided to EncryptInput.
+    /// This can differ from the value set in EncryptOptions.
     std::map<std::string, std::string> encryption_context;
     /// Algorithm suite used for encryption.
-    /// This can differ from the value provided to EncryptInput.
+    /// This can differ from the value set in EncryptOptions.
     AlgorithmSuiteId algorithm_suite_id;
 };
 
@@ -900,26 +936,28 @@ struct DecryptResult {
     AlgorithmSuiteId algorithm_suite_id;
 };
 
-/// Client-level configuration for EncryptionSDK.
+/// Configuration for Client.
 ///
-/// A field set both here and on a per-call EncryptOptions/DecryptOptions is rejected with ValidationException.
-/// Each field must be set in exactly one place.
-/// A field unset in both defers to the core library's default.
+/// A field left unset defers to the core library's default.
 //
 //= spec/shim/esdk-shim.md#client-configuration
 //# The ESDK shim MAY expose a client-level configuration mirroring the core
 //# ESDK's client configuration, applied to every operation of that client.
-class EncryptionSDKConfig {
+class Config {
     std::optional<CommitmentPolicy> commitment_policy_;
     std::optional<std::uint32_t> max_encrypted_data_keys_;
-    friend class EncryptionSDK;
+    friend class Client;
 
 public:
     /// Commitment policy applied to every operation on this client.
-    EncryptionSDKConfig& with_commitment_policy(CommitmentPolicy p) { commitment_policy_ = p; return *this; }
+    /// Governs whether messages are encrypted with, and are required to carry, key commitment.
+    /// <https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/migrate-commitment-policy.html>
+    /// Default is CommitmentPolicy::RequireEncryptRequireDecrypt.
+    Config& with_commitment_policy(CommitmentPolicy p) { commitment_policy_ = p; return *this; }
     /// Cap on the number of encrypted data keys per message, applied to every
     /// operation on this client. 0 means no limit.
-    EncryptionSDKConfig& with_max_encrypted_data_keys(std::uint32_t n) { max_encrypted_data_keys_ = n; return *this; }
+    /// <https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/configure.html#config-limit-keys>
+    Config& with_max_encrypted_data_keys(std::uint32_t n) { max_encrypted_data_keys_ = n; return *this; }
 };
 
 /// Result of finishing a stream
@@ -935,11 +973,11 @@ struct StreamResult {
 
 /// Streaming encrypt. Feed plaintext in chunks, receive ciphertext as it is produced.
 /// `finish()` flushes the final frame (and signature footer, for signing suites).
-/// Create via EncryptionSDK::create_encrypt_stream.
+/// Create via Client::create_encrypt_stream.
 /// One stream is single-threaded; different streams may run on different threads.
 class EncryptStream {
     std::shared_ptr<detail::EncryptStreamImpl> impl_;
-    friend class EncryptionSDK;
+    friend class Client;
     explicit EncryptStream(std::shared_ptr<detail::EncryptStreamImpl> impl) : impl_(std::move(impl)) {}
 
 public:
@@ -968,10 +1006,10 @@ public:
 ///
 /// Streamed decrypt cannot be used to decrypt messages
 /// that were encrypted with signing suites and have multiple frames.
-/// Decrypt these messages with Aws::Esdk::decrypt instead.
+/// Decrypt these messages with Client::decrypt instead.
 class DecryptStream {
     std::shared_ptr<detail::DecryptStreamImpl> impl_;
-    friend class EncryptionSDK;
+    friend class Client;
     explicit DecryptStream(std::shared_ptr<detail::DecryptStreamImpl> impl) : impl_(std::move(impl)) {}
 
 public:
@@ -988,6 +1026,10 @@ public:
     /// \copydoc write(const std::uint8_t*, std::size_t)
     Bytes write(const std::vector<std::uint8_t>& chunk) { return write(chunk.data(), chunk.size()); }
     /// \copydoc write(const std::uint8_t*, std::size_t)
+    Bytes write(std::string_view chunk) {
+        return write(reinterpret_cast<const std::uint8_t*>(chunk.data()), chunk.size());
+    }
+    /// \copydoc write(const std::uint8_t*, std::size_t)
     Bytes write(const Bytes& chunk) { return write(chunk.data(), chunk.size()); }
     /// Ends the ciphertext input and completes decryption, including signature
     /// verification for signing suites.
@@ -997,20 +1039,20 @@ public:
 };
 
 /// ESDK client interface.
-class EncryptionSDK {
+class Client {
     std::optional<CommitmentPolicy> commitment_policy_;
     std::optional<std::uint32_t> max_encrypted_data_keys_;
 
 public:
-    EncryptionSDK() = default;
-    explicit EncryptionSDK(const EncryptionSDKConfig& options)
+    Client() = default;
+    explicit Client(const Config& options)
         : commitment_policy_(options.commitment_policy_),
           max_encrypted_data_keys_(options.max_encrypted_data_keys_) {}
 
     EncryptResult encrypt(
         const std::vector<std::uint8_t>& plaintext,
         const Keyring& keyring,
-        const EncryptOptions& options = {});
+        const EncryptOptions& options = {}) const;
 
     /// Encrypts a plaintext held in any contiguous buffer
     /// (e.g. an mmap'd file or another library's buffer)
@@ -1026,18 +1068,18 @@ public:
         const std::uint8_t* plaintext,
         std::size_t plaintext_len,
         const Keyring& keyring,
-        const EncryptOptions& options = {});
+        const EncryptOptions& options = {}) const;
 
     DecryptResult decrypt(
         const std::vector<std::uint8_t>& ciphertext,
         const Keyring& keyring,
-        const DecryptOptions& options = {});
+        const DecryptOptions& options = {}) const;
 
     /// Decrypts a ciphertext held in a Aws::Esdk::Bytes without copying it.
     DecryptResult decrypt(
         const Bytes& ciphertext,
         const Keyring& keyring,
-        const DecryptOptions& options = {});
+        const DecryptOptions& options = {}) const;
 
     /// Decrypts a ciphertext held in any contiguous buffer without copying it into a std::vector first.
     /// The buffer must stay valid for the duration of the call.
@@ -1046,28 +1088,38 @@ public:
         const std::uint8_t* ciphertext,
         std::size_t ciphertext_len,
         const Keyring& keyring,
-        const DecryptOptions& options = {});
+        const DecryptOptions& options = {}) const;
 
     /// Encrypts a text payload viewed through a std::string_view without copying it.
     /// The view must stay valid for the duration of the call.
     EncryptResult encrypt(
         std::string_view plaintext,
         const Keyring& keyring,
-        const EncryptOptions& options = {}) {
+        const EncryptOptions& options = {}) const {
         return encrypt(reinterpret_cast<const std::uint8_t*>(plaintext.data()),
                        plaintext.size(), keyring, options);
+    }
+
+    /// Decrypts a ciphertext viewed through a std::string_view without copying it.
+    /// The view must stay valid for the duration of the call.
+    DecryptResult decrypt(
+        std::string_view ciphertext,
+        const Keyring& keyring,
+        const DecryptOptions& options = {}) const {
+        return decrypt(reinterpret_cast<const std::uint8_t*>(ciphertext.data()),
+                       ciphertext.size(), keyring, options);
     }
 
     /// Creates a streaming encrypt operation.
     EncryptStream create_encrypt_stream(
         const Keyring& keyring,
-        const EncryptOptions& options = {});
+        const EncryptOptions& options = {}) const;
 
     /// Creates a streaming decrypt operation.
     /// See DecryptStream documentation for the verification semantics of streamed plaintext.
     DecryptStream create_decrypt_stream(
         const Keyring& keyring,
-        const DecryptOptions& options = {});
+        const DecryptOptions& options = {}) const;
 
     /// Encrypts a whole stream: reads plaintext from `source` in chunks, encrypts
     /// each, and writes the ciphertext to `sink` until `source` is exhausted,
@@ -1079,7 +1131,7 @@ public:
         std::istream& source,
         std::ostream& sink,
         const Keyring& keyring,
-        const EncryptOptions& options = {});
+        const EncryptOptions& options = {}) const;
 
     /// Decrypts a whole stream: reads ciphertext from `source`, writes plaintext
     /// to `sink`, and returns the message metadata.
@@ -1092,7 +1144,7 @@ public:
         std::istream& source,
         std::ostream& sink,
         const Keyring& keyring,
-        const DecryptOptions& options = {});
+        const DecryptOptions& options = {}) const;
 
 #if defined(__cpp_lib_span)
     /// Encrypts a plaintext viewed through a std::span without copying it.
@@ -1100,7 +1152,7 @@ public:
     EncryptResult encrypt(
         std::span<const std::uint8_t> plaintext,
         const Keyring& keyring,
-        const EncryptOptions& options = {}) {
+        const EncryptOptions& options = {}) const {
         return encrypt(plaintext.data(), plaintext.size(), keyring, options);
     }
 
@@ -1109,7 +1161,7 @@ public:
     DecryptResult decrypt(
         std::span<const std::uint8_t> ciphertext,
         const Keyring& keyring,
-        const DecryptOptions& options = {}) {
+        const DecryptOptions& options = {}) const {
         return decrypt(ciphertext.data(), ciphertext.size(), keyring, options);
     }
 #endif

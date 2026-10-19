@@ -1,268 +1,199 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Optional [`Esdk`] client and its [`EsdkConfig`].
+//! The [`Client`] and its [`Config`].
 //!
-//! `Esdk` is an optional convenience layer over the free
-//! [`encrypt`](crate::encrypt) / [`decrypt`](crate::decrypt) /
-//! [`encrypt_stream`](crate::encrypt_stream) /
-//! [`decrypt_stream`](crate::decrypt_stream) functions. It holds an
-//! [`EsdkConfig`] — a commitment policy and an optional cap on the number of
-//! encrypted data keys — and forwards each call to the corresponding free
-//! function with those fields filled in from the client.
+//! `Client` holds a [`Config`]: a commitment policy and an optional cap on encrypted data keys.
+//! Each operation's fluent builder takes both settings from the client and has no setters for them:
 //!
-//! Callers who don't want a client can keep using the free functions and set
-//! `commitment_policy` / `max_encrypted_data_keys` on the input's builder.
-//!
-//! Per-call config on the input AND a configured `Esdk` is currently rejected:
-//! returning an error today is forward-compatible (override semantics can be
-//! defined later without breaking callers); committing to a precedence rule
-//! today is not.
+//! ```no_run
+//! # use aws_esdk::{types::CommitmentPolicy, keyring::SharedKeyring};
+//! # async fn example(policy: CommitmentPolicy, plaintext: &[u8], keyring: SharedKeyring) -> Result<(), aws_esdk::Error> {
+//! let esdk = aws_esdk::Client::builder().commitment_policy(policy).build()?;
+//! let output = esdk.encrypt().plaintext(plaintext).keyring(keyring).send().await?;
+//! # Ok(())
+//! # }
+//! ```
 
 use crate::Error;
-use crate::error::val_err;
-use crate::types::{CommitmentPolicy, DEFAULT_COMMITMENT_POLICY};
-use crate::types::{
-    DecryptInput, DecryptOutput, DecryptStreamInput, DecryptStreamOutput, EncryptInput,
-    EncryptOutput, EncryptStreamInput, EncryptStreamOutput, SafeRead, SafeWrite,
-};
+use crate::config::{self, Config};
+use crate::operation::decrypt::builders::DecryptFluentBuilder;
+use crate::operation::decrypt_stream::builders::DecryptStreamFluentBuilder;
+use crate::operation::encrypt::builders::EncryptFluentBuilder;
+use crate::operation::encrypt_stream::builders::EncryptStreamFluentBuilder;
+use crate::shapes::CommitmentPolicy;
 use std::num::NonZeroUsize;
 
-/// Cross-call configuration for the optional [`Esdk`] client.
+/// The AWS Encryption SDK client.
+/// Applies one [`Config`] to every operation.
+/// Build with [`Client::builder`], or from a [`Config`] with [`Client::from_conf`].
 ///
-/// Holds the commitment policy and the optional cap on the number of encrypted
-/// data keys per message. Construct via [`EsdkConfig::default`] and field
-/// assignment, or via [`Esdk::builder`].
-//= spec/client-apis/client.md#initialization
-//= reason=field defaults to None via derive(Default); None means no cap
-//# If no [maximum number of encrypted data keys](#maximum-number-of-encrypted-data-keys) is provided
-//# the default MUST result in no limit on the number of encrypted data keys (aside from the limit imposed by the [message format](../format/message-header.md)).
-//
-//= spec/client-apis/client.md#initialization
-//= reason=EsdkConfig::default() sets commitment_policy to DEFAULT_COMMITMENT_POLICY = RequireEncryptRequireDecrypt
-//# If no [commitment policy](#commitment-policy) is provided the default MUST be [REQUIRE_ENCRYPT_REQUIRE_DECRYPT](../framework/algorithm-suites.md#require_encrypt_require_decrypt).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[non_exhaustive]
-pub struct EsdkConfig {
-    /// Commitment policy applied to every operation. Default is
-    /// `CommitmentPolicy::RequireEncryptRequireDecrypt`.
-    //= spec/client-apis/client.md#commitment-policy
-    //= reason=CommitmentPolicy is a re-export of the MPL's aws_crypto_mpl::structures::EsdkCommitmentPolicy
-    //# The AWS Encryption SDK MUST use the ESDK [commitment policies](../framework/commitment-policy.md) defined in the Material Providers Library.
-    pub commitment_policy: CommitmentPolicy,
-    /// Optional cap on the number of encrypted data keys per message.
-    /// Default is `None` (no cap beyond the message-format limit).
-    pub max_encrypted_data_keys: Option<NonZeroUsize>,
-}
-
-impl Default for EsdkConfig {
-    fn default() -> Self {
-        Self {
-            commitment_policy: DEFAULT_COMMITMENT_POLICY,
-            max_encrypted_data_keys: None,
-        }
-    }
-}
-
-/// Optional client over the free encrypt/decrypt functions.
-///
-/// Holds an [`EsdkConfig`] and forwards each operation to the corresponding
-/// free function ([`encrypt`](crate::encrypt), [`decrypt`](crate::decrypt),
-/// [`encrypt_stream`](crate::encrypt_stream), [`decrypt_stream`](crate::decrypt_stream))
-/// with `commitment_policy` and `max_encrypted_data_keys` filled in from
-/// `self.config`.
-///
-/// If the input also sets either of those fields, the call is rejected with a
-/// validation error. Override semantics may be defined in a future release;
-/// callers should set the fields in exactly one place.
-///
-/// Note: an input commitment policy set to its default value is not detected as a conflict;
-/// configure it via [`Esdk::builder`] only.
+/// Each operation method returns a fluent builder that takes `commitment_policy`
+/// and `max_encrypted_data_keys` from the client.
+/// Set the rest on the builder and finish with `send`.
 ///
 /// # Example
 ///
-/// ```ignore
-/// let esdk = Esdk::builder()
+/// ```no_run
+/// # use aws_esdk::{types::CommitmentPolicy, types::EncryptionContext, keyring::SharedKeyring};
+/// # async fn example(plaintext: &[u8], ec: EncryptionContext, keyring: SharedKeyring) -> Result<(), aws_esdk::Error> {
+/// let esdk = aws_esdk::Client::builder()
 ///     .commitment_policy(CommitmentPolicy::RequireEncryptRequireDecrypt)
-///     .build();
-/// let input = EncryptInput::builder()
+///     .build()?;
+/// let output = esdk
+///     .encrypt()
 ///     .plaintext(plaintext)
 ///     .encryption_context(ec)
 ///     .keyring(keyring)
-///     .build()?;
-/// let output = esdk.encrypt(&input).await?;
+///     .send()
+///     .await?;
+/// # Ok(())
+/// # }
 /// ```
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Default)]
 #[non_exhaustive]
-pub struct Esdk {
+pub struct Client {
     /// Client configuration applied to every call.
     ///
-    /// Private to enforce construction via [`Esdk::new`] / [`Esdk::builder`];
-    /// read via [`Esdk::config`].
+    /// Private to enforce construction via [`Client::builder`] / [`Client::from_conf`];
+    /// read via [`Client::config`].
     //= spec/client-apis/client.md#initialization
     //= type=implication
-    //= reason=pub(crate) prevents external mutation; Esdk is Copy so any "change" must construct a new value
+    //= reason=pub(crate) prevents external mutation and Client has no setters, so any "change" must construct a new value
     //# Once a [commitment policy](#commitment-policy) has been set it SHOULD be immutable.
-    pub(crate) config: EsdkConfig,
+    pub(crate) config: Config,
 }
 
-impl Esdk {
-    /// Construct an `Esdk` with the given config.
+impl Client {
+    /// Construct a `Client` from a [`Config`].
     #[must_use]
-    pub const fn new(config: EsdkConfig) -> Self {
+    pub const fn from_conf(config: Config) -> Self {
         Self { config }
     }
 
-    /// Start a fluent builder for `Esdk`.
+    /// Start a fluent builder for `Client`.
     #[must_use]
-    pub fn builder() -> EsdkBuilder {
-        EsdkBuilder::default()
+    pub fn builder() -> Builder {
+        Builder::default()
     }
 
     /// Borrow this client's configuration.
     #[must_use]
-    pub const fn config(&self) -> &EsdkConfig {
+    pub const fn config(&self) -> &Config {
         &self.config
     }
 
-    /// Encrypt with the client's configured commitment policy and EDK cap.
+    /// Constructs a fluent builder for the encrypt operation, which encrypts a plaintext held in memory into an encrypted message.
     ///
-    /// # Errors
+    /// The client's commitment policy and encrypted data key cap apply.
+    /// Finish with [`send()`](EncryptFluentBuilder::send).
     ///
-    /// - [`Validation`](crate::Error::Validation): the input also sets a non-default commitment policy or an encrypted data key cap; set these on the client or the input, not both.
-    ///
-    /// Otherwise returns any variant [`encrypt`](crate::encrypt) returns.
+    /// - The fluent builder is configurable:
+    ///   - [`plaintext(&[u8])`](EncryptFluentBuilder::plaintext) / [`set_plaintext(Option<&[u8]>)`](EncryptFluentBuilder::set_plaintext):<br>required: **true**<br>The data to encrypt.<br>
+    ///   - [`encryption_context(impl Into<EncryptionContext>)`](EncryptFluentBuilder::encryption_context) / [`set_encryption_context(Option<EncryptionContext>)`](EncryptFluentBuilder::set_encryption_context):<br>required: **false**<br>Key-value pairs bound to the message. They are authenticated, not encrypted, so never put secrets in them.<br>
+    ///   - [`algorithm_suite_id(AlgorithmSuiteId)`](EncryptFluentBuilder::algorithm_suite_id) / [`set_algorithm_suite_id(Option<AlgorithmSuiteId>)`](EncryptFluentBuilder::set_algorithm_suite_id):<br>required: **false**<br>The algorithm suite to encrypt with. Unset uses the default suite for the client's commitment policy.<br>
+    ///   - [`frame_length(NonZeroU32)`](EncryptFluentBuilder::frame_length) / [`set_frame_length(Option<NonZeroU32>)`](EncryptFluentBuilder::set_frame_length):<br>required: **false**<br>Bytes of plaintext per frame. Default is 4096.<br>
+    ///   - [`keyring(impl Keyring)`](EncryptFluentBuilder::keyring) / [`set_keyring(Option<SharedKeyring>)`](EncryptFluentBuilder::set_keyring):<br>required: **one of keyring or cmm**<br>The keyring that protects the message's data key. Set exactly one of a keyring or a CMM.<br>
+    ///   - [`cmm(impl Cmm)`](EncryptFluentBuilder::cmm) / [`set_cmm(Option<SharedCmm>)`](EncryptFluentBuilder::set_cmm):<br>required: **one of keyring or cmm**<br>The cryptographic materials manager (CMM) that supplies the message's data key. Set exactly one of a keyring or a CMM.<br>
+    /// - On success, responds with [`EncryptOutput`](crate::operation::encrypt::EncryptOutput) with field(s):
+    ///   - [`ciphertext(&[u8])`](crate::operation::encrypt::EncryptOutput::ciphertext): The encrypted message.
+    ///   - [`encryption_context(&EncryptionContext)`](crate::operation::encrypt::EncryptOutput::encryption_context): The encryption context bound to the message, including any pairs the CMM added.
+    ///   - [`algorithm_suite_id(AlgorithmSuiteId)`](crate::operation::encrypt::EncryptOutput::algorithm_suite_id): The algorithm suite the message uses.
+    /// - On failure, responds with [`Error`]; [`send`](EncryptFluentBuilder::send) lists each variant.
     //= spec/client-apis/client.md#encrypt
     //# The AWS Encryption SDK Client MUST provide an [encrypt](./encrypt.md#input) function
     //# that adheres to [encrypt](./encrypt.md).
-    pub async fn encrypt(&self, input: &EncryptInput<'_>) -> Result<EncryptOutput, Error> {
-        crate::encrypt::encrypt(&fill_or_reject(input, &self.config)?).await
+    pub fn encrypt<'a>(&self) -> EncryptFluentBuilder<'a> {
+        EncryptFluentBuilder::new(self.config.clone())
     }
 
-    /// Decrypt with the client's configured commitment policy and EDK cap.
+    /// Constructs a fluent builder for the decrypt operation, which decrypts an encrypted message held in memory.
     ///
-    /// # Errors
+    /// The client's commitment policy and encrypted data key cap apply.
+    /// Finish with [`send()`](DecryptFluentBuilder::send).
     ///
-    /// - [`Validation`](crate::Error::Validation): the input also sets a non-default commitment policy or an encrypted data key cap; set these on the client or the input, not both.
-    ///
-    /// Otherwise returns any variant [`decrypt`](crate::decrypt) returns.
+    /// - The fluent builder is configurable:
+    ///   - [`ciphertext(&[u8])`](DecryptFluentBuilder::ciphertext) / [`set_ciphertext(Option<&[u8]>)`](DecryptFluentBuilder::set_ciphertext):<br>required: **true**<br>The encrypted message to decrypt.<br>
+    ///   - [`encryption_context(impl Into<EncryptionContext>)`](DecryptFluentBuilder::encryption_context) / [`set_encryption_context(Option<EncryptionContext>)`](DecryptFluentBuilder::set_encryption_context):<br>required: **false**<br>Key-value pairs the message's encryption context must contain. Decrypt fails if a pair is missing from the message or has a different value.<br>
+    ///   - [`keyring(impl Keyring)`](DecryptFluentBuilder::keyring) / [`set_keyring(Option<SharedKeyring>)`](DecryptFluentBuilder::set_keyring):<br>required: **one of keyring or cmm**<br>The keyring that protects the message's data key. Set exactly one of a keyring or a CMM.<br>
+    ///   - [`cmm(impl Cmm)`](DecryptFluentBuilder::cmm) / [`set_cmm(Option<SharedCmm>)`](DecryptFluentBuilder::set_cmm):<br>required: **one of keyring or cmm**<br>The cryptographic materials manager (CMM) that supplies the message's data key. Set exactly one of a keyring or a CMM.<br>
+    /// - On success, responds with [`DecryptOutput`](crate::operation::decrypt::DecryptOutput) with field(s):
+    ///   - [`plaintext(&[u8])`](crate::operation::decrypt::DecryptOutput::plaintext): The decrypted data.
+    ///   - [`encryption_context(&EncryptionContext)`](crate::operation::decrypt::DecryptOutput::encryption_context): The message's encryption context.
+    ///   - [`algorithm_suite_id(AlgorithmSuiteId)`](crate::operation::decrypt::DecryptOutput::algorithm_suite_id): The algorithm suite the message uses.
+    /// - On failure, responds with [`Error`]; [`send`](DecryptFluentBuilder::send) lists each variant.
     //= spec/client-apis/client.md#decrypt
     //# The AWS Encryption SDK Client MUST provide an [decrypt](./decrypt.md#input) function
     //# that adheres to [decrypt](./decrypt.md).
-    pub async fn decrypt(&self, input: &DecryptInput<'_>) -> Result<DecryptOutput, Error> {
-        crate::decrypt::decrypt(&fill_or_reject(input, &self.config)?).await
+    pub fn decrypt<'a>(&self) -> DecryptFluentBuilder<'a> {
+        DecryptFluentBuilder::new(self.config.clone())
     }
 
-    /// Stream-encrypt with the client's configured commitment policy and EDK cap.
+    /// Constructs a fluent builder for the streaming encrypt operation, which reads plaintext from an `AsyncRead` and writes the encrypted message to an `AsyncWrite`.
     ///
-    /// # Errors
+    /// The client's commitment policy and encrypted data key cap apply.
+    /// Finish with [`send()`](EncryptStreamFluentBuilder::send).
     ///
-    /// - [`Validation`](crate::Error::Validation): the input also sets a non-default commitment policy or an encrypted data key cap; set these on the client or the input, not both.
-    ///
-    /// Otherwise returns any variant [`encrypt_stream`](crate::encrypt_stream) returns.
-    pub async fn encrypt_stream(
-        &self,
-        plaintext: &mut dyn SafeRead,
-        ciphertext: &mut dyn SafeWrite,
-        input: &EncryptStreamInput,
-    ) -> Result<EncryptStreamOutput, Error> {
-        crate::encrypt::encrypt_stream(plaintext, ciphertext, &fill_or_reject(input, &self.config)?)
-            .await
+    /// - The fluent builder is configurable:
+    ///   - [`plaintext(impl AsyncRead)`](EncryptStreamFluentBuilder::plaintext) / [`set_plaintext(Option<Box<dyn AsyncRead>>)`](EncryptStreamFluentBuilder::set_plaintext):<br>required: **true**<br>The reader the data to encrypt is read from, until end of stream.<br>
+    ///   - [`ciphertext(impl AsyncWrite)`](EncryptStreamFluentBuilder::ciphertext) / [`set_ciphertext(Option<Box<dyn AsyncWrite>>)`](EncryptStreamFluentBuilder::set_ciphertext):<br>required: **true**<br>The writer the encrypted message is written to.<br>
+    ///   - [`encryption_context(impl Into<EncryptionContext>)`](EncryptStreamFluentBuilder::encryption_context) / [`set_encryption_context(Option<EncryptionContext>)`](EncryptStreamFluentBuilder::set_encryption_context):<br>required: **false**<br>Key-value pairs bound to the message. They are authenticated, not encrypted, so never put secrets in them.<br>
+    ///   - [`algorithm_suite_id(AlgorithmSuiteId)`](EncryptStreamFluentBuilder::algorithm_suite_id) / [`set_algorithm_suite_id(Option<AlgorithmSuiteId>)`](EncryptStreamFluentBuilder::set_algorithm_suite_id):<br>required: **false**<br>The algorithm suite to encrypt with. Unset uses the default suite for the client's commitment policy.<br>
+    ///   - [`frame_length(NonZeroU32)`](EncryptStreamFluentBuilder::frame_length) / [`set_frame_length(Option<NonZeroU32>)`](EncryptStreamFluentBuilder::set_frame_length):<br>required: **false**<br>Bytes of plaintext per frame. Default is 4096.<br>
+    ///   - [`keyring(impl Keyring)`](EncryptStreamFluentBuilder::keyring) / [`set_keyring(Option<SharedKeyring>)`](EncryptStreamFluentBuilder::set_keyring):<br>required: **one of keyring or cmm**<br>The keyring that protects the message's data key. Set exactly one of a keyring or a CMM.<br>
+    ///   - [`cmm(impl Cmm)`](EncryptStreamFluentBuilder::cmm) / [`set_cmm(Option<SharedCmm>)`](EncryptStreamFluentBuilder::set_cmm):<br>required: **one of keyring or cmm**<br>The cryptographic materials manager (CMM) that supplies the message's data key. Set exactly one of a keyring or a CMM.<br>
+    ///   - [`data_size(usize)`](EncryptStreamFluentBuilder::data_size) / [`set_data_size(Option<usize>)`](EncryptStreamFluentBuilder::set_data_size):<br>required: **false**<br>An upper bound on the plaintext length, in bytes. It is passed to the CMM, and encrypt fails if the stream is longer.<br>
+    /// - On success, responds with [`EncryptStreamOutput`](crate::operation::encrypt_stream::EncryptStreamOutput) with field(s):
+    ///   - [`encryption_context(&EncryptionContext)`](crate::operation::encrypt_stream::EncryptStreamOutput::encryption_context): The encryption context bound to the message, including any pairs the CMM added.
+    ///   - [`algorithm_suite_id(AlgorithmSuiteId)`](crate::operation::encrypt_stream::EncryptStreamOutput::algorithm_suite_id): The algorithm suite the message uses.
+    /// - On failure, responds with [`Error`]; [`send`](EncryptStreamFluentBuilder::send) lists each variant.
+    pub fn encrypt_stream<'a>(&self) -> EncryptStreamFluentBuilder<'a> {
+        EncryptStreamFluentBuilder::new(self.config.clone())
     }
 
-    /// Stream-decrypt with the client's configured commitment policy and EDK cap.
+    /// Constructs a fluent builder for the streaming decrypt operation, which reads an encrypted message from an `AsyncRead` and writes the plaintext to an `AsyncWrite`.
     ///
-    /// # Errors
+    /// The client's commitment policy and encrypted data key cap apply.
+    /// Finish with [`send()`](DecryptStreamFluentBuilder::send).
     ///
-    /// - [`Validation`](crate::Error::Validation): the input also sets a non-default commitment policy or an encrypted data key cap; set these on the client or the input, not both.
-    ///
-    /// Otherwise returns any variant [`decrypt_stream`](crate::decrypt_stream) returns.
-    pub async fn decrypt_stream(
-        &self,
-        ciphertext: &mut dyn SafeRead,
-        plaintext: &mut dyn SafeWrite,
-        input: &DecryptStreamInput,
-    ) -> Result<DecryptStreamOutput, Error> {
-        crate::decrypt::decrypt_stream(ciphertext, plaintext, &fill_or_reject(input, &self.config)?)
-            .await
+    /// - The fluent builder is configurable:
+    ///   - [`ciphertext(impl AsyncRead)`](DecryptStreamFluentBuilder::ciphertext) / [`set_ciphertext(Option<Box<dyn AsyncRead>>)`](DecryptStreamFluentBuilder::set_ciphertext):<br>required: **true**<br>The reader the encrypted message is read from.<br>
+    ///   - [`plaintext(impl AsyncWrite)`](DecryptStreamFluentBuilder::plaintext) / [`set_plaintext(Option<Box<dyn AsyncWrite>>)`](DecryptStreamFluentBuilder::set_plaintext):<br>required: **true**<br>The writer the decrypted data is written to. It receives plaintext before the whole message is verified.<br>
+    ///   - [`encryption_context(impl Into<EncryptionContext>)`](DecryptStreamFluentBuilder::encryption_context) / [`set_encryption_context(Option<EncryptionContext>)`](DecryptStreamFluentBuilder::set_encryption_context):<br>required: **false**<br>Key-value pairs the message's encryption context must contain. Decrypt fails if a pair is missing from the message or has a different value.<br>
+    ///   - [`keyring(impl Keyring)`](DecryptStreamFluentBuilder::keyring) / [`set_keyring(Option<SharedKeyring>)`](DecryptStreamFluentBuilder::set_keyring):<br>required: **one of keyring or cmm**<br>The keyring that protects the message's data key. Set exactly one of a keyring or a CMM.<br>
+    ///   - [`cmm(impl Cmm)`](DecryptStreamFluentBuilder::cmm) / [`set_cmm(Option<SharedCmm>)`](DecryptStreamFluentBuilder::set_cmm):<br>required: **one of keyring or cmm**<br>The cryptographic materials manager (CMM) that supplies the message's data key. Set exactly one of a keyring or a CMM.<br>
+    /// - On success, responds with [`DecryptStreamOutput`](crate::operation::decrypt_stream::DecryptStreamOutput) with field(s):
+    ///   - [`encryption_context(&EncryptionContext)`](crate::operation::decrypt_stream::DecryptStreamOutput::encryption_context): The message's encryption context.
+    ///   - [`algorithm_suite_id(AlgorithmSuiteId)`](crate::operation::decrypt_stream::DecryptStreamOutput::algorithm_suite_id): The algorithm suite the message uses.
+    /// - On failure, responds with [`Error`]; [`send`](DecryptStreamFluentBuilder::send) lists each variant.
+    pub fn decrypt_stream<'a>(&self) -> DecryptStreamFluentBuilder<'a> {
+        DecryptStreamFluentBuilder::new(self.config.clone())
     }
 }
 
-/// Internal abstraction over the four input structs that carry the
-/// "client-config" fields. Used by [`fill_or_reject`] so the four `Esdk`
-/// methods don't repeat the rejection-and-fill logic.
-trait HasClientConfigFields {
-    fn client_commitment_policy(&self) -> CommitmentPolicy;
-    fn client_max_encrypted_data_keys(&self) -> Option<NonZeroUsize>;
-    fn set_client_commitment_policy(&mut self, p: CommitmentPolicy);
-    fn set_client_max_encrypted_data_keys(&mut self, n: Option<NonZeroUsize>);
+/// Fluent builder for [`Client`].
+#[derive(Debug, Clone, Default)]
+pub struct Builder {
+    config: config::Builder,
 }
 
-macro_rules! impl_client_config_fields {
-    ($t:ty) => {
-        impl HasClientConfigFields for $t {
-            fn client_commitment_policy(&self) -> CommitmentPolicy {
-                self.commitment_policy
-            }
-            fn client_max_encrypted_data_keys(&self) -> Option<NonZeroUsize> {
-                self.max_encrypted_data_keys
-            }
-            fn set_client_commitment_policy(&mut self, p: CommitmentPolicy) {
-                self.commitment_policy = p;
-            }
-            fn set_client_max_encrypted_data_keys(&mut self, n: Option<NonZeroUsize>) {
-                self.max_encrypted_data_keys = n;
-            }
-        }
-    };
-}
-
-impl_client_config_fields!(EncryptInput<'_>);
-impl_client_config_fields!(EncryptStreamInput);
-impl_client_config_fields!(DecryptInput<'_>);
-impl_client_config_fields!(DecryptStreamInput);
-
-/// Reject the call if the input also carries client-level config; otherwise
-/// return a clone of the input with the client config's fields filled in.
-///
-/// Returning an error today (rather than picking a precedence rule) is
-/// forward-compatible: a future release may define override semantics
-/// without breaking callers.
-fn fill_or_reject<I>(input: &I, config: &EsdkConfig) -> Result<I, Error>
-where
-    I: HasClientConfigFields + Clone,
-{
-    if input.client_commitment_policy() != DEFAULT_COMMITMENT_POLICY
-        || input.client_max_encrypted_data_keys().is_some()
-    {
-        return Err(val_err(
-            "EsdkConfig is provided by both the Esdk client and the input struct. \
-             Set commitment_policy and max_encrypted_data_keys \
-             in exactly one place: on the Esdk client (via Esdk::builder), or on the \
-             input struct (when using the free encrypt/decrypt functions)",
-        ));
-    }
-    let mut filled = input.clone();
-    filled.set_client_commitment_policy(config.commitment_policy);
-    filled.set_client_max_encrypted_data_keys(config.max_encrypted_data_keys);
-    Ok(filled)
-}
-
-/// Fluent builder for [`Esdk`].
-#[derive(Debug, Clone, Copy, Default)]
-pub struct EsdkBuilder {
-    commitment_policy: Option<CommitmentPolicy>,
-    max_encrypted_data_keys: Option<NonZeroUsize>,
-}
-
-impl EsdkBuilder {
+impl Builder {
     /// Set the commitment policy.
     //= spec/client-apis/client.md#initialization
     //# - On client initialization,
     //# the caller MUST have the option to provide a [commitment policy](#commitment-policy).
     #[must_use]
     pub const fn commitment_policy(mut self, p: CommitmentPolicy) -> Self {
-        self.commitment_policy = Some(p);
+        self.config = self.config.commitment_policy(p);
+        self
+    }
+
+    /// Set or clear the commitment policy from an `Option`.
+    pub const fn set_commitment_policy(
+        &mut self,
+        commitment_policy: Option<CommitmentPolicy>,
+    ) -> &mut Self {
+        self.config.set_commitment_policy(commitment_policy);
         self
     }
 
@@ -272,19 +203,42 @@ impl EsdkBuilder {
     //# the caller MUST have the option to provide a [maximum number of encrypted data keys](#maximum-number-of-encrypted-data-keys).
     #[must_use]
     pub const fn max_encrypted_data_keys(mut self, n: NonZeroUsize) -> Self {
-        self.max_encrypted_data_keys = Some(n);
+        self.config = self.config.max_encrypted_data_keys(n);
         self
     }
 
-    /// Build the `Esdk`. Unset fields use their defaults
-    /// (`RequireEncryptRequireDecrypt` commitment policy, no EDK cap).
+    /// Set or clear the maximum number of encrypted data keys from an `Option`.
+    pub const fn set_max_encrypted_data_keys(
+        &mut self,
+        max_encrypted_data_keys: Option<NonZeroUsize>,
+    ) -> &mut Self {
+        self.config
+            .set_max_encrypted_data_keys(max_encrypted_data_keys);
+        self
+    }
+
+    /// The commitment policy set so far.
     #[must_use]
-    pub fn build(self) -> Esdk {
-        Esdk {
-            config: EsdkConfig {
-                commitment_policy: self.commitment_policy.unwrap_or(DEFAULT_COMMITMENT_POLICY),
-                max_encrypted_data_keys: self.max_encrypted_data_keys,
-            },
-        }
+    #[allow(clippy::ref_option)] // AWS SDK for Rust getter shape
+    pub const fn get_commitment_policy(&self) -> &Option<CommitmentPolicy> {
+        self.config.get_commitment_policy()
+    }
+
+    /// The maximum number of encrypted data keys set so far.
+    #[must_use]
+    #[allow(clippy::ref_option)] // AWS SDK for Rust getter shape
+    pub const fn get_max_encrypted_data_keys(&self) -> &Option<NonZeroUsize> {
+        self.config.get_max_encrypted_data_keys()
+    }
+
+    /// Build the `Client`. Unset fields use their defaults
+    /// (`RequireEncryptRequireDecrypt` commitment policy, no EDK cap).
+    ///
+    /// # Errors
+    ///
+    /// Currently never fails. Returns a `Result` so that a future validated
+    /// setting is not a breaking change.
+    pub fn build(self) -> Result<Client, Error> {
+        Ok(Client::from_conf(self.config.build()?))
     }
 }
