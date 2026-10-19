@@ -341,12 +341,12 @@ impl Cmm for DuplicateEdkCmm {
         let materials = self
             .inner
             .get_encryption_materials()
-            .encryption_context(request.encryption_context().clone())
+            .set_encryption_context(Some(request.encryption_context().clone()))
             .commitment_policy(request.commitment_policy())
             .set_algorithm_suite_id(request.algorithm_suite_id())
-            .set_required_encryption_context_keys(
-                request.required_encryption_context_keys().cloned(),
-            )
+            .set_required_encryption_context_keys(Some(
+                request.required_encryption_context_keys().clone(),
+            ))
             .set_max_plaintext_length(request.max_plaintext_length())
             .send()
             .await?
@@ -370,8 +370,8 @@ impl Cmm for DuplicateEdkCmm {
             .decrypt_materials()
             .algorithm_suite_id(request.algorithm_suite_id())
             .commitment_policy(request.commitment_policy())
-            .encrypted_data_keys(request.encrypted_data_keys().to_vec())
-            .encryption_context(request.encryption_context().clone())
+            .set_encrypted_data_keys(Some(request.encrypted_data_keys().to_vec()))
+            .set_encryption_context(Some(request.encryption_context().clone()))
             .set_reproduced_encryption_context(request.reproduced_encryption_context().cloned())
             .send()
             .await
@@ -704,12 +704,12 @@ impl Cmm for SpyCmm {
 
         self.inner
             .get_encryption_materials()
-            .encryption_context(request.encryption_context().clone())
+            .set_encryption_context(Some(request.encryption_context().clone()))
             .commitment_policy(request.commitment_policy())
             .set_algorithm_suite_id(request.algorithm_suite_id())
-            .set_required_encryption_context_keys(
-                request.required_encryption_context_keys().cloned(),
-            )
+            .set_required_encryption_context_keys(Some(
+                request.required_encryption_context_keys().clone(),
+            ))
             .set_max_plaintext_length(request.max_plaintext_length())
             .send()
             .await
@@ -723,8 +723,8 @@ impl Cmm for SpyCmm {
             .decrypt_materials()
             .algorithm_suite_id(request.algorithm_suite_id())
             .commitment_policy(request.commitment_policy())
-            .encrypted_data_keys(request.encrypted_data_keys().to_vec())
-            .encryption_context(request.encryption_context().clone())
+            .set_encrypted_data_keys(Some(request.encrypted_data_keys().to_vec()))
+            .set_encryption_context(Some(request.encryption_context().clone()))
             .set_reproduced_encryption_context(request.reproduced_encryption_context().cloned())
             .send()
             .await
