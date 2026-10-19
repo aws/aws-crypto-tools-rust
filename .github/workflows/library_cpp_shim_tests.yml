@@ -6,12 +6,12 @@ on:
 
 jobs:
   shim:
-    name: build + test (${{ startsWith(matrix.os, 'ubuntu') && 'ubuntu' || 'macos' }})
+    name: build + test (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
+        os: [ubuntu, macos]
+    runs-on: ${{ matrix.os }}-latest
     permissions:
       contents: read
       id-token: write

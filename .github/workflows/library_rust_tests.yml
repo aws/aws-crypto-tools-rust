@@ -11,13 +11,13 @@ on:
 
 jobs:
   testRust:
-    name: ${{ matrix.project }} (${{ startsWith(matrix.os, 'ubuntu') && 'ubuntu' || 'macos' }})
+    name: ${{ matrix.project }} (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
         project: ${{ fromJSON(inputs.projects) }}
-        os: [ubuntu-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
+        os: [ubuntu, macos]
+    runs-on: ${{ matrix.os }}-latest
     permissions:
       id-token: write
       contents: read
