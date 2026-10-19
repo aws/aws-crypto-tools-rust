@@ -50,7 +50,7 @@ fn a_fallback_covers_a_missing_variant() {
     let esdk = outputs.iter().find(|o| o.path.starts_with("esdk")).unwrap();
     assert!(
         esdk.contents
-            .contains("aws_crypto_mpl::error::Error::Conflict(_) => Kind::Service")
+            .contains("aws_crypto_mpl::Error::Conflict(_) => Kind::Service")
     );
 }
 

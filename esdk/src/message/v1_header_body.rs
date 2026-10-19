@@ -14,18 +14,15 @@ use super::serializable_types::get_iv_length;
 use super::serialize_functions::{read_bytes, read_u8, read_u32, write_bytes, write_u8, write_u32};
 use super::{Error, ser_err};
 use crate::error::{Kind, err};
-use crate::types::{SafeRead, SafeWrite};
-use aws_crypto_mpl::structures::AlgorithmSuite;
+use crate::shapes::{Source, Tee};
+use aws_crypto_mpl::types::AlgorithmSuite;
 
 //= spec/data-format/message-header.md#reserved
 //# A reserved sequence of 4 bytes
 //# that MUST have the value (hex) of `00 00 00 00`.
 const RESERVED_BYTES: [u8; 4] = [0x00, 0x00, 0x00, 0x00];
 
-pub(crate) fn write_v1_header_body(
-    w: &mut dyn SafeWrite,
-    body: &V1HeaderBody,
-) -> Result<(), Error> {
+pub(crate) fn write_v1_header_body(w: &mut Tee, body: &V1HeaderBody) -> Result<(), Error> {
     //= spec/data-format/message-header.md#header-body-version-1-0
     //# The V1 Header Body MUST consist of, in order,
     //# Version,
@@ -164,12 +161,9 @@ pub(crate) fn write_v1_header_body(
     write_u32(w, frame_len)
 }
 
-pub(crate) fn read_v1_reserved_bytes(
-    r: &mut dyn SafeRead,
-    raw: &mut dyn SafeWrite,
-) -> Result<(), Error> {
+pub(crate) async fn read_v1_reserved_bytes(r: &mut dyn Source, raw: &mut Tee) -> Result<(), Error> {
     let mut result = [0; RESERVED_BYTES.len()];
-    read_bytes(r, &mut result, raw)?;
+    read_bytes(r, &mut result, raw).await?;
     if result == RESERVED_BYTES {
         Ok(())
     } else {
@@ -177,12 +171,12 @@ pub(crate) fn read_v1_reserved_bytes(
     }
 }
 
-pub(crate) fn read_v1_header_iv_length(
-    r: &mut dyn SafeRead,
+pub(crate) async fn read_v1_header_iv_length(
+    r: &mut dyn Source,
     suite: &AlgorithmSuite,
-    raw: &mut dyn SafeWrite,
+    raw: &mut Tee,
 ) -> Result<u8, Error> {
-    let iv_len = read_u8(r, raw)?;
+    let iv_len = read_u8(r, raw).await?;
 
     //= spec/data-format/message-header.md#iv-length
     //# This value MUST be equal to the [IV length](../framework/algorithm-suites.md#iv-length) value of the
@@ -194,10 +188,10 @@ pub(crate) fn read_v1_header_iv_length(
     }
 }
 
-pub(crate) fn read_v1_header_body(
-    r: &mut dyn SafeRead,
+pub(crate) async fn read_v1_header_body(
+    r: &mut dyn Source,
     max_edks: Option<std::num::NonZeroUsize>,
-    raw: &mut dyn SafeWrite,
+    raw: &mut Tee,
 ) -> Result<V1HeaderBody, Error> {
     //= spec/data-format/message-header.md#header-body-version-1-0
     //# The V1 Header Body MUST consist of, in order,
@@ -216,55 +210,55 @@ pub(crate) fn read_v1_header_body(
 
     //= spec/client-apis/decrypt.md#v1-header-deserialization
     //# - MUST deserialize the [Type](../data-format/message-header.md#type).
-    let message_type = read_msg_type(r, raw)?;
+    let message_type = read_msg_type(r, raw).await?;
 
     // Algorithm Suite ID
 
     //= spec/client-apis/decrypt.md#v1-header-deserialization
     //# - MUST deserialize the [Algorithm Suite ID](../data-format/message-header.md#algorithm-suite-id).
-    let algorithm_suite = read_esdk_suite_id(r, raw)?;
+    let algorithm_suite = read_esdk_suite_id(r, raw).await?;
 
     // Message ID
 
     //= spec/client-apis/decrypt.md#v1-header-deserialization
     //# - MUST deserialize the [Message ID](../data-format/message-header.md#message-id).
-    let message_id = read_message_id_v1(r, raw)?;
+    let message_id = read_message_id_v1(r, raw).await?;
 
     // AAD
 
     //= spec/client-apis/decrypt.md#v1-header-deserialization
     //# - MUST deserialize the [AAD](../data-format/message-header.md#aad).
-    let encryption_context = read_encryption_context(r, raw)?;
+    let encryption_context = read_encryption_context(r, raw).await?;
 
     // Encrypted Data Keys
 
     //= spec/client-apis/decrypt.md#v1-header-deserialization
     //# - MUST deserialize the [Encrypted Data Keys](../data-format/message-header.md#encrypted-data-keys).
-    let encrypted_data_keys = read_edks(r, max_edks, raw)?;
+    let encrypted_data_keys = read_edks(r, max_edks, raw).await?;
 
     // Content Type
 
     //= spec/client-apis/decrypt.md#v1-header-deserialization
     //# - MUST deserialize the [Content Type](../data-format/message-header.md#content-type).
-    let content_type = read_content_type(r, raw)?;
+    let content_type = read_content_type(r, raw).await?;
 
     // Reserved
 
     //= spec/client-apis/decrypt.md#v1-header-deserialization
     //# - MUST deserialize the [Reserved](../data-format/message-header.md#reserved).
-    read_v1_reserved_bytes(r, raw)?;
+    read_v1_reserved_bytes(r, raw).await?;
 
     // IV Length
 
     //= spec/client-apis/decrypt.md#v1-header-deserialization
     //# - MUST deserialize the [IV Length](../data-format/message-header.md#iv-length).
-    let header_iv_length = read_v1_header_iv_length(r, &algorithm_suite, raw)?;
+    let header_iv_length = read_v1_header_iv_length(r, &algorithm_suite, raw).await?;
 
     // Frame Length
 
     //= spec/client-apis/decrypt.md#v1-header-deserialization
     //# - MUST deserialize the [Frame Length](../data-format/message-header.md#frame-length).
-    let frame_length = read_u32(r, raw)?;
+    let frame_length = read_u32(r, raw).await?;
 
     Ok(V1HeaderBody {
         message_type,

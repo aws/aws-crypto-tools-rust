@@ -4,15 +4,16 @@
 //! The `Cmm` trait — the abstract contract every Cryptographic Materials
 //! Manager MUST implement.
 //!
-//! Uses #[async_trait] so that the CMM can hold any runtime defined
-//! CMM. The macro makes this work by rewriting each `async fn`
-//! to return a boxed future.
+//! Implement it with [`#[async_trait]`](macro@crate::async_trait).
+//! The macro rewrites each `async fn` to return a boxed future,
+//! so a caller can hold a CMM whose type is chosen at runtime.
 //!
 //! See [Errors for keyring and CMM authors](crate::keyring#errors-for-keyring-and-cmm-authors)
 //! for which error variant to return.
 
-pub mod default_cmm;
-pub mod request;
+mod default_cmm;
+mod fluent_builders;
+mod types;
 
 use crate::Error;
 use std::borrow::Cow;
@@ -20,9 +21,12 @@ use std::borrow::Cow;
 use async_trait::async_trait;
 
 pub use default_cmm::DefaultCmm;
-pub use request::{DecryptMaterialsRequest, EncryptionMaterialsRequest};
-
-use crate::structures::{DecryptionMaterials, EncryptionMaterials};
+pub use fluent_builders::{DecryptMaterialsFluentBuilder, GetEncryptionMaterialsFluentBuilder};
+pub use types::{
+    DecryptMaterialsInput, DecryptMaterialsInputBuilder, DecryptMaterialsOutput,
+    DecryptMaterialsOutputBuilder, GetEncryptionMaterialsInput, GetEncryptionMaterialsInputBuilder,
+    GetEncryptionMaterialsOutput, GetEncryptionMaterialsOutputBuilder,
+};
 
 /// To hold a CMM whose concrete type is chosen at runtime, use [`SharedCmm`].
 #[async_trait]
@@ -43,16 +47,16 @@ pub trait Cmm: Send + Sync {
     /// [CMM interface specification](../../../spec/framework/cmm-interface.md#get-encryption-materials).
     async fn get_encryption_materials(
         &self,
-        request: EncryptionMaterialsRequest,
-    ) -> Result<EncryptionMaterials, Error>;
+        input: GetEncryptionMaterialsInput,
+    ) -> Result<GetEncryptionMaterialsOutput, Error>;
 
     /// Assemble decryption materials for a decrypt request. Mirrors the
     /// `Decrypt Materials` behavior of the
     /// [CMM interface specification](../../../spec/framework/cmm-interface.md#decrypt-materials).
     async fn decrypt_materials(
         &self,
-        request: DecryptMaterialsRequest,
-    ) -> Result<DecryptionMaterials, Error>;
+        input: DecryptMaterialsInput,
+    ) -> Result<DecryptMaterialsOutput, Error>;
 }
 
 crate::shared::shared_handle!(
@@ -60,6 +64,8 @@ crate::shared::shared_handle!(
     ///
     /// It implements [`Cmm`], so it can be passed anywhere a CMM is accepted.
     /// Callers that know their CMM's type pass it directly and never need this one.
+    ///
+    /// Each operation returns a fluent builder: set the input, then call `send`.
     SharedCmm,
     Cmm
 );
@@ -72,15 +78,37 @@ impl Cmm for SharedCmm {
 
     async fn get_encryption_materials(
         &self,
-        request: EncryptionMaterialsRequest,
-    ) -> Result<EncryptionMaterials, Error> {
-        self.0.get_encryption_materials(request).await
+        input: GetEncryptionMaterialsInput,
+    ) -> Result<GetEncryptionMaterialsOutput, Error> {
+        Cmm::get_encryption_materials(&*self.0, input).await
     }
 
     async fn decrypt_materials(
         &self,
-        request: DecryptMaterialsRequest,
-    ) -> Result<DecryptionMaterials, Error> {
-        self.0.decrypt_materials(request).await
+        input: DecryptMaterialsInput,
+    ) -> Result<DecryptMaterialsOutput, Error> {
+        Cmm::decrypt_materials(&*self.0, input).await
+    }
+}
+
+/// A CMM behind an `Arc` is a CMM, so one instance can be shared without being `Clone`.
+#[async_trait]
+impl<T: Cmm + ?Sized> Cmm for std::sync::Arc<T> {
+    fn name(&self) -> Cow<'_, str> {
+        (**self).name()
+    }
+
+    async fn get_encryption_materials(
+        &self,
+        input: GetEncryptionMaterialsInput,
+    ) -> Result<GetEncryptionMaterialsOutput, Error> {
+        (**self).get_encryption_materials(input).await
+    }
+
+    async fn decrypt_materials(
+        &self,
+        input: DecryptMaterialsInput,
+    ) -> Result<DecryptMaterialsOutput, Error> {
+        (**self).decrypt_materials(input).await
     }
 }
