@@ -1,4 +1,6 @@
-# This workflow runs for every pull request.
+# This workflow runs for every pull request, and on a weekday schedule as the
+# repo's daily CI. The scheduled run tests every project and also runs the
+# path-filtered standalone workflows (TestServers, C++ shim, C++ duvet).
 #
 # This is a monorepo containing multiple projects. To avoid running every
 # project's CI on every PR, we detect which project directories changed and
@@ -15,6 +17,9 @@ name: PR CI
 
 on:
   pull_request:
+  # Every weekday at 15:00 UTC (8AM PDT), matching the MPL's daily CI.
+  schedule:
+    - cron: "00 15 * * 1-5"
 
 # Concurrency control helps free up runners faster and speed up development.
 # When new commits are pushed in PR, the previous workflow run is cancelled.
@@ -34,6 +39,8 @@ jobs:
   # so the fan-out scales automatically as new projects are added.
   detect-changes:
     name: Detect changed projects
+    # Don't run the cron builds on forks
+    if: github.event_name != 'schedule' || github.repository_owner == 'aws'
     runs-on: ubuntu-22.04
     permissions:
       contents: read
@@ -46,6 +53,7 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Filter changed paths
+        if: github.event_name == 'pull_request'
         id: filter
         uses: dorny/paths-filter@v4
         with:
@@ -80,6 +88,7 @@ jobs:
           DBESDK: ${{ steps.filter.outputs.db-esdk }}
           S3EC: ${{ steps.filter.outputs.s3ec }}
           SHARED: ${{ steps.filter.outputs.shared }}
+          SCHEDULED: ${{ github.event_name == 'schedule' }}
         run: |
           set -euo pipefail
 
@@ -98,7 +107,12 @@ jobs:
             fi
           }
 
-          if [[ "$MPL" == "true" || "$SHARED" == "true" ]]; then
+          if [[ "$SCHEDULED" == "true" ]]; then
+            echo "Scheduled run -> running all projects."
+            for p in "${all[@]}"; do
+              add "$p"
+            done
+          elif [[ "$MPL" == "true" || "$SHARED" == "true" ]]; then
             echo "MPL or shared infrastructure changed -> running all projects."
             for p in "${all[@]}"; do
               add "$p"
@@ -143,9 +157,66 @@ jobs:
     with:
       project: esdk
 
+  # The standalone workflows below only trigger on PRs that touch their paths,
+  # so the scheduled run calls each of them to cover every project daily.
+  daily-ci-esdk-test-server:
+    needs: detect-changes
+    if: github.event_name == 'schedule'
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    uses: ./.github/workflows/esdk-test-server.yml
+    secrets: inherit
+
+  daily-ci-mpl-test-server:
+    needs: detect-changes
+    if: github.event_name == 'schedule'
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/mpl-test-server.yml
+    secrets: inherit
+
+  daily-ci-prim-test-server:
+    needs: detect-changes
+    if: github.event_name == 'schedule'
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/prim-test-server.yml
+    secrets: inherit
+
+  daily-ci-aws-esdk-cpp:
+    needs: detect-changes
+    if: github.event_name == 'schedule'
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/aws-esdk-cpp.yml
+
+  daily-ci-aws-esdk-cpp-test-server:
+    needs: detect-changes
+    if: github.event_name == 'schedule'
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    uses: ./.github/workflows/aws-esdk-cpp-test-server.yml
+    secrets: inherit
+
+  daily-ci-aws-esdk-cpp-duvet:
+    needs: detect-changes
+    if: github.event_name == 'schedule'
+    uses: ./.github/workflows/duvet.yml
+    with:
+      project: esdk/shims/aws-esdk-cpp
+      artifact-name: aws-esdk-cpp-duvet-report
+
   # Check that the generated error types files match the errors.toml definitions.
   gen-errors:
     name: Generated error types are current
+    if: github.event_name != 'schedule' || github.repository_owner == 'aws'
     runs-on: ubuntu-22.04
     permissions:
       contents: read
@@ -173,11 +244,17 @@ jobs:
   # every needed job either succeeded or was legitimately skipped. `pr-ci-rust`
   # is allowed to skip so that PRs touching no project still pass this gate.
   pr-ci-all-required:
-    if: always()
+    if: always() && (github.event_name != 'schedule' || github.repository_owner == 'aws')
     needs:
       - detect-changes
       - pr-ci-rust
       - pr-ci-duvet
+      - daily-ci-esdk-test-server
+      - daily-ci-mpl-test-server
+      - daily-ci-prim-test-server
+      - daily-ci-aws-esdk-cpp
+      - daily-ci-aws-esdk-cpp-test-server
+      - daily-ci-aws-esdk-cpp-duvet
       - gen-errors
     runs-on: ubuntu-22.04
     steps:
@@ -185,4 +262,8 @@ jobs:
         uses: re-actors/alls-green@release/v1
         with:
           jobs: ${{ toJSON(needs) }}
-          allowed-skips: pr-ci-rust, pr-ci-duvet
+          allowed-skips: >-
+            pr-ci-rust, pr-ci-duvet, daily-ci-esdk-test-server,
+            daily-ci-mpl-test-server, daily-ci-prim-test-server,
+            daily-ci-aws-esdk-cpp, daily-ci-aws-esdk-cpp-test-server,
+            daily-ci-aws-esdk-cpp-duvet

@@ -14,6 +14,7 @@ on:
       - "mpl/**"
       - ".github/workflows/mpl-test-server.yml"
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read

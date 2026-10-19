@@ -11,9 +11,12 @@ on:
       - "esdk/**"
       - ".github/workflows/aws-esdk-cpp.yml"
   workflow_dispatch:
+  workflow_call:
 
+# Under workflow_call, github.workflow is the caller's name; the suffix keeps
+# this group distinct from the caller's own concurrency group.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-aws-esdk-cpp-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
