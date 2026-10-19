@@ -33,4 +33,7 @@ Cargo.lock
 /examples/custom-keyring/target/
 /examples/custom-keyring/Cargo.lock
 /streaming_example
+/streaming_chunks_example
 /shared_cache_example
+/per_request_credentials_example
+/enum_parity_test

@@ -6,6 +6,7 @@
 //! decode end to end.
 
 use super::*;
+use aws_crypto_mpl::cmc::Cmc as _;
 use ffi::EsdkAlgorithmSuiteId as F;
 use ffi::EsdkCommitmentPolicy as P;
 
@@ -47,21 +48,28 @@ fn unset_policy() -> ffi::OptCommitmentPolicy {
 fn set_policy(value: P) -> ffi::OptCommitmentPolicy {
     ffi::OptCommitmentPolicy { set: true, value }
 }
-fn unset_cache() -> ffi::OptCacheType {
-    ffi::OptCacheType {
+fn unset_duration() -> ffi::OptDuration {
+    ffi::OptDuration {
         set: false,
-        value: ffi::CacheType {
-            kind: ffi::CacheKind { repr: 0 },
-            entry_capacity: 0,
-            entry_pruning_tail_size: 0,
-            grace_period: 0,
-            grace_interval: 0,
-            fan_out: 0,
-            inflight_ttl: 0,
-            sleep_milli: 0,
-            time_units: ffi::TimeUnits::Unset,
-            shared: std::ptr::null(),
-        },
+        value: ffi::Duration { secs: 0, nanos: 0 },
+    }
+}
+fn set_duration(secs: u64, nanos: u32) -> ffi::OptDuration {
+    ffi::OptDuration {
+        set: true,
+        value: ffi::Duration { secs, nanos },
+    }
+}
+
+fn unset_storm_tracking_options() -> ffi::StormTrackingCmcOptions {
+    ffi::StormTrackingCmcOptions {
+        entry_capacity: unset_u32(),
+        entry_pruning_tail_size: unset_u32(),
+        grace_period: unset_duration(),
+        grace_interval: unset_duration(),
+        fan_out: unset_u32(),
+        inflight_ttl: unset_duration(),
+        sleep: unset_duration(),
     }
 }
 
@@ -91,8 +99,8 @@ fn unset_hierarchical_keyring_input() -> ffi::HierarchicalKeyringInput {
     ffi::HierarchicalKeyringInput {
         branch_key_id: String::new(),
         key_store: std::ptr::null(),
-        ttl_seconds: 0,
-        cache: unset_cache(),
+        ttl: ffi::Duration { secs: 0, nanos: 0 },
+        cache: std::ptr::null(),
         partition_id: unset_string(),
     }
 }
@@ -117,7 +125,41 @@ fn unset_client_config() -> ffi::MplAwsClientConfig {
             mode_adaptive: false,
             max_attempts: unset_u32(),
         },
+        credentials: ffi::OptCredentials {
+            set: false,
+            value: test_credentials("", "", None),
+        },
     }
+}
+
+fn test_credentials(
+    access_key_id: &str,
+    secret_access_key: &str,
+    session_token: Option<&str>,
+) -> ffi::Credentials {
+    ffi::Credentials {
+        access_key_id: access_key_id.to_string(),
+        secret_access_key: secret_access_key.to_string(),
+        session_token: ffi::OptString {
+            set: session_token.is_some(),
+            value: session_token.unwrap_or_default().to_string(),
+        },
+        expiration: unset_duration(),
+    }
+}
+
+fn client_config_with_credentials(credentials: ffi::Credentials) -> ffi::MplAwsClientConfig {
+    let mut cfg = unset_client_config();
+    cfg.region = ffi::OptString {
+        set: true,
+        value: "us-west-2".to_string(),
+    };
+    cfg.retry.max_attempts = set_u32(1);
+    cfg.credentials = ffi::OptCredentials {
+        set: true,
+        value: credentials,
+    };
+    cfg
 }
 
 fn keystore_config_with_clients(kms: &MplKmsClient, ddb: &MplDdbClient) -> ffi::KeyStoreConfig {
@@ -158,7 +200,7 @@ fn alg_id_target_to_core_accepts_exactly_known_reprs() {
 
 #[test]
 fn alg_id_target_to_core_maps_each_repr_to_matching_variant() {
-    use aws_mpl_legacy::suites::EsdkAlgorithmSuiteId as C;
+    use super::EsdkAlgorithmSuiteId as C;
     let pairs: [(u16, C); 11] = [
         (0x0014, C::AlgAes128GcmIv12Tag16NoKdf),
         (0x0046, C::AlgAes192GcmIv12Tag16NoKdf),
@@ -188,32 +230,25 @@ fn alg_id_target_to_core_rejects_unknown() {
     //# - The shim MUST return an error when the target value is not one of the algorithm
     //# suite IDs defined by the core ESDK.
     let err = alg_id_target_to_core(F { repr: 0xFFFF }).unwrap_err();
-    assert!(err.contains("unrecognized"), "unexpected error: {err}");
+    assert!(
+        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, "")),
+        "unexpected error: {err}"
+    );
     assert!(alg_id_target_to_core(F { repr: 0x0000 }).is_err());
 }
 
+// Catches if ESDK Rust adds a suite but C++ doesn't.
+// The new id falls through to the error arm of `alg_id_core_to_target`.
 #[test]
 fn alg_id_core_to_target_maps_every_core_variant() {
-    use aws_mpl_legacy::suites::EsdkAlgorithmSuiteId as C;
-    let pairs: [(C, u16); 11] = [
-        (C::AlgAes128GcmIv12Tag16NoKdf, 0x0014),
-        (C::AlgAes192GcmIv12Tag16NoKdf, 0x0046),
-        (C::AlgAes256GcmIv12Tag16NoKdf, 0x0078),
-        (C::AlgAes128GcmIv12Tag16HkdfSha256, 0x0114),
-        (C::AlgAes192GcmIv12Tag16HkdfSha256, 0x0146),
-        (C::AlgAes256GcmIv12Tag16HkdfSha256, 0x0178),
-        (C::AlgAes128GcmIv12Tag16HkdfSha256EcdsaP256, 0x0214),
-        (C::AlgAes192GcmIv12Tag16HkdfSha384EcdsaP384, 0x0346),
-        (C::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384, 0x0378),
-        (C::AlgAes256GcmHkdfSha512CommitKey, 0x0478),
-        (C::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384, 0x0578),
-    ];
-    for (core, repr) in pairs {
+    for &core in super::EsdkAlgorithmSuiteId::ALL {
         //= spec/shim/esdk-shim.md#algorithm-suite-identifier
         //= type=test
         //# - The shim MUST translate a core ESDK algorithm suite to the target algorithm
         //# suite identifier that has the same two-byte ID.
-        assert_eq!(alg_id_core_to_target(core).unwrap().repr, repr);
+        let target = alg_id_core_to_target(core)
+            .unwrap_or_else(|e| panic!("{core:?} has no C++ mapping: {e}"));
+        assert_eq!(target.repr, u16::from_be_bytes(core.id_bytes()));
     }
 }
 
@@ -228,7 +263,7 @@ fn alg_id_round_trips_through_both_conversions() {
 
 #[test]
 fn commitment_policy_target_to_core_accepts_exactly_known_reprs() {
-    use aws_mpl_legacy::commitment::EsdkCommitmentPolicy as C;
+    use super::EsdkCommitmentPolicy as C;
     let pairs: [(P, C); 3] = [
         (P::ForbidEncryptAllowDecrypt, C::ForbidEncryptAllowDecrypt),
         (P::RequireEncryptAllowDecrypt, C::RequireEncryptAllowDecrypt),
@@ -260,22 +295,21 @@ fn commitment_policy_target_to_core_accepts_exactly_known_reprs() {
 
 #[test]
 fn encryption_context_round_trips() {
-    use std::collections::HashMap;
-    let mut m = HashMap::new();
-    m.insert("k1".to_string(), "v1".to_string());
-    m.insert("k2".to_string(), "v2".to_string());
-    let list = encryption_context_core_to_target(m.clone()).unwrap();
+    let mut m = aws_esdk::types::EncryptionContext::new();
+    m.insert("k1", "v1");
+    m.insert("k2", "\u{1F600}");
+    let list = encryption_context_core_to_target(&m);
     assert_eq!(list.len(), 2);
     //= spec/shim/esdk-shim.md#encryption-context
     //= type=test
     //# - The shim MUST translate the core ESDK's encryption context, given as a
     //# key-value map, to the target's list of key-value pairs, preserving every pair
     //# and the exact key and value of each.
-    for (k, v) in &m {
+    for (k, v) in m.iter() {
         assert_eq!(
-            list.iter().filter(|i| &i.key == k && &i.value == v).count(),
+            list.iter().filter(|i| i.key == k && i.value == v).count(),
             1,
-            "pair {k}={v} must appear exactly once"
+            "pair {k:?}={v:?} must appear exactly once"
         );
     }
     //= spec/shim/esdk-shim.md#encryption-context
@@ -283,15 +317,14 @@ fn encryption_context_round_trips() {
     //# - The shim MUST translate the target's encryption context, given as a list of
     //# key-value pairs, to the core ESDK's key-value map, preserving every pair and
     //# the exact key and value of each.
-    assert_eq!(encryption_context_target_to_core(&list).unwrap(), m);
+    assert_eq!(encryption_context_target_to_core(&list), m);
 }
 
 #[test]
 fn encryption_context_empty() {
-    use std::collections::HashMap;
-    let empty: HashMap<String, String> = HashMap::new();
-    assert!(encryption_context_core_to_target(empty).unwrap().is_empty());
-    assert!(encryption_context_target_to_core(&[]).unwrap().is_empty());
+    let empty = aws_esdk::types::EncryptionContext::new();
+    assert!(encryption_context_core_to_target(&empty).is_empty());
+    assert!(encryption_context_target_to_core(&[]).is_empty());
 }
 
 #[test]
@@ -303,7 +336,7 @@ fn make_frame_length_translates_and_rejects_zero() {
     //# value.
     let err = make_frame_length(0).unwrap_err();
     assert!(
-        err.contains("Frame length must be non-zero"),
+        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, "")),
         "unexpected error: {err}"
     );
     assert!(make_frame_length(4096).is_ok());
@@ -323,7 +356,7 @@ fn max_edks_zero_is_no_limit_positive_is_limit() {
 
 #[test]
 fn make_kms_config_accepts_key_arn() {
-    use aws_mpl_legacy::dafny::deps::aws_cryptography_keyStore::types::KmsConfiguration;
+    use aws_crypto_mpl::key_store::types::KmsConfiguration;
     //= spec/shim/esdk-shim.md#kms-configuration
     //= type=test
     //# - The shim MUST translate a KMS key ARN configuration.
@@ -335,7 +368,7 @@ fn make_kms_config_accepts_key_arn() {
 
 #[test]
 fn make_kms_config_accepts_mr_key_arn() {
-    use aws_mpl_legacy::dafny::deps::aws_cryptography_keyStore::types::KmsConfiguration;
+    use aws_crypto_mpl::key_store::types::KmsConfiguration;
     //= spec/shim/esdk-shim.md#kms-configuration
     //= type=test
     //# - The shim MUST translate a KMS multi-Region-key ARN configuration.
@@ -347,7 +380,7 @@ fn make_kms_config_accepts_mr_key_arn() {
 
 #[test]
 fn make_kms_config_accepts_discovery() {
-    use aws_mpl_legacy::dafny::deps::aws_cryptography_keyStore::types::KmsConfiguration;
+    use aws_crypto_mpl::key_store::types::KmsConfiguration;
     //= spec/shim/esdk-shim.md#kms-configuration
     //= type=test
     //# - The shim MUST translate a discovery configuration.
@@ -359,13 +392,13 @@ fn make_kms_config_accepts_discovery() {
 
 #[test]
 fn make_kms_config_accepts_mr_discovery() {
-    use aws_mpl_legacy::dafny::deps::aws_cryptography_keyStore::types::KmsConfiguration;
+    use aws_crypto_mpl::key_store::types::KmsConfiguration;
     //= spec/shim/esdk-shim.md#kms-configuration
     //= type=test
     //# - The shim MUST translate a multi-Region-key discovery configuration.
     assert!(matches!(
-        make_kms_config(ffi::KmsConfigurationType::MrDiscovery, "").unwrap(),
-        KmsConfiguration::MrDiscovery(_)
+        make_kms_config(ffi::KmsConfigurationType::MrDiscovery, "us-west-2").unwrap(),
+        KmsConfiguration::MrDiscovery(m) if m.region() == "us-west-2"
     ));
 }
 
@@ -377,43 +410,254 @@ fn make_kms_config_rejects_unknown_type() {
     //# supported value.
     let err = make_kms_config(ffi::KmsConfigurationType { repr: 99 }, "").unwrap_err();
     assert!(
-        err.contains("Invalid KmsConfigurationType"),
+        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, "")),
         "unexpected error: {err}"
     );
     let err = make_kms_config(ffi::KmsConfigurationType::Unset, "").unwrap_err();
     assert!(
-        err.contains("kms_configuration_type is unset"),
+        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, "")),
         "unexpected error: {err}"
     );
 }
 
 #[test]
-fn classify_core_error_maps_each_kind() {
-    use aws_esdk::ErrorKind;
-    // ErrorKind::Esdk has no explicit arm; it maps through the wildcard.
+fn classify_core_error_maps_each_variant_to_the_same_name() {
+    use aws_esdk::error as e;
+    use ffi::ShimErrorKind as S;
+    let cases: [(aws_esdk::Error, S); 14] = [
+        (e::ValidationError::new("x").into(), S::Validation),
+        (e::SerializationError::new("x").into(), S::Serialization),
+        (e::CryptographicError::new("x").into(), S::Cryptographic),
+        (
+            e::InvalidMaterialsError::new("x").into(),
+            S::InvalidMaterials,
+        ),
+        (
+            e::EncryptionContextMismatchError::new("x").into(),
+            S::EncryptionContextMismatch,
+        ),
+        (
+            e::NoMatchingDataKeyError::new("x").into(),
+            S::NoMatchingDataKey,
+        ),
+        (e::AccessDeniedError::new("x").into(), S::AccessDenied),
+        (
+            e::ResourceNotFoundError::new("x").into(),
+            S::ResourceNotFound,
+        ),
+        (e::ServiceError::new("x").into(), S::Service),
+        (e::DispatchError::new("x").into(), S::Dispatch),
+        (e::InternalError::new("x").into(), S::Internal),
+        (e::IoError::new("x").into(), S::Io),
+        (e::ThrottlingError::new("x").into(), S::Throttling),
+        (e::ConflictError::new("x").into(), S::Conflict),
+    ];
+    for (err, expected) in cases {
+        assert_eq!(classify_core_error(&err).repr, expected.repr, "for {err:?}");
+    }
+}
+
+/// The `kind=K<US>retryable=Y<US>retry=R` prefix the facade decodes.
+fn err_prefix(kind: ffi::ShimErrorKind, retry: &str) -> String {
+    let sep = ERROR_FIELD_SEPARATOR;
+    let retryable = u8::from(!retry.is_empty());
+    format!(
+        "kind={}{sep}retryable={retryable}{sep}retry={retry}{sep}",
+        kind.repr
+    )
+}
+
+#[test]
+fn core_err_encodes_an_mpl_errors_kind_and_retry_kind() {
+    use aws_crypto_mpl::Error as MplError;
+    use aws_crypto_mpl::error::{NoMatchingDataKeyError, RetryKind, ServiceError, ValidationError};
     let cases = [
-        (ErrorKind::Esdk, ffi::ShimErrorKind::Esdk),
         (
-            ErrorKind::SerializationError,
-            ffi::ShimErrorKind::SerializationError,
+            MplError::from(NoMatchingDataKeyError::new("x")),
+            ffi::ShimErrorKind::NoMatchingDataKey,
+            "",
         ),
         (
-            ErrorKind::CryptographicError,
-            ffi::ShimErrorKind::CryptographicError,
+            MplError::from(
+                ServiceError::builder()
+                    .message("x")
+                    .retry_kind(RetryKind::Throttling)
+                    .build(),
+            ),
+            ffi::ShimErrorKind::Service,
+            "throttling",
         ),
-        (ErrorKind::MplError, ffi::ShimErrorKind::MplError),
         (
-            ErrorKind::ValidationError,
-            ffi::ShimErrorKind::ValidationError,
+            MplError::from(aws_crypto_mpl::error::ThrottlingError::new("x")),
+            ffi::ShimErrorKind::Throttling,
+            "throttling",
+        ),
+        (
+            MplError::from(ValidationError::new("x")),
+            ffi::ShimErrorKind::Validation,
+            "",
         ),
     ];
-    for (kind, expected) in cases {
-        assert_eq!(
-            classify_core_error(&kind).repr,
-            expected.repr,
-            "for {kind:?}"
+    for (e, kind, retry) in cases {
+        let err = core_err(e);
+        assert!(
+            err.starts_with(&err_prefix(kind, retry)),
+            "unexpected error: {err}"
         );
     }
+}
+
+#[test]
+fn core_err_encodes_the_aws_call() {
+    use aws_crypto_mpl::Error as MplError;
+    use aws_crypto_mpl::error::{AccessDeniedError, KmsKey, Resource, Service};
+    let err = core_err(MplError::from(
+        AccessDeniedError::builder()
+            .message("denied")
+            .service(Service::Kms)
+            .resource(Resource::KmsKey(KmsKey::new("arn:aws:kms:k")))
+            .build(),
+    ));
+    let sep = ERROR_FIELD_SEPARATOR;
+    assert!(
+        err.contains(&format!(
+            "{sep}service=kms{sep}resource_type=kms_key{sep}resource=arn:aws:kms:k{sep}"
+        )),
+        "unexpected error: {err}"
+    );
+}
+
+/// The header field `name`, from an encoded error.
+fn header_field<'a>(encoded: &'a str, name: &str) -> &'a str {
+    let header = &encoded[..encoded.find(ERROR_HEADER_END).expect("a header")];
+    header
+        .split(ERROR_FIELD_SEPARATOR)
+        .find_map(|f| f.strip_prefix(&format!("{name}=")))
+        .expect("the field")
+}
+
+/// The Rust `{}` and `{:#}` text after the header.
+fn message_parts(encoded: &str) -> (&str, &str) {
+    let (display, full, _) = body_parts(encoded);
+    (display, full)
+}
+
+/// The Rust `{}` text, `{:#}` text and backtrace after the header.
+fn body_parts(encoded: &str) -> (&str, &str, &str) {
+    let body = &encoded[encoded.find(ERROR_HEADER_END).expect("a header") + 1..];
+    let display_len: usize = header_field(encoded, "display_len").parse().unwrap();
+    let full_len: usize = header_field(encoded, "full_len").parse().unwrap();
+    let (display, rest) = body.split_at(display_len);
+    let (full, backtrace) = rest.split_at(full_len);
+    (display, full, backtrace)
+}
+
+#[test]
+fn core_err_carries_the_backtrace_after_the_messages() {
+    use aws_esdk::error::InternalError;
+    let err = InternalError::new("example");
+    let captured = backtrace_text(origin_backtrace(&aws_esdk::Error::from(err.clone())));
+    let encoded = core_err(err);
+    let (display, full, backtrace) = body_parts(&encoded);
+    assert_eq!(display, "Internal: example");
+    assert_eq!(full, "Internal: example");
+    assert_eq!(backtrace, captured);
+}
+
+#[test]
+fn the_backtrace_is_the_innermost_library_errors() {
+    let inner = aws_crypto_mpl::Error::internal("origin");
+    let outer = aws_esdk::Error::from(inner.clone());
+    assert!(std::ptr::eq(origin_backtrace(&outer), inner.backtrace()));
+}
+
+#[test]
+fn shim_err_has_no_backtrace() {
+    let encoded = shim_err(ffi::ShimErrorKind::Validation, "decrypt", "bad input");
+    let (_, _, backtrace) = body_parts(&encoded);
+    assert_eq!(backtrace, "");
+}
+
+#[test]
+fn core_err_encodes_the_new_resources_reason_credentials_and_name() {
+    use aws_esdk::error::{
+        AccessDeniedError, Cache, CmmResource, ConflictError, ConflictReason, KeyringResource,
+        Resource, Service, ThrottlingError,
+    };
+    let throttled = core_err(
+        ThrottlingError::builder()
+            .resource(Resource::Cache(Cache::new()))
+            .build(),
+    );
+    assert_eq!(header_field(&throttled, "resource_type"), "cache");
+    assert_eq!(header_field(&throttled, "service"), "");
+    assert_eq!(header_field(&throttled, "name"), "Throttling");
+
+    let keyring = core_err(
+        aws_esdk::error::NoMatchingDataKeyError::builder()
+            .resource(Resource::Keyring(KeyringResource::new("ns/name")))
+            .build(),
+    );
+    assert_eq!(header_field(&keyring, "resource_type"), "keyring");
+    assert_eq!(header_field(&keyring, "resource"), "ns/name");
+
+    let cmm = core_err(
+        aws_esdk::error::InvalidMaterialsError::builder()
+            .resource(Resource::Cmm(CmmResource::new("default")))
+            .build(),
+    );
+    assert_eq!(header_field(&cmm, "resource_type"), "cmm");
+    assert_eq!(header_field(&cmm, "resource"), "default");
+
+    let conflict = core_err(
+        ConflictError::builder()
+            .service(Service::DynamoDb)
+            .reason(ConflictReason::ConcurrentModification)
+            .build(),
+    );
+    assert_eq!(
+        header_field(&conflict, "conflict_reason"),
+        "concurrent_modification"
+    );
+    assert_eq!(header_field(&conflict, "credentials"), "0");
+
+    let expired = core_err(
+        AccessDeniedError::builder()
+            .code("ExpiredTokenException")
+            .build(),
+    );
+    assert_eq!(header_field(&expired, "credentials"), "1");
+}
+
+#[test]
+fn core_err_sends_the_display_and_alternate_text() {
+    use aws_esdk::error::InternalError;
+    let err = aws_esdk::Error::from(
+        InternalError::new("outer").with_source(std::io::Error::other("the cause")),
+    );
+    let encoded = core_err(err);
+    let (display, full) = message_parts(&encoded);
+    assert_eq!(display, "Internal: outer");
+    assert_eq!(full, "Internal: outer: the cause");
+}
+
+#[test]
+fn a_message_holding_the_separators_still_decodes() {
+    use aws_esdk::error::InternalError;
+    let message = format!("a{ERROR_HEADER_END}b{ERROR_FIELD_SEPARATOR}c");
+    let encoded = core_err(InternalError::new(message.clone()));
+    let (display, full) = message_parts(&encoded);
+    assert_eq!(display, format!("Internal: {message}"));
+    assert_eq!(full, display);
+}
+
+#[test]
+fn shim_err_is_not_retryable() {
+    let err = shim_err(ffi::ShimErrorKind::Validation, "op", "x");
+    assert!(
+        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, "")),
+        "unexpected error: {err}"
+    );
 }
 
 // Inputs the facade cannot express, so must be tested in Rust
@@ -428,13 +672,19 @@ fn encrypt_rejects_null_keyring() {
     //# - The shim MUST return an error, and MUST NOT invoke the core ESDK, when no
     //# materials source is supplied.
     let err = expect_err(encrypt(&unset_encrypt_input()));
-    assert!(err.contains("keyring is null"), "unexpected error: {err}");
+    assert!(
+        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, "")),
+        "unexpected error: {err}"
+    );
 }
 
 #[test]
 fn decrypt_rejects_null_keyring() {
     let err = expect_err(decrypt(&unset_decrypt_input()));
-    assert!(err.contains("keyring is null"), "unexpected error: {err}");
+    assert!(
+        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, "")),
+        "unexpected error: {err}"
+    );
 }
 
 #[test]
@@ -468,7 +718,7 @@ fn create_keystore_rejects_unset_kms_config_type() {
     unset_kms.kms_configuration_type = ffi::KmsConfigurationType::Unset;
     let err = expect_err(create_keystore(&unset_kms));
     assert!(
-        err.contains("kms_configuration_type is unset"),
+        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, "")),
         "unexpected error: {err}"
     );
 }
@@ -483,89 +733,205 @@ fn create_hierarchical_keyring_rejects_null_key_store() {
     let err = expect_err(create_hierarchical_keyring(
         &unset_hierarchical_keyring_input(),
     ));
-    assert!(err.contains("key_store is null"), "unexpected error: {err}");
+    assert!(
+        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, "")),
+        "unexpected error: {err}"
+    );
+}
+
+fn hierarchical_keyring_input_with_ttl(
+    key_store: &KeyStore,
+    ttl: ffi::Duration,
+) -> ffi::HierarchicalKeyringInput {
+    let mut input = unset_hierarchical_keyring_input();
+    input.key_store = key_store as *const KeyStore;
+    input.branch_key_id = "branch-key-id".to_string();
+    input.ttl = ttl;
+    input
 }
 
 #[test]
-fn create_hierarchical_keyring_reports_bad_cache() {
+fn create_hierarchical_keyring_passes_ttl_nanos_to_the_core() {
     let kms = create_kms_client(&unset_client_config()).expect("kms client");
     let ddb = create_ddb_client(&unset_client_config()).expect("ddb client");
-    let keystore = create_keystore(&keystore_config_with_clients(&kms, &ddb)).expect("key store");
+    let key_store = create_keystore(&keystore_config_with_clients(&kms, &ddb)).expect("key store");
 
-    let mut input = unset_hierarchical_keyring_input();
-    input.key_store = &*keystore as *const KeyStore;
-    input.cache = ffi::OptCacheType {
-        set: true,
-        value: ffi::CacheType {
-            kind: ffi::CacheKind { repr: 99 },
-            entry_capacity: 0,
-            entry_pruning_tail_size: 0,
-            grace_period: 0,
-            grace_interval: 0,
-            fan_out: 0,
-            inflight_ttl: 0,
-            sleep_milli: 0,
-            time_units: ffi::TimeUnits::Unset,
-            shared: std::ptr::null(),
+    create_hierarchical_keyring(&hierarchical_keyring_input_with_ttl(
+        &key_store,
+        ffi::Duration {
+            secs: 10,
+            nanos: 500_000_000,
         },
-    };
-    let err = expect_err(create_hierarchical_keyring(&input));
+    ))
+    .expect("a 10.5 s TTL must be accepted");
+
+    let err = expect_err(create_hierarchical_keyring(
+        &hierarchical_keyring_input_with_ttl(
+            &key_store,
+            ffi::Duration {
+                secs: u64::MAX,
+                nanos: 1_000_000_000,
+            },
+        ),
+    ));
     assert!(
-        err.contains("unrecognized or unset cache kind"),
+        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, "")),
         "unexpected error: {err}"
     );
 }
 
 #[test]
-fn create_cache_rejects_unknown_kind() {
-    //= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
-    //= type=test
-    //= reason=Repr 0 (the deliberately unassigned zero value) and 99 are both rejected.
-    //# - The shim MUST return an error when the target cache kind is not a supported value.
-    for repr in [0u8, 99] {
-        let err = expect_err(create_cryptographic_materials_cache(&ffi::CacheType {
-            kind: ffi::CacheKind { repr },
-            entry_capacity: 0,
-            entry_pruning_tail_size: 0,
-            grace_period: 0,
-            grace_interval: 0,
-            fan_out: 0,
-            inflight_ttl: 0,
-            sleep_milli: 0,
-            time_units: ffi::TimeUnits::Unset,
-            shared: std::ptr::null(),
-        }));
-        assert!(
-            err.contains("unrecognized or unset cache kind"),
-            "unexpected error: {err}"
-        );
+fn create_hierarchical_keyring_uses_the_supplied_cache() {
+    let kms = create_kms_client(&unset_client_config()).expect("kms client");
+    let ddb = create_ddb_client(&unset_client_config()).expect("ddb client");
+    let key_store = create_keystore(&keystore_config_with_clients(&kms, &ddb)).expect("key store");
+
+    // A 5 s TTL fails with the default cache (10 s grace period)
+    // and succeeds with a local cache (no grace period).
+    let mut input =
+        hierarchical_keyring_input_with_ttl(&key_store, ffi::Duration { secs: 5, nanos: 0 });
+    let err = expect_err(create_hierarchical_keyring(&input));
+    assert!(
+        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, "")),
+        "unexpected error: {err}"
+    );
+
+    let cache = create_local_cmc(10).expect("local cache should build");
+    input.cache = &*cache as *const CryptographicMaterialsCache;
+    create_hierarchical_keyring(&input).expect("a local cache has no grace period");
+}
+
+#[test]
+fn create_default_cmc_builds_a_default_storm_tracking_cache() {
+    let cache = create_default_cmc(10).expect("default cache should build");
+    assert_eq!(cache.inner.grace_period(), Some(Duration::from_secs(10)));
+    let err = expect_err(create_default_cmc(0x8000_0000));
+    assert!(
+        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, "")),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn unset_storm_tracking_options_keep_the_core_defaults() {
+    let cache = create_storm_tracking_cmc(&unset_storm_tracking_options())
+        .expect("storm-tracking cache should build");
+    assert_eq!(cache.inner.grace_period(), Some(Duration::from_secs(10)));
+}
+
+fn storm_tracking_options() -> ffi::StormTrackingCmcOptions {
+    ffi::StormTrackingCmcOptions {
+        entry_capacity: set_u32(10),
+        entry_pruning_tail_size: set_u32(1),
+        grace_period: set_duration(10, 0),
+        grace_interval: set_duration(0, 500_000_000),
+        fan_out: set_u32(20),
+        inflight_ttl: set_duration(2, 250_000_000),
+        sleep: set_duration(0, 20_000_000),
     }
 }
 
 #[test]
-fn create_storm_tracking_cache_honors_time_units() {
-    // time_units governs how grace_period/grace_interval/inflight_ttl are
-    // interpreted; Unset (the core default of seconds), Seconds, and
-    // Milliseconds must each build a usable cache.
-    for time_units in [
-        ffi::TimeUnits::Unset,
-        ffi::TimeUnits::Seconds,
-        ffi::TimeUnits::Milliseconds,
-    ] {
-        create_cryptographic_materials_cache(&ffi::CacheType {
-            kind: ffi::CacheKind::StormTracking,
-            entry_capacity: 10,
-            entry_pruning_tail_size: 1,
-            grace_period: 10,
-            grace_interval: 1,
-            fan_out: 20,
-            inflight_ttl: 10,
-            sleep_milli: 20,
-            time_units,
-            shared: std::ptr::null(),
-        })
-        .expect("storm-tracking cache should build");
-    }
+fn create_storm_tracking_cmc_passes_each_option_to_the_core() {
+    let cache =
+        apply_storm_tracking_options(StormTrackingCmc::builder(), &storm_tracking_options())
+            .expect("options convert")
+            .build()
+            .expect("storm-tracking cache should build");
+    assert_eq!(cache.entry_capacity(), 10);
+    assert_eq!(cache.entry_pruning_tail_size(), 1);
+    assert_eq!(cache.grace_period(), Some(Duration::from_secs(10)));
+    assert_eq!(cache.grace_interval(), Duration::from_millis(500));
+    assert_eq!(cache.fan_out(), 20);
+    assert_eq!(cache.inflight_ttl(), Duration::from_millis(2250));
+    assert_eq!(cache.sleep(), Duration::from_millis(20));
+}
+
+#[test]
+fn create_storm_tracking_cmc_rejects_zero_sleep() {
+    let mut options = storm_tracking_options();
+    options.sleep = set_duration(0, 0);
+    let err = expect_err(create_storm_tracking_cmc(&options));
+    assert!(
+        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, "")),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn create_storm_tracking_cmc_rejects_out_of_range_durations() {
+    let mut options = storm_tracking_options();
+    options.grace_period = set_duration(u64::MAX, 1_000_000_000);
+    let err = expect_err(create_storm_tracking_cmc(&options));
+    assert!(
+        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, "")),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn create_local_cmc_rejects_out_of_range_capacity() {
+    let err = expect_err(create_local_cmc(0x8000_0000));
+    assert!(
+        err.contains("entry_capacity 2147483648 exceeds"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn opt_to_option_returns_the_value_only_when_set() {
+    assert_eq!(unset_u32().to_option(), None);
+    assert_eq!(set_u32(7).to_option(), Some(7));
+
+    assert_eq!(unset_string().to_option(), None);
+    let set_string = ffi::OptString {
+        set: true,
+        value: "v".to_string(),
+    };
+    assert_eq!(set_string.to_option(), Some("v".to_string()));
+
+    // The bridge enums don't implement Debug, so compare their reprs.
+    assert!(unset_alg_id().to_option().is_none());
+    let alg = F::AlgAes256GcmHkdfSha512CommitKey;
+    assert_eq!(set_alg_id(alg).to_option().map(|a| a.repr), Some(alg.repr));
+
+    assert!(unset_policy().to_option().is_none());
+    let policy = P::RequireEncryptRequireDecrypt;
+    assert_eq!(
+        set_policy(policy).to_option().map(|p| p.repr),
+        Some(policy.repr)
+    );
+
+    assert!(unset_duration().to_option().is_none());
+    let got = set_duration(3, 500)
+        .to_option()
+        .expect("a set duration is Some");
+    assert_eq!((got.secs, got.nanos), (3, 500));
+}
+
+#[test]
+fn create_keystore_forwards_id_and_grant_tokens() {
+    let kms = create_kms_client(&unset_client_config()).expect("kms client");
+    let ddb = create_ddb_client(&unset_client_config()).expect("ddb client");
+
+    let unset = create_keystore(&keystore_config_with_clients(&kms, &ddb)).expect("key store");
+    let info = TOKIO_RUNTIME
+        .block_on(unset.inner.get_key_store_info().send())
+        .expect("info");
+    assert!(info.grant_tokens().is_empty());
+
+    let mut cfg = keystore_config_with_clients(&kms, &ddb);
+    cfg.id = ffi::OptString {
+        set: true,
+        value: "the-id".to_string(),
+    };
+    cfg.grant_tokens = vec!["g1".to_string(), "g2".to_string()];
+    let store = create_keystore(&cfg).expect("key store");
+    let info = TOKIO_RUNTIME
+        .block_on(store.inner.get_key_store_info().send())
+        .expect("info");
+    assert_eq!(info.key_store_id(), "the-id");
+    assert_eq!(info.grant_tokens(), ["g1", "g2"]);
 }
 
 #[test]
@@ -581,7 +947,7 @@ fn create_raw_aes_keyring_rejects_unsupported_wrapping_alg() {
         wrapping_alg: ffi::AesWrappingAlg::Unset,
     }));
     assert!(
-        unset.contains("wrapping_alg is unset"),
+        unset.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, "")),
         "unexpected error: {unset}"
     );
 
@@ -592,7 +958,7 @@ fn create_raw_aes_keyring_rejects_unsupported_wrapping_alg() {
         wrapping_alg: ffi::AesWrappingAlg { repr: 99 },
     }));
     assert!(
-        unknown.contains("Invalid AesWrappingAlg"),
+        unknown.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, "")),
         "unexpected error: {unknown}"
     );
 }
@@ -600,8 +966,8 @@ fn create_raw_aes_keyring_rejects_unsupported_wrapping_alg() {
 // Options forwarding
 
 #[test]
-fn apply_encrypt_options_forwards_every_optional_input() {
-    use aws_mpl_legacy::commitment::EsdkCommitmentPolicy as C;
+fn encrypt_settings_forwards_every_optional_input() {
+    use super::EsdkCommitmentPolicy as C;
     let input = ffi::EncryptInput {
         algorithm_suite_id: set_alg_id(F { repr: 0x0578 }),
         encryption_context: Vec::new(),
@@ -611,32 +977,57 @@ fn apply_encrypt_options_forwards_every_optional_input() {
         max_encrypted_data_keys: set_u32(5),
         commitment_policy: set_policy(P::ForbidEncryptAllowDecrypt),
     };
-    let mut core = aws_esdk::EncryptInput::default();
-    apply_encrypt_options(&mut core, &input).expect("options apply");
+    let settings = encrypt_settings(&input).expect("settings convert");
+    let config = settings.esdk.config();
 
     //= spec/shim/esdk-shim.md#encrypt-inputs
     //= type=test
     //# - MUST provide the target-supplied maximum-encrypted-data-keys value to
     //# the core ESDK, converted as defined in
     //# [Maximum encrypted data keys](#maximum-encrypted-data-keys).
-    assert_eq!(core.max_encrypted_data_keys, std::num::NonZeroUsize::new(5));
+    assert_eq!(
+        config.max_encrypted_data_keys(),
+        std::num::NonZeroUsize::new(5)
+    );
 
     //= spec/shim/esdk-shim.md#encrypt-inputs
     //= type=test
     //# - MUST provide the target-supplied frame length to the core ESDK,
     //# converted as defined in [Frame length](#frame-length).
-    assert_eq!(core.frame_length.0.get(), 1024);
+    assert_eq!(settings.frame_length, NonZeroU32::new(1024));
 
     //= spec/shim/esdk-shim.md#encrypt-inputs
     //= type=test
     //# - MUST provide the target-supplied commitment policy to the core ESDK,
     //# converted as defined in [Commitment policy](#commitment-policy).
-    assert_eq!(core.commitment_policy, C::ForbidEncryptAllowDecrypt);
+    assert_eq!(config.commitment_policy(), C::ForbidEncryptAllowDecrypt);
+
+    //= spec/shim/esdk-shim.md#encrypt-inputs
+    //= type=test
+    //# - MUST provide the target-supplied algorithm suite to the core ESDK,
+    //# converted as defined in [Algorithm suite identifier](#algorithm-suite-identifier).
+    assert_eq!(
+        settings.algorithm_suite_id,
+        Some(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
+    );
 }
 
 #[test]
-fn apply_decrypt_options_forwards_every_optional_input() {
-    use aws_mpl_legacy::commitment::EsdkCommitmentPolicy as C;
+fn encrypt_settings_leaves_unset_inputs_defaulted() {
+    let settings = encrypt_settings(&unset_encrypt_input()).expect("settings convert");
+    let config = settings.esdk.config();
+    assert_eq!(config.max_encrypted_data_keys(), None);
+    assert_eq!(settings.frame_length, None);
+    assert_eq!(
+        config.commitment_policy(),
+        EsdkCommitmentPolicy::RequireEncryptRequireDecrypt
+    );
+    assert_eq!(settings.algorithm_suite_id, None);
+}
+
+#[test]
+fn decrypt_client_forwards_every_optional_input() {
+    use super::EsdkCommitmentPolicy as C;
     let input = ffi::DecryptInput {
         ciphertext: &[],
         encryption_context: Vec::new(),
@@ -644,21 +1035,51 @@ fn apply_decrypt_options_forwards_every_optional_input() {
         max_encrypted_data_keys: set_u32(7),
         commitment_policy: set_policy(P::RequireEncryptAllowDecrypt),
     };
-    let mut core = aws_esdk::DecryptInput::default();
-    apply_decrypt_options(&mut core, &input).expect("options apply");
+    let esdk = decrypt_client(&input).expect("settings convert");
+    let config = esdk.config();
 
     //= spec/shim/esdk-shim.md#decrypt-inputs
     //= type=test
     //# - MUST provide the target-supplied maximum-encrypted-data-keys value to
     //# the core ESDK, converted as defined in
     //# [Maximum encrypted data keys](#maximum-encrypted-data-keys).
-    assert_eq!(core.max_encrypted_data_keys, std::num::NonZeroUsize::new(7));
+    assert_eq!(
+        config.max_encrypted_data_keys(),
+        std::num::NonZeroUsize::new(7)
+    );
 
     //= spec/shim/esdk-shim.md#decrypt-inputs
     //= type=test
     //# - MUST provide the target-supplied commitment policy to the core ESDK,
     //# converted as defined in [Commitment policy](#commitment-policy).
-    assert_eq!(core.commitment_policy, C::RequireEncryptAllowDecrypt);
+    assert_eq!(config.commitment_policy(), C::RequireEncryptAllowDecrypt);
+}
+
+#[test]
+fn opt_to_option_is_some_only_when_set() {
+    assert_eq!(set_u32(5).to_option(), Some(5));
+    assert_eq!(unset_u32().to_option(), None);
+
+    let region = ffi::OptString {
+        set: true,
+        value: "us-west-2".to_string(),
+    };
+    assert_eq!(region.to_option().as_deref(), Some("us-west-2"));
+    assert_eq!(unset_string().to_option(), None);
+
+    assert_eq!(
+        set_alg_id(F { repr: 0x0578 }).to_option().map(|v| v.repr),
+        Some(0x0578)
+    );
+    assert!(unset_alg_id().to_option().is_none());
+
+    assert!(
+        set_policy(P::ForbidEncryptAllowDecrypt).to_option() == Some(P::ForbidEncryptAllowDecrypt)
+    );
+    assert!(unset_policy().to_option().is_none());
+
+    assert!(unset_duration().to_option().is_none());
+    assert_eq!(set_duration(9, 0).to_option().map(|d| d.secs), Some(9));
 }
 
 // AWS SDK client configuration
@@ -693,7 +1114,7 @@ fn create_sdk_config_defers_retry_when_unset() {
     let default_ref = TOKIO_RUNTIME.block_on(aws_config::load_defaults(
         aws_config::BehaviorVersion::latest(),
     ));
-    let sdk = create_sdk_config(&unset_client_config()).expect("build sdk config");
+    let sdk = create_sdk_config(&unset_client_config(), None).expect("build sdk config");
     //= spec/shim/esdk-shim.md#service-client-configuration
     //= type=test
     //# - If the target does not supply a retry configuration, the shim MUST defer to
@@ -713,7 +1134,7 @@ fn create_sdk_config_applies_every_field() {
     };
     cfg.retry.max_attempts = set_u32(7);
     cfg.retry.mode_adaptive = true;
-    let sdk = create_sdk_config(&cfg).expect("build sdk config");
+    let sdk = create_sdk_config(&cfg, None).expect("build sdk config");
 
     let region: Option<&str> = sdk.region().map(|r| r.as_ref());
     //= spec/shim/esdk-shim.md#service-client-configuration
@@ -735,6 +1156,219 @@ fn create_sdk_config_applies_every_field() {
     assert!(app_name.contains("AwsEncryptionSdk-Shim-C++-Rust-"));
 }
 
+#[test]
+fn create_sdk_config_adds_the_user_agent_once() {
+    let ua = shim_user_agent();
+    for _ in 0..2 {
+        let sdk = create_sdk_config(&unset_client_config(), None).expect("build sdk config");
+        let app_name: &str = sdk.app_name().expect("app name is set").as_ref();
+        assert_eq!(app_name.matches(ua.as_str()).count(), 1, "{app_name}");
+    }
+}
+
+#[test]
+fn clients_carry_an_explicit_http_client() {
+    let cfg = unset_client_config();
+    let kms = create_kms_client(&cfg).expect("kms client");
+    let ddb = create_ddb_client(&cfg).expect("ddb client");
+    let creds = test_credentials("AKIDDERIVED", "secret", None);
+    let derived_kms = kms_client_with_credentials(&kms, &creds).expect("derived kms");
+    let derived_ddb = ddb_client_with_credentials(&ddb, &creds).expect("derived ddb");
+    assert!(kms.inner.config().http_client().is_some());
+    assert!(ddb.inner.config().http_client().is_some());
+    assert!(derived_kms.inner.config().http_client().is_some());
+    assert!(derived_ddb.inner.config().http_client().is_some());
+}
+
+// Records the signing headers of a request, then fails it before it is sent.
+#[derive(Debug, Clone, Default)]
+struct CaptureSigning(std::sync::Arc<std::sync::Mutex<Option<SigningHeaders>>>);
+
+#[derive(Debug)]
+struct SigningHeaders {
+    authorization: String,
+    security_token: Option<String>,
+}
+
+impl aws_sdk_kms::config::Intercept for CaptureSigning {
+    fn name(&self) -> &'static str {
+        "CaptureSigning"
+    }
+
+    fn read_before_transmit(
+        &self,
+        context: &aws_sdk_kms::config::interceptors::BeforeTransmitInterceptorContextRef<'_>,
+        _runtime_components: &aws_sdk_kms::config::RuntimeComponents,
+        _cfg: &mut aws_sdk_kms::config::ConfigBag,
+    ) -> Result<(), aws_sdk_kms::error::BoxError> {
+        let headers = context.request().headers();
+        *self.0.lock().unwrap() = Some(SigningHeaders {
+            authorization: headers.get("authorization").unwrap_or_default().to_string(),
+            security_token: headers.get("x-amz-security-token").map(str::to_string),
+        });
+        Err("request captured".into())
+    }
+}
+
+impl CaptureSigning {
+    fn take(&self) -> SigningHeaders {
+        self.0.lock().unwrap().take().expect("a request was signed")
+    }
+}
+
+fn kms_signing(client: &MplKmsClient) -> SigningHeaders {
+    let capture = CaptureSigning::default();
+    let config = client
+        .inner
+        .config()
+        .to_builder()
+        .interceptor(capture.clone())
+        .build();
+    let result = TOKIO_RUNTIME.block_on(aws_sdk_kms::Client::from_conf(config).list_keys().send());
+    assert!(result.is_err(), "the interceptor stops every request");
+    capture.take()
+}
+
+fn ddb_signing(client: &MplDdbClient) -> SigningHeaders {
+    let capture = CaptureSigning::default();
+    let config = client
+        .inner
+        .config()
+        .to_builder()
+        .interceptor(capture.clone())
+        .build();
+    let result = TOKIO_RUNTIME.block_on(
+        aws_sdk_dynamodb::Client::from_conf(config)
+            .list_tables()
+            .send(),
+    );
+    assert!(result.is_err(), "the interceptor stops every request");
+    capture.take()
+}
+
+#[test]
+fn kms_clients_sign_with_their_own_credentials() {
+    let cfg = client_config_with_credentials(test_credentials("AKIDBASE", "secret-base", None));
+    let base = create_kms_client(&cfg).expect("kms client");
+    let derived = kms_client_with_credentials(
+        &base,
+        &test_credentials("AKIDDERIVED", "secret-derived", Some("token-derived")),
+    )
+    .expect("derived kms client");
+
+    let base_signing = kms_signing(&base);
+    assert!(
+        base_signing.authorization.contains("Credential=AKIDBASE/"),
+        "{base_signing:?}"
+    );
+    assert_eq!(base_signing.security_token, None);
+
+    let derived_signing = kms_signing(&derived);
+    assert!(
+        derived_signing
+            .authorization
+            .contains("Credential=AKIDDERIVED/"),
+        "{derived_signing:?}"
+    );
+    assert_eq!(
+        derived_signing.security_token.as_deref(),
+        Some("token-derived")
+    );
+}
+
+#[test]
+fn ddb_clients_sign_with_their_own_credentials() {
+    let cfg = client_config_with_credentials(test_credentials("AKIDBASE", "secret-base", None));
+    let base = create_ddb_client(&cfg).expect("ddb client");
+    let derived = ddb_client_with_credentials(
+        &base,
+        &test_credentials("AKIDDERIVED", "secret-derived", Some("token-derived")),
+    )
+    .expect("derived ddb client");
+
+    let base_signing = ddb_signing(&base);
+    assert!(
+        base_signing.authorization.contains("Credential=AKIDBASE/"),
+        "{base_signing:?}"
+    );
+    let derived_signing = ddb_signing(&derived);
+    assert!(
+        derived_signing
+            .authorization
+            .contains("Credential=AKIDDERIVED/"),
+        "{derived_signing:?}"
+    );
+    assert_eq!(
+        derived_signing.security_token.as_deref(),
+        Some("token-derived")
+    );
+}
+
+#[test]
+fn derived_clients_keep_the_base_configuration() {
+    let mut cfg = client_config_with_credentials(test_credentials("AKIDBASE", "secret", None));
+    cfg.retry.max_attempts = set_u32(5);
+    let creds = test_credentials("AKIDDERIVED", "secret", None);
+
+    let kms = create_kms_client(&cfg).expect("kms client");
+    let derived = kms_client_with_credentials(&kms, &creds).expect("derived kms");
+    let config = derived.inner.config();
+    assert_eq!(config.region().map(|r| r.as_ref()), Some("us-west-2"));
+    assert_eq!(config.retry_config().map(|r| r.max_attempts()), Some(5));
+
+    let ddb = create_ddb_client(&cfg).expect("ddb client");
+    let derived = ddb_client_with_credentials(&ddb, &creds).expect("derived ddb");
+    let config = derived.inner.config();
+    assert_eq!(config.region().map(|r| r.as_ref()), Some("us-west-2"));
+    assert_eq!(config.retry_config().map(|r| r.max_attempts()), Some(5));
+}
+
+#[test]
+fn empty_credentials_are_rejected_without_echoing_them() {
+    let kms = create_kms_client(&unset_client_config()).expect("kms client");
+    let ddb = create_ddb_client(&unset_client_config()).expect("ddb client");
+    for (access_key_id, secret_access_key) in [("", "secret-value"), ("AKIDVALUE", "")] {
+        let creds = || test_credentials(access_key_id, secret_access_key, Some("token-value"));
+        let errors = [
+            expect_err(create_kms_client(&client_config_with_credentials(creds()))),
+            expect_err(create_ddb_client(&client_config_with_credentials(creds()))),
+            expect_err(kms_client_with_credentials(&kms, &creds())),
+            expect_err(ddb_client_with_credentials(&ddb, &creds())),
+        ];
+        for err in errors {
+            assert!(
+                err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, "")),
+                "unexpected error: {err}"
+            );
+            assert!(err.contains("must not be empty"), "unexpected error: {err}");
+            for value in ["AKIDVALUE", "secret-value", "token-value"] {
+                assert!(!err.contains(value), "error contains {value}: {err}");
+            }
+        }
+    }
+}
+
+#[test]
+fn credentials_expiration_is_time_since_the_epoch() {
+    let mut creds = test_credentials("AKID", "secret", None);
+    let unset = credentials_target_to_core(&creds, "test").expect("credentials");
+    assert_eq!(unset.expiry(), None);
+
+    creds.expiration = set_duration(1_700_000_000, 5);
+    let set = credentials_target_to_core(&creds, "test").expect("credentials");
+    assert_eq!(
+        set.expiry(),
+        Some(SystemTime::UNIX_EPOCH + Duration::new(1_700_000_000, 5))
+    );
+
+    creds.expiration = set_duration(u64::MAX, 0);
+    let err = expect_err(credentials_target_to_core(&creds, "test"));
+    assert!(
+        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, "")),
+        "unexpected error: {err}"
+    );
+}
+
 // Handles
 
 // into_keyring_handle is the Rust that backs the public C++ `Keyring::adopt` path.
@@ -748,7 +1382,7 @@ fn into_keyring_handle_boxes_the_keyring() {
         wrapping_alg: ffi::AesWrappingAlg::AlgAes256GcmIv12Tag16,
     })
     .expect("raw AES keyring should build");
-    let handle = into_keyring_handle(keyring.client.clone());
+    let handle = into_keyring_handle(keyring.inner.clone());
     assert!(!handle.is_null());
     unsafe { drop(Box::from_raw(handle.cast::<Keyring>())) };
 }
@@ -798,7 +1432,7 @@ fn stream_finish_surfaces_worker_panic() {
     let mut state = StreamState::spawn("test_stream", |_reader, _writer| panic!("worker panic"));
     let err = expect_err(state.finish());
     assert!(
-        err.contains("stream worker panicked"),
+        err.starts_with(&err_prefix(ffi::ShimErrorKind::Internal, "")),
         "unexpected error: {err}"
     );
 }
@@ -822,4 +1456,202 @@ fn stream_write_after_worker_failure_surfaces_error() {
     }
     let err = surfaced.expect("write must surface the failed worker");
     assert!(err.contains("worker failed"), "unexpected error: {err}");
+}
+
+// Records every header of a request, then fails it before it is sent.
+#[derive(Debug, Clone, Default)]
+struct CaptureHeaders(std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>>);
+
+impl aws_sdk_kms::config::Intercept for CaptureHeaders {
+    fn name(&self) -> &'static str {
+        "CaptureHeaders"
+    }
+
+    fn read_before_transmit(
+        &self,
+        context: &aws_sdk_kms::config::interceptors::BeforeTransmitInterceptorContextRef<'_>,
+        _runtime_components: &aws_sdk_kms::config::RuntimeComponents,
+        _cfg: &mut aws_sdk_kms::config::ConfigBag,
+    ) -> Result<(), aws_sdk_kms::error::BoxError> {
+        *self.0.lock().unwrap() = context
+            .request()
+            .headers()
+            .iter()
+            .map(|(n, v)| (n.to_string(), v.to_string()))
+            .collect();
+        Err("request captured".into())
+    }
+}
+
+fn kms_sent_headers(client: &MplKmsClient) -> Vec<(String, String)> {
+    let capture = CaptureHeaders::default();
+    let config = client
+        .inner
+        .config()
+        .to_builder()
+        .interceptor(capture.clone())
+        .build();
+    let result = TOKIO_RUNTIME.block_on(aws_sdk_kms::Client::from_conf(config).list_keys().send());
+    assert!(result.is_err(), "the interceptor stops every request");
+    capture.0.lock().unwrap().clone()
+}
+
+fn header_value<'a>(headers: &'a [(String, String)], name: &str) -> Option<&'a str> {
+    headers
+        .iter()
+        .find(|(n, _)| n.eq_ignore_ascii_case(name))
+        .map(|(_, v)| v.as_str())
+}
+
+fn http_header(name: &str, value: &str) -> ffi::HttpHeader {
+    ffi::HttpHeader {
+        name: name.to_string(),
+        value: value.to_string(),
+    }
+}
+
+#[test]
+fn kms_client_with_headers_sends_and_signs_the_headers() {
+    let cfg = client_config_with_credentials(test_credentials("AKIDBASE", "secret-base", None));
+    let base = create_kms_client(&cfg).expect("kms client");
+    let derived = kms_client_with_headers(
+        &base,
+        vec![
+            http_header("x-test-one", "1"),
+            http_header("x-test-two", "two"),
+        ],
+    )
+    .expect("derived kms client");
+
+    let sent = kms_sent_headers(&derived);
+    assert_eq!(header_value(&sent, "x-test-one"), Some("1"));
+    assert_eq!(header_value(&sent, "x-test-two"), Some("two"));
+    let authorization = header_value(&sent, "authorization").expect("signed request");
+    assert!(
+        authorization.contains("x-test-one;x-test-two"),
+        "headers must be signed: {authorization}"
+    );
+
+    assert_eq!(header_value(&kms_sent_headers(&base), "x-test-one"), None);
+}
+
+#[test]
+fn kms_client_with_headers_rejects_invalid_headers() {
+    let base = create_kms_client(&unset_client_config()).expect("kms client");
+    let cases = [
+        vec![],
+        vec![http_header("", "v")],
+        vec![http_header("x-test", "")],
+        vec![http_header("bad name", "v")],
+        vec![http_header("x-test", "bad\nvalue")],
+        vec![http_header("x-test", "a"), http_header("X-Test", "b")],
+    ];
+    for headers in cases {
+        let err = expect_err(kms_client_with_headers(&base, headers));
+        assert!(
+            err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, "")),
+            "{err}"
+        );
+    }
+}
+
+// A local HTTP/1.1 server that answers every KMS request with an empty `ListKeys` result
+// and counts the TCP connections it accepts.
+fn connection_counting_server() -> (String, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let listener = TOKIO_RUNTIME
+        .block_on(tokio::net::TcpListener::bind("127.0.0.1:0"))
+        .expect("bind");
+    let url = format!("http://{}", listener.local_addr().expect("local addr"));
+    let accepted = std::sync::Arc::new(AtomicUsize::new(0));
+    let counter = accepted.clone();
+    TOKIO_RUNTIME.spawn(async move {
+        loop {
+            let Ok((mut socket, _)) = listener.accept().await else { return };
+            counter.fetch_add(1, Ordering::SeqCst);
+            tokio::spawn(async move {
+                let mut buf = Vec::new();
+                loop {
+                    // Read one request: headers, then a Content-Length body.
+                    let header_end = loop {
+                        if let Some(i) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
+                            break i + 4;
+                        }
+                        let mut chunk = [0u8; 4096];
+                        match socket.read(&mut chunk).await {
+                            Ok(0) | Err(_) => return,
+                            Ok(n) => buf.extend_from_slice(&chunk[..n]),
+                        }
+                    };
+                    let head = String::from_utf8_lossy(&buf[..header_end]).to_ascii_lowercase();
+                    let body_len = head
+                        .lines()
+                        .find_map(|l| l.strip_prefix("content-length:"))
+                        .and_then(|v| v.trim().parse::<usize>().ok())
+                        .unwrap_or(0);
+                    while buf.len() < header_end + body_len {
+                        let mut chunk = [0u8; 4096];
+                        match socket.read(&mut chunk).await {
+                            Ok(0) | Err(_) => return,
+                            Ok(n) => buf.extend_from_slice(&chunk[..n]),
+                        }
+                    }
+                    buf.drain(..header_end + body_len);
+                    let body = br#"{"Keys":[],"Truncated":false}"#;
+                    let response = format!(
+                        "HTTP/1.1 200 OK\r\ncontent-type: application/x-amz-json-1.1\r\ncontent-length: {}\r\n\r\n",
+                        body.len()
+                    );
+                    if socket.write_all(response.as_bytes()).await.is_err()
+                        || socket.write_all(body).await.is_err()
+                    {
+                        return;
+                    }
+                }
+            });
+        }
+    });
+    (url, accepted)
+}
+
+/// A copy of `client` that sends to `url`, keeping its HTTP client.
+fn pointed_at(client: &MplKmsClient, url: &str) -> aws_sdk_kms::Client {
+    aws_sdk_kms::Client::from_conf(client.inner.config().to_builder().endpoint_url(url).build())
+}
+
+fn list_keys(client: &aws_sdk_kms::Client) {
+    TOKIO_RUNTIME
+        .block_on(client.list_keys().send())
+        .expect("list_keys against the local server");
+}
+
+#[test]
+fn clients_sharing_an_http_client_reuse_one_connection() {
+    let (url, accepted) = connection_counting_server();
+    let cfg = client_config_with_credentials(test_credentials("AKIDBASE", "secret-base", None));
+    let http = create_http_client().expect("http client");
+    let first = create_kms_client_with_http_client(&cfg, &http).expect("kms client");
+    let second = create_kms_client_with_http_client(&cfg, &http).expect("kms client");
+    let derived = kms_client_with_headers(&first, vec![http_header("x-test", "1")]).expect("copy");
+
+    list_keys(&pointed_at(&first, &url));
+    list_keys(&pointed_at(&second, &url));
+    list_keys(&pointed_at(&derived, &url));
+
+    assert_eq!(accepted.load(std::sync::atomic::Ordering::SeqCst), 1);
+}
+
+#[test]
+fn clients_without_a_shared_http_client_use_their_own_connections() {
+    let (url, accepted) = connection_counting_server();
+    let cfg = client_config_with_credentials(test_credentials("AKIDBASE", "secret-base", None));
+    let first = create_kms_client(&cfg).expect("kms client");
+    let second = create_kms_client(&cfg).expect("kms client");
+
+    list_keys(&pointed_at(&first, &url));
+    list_keys(&pointed_at(&second, &url));
+
+    assert_eq!(accepted.load(std::sync::atomic::Ordering::SeqCst), 2);
 }

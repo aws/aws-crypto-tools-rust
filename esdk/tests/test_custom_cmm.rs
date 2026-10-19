@@ -1,8 +1,8 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! A caller-implemented CMM (legacy `CryptographicMaterialsManager` trait)
-//! driven through the public encrypt/decrypt API.
+//! A caller-implemented CMM (native `aws_crypto_mpl::cmm::Cmm` trait) driven
+//! through the public encrypt/decrypt API.
 //!
 //! This pins the CMM extension interface and the behavior the ESDK expects
 //! from it. If these tests break, a change has likely broken
@@ -11,74 +11,49 @@
 //! Local because a caller's CMM impl is a native trait, unreachable from the
 //! cross-language interop vectors.
 
-// The MPL trait signatures return the large `aws_mpl_legacy` error type by value.
-#![allow(clippy::result_large_err)]
-
 #[allow(clippy::duplicate_mod)]
 mod fixtures;
 mod test_helpers;
 
+use aws_crypto_mpl::Error as MplError;
+use aws_crypto_mpl::async_trait;
+use aws_crypto_mpl::cmm::{Cmm, DefaultCmm};
+use aws_crypto_mpl::cmm::{
+    DecryptMaterialsInput, DecryptMaterialsOutput, GetEncryptionMaterialsInput,
+    GetEncryptionMaterialsOutput,
+};
 use aws_esdk::*;
-use aws_mpl_legacy::dafny::operation::decrypt_materials::{
-    DecryptMaterialsInput, DecryptMaterialsOutput,
-};
-use aws_mpl_legacy::dafny::operation::get_encryption_materials::{
-    GetEncryptionMaterialsInput, GetEncryptionMaterialsOutput,
-};
-use aws_mpl_legacy::dafny::types::cryptographic_materials_manager::{
-    CryptographicMaterialsManager, CryptographicMaterialsManagerRef,
-};
-use aws_mpl_legacy::dafny::types::error::Error as MplError;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Caller-implemented CMM. Forwards materials requests to an inner default
 /// CMM and records that each trait method was invoked.
+#[derive(Clone)]
 struct RecordingCmm {
-    inner: CryptographicMaterialsManagerRef,
+    inner: DefaultCmm,
     saw_get_encryption_materials: Arc<AtomicBool>,
     saw_decrypt_materials: Arc<AtomicBool>,
 }
 
-impl CryptographicMaterialsManager for RecordingCmm {
-    fn get_encryption_materials(
+#[async_trait]
+impl Cmm for RecordingCmm {
+    async fn get_encryption_materials(
         &self,
-        input: GetEncryptionMaterialsInput,
+        request: GetEncryptionMaterialsInput,
     ) -> Result<GetEncryptionMaterialsOutput, MplError> {
         self.saw_get_encryption_materials
             .store(true, Ordering::Relaxed);
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(async {
-                self.inner
-                    .get_encryption_materials()
-                    .encryption_context(input.encryption_context.unwrap())
-                    .commitment_policy(input.commitment_policy.unwrap())
-                    .set_algorithm_suite_id(input.algorithm_suite_id)
-                    .set_max_plaintext_length(input.max_plaintext_length)
-                    .send()
-                    .await
-            })
-        })
+        // Forward the request unchanged to the wrapped default CMM.
+        Cmm::get_encryption_materials(&self.inner, request).await
     }
 
-    fn decrypt_materials(
+    async fn decrypt_materials(
         &self,
-        input: DecryptMaterialsInput,
+        request: DecryptMaterialsInput,
     ) -> Result<DecryptMaterialsOutput, MplError> {
         self.saw_decrypt_materials.store(true, Ordering::Relaxed);
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(async {
-                self.inner
-                    .decrypt_materials()
-                    .algorithm_suite_id(input.algorithm_suite_id.unwrap())
-                    .commitment_policy(input.commitment_policy.unwrap())
-                    .encrypted_data_keys(input.encrypted_data_keys.unwrap())
-                    .encryption_context(input.encryption_context.unwrap())
-                    .set_reproduced_encryption_context(input.reproduced_encryption_context)
-                    .send()
-                    .await
-            })
-        })
+        // Forward the request unchanged to the wrapped default CMM.
+        Cmm::decrypt_materials(&self.inner, request).await
     }
 }
 
@@ -88,34 +63,30 @@ async fn custom_cmm_round_trips_via_public_api() {
     let saw_decrypt_materials = Arc::new(AtomicBool::new(false));
 
     // Custom CMM over a default CMM backed by a local raw AES keyring.
-    let cmm = CryptographicMaterialsManagerRef::from(RecordingCmm {
-        inner: mpl()
-            .create_default_cryptographic_materials_manager()
-            .keyring(test_helpers::test_keyring().await)
-            .send()
-            .await
-            .unwrap(),
+    let cmm = RecordingCmm {
+        inner: DefaultCmm::new(test_helpers::test_keyring().await),
         saw_get_encryption_materials: Arc::clone(&saw_get_encryption_materials),
         saw_decrypt_materials: Arc::clone(&saw_decrypt_materials),
-    });
+    };
     let plaintext = b"custom cmm round trip";
 
     // Encrypt and decrypt entirely through the custom CMM.
-    let out = encrypt(&EncryptInput::with_legacy_cmm(
-        plaintext,
-        EncryptionContext::new(),
-        cmm.clone(),
-    ))
-    .await
-    .unwrap();
-    let dec = decrypt(&DecryptInput::with_legacy_cmm(
-        &out.ciphertext,
-        EncryptionContext::new(),
-        cmm,
-    ))
-    .await
-    .unwrap();
-    assert_eq!(dec.plaintext, plaintext);
+    let esdk = Client::default();
+    let out = esdk
+        .encrypt()
+        .plaintext(plaintext)
+        .cmm(cmm.clone())
+        .send()
+        .await
+        .unwrap();
+    let dec = esdk
+        .decrypt()
+        .ciphertext(out.ciphertext())
+        .cmm(cmm)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(dec.plaintext(), plaintext);
 
     // Both trait methods must have been driven by the ESDK.
     assert!(

@@ -25,6 +25,11 @@ raw_aes_example: examples/raw_aes_keyring_example.cpp include/aws/esdk/Encryptio
 		$(CXXFLAGS_COMMON) $(LINK_LIBS) \
 		-o raw_aes_keyring_example
 
+per_request_credentials_example: examples/per_request_credentials_example.cpp include/aws/esdk/EncryptionSDK.h src/lib.rs $(STATICLIB)
+	g++ examples/per_request_credentials_example.cpp \
+		$(CXXFLAGS_COMMON) $(LINK_LIBS) \
+		-o per_request_credentials_example
+
 zero_copy_example: examples/zero_copy_comparison.cpp include/aws/esdk/EncryptionSDK.h src/lib.rs $(STATICLIB)
 	g++ examples/zero_copy_comparison.cpp \
 		$(CXXFLAGS_COMMON) -O2 $(LINK_LIBS) \
@@ -96,7 +101,7 @@ clippy:
 # and the test binaries.
 build-tests:
 	cargo build
-	$(MAKE) example raw_aes_example zero_copy_example shared_cache_example custom_keyring_example streaming_example streaming_chunks_example enum_parity test_esdk adopt_keyring_test test_concurrency test_resource_leaks
+	$(MAKE) example raw_aes_example per_request_credentials_example zero_copy_example shared_cache_example custom_keyring_example streaming_example streaming_chunks_example enum_parity test_esdk adopt_keyring_test test_concurrency test_resource_leaks
 
 # Set LOCAL_ONLY=--local-only to skip integration tests that needs creds.
 # When it is empty, a missing ESDK_TEST_* credential is a hard failure.

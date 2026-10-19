@@ -1,7 +1,7 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Tests for `AlgorithmSuiteId`, the materialized `AlgorithmSuite` spec table,
+//! Tests for `EsdkAlgorithmSuiteId`, the materialized `AlgorithmSuite` spec table,
 //! and the `Format` enum. Each test asserts a property derived directly from
 //! the algorithm-suites.md spec tables — hex IDs, encryption key lengths, IV
 //! lengths, KDF / commit-KDF mappings, asymmetric-signature-algorithm
@@ -9,25 +9,25 @@
 
 use std::collections::HashSet;
 
-use aws_crypto_mpl::structures::{
-    AlgorithmSuiteId, AsymmetricSignatureAlgorithm, EncryptionAlgorithm, EncryptionAlgorithmMode,
-    Format, KeyDerivationAlgorithm,
+use aws_crypto_mpl::types::{
+    AsymmetricSignatureAlgorithm, EncryptionAlgorithm, EncryptionAlgorithmMode,
+    EsdkAlgorithmSuiteId, Format, KeyDerivationAlgorithm,
 };
 
 /// All 11 ESDK algorithm suite variants in the order their hex IDs appear in
 /// the spec table (ascending).
-const ALL_SUITES: [AlgorithmSuiteId; 11] = [
-    AlgorithmSuiteId::AlgAes128GcmIv12Tag16NoKdf,
-    AlgorithmSuiteId::AlgAes192GcmIv12Tag16NoKdf,
-    AlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf,
-    AlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256,
-    AlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha256,
-    AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256,
-    AlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256EcdsaP256,
-    AlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha384EcdsaP384,
-    AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384,
-    AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey,
-    AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,
+const ALL_SUITES: [EsdkAlgorithmSuiteId; 11] = [
+    EsdkAlgorithmSuiteId::AlgAes128GcmIv12Tag16NoKdf,
+    EsdkAlgorithmSuiteId::AlgAes192GcmIv12Tag16NoKdf,
+    EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf,
+    EsdkAlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256,
+    EsdkAlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha256,
+    EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256,
+    EsdkAlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256EcdsaP256,
+    EsdkAlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha384EcdsaP384,
+    EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384,
+    EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey,
+    EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,
 ];
 
 // --- Hex IDs and uniqueness ---
@@ -35,40 +35,49 @@ const ALL_SUITES: [AlgorithmSuiteId; 11] = [
 #[test]
 fn test_hex_ids_match_spec_table() {
     // Mapping is taken straight from the spec's Supported Algorithm Suites table.
-    let expected: [(AlgorithmSuiteId, [u8; 2]); 11] = [
-        (AlgorithmSuiteId::AlgAes128GcmIv12Tag16NoKdf, [0x00, 0x14]),
-        (AlgorithmSuiteId::AlgAes192GcmIv12Tag16NoKdf, [0x00, 0x46]),
-        (AlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf, [0x00, 0x78]),
+    let expected: [(EsdkAlgorithmSuiteId, [u8; 2]); 11] = [
         (
-            AlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256,
+            EsdkAlgorithmSuiteId::AlgAes128GcmIv12Tag16NoKdf,
+            [0x00, 0x14],
+        ),
+        (
+            EsdkAlgorithmSuiteId::AlgAes192GcmIv12Tag16NoKdf,
+            [0x00, 0x46],
+        ),
+        (
+            EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf,
+            [0x00, 0x78],
+        ),
+        (
+            EsdkAlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256,
             [0x01, 0x14],
         ),
         (
-            AlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha256,
+            EsdkAlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha256,
             [0x01, 0x46],
         ),
         (
-            AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256,
+            EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256,
             [0x01, 0x78],
         ),
         (
-            AlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256EcdsaP256,
+            EsdkAlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256EcdsaP256,
             [0x02, 0x14],
         ),
         (
-            AlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha384EcdsaP384,
+            EsdkAlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha384EcdsaP384,
             [0x03, 0x46],
         ),
         (
-            AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384,
+            EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384,
             [0x03, 0x78],
         ),
         (
-            AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey,
+            EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey,
             [0x04, 0x78],
         ),
         (
-            AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,
+            EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,
             [0x05, 0x78],
         ),
     ];
@@ -105,8 +114,35 @@ fn test_reserved_id_00_00_is_not_used() {
         assert_ne!(
             id,
             [0x00, 0x00],
-            "no constructible AlgorithmSuiteId variant may map to the reserved id 00 00"
+            "no constructible EsdkAlgorithmSuiteId variant may map to the reserved id 00 00"
         );
+    }
+}
+
+// --- Suite table and reverse lookup ---
+
+#[test]
+fn test_all_lists_every_variant_once() {
+    let listed: HashSet<_> = EsdkAlgorithmSuiteId::ALL.iter().copied().collect();
+    assert_eq!(
+        listed.len(),
+        EsdkAlgorithmSuiteId::ALL.len(),
+        "EsdkAlgorithmSuiteId::ALL must not contain duplicates"
+    );
+    assert_eq!(listed, HashSet::from(ALL_SUITES));
+}
+
+#[test]
+fn test_from_id_bytes_inverts_id_bytes() {
+    for &id in EsdkAlgorithmSuiteId::ALL {
+        assert_eq!(EsdkAlgorithmSuiteId::from_id_bytes(id.id_bytes()), Some(id));
+    }
+}
+
+#[test]
+fn test_from_id_bytes_rejects_unknown_ids() {
+    for bytes in [[0x00, 0x00], [0xFF, 0xFF]] {
+        assert_eq!(EsdkAlgorithmSuiteId::from_id_bytes(bytes), None);
     }
 }
 
@@ -165,28 +201,28 @@ fn test_key_commitment_matches_commit_kdf_presence() {
 #[test]
 fn test_encryption_key_length_matches_spec_table() {
     // Per spec Encryption Settings table (bits → bytes):
-    let cases: [(AlgorithmSuiteId, usize); 11] = [
-        (AlgorithmSuiteId::AlgAes128GcmIv12Tag16NoKdf, 16),
-        (AlgorithmSuiteId::AlgAes192GcmIv12Tag16NoKdf, 24),
-        (AlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf, 32),
-        (AlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256, 16),
-        (AlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha256, 24),
-        (AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256, 32),
+    let cases: [(EsdkAlgorithmSuiteId, usize); 11] = [
+        (EsdkAlgorithmSuiteId::AlgAes128GcmIv12Tag16NoKdf, 16),
+        (EsdkAlgorithmSuiteId::AlgAes192GcmIv12Tag16NoKdf, 24),
+        (EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf, 32),
+        (EsdkAlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256, 16),
+        (EsdkAlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha256, 24),
+        (EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256, 32),
         (
-            AlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256EcdsaP256,
+            EsdkAlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256EcdsaP256,
             16,
         ),
         (
-            AlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha384EcdsaP384,
+            EsdkAlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha384EcdsaP384,
             24,
         ),
         (
-            AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384,
+            EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384,
             32,
         ),
-        (AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey, 32),
+        (EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey, 32),
         (
-            AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,
+            EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,
             32,
         ),
     ];
@@ -221,49 +257,49 @@ fn test_authentication_tag_length_is_sixteen_for_every_esdk_suite() {
 
 #[test]
 fn test_encryption_kdf_matches_spec_table() {
-    let cases: [(AlgorithmSuiteId, KeyDerivationAlgorithm); 11] = [
+    let cases: [(EsdkAlgorithmSuiteId, KeyDerivationAlgorithm); 11] = [
         (
-            AlgorithmSuiteId::AlgAes128GcmIv12Tag16NoKdf,
+            EsdkAlgorithmSuiteId::AlgAes128GcmIv12Tag16NoKdf,
             KeyDerivationAlgorithm::IdentityKdf,
         ),
         (
-            AlgorithmSuiteId::AlgAes192GcmIv12Tag16NoKdf,
+            EsdkAlgorithmSuiteId::AlgAes192GcmIv12Tag16NoKdf,
             KeyDerivationAlgorithm::IdentityKdf,
         ),
         (
-            AlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf,
+            EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf,
             KeyDerivationAlgorithm::IdentityKdf,
         ),
         (
-            AlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256,
+            EsdkAlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256,
             KeyDerivationAlgorithm::HkdfSha256,
         ),
         (
-            AlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha256,
+            EsdkAlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha256,
             KeyDerivationAlgorithm::HkdfSha256,
         ),
         (
-            AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256,
+            EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256,
             KeyDerivationAlgorithm::HkdfSha256,
         ),
         (
-            AlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256EcdsaP256,
+            EsdkAlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256EcdsaP256,
             KeyDerivationAlgorithm::HkdfSha256,
         ),
         (
-            AlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha384EcdsaP384,
+            EsdkAlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha384EcdsaP384,
             KeyDerivationAlgorithm::HkdfSha384,
         ),
         (
-            AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384,
+            EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384,
             KeyDerivationAlgorithm::HkdfSha384,
         ),
         (
-            AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey,
+            EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey,
             KeyDerivationAlgorithm::HkdfSha512,
         ),
         (
-            AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,
+            EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,
             KeyDerivationAlgorithm::HkdfSha512,
         ),
     ];
@@ -285,9 +321,9 @@ fn test_identity_kdf_used_if_and_only_if_no_kdf_suite() {
     for suite in ALL_SUITES {
         let is_no_kdf_suite = matches!(
             suite,
-            AlgorithmSuiteId::AlgAes128GcmIv12Tag16NoKdf
-                | AlgorithmSuiteId::AlgAes192GcmIv12Tag16NoKdf
-                | AlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf
+            EsdkAlgorithmSuiteId::AlgAes128GcmIv12Tag16NoKdf
+                | EsdkAlgorithmSuiteId::AlgAes192GcmIv12Tag16NoKdf
+                | EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf
         );
         let uses_identity_kdf =
             suite.specification().encryption_kdf() == KeyDerivationAlgorithm::IdentityKdf;
@@ -305,8 +341,8 @@ fn test_commit_kdf_present_only_for_commit_key_suites() {
         let spec = suite.specification();
         let expected_commit = matches!(
             suite,
-            AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey
-                | AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384
+            EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey
+                | EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384
         );
         if expected_commit {
             assert_eq!(
@@ -334,28 +370,28 @@ fn test_asymmetric_signature_present_for_signing_suites() {
     // this MPL layer exposes the required algorithm via
     // AlgorithmSuite::asymmetric_signature_algorithm(), and this test verifies
     // the suite-to-algorithm mapping consumers will read.
-    let cases: [(AlgorithmSuiteId, Option<AsymmetricSignatureAlgorithm>); 11] = [
-        (AlgorithmSuiteId::AlgAes128GcmIv12Tag16NoKdf, None),
-        (AlgorithmSuiteId::AlgAes192GcmIv12Tag16NoKdf, None),
-        (AlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf, None),
-        (AlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256, None),
-        (AlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha256, None),
-        (AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256, None),
+    let cases: [(EsdkAlgorithmSuiteId, Option<AsymmetricSignatureAlgorithm>); 11] = [
+        (EsdkAlgorithmSuiteId::AlgAes128GcmIv12Tag16NoKdf, None),
+        (EsdkAlgorithmSuiteId::AlgAes192GcmIv12Tag16NoKdf, None),
+        (EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf, None),
+        (EsdkAlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256, None),
+        (EsdkAlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha256, None),
+        (EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256, None),
         (
-            AlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256EcdsaP256,
+            EsdkAlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256EcdsaP256,
             Some(AsymmetricSignatureAlgorithm::EcdsaP256),
         ),
         (
-            AlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha384EcdsaP384,
+            EsdkAlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha384EcdsaP384,
             Some(AsymmetricSignatureAlgorithm::EcdsaP384),
         ),
         (
-            AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384,
+            EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384,
             Some(AsymmetricSignatureAlgorithm::EcdsaP384),
         ),
-        (AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey, None),
+        (EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey, None),
         (
-            AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,
+            EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,
             Some(AsymmetricSignatureAlgorithm::EcdsaP384),
         ),
     ];
@@ -412,28 +448,28 @@ fn test_symmetric_signature_algorithm_is_none_for_every_esdk_suite() {
 
 #[test]
 fn test_message_format_version_branches_v1_and_v2() {
-    let cases: [(AlgorithmSuiteId, u8); 11] = [
-        (AlgorithmSuiteId::AlgAes128GcmIv12Tag16NoKdf, 0x01),
-        (AlgorithmSuiteId::AlgAes192GcmIv12Tag16NoKdf, 0x01),
-        (AlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf, 0x01),
-        (AlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256, 0x01),
-        (AlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha256, 0x01),
-        (AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256, 0x01),
+    let cases: [(EsdkAlgorithmSuiteId, u8); 11] = [
+        (EsdkAlgorithmSuiteId::AlgAes128GcmIv12Tag16NoKdf, 0x01),
+        (EsdkAlgorithmSuiteId::AlgAes192GcmIv12Tag16NoKdf, 0x01),
+        (EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf, 0x01),
+        (EsdkAlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256, 0x01),
+        (EsdkAlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha256, 0x01),
+        (EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256, 0x01),
         (
-            AlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256EcdsaP256,
+            EsdkAlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256EcdsaP256,
             0x01,
         ),
         (
-            AlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha384EcdsaP384,
+            EsdkAlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha384EcdsaP384,
             0x01,
         ),
         (
-            AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384,
+            EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384,
             0x01,
         ),
-        (AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey, 0x02),
+        (EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey, 0x02),
         (
-            AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,
+            EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,
             0x02,
         ),
     ];
@@ -449,7 +485,7 @@ fn test_message_format_version_branches_v1_and_v2() {
 
 #[test]
 fn test_suite_04_78_stores_commit_key_in_suite_data() {
-    let spec = AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey.specification();
+    let spec = EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey.specification();
     assert_eq!(spec.id(), [0x04, 0x78]);
     // Commit key for HKDF-SHA512 is 256 bits = 32 bytes; suite data field
     // stores the commit key, so its length is 32. The AES-256 data key is
@@ -461,7 +497,7 @@ fn test_suite_04_78_stores_commit_key_in_suite_data() {
 
 #[test]
 fn test_suite_05_78_stores_commit_key_in_suite_data() {
-    let spec = AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384.specification();
+    let spec = EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384.specification();
     assert_eq!(spec.id(), [0x05, 0x78]);
     assert_eq!(spec.encryption_key_length(), 32);
     assert_eq!(spec.commit_kdf(), Some(KeyDerivationAlgorithm::HkdfSha512));
@@ -472,15 +508,15 @@ fn test_suite_05_78_stores_commit_key_in_suite_data() {
 fn test_algorithm_suite_data_length_may_be_zero() {
     // Every non-commit-key ESDK suite has algorithm_suite_data_length == 0.
     let zero_length_suites = [
-        AlgorithmSuiteId::AlgAes128GcmIv12Tag16NoKdf,
-        AlgorithmSuiteId::AlgAes192GcmIv12Tag16NoKdf,
-        AlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf,
-        AlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256,
-        AlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha256,
-        AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256,
-        AlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256EcdsaP256,
-        AlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha384EcdsaP384,
-        AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384,
+        EsdkAlgorithmSuiteId::AlgAes128GcmIv12Tag16NoKdf,
+        EsdkAlgorithmSuiteId::AlgAes192GcmIv12Tag16NoKdf,
+        EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf,
+        EsdkAlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256,
+        EsdkAlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha256,
+        EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256,
+        EsdkAlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256EcdsaP256,
+        EsdkAlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha384EcdsaP384,
+        EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384,
     ];
     for suite in zero_length_suites {
         assert_eq!(
@@ -496,28 +532,28 @@ fn test_algorithm_suite_data_length_may_be_zero() {
 fn test_verification_key_length_matches_spec_table() {
     // SEC1 compressed public key: 1 byte tag + coord_len.
     // P-256: 1 + 32 = 33 bytes. P-384: 1 + 48 = 49 bytes. Non-signing: None.
-    let cases: [(AlgorithmSuiteId, Option<usize>); 11] = [
-        (AlgorithmSuiteId::AlgAes128GcmIv12Tag16NoKdf, None),
-        (AlgorithmSuiteId::AlgAes192GcmIv12Tag16NoKdf, None),
-        (AlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf, None),
-        (AlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256, None),
-        (AlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha256, None),
-        (AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256, None),
+    let cases: [(EsdkAlgorithmSuiteId, Option<usize>); 11] = [
+        (EsdkAlgorithmSuiteId::AlgAes128GcmIv12Tag16NoKdf, None),
+        (EsdkAlgorithmSuiteId::AlgAes192GcmIv12Tag16NoKdf, None),
+        (EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf, None),
+        (EsdkAlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256, None),
+        (EsdkAlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha256, None),
+        (EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256, None),
         (
-            AlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256EcdsaP256,
+            EsdkAlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256EcdsaP256,
             Some(33),
         ),
         (
-            AlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha384EcdsaP384,
+            EsdkAlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha384EcdsaP384,
             Some(49),
         ),
         (
-            AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384,
+            EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384,
             Some(49),
         ),
-        (AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey, None),
+        (EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey, None),
         (
-            AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,
+            EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,
             Some(49),
         ),
     ];
