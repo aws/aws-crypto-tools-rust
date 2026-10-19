@@ -1,0 +1,29 @@
+# Runs all of CI on every push to main, so main is always fully tested and PR
+# runs start from main's warm build cache.
+name: Main CI
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+# One run per ref at a time; queued runs wait instead of cancelling.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+      pull-requests: read
+    uses: ./.github/workflows/ci.yml
+    with:
+      scope: all
+    secrets: inherit

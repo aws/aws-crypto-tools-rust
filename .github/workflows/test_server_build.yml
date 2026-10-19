@@ -1,0 +1,62 @@
+# Reusable workflow that runs fmt, clippy, build, and unit tests for one
+# TestServer crate (the language server this repo contributes to the
+# cross-language TestServer). The cross-language run itself is called from
+# ci.yml.
+name: TestServer Build
+
+on:
+  workflow_call:
+    inputs:
+      server:
+        description: "TestServer crate directory (e.g. esdk-test-server)."
+        required: true
+        type: string
+      prebuild:
+        description: "Crate directory to `cargo build` before the server, for a server that links its build output."
+        required: false
+        type: string
+        default: ""
+      os:
+        description: "Runner to build on."
+        required: false
+        type: string
+        default: ubuntu-latest
+
+jobs:
+  build:
+    name: ${{ inputs.server }} (${{ inputs.os }})
+    runs-on: ${{ inputs.os }}
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: ${{ inputs.server }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-rust
+        with:
+          components: clippy, rustfmt
+          cache-workspaces: |
+            ${{ inputs.server }}
+            ${{ inputs.prebuild }}
+
+      # A separate step keeps the two heavy Rust builds from running at once.
+      - name: Build ${{ inputs.prebuild }}
+        if: inputs.prebuild != ''
+        working-directory: ${{ inputs.prebuild }}
+        run: cargo build
+
+      - name: Format check
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Build
+        run: cargo build --verbose
+
+      - name: Test
+        run: cargo test --verbose

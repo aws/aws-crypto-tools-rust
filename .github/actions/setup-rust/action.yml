@@ -1,0 +1,45 @@
+name: Set up Rust
+description: >
+  Install Go (aws-lc-sys and aws-lc-fips-sys build their native code with it),
+  the stable Rust toolchain, and the cargo build cache.
+
+inputs:
+  components:
+    description: "Comma-separated rustup components (e.g. \"clippy, rustfmt\")."
+    required: false
+    default: ""
+  cache-workspaces:
+    description: "Newline-separated cargo workspaces to cache, as Swatinem/rust-cache expects."
+    required: true
+  free-disk-space:
+    description: "Remove large preinstalled Linux toolchains before building."
+    required: false
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    # GHA runners run out of disk holding the statically linked aws-lc and AWS
+    # SDKs. Reclaim the large preinstalled toolchains these builds do not use.
+    - name: Free disk space
+      if: runner.os == 'Linux' && inputs.free-disk-space == 'true'
+      shell: bash
+      run: |
+        sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc \
+          /usr/local/share/boost /opt/hostedtoolcache/CodeQL
+        df -h /
+
+    - name: Install Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: "stable"
+
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        components: ${{ inputs.components }}
+
+    - name: Cache cargo build artifacts
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: ${{ inputs.cache-workspaces }}

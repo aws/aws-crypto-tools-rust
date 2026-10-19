@@ -44,17 +44,12 @@ jobs:
 
       - uses: actions/checkout@v4
 
-      # aws-lc-sys (via aws-esdk) needs Go to build its native code.
-      - name: Install Go
-        uses: actions/setup-go@v5
+      - uses: ./.github/actions/setup-rust
         with:
-          go-version: "stable"
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+          cache-workspaces: esdk/shims/aws-esdk-cpp
 
       # The hierarchical keyring reads the shared test key store (KMS + DynamoDB,
-      # account 370957321024, us-west-2); same OIDC role as aws-esdk-cpp.yml.
+      # account 370957321024, us-west-2); same OIDC role as library_cpp_shim_tests.yml.
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v6
         with:
@@ -62,11 +57,6 @@ jobs:
           role-to-assume: arn:aws:iam::370957321024:role/GitHub-CI-Public-ESDK-Dafny-Role-us-west-2
           role-session-name: RustCppPerformanceBenchmarks
           special-characters-workaround: "true" # Some environments cannot tolerate special characters in a secret key.
-
-      - name: Cache cargo build artifacts
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: esdk/shims/aws-esdk-cpp
 
       - name: Build and run performance benchmark - Quick Mode
         run: make run ARGS="--quick"

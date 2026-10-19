@@ -34,18 +34,10 @@ jobs:
         with:
           submodules: 'true'
 
-      # Required by aws-lc-fips-sys: its CMake build invokes Go to generate
-      # FIPS module artifacts. GitHub-hosted runners do not put `go` on PATH
-      # for this workflow by default.
-      - name: Install Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: 'stable'
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/setup-rust
         with:
           components: clippy, rustfmt, llvm-tools-preview
+          cache-workspaces: ${{ inputs.project }}
 
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
@@ -65,11 +57,6 @@ jobs:
           role-to-assume: arn:aws:iam::370957321024:role/GitHub-CI-Public-ESDK-Dafny-Role-us-west-2
           role-session-name: RustTests
           special-characters-workaround: "true" # Some environments (example: windowsOS) cannot tolerate special characters in a secret key.
-
-      - name: Cache cargo build artifacts
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: ${{ inputs.project }}
 
       - name: Format check
         run: cargo fmt --all -- --check

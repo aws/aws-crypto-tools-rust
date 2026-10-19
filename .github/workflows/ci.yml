@@ -1,0 +1,261 @@
+# The CI pipeline. ci-pr.yml, ci-main.yml, and ci-scheduled.yml call this
+# workflow; it holds every CI job, so the three triggers always run the same
+# checks.
+#
+# `scope: changed` (pull requests) runs only the jobs whose inputs changed,
+# following the crates' path dependencies:
+#
+#   prim <- mpl <- esdk (including the esdk/shims/aws-esdk-cpp C++ shim)
+#
+# so an mpl change re-tests mpl, esdk, the C++ shim, and their TestServers.
+# A change to shared infrastructure (workflows, the spec submodule, errors.toml,
+# xtask) runs everything. `scope: all` (main and the daily run) runs everything.
+name: CI Pipeline
+
+on:
+  workflow_call:
+    inputs:
+      scope:
+        description: "`changed` to run only the jobs affected by the change, `all` to run everything."
+        required: true
+        type: string
+
+jobs:
+  # Emits what to run: JSON matrices for the fan-out jobs and booleans for the
+  # rest.
+  detect:
+    name: Detect what to run
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # dorny/paths-filter lists the PR's files through the GitHub API.
+      pull-requests: read
+    outputs:
+      rust-projects: ${{ steps.set.outputs.rust-projects }}
+      duvet-projects: ${{ steps.set.outputs.duvet-projects }}
+      test-server-builds: ${{ steps.set.outputs.test-server-builds }}
+      esdk-test-server-focus: ${{ steps.set.outputs.esdk-test-server-focus }}
+      mpl-test-server: ${{ steps.set.outputs.mpl-test-server }}
+      prim-test-server: ${{ steps.set.outputs.prim-test-server }}
+      cpp-shim: ${{ steps.set.outputs.cpp-shim }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Filter changed paths
+        if: inputs.scope == 'changed'
+        id: filter
+        uses: dorny/paths-filter@v4
+        with:
+          filters: |
+            prim: &prim
+              - 'prim/**'
+            mpl: &mpl
+              - *prim
+              - 'mpl/**'
+            esdk: &esdk
+              - *mpl
+              - 'esdk/**'
+            prim-test-server:
+              - *prim
+              - 'prim-test-server/**'
+            mpl-test-server:
+              - *mpl
+              - 'mpl-test-server/**'
+            esdk-test-server:
+              - *esdk
+              - 'esdk-test-server/**'
+            esdk-cpp-test-server:
+              - *esdk
+              - 'esdk-test-server/**'
+              - 'esdk-cpp-test-server/**'
+            shared:
+              - '.github/**'
+              - 'spec'
+              - '.gitmodules'
+              - 'errors.toml'
+              - 'xtask/**'
+
+      - name: Compute what to run
+        id: set
+        shell: bash
+        env:
+          ALL: ${{ inputs.scope == 'all' || steps.filter.outputs.shared == 'true' }}
+          prim: ${{ steps.filter.outputs.prim }}
+          mpl: ${{ steps.filter.outputs.mpl }}
+          esdk: ${{ steps.filter.outputs.esdk }}
+          prim_test_server: ${{ steps.filter.outputs.prim-test-server }}
+          mpl_test_server: ${{ steps.filter.outputs.mpl-test-server }}
+          esdk_test_server: ${{ steps.filter.outputs.esdk-test-server }}
+          esdk_cpp_test_server: ${{ steps.filter.outputs.esdk-cpp-test-server }}
+        run: |
+          set -eo pipefail
+
+          # `run <filter>` succeeds when that filter's job should run.
+          run() { [[ "$ALL" == "true" || "${!1:-false}" == "true" ]]; }
+
+          rust=()
+          for p in esdk mpl prim; do
+            if run "$p"; then rust+=("\"$p\""); fi
+          done
+
+          duvet=()
+          if run esdk; then
+            duvet+=('{"project":"esdk","artifact":"esdk-duvet-report"}')
+            duvet+=('{"project":"esdk/shims/aws-esdk-cpp","artifact":"aws-esdk-cpp-duvet-report"}')
+          fi
+
+          builds=()
+          focus=()
+          if run esdk_test_server; then
+            builds+=('{"server":"esdk-test-server","prebuild":"","os":"ubuntu-latest"}')
+            focus+=('"rust"')
+          fi
+          if run esdk_cpp_test_server; then
+            for os in ubuntu-latest macos-latest; do
+              builds+=("{\"server\":\"esdk-cpp-test-server\",\"prebuild\":\"esdk/shims/aws-esdk-cpp\",\"os\":\"$os\"}")
+            done
+            focus+=('"rust-cpp"')
+          fi
+          if run mpl_test_server; then
+            builds+=('{"server":"mpl-test-server","prebuild":"","os":"ubuntu-latest"}')
+          fi
+          if run prim_test_server; then
+            builds+=('{"server":"prim-test-server","prebuild":"","os":"ubuntu-latest"}')
+          fi
+
+          json() { local IFS=,; echo "[$*]"; }
+          bool() { if run "$1"; then echo true; else echo false; fi; }
+          {
+            echo "rust-projects=$(json "${rust[@]}")"
+            echo "duvet-projects=$(json "${duvet[@]}")"
+            echo "test-server-builds=$(json "${builds[@]}")"
+            echo "esdk-test-server-focus=$(json "${focus[@]}")"
+            echo "mpl-test-server=$(bool mpl_test_server)"
+            echo "prim-test-server=$(bool prim_test_server)"
+            echo "cpp-shim=$(bool esdk)"
+          } | tee -a "$GITHUB_OUTPUT"
+
+  rust:
+    needs: detect
+    if: needs.detect.outputs.rust-projects != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        project: ${{ fromJSON(needs.detect.outputs.rust-projects) }}
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/library_rust_tests.yml
+    with:
+      project: ${{ matrix.project }}
+
+  cpp-shim:
+    needs: detect
+    if: needs.detect.outputs.cpp-shim == 'true'
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/library_cpp_shim_tests.yml
+
+  duvet:
+    needs: detect
+    if: needs.detect.outputs.duvet-projects != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.detect.outputs.duvet-projects) }}
+    permissions:
+      contents: read
+    uses: ./.github/workflows/duvet.yml
+    with:
+      project: ${{ matrix.project }}
+      artifact-name: ${{ matrix.artifact }}
+
+  test-server-build:
+    needs: detect
+    if: needs.detect.outputs.test-server-builds != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.detect.outputs.test-server-builds) }}
+    permissions:
+      contents: read
+    uses: ./.github/workflows/test_server_build.yml
+    with:
+      server: ${{ matrix.server }}
+      prebuild: ${{ matrix.prebuild }}
+      os: ${{ matrix.os }}
+
+  # The cross-language TestServer runs, from the shared commons workflows. This
+  # checkout supplies the focus language's server; every other server comes
+  # from its configured branch. Only the pairs involving the focus language
+  # run; the full matrix runs in commons.
+  esdk-test-server:
+    needs: detect
+    if: needs.detect.outputs.esdk-test-server-focus != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        focus: ${{ fromJSON(needs.detect.outputs.esdk-test-server-focus) }}
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    uses: aws/aws-crypto-tools-commons/.github/workflows/esdk-test-server-reusable.yml@main
+    with:
+      focus: ${{ matrix.focus }}
+      checkout-languages: ${{ matrix.focus }}
+    secrets:
+      repo-pat: ${{ secrets.COMMONS_REPO_PAT }}
+
+  mpl-test-server:
+    needs: detect
+    if: needs.detect.outputs.mpl-test-server == 'true'
+    permissions:
+      contents: read
+      actions: read
+    uses: aws/aws-crypto-tools-commons/.github/workflows/mpl-test-server-reusable.yml@main
+    with:
+      focus: rust
+      checkout-languages: rust
+    secrets:
+      repo-pat: ${{ secrets.COMMONS_REPO_PAT }}
+
+  prim-test-server:
+    needs: detect
+    if: needs.detect.outputs.prim-test-server == 'true'
+    permissions:
+      contents: read
+      actions: read
+    uses: aws/aws-crypto-tools-commons/.github/workflows/primitives-test-server-reusable.yml@main
+    with:
+      focus: rust
+      checkout-languages: rust
+    secrets:
+      repo-pat: ${{ secrets.COMMONS_REPO_PAT }}
+
+  # Check that the generated error types files match the errors.toml definitions.
+  gen-errors:
+    name: Generated error types are current
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Format check
+        run: cargo fmt --manifest-path xtask/Cargo.toml -- --check
+
+      - name: Clippy
+        run: cargo clippy --manifest-path xtask/Cargo.toml --all-targets -- -D warnings
+
+      - name: Test the generator
+        run: cargo test --manifest-path xtask/Cargo.toml
+
+      - name: Check the generated files
+        run: cargo xtask gen-errors --check
