@@ -81,6 +81,9 @@ jobs:
       - name: Build
         run: cargo build --verbose
 
+      - name: Run examples
+        if: inputs.project == 'esdk'
+        run: make examples
 
       # Line coverage does not need debug info, so build the coverage binaries
       # with `-C debuginfo=0`. They are large (aws-lc-sys + aws-lc-fips-sys,
