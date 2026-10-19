@@ -7,23 +7,26 @@ description = "aws-cryptographic-material-providers-library is a low level libra
 authors = ["AWS-CryptoTools"]
 
 [dependencies]
-async-trait = "=0.1.83"
-aws-config = "=1.10.1"
+async-trait = "0.1.92"
+aws-config = "1.12.0"
 aws-mpl-primitives = { path = "../prim" }
-aws-sdk-dynamodb = "=1.119.0"
-aws-sdk-kms = "=1.114.0"
-base64 = "=0.22.1"
-lru = "=0.18.1"
-time = { version = "=0.3.54", default-features = false, features = ["std", "formatting", "macros"] }
-tokio = { version = "=1.49.0", features = ["rt", "time"], default-features = false }
-uuid = { version = "=1.23.3", features = ["v4"] }
+aws-sdk-dynamodb = "1.130.0"
+aws-sdk-kms = "1.123.0"
+aws-smithy-types = "1.8.1"
+base64 = "0.23.1"
+lru = "0.18.5"
+time = { version = "0.3.55", default-features = false, features = ["std", "formatting", "macros"] }
+tokio = { version = "1.49", features = ["rt", "time"], default-features = false }
+uuid = { version = "1.27.0", features = ["v4"] }
 
 [features]
 default = []
 test-utils = []
 
 [dev-dependencies]
+# Used only to construct AWS SDK errors for the classifier unit tests.
+aws-smithy-runtime-api = { version = "1.19.0", features = ["http-1x"] }
 # Used only by tests, as an implementation-independent digest oracle for the
 # cache-identifier byte-layout assertions.
-aws-lc-rs = "=1.17.0"
-tokio = { version = "=1.49.0", features = ["rt", "macros", "test-util", "time"], default-features = false }
+aws-lc-rs = "1.18.1"
+tokio = { version = "1.49", features = ["rt", "macros", "test-util", "time"], default-features = false }
