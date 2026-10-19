@@ -25,6 +25,16 @@ raw_aes_example: examples/raw_aes_keyring_example.cpp include/aws/esdk/Encryptio
 		$(CXXFLAGS_COMMON) $(LINK_LIBS) \
 		-o raw_aes_keyring_example
 
+handling_errors_example: examples/handling_errors_example.cpp include/aws/esdk/EncryptionSDK.h src/lib.rs $(STATICLIB)
+	g++ examples/handling_errors_example.cpp \
+		$(CXXFLAGS_COMMON) $(LINK_LIBS) \
+		-o handling_errors_example
+
+per_request_credentials_example: examples/per_request_credentials_example.cpp include/aws/esdk/EncryptionSDK.h src/lib.rs $(STATICLIB)
+	g++ examples/per_request_credentials_example.cpp \
+		$(CXXFLAGS_COMMON) $(LINK_LIBS) \
+		-o per_request_credentials_example
+
 zero_copy_example: examples/zero_copy_comparison.cpp include/aws/esdk/EncryptionSDK.h src/lib.rs $(STATICLIB)
 	g++ examples/zero_copy_comparison.cpp \
 		$(CXXFLAGS_COMMON) -O2 $(LINK_LIBS) \
@@ -34,6 +44,16 @@ shared_cache_example: examples/shared_cache_example.cpp include/aws/esdk/Encrypt
 	g++ examples/shared_cache_example.cpp \
 		$(CXXFLAGS_COMMON) $(LINK_LIBS) \
 		-o shared_cache_example
+
+set_algorithm_suite_example: examples/set_algorithm_suite_example.cpp include/aws/esdk/EncryptionSDK.h src/lib.rs $(STATICLIB)
+	g++ examples/set_algorithm_suite_example.cpp \
+		$(CXXFLAGS_COMMON) $(LINK_LIBS) \
+		-o set_algorithm_suite_example
+
+set_commitment_policy_example: examples/set_commitment_policy_example.cpp include/aws/esdk/EncryptionSDK.h src/lib.rs $(STATICLIB)
+	g++ examples/set_commitment_policy_example.cpp \
+		$(CXXFLAGS_COMMON) $(LINK_LIBS) \
+		-o set_commitment_policy_example
 
 test_esdk: tests/test_esdk.cpp tests/esdk_test_support.h include/aws/esdk/EncryptionSDK.h src/lib.rs $(STATICLIB)
 	g++ tests/test_esdk.cpp \
@@ -87,7 +107,7 @@ enum_parity: enum_parity_test.cpp include/aws/esdk/EncryptionSDK.h src/lib.rs $(
 		-o enum_parity_test.o
 
 clean:
-	rm -f test_esdk adopt_keyring_test custom_keyring_example enum_parity_test.o
+	rm -f test_esdk adopt_keyring_test custom_keyring_example set_algorithm_suite_example set_commitment_policy_example enum_parity_test.o
 
 clippy:
 	cargo clippy --tests
@@ -96,7 +116,7 @@ clippy:
 # and the test binaries.
 build-tests:
 	cargo build
-	$(MAKE) example raw_aes_example zero_copy_example shared_cache_example custom_keyring_example streaming_example streaming_chunks_example enum_parity test_esdk adopt_keyring_test test_concurrency test_resource_leaks
+	$(MAKE) example raw_aes_example handling_errors_example per_request_credentials_example zero_copy_example shared_cache_example set_algorithm_suite_example set_commitment_policy_example custom_keyring_example streaming_example streaming_chunks_example enum_parity test_esdk adopt_keyring_test test_concurrency test_resource_leaks
 
 # Set LOCAL_ONLY=--local-only to skip integration tests that needs creds.
 # When it is empty, a missing ESDK_TEST_* credential is a hard failure.
@@ -110,6 +130,8 @@ NON_LINUX ?=
 # Run the C++ integ tests and examples
 run-cpp:
 	LD_LIBRARY_PATH="$(CURDIR)/$(PROFILE_DIR)" ./raw_aes_keyring_example
+	LD_LIBRARY_PATH="$(CURDIR)/$(PROFILE_DIR)" ./set_algorithm_suite_example
+	LD_LIBRARY_PATH="$(CURDIR)/$(PROFILE_DIR)" ./set_commitment_policy_example
 	./custom_keyring_example
 	LD_LIBRARY_PATH="$(CURDIR)/$(PROFILE_DIR)" ./streaming_example
 	LD_LIBRARY_PATH="$(CURDIR)/$(PROFILE_DIR)" ./streaming_chunks_example

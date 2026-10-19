@@ -8,6 +8,7 @@
 mod fixtures;
 mod test_helpers;
 
+use aws_esdk::types::*;
 use aws_esdk::*;
 use fixtures::*;
 use test_helpers::*;
@@ -70,7 +71,7 @@ async fn test_aad_serialization_order() {
         // Cross-check: the decrypt path recovers the same encryption context, which is
         // only possible if the on-wire ordering agreed with the spec on both sides.
         let dec = decrypt_with_version(&ct, version).await;
-        assert_ec_contains(&dec.encryption_context, &ec, version);
+        assert_ec_contains(dec.encryption_context(), &ec, version);
     }
 }
 
@@ -100,7 +101,7 @@ async fn test_aad_key_value_pairs_length_field_size() {
         // Cross-check: the decrypted EC matches what we encrypted, confirming the 2-byte
         // length field was parsed correctly on the decrypt side too.
         let dec = decrypt_with_version(&ct, version).await;
-        assert_ec_contains(&dec.encryption_context, &ec, version);
+        assert_ec_contains(dec.encryption_context(), &ec, version);
     }
 }
 
@@ -127,7 +128,7 @@ async fn test_aad_key_value_pairs_length_uint16() {
         // Cross-check: the decrypted EC round-trips, confirming both sides agree that
         // the field is a big-endian UInt16.
         let dec = decrypt_with_version(&ct, version).await;
-        assert_ec_contains(&dec.encryption_context, &ec, version);
+        assert_ec_contains(dec.encryption_context(), &ec, version);
     }
 }
 
@@ -158,9 +159,9 @@ async fn test_aad_empty_encryption_context_length_zero() {
         // means the SDK added no entries of its own).
         let dec = decrypt_with_version(&ct, version).await;
         assert!(
-            dec.encryption_context.is_empty(),
+            dec.encryption_context().is_empty(),
             "{version:?}: decrypted EC must be empty, got {:?}",
-            dec.encryption_context
+            dec.encryption_context()
         );
     }
 }
@@ -210,7 +211,7 @@ async fn test_aad_key_value_pairs_serialization() {
 
         // Cross-check: decrypted EC contains the same key/value pairs we encrypted.
         let dec = decrypt_with_version(&ct, version).await;
-        assert_ec_contains(&dec.encryption_context, &ec, version);
+        assert_ec_contains(dec.encryption_context(), &ec, version);
     }
 }
 
@@ -241,9 +242,9 @@ async fn test_aad_empty_encryption_context_no_kvp_field() {
         // Cross-check: decrypt recovers an empty encryption context.
         let dec = decrypt_with_version(&ct, version).await;
         assert!(
-            dec.encryption_context.is_empty(),
+            dec.encryption_context().is_empty(),
             "{version:?}: decrypted EC must be empty, got {:?}",
-            dec.encryption_context
+            dec.encryption_context()
         );
     }
 }
@@ -271,7 +272,7 @@ async fn test_aad_non_ascii_keys_serialize_in_utf8_byte_order() {
         );
 
         let dec = decrypt_with_version(&ct, version).await;
-        assert_eq!(dec.encryption_context, ec, "{version:?}: round trip");
+        assert_eq!(*dec.encryption_context(), ec, "{version:?}: round trip");
     }
 }
 
