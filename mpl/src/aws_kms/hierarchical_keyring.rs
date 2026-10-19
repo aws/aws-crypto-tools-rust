@@ -15,11 +15,11 @@ use std::time::{Duration, SystemTime};
 
 use async_trait::async_trait;
 
-use crate::Keyring;
 use crate::aws_kms::branch_key_wrap;
 use crate::aws_kms::cache_entry_identifier;
 use crate::cmc::{CacheEntry, CachedMaterials, Cmc, DefaultCmc, SharedCmc};
-use crate::key_store::KeyStoreClient;
+use crate::key_store;
+use crate::keyring::Keyring;
 use crate::keyring::{OnDecryptInput, OnDecryptOutput, OnEncryptInput, OnEncryptOutput};
 use crate::shared::IntoShared;
 use crate::structures::{
@@ -274,7 +274,7 @@ pub struct HierarchicalKeyring {
 }
 
 struct HierarchicalKeyringInner {
-    key_store: KeyStoreClient,
+    key_store: key_store::Client,
 
     ttl: Duration,
 
@@ -327,7 +327,7 @@ impl HierarchicalKeyring {
 
     /// The configured key store.
     #[must_use]
-    pub fn key_store(&self) -> &KeyStoreClient {
+    pub fn key_store(&self) -> &key_store::Client {
         &self.inner.key_store
     }
 
@@ -352,7 +352,7 @@ const DEFAULT_CACHE_ENTRY_CAPACITY: usize = 1000;
 /// [`HierarchicalKeyring::builder`].
 #[derive(Default)]
 pub struct HierarchicalKeyringBuilder {
-    key_store: Option<KeyStoreClient>,
+    key_store: Option<key_store::Client>,
     ttl: Option<Duration>,
     branch_key_id: Option<String>,
     branch_key_id_supplier: Option<SharedBranchKeySupplier>,
@@ -374,9 +374,9 @@ impl HierarchicalKeyringBuilder {
     /// The key store.
     /// Required.
     ///
-    /// Pass the [`KeyStoreClient`] that [`KeyStoreClient::builder`] builds, or any [`KeyStore`](crate::KeyStore).
+    /// Pass the [`key_store::Client`](crate::key_store::Client) that [`key_store::Client::builder`](crate::key_store::Client::builder) builds, or any [`KeyStore`](crate::key_store::KeyStore).
     #[must_use]
-    pub fn key_store(mut self, key_store: impl Into<KeyStoreClient>) -> Self {
+    pub fn key_store(mut self, key_store: impl Into<key_store::Client>) -> Self {
         self.key_store = Some(key_store.into());
         self
     }
@@ -384,14 +384,14 @@ impl HierarchicalKeyringBuilder {
     /// Set or clear the key store from an `Option`.
     /// To set a value, use [`Self::key_store`].
     #[must_use]
-    pub fn set_key_store(mut self, key_store: Option<KeyStoreClient>) -> Self {
+    pub fn set_key_store(mut self, key_store: Option<key_store::Client>) -> Self {
         self.key_store = key_store;
         self
     }
 
     /// The key store, if set.
     #[must_use]
-    pub const fn get_key_store(&self) -> &Option<KeyStoreClient> {
+    pub const fn get_key_store(&self) -> &Option<key_store::Client> {
         &self.key_store
     }
 
@@ -516,8 +516,8 @@ impl HierarchicalKeyringBuilder {
     /// - [`Validation`](crate::Error::Validation): no key store or TTL is set, the TTL is zero, both or neither of a branch key id and a branch key id supplier are set, a storm-tracking grace period is not less than the TTL, or the materials cache rejects its parameters.
     /// - [`Cryptographic`](crate::Error::Cryptographic): the random number generator failed while creating the default partition id.
     ///
-    /// If the key store's [`get_key_store_info`](crate::KeyStore::get_key_store_info) fails, returns that error unchanged.
-    /// The key store [`KeyStoreClient::builder`] builds does not fail it.
+    /// If the key store's [`get_key_store_info`](crate::key_store::KeyStore::get_key_store_info) fails, returns that error unchanged.
+    /// The key store [`key_store::Client::builder`](crate::key_store::Client::builder) builds does not fail it.
     pub async fn build(self) -> Result<HierarchicalKeyring, Error> {
         let Self {
             key_store,

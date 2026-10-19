@@ -3,6 +3,7 @@
 
 //! Framework structures for cryptographic materials.
 
+mod aes_wrapping_alg;
 pub mod algorithm_suite;
 pub mod beacon_key_materials;
 pub mod branch_key_materials;
@@ -12,6 +13,7 @@ pub mod encrypted_data_key;
 pub mod encryption_context;
 pub mod encryption_materials;
 
+pub use aes_wrapping_alg::AesWrappingAlg;
 pub use algorithm_suite::{
     AlgorithmSuite, AlgorithmSuiteId, AsymmetricSignatureAlgorithm, EncryptionAlgorithm,
     EncryptionAlgorithmMode, EsdkAlgorithmSuiteId, Format, KeyDerivationAlgorithm,

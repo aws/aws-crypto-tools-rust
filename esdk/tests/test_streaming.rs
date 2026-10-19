@@ -5,7 +5,8 @@
 mod fixtures;
 mod test_helpers;
 
-use aws_esdk::{Client, EncryptionContext};
+use aws_esdk::Client;
+use aws_esdk::types::EncryptionContext;
 use test_helpers::{multi_frame_signed_for_stream, multi_frame_unsigned_for_stream, test_keyring};
 
 #[tokio::test(flavor = "multi_thread")]
@@ -282,7 +283,7 @@ async fn test_streaming_round_trip_through_pending_partial_io() {
     let mut ciphertext = Vec::new();
     esdk.encrypt_stream()
         .keyring(keyring.clone())
-        .algorithm_suite_id(aws_esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
+        .algorithm_suite_id(aws_esdk::types::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
         .plaintext(Trickle::new(plaintext.as_slice()))
         .ciphertext(Trickle::new(&mut ciphertext))
         .send()
@@ -301,8 +302,7 @@ async fn test_streaming_round_trip_through_pending_partial_io() {
     assert_eq!(decrypted, plaintext);
 }
 
-// On a single-threaded runtime, another task runs only when this one yields.
-// A large one-shot encrypt and decrypt must let it run, at the default frame length and with large frames.
+// On a single-threaded runtime, another task should run when the encrypt/decrypt task yields.
 #[tokio::test(flavor = "current_thread")]
 async fn test_large_message_yields_to_other_tasks() {
     use std::num::NonZeroU32;
@@ -314,6 +314,7 @@ async fn test_large_message_yields_to_other_tasks() {
         let ticks = ticks.clone();
         async move {
             loop {
+                // The ticker should advance when encryption/decryption yields between frames.
                 ticks.fetch_add(1, Ordering::Relaxed);
                 tokio::task::yield_now().await;
             }
@@ -329,7 +330,7 @@ async fn test_large_message_yields_to_other_tasks() {
             .encrypt()
             .plaintext(&plaintext)
             .keyring(keyring.clone())
-            .algorithm_suite_id(aws_esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
+            .algorithm_suite_id(aws_esdk::types::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
             .frame_length(NonZeroU32::new(frame_length).unwrap())
             .send()
             .await

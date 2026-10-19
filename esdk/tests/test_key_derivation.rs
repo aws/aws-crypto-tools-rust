@@ -8,7 +8,7 @@
 mod fixtures;
 mod test_helpers;
 
-use aws_crypto_mpl::structures::AlgorithmSuite;
+use aws_crypto_mpl::types::AlgorithmSuite;
 use aws_esdk::__test_internals::{algorithm_suite_from_bytes, derive_key_v2, derive_keys};
 use aws_mpl_primitives::{hkdf_expand, hkdf_extract};
 
@@ -401,7 +401,7 @@ trait KdfDigestExt {
 
 impl KdfDigestExt for AlgorithmSuite {
     fn kdf_digest(&self) -> aws_mpl_primitives::DigestAlg {
-        use aws_crypto_mpl::structures::KeyDerivationAlgorithm as Kdf;
+        use aws_crypto_mpl::types::KeyDerivationAlgorithm as Kdf;
         use aws_mpl_primitives::DigestAlg;
         match self.encryption_kdf() {
             Kdf::HkdfSha256 => DigestAlg::Sha256,

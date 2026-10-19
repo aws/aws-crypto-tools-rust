@@ -18,11 +18,11 @@
 
 use std::time::Duration;
 
-use aws_crypto_mpl::key_store::{KeyStoreClient, KmsConfiguration};
-use aws_crypto_mpl::{
-    HierarchicalKeyring, StormTrackingCmc, aws_config, aws_sdk_dynamodb, aws_sdk_kms,
-};
-use aws_esdk::EncryptionContext;
+use aws_esdk::cmc::StormTrackingCmc;
+use aws_esdk::key_store::types::KmsConfiguration;
+use aws_esdk::keyring::HierarchicalKeyring;
+use aws_esdk::types::EncryptionContext;
+use aws_esdk::{aws_config, aws_sdk_dynamodb, aws_sdk_kms, key_store};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -32,7 +32,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // The AWS Crypto Tools CI test key store.
     // Replace these with your own key store's table, name, and KMS key ARN.
     let make_key_store = || {
-        KeyStoreClient::builder()
+        key_store::Client::builder()
             .ddb_table_name("KeyStoreDdbTable")
             .logical_key_store_name("KeyStoreDdbTable")
             .kms_configuration(KmsConfiguration::KmsKeyArn(
@@ -67,7 +67,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Same cache, partition ID, logical key store name, and branch key ID,
     // so the keyrings reuse each other's entries.
-    let make_keyring = async |key_store: KeyStoreClient| {
+    let make_keyring = async |key_store: key_store::Client| {
         HierarchicalKeyring::builder()
             .key_store(key_store)
             .ttl(Duration::from_secs(600))

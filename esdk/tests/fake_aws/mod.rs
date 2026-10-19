@@ -10,7 +10,9 @@ use std::time::Duration;
 use aws_crypto_mpl::aws_sdk_dynamodb;
 use aws_crypto_mpl::aws_sdk_kms;
 use aws_crypto_mpl::cmc::DefaultCmc;
-use aws_crypto_mpl::{HierarchicalKeyring, KeyStoreClient, KmsConfiguration};
+use aws_crypto_mpl::key_store::Client as KeyStoreClient;
+use aws_crypto_mpl::key_store::types::KmsConfiguration;
+use aws_crypto_mpl::keyring::HierarchicalKeyring;
 use aws_smithy_runtime_api::client::http::{
     HttpConnector, HttpConnectorFuture, SharedHttpConnector, http_client_fn,
 };

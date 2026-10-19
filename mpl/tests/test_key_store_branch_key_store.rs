@@ -20,8 +20,10 @@ use aws_sdk_dynamodb::operation::get_item::GetItemError;
 use aws_sdk_kms::Client as KmsClient;
 
 use aws_crypto_mpl::__test_internals::error_chain::{aws_service_error_code, find_in_error_chain};
-use aws_crypto_mpl::key_store::{Discovery, MrDiscovery};
-use aws_crypto_mpl::{KeyStoreClient, KeyStoreClientBuilder, KmsConfiguration};
+use aws_crypto_mpl::key_store::Client as KeyStoreClient;
+use aws_crypto_mpl::key_store::client::Builder as KeyStoreClientBuilder;
+use aws_crypto_mpl::key_store::types::KmsConfiguration;
+use aws_crypto_mpl::key_store::types::{Discovery, MrDiscovery};
 
 async fn key_store_id(store: &KeyStoreClient) -> String {
     store

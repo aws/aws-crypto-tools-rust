@@ -5,9 +5,9 @@
 //!
 //! Runs offline.
 
-use aws_crypto_mpl::{AesGcm, RawAesKeyring};
-use aws_esdk::EncryptionContext;
-use aws_esdk::error::Error;
+use aws_esdk::Error;
+use aws_esdk::keyring::RawAesKeyring;
+use aws_esdk::types::{AesWrappingAlg, EncryptionContext};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -21,7 +21,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .key_namespace("my-key-namespace")
         .key_name("my-key-name")
         .wrapping_key(wrapping_key)
-        .wrapping_alg(AesGcm::Aes256Gcm)
+        .wrapping_alg(AesWrappingAlg::AlgAes256GcmIv12Tag16)
         .build()?;
 
     let plaintext = b"Hello World";

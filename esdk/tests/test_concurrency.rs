@@ -15,7 +15,7 @@
 mod fixtures;
 mod test_helpers;
 
-use aws_esdk::*;
+use aws_esdk::types::*;
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 

@@ -8,7 +8,7 @@
 use aws_crypto_mpl::key_store::__test_internals::kms_config::{
     is_arn_compatible, parse_arn, validate_kms_key_arn,
 };
-use aws_crypto_mpl::key_store::{Discovery, KmsConfiguration, MrDiscovery};
+use aws_crypto_mpl::key_store::types::{Discovery, KmsConfiguration, MrDiscovery};
 
 const VALID_KMS_ARN: &str =
     "arn:aws:kms:us-east-1:111122223333:key/abcd1234-1234-abcd-1234-1234567890ab";

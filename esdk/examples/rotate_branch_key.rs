@@ -12,9 +12,10 @@
 
 use std::time::Duration;
 
-use aws_crypto_mpl::key_store::{KeyStoreClient, KmsConfiguration};
-use aws_crypto_mpl::{HierarchicalKeyring, aws_config, aws_sdk_dynamodb, aws_sdk_kms};
-use aws_esdk::EncryptionContext;
+use aws_esdk::key_store::types::KmsConfiguration;
+use aws_esdk::keyring::HierarchicalKeyring;
+use aws_esdk::types::EncryptionContext;
+use aws_esdk::{aws_config, aws_sdk_dynamodb, aws_sdk_kms, key_store};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -22,7 +23,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // The AWS Crypto Tools CI test key store.
     // Replace these with your own key store's table, name, and KMS key ARN.
-    let key_store = KeyStoreClient::builder()
+    let key_store = key_store::Client::builder()
         .ddb_table_name("KeyStoreDdbTable")
         .logical_key_store_name("KeyStoreDdbTable")
         .kms_configuration(KmsConfiguration::KmsKeyArn(

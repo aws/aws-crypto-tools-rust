@@ -10,14 +10,14 @@
 //!
 //! Runs offline.
 
-use aws_crypto_mpl::async_trait;
-use aws_crypto_mpl::cmm::{
-    DecryptMaterialsInput, DecryptMaterialsOutput, GetEncryptionMaterialsInput,
+use aws_esdk::cmm::{
+    Cmm, DecryptMaterialsInput, DecryptMaterialsOutput, DefaultCmm, GetEncryptionMaterialsInput,
     GetEncryptionMaterialsOutput,
 };
-use aws_crypto_mpl::{AesGcm, Cmm, DefaultCmm, Error as MplError, Keyring, RawAesKeyring};
-use aws_esdk::error::Error;
-use aws_esdk::{AlgorithmSuiteId, EncryptionContext};
+use aws_esdk::keyring::{Keyring, RawAesKeyring};
+use aws_esdk::mpl::Error as MplError;
+use aws_esdk::types::{AesWrappingAlg, AlgorithmSuiteId, EncryptionContext};
+use aws_esdk::{Error, async_trait};
 
 /// Passes requests to a [`DefaultCmm`] and fails any that would use an algorithm suite without a signature.
 #[derive(Clone)]
@@ -68,7 +68,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .key_namespace("my-key-namespace")
         .key_name("my-key-name")
         .wrapping_key(vec![0x01u8; 32])
-        .wrapping_alg(AesGcm::Aes256Gcm)
+        .wrapping_alg(AesWrappingAlg::AlgAes256GcmIv12Tag16)
         .build()?;
     let cmm = SigningSuiteOnlyCmm::new(keyring);
 
