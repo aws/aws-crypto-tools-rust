@@ -14,5 +14,8 @@ readme = "README.md"
 aws-lc-rs = { version = "1.18.1", default-features = false }
 
 [features]
-default = ["aws-lc-rs/aws-lc-sys"]
+default = ["aws-lc-sys"]
+# The crypto backend: `aws-lc-sys` (the default), or `fips` for AWS-LC's FIPS module.
+# To use AWS-LC FIPS with MPL primitives, simply set `features = ["fips"]`.
+aws-lc-sys = ["aws-lc-rs/aws-lc-sys"]
 fips = ["aws-lc-rs/fips"]
