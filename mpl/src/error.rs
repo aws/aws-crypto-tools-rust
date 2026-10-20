@@ -152,8 +152,8 @@
 //!
 //! Keyring and CMM authors: see [Errors for keyring and CMM authors](crate::keyring#errors-for-keyring-and-cmm-authors).
 
-use aws_sdk_kms::config::http::HttpResponse;
-use aws_sdk_kms::error::SdkError;
+use aws_smithy_runtime_api::client::orchestrator::HttpResponse;
+use aws_smithy_runtime_api::client::result::SdkError;
 
 // `cargo xtask gen-errors` writes `generated.rs` from `errors.toml` at the repository root.
 pub(crate) mod generated;
@@ -170,10 +170,10 @@ pub use aws_mpl_primitives::error::{
     BranchKey, Cache, CmmResource, Collection, ConflictReason, DataKeyInfo, DynamoDbTable,
     KeyringResource, KmsKey, Resource, RetryKind, Service,
 };
-pub use aws_sdk_kms::operation::RequestId;
 pub use aws_smithy_types::error::display::DisplayErrorContext;
 pub use aws_smithy_types::error::metadata::{ErrorMetadata, ProvideErrorMetadata};
 pub use aws_smithy_types::retry::{ErrorKind as RetryErrorKind, ProvideErrorKind};
+pub use aws_types::request_id::RequestId;
 
 impl Error {
     /// Classify a failed AWS SDK call to `service` about `resource`.
@@ -453,7 +453,7 @@ fn classify_sdk_error<E: ProvideErrorMetadata>(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "kms"))]
 mod tests {
     use super::*;
     use aws_sdk_kms::operation::decrypt::DecryptError;
