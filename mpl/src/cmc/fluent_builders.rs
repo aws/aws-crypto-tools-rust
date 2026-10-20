@@ -296,4 +296,6 @@ macro_rules! fluent_cmc {
     )+};
 }
 
-fluent_cmc!(super::DefaultCmc, super::LocalCmc, super::StormTrackingCmc);
+fluent_cmc!(super::LocalCmc);
+#[cfg(feature = "rt-tokio")]
+fluent_cmc!(super::DefaultCmc, super::StormTrackingCmc);
