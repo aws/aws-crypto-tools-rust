@@ -1,3 +1,6 @@
+// Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 // Encrypts and decrypts a message with a hierarchical keyring.
 //
 // Requires an existing key store with a provisioned branch key.

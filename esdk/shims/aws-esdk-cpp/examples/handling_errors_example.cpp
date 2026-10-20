@@ -1,3 +1,6 @@
+// Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 // Handles the exceptions that the hierarchical keyring throws.
 //
 // Every failure is an AwsEncryptionSdkException, or a subclass for its kind.

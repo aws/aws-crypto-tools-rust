@@ -1,3 +1,6 @@
+// Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 //! The two modeled TestServer errors and their rpcv2Cbor wire form.
 
 /// A modeled TestServer error.

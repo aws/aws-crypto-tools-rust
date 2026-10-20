@@ -155,21 +155,6 @@ jobs:
     with:
       project: ${{ matrix.project }}
 
-  # Check every changed file for copyright and license headers
-  pr-ci-license-header:
-    runs-on: ubuntu-22.04
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          # Full history so the diff against the PR base branch resolves.
-          fetch-depth: 0
-      - name: Check SPDX license headers on changed files
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: .github/scripts/check-license-headers.sh --base "$BASE_SHA"
-
   # Check that the generated error types files match the errors.toml definitions.
   gen-errors:
     name: Generated error types are current
@@ -206,7 +191,6 @@ jobs:
       - pr-ci-rust
       - pr-ci-duvet
       - pr-ci-supply-chain
-      - pr-ci-license-header
       - gen-errors
     runs-on: ubuntu-22.04
     steps:

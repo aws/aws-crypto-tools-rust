@@ -1,3 +1,6 @@
+// Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 // Encrypt a buffer to a file (and decrypt it back) without copying.
 //
 // The ESDK's encrypt/decrypt methods accept their input payloads (plaintext/ciphertext, respectively)
