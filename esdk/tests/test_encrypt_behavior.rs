@@ -54,7 +54,8 @@ async fn test_step_4_construct_signature() {
         .send()
         .await
         .unwrap()
-        .into_ciphertext();
+        .into_ciphertext()
+        .into_inner();
     //= spec/client-apis/encrypt.md#behavior
     //= type=test
     //= reason=Footer is present on wire; decrypt verifies it — proves encrypt performed signature step
@@ -72,7 +73,8 @@ async fn test_step_4_construct_signature() {
         .send()
         .await
         .unwrap()
-        .into_plaintext();
+        .into_plaintext()
+        .into_inner();
     assert_eq!(pt, b"test step 4");
 }
 
@@ -200,7 +202,8 @@ async fn test_cmm_used_must_be_input_cmm() {
         .send()
         .await
         .unwrap()
-        .into_ciphertext();
+        .into_ciphertext()
+        .into_inner();
 
     //= spec/client-apis/encrypt.md#get-the-encryption-materials
     //= type=test
@@ -226,7 +229,8 @@ async fn test_cmm_used_must_be_input_cmm() {
             .send()
             .await
             .unwrap()
-            .into_plaintext(),
+            .into_plaintext()
+            .into_inner(),
         pt
     );
 }
@@ -441,7 +445,8 @@ async fn test_frame_length_input_used() {
         .send()
         .await
         .unwrap()
-        .into_ciphertext();
+        .into_ciphertext()
+        .into_inner();
 
     let fields = parse_v2_header_field_offsets(&ct);
     let (_, fl_start, fl_end) = fields
@@ -478,7 +483,7 @@ async fn test_frame_length_input_used() {
 async fn test_default_frame_length_used() {
     // Encrypt without specifying a frame length and verify the header records the default (4096).
     let pt = b"default frame length test";
-    let ct = encrypt_default(pt).await.into_ciphertext();
+    let ct = encrypt_default(pt).await.into_ciphertext().into_inner();
 
     let fields = parse_v2_header_field_offsets(&ct);
     let (_, fl_start, fl_end) = fields
@@ -517,7 +522,8 @@ async fn test_message_format_version_matches_suite() {
         .send()
         .await
         .unwrap()
-        .into_ciphertext();
+        .into_ciphertext()
+        .into_inner();
     //= spec/client-apis/encrypt.md#construct-the-header
     //= type=test
     //# The [message format version](../data-format/message-header.md#supported-versions) MUST be the value associated with the [algorithm suite](../framework/algorithm-suites.md#supported-algorithm-suites).
@@ -535,7 +541,8 @@ async fn test_message_format_version_matches_suite() {
         .send()
         .await
         .unwrap()
-        .into_ciphertext();
+        .into_ciphertext()
+        .into_inner();
     assert_eq!(
         ct_v1[0], 0x01,
         "V1 non-committing suite must produce message version 1"
@@ -679,7 +686,8 @@ async fn test_algorithm_suite_used_for_encryption() {
         .send()
         .await
         .unwrap()
-        .into_plaintext();
+        .into_plaintext()
+        .into_inner();
     assert_eq!(pt, b"suite used test");
 }
 
@@ -780,7 +788,8 @@ async fn test_cmm_request_no_algorithm_suite_field() {
             .send()
             .await
             .unwrap()
-            .into_plaintext(),
+            .into_plaintext()
+            .into_inner(),
         pt
     );
 }
@@ -1104,7 +1113,7 @@ async fn test_frame_fields_serialized_per_spec() {
     );
 
     // Round-trip corroboration.
-    let decrypted = decrypt_ciphertext(&ct).await.into_plaintext();
+    let decrypted = decrypt_ciphertext(&ct).await.into_plaintext().into_inner();
     assert_eq!(decrypted, pt, "round-trip must recover the plaintext");
 }
 

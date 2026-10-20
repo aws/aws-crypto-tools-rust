@@ -10,6 +10,7 @@
 #include <streambuf>
 #include <string>
 #include <thread>
+#include <type_traits>
 #include <typeinfo>
 #include <vector>
 
@@ -515,7 +516,7 @@ void test_client_credentials() {
                               .with_expiration(std::chrono::system_clock::time_point(-1s))));
 }
 
-// String-view and Bytes ergonomics for non-std::vector input/output types
+// String-view and Plaintext/Ciphertext ergonomics for non-std::vector input/output types
 void test_bytes_and_string_ergonomics() {
     std::vector<std::uint8_t> key(32, 0x2A);
     Aws::Esdk::RawAesKeyring keyring("test-ns", "test-key", key,
@@ -538,26 +539,26 @@ void test_bytes_and_string_ergonomics() {
 
     //= spec/shim/shim.md#bulk-data
     //= type=test
-    //= reason=Bytes-provided to_vector copies the data
+    //= reason=Ciphertext-provided to_vector copies the data
     //# - The shim MUST also let the caller copy a result into memory the caller
     //# owns.
     ESDK_CHECK(encrypted.ciphertext.to_vector() == encrypted.ciphertext);
 
-    // Copies share the buffer and compare equal; different content does not.
-    Aws::Esdk::Bytes copy = encrypted.ciphertext;
-    ESDK_CHECK(copy == encrypted.ciphertext);
-    ESDK_CHECK(copy.data() == encrypted.ciphertext.data());
     auto other = sdk.encrypt(std::string_view("different payload"), keyring);
-    ESDK_CHECK(copy != other.ciphertext);
+    ESDK_CHECK(encrypted.ciphertext != other.ciphertext);
 
-    // A copy keeps the buffer alive after the original is destroyed.
+    static_assert(!std::is_copy_constructible_v<Aws::Esdk::Plaintext>);
+    static_assert(!std::is_copy_constructible_v<Aws::Esdk::Ciphertext>);
+
+    // Moving a result out keeps the buffer alive after its source is destroyed.
     //= spec/shim/shim.md#bulk-data
     //= type=test
     //# - A result exposed this way MUST remain valid until the caller releases it.
-    Aws::Esdk::Bytes survivor;
+    Aws::Esdk::Ciphertext survivor;
     {
         auto scoped = sdk.encrypt(std::string_view("outlives original"), keyring);
-        survivor = scoped.ciphertext;
+        survivor = std::move(scoped.ciphertext);
+        ESDK_CHECK(scoped.ciphertext.empty());
     }
     auto plain = sdk.decrypt(survivor, keyring);
     ESDK_CHECK(plain.plaintext.as_string_view() == "outlives original");

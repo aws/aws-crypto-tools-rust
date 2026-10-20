@@ -132,7 +132,8 @@ async fn test_decrypt_fails_with_wrong_keyring() {
         .send()
         .await
         .unwrap()
-        .into_ciphertext();
+        .into_ciphertext()
+        .into_inner();
 
     let wrong_keyring = aes_keyring(1).await;
     let result = Client::default()

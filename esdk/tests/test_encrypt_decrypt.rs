@@ -78,7 +78,8 @@ async fn test_encrypt_decrypt_short() {
         .send()
         .await
         .unwrap()
-        .into_ciphertext();
+        .into_ciphertext()
+        .into_inner();
     let cipher_len: usize = esdk_ciphertext.len();
     // The last byte belongs to the footer signature, so decrypt fails with a Serialization error.
     //= spec/client-apis/decrypt.md#behavior
@@ -119,7 +120,8 @@ async fn test_encrypt_decrypt_ec() {
         .send()
         .await
         .unwrap()
-        .into_ciphertext();
+        .into_ciphertext()
+        .into_inner();
     let decrypt_output = esdk
         .decrypt()
         .ciphertext(&esdk_ciphertext)
@@ -206,7 +208,8 @@ async fn test_encrypt_decrypt_varied_frame_lengths() {
             .send()
             .await
             .unwrap_or_else(|e| panic!("encrypt failed (frame_len={i}): {e:?}"))
-            .into_ciphertext();
+            .into_ciphertext()
+            .into_inner();
         let decrypt_output = esdk
             .decrypt()
             .ciphertext(&esdk_ciphertext)
