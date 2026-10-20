@@ -16,4 +16,4 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: not-grep
-        uses: mattsb42-meta/not-grep@584c5c7cf0e1a37346b4cc10bec163f5094f0537 # 1.0.1
+        uses: mattsb42-meta/not-grep@1.0.1
