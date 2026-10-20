@@ -11,9 +11,8 @@ use crate::shapes::{
     EncryptOutput, EncryptStreamInput, EncryptStreamInputBuilder, EncryptStreamOutput,
     EncryptionContext,
 };
-use aws_crypto_mpl::cmm::SharedCmm;
-use aws_crypto_mpl::keyring::SharedKeyring;
-use aws_crypto_mpl::shared::IntoShared;
+use aws_crypto_mpl::cmm::{Cmm, SharedCmm};
+use aws_crypto_mpl::keyring::{Keyring, SharedKeyring};
 use std::fmt;
 use std::num::NonZeroU32;
 use tokio::io::{AsyncRead, AsyncWrite};
@@ -85,12 +84,12 @@ macro_rules! material_source_members {
         member!(
             /// The keyring that protects the message's data key.
             /// Set exactly one of a keyring or a CMM.
-            keyring(impl IntoShared<SharedKeyring>), set_keyring, get_keyring -> SharedKeyring
+            keyring(impl Keyring + 'static), set_keyring, get_keyring -> SharedKeyring
         );
         member!(
             /// The cryptographic materials manager (CMM) that supplies the message's data key.
             /// Set exactly one of a keyring or a CMM.
-            cmm(impl IntoShared<SharedCmm>), set_cmm, get_cmm -> SharedCmm
+            cmm(impl Cmm + 'static), set_cmm, get_cmm -> SharedCmm
         );
     };
 }

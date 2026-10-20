@@ -34,7 +34,7 @@ use aws_crypto_mpl::__test_internals::aws_kms::{
     partition_id_bytes, unwrap as branch_key_unwrap, wrap as branch_key_wrap,
 };
 use aws_crypto_mpl::Error;
-use aws_crypto_mpl::cmc::{LocalCmc, SharedCmc, StormTrackingCmc};
+use aws_crypto_mpl::cmc::{Cmc, LocalCmc, SharedCmc, StormTrackingCmc};
 use aws_crypto_mpl::key_store::client::Builder as KeyStoreClientBuilder;
 use aws_crypto_mpl::key_store::operation::create_key::{CreateKeyInput, CreateKeyOutput};
 use aws_crypto_mpl::key_store::operation::create_key_store::{

@@ -6,6 +6,7 @@
 //! decode end to end.
 
 use super::*;
+use aws_crypto_mpl::cmc::Cmc as _;
 use ffi::EsdkAlgorithmSuiteId as F;
 use ffi::EsdkCommitmentPolicy as P;
 

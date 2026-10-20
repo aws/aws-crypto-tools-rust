@@ -19,7 +19,7 @@ use crate::aws_kms::branch_key_wrap;
 use crate::aws_kms::cache_entry_identifier;
 #[cfg(feature = "rt-tokio")]
 use crate::cmc::DefaultCmc;
-use crate::cmc::{CacheEntry, CachedMaterials, SharedCmc};
+use crate::cmc::{CacheEntry, CachedMaterials, Cmc, SharedCmc};
 use crate::key_store;
 use crate::keyring::Keyring;
 use crate::keyring::{OnDecryptInput, OnDecryptOutput, OnEncryptInput, OnEncryptOutput};
@@ -191,13 +191,23 @@ pub trait BranchKeySupplier: Send + Sync {
 crate::shared::shared_handle!(
     /// A branch key supplier whose concrete type is chosen at runtime.
     ///
-    /// Pass it anywhere a branch key supplier is accepted.
+    /// It implements [`BranchKeySupplier`], so it can be passed anywhere a branch key supplier is accepted.
     /// Callers that know their branch key supplier's type pass it directly and never need this one.
     ///
     /// Its operation returns a fluent builder: set the input, then call `send`.
     SharedBranchKeySupplier,
     BranchKeySupplier
 );
+
+#[async_trait::async_trait]
+impl BranchKeySupplier for SharedBranchKeySupplier {
+    async fn get_branch_key_id(
+        &self,
+        input: GetBranchKeyIdInput,
+    ) -> Result<GetBranchKeyIdOutput, Error> {
+        BranchKeySupplier::get_branch_key_id(&*self.0, input).await
+    }
+}
 
 impl SharedBranchKeySupplier {
     /// Start a [`BranchKeySupplier::get_branch_key_id`] call.
@@ -291,12 +301,6 @@ struct HierarchicalKeyringInner {
 }
 
 impl HierarchicalKeyring {
-    /// The configured branch key ID, or `"supplier"` when a branch key ID supplier chooses it.
-    #[must_use]
-    pub fn name(&self) -> Cow<'_, str> {
-        Cow::Borrowed(self.inner.branch_key_id.as_deref().unwrap_or("supplier"))
-    }
-
     /// Start a builder for `HierarchicalKeyring`.
     #[must_use]
     pub fn builder() -> HierarchicalKeyringBuilder {
@@ -441,10 +445,7 @@ impl HierarchicalKeyringBuilder {
     /// A [`BranchKeySupplier`].
     /// Set this or [`branch_key_id`](Self::branch_key_id), not both.
     #[must_use]
-    pub fn branch_key_id_supplier(
-        mut self,
-        supplier: impl IntoShared<SharedBranchKeySupplier>,
-    ) -> Self {
+    pub fn branch_key_id_supplier(mut self, supplier: impl BranchKeySupplier + 'static) -> Self {
         self.branch_key_id_supplier = Some(supplier.into_shared());
         self
     }
@@ -468,10 +469,10 @@ impl HierarchicalKeyringBuilder {
     /// When unset, the keyring builds its own [`DefaultCmc`] with an entry capacity of 1000.
     /// Without the `rt-tokio` feature, it is required.
     ///
-    /// The cache's [grace period](crate::cmc::Cmc::grace_period), if it has one, must be less than the [TTL](Self::ttl).
+    /// The cache's [grace period](Cmc::grace_period), if it has one, must be less than the [TTL](Self::ttl).
     /// The default cache's grace period is 10 seconds.
     #[must_use]
-    pub fn cache(mut self, cache: impl IntoShared<SharedCmc>) -> Self {
+    pub fn cache(mut self, cache: impl Cmc + 'static) -> Self {
         self.cache = Some(cache.into_shared());
         self
     }
@@ -556,11 +557,12 @@ impl HierarchicalKeyringBuilder {
         let cache = match cache {
             Some(cache) => cache,
             #[cfg(feature = "rt-tokio")]
-            None => DefaultCmc::builder()
-                .entry_capacity(DEFAULT_CACHE_ENTRY_CAPACITY)
-                .build()
-                .map_err(|e| Error::wrap("could not create the default materials cache", e))?
-                .into_shared(),
+            None => SharedCmc::new(
+                DefaultCmc::builder()
+                    .entry_capacity(DEFAULT_CACHE_ENTRY_CAPACITY)
+                    .build()
+                    .map_err(|e| Error::wrap("could not create the default materials cache", e))?,
+            ),
             #[cfg(not(feature = "rt-tokio"))]
             None => {
                 return Err(Error::new(
@@ -635,9 +637,10 @@ fn uuid_16_bytes_to_str(bytes: &[u8; CIPHERTEXT_VERSION_LEN]) -> String {
 }
 
 #[async_trait]
-impl Keyring for crate::shared::Builtin<HierarchicalKeyring> {
+impl Keyring for HierarchicalKeyring {
+    /// The configured branch key ID, or `"supplier"` when a branch key ID supplier chooses it.
     fn name(&self) -> Cow<'_, str> {
-        self.0.name()
+        Cow::Borrowed(self.inner.branch_key_id.as_deref().unwrap_or("supplier"))
     }
 
     async fn on_encrypt(&self, input: OnEncryptInput) -> Result<OnEncryptOutput, Error> {

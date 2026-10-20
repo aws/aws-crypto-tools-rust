@@ -15,8 +15,10 @@ use aws_crypto_mpl::error::{Cache, Resource, RetryKind};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
-use aws_crypto_mpl::cmc::{LocalCmc, SharedCmc, StormTrackingCmc, StormTrackingCmcBuilder};
-use aws_crypto_mpl::shared::IntoShared;
+use aws_crypto_mpl::cmc::{
+    Cmc, DeleteCacheEntryInput, GetCacheEntryInput, LocalCmc, PutCacheEntryInput, StormTrackingCmc,
+    StormTrackingCmcBuilder,
+};
 use aws_crypto_mpl::types::{
     AlgorithmSuiteId, BeaconKeyMaterials, BranchKeyMaterials, DecryptionMaterials,
     EncryptionContext, EncryptionMaterials, EsdkAlgorithmSuiteId,
@@ -25,30 +27,27 @@ use aws_crypto_mpl::types::{BytesUsage, CacheEntry, CachedMaterials, MessageUsag
 
 /// Positional shorthand for the `Cmc` operations.
 #[async_trait]
-trait CmcExt {
-    fn handle(&self) -> SharedCmc;
-
+trait CmcExt: Cmc {
     async fn put_entry(&self, id: &[u8], entry: CacheEntry) -> Result<(), Error> {
-        let put = self.handle().put_cache_entry().identifier(id).entry(entry);
-        put.send().await.map(|_| ())
+        let input = PutCacheEntryInput::builder()
+            .identifier(id)
+            .entry(entry)
+            .build()?;
+        self.put_cache_entry(input).await.map(|_| ())
     }
 
     async fn get_entry(&self, id: &[u8]) -> Result<Option<Arc<CacheEntry>>, Error> {
-        let get = self.handle().get_cache_entry().identifier(id);
-        Ok(get.send().await?.into_entry())
+        let input = GetCacheEntryInput::builder().identifier(id).build()?;
+        Ok(self.get_cache_entry(input).await?.into_entry())
     }
 
     async fn delete_entry(&self, id: &[u8]) -> Result<(), Error> {
-        let delete = self.handle().delete_cache_entry().identifier(id);
-        delete.send().await.map(|_| ())
+        let input = DeleteCacheEntryInput::builder().identifier(id).build()?;
+        self.delete_cache_entry(input).await.map(|_| ())
     }
 }
 
-impl<T: IntoShared<SharedCmc> + Clone + Send + Sync> CmcExt for T {
-    fn handle(&self) -> SharedCmc {
-        self.clone().into_shared()
-    }
-}
+impl<T: Cmc + ?Sized> CmcExt for T {}
 
 // ── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -410,8 +409,8 @@ async fn test_cmc_trait_surface_matches_local_cmc() {
     let now = anchor_now();
     let expiry = now + Duration::from_secs(3600);
 
-    let storm = SharedCmc::new(make_storm_tracking(now));
-    let local = SharedCmc::new(
+    let storm: Box<dyn Cmc> = Box::new(make_storm_tracking(now));
+    let local: Box<dyn Cmc> = Box::new(
         LocalCmc::builder()
             .entry_capacity(32)
             .entry_pruning_tail_size(4)

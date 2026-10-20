@@ -156,18 +156,12 @@ macro_rules! fluent_keyring {
         impl $ty {
             /// Start a [`Keyring::on_encrypt`] call.
             pub fn on_encrypt(&self) -> OnEncryptFluentBuilder {
-                SharedKeyring::new(crate::shared::Builtin(self.clone())).on_encrypt()
+                SharedKeyring::new(self.clone()).on_encrypt()
             }
 
             /// Start a [`Keyring::on_decrypt`] call.
             pub fn on_decrypt(&self) -> OnDecryptFluentBuilder {
-                SharedKeyring::new(crate::shared::Builtin(self.clone())).on_decrypt()
-            }
-        }
-
-        impl crate::shared::FromUnshared<$ty> for SharedKeyring {
-            fn from_unshared(value: $ty) -> Self {
-                SharedKeyring::new(crate::shared::Builtin(value))
+                SharedKeyring::new(self.clone()).on_decrypt()
             }
         }
     )+};

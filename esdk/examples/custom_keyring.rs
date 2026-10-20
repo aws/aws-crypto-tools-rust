@@ -28,12 +28,7 @@ fn providers(edks: &[EncryptedDataKey]) -> Vec<&str> {
 #[async_trait]
 impl Keyring for AuditKeyring {
     async fn on_encrypt(&self, input: OnEncryptInput) -> Result<OnEncryptOutput, MplError> {
-        let output = self
-            .inner
-            .on_encrypt()
-            .materials(input.into_materials())
-            .send()
-            .await?;
+        let output = Keyring::on_encrypt(&self.inner, input).await?;
         println!(
             "audit: encrypt wrote data keys for {:?}",
             providers(output.materials().encrypted_data_keys())
@@ -46,15 +41,7 @@ impl Keyring for AuditKeyring {
             "audit: decrypt tried data keys from {:?}",
             providers(input.encrypted_data_keys())
         );
-        {
-            let (materials, encrypted_data_keys) = input.into_parts();
-            self.inner
-                .on_decrypt()
-                .materials(materials)
-                .encrypted_data_keys(encrypted_data_keys)
-                .send()
-        }
-        .await
+        Keyring::on_decrypt(&self.inner, input).await
     }
 }
 

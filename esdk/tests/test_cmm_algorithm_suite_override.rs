@@ -54,15 +54,7 @@ impl Cmm for SuiteOverrideCmm {
         &self,
         request: DecryptMaterialsInput,
     ) -> Result<DecryptMaterialsOutput, MplError> {
-        self.inner
-            .decrypt_materials()
-            .algorithm_suite_id(request.algorithm_suite_id())
-            .commitment_policy(request.commitment_policy())
-            .encrypted_data_keys(request.encrypted_data_keys().to_vec())
-            .encryption_context(request.encryption_context().clone())
-            .set_reproduced_encryption_context(request.reproduced_encryption_context().cloned())
-            .send()
-            .await
+        Cmm::decrypt_materials(&self.inner, request).await
     }
 }
 

@@ -44,17 +44,7 @@ impl Cmm for RecordingCmm {
         self.saw_get_encryption_materials
             .store(true, Ordering::Relaxed);
         // Forward the request unchanged to the wrapped default CMM.
-        self.inner
-            .get_encryption_materials()
-            .encryption_context(request.encryption_context().clone())
-            .commitment_policy(request.commitment_policy())
-            .set_algorithm_suite_id(request.algorithm_suite_id())
-            .set_required_encryption_context_keys(
-                request.required_encryption_context_keys().cloned(),
-            )
-            .set_max_plaintext_length(request.max_plaintext_length())
-            .send()
-            .await
+        Cmm::get_encryption_materials(&self.inner, request).await
     }
 
     async fn decrypt_materials(
@@ -63,15 +53,7 @@ impl Cmm for RecordingCmm {
     ) -> Result<DecryptMaterialsOutput, MplError> {
         self.saw_decrypt_materials.store(true, Ordering::Relaxed);
         // Forward the request unchanged to the wrapped default CMM.
-        self.inner
-            .decrypt_materials()
-            .algorithm_suite_id(request.algorithm_suite_id())
-            .commitment_policy(request.commitment_policy())
-            .encrypted_data_keys(request.encrypted_data_keys().to_vec())
-            .encryption_context(request.encryption_context().clone())
-            .set_reproduced_encryption_context(request.reproduced_encryption_context().cloned())
-            .send()
-            .await
+        Cmm::decrypt_materials(&self.inner, request).await
     }
 }
 

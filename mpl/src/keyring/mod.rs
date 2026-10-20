@@ -178,7 +178,7 @@ pub trait Keyring: Send + Sync {
 crate::shared::shared_handle!(
     /// A keyring whose concrete type is chosen at runtime.
     ///
-    /// Pass it anywhere a keyring is accepted.
+    /// It implements [`Keyring`], so it can be passed anywhere a keyring is accepted.
     /// Callers that know their keyring's type pass it directly and never need this one.
     ///
     /// Each operation returns a fluent builder: set the input, then call `send`.
@@ -186,10 +186,33 @@ crate::shared::shared_handle!(
     Keyring
 );
 
-impl SharedKeyring {
-    /// The keyring's [`name`](Keyring::name).
-    #[must_use]
-    pub fn name(&self) -> Cow<'_, str> {
+#[async_trait]
+impl Keyring for SharedKeyring {
+    fn name(&self) -> Cow<'_, str> {
         self.0.name()
+    }
+
+    async fn on_encrypt(&self, input: OnEncryptInput) -> Result<OnEncryptOutput, Error> {
+        Keyring::on_encrypt(&*self.0, input).await
+    }
+
+    async fn on_decrypt(&self, input: OnDecryptInput) -> Result<OnDecryptOutput, Error> {
+        Keyring::on_decrypt(&*self.0, input).await
+    }
+}
+
+/// A keyring behind an `Arc` is a keyring, so one instance can be shared without being `Clone`.
+#[async_trait]
+impl<T: Keyring + ?Sized> Keyring for std::sync::Arc<T> {
+    fn name(&self) -> Cow<'_, str> {
+        (**self).name()
+    }
+
+    async fn on_encrypt(&self, input: OnEncryptInput) -> Result<OnEncryptOutput, Error> {
+        (**self).on_encrypt(input).await
+    }
+
+    async fn on_decrypt(&self, input: OnDecryptInput) -> Result<OnDecryptOutput, Error> {
+        (**self).on_decrypt(input).await
     }
 }

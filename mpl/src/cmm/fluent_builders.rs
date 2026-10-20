@@ -317,18 +317,12 @@ macro_rules! fluent_cmm {
         impl $ty {
             /// Start a [`Cmm::get_encryption_materials`] call.
             pub fn get_encryption_materials(&self) -> GetEncryptionMaterialsFluentBuilder {
-                SharedCmm::new(crate::shared::Builtin(self.clone())).get_encryption_materials()
+                SharedCmm::new(self.clone()).get_encryption_materials()
             }
 
             /// Start a [`Cmm::decrypt_materials`] call.
             pub fn decrypt_materials(&self) -> DecryptMaterialsFluentBuilder {
-                SharedCmm::new(crate::shared::Builtin(self.clone())).decrypt_materials()
-            }
-        }
-
-        impl crate::shared::FromUnshared<$ty> for SharedCmm {
-            fn from_unshared(value: $ty) -> Self {
-                SharedCmm::new(crate::shared::Builtin(value))
+                SharedCmm::new(self.clone()).decrypt_materials()
             }
         }
     )+};

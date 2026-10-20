@@ -5,7 +5,7 @@
 
 use std::time::Duration;
 
-use aws_crypto_mpl::cmc::DefaultCmc;
+use aws_crypto_mpl::cmc::{Cmc, DefaultCmc};
 
 #[test]
 fn default_cmc_is_a_default_storm_tracking_cache_with_the_given_capacity() {

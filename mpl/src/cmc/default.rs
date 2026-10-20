@@ -24,7 +24,7 @@ use crate::builder::required;
 /// A clone refers to the same cache, not a copy of it.
 #[derive(Clone, Debug)]
 pub struct DefaultCmc {
-    inner: crate::shared::Builtin<StormTrackingCmc>,
+    inner: StormTrackingCmc,
 }
 
 impl DefaultCmc {
@@ -77,25 +77,15 @@ impl DefaultCmcBuilder {
     pub fn build(self) -> Result<DefaultCmc, Error> {
         let entry_capacity = required(self.entry_capacity, "entry_capacity")?;
         Ok(DefaultCmc {
-            inner: crate::shared::Builtin(
-                StormTrackingCmc::builder()
-                    .entry_capacity(entry_capacity)
-                    .build()?,
-            ),
+            inner: StormTrackingCmc::builder()
+                .entry_capacity(entry_capacity)
+                .build()?,
         })
     }
 }
 
-impl DefaultCmc {
-    /// How long before an entry expires the cache starts refreshing it.
-    #[must_use]
-    pub fn grace_period(&self) -> Option<Duration> {
-        self.inner.0.grace_period()
-    }
-}
-
 #[async_trait]
-impl Cmc for crate::shared::Builtin<DefaultCmc> {
+impl Cmc for DefaultCmc {
     async fn put_cache_entry(
         &self,
         input: PutCacheEntryInput,
@@ -125,6 +115,6 @@ impl Cmc for crate::shared::Builtin<DefaultCmc> {
     }
 
     fn grace_period(&self) -> Option<Duration> {
-        self.0.grace_period()
+        self.inner.grace_period()
     }
 }

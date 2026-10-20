@@ -25,9 +25,7 @@ fn context() -> EncryptionContext {
     ec
 }
 
-async fn encrypt_with(
-    keyring: impl aws_crypto_mpl::shared::IntoShared<aws_crypto_mpl::keyring::SharedKeyring>,
-) -> Vec<u8> {
+async fn encrypt_with(keyring: impl aws_crypto_mpl::keyring::Keyring + 'static) -> Vec<u8> {
     Client::default()
         .encrypt()
         .plaintext(b"hello")
@@ -41,7 +39,7 @@ async fn encrypt_with(
 
 async fn decrypt_with(
     ciphertext: &[u8],
-    keyring: impl aws_crypto_mpl::shared::IntoShared<aws_crypto_mpl::keyring::SharedKeyring>,
+    keyring: impl aws_crypto_mpl::keyring::Keyring + 'static,
 ) -> Result<Vec<u8>, Error> {
     Client::default()
         .decrypt()
@@ -647,11 +645,7 @@ impl aws_crypto_mpl::keyring::Keyring for Both {
         &self,
         input: OnEncryptInput,
     ) -> Result<OnEncryptOutput, aws_crypto_mpl::Error> {
-        let materials = self
-            .0
-            .on_encrypt()
-            .materials(input.into_materials())
-            .send()
+        let materials = aws_crypto_mpl::keyring::Keyring::on_encrypt(&self.0, input)
             .await?
             .into_materials();
         self.1.on_encrypt().materials(materials).send().await

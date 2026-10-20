@@ -10,7 +10,6 @@ use aws_crypto_mpl::async_trait;
 use aws_crypto_mpl::keyring::{Keyring, RawAesKeyring, SharedKeyring};
 use aws_crypto_mpl::keyring::{OnDecryptInput, OnEncryptInput};
 use aws_crypto_mpl::keyring::{OnDecryptOutput, OnEncryptOutput};
-use aws_crypto_mpl::shared::IntoShared;
 use aws_crypto_mpl::types::AesWrappingAlg;
 use aws_crypto_mpl::types::{EncryptionContext, EncryptionMaterials, PlaintextDataKey};
 use aws_esdk::types::AlgorithmSuiteId;
@@ -88,13 +87,7 @@ impl Keyring for KnownDataKey {
         &self,
         input: OnDecryptInput,
     ) -> Result<OnDecryptOutput, aws_crypto_mpl::Error> {
-        let (materials, encrypted_data_keys) = input.into_parts();
-        self.0
-            .on_decrypt()
-            .materials(materials)
-            .encrypted_data_keys(encrypted_data_keys)
-            .send()
-            .await
+        Keyring::on_decrypt(&self.0, input).await
     }
 }
 
@@ -114,7 +107,7 @@ async fn ciphertext() -> Vec<u8> {
 async fn decrypt_error(
     ciphertext: &[u8],
     ec: Option<&str>,
-    keyring: impl IntoShared<SharedKeyring>,
+    keyring: impl Keyring + 'static,
 ) -> Error {
     Client::default()
         .decrypt()

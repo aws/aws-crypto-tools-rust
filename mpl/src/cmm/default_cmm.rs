@@ -20,7 +20,7 @@ use super::{
     DecryptMaterialsInput, DecryptMaterialsOutput, GetEncryptionMaterialsInput,
     GetEncryptionMaterialsOutput,
 };
-use crate::keyring::SharedKeyring;
+use crate::keyring::{Keyring, SharedKeyring};
 use crate::shared::IntoShared;
 use crate::structures::{
     AsymmetricSignatureAlgorithm, DecryptionMaterials, EncryptionContext, EncryptionMaterials,
@@ -62,14 +62,8 @@ pub struct DefaultCmm {
 }
 
 impl DefaultCmm {
-    /// `"default"`.
-    #[must_use]
-    pub fn name(&self) -> Cow<'_, str> {
-        Cow::Borrowed("default")
-    }
-
     /// Construct a `DefaultCmm` wrapping the given keyring.
-    pub fn new(keyring: impl IntoShared<SharedKeyring>) -> Self {
+    pub fn new(keyring: impl Keyring + 'static) -> Self {
         Self {
             keyring: keyring.into_shared(),
         }
@@ -77,9 +71,9 @@ impl DefaultCmm {
 }
 
 #[async_trait]
-impl Cmm for crate::shared::Builtin<DefaultCmm> {
+impl Cmm for DefaultCmm {
     fn name(&self) -> Cow<'_, str> {
-        self.0.name()
+        Cow::Borrowed("default")
     }
 
     async fn get_encryption_materials(
