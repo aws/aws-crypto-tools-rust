@@ -181,7 +181,7 @@ fn oversubscribed_round_trips(rt: tokio::runtime::Runtime, tasks: usize, iters: 
                         .unwrap();
                     assert_eq!(
                         dec.plaintext(),
-                        plaintext,
+                        &plaintext,
                         "round trip must return the plaintext"
                     );
                 }
