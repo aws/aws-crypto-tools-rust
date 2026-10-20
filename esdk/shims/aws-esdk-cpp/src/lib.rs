@@ -1995,10 +1995,10 @@ fn decrypt_stream_finish(stream: &mut DecryptStream) -> Result<ffi::StreamFinish
 /// Pass this to C++ via `Aws::Esdk::Keyring::adopt`.
 /// Ownership transfers to the returned pointer; consumers MUST NOT `adopt` this handle more than once.
 pub fn into_keyring_handle(
-    keyring: impl aws_crypto_mpl::keyring::Keyring + 'static,
+    keyring: impl aws_crypto_mpl::shared::IntoShared<SharedKeyring>,
 ) -> *mut std::ffi::c_void {
     Box::into_raw(Box::new(Keyring {
-        inner: SharedKeyring::new(keyring),
+        inner: keyring.into_shared(),
     }))
     .cast()
 }
