@@ -1498,6 +1498,36 @@ fn header_value<'a>(headers: &'a [(String, String)], name: &str) -> Option<&'a s
         .map(|(_, v)| v.as_str())
 }
 
+#[test]
+fn shim_user_agent_keeps_the_customers_app_id() {
+    let loaded = SdkConfig::builder()
+        .behavior_version(BehaviorVersion::latest())
+        .region(Region::new("us-west-2"))
+        .app_name(aws_config::AppName::new("my-service").expect("valid app name"))
+        .credentials_provider(SharedCredentialsProvider::new(
+            aws_sdk_kms::config::Credentials::new("AKID", "secret", None, None, "test"),
+        ))
+        .build();
+    let kms = MplKmsClient {
+        inner: aws_sdk_kms::Client::new(&with_shim_user_agent(loaded)),
+    };
+
+    let sent = kms_sent_headers(&kms);
+    let ua = header_value(&sent, "x-amz-user-agent").expect("user agent header");
+    //= spec/shim/esdk-shim.md#service-client-configuration
+    //= type=test
+    //# - The shim MUST preserve any user-agent already present in the loaded
+    //# configuration, appending its own rather than replacing it.
+    assert!(ua.contains("app/my-service"), "{ua}");
+    assert!(
+        ua.contains(&format!(
+            "lib/{SHIM_FRAMEWORK_NAME}/{}",
+            env!("CARGO_PKG_VERSION")
+        )),
+        "{ua}"
+    );
+}
+
 fn http_header(name: &str, value: &str) -> ffi::HttpHeader {
     ffi::HttpHeader {
         name: name.to_string(),

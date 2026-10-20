@@ -1053,16 +1053,19 @@ fn default_http_client() -> Option<SharedHttpClient> {
 fn load_default_sdk_config() -> Result<SdkConfig, String> {
     let shared_config =
         TOKIO_RUNTIME.block_on(aws_config::defaults(BehaviorVersion::latest()).load());
+    Ok(with_shim_user_agent(shared_config))
+}
 
+fn with_shim_user_agent(loaded: SdkConfig) -> SdkConfig {
     //= spec/shim/esdk-shim.md#service-client-configuration
     //= type=implication
     //= reason=FrameworkMetadata is appended to the User-Agent and the shim sets no app name, so any user-agent already present in the loaded configuration is preserved.
     //# - The shim MUST preserve any user-agent already present in the loaded
     //# configuration, appending its own rather than replacing it.
-    Ok(shared_config
+    loaded
         .to_builder()
         .framework_metadata(shim_framework_metadata())
-        .build())
+        .build()
 }
 
 /// Convert C++ static credentials to AWS SDK credentials.
