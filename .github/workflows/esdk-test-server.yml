@@ -72,8 +72,9 @@ jobs:
       contents: read
       actions: read
       id-token: write
-    uses: aws/aws-crypto-tools-commons/.github/workflows/esdk-test-server-reusable.yml@main
+    uses: aws/aws-crypto-tools-commons/.github/workflows/esdk-test-server-reusable.yml@lucmcdon/esdk-registry-move-rust-server-paths
     with:
+      commons-ref: lucmcdon/esdk-registry-move-rust-server-paths
       focus: rust
       checkout-languages: rust
     secrets:
