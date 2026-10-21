@@ -77,7 +77,7 @@ async fn handle_request(
 
     // The AWS Crypto Tools CI test key store.
     // Replace these with your own key store's table, name, and KMS key ARN.
-    let key_store = key_store::Client::builder()
+    let key_store = key_store::DynamoDbKeyStore::builder()
         .ddb_table_name("KeyStoreDdbTable")
         .logical_key_store_name("KeyStoreDdbTable")
         .kms_configuration(KmsConfiguration::KmsKeyArn(
