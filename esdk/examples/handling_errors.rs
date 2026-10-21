@@ -38,7 +38,7 @@ const PLAINTEXT: &[u8] = b"Hello World";
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let sdk_config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
-    let key_store = key_store::DynamoDbKeyStore::builder()
+    let key_store = key_store::Client::builder()
         .ddb_table_name(TABLE_NAME)
         .logical_key_store_name(LOGICAL_KEY_STORE_NAME)
         .kms_configuration(KmsConfiguration::KmsKeyArn(KMS_KEY_ARN.into()))

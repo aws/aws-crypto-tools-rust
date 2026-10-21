@@ -10,7 +10,7 @@ use std::time::Duration;
 use aws_crypto_mpl::aws_sdk_dynamodb;
 use aws_crypto_mpl::aws_sdk_kms;
 use aws_crypto_mpl::cmc::DefaultCmc;
-use aws_crypto_mpl::key_store::DynamoDbKeyStore;
+use aws_crypto_mpl::key_store::Client as KeyStoreClient;
 use aws_crypto_mpl::key_store::types::KmsConfiguration;
 use aws_crypto_mpl::keyring::HierarchicalKeyring;
 use aws_smithy_runtime_api::client::http::{
@@ -127,8 +127,8 @@ impl FakeAws {
         aws_sdk_dynamodb::Client::from_conf(config)
     }
 
-    pub async fn key_store(&self) -> DynamoDbKeyStore {
-        DynamoDbKeyStore::builder()
+    pub async fn key_store(&self) -> KeyStoreClient {
+        KeyStoreClient::builder()
             .ddb_table_name(TABLE)
             .logical_key_store_name(TABLE)
             .kms_configuration(KmsConfiguration::KmsKeyArn(KEY_ARN.into()))

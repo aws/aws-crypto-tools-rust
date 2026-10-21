@@ -11,7 +11,7 @@ use aws_crypto_mpl::aws_sdk_dynamodb::Client as DynamoDbClient;
 use aws_crypto_mpl::aws_sdk_kms::Client as KmsClient;
 use aws_crypto_mpl::cmc::*;
 use aws_crypto_mpl::cmm::*;
-use aws_crypto_mpl::key_store::DynamoDbKeyStore;
+use aws_crypto_mpl::key_store::Client as KeyStoreClient;
 use aws_crypto_mpl::key_store::operation::create_key::{CreateKeyInput, CreateKeyOutput};
 use aws_crypto_mpl::key_store::operation::create_key_store::CreateKeyStoreOutput;
 use aws_crypto_mpl::key_store::operation::get_active_branch_key::{
@@ -149,8 +149,8 @@ fn ddb() -> DynamoDbClient {
     DynamoDbClient::new(&sdk_config())
 }
 
-async fn key_store() -> DynamoDbKeyStore {
-    DynamoDbKeyStore::builder()
+async fn key_store() -> KeyStoreClient {
+    KeyStoreClient::builder()
         .ddb_table_name("table")
         .logical_key_store_name("table")
         .kms_configuration(KmsConfiguration::KmsKeyArn(
@@ -586,43 +586,43 @@ async fn every_builder_getter_tracks_its_setter() {
         dec()
     );
     check!(
-        DynamoDbKeyStore::builder(),
+        KeyStoreClient::builder(),
         ddb_table_name,
         set_ddb_table_name,
         get_ddb_table_name,
         "x"
     );
     check!(
-        DynamoDbKeyStore::builder(),
+        KeyStoreClient::builder(),
         logical_key_store_name,
         set_logical_key_store_name,
         get_logical_key_store_name,
         "x"
     );
     check!(
-        DynamoDbKeyStore::builder(),
+        KeyStoreClient::builder(),
         kms_configuration,
         set_kms_configuration,
         get_kms_configuration,
         KmsConfiguration::KmsKeyArn("arn".into())
     );
-    check!(DynamoDbKeyStore::builder(), id, set_id, get_id, "x");
+    check!(KeyStoreClient::builder(), id, set_id, get_id, "x");
     check!(
-        DynamoDbKeyStore::builder(),
+        KeyStoreClient::builder(),
         grant_tokens,
         set_grant_tokens,
         get_grant_tokens,
         ["x"]
     );
     check!(
-        DynamoDbKeyStore::builder(),
+        KeyStoreClient::builder(),
         kms_client,
         set_kms_client,
         get_kms_client,
         kms()
     );
     check!(
-        DynamoDbKeyStore::builder(),
+        KeyStoreClient::builder(),
         ddb_client,
         set_ddb_client,
         get_ddb_client,

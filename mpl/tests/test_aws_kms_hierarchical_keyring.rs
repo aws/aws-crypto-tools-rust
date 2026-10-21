@@ -35,7 +35,7 @@ use aws_crypto_mpl::__test_internals::aws_kms::{
 };
 use aws_crypto_mpl::Error;
 use aws_crypto_mpl::cmc::{LocalCmc, SharedCmc, StormTrackingCmc};
-use aws_crypto_mpl::key_store::DynamoDbKeyStoreBuilder;
+use aws_crypto_mpl::key_store::client::Builder as KeyStoreClientBuilder;
 use aws_crypto_mpl::key_store::operation::create_key::{CreateKeyInput, CreateKeyOutput};
 use aws_crypto_mpl::key_store::operation::create_key_store::{
     CreateKeyStoreInput, CreateKeyStoreOutput,
@@ -52,7 +52,7 @@ use aws_crypto_mpl::key_store::operation::get_key_store_info::{
 };
 use aws_crypto_mpl::key_store::operation::version_key::{VersionKeyInput, VersionKeyOutput};
 use aws_crypto_mpl::key_store::types::{Discovery, KmsConfiguration};
-use aws_crypto_mpl::key_store::{DynamoDbKeyStore, KeyStore};
+use aws_crypto_mpl::key_store::{Client as KeyStoreClient, KeyStore};
 use aws_crypto_mpl::keyring::SharedKeyring;
 use aws_crypto_mpl::keyring::{
     BranchKeySupplier, GetBranchKeyIdInput, GetBranchKeyIdOutput, HierarchicalKeyring,
@@ -107,10 +107,10 @@ impl BranchKeySupplier for FixedBranchKeySupplier {
 ///
 /// Building a keyring reads only the key store's configuration, so no test using this makes a key store call.
 /// OnEncrypt / OnDecrypt tests use the `FakeKeyStore` doubles.
-fn key_store_never_consulted() -> DynamoDbKeyStore {
+fn key_store_never_consulted() -> KeyStoreClient {
     let (kms, ddb) = dummy_clients();
     build_without_io(
-        DynamoDbKeyStore::builder()
+        KeyStoreClient::builder()
             .ddb_table_name("test-table")
             .kms_configuration(KmsConfiguration::KmsKeyArn(
                 "arn:aws:kms:us-west-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab"
@@ -124,7 +124,7 @@ fn key_store_never_consulted() -> DynamoDbKeyStore {
 
 /// Builds `builder` by polling its future once.
 /// With both clients supplied, `build` does no IO, so it is ready on the first poll.
-fn build_without_io(builder: DynamoDbKeyStoreBuilder) -> DynamoDbKeyStore {
+fn build_without_io(builder: KeyStoreClientBuilder) -> KeyStoreClient {
     use std::future::Future;
     use std::task::{Context, Poll, Waker};
     let mut fut = std::pin::pin!(builder.build());

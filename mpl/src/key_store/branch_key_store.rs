@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! The [`KeyStore`] implementation backed by AWS KMS and Amazon DynamoDB,
-//! built with [`DynamoDbKeyStore::builder`].
+//! built with [`Client::builder`].
 
 use crate::Error;
 use crate::error::{BranchKey, ConflictReason, DynamoDbTable, Kind, Resource, RetryKind, Service};
@@ -48,21 +48,16 @@ use crate::key_store::record::{
     custom_encryption_context_from_authenticated_encryption_context,
 };
 use crate::key_store::{
-    CreateKeyInput, CreateKeyOutput, CreateKeyStoreInput, CreateKeyStoreOutput,
+    Client, CreateKeyInput, CreateKeyOutput, CreateKeyStoreInput, CreateKeyStoreOutput,
     GetActiveBranchKeyInput, GetActiveBranchKeyOutput, GetBeaconKeyInput, GetBeaconKeyOutput,
     GetBranchKeyVersionInput, GetBranchKeyVersionOutput, GetKeyStoreInfoInput,
     GetKeyStoreInfoOutput, KeyStore, VersionKeyInput, VersionKeyOutput,
 };
 use crate::structures::BeaconKeyMaterials;
 
-/// A key store backed by AWS KMS and Amazon DynamoDB.
-///
-/// Each key store operation is a method that returns a fluent builder: set the input, then call `send`.
-/// Pass it anywhere a key store is accepted.
-///
-/// Cloning is cheap: clones share one key store.
+/// A [`KeyStore`] backed by AWS KMS and Amazon DynamoDB.
 #[derive(Clone)]
-pub struct DynamoDbKeyStore {
+pub(crate) struct DynamoDbKeyStore {
     inner: Arc<DynamoDbKeyStoreInner>,
 }
 
@@ -83,17 +78,11 @@ struct DynamoDbKeyStoreInner {
 const DDB_TABLE_NAME_MIN_LEN: usize = 3;
 const DDB_TABLE_NAME_MAX_LEN: usize = 255;
 
-impl DynamoDbKeyStore {
+impl Client {
     /// Start a builder for a key store backed by AWS KMS and Amazon DynamoDB.
     #[must_use]
-    pub fn builder() -> DynamoDbKeyStoreBuilder {
-        DynamoDbKeyStoreBuilder::default()
-    }
-}
-
-impl std::fmt::Debug for DynamoDbKeyStore {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("DynamoDbKeyStore").finish_non_exhaustive()
+    pub fn builder() -> Builder {
+        Builder::default()
     }
 }
 
@@ -186,12 +175,12 @@ impl DynamoDbKeyStore {
     }
 }
 
-/// Builder for a [`DynamoDbKeyStore`].
+/// Builder for a [`Client`] backed by AWS KMS and Amazon DynamoDB.
 ///
 /// `ddb_table_name`, `logical_key_store_name`, and `kms_configuration` are required.
 /// Everything else is optional.
 #[derive(Debug, Clone, Default)]
-pub struct DynamoDbKeyStoreBuilder {
+pub struct Builder {
     ddb_table_name: Option<String>,
     logical_key_store_name: Option<String>,
     kms_configuration: Option<KmsConfiguration>,
@@ -201,7 +190,7 @@ pub struct DynamoDbKeyStoreBuilder {
     ddb_client: Option<DynamoDbClient>,
 }
 
-impl DynamoDbKeyStoreBuilder {
+impl Builder {
     /// Set the DynamoDB table name that backs this key store.
     /// Required.
     #[must_use]
@@ -366,7 +355,11 @@ impl DynamoDbKeyStoreBuilder {
     /// # Errors
     ///
     /// - [`Validation`](crate::Error::Validation): a required field is unset, a client is unset without the `default-aws-sdk-clients` feature, the table name is not 3 to 255 characters long, or the KMS configuration is invalid (malformed ARN, alias, or non-`kms` service).
-    pub async fn build(self) -> Result<DynamoDbKeyStore, Error> {
+    pub async fn build(self) -> Result<Client, Error> {
+        self.build_store().await.map(Client::new)
+    }
+
+    async fn build_store(self) -> Result<DynamoDbKeyStore, Error> {
         let ddb_table_name = required(self.ddb_table_name, "ddb_table_name")?;
         let logical_key_store_name =
             required(self.logical_key_store_name, "logical_key_store_name")?;
@@ -425,7 +418,7 @@ impl DynamoDbKeyStoreBuilder {
 }
 
 #[async_trait]
-impl KeyStore for crate::shared::Builtin<DynamoDbKeyStore> {
+impl KeyStore for DynamoDbKeyStore {
     /// # Errors
     ///
     /// Does not return an error.
@@ -1205,14 +1198,14 @@ fn record_from_ddb_item(
 /// Not part of the public API and may change in any release.
 #[cfg(feature = "test-utils")]
 pub mod __test_internals {
-    use super::DynamoDbKeyStoreBuilder;
+    use super::Builder;
     use crate::Error;
 
     /// Build the key store and return its KMS and DynamoDB clients.
     pub async fn build_clients(
-        builder: DynamoDbKeyStoreBuilder,
+        builder: Builder,
     ) -> Result<(aws_sdk_kms::Client, aws_sdk_dynamodb::Client), Error> {
-        let store = builder.build().await?;
+        let store = builder.build_store().await?;
         Ok((store.kms_client().clone(), store.ddb_client().clone()))
     }
 }

@@ -1,6 +1,8 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
+use std::sync::Arc;
+
 use crate::Error;
 use crate::key_store::KeyStore;
 use crate::key_store::shapes::{
@@ -14,29 +16,36 @@ use crate::key_store::shapes::{
 };
 use crate::structures::EncryptionContext;
 
-crate::shared::shared_handle!(
-    /// A handle to a key store, with one method per key store operation.
-    ///
-    /// Each method returns a fluent builder: set the input, then call `send`.
-    ///
-    /// ```no_run
-    /// # async fn example(key_store: aws_crypto_mpl::key_store::SharedKeyStore) -> Result<(), aws_crypto_mpl::Error> {
-    /// let materials = key_store
-    ///     .get_active_branch_key()
-    ///     .branch_key_id("my-branch-key")
-    ///     .send()
-    ///     .await?
-    ///     .into_branch_key_materials();
-    /// # Ok(())
-    /// # }
-    /// ```
-    ///
-    /// Cloning is cheap: clones share one key store.
-    SharedKeyStore,
-    KeyStore
-);
+/// A handle to a key store, with one method per key store operation.
+///
+/// Each method returns a fluent builder: set the input, then call `send`.
+///
+/// ```no_run
+/// # async fn example(key_store: aws_crypto_mpl::key_store::Client) -> Result<(), aws_crypto_mpl::Error> {
+/// let materials = key_store
+///     .get_active_branch_key()
+///     .branch_key_id("my-branch-key")
+///     .send()
+///     .await?
+///     .into_branch_key_materials();
+/// # Ok(())
+/// # }
+/// ```
+///
+/// Cloning is cheap: clones share one key store.
+#[derive(Clone)]
+pub struct Client {
+    inner: Arc<dyn KeyStore>,
+}
 
-impl SharedKeyStore {
+impl Client {
+    /// Wrap `key_store` in a client.
+    pub fn new(key_store: impl KeyStore + 'static) -> Self {
+        Self {
+            inner: Arc::new(key_store),
+        }
+    }
+
     /// Start a [`KeyStore::get_key_store_info`] call.
     pub fn get_key_store_info(&self) -> GetKeyStoreInfoFluentBuilder {
         GetKeyStoreInfoFluentBuilder {
@@ -94,11 +103,23 @@ impl SharedKeyStore {
     }
 }
 
-/// Fluent builder for [`SharedKeyStore::get_key_store_info`].
+impl<T: KeyStore + 'static> From<T> for Client {
+    fn from(key_store: T) -> Self {
+        Self::new(key_store)
+    }
+}
+
+impl std::fmt::Debug for Client {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Client").finish_non_exhaustive()
+    }
+}
+
+/// Fluent builder for [`Client::get_key_store_info`].
 #[derive(Debug, Clone)]
 #[must_use = "does nothing until `send` is called"]
 pub struct GetKeyStoreInfoFluentBuilder {
-    client: SharedKeyStore,
+    client: Client,
     inner: GetKeyStoreInfoInputBuilder,
 }
 
@@ -116,15 +137,15 @@ impl GetKeyStoreInfoFluentBuilder {
     /// The errors [`KeyStore::get_key_store_info`] documents.
     pub async fn send(self) -> Result<GetKeyStoreInfoOutput, Error> {
         let input = self.inner.build()?;
-        self.client.0.get_key_store_info(input).await
+        self.client.inner.get_key_store_info(input).await
     }
 }
 
-/// Fluent builder for [`SharedKeyStore::create_key_store`].
+/// Fluent builder for [`Client::create_key_store`].
 #[derive(Debug, Clone)]
 #[must_use = "does nothing until `send` is called"]
 pub struct CreateKeyStoreFluentBuilder {
-    client: SharedKeyStore,
+    client: Client,
     inner: CreateKeyStoreInputBuilder,
 }
 
@@ -142,15 +163,15 @@ impl CreateKeyStoreFluentBuilder {
     /// The errors [`KeyStore::create_key_store`] documents.
     pub async fn send(self) -> Result<CreateKeyStoreOutput, Error> {
         let input = self.inner.build()?;
-        self.client.0.create_key_store(input).await
+        self.client.inner.create_key_store(input).await
     }
 }
 
-/// Fluent builder for [`SharedKeyStore::create_key`].
+/// Fluent builder for [`Client::create_key`].
 #[derive(Debug, Clone)]
 #[must_use = "does nothing until `send` is called"]
 pub struct CreateKeyFluentBuilder {
-    client: SharedKeyStore,
+    client: Client,
     inner: CreateKeyInputBuilder,
 }
 
@@ -208,15 +229,15 @@ impl CreateKeyFluentBuilder {
     /// The errors [`KeyStore::create_key`] documents.
     pub async fn send(self) -> Result<CreateKeyOutput, Error> {
         let input = self.inner.build()?;
-        self.client.0.create_key(input).await
+        self.client.inner.create_key(input).await
     }
 }
 
-/// Fluent builder for [`SharedKeyStore::version_key`].
+/// Fluent builder for [`Client::version_key`].
 #[derive(Debug, Clone)]
 #[must_use = "does nothing until `send` is called"]
 pub struct VersionKeyFluentBuilder {
-    client: SharedKeyStore,
+    client: Client,
     inner: VersionKeyInputBuilder,
 }
 
@@ -256,15 +277,15 @@ impl VersionKeyFluentBuilder {
     /// Otherwise, the errors [`KeyStore::version_key`] documents.
     pub async fn send(self) -> Result<VersionKeyOutput, Error> {
         let input = self.inner.build()?;
-        self.client.0.version_key(input).await
+        self.client.inner.version_key(input).await
     }
 }
 
-/// Fluent builder for [`SharedKeyStore::get_active_branch_key`].
+/// Fluent builder for [`Client::get_active_branch_key`].
 #[derive(Debug, Clone)]
 #[must_use = "does nothing until `send` is called"]
 pub struct GetActiveBranchKeyFluentBuilder {
-    client: SharedKeyStore,
+    client: Client,
     inner: GetActiveBranchKeyInputBuilder,
 }
 
@@ -304,15 +325,15 @@ impl GetActiveBranchKeyFluentBuilder {
     /// Otherwise, the errors [`KeyStore::get_active_branch_key`] documents.
     pub async fn send(self) -> Result<GetActiveBranchKeyOutput, Error> {
         let input = self.inner.build()?;
-        self.client.0.get_active_branch_key(input).await
+        self.client.inner.get_active_branch_key(input).await
     }
 }
 
-/// Fluent builder for [`SharedKeyStore::get_branch_key_version`].
+/// Fluent builder for [`Client::get_branch_key_version`].
 #[derive(Debug, Clone)]
 #[must_use = "does nothing until `send` is called"]
 pub struct GetBranchKeyVersionFluentBuilder {
-    client: SharedKeyStore,
+    client: Client,
     inner: GetBranchKeyVersionInputBuilder,
 }
 
@@ -372,15 +393,15 @@ impl GetBranchKeyVersionFluentBuilder {
     /// Otherwise, the errors [`KeyStore::get_branch_key_version`] documents.
     pub async fn send(self) -> Result<GetBranchKeyVersionOutput, Error> {
         let input = self.inner.build()?;
-        self.client.0.get_branch_key_version(input).await
+        self.client.inner.get_branch_key_version(input).await
     }
 }
 
-/// Fluent builder for [`SharedKeyStore::get_beacon_key`].
+/// Fluent builder for [`Client::get_beacon_key`].
 #[derive(Debug, Clone)]
 #[must_use = "does nothing until `send` is called"]
 pub struct GetBeaconKeyFluentBuilder {
-    client: SharedKeyStore,
+    client: Client,
     inner: GetBeaconKeyInputBuilder,
 }
 
@@ -420,58 +441,6 @@ impl GetBeaconKeyFluentBuilder {
     /// Otherwise, the errors [`KeyStore::get_beacon_key`] documents.
     pub async fn send(self) -> Result<GetBeaconKeyOutput, Error> {
         let input = self.inner.build()?;
-        self.client.0.get_beacon_key(input).await
+        self.client.inner.get_beacon_key(input).await
     }
 }
-
-/// Add the [`SharedKeyStore`] fluent calls to a built-in key store.
-#[cfg(all(feature = "kms", feature = "ddb"))]
-macro_rules! fluent_key_store {
-    ($($ty:ty),+) => {$(
-        impl $ty {
-            /// Start a [`KeyStore::get_key_store_info`] call.
-            pub fn get_key_store_info(&self) -> GetKeyStoreInfoFluentBuilder {
-                SharedKeyStore::new(crate::shared::Builtin(self.clone())).get_key_store_info()
-            }
-
-            /// Start a [`KeyStore::create_key_store`] call.
-            pub fn create_key_store(&self) -> CreateKeyStoreFluentBuilder {
-                SharedKeyStore::new(crate::shared::Builtin(self.clone())).create_key_store()
-            }
-
-            /// Start a [`KeyStore::create_key`] call.
-            pub fn create_key(&self) -> CreateKeyFluentBuilder {
-                SharedKeyStore::new(crate::shared::Builtin(self.clone())).create_key()
-            }
-
-            /// Start a [`KeyStore::version_key`] call.
-            pub fn version_key(&self) -> VersionKeyFluentBuilder {
-                SharedKeyStore::new(crate::shared::Builtin(self.clone())).version_key()
-            }
-
-            /// Start a [`KeyStore::get_active_branch_key`] call.
-            pub fn get_active_branch_key(&self) -> GetActiveBranchKeyFluentBuilder {
-                SharedKeyStore::new(crate::shared::Builtin(self.clone())).get_active_branch_key()
-            }
-
-            /// Start a [`KeyStore::get_branch_key_version`] call.
-            pub fn get_branch_key_version(&self) -> GetBranchKeyVersionFluentBuilder {
-                SharedKeyStore::new(crate::shared::Builtin(self.clone())).get_branch_key_version()
-            }
-
-            /// Start a [`KeyStore::get_beacon_key`] call.
-            pub fn get_beacon_key(&self) -> GetBeaconKeyFluentBuilder {
-                SharedKeyStore::new(crate::shared::Builtin(self.clone())).get_beacon_key()
-            }
-        }
-
-        impl crate::shared::FromUnshared<$ty> for SharedKeyStore {
-            fn from_unshared(value: $ty) -> Self {
-                SharedKeyStore::new(crate::shared::Builtin(value))
-            }
-        }
-    )+};
-}
-
-#[cfg(all(feature = "kms", feature = "ddb"))]
-fluent_key_store!(crate::key_store::DynamoDbKeyStore);

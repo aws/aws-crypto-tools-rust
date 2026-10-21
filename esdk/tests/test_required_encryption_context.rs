@@ -92,7 +92,7 @@ async fn get_hierarchical_keyring(mpl: &MplClient) -> KeyringRef {
         .build()
         .unwrap();
 
-    let key_store = SharedKeyStore::from_conf(key_store_config).unwrap();
+    let key_store = KeyStoreClient::from_conf(key_store_config).unwrap();
 
     mpl.create_aws_kms_hierarchical_keyring()
         .key_store(key_store)

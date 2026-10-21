@@ -72,9 +72,9 @@ use aws_sdk_kms::operation::decrypt::DecryptError;
 use aws_crypto_mpl::__test_internals::aws_kms::unwrap as branch_key_unwrap;
 use aws_crypto_mpl::Error;
 use aws_crypto_mpl::cmc::{LocalCmc, SharedCmc};
+use aws_crypto_mpl::key_store::Client as KeyStoreClient;
 use aws_crypto_mpl::key_store::types::KmsConfiguration;
 use aws_crypto_mpl::key_store::types::{Discovery, MrDiscovery};
-use aws_crypto_mpl::key_store::{DynamoDbKeyStore, SharedKeyStore};
 use aws_crypto_mpl::keyring::HierarchicalKeyring;
 use aws_crypto_mpl::keyring::SharedKeyring;
 use aws_crypto_mpl::shared::IntoShared;
@@ -99,9 +99,9 @@ async fn build_clients() -> (KmsClient, DynamoDbClient) {
     (KmsClient::new(&cfg), DynamoDbClient::new(&cfg))
 }
 
-async fn build_key_store() -> DynamoDbKeyStore {
+async fn build_key_store() -> KeyStoreClient {
     let (kms, ddb) = build_clients().await;
-    DynamoDbKeyStore::builder()
+    KeyStoreClient::builder()
         .ddb_table_name(BRANCH_KEY_STORE_NAME)
         .kms_configuration(KmsConfiguration::KmsKeyArn(KEY_ARN.into()))
         .logical_key_store_name(LOGICAL_KEY_STORE_NAME)
@@ -119,7 +119,7 @@ const FIXTURE_TTL: Duration = Duration::from_secs(3600);
 /// Build a keyring over `key_store` for `branch_key_id`, with its own `LocalCmc`.
 /// Every test varies only these three things, so they share one fixture.
 async fn keyring_for(
-    key_store: impl aws_crypto_mpl::shared::IntoShared<SharedKeyStore>,
+    key_store: impl Into<KeyStoreClient>,
     branch_key_id: &str,
     partition: &str,
 ) -> SharedKeyring {
@@ -135,7 +135,7 @@ async fn keyring_for(
 /// Same, with an explicit cache. Used by the shared-cache tests, which hand
 /// two keyrings the same `SharedCmc`.
 async fn keyring_with_cache(
-    key_store: impl aws_crypto_mpl::shared::IntoShared<SharedKeyStore>,
+    key_store: impl Into<KeyStoreClient>,
     branch_key_id: &str,
     partition: &str,
     cache: impl IntoShared<SharedCmc>,
@@ -297,8 +297,8 @@ async fn ddb_client_us_west_2() -> DynamoDbClient {
 async fn build_key_store_with_kms_and_logical_name(
     kms: KmsClient,
     logical_key_store_name: &str,
-) -> DynamoDbKeyStore {
-    DynamoDbKeyStore::builder()
+) -> KeyStoreClient {
+    KeyStoreClient::builder()
         .ddb_table_name(BRANCH_KEY_STORE_NAME)
         .kms_configuration(KmsConfiguration::KmsKeyArn(KEY_ARN.into()))
         .logical_key_store_name(logical_key_store_name)
@@ -672,9 +672,9 @@ const DISCOVERY_BRANCH_KEY_ACTIVE_VERSION: &str = "6b7a8ef4-8c1c-4f63-b196-a6ef7
 
 /// Build a key store in Discovery mode: no configured KMS key ARN, so each
 /// record's own `kms-arn` is used for the KMS Decrypt.
-async fn build_discovery_key_store() -> DynamoDbKeyStore {
+async fn build_discovery_key_store() -> KeyStoreClient {
     let (kms, ddb) = build_clients().await;
-    DynamoDbKeyStore::builder()
+    KeyStoreClient::builder()
         .ddb_table_name(BRANCH_KEY_STORE_NAME)
         .kms_configuration(KmsConfiguration::Discovery(
             Discovery::builder().build().unwrap(),
@@ -828,9 +828,9 @@ const EAST_BRANCH_KEY: &str = "MyEastBranch2";
 
 /// Build a key store in MRDiscovery mode: the record's `kms-arn` is used, but
 /// rewritten into `region` first.
-async fn build_mr_discovery_key_store(region: &str) -> DynamoDbKeyStore {
+async fn build_mr_discovery_key_store(region: &str) -> KeyStoreClient {
     let (kms, ddb) = build_clients().await;
-    DynamoDbKeyStore::builder()
+    KeyStoreClient::builder()
         .ddb_table_name(BRANCH_KEY_STORE_NAME)
         .kms_configuration(KmsConfiguration::MrDiscovery(
             MrDiscovery::builder().region(region).build().unwrap(),
