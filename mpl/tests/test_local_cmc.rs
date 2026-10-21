@@ -34,10 +34,8 @@ use std::time::{Duration, SystemTime};
 
 use aws_crypto_mpl::Error;
 
-use aws_crypto_mpl::cmc::{
-    Cmc, DeleteCacheEntryInput, GetCacheEntryInput, LocalCmc, PutCacheEntryInput,
-    UpdateUsageMetadataInput,
-};
+use aws_crypto_mpl::cmc::{LocalCmc, SharedCmc};
+use aws_crypto_mpl::shared::IntoShared;
 use aws_crypto_mpl::types::{
     AlgorithmSuiteId, BeaconKeyMaterials, BranchKeyMaterials, DecryptionMaterials,
     EncryptionContext, EncryptionMaterials, EsdkAlgorithmSuiteId,
@@ -46,35 +44,39 @@ use aws_crypto_mpl::types::{BytesUsage, CacheEntry, CachedMaterials, MessageUsag
 
 /// Positional shorthand for the `Cmc` operations.
 #[async_trait]
-trait CmcExt: Cmc {
+trait CmcExt {
+    fn handle(&self) -> SharedCmc;
+
     async fn put_entry(&self, id: &[u8], entry: CacheEntry) -> Result<(), Error> {
-        let input = PutCacheEntryInput::builder()
-            .identifier(id)
-            .entry(entry)
-            .build()?;
-        self.put_cache_entry(input).await.map(|_| ())
+        let put = self.handle().put_cache_entry().identifier(id).entry(entry);
+        put.send().await.map(|_| ())
     }
 
     async fn get_entry(&self, id: &[u8]) -> Result<Option<Arc<CacheEntry>>, Error> {
-        let input = GetCacheEntryInput::builder().identifier(id).build()?;
-        Ok(self.get_cache_entry(input).await?.into_entry())
+        let get = self.handle().get_cache_entry().identifier(id);
+        Ok(get.send().await?.into_entry())
     }
 
     async fn delete_entry(&self, id: &[u8]) -> Result<(), Error> {
-        let input = DeleteCacheEntryInput::builder().identifier(id).build()?;
-        self.delete_cache_entry(input).await.map(|_| ())
+        let delete = self.handle().delete_cache_entry().identifier(id);
+        delete.send().await.map(|_| ())
     }
 
     async fn record_use(&self, id: &[u8], bytes: u64) -> Result<(), Error> {
-        let input = UpdateUsageMetadataInput::builder()
+        let update = self
+            .handle()
+            .update_usage_metadata()
             .identifier(id)
-            .bytes_used(bytes)
-            .build()?;
-        self.update_usage_metadata(input).await.map(|_| ())
+            .bytes_used(bytes);
+        update.send().await.map(|_| ())
     }
 }
 
-impl<T: Cmc + ?Sized> CmcExt for T {}
+impl<T: IntoShared<SharedCmc> + Clone + Send + Sync> CmcExt for T {
+    fn handle(&self) -> SharedCmc {
+        self.clone().into_shared()
+    }
+}
 
 // Fixtures
 

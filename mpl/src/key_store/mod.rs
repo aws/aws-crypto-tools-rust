@@ -23,13 +23,18 @@
 //! # }
 //! ```
 
+#[cfg(all(feature = "kms", feature = "ddb"))]
 mod attributes;
+#[cfg(all(feature = "kms", feature = "ddb"))]
 mod branch_key_store;
 mod client_impl;
 mod config;
+#[cfg(all(feature = "kms", feature = "ddb"))]
 mod encryption_context;
 mod kms_config;
+#[cfg(all(feature = "kms", feature = "ddb"))]
 mod kms_ops;
+#[cfg(all(feature = "kms", feature = "ddb"))]
 mod record;
 mod shapes;
 
@@ -41,6 +46,7 @@ pub use client_impl::Client;
 pub mod client {
     //! The key store [`Client`] and its [`Builder`].
 
+    #[cfg(all(feature = "kms", feature = "ddb"))]
     pub use super::branch_key_store::Builder;
     pub use super::client_impl::Client;
 }
