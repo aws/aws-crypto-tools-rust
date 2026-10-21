@@ -1,3 +1,6 @@
+// Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 //! The hierarchical keyring config decodes from CBOR built with the model's
 //! literal wire names (as a generated rpcv2Cbor Test_Client sends them), using
 //! the canonical branch-key-store fixtures shared across the ESDK/MPL test

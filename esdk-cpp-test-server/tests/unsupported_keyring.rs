@@ -1,3 +1,6 @@
+// Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 //! Offline: the C++ facade exposes the hierarchical and raw-AES keyrings, so a
 //! CreateClient for any other keyring is rejected before the shim is invoked.
 

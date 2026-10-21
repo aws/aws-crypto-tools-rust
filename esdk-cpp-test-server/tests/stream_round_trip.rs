@@ -1,3 +1,6 @@
+// Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 //! Offline streaming round trips through the C++ facade with a raw-AES keyring
 //! over the rpcv2Cbor wire: EncryptStream -> DecryptStream, plus each cross-mode
 //! pairing with the blob operations. The multi-frame plaintext spans several

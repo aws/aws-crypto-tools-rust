@@ -143,6 +143,18 @@ jobs:
     with:
       project: esdk
 
+  # Run cargo-deny for every changed project
+  pr-ci-supply-chain:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.projects != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        project: ${{ fromJSON(needs.detect-changes.outputs.projects) }}
+    uses: ./.github/workflows/supply_chain.yml
+    with:
+      project: ${{ matrix.project }}
+
   # Check that the generated error types files match the errors.toml definitions.
   gen-errors:
     name: Generated error types are current
@@ -178,6 +190,7 @@ jobs:
       - detect-changes
       - pr-ci-rust
       - pr-ci-duvet
+      - pr-ci-supply-chain
       - gen-errors
     runs-on: ubuntu-22.04
     steps:
@@ -185,4 +198,4 @@ jobs:
         uses: re-actors/alls-green@release/v1
         with:
           jobs: ${{ toJSON(needs) }}
-          allowed-skips: pr-ci-rust, pr-ci-duvet
+          allowed-skips: pr-ci-rust, pr-ci-duvet, pr-ci-supply-chain
