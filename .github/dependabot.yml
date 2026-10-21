@@ -2,11 +2,7 @@ version: 2
 updates:
   - package-ecosystem: "cargo"
     directories:
-      - "/esdk"
-      - "/esdk/performance-tests"
-      - "/esdk/shims/aws-esdk-cpp"
-      - "/mpl"
-      - "/prim"
+      - "/**/*"
     schedule:
       interval: "weekly"
     groups:
