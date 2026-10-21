@@ -248,8 +248,8 @@ auto guard(F&& f) -> decltype(f()) {
     ::rust::Vec<::ffi::EncryptionContextItem> out;
     for (const auto& kv : ec) {
         ::ffi::EncryptionContextItem item;
-        item.key = to_rust_string(kv.first, "encryption context keys and values");
-        item.value = to_rust_string(kv.second, "encryption context keys and values");
+        item.key = to_rust_string(kv.first, "encryption context keys");
+        item.value = to_rust_string(kv.second, "encryption context values");
         out.push_back(std::move(item));
     }
     return out;
@@ -425,8 +425,8 @@ KmsClient KmsClient::with_headers(
     const std::vector<std::pair<std::string, std::string>>& headers) const {
     ::rust::Vec<::ffi::HttpHeader> ffi_headers;
     for (const auto& [name, value] : headers) {
-        ffi_headers.push_back(::ffi::HttpHeader{detail::to_rust_string(name, "header names and values"),
-                                                detail::to_rust_string(value, "header names and values")});
+        ffi_headers.push_back(::ffi::HttpHeader{detail::to_rust_string(name, "header names"),
+                                                detail::to_rust_string(value, "header values")});
     }
     return KmsClient(std::make_shared<detail::KmsClientImpl>(
         detail::Retained{},
