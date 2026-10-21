@@ -75,7 +75,7 @@
 //! and [`reason`](ConflictError::reason) says why:
 //!
 //! ```no_run
-//! # async fn example(key_store: aws_crypto_mpl::key_store::DynamoDbKeyStore) -> Result<(), aws_crypto_mpl::Error> {
+//! # async fn example(key_store: aws_crypto_mpl::key_store::Client) -> Result<(), aws_crypto_mpl::Error> {
 //! use aws_crypto_mpl::error::ConflictReason;
 //! use aws_crypto_mpl::Error;
 //!
