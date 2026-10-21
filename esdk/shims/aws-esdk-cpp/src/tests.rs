@@ -1,3 +1,6 @@
+// Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 //! Bridge-internal tests: translation helpers, null-handle checks, and inputs
 //! the facade cannot express. Everything here runs offline. Facade-observable
 //! behavior, including the credentialed integration coverage, lives in the C++
@@ -6,7 +9,6 @@
 //! decode end to end.
 
 use super::*;
-use aws_crypto_mpl::cmc::Cmc as _;
 use ffi::EsdkAlgorithmSuiteId as F;
 use ffi::EsdkCommitmentPolicy as P;
 
@@ -1086,27 +1088,16 @@ fn opt_to_option_is_some_only_when_set() {
 // The built SdkConfig is opaque through the facade, so the values must be tested from Rust
 
 #[test]
-fn user_agent_form_and_append() {
+fn shim_framework_metadata_is_valid() {
     //= spec/shim/esdk-shim.md#service-client-configuration
     //= type=test
     //# - The shim MUST set a user-agent on each service client of the form
     //# `AwsEncryptionSdk-Shim-<target-language>-<core-language>-<version>`, where
     //# `<target-language>` is the target language, `<core-language>` is the core
     //# ESDK's implementation language, and `<version>` is the shim's published version.
-    let ua = shim_user_agent();
-    assert_eq!(merge_user_agent("", &ua), ua);
-    assert!(ua.starts_with("AwsEncryptionSdk-Shim-C++-Rust-"));
-
-    //= spec/shim/esdk-shim.md#service-client-configuration
-    //= type=test
-    //# - The shim MUST preserve any user-agent already present in the loaded
-    //# configuration, appending its own rather than replacing it.
-    let merged = merge_user_agent("existing-agent/1.0", &ua);
-    assert!(
-        merged.starts_with("existing-agent/1.0"),
-        "must preserve existing: {merged}"
-    );
-    assert!(merged.contains(&ua), "must append shim UA: {merged}");
+    let md = shim_framework_metadata();
+    assert_eq!(md.name(), "AwsEncryptionSdk-Shim-C++-Rust");
+    assert_eq!(md.version(), Some(env!("CARGO_PKG_VERSION")));
 }
 
 #[test]
@@ -1152,17 +1143,23 @@ fn create_sdk_config_applies_every_field() {
         Some(aws_config::retry::RetryConfig::adaptive().mode())
     );
 
-    let app_name: &str = sdk.app_name().expect("app name is set").as_ref();
-    assert!(app_name.contains("AwsEncryptionSdk-Shim-C++-Rust-"));
+    assert!(
+        sdk.framework_metadata()
+            .iter()
+            .any(|md| md.name() == SHIM_FRAMEWORK_NAME)
+    );
 }
 
 #[test]
 fn create_sdk_config_adds_the_user_agent_once() {
-    let ua = shim_user_agent();
     for _ in 0..2 {
         let sdk = create_sdk_config(&unset_client_config(), None).expect("build sdk config");
-        let app_name: &str = sdk.app_name().expect("app name is set").as_ref();
-        assert_eq!(app_name.matches(ua.as_str()).count(), 1, "{app_name}");
+        let count = sdk
+            .framework_metadata()
+            .iter()
+            .filter(|md| md.name() == SHIM_FRAMEWORK_NAME)
+            .count();
+        assert_eq!(count, 1);
     }
 }
 
@@ -1503,6 +1500,36 @@ fn header_value<'a>(headers: &'a [(String, String)], name: &str) -> Option<&'a s
         .map(|(_, v)| v.as_str())
 }
 
+#[test]
+fn shim_user_agent_keeps_the_customers_app_id() {
+    let loaded = SdkConfig::builder()
+        .behavior_version(BehaviorVersion::latest())
+        .region(Region::new("us-west-2"))
+        .app_name(aws_config::AppName::new("my-service").expect("valid app name"))
+        .credentials_provider(SharedCredentialsProvider::new(
+            aws_sdk_kms::config::Credentials::new("AKID", "secret", None, None, "test"),
+        ))
+        .build();
+    let kms = MplKmsClient {
+        inner: aws_sdk_kms::Client::new(&with_shim_user_agent(loaded)),
+    };
+
+    let sent = kms_sent_headers(&kms);
+    let ua = header_value(&sent, "x-amz-user-agent").expect("user agent header");
+    //= spec/shim/esdk-shim.md#service-client-configuration
+    //= type=test
+    //# - The shim MUST preserve any user-agent already present in the loaded
+    //# configuration, appending its own rather than replacing it.
+    assert!(ua.contains("app/my-service"), "{ua}");
+    assert!(
+        ua.contains(&format!(
+            "lib/{SHIM_FRAMEWORK_NAME}/{}",
+            env!("CARGO_PKG_VERSION")
+        )),
+        "{ua}"
+    );
+}
+
 fn http_header(name: &str, value: &str) -> ffi::HttpHeader {
     ffi::HttpHeader {
         name: name.to_string(),
@@ -1625,6 +1652,10 @@ fn list_keys(client: &aws_sdk_kms::Client) {
     TOKIO_RUNTIME
         .block_on(client.list_keys().send())
         .expect("list_keys against the local server");
+    // Wait for the connection to return to the pool so the next request reuses it.
+    TOKIO_RUNTIME.block_on(async {
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    });
 }
 
 #[test]

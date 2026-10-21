@@ -1,3 +1,6 @@
+// Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 //! Offline: a request without the rpcv2Cbor protocol header is rejected as a
 //! GenericServerError before any backend operation runs.
 

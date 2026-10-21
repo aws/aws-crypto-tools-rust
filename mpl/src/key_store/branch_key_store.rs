@@ -10,6 +10,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
 use async_trait::async_trait;
+#[cfg(feature = "default-aws-sdk-clients")]
 use aws_config::{BehaviorVersion, Region};
 use aws_sdk_dynamodb::Client as DynamoDbClient;
 use aws_sdk_dynamodb::config::http::HttpResponse;
@@ -37,6 +38,7 @@ use crate::key_store::encryption_context::{
     EncryptionContextInput, active_encryption_context, beacon_key_encryption_context,
     decrypt_only_encryption_context,
 };
+#[cfg(feature = "default-aws-sdk-clients")]
 use crate::key_store::kms_config::parse_arn;
 use crate::key_store::kms_ops::{
     decrypt_branch_key, generate_wrapped_key, reencrypt_wrapped_key, resolve_key_store_arn,
@@ -300,7 +302,7 @@ impl Builder {
 
     /// Set the AWS KMS client. Defaults to a client for the Region parsed
     /// from the KMS configuration (the SDK's default region provider chain
-    /// for `Discovery`).
+    /// for `Discovery`). Without the `default-aws-sdk-clients` feature, it is required.
     #[must_use]
     pub fn kms_client(mut self, client: impl Into<KmsClient>) -> Self {
         self.kms_client = Some(client.into());
@@ -323,7 +325,7 @@ impl Builder {
 
     /// Set the Amazon DynamoDB client. Defaults to a client for the Region
     /// parsed from the KMS configuration (the SDK's default region provider
-    /// chain for `Discovery`).
+    /// chain for `Discovery`). Without the `default-aws-sdk-clients` feature, it is required.
     #[must_use]
     pub fn ddb_client(mut self, client: impl Into<DynamoDbClient>) -> Self {
         self.ddb_client = Some(client.into());
@@ -348,10 +350,11 @@ impl Builder {
     ///
     /// Building a default client is the only reason this is `async`.
     /// With both clients supplied it does no IO and completes on the first poll.
+    /// Default clients need the `default-aws-sdk-clients` feature, which is on by default.
     ///
     /// # Errors
     ///
-    /// - [`Validation`](crate::Error::Validation): a required field is unset, the table name is not 3 to 255 characters long, or the KMS configuration is invalid (malformed ARN, alias, or non-`kms` service).
+    /// - [`Validation`](crate::Error::Validation): a required field is unset, a client is unset without the `default-aws-sdk-clients` feature, the table name is not 3 to 255 characters long, or the KMS configuration is invalid (malformed ARN, alias, or non-`kms` service).
     pub async fn build(self) -> Result<Client, Error> {
         self.build_store().await.map(Client::new)
     }
@@ -381,12 +384,20 @@ impl Builder {
 
         let (kms_client, ddb_client) = match (self.kms_client, self.ddb_client) {
             (Some(kms), Some(ddb)) => (kms, ddb),
+            #[cfg(feature = "default-aws-sdk-clients")]
             (kms, ddb) => {
                 let sdk_config = default_sdk_config(&kms_configuration).await;
                 (
                     kms.unwrap_or_else(|| KmsClient::new(&sdk_config)),
                     ddb.unwrap_or_else(|| DynamoDbClient::new(&sdk_config)),
                 )
+            }
+            #[cfg(not(feature = "default-aws-sdk-clients"))]
+            _ => {
+                return Err(Error::new(
+                    Kind::Validation,
+                    "kms_client and ddb_client are required without the `default-aws-sdk-clients` feature",
+                ));
             }
         };
 
@@ -1094,6 +1105,7 @@ fn item_from_ec_and_enc(
 /// the Region in the KMS ARN for the ARN-based variants, the explicit
 /// region for `MrDiscovery`, and `None` for `Discovery` (in which case the
 /// SDK's default region provider chain is used).
+#[cfg(feature = "default-aws-sdk-clients")]
 fn region_from_kms_config(config: &KmsConfiguration) -> Option<String> {
     match config {
         KmsConfiguration::KmsKeyArn(arn) => parse_arn(arn.as_str()).ok().map(|parts| parts.region),
@@ -1108,6 +1120,7 @@ fn region_from_kms_config(config: &KmsConfiguration) -> Option<String> {
 /// Build a default [`aws_config::SdkConfig`] for constructing KMS / DynamoDB
 /// clients, pinning the Region parsed from the KMS configuration when
 /// available.
+#[cfg(feature = "default-aws-sdk-clients")]
 async fn default_sdk_config(config: &KmsConfiguration) -> aws_config::SdkConfig {
     let loader = aws_config::defaults(BehaviorVersion::latest());
     match region_from_kms_config(config) {

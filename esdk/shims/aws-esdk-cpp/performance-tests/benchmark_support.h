@@ -1,11 +1,11 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// Support for the C++ hierarchical-keyring performance benchmark
-// (benchmark.cpp): scenario configuration, keyring setup from the environment,
-// resident-memory sampling, latency statistics, the result record, and JSON
-// output. The JSON schema matches the Rust benchmark so both feed the same
-// CloudWatch pipeline; results carry language "rust-cpp".
+// Support for the C++ performance benchmark (benchmark.cpp): scenario
+// configuration, keyring setup, resident-memory sampling, latency statistics,
+// the result record, and JSON output. The JSON schema matches the Rust
+// benchmark so both feed the same CloudWatch pipeline; results carry language
+// "rust-cpp".
 #pragma once
 
 #include <cstddef>
@@ -86,7 +86,7 @@ inline std::optional<KeyStoreEnv> load_env() {
 // Hierarchical keyring backed by the key store named in the environment. The
 // long TTL keeps the branch key cached for the whole run, so measured latency
 // reflects the SDK crypto path rather than a KMS round trip.
-inline Aws::Esdk::HierarchicalKeyring make_keyring(const KeyStoreEnv& env) {
+inline Aws::Esdk::HierarchicalKeyring make_hierarchical_keyring(const KeyStoreEnv& env) {
     auto client_config = Aws::Esdk::AwsSdkClientConfig().with_max_retry_attempts(5);
     if (!env.region.empty()) {
         client_config.with_region(env.region);
@@ -100,6 +100,16 @@ inline Aws::Esdk::HierarchicalKeyring make_keyring(const KeyStoreEnv& env) {
     return Aws::Esdk::HierarchicalKeyring(
         std::move(keystore), env.branch_key_id, std::chrono::seconds{600000},
         Aws::Esdk::HierarchicalKeyringOptions().with_cache(Aws::Esdk::DefaultCmc(100)));
+}
+
+// Raw AES keyring with a fixed 256-bit wrapping key. Wraps data keys locally,
+// so it needs no AWS resources or credentials. The key identity matches the
+// Rust benchmark so the two series are comparable.
+inline Aws::Esdk::RawAesKeyring make_raw_aes_keyring() {
+    return Aws::Esdk::RawAesKeyring(
+        "performance-test", "raw-aes-256",
+        std::vector<std::uint8_t>(32, 0),
+        Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16);
 }
 
 // Resident set size in bytes from /proc/self/statm, or 0 when it cannot be read
@@ -284,12 +294,13 @@ inline void append_result_json(std::ostringstream& os, const BenchmarkResult& r,
 
 inline void write_results_json(const std::string& path,
                                const std::vector<BenchmarkResult>& results,
-                               const RunInfo& info) {
+                               const RunInfo& info,
+                               const std::string& keyring) {
     std::ostringstream os;
     os << "{\n";
     os << "  \"metadata\": {\n";
     os << "    \"language\": \"rust-cpp\",\n";
-    os << "    \"keyring\": \"hierarchical\",\n";
+    os << "    \"keyring\": \"" << json_escape(keyring) << "\",\n";
     os << "    \"timestamp\": \"" << json_escape(info.timestamp) << "\",\n";
     os << "    \"compiler\": \"" << json_escape(info.compiler) << "\",\n";
     os << "    \"cpu_count\": " << info.cpu_count << ",\n";

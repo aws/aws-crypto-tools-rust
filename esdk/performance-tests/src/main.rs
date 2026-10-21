@@ -10,7 +10,7 @@ mod tests;
 use anyhow::Result;
 use clap::{Arg, ArgAction, Command};
 
-use benchmark::EsdkBenchmark;
+use benchmark::{EsdkBenchmark, KeyringChoice};
 
 fn main() -> Result<()> {
     // Default worker stacks overflow decrypting 50 MiB payloads.
@@ -28,9 +28,9 @@ async fn run_benchmark() -> Result<()> {
         .filter_level(log::LevelFilter::Info)
         .init();
 
-    let matches = Command::new("ESDK Rust Hierarchical Keyring Benchmark")
+    let matches = Command::new("ESDK Rust Benchmark")
         .version(env!("CARGO_PKG_VERSION"))
-        .about("AWS Encryption SDK performance benchmark — Rust, hierarchical keyring")
+        .about("AWS Encryption SDK performance benchmark — Rust")
         .arg(
             Arg::new("config")
                 .long("config")
@@ -46,6 +46,14 @@ async fn run_benchmark() -> Result<()> {
                 .default_value("results/raw-data/rust_results.json"),
         )
         .arg(
+            Arg::new("keyring")
+                .long("keyring")
+                .value_name("KEYRING")
+                .help("Keyring to benchmark")
+                .value_parser(["hierarchical", "raw-aes"])
+                .default_value("hierarchical"),
+        )
+        .arg(
             Arg::new("quick")
                 .long("quick")
                 .help("Run quick test with reduced iterations")
@@ -55,9 +63,13 @@ async fn run_benchmark() -> Result<()> {
 
     let config_path = matches.get_one::<String>("config").unwrap();
     let output_path = matches.get_one::<String>("output").unwrap();
+    let keyring_choice = match matches.get_one::<String>("keyring").unwrap().as_str() {
+        "raw-aes" => KeyringChoice::RawAes,
+        _ => KeyringChoice::Hierarchical,
+    };
     let quick = matches.get_flag("quick");
 
-    let mut bench = EsdkBenchmark::new(config_path).await?;
+    let mut bench = EsdkBenchmark::new(config_path, keyring_choice).await?;
 
     if quick {
         let quick_config = bench.config.quick_config.as_ref().ok_or_else(|| {
@@ -82,7 +94,10 @@ async fn run_benchmark() -> Result<()> {
 
     bench.save_results(output_path)?;
 
-    println!("\n=== ESDK Rust Hierarchical Keyring Benchmark Summary ===");
+    println!(
+        "\n=== ESDK Rust Benchmark Summary ({} keyring) ===",
+        bench.keyring_name
+    );
     println!("Total tests completed: {}", bench.results.len());
     println!("Results saved to: {}", output_path);
 

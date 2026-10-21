@@ -1,3 +1,6 @@
+// Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 // Encrypts with a non-default algorithm suite.
 //
 // The default suite, AlgAes256GcmHkdfSha512CommitKeyEcdsaP384, commits to the data key and signs the message.

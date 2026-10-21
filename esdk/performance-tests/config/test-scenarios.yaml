@@ -1,4 +1,4 @@
-# ESDK Rust hierarchical-keyring performance test scenarios.
+# ESDK Rust performance test scenarios, shared by every keyring under test.
 # The harness runs every size in small + medium + large.
 
 # Data sizes in bytes.
