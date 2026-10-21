@@ -127,7 +127,7 @@
 //= spec/shim/shim.md#streaming
 //# If a core library resource or operation supports [streamed](../client-apis/streaming.md) inputs/outputs,
 //# the shim library SHOULD support it as well.
-use aws_config::{AppName, BehaviorVersion, Region, SdkConfig};
+use aws_config::{BehaviorVersion, FrameworkMetadata, Region, SdkConfig};
 use aws_crypto_mpl::aws_config;
 use aws_crypto_mpl::cmc::{
     DefaultCmc, LocalCmc, SharedCmc, StormTrackingCmc, StormTrackingCmcBuilder,
@@ -1027,27 +1027,18 @@ fn make_retry_config(config: &ffi::RetryConfig) -> Option<aws_config::retry::Ret
 
 // AWS SDK client configuration
 
-fn shim_user_agent() -> String {
-    //= spec/shim/esdk-shim.md#service-client-configuration
-    //# - The shim MUST set a user-agent on each service client of the form
-    //# `AwsEncryptionSdk-Shim-<target-language>-<core-language>-<version>`, where
-    //# `<target-language>` is the target language, `<core-language>` is the core
-    //# ESDK's implementation language, and `<version>` is the shim's published version.
-    format!(
-        "AwsEncryptionSdk-Shim-C++-Rust-{}",
-        env!("CARGO_PKG_VERSION")
-    )
-}
+// A library built on the AWS SDK for Rust identifies itself with FrameworkMetadata.
+// The SDK renders it into the User-Agent as `lib/<name>/<version>`.
+const SHIM_FRAMEWORK_NAME: &str = "AwsEncryptionSdk-Shim-C++-Rust";
 
-fn merge_user_agent(current_app_name: &str, shim_ua: &str) -> String {
-    if current_app_name.is_empty() {
-        shim_ua.to_string()
-    } else {
-        //= spec/shim/esdk-shim.md#service-client-configuration
-        //# - The shim MUST preserve any user-agent already present in the loaded
-        //# configuration, appending its own rather than replacing it.
-        format!("{} {}", current_app_name, shim_ua)
-    }
+//= spec/shim/esdk-shim.md#service-client-configuration
+//# - The shim MUST set a user-agent on each service client of the form
+//# `AwsEncryptionSdk-Shim-<target-language>-<core-language>-<version>`, where
+//# `<target-language>` is the target language, `<core-language>` is the core
+//# ESDK's implementation language, and `<version>` is the shim's published version.
+fn shim_framework_metadata() -> FrameworkMetadata {
+    FrameworkMetadata::new(SHIM_FRAMEWORK_NAME, Some(env!("CARGO_PKG_VERSION")))
+        .expect("the shim framework metadata name and version are valid")
 }
 
 // Loaded once per process.
@@ -1065,21 +1056,19 @@ fn default_http_client() -> Option<SharedHttpClient> {
 fn load_default_sdk_config() -> Result<SdkConfig, String> {
     let shared_config =
         TOKIO_RUNTIME.block_on(aws_config::defaults(BehaviorVersion::latest()).load());
+    Ok(with_shim_user_agent(shared_config))
+}
 
-    let user_agent_string = shim_user_agent();
-    let current_app_name = shared_config
-        .app_name()
-        .map(|app_name| app_name.to_string())
-        .unwrap_or_default();
-    let new_app_name = merge_user_agent(&current_app_name, &user_agent_string);
-    let app_name = AppName::new(new_app_name).map_err(|e| {
-        shim_err(
-            ffi::ShimErrorKind::Validation,
-            "client configuration",
-            format!("invalid app name: {e}"),
-        )
-    })?;
-    Ok(shared_config.to_builder().app_name(app_name).build())
+fn with_shim_user_agent(loaded: SdkConfig) -> SdkConfig {
+    //= spec/shim/esdk-shim.md#service-client-configuration
+    //= type=implication
+    //= reason=FrameworkMetadata is appended to the User-Agent and the shim sets no app name, so any user-agent already present in the loaded configuration is preserved.
+    //# - The shim MUST preserve any user-agent already present in the loaded
+    //# configuration, appending its own rather than replacing it.
+    loaded
+        .to_builder()
+        .framework_metadata(shim_framework_metadata())
+        .build()
 }
 
 /// Convert C++ static credentials to AWS SDK credentials.
