@@ -1,3 +1,6 @@
+// Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 fn main() {
     // Generates the cxx bridge code and compile it together
     // with the shim's facade into the same staticlib.

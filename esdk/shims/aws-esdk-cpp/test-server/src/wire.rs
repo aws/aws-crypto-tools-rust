@@ -1,3 +1,6 @@
+// Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 //! rpcv2Cbor HTTP wire layer: routes an operation, validates the protocol,
 //! decodes the CBOR request, dispatches to the backend, encodes the response.
 

@@ -1,4 +1,4 @@
-# Runs the ESDK hierarchical-keyring benchmark and publishes results to
+# Runs the ESDK Rust benchmark for each keyring and publishes results to
 # CloudWatch Logs.
 name: Performance Benchmarks
 
@@ -19,11 +19,12 @@ jobs:
   benchmark:
     # Skip the scheduled run on forks.
     if: github.event_name != 'schedule' || github.repository_owner == 'aws'
-    name: hierarchical (${{ matrix.os }})
+    name: ${{ matrix.keyring }} (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest]
+        keyring: [hierarchical, raw-aes]
     runs-on: ${{ matrix.os }}
     permissions:
       id-token: write
@@ -42,7 +43,8 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       # The hierarchical keyring reads the shared test key store (KMS + DynamoDB,
-      # account 370957321024, us-west-2); same OIDC role as library_rust_tests.yml.
+      # account 370957321024, us-west-2) and every leg uploads to CloudWatch
+      # Logs; same OIDC role as library_rust_tests.yml.
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v6
         with:
@@ -57,7 +59,7 @@ jobs:
           workspaces: esdk/performance-tests
 
       - name: Run performance benchmarks - Quick Mode
-        run: cargo run --release -- --quick
+        run: cargo run --release -- --quick --keyring ${{ matrix.keyring }}
 
       - name: Parse and Format Logs
         working-directory: esdk/performance-tests/results/raw-data
@@ -72,7 +74,7 @@ jobs:
           LOG_FILE="cloudwatch_logs.json"
           LOG_GROUP="aws-esdk-performance-benchmarks"
           # Distinct stream per keyring so series don't mix in the shared log group.
-          LOG_STREAM="rust-hierarchical/${{ matrix.os }}/quick_benchmarks/${{ github.workflow }}"
+          LOG_STREAM="rust-${{ matrix.keyring }}/${{ matrix.os }}/quick_benchmarks/${{ github.workflow }}"
 
           aws logs create-log-stream \
             --log-group-name "$LOG_GROUP" \

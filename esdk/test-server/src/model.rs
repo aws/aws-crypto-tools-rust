@@ -1,3 +1,6 @@
+// Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 //! Native Rust mirror of the ESDK TestServer Smithy model shapes, with serde
 //! renames matching each model member name and `serde_bytes` on blob members so
 //! they travel as CBOR byte strings (rpcv2Cbor), not arrays.

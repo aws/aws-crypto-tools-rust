@@ -1,3 +1,6 @@
+// Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 // EncryptionSDK.h — public types for the C++ Shim for the AWS Encryption SDK for Rust
 
 #pragma once
