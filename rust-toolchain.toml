@@ -1,5 +1,0 @@
-# The Rust version CI, the pre-commit hook, and rustup in this repo use.
-# The daily CI run builds with the latest stable instead, so a new release's lints show up there first.
-# Bump this once the daily run is green on the new release.
-[toolchain]
-channel = "1.99.1"

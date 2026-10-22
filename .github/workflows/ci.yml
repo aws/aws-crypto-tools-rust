@@ -5,10 +5,9 @@
 #   push to main  everything
 #   schedule      everything, daily; failures go to a "Daily CI failing" issue
 #
-# CI can break with no push here: dependencies and Rust publish new versions,
+# CI can break with no push here: dependencies publish new versions, the toolchain is `stable`,
 # and the TestServer pulls other repos' servers.
-# Pull requests build with the committed Cargo.lock files and the Rust version in rust-toolchain.toml.
-# The daily run builds with the latest compatible dependencies and the latest stable Rust to catch those breaks.
+# The daily run builds against the latest compatible dependencies to catch those breaks.
 name: CI
 
 on:
