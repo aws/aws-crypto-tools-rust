@@ -1,7 +1,4 @@
 # All CI for this repo.
-# CI can break with no push here: dependencies publish new versions, the toolchain is `stable`,
-# and the TestServer pulls other repos' servers.
-# The daily run builds against the latest compatible dependencies to catch those breaks.
 name: CI
 
 on:
