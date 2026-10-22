@@ -1,6 +1,5 @@
-//! Streaming round trips with a raw-AES keyring: EncryptStream ↔ DecryptStream
+//! Streaming round trips with a raw-AES keyring: EncryptStream <-> DecryptStream
 //! and each cross-mode pairing with the blob operations.
-//! Uses a non-signing suite — streamed decrypt refuses multi-frame signed messages.
 
 use std::sync::Arc;
 
@@ -87,6 +86,7 @@ async fn stream_round_trip_multi_frame() {
         client_id: client_id.clone(),
         plaintext: plaintext.clone(),
         encryption_context: None,
+        // Streamed decrypt refuses multi-frame signed messages, and the default suite signs.
         algorithm_suite_id: Some(EsdkAlgorithmSuiteId::Alg256GcmCommit),
         frame_length: Some(frame_length),
         plaintext_length_bound: None,
@@ -147,8 +147,6 @@ async fn blob_encrypt_decrypts_as_stream() {
         client_id: client_id.clone(),
         plaintext: plaintext.clone(),
         encryption_context: None,
-        // Non-signing committing suite: streamed decrypt refuses multi-frame
-        // signed messages, and the default suite signs.
         algorithm_suite_id: Some(EsdkAlgorithmSuiteId::Alg256GcmCommit),
         frame_length: None,
     };
@@ -166,9 +164,7 @@ async fn blob_encrypt_decrypts_as_stream() {
     );
 }
 
-/// `plaintextLengthBound` is enforced: a bound equal to the plaintext length
-/// succeeds, a bound below it is rejected as the modeled ESDK error
-/// (commons ENC-007).
+/// Commons ENC-007.
 #[tokio::test]
 async fn stream_encrypt_enforces_plaintext_length_bound() {
     let state = Arc::new(AppState::new());

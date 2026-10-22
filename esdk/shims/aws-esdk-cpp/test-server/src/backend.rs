@@ -75,7 +75,8 @@ fn encryption_context(map: Option<BTreeMap<String, String>>) -> Vec<(String, Str
     map.map(|m| m.into_iter().collect()).unwrap_or_default()
 }
 
-// Invalid ESDK encrypt input — the modeled ESDK error.
+// 0 encodes "unset" over the FFI, so a configured frame length must be in 1..=u32::MAX.
+// The commons suite expects an out-of-range frame length as ESDKClientError.
 fn frame_length_code(frame_length: Option<i64>) -> Result<u32, ServerError> {
     match frame_length {
         Some(value) => match u32::try_from(value) {
@@ -167,7 +168,7 @@ impl CppBackend {
             ));
         };
 
-        // CreateClient configuration rejection — the framework GenericServerError.
+        // The commons suite expects GenericServerError when CreateClient rejects its configuration.
         let client = create
             .await
             .map_err(|e| ServerError::generic(format!("create_client task failed: {e}")))?
@@ -233,7 +234,6 @@ impl CppBackend {
         Ok(DecryptResponse { plaintext })
     }
 
-    /// Streaming encrypt variant.
     pub async fn encrypt_stream(
         &self,
         req: EncryptStreamRequest,
@@ -275,7 +275,6 @@ impl CppBackend {
         Ok(EncryptStreamResponse { ciphertext })
     }
 
-    /// Streaming decrypt variant.
     pub async fn decrypt_stream(
         &self,
         req: DecryptStreamRequest,

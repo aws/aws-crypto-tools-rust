@@ -1,6 +1,6 @@
-//! Error-type conformance: CreateClient configuration rejections surface as the
-//! framework `GenericServerError`, invalid ESDK input on Encrypt surfaces as
-//! the modeled `ESDKClientError`.
+//! Which error type each failure returns:
+//! a rejected CreateClient configuration is `GenericServerError`,
+//! invalid Encrypt input is `ESDKClientError`.
 
 use std::sync::Arc;
 
@@ -83,8 +83,7 @@ fn error_type(body: &[u8]) -> String {
         .expect("error carries __type")
 }
 
-/// A 16-byte wrapping key does not match the 256-bit AES wrapping suite
-/// (commons KEYRING-006).
+/// Commons KEYRING-006.
 #[tokio::test]
 async fn create_client_rejects_short_wrapping_key_as_generic_error() {
     let state = Arc::new(AppState::new());
@@ -101,8 +100,7 @@ async fn create_client_rejects_short_wrapping_key_as_generic_error() {
     );
 }
 
-/// A Raw-AES keyring in the reserved "aws-kms" key namespace is rejected
-/// (commons KEYRING-073).
+/// Commons KEYRING-073.
 #[tokio::test]
 async fn create_client_rejects_reserved_namespace_as_generic_error() {
     let state = Arc::new(AppState::new());
@@ -116,8 +114,7 @@ async fn create_client_rejects_reserved_namespace_as_generic_error() {
     );
 }
 
-/// A frame length that is not greater than 0 is rejected on encrypt as the
-/// modeled ESDK error (commons ENC-001).
+/// Commons ENC-001.
 #[tokio::test]
 async fn encrypt_rejects_non_positive_frame_length_as_esdk_error() {
     let state = Arc::new(AppState::new());

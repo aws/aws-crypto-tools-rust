@@ -37,13 +37,11 @@ make stop-server PORT=8092
 make check                       # fmt + clippy + build + test (the CI gate)
 ```
 
-## Current status: offline Raw-AES and AWS KMS Hierarchical
+## Keyrings
 
-The Raw-AES / Default-CMM path and the AWS KMS Hierarchical keyring are wired
-end to end through the vendored Material Providers Library. `CreateClient`
-rejects an invalid keyring configuration as a framework `GenericServerError`;
-failures during `Encrypt`/`Decrypt` (including their Stream_Variants) surface
-as the modeled `ESDKClientError`.
+The server supports the Raw AES and AWS KMS Hierarchical keyrings, both built through the MPL.
+`CreateClient` returns `GenericServerError` when it rejects a keyring configuration.
+`Encrypt`, `Decrypt`, and their streaming forms return `ESDKClientError` when the ESDK fails.
 
 ## Layout
 

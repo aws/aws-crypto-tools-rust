@@ -20,7 +20,7 @@ use aws_crypto_mpl::keyring::{HierarchicalKeyring, RawAesKeyring};
 use aws_esdk::keyring::SharedKeyring;
 
 /// Resolve a CMM configuration to the keyring the ESDK client will use.
-/// Failure here is a CreateClient-time configuration rejection.
+/// Errors here are `GenericServerError`: the commons suite treats them as CreateClient rejections.
 pub async fn keyring_for_cmm(
     cmm: &CryptographicMaterialsManager,
 ) -> Result<SharedKeyring, ServerError> {

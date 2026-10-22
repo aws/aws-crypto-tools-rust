@@ -169,9 +169,7 @@ async fn blob_encrypt_decrypts_as_stream() {
     );
 }
 
-/// `plaintextLengthBound` is enforced through the C++ facade: a bound equal to
-/// the plaintext length succeeds, a bound below it is rejected as the modeled
-/// ESDK error (commons ENC-007).
+/// Commons ENC-007.
 #[tokio::test(flavor = "multi_thread")]
 async fn stream_encrypt_enforces_plaintext_length_bound() {
     let state = Arc::new(CppBackend::new());

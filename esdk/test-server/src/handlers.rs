@@ -91,7 +91,7 @@ fn encryption_context(
     map.map(EncryptionContext::from).unwrap_or_default()
 }
 
-// Invalid ESDK encrypt input — the modeled ESDK error.
+// The commons suite expects an out-of-range frame length as ESDKClientError.
 fn frame_length(frame: i64) -> Result<NonZeroU32, ServerError> {
     u32::try_from(frame)
         .ok()
@@ -161,7 +161,6 @@ impl AppState {
         })
     }
 
-    /// Streaming encrypt variant.
     pub async fn encrypt_stream(
         &self,
         req: EncryptStreamRequest,
@@ -193,7 +192,6 @@ impl AppState {
         Ok(EncryptStreamResponse { ciphertext })
     }
 
-    /// Streaming decrypt variant.
     pub async fn decrypt_stream(
         &self,
         req: DecryptStreamRequest,

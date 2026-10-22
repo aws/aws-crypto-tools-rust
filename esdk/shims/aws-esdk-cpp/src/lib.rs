@@ -259,9 +259,7 @@ mod ffi {
         /// Whether to require committing algorithms on encrypt/decrypt.
         /// Core default is `EsdkCommitmentPolicy::RequireEncryptRequireDecrypt`
         pub commitment_policy: OptCommitmentPolicy,
-        /// Upper bound on the plaintext length for a streaming encrypt.
-        /// Applied only by `create_encrypt_stream`; the one-shot encrypt has a
-        /// plaintext of known length and ignores it.
+        /// Upper bound on the plaintext length; only `create_encrypt_stream` reads it.
         pub plaintext_length_bound: OptU64,
     }
     struct EncryptOutput {

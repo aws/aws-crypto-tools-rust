@@ -822,10 +822,9 @@ public:
     EncryptOptions& with_encryption_context(const std::map<std::string, std::string>& ec) { encryption_context_ = ec; return *this; }
     /// Length of each frame of framed data in bytes. Default 4096.
     EncryptOptions& with_frame_length(std::uint32_t n) { frame_length_ = n; return *this; }
-    /// Upper bound on the plaintext length for a streaming encrypt: the stream
-    /// fails once more than `n` plaintext bytes are consumed. Applied only by
-    /// create_encrypt_stream; the one-shot encrypt has a plaintext of known
-    /// length and ignores it.
+    /// Maximum plaintext bytes a streaming encrypt accepts.
+    /// The stream fails once it consumes more than `n` bytes.
+    /// Only create_encrypt_stream reads this; encrypt ignores it.
     EncryptOptions& with_plaintext_length_bound(std::uint64_t n) { plaintext_length_bound_ = n; return *this; }
 };
 
