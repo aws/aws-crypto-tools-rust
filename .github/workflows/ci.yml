@@ -42,9 +42,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      # Each filter matches its crate plus the crates it depends on:
-      #   prim <- mpl <- esdk (the C++ shim lives under esdk/)
-      # so an mpl change re-tests mpl, esdk, the C++ shim, and their TestServers.
+      # Each filter matches its crate, plus the crates it depends on.
+      # ex. an mpl change re-tests mpl, esdk, the C++ shim, and their TestServers.
       # A change to a `shared` path runs everything.
       - name: Filter changed paths
         if: github.event_name == 'pull_request'
@@ -80,15 +79,16 @@ jobs:
               - 'errors.toml'
               - 'xtask/**'
 
-      # JOBS lists each job's matrix entries.
-      # An entry runs when its `when` filter matched; push and schedule runs, and a `shared` change, run every entry.
-      # Jobs left with no entries drop out of the output and skip.
       - name: Compute what to run
         id: set
         env:
+          # PRs only test the files that changed.
+          # Pushes to main/scheduled runs/"shared" files resolve to "all" and test everything.
           CHANGES: >-
             ${{ (github.event_name != 'pull_request' || contains(steps.filter.outputs.changes, '"shared"'))
               && '"all"' || steps.filter.outputs.changes }}
+          # JOBS defines when/what to run.
+          # ex. `when` "esdk" changes, test `project` "esdk".
           JOBS: |
             {
               "rust-tests": [
@@ -183,9 +183,7 @@ jobs:
     with:
       builds: ${{ toJSON(fromJSON(needs.detect.outputs.jobs)['test-server-builds']) }}
 
-  # Cross-language TestServer runs, from the commons workflows.
-  # This checkout supplies the focus language's server; the other servers come from their configured branches.
-  # Only pairs involving the focus language run here; commons runs the full matrix.
+  # Cross-language TestServer runs.
   esdk-test-server:
     name: ESDK TestServer (${{ matrix.focus }})
     needs: detect
@@ -200,6 +198,7 @@ jobs:
       id-token: write
     uses: aws/aws-crypto-tools-commons/.github/workflows/esdk-test-server-reusable.yml@main
     with:
+      # Only run tests that involve the focus language (ex. skip Python <--> Java tests for this Rust repo)
       focus: ${{ matrix.focus }}
       checkout-languages: ${{ matrix.focus }}
     secrets:
@@ -274,9 +273,6 @@ jobs:
 
       - uses: mattsb42-meta/not-grep@1.0.1
 
-  # The main branch ruleset requires this check by name; renaming the job blocks merges.
-  # It fails when any job failed or was cancelled.
-  # A skipped job counts as passing: the change didn't affect it.
   pr-ci-all-required:
     if: always()
     needs:
