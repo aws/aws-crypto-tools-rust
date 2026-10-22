@@ -15,16 +15,15 @@ set -euo pipefail
 # different edition.
 RUST_EDITION="2024"
 
-# Toolchain must match CI, which installs dtolnay/rust-toolchain@stable
-# (see .github/workflows/library_rust_tests.yml) and gates on
-# `cargo fmt --all -- --check`. Without this pin, `rustfmt` resolves to
+# Toolchain must match CI, which formats with the version pinned in
+# rust-toolchain.toml and gates on `cargo fmt --all -- --check`. Without this pin, `rustfmt` resolves to
 # whatever rustup default the developer happens to have. That matters
 # beyond cosmetics: --edition controls PARSING, not style rules, so an
 # older rustfmt accepts --edition 2024 yet still applies the pre-2024
 # style edition and sorts `use` items lowercase-first. The hook would
 # then reformat and re-stage files into a state CI rejects, silently, at
 # commit time.
-RUST_TOOLCHAIN="stable"
+RUST_TOOLCHAIN=$(sed -n 's/^channel *= *"\(.*\)"/\1/p' "$(git rev-parse --show-toplevel)/rust-toolchain.toml")
 
 staged_rs=$(git diff --cached --name-only --diff-filter=ACMR | grep '\.rs$' || true)
 

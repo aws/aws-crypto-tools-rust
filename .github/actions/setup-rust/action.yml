@@ -1,6 +1,6 @@
 name: Set up Rust
 description: >
-  Install Go and the stable Rust toolchain, check or update each workspace's
+  Install Go and the Rust toolchain, check or update each workspace's
   Cargo.lock, and restore the cargo build cache.
   aws-lc-sys and aws-lc-fips-sys need Go to build their native code.
 
@@ -40,9 +40,27 @@ runs:
       with:
         go-version: "stable"
 
-    - name: Install Rust toolchain
-      uses: dtolnay/rust-toolchain@stable
+    # rust-toolchain.toml pins the version; scheduled runs use the latest stable.
+    # RUSTUP_TOOLCHAIN makes every later cargo call in the job use the toolchain installed here.
+    - name: Pick Rust toolchain
+      id: toolchain
+      shell: bash
+      env:
+        SCHEDULED: ${{ github.event_name == 'schedule' }}
+      run: |
+        set -euo pipefail
+        if [[ "$SCHEDULED" == "true" ]]; then
+          toolchain=stable
+        else
+          toolchain=$(sed -n 's/^channel *= *"\(.*\)"/\1/p' rust-toolchain.toml)
+        fi
+        echo "toolchain=$toolchain" >> "$GITHUB_OUTPUT"
+        echo "RUSTUP_TOOLCHAIN=$toolchain" >> "$GITHUB_ENV"
+
+    - name: Install Rust ${{ steps.toolchain.outputs.toolchain }}
+      uses: dtolnay/rust-toolchain@master
       with:
+        toolchain: ${{ steps.toolchain.outputs.toolchain }}
         components: ${{ inputs.components }}
 
     # Workspaces without a committed Cargo.lock (e.g. the C++ shim) resolve fresh on every build.
