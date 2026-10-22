@@ -1,3 +1,6 @@
+// Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 //! Keyring-interface operations over the real wire, in process:
 //! InitializeEncryptionMaterials → OnEncrypt → InitializeDecryptionMaterials
 //! → OnDecrypt, plus the handle and error contract.

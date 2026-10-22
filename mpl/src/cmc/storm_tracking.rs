@@ -93,7 +93,7 @@ impl std::fmt::Debug for StormTrackingCmc {
 }
 
 struct StormTrackingCmcInner {
-    local: LocalCmc,
+    local: crate::shared::Builtin<LocalCmc>,
     grace_period: Duration,
     grace_interval: Duration,
     fan_out: usize,
@@ -635,7 +635,7 @@ impl StormTrackingCmcBuilder {
 
         Ok(StormTrackingCmc {
             inner: Arc::new(StormTrackingCmcInner {
-                local,
+                local: crate::shared::Builtin(local),
                 grace_period,
                 grace_interval,
                 fan_out,
@@ -706,7 +706,7 @@ pub mod __test_internals {
 }
 
 #[async_trait]
-impl Cmc for StormTrackingCmc {
+impl Cmc for crate::shared::Builtin<StormTrackingCmc> {
     async fn put_cache_entry(
         &self,
         input: PutCacheEntryInput,
@@ -762,6 +762,14 @@ impl Cmc for StormTrackingCmc {
     }
 
     fn grace_period(&self) -> Option<Duration> {
+        self.0.grace_period()
+    }
+}
+
+impl StormTrackingCmc {
+    /// How long before an entry expires the cache starts refreshing it.
+    #[must_use]
+    pub fn grace_period(&self) -> Option<Duration> {
         Some(self.inner.grace_period)
     }
 }

@@ -5,9 +5,9 @@
 #   push to main  everything
 #   schedule      everything, daily; failures go to a "Daily CI failing" issue
 #
-# CI can break with no push here: no Cargo.lock is committed, the toolchain is `stable`,
+# CI can break with no push here: dependencies publish new versions, the toolchain is `stable`,
 # and the TestServer pulls other repos' servers.
-# The daily run catches those breaks.
+# The daily run builds against the latest compatible dependencies to catch those breaks.
 name: CI
 
 on:
@@ -96,6 +96,11 @@ jobs:
                 {"when": "mpl", "project": "mpl"},
                 {"when": "prim", "project": "prim"}
               ],
+              "supply-chain": [
+                {"when": "esdk", "project": "esdk"},
+                {"when": "mpl", "project": "mpl"},
+                {"when": "prim", "project": "prim"}
+              ],
               "cpp-shim": [
                 {"when": "esdk"}
               ],
@@ -138,6 +143,16 @@ jobs:
     uses: ./.github/workflows/library_rust_tests.yml
     with:
       projects: ${{ toJSON(fromJSON(needs.detect.outputs.jobs)['rust-tests'].*.project) }}
+
+  supply-chain:
+    name: Supply chain
+    needs: detect
+    if: fromJSON(needs.detect.outputs.jobs)['supply-chain'] != null
+    permissions:
+      contents: read
+    uses: ./.github/workflows/supply_chain.yml
+    with:
+      projects: ${{ toJSON(fromJSON(needs.detect.outputs.jobs)['supply-chain'].*.project) }}
 
   cpp-shim:
     name: C++ shim
@@ -231,7 +246,7 @@ jobs:
       - uses: ./.github/actions/setup-rust
         with:
           components: clippy, rustfmt
-          cache-workspaces: xtask
+          workspaces: xtask
 
       - name: Format check
         run: cargo fmt --manifest-path xtask/Cargo.toml -- --check
@@ -245,6 +260,20 @@ jobs:
       - name: Check the generated files
         run: cargo xtask gen-errors --check
 
+  # Every source file must start with the header in .github/not-grep.toml.
+  license-headers:
+    name: License headers
+    needs: detect
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: mattsb42-meta/not-grep@1.0.1
+
   # The main branch ruleset requires this check by name; renaming the job blocks merges.
   # It fails when any job failed or was cancelled.
   # A skipped job counts as passing: the change didn't affect it.
@@ -253,6 +282,7 @@ jobs:
     needs:
       - detect
       - rust-tests
+      - supply-chain
       - cpp-shim
       - duvet
       - test-server-builds
@@ -260,6 +290,7 @@ jobs:
       - mpl-test-server
       - prim-test-server
       - gen-errors
+      - license-headers
     runs-on: ubuntu-latest
     steps:
       - name: Check job results

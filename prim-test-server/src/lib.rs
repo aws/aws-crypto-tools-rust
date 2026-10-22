@@ -1,3 +1,6 @@
+// Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 //! Hand-rolled Primitives TestServer Language_Server for Rust.
 //!
 //! Speaks the rpcv2Cbor wire contract and delegates each operation to the

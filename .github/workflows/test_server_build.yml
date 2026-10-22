@@ -35,7 +35,7 @@ jobs:
       - uses: ./.github/actions/setup-rust
         with:
           components: clippy, rustfmt
-          cache-workspaces: |
+          workspaces: |
             ${{ matrix.server }}
             ${{ matrix.prebuild }}
 

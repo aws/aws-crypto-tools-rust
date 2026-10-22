@@ -30,7 +30,7 @@ jobs:
       - uses: ./.github/actions/setup-rust
         with:
           components: clippy, rustfmt
-          cache-workspaces: esdk/shims/aws-esdk-cpp
+          workspaces: esdk/shims/aws-esdk-cpp
           free-disk-space: "true"
 
       # integration tests need real KMS + DynamoDB
