@@ -1,25 +1,23 @@
 # All CI for this repo.
-# Each top-level job is one area and gets its own group in the Actions sidebar.
-#
-#   pull_request  the jobs the change affects
-#   push to main  everything
-#   schedule      everything, daily; failures go to a "Daily CI failing" issue
-#
 # CI can break with no push here: dependencies publish new versions, the toolchain is `stable`,
 # and the TestServer pulls other repos' servers.
 # The daily run builds against the latest compatible dependencies to catch those breaks.
 name: CI
 
 on:
+  # PRs only test projects the change affects (ex. mpl change tests mpl, esdk, shims, and mpl/esdk test servers)
   pull_request:
+  # push to main tests everything
   push:
     branches:
       - main
+  # Daily CI tests everything 
   schedule:
     - cron: "00 15 * * *" # 15:00 UTC (8AM PDT)
   workflow_dispatch:
 
-# Pull requests cancel their previous run; other runs queue.
+# Pull requests cancel any previous CI run when a new run starts.
+# Otherwise (ex. push to main, daily CI), the run queues.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -293,33 +291,3 @@ jobs:
         env:
           FAILED: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
         run: '[[ "$FAILED" == "false" ]]'
-
-  daily-report:
-    name: Daily report
-    if: always() && github.event_name == 'schedule' && github.repository_owner == 'aws'
-    needs: pr-ci-all-required
-    runs-on: ubuntu-latest
-    permissions:
-      issues: write
-    steps:
-      - name: Open, update, or close the "Daily CI failing" issue
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          PASSED: ${{ needs.pr-ci-all-required.result == 'success' }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          set -euo pipefail
-          title="Daily CI failing"
-          issue=$(gh issue list --state open --search "\"$title\" in:title" \
-            --json number,title --jq "map(select(.title == \"$title\")) | .[0].number // empty")
-
-          if [[ "$PASSED" == "true" ]]; then
-            if [[ -n "$issue" ]]; then
-              gh issue close "$issue" --comment "Daily CI passed: $RUN_URL"
-            fi
-          elif [[ -n "$issue" ]]; then
-            gh issue comment "$issue" --body "Daily CI failed again: $RUN_URL"
-          else
-            gh issue create --title "$title" --body "Daily CI failed: $RUN_URL"
-          fi
