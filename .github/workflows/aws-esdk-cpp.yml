@@ -38,7 +38,7 @@ jobs:
       run:
         working-directory: esdk/shims/aws-esdk-cpp
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # GHA runners crash if they hold the statically linked aws-lc and AWS SDKs.
       # Reclaim the large preinstalled toolchains this job does not use.
@@ -58,7 +58,7 @@ jobs:
 
       # aws-lc-sys needs Go to build
       - name: Install Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version: "stable"
 

@@ -31,7 +31,7 @@ jobs:
       run:
         working-directory: ${{ inputs.project }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       # Install duvet at its latest published release, matching the duvet
       # workflow in aws-cryptographic-material-providers-library. duvet has no

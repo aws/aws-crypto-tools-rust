@@ -28,13 +28,13 @@ jobs:
       run:
         working-directory: prim-test-server
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
       # aws-lc-sys (via aws-mpl-primitives) needs Go to build its native code
       - name: Install Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version: "stable"
 
