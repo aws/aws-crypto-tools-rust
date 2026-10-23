@@ -40,6 +40,12 @@
 //# validation, error propagation, and lifetime safety — rather than by re-testing
 //# the core library's own behavior.
 //
+//= spec/shim/esdk-shim.md#conformance-and-testing
+//= type=implication
+//= reason=esdk-cpp-test-server runs this shim against the shared cross-language ESDK test-server suite
+//# - The ESDK shim SHOULD demonstrate message interoperability with other ESDK
+//# implementations (for example via a shared test-vector suite).
+//
 //= spec/shim/shim.md#type-translation
 //= type=implication
 //= reason=Every translation returns a Result
@@ -767,6 +773,8 @@ fn alg_id_core_to_target(e: EsdkAlgorithmSuiteId) -> Result<ffi::EsdkAlgorithmSu
             Ok(Target::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
         }
         //= spec/shim/esdk-shim.md#algorithm-suite-identifier
+        //= type=implication
+        //= reason=The core suite enum is non_exhaustive, so this match needs a wildcard arm, and that arm returns an error
         //# - The shim MUST return an error when the core ESDK produces an algorithm suite
         //# the shim does not define.
         _ => Err(shim_err(
@@ -1605,6 +1613,12 @@ fn create_hierarchical_keyring(
     //= reason=The cache handle's SharedCmc is passed to the builder, so the keyring refers to that exact cache.
     //# - When a cache is supplied, creating a hierarchical keyring MUST reference that
     //# exact cache, so several keyrings given the same cache share it.
+    //
+    //= spec/shim/esdk-shim.md#create-hierarchical-keyring
+    //# - Creating a hierarchical keyring MAY be supplied with a
+    //# [cryptographic materials cache](#create-cryptographic-materials-cache),
+    //# checked as defined in
+    //# [Shim Specification: Handles and lifetimes](./shim.md#handles-and-lifetimes).
     //
     // SAFETY: a non-null handle is a valid cache borrowed for this call.
     let cache = unsafe { input.cache.as_ref() }.map(|c| c.inner.clone());

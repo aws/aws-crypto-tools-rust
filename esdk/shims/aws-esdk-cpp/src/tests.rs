@@ -732,6 +732,11 @@ fn create_hierarchical_keyring_rejects_null_key_store() {
     //# - Creating a hierarchical keyring MUST require a key store handle, checked as defined in
     //# [Shim Specification: Handles and lifetimes](./shim.md#handles-and-lifetimes),
     //# and MUST provide it to the core ESDK.
+    //
+    //= spec/shim/shim.md#handles-and-lifetimes
+    //= type=test
+    //# - Before dereferencing a target-supplied resource handle, the shim MUST check it
+    //# and MUST return an error when a required handle is absent.
     let err = expect_err(create_hierarchical_keyring(
         &unset_hierarchical_keyring_input(),
     ));
@@ -792,6 +797,10 @@ fn create_hierarchical_keyring_uses_the_supplied_cache() {
     // and succeeds with a local cache (no grace period).
     let mut input =
         hierarchical_keyring_input_with_ttl(&key_store, ffi::Duration { secs: 5, nanos: 0 });
+    //= spec/shim/esdk-shim.md#create-hierarchical-keyring
+    //= type=test
+    //# - When no cache is supplied, creating a hierarchical keyring MUST defer to the
+    //# core ESDK's default cache.
     let err = expect_err(create_hierarchical_keyring(&input));
     assert!(
         err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, "")),
@@ -800,6 +809,10 @@ fn create_hierarchical_keyring_uses_the_supplied_cache() {
 
     let cache = create_local_cmc(10).expect("local cache should build");
     input.cache = &*cache as *const CryptographicMaterialsCache;
+    //= spec/shim/esdk-shim.md#create-hierarchical-keyring
+    //= type=test
+    //# - When a cache is supplied, creating a hierarchical keyring MUST reference that
+    //# exact cache, so several keyrings given the same cache share it.
     create_hierarchical_keyring(&input).expect("a local cache has no grace period");
 }
 
@@ -835,6 +848,10 @@ fn storm_tracking_options() -> ffi::StormTrackingCmcOptions {
 
 #[test]
 fn create_storm_tracking_cmc_passes_each_option_to_the_core() {
+    //= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
+    //= type=test
+    //# - Creating a cryptographic materials cache MUST provide the target-supplied
+    //# cache type, with its values, to the core ESDK.
     let cache =
         apply_storm_tracking_options(StormTrackingCmc::builder(), &storm_tracking_options())
             .expect("options convert")
@@ -963,6 +980,75 @@ fn create_raw_aes_keyring_rejects_unsupported_wrapping_alg() {
         unknown.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, "")),
         "unexpected error: {unknown}"
     );
+}
+
+// A message from the shim's keyring decrypts with a core keyring built from the same inputs.
+#[test]
+fn create_raw_aes_keyring_passes_its_inputs_to_the_core() {
+    use aws_crypto_mpl::types::AesWrappingAlg as Core;
+    let cases = [
+        (
+            ffi::AesWrappingAlg::AlgAes128GcmIv12Tag16,
+            Core::AlgAes128GcmIv12Tag16,
+            16,
+        ),
+        (
+            ffi::AesWrappingAlg::AlgAes192GcmIv12Tag16,
+            Core::AlgAes192GcmIv12Tag16,
+            24,
+        ),
+        (
+            ffi::AesWrappingAlg::AlgAes256GcmIv12Tag16,
+            Core::AlgAes256GcmIv12Tag16,
+            32,
+        ),
+    ];
+    for (target_alg, core_alg, key_len) in cases {
+        let key: Vec<u8> = (0..key_len).collect();
+        //= spec/shim/esdk-shim.md#create-raw-aes-keyring
+        //= type=test
+        //# - Creating a raw AES keyring MUST provide the target-supplied key namespace and
+        //# key name to the core ESDK.
+        //
+        //= spec/shim/esdk-shim.md#create-raw-aes-keyring
+        //= type=test
+        //# - Creating a raw AES keyring MUST pass the target-supplied wrapping key to the
+        //# core ESDK unmodified.
+        //
+        //= spec/shim/esdk-shim.md#create-raw-aes-keyring
+        //= type=test
+        //# - Creating a raw AES keyring MUST provide the target-supplied wrapping algorithm
+        //# to the core ESDK, converted as defined in
+        //# [AES wrapping algorithm](#aes-wrapping-algorithm).
+        let shim_keyring = create_raw_aes_keyring(&ffi::RawAesKeyringInput {
+            key_namespace: "test-ns".to_string(),
+            key_name: "test-key".to_string(),
+            wrapping_key: &key,
+            wrapping_alg: target_alg,
+        })
+        .expect("shim keyring");
+        let core_keyring = Keyring {
+            inner: SharedKeyring::new(
+                RawAesKeyring::builder()
+                    .key_namespace("test-ns")
+                    .key_name("test-key")
+                    .wrapping_key(key.clone())
+                    .wrapping_alg(core_alg)
+                    .build()
+                    .expect("core keyring"),
+            ),
+        };
+
+        let mut enc = unset_encrypt_input();
+        enc.plaintext = b"raw aes inputs";
+        enc.keyring = &*shim_keyring as *const Keyring;
+        let ciphertext = encrypt(&enc).expect("encrypt").ciphertext;
+
+        let mut dec = unset_decrypt_input();
+        dec.ciphertext = &ciphertext;
+        dec.keyring = &core_keyring as *const Keyring;
+        assert_eq!(decrypt(&dec).expect("decrypt").plaintext, b"raw aes inputs");
+    }
 }
 
 // Options forwarding

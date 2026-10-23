@@ -51,6 +51,8 @@ pub fn get_esdk_algorithm_suite_id(id: MplAlgorithmSuiteId) -> Result<AlgorithmS
     match id {
         MplAlgorithmSuiteId::Esdk(id) => Ok(id),
         //= spec/client-apis/encrypt.md#get-the-encryption-materials
+        //= type=implication
+        //= reason=Esdk is the only AlgorithmSuiteId variant, so encryption materials always carry an ESDK suite
         //# If this algorithm suite is not [supported for the ESDK](../framework/algorithm-suites.md#supported-algorithm-suites-enum)
         //# encrypt MUST yield an error.
         //

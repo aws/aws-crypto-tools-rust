@@ -403,6 +403,10 @@ void test_client_configuration() {
                                      Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16);
 
     // ForbidEncryptAllowDecrypt must forward ESDK Rust's behavior of rejecting committing policy in config
+    //= spec/shim/esdk-shim.md#client-configuration
+    //= type=test
+    //# The ESDK shim MAY expose a client-level configuration mirroring the core
+    //# ESDK's client configuration, applied to every operation of that client.
     Aws::Esdk::Client forbid_sdk(Aws::Esdk::Config().with_commitment_policy(
         Aws::Esdk::CommitmentPolicy::ForbidEncryptAllowDecrypt));
     CHECK_THROWS_ESDK(forbid_sdk.encrypt(
