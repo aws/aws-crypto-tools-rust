@@ -681,6 +681,24 @@ fn shim_err_is_not_retryable() {
 // - unset/unknown enum reprs (the facade's factories only produce valid values)
 
 #[test]
+fn require_handle_rejects_null_and_borrows_non_null() {
+    //= spec/shim/shim.md#handles-and-lifetimes
+    //= type=test
+    //# - Before dereferencing a target-supplied resource handle, the shim MUST check it
+    //# and MUST return an error when a required handle is absent.
+    let err = expect_err(require_handle(std::ptr::null::<u32>(), "handle", "op"));
+    assert!(
+        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, "")),
+        "unexpected error: {err}"
+    );
+    assert!(err.contains("handle is null"), "unexpected error: {err}");
+
+    let value = 7u32;
+    let borrowed = require_handle(&value as *const u32, "handle", "op").expect("non-null handle");
+    assert!(std::ptr::eq(borrowed, &value));
+}
+
+#[test]
 fn encrypt_rejects_null_keyring() {
     //= spec/shim/esdk-shim.md#materials-source
     //= type=test
