@@ -240,7 +240,7 @@ fn alg_id_target_to_core_rejects_unknown() {
 }
 
 // Catches if ESDK Rust adds a suite but C++ doesn't.
-// The new id falls through to the error arm of `alg_id_core_to_target`.
+// The new id falls through to the error arm of `alg_id_bytes_to_target`.
 #[test]
 fn alg_id_core_to_target_maps_every_core_variant() {
     for &core in super::EsdkAlgorithmSuiteId::ALL {
@@ -252,6 +252,19 @@ fn alg_id_core_to_target_maps_every_core_variant() {
             .unwrap_or_else(|e| panic!("{core:?} has no C++ mapping: {e}"));
         assert_eq!(target.repr, u16::from_be_bytes(core.id_bytes()));
     }
+}
+
+#[test]
+fn alg_id_bytes_to_target_rejects_an_id_the_shim_does_not_define() {
+    //= spec/shim/esdk-shim.md#algorithm-suite-identifier
+    //= type=test
+    //# - The shim MUST return an error when the core ESDK produces an algorithm suite
+    //# the shim does not define.
+    let err = expect_err(alg_id_bytes_to_target([0xFF, 0xFF]));
+    assert!(
+        err.starts_with(&err_prefix(ffi::ShimErrorKind::Internal, "")),
+        "unexpected error: {err}"
+    );
 }
 
 #[test]

@@ -750,31 +750,27 @@ fn alg_id_target_to_core(e: ffi::EsdkAlgorithmSuiteId) -> Result<EsdkAlgorithmSu
 //# - The shim MUST translate a core ESDK algorithm suite to the target algorithm
 //# suite identifier that has the same two-byte ID.
 fn alg_id_core_to_target(e: EsdkAlgorithmSuiteId) -> Result<ffi::EsdkAlgorithmSuiteId, String> {
-    use EsdkAlgorithmSuiteId as Core;
+    alg_id_bytes_to_target(e.id_bytes())
+}
+
+fn alg_id_bytes_to_target(id: [u8; 2]) -> Result<ffi::EsdkAlgorithmSuiteId, String> {
     use ffi::EsdkAlgorithmSuiteId as Target;
-    match e {
-        Core::AlgAes128GcmIv12Tag16NoKdf => Ok(Target::AlgAes128GcmIv12Tag16NoKdf),
-        Core::AlgAes192GcmIv12Tag16NoKdf => Ok(Target::AlgAes192GcmIv12Tag16NoKdf),
-        Core::AlgAes256GcmIv12Tag16NoKdf => Ok(Target::AlgAes256GcmIv12Tag16NoKdf),
-        Core::AlgAes128GcmIv12Tag16HkdfSha256 => Ok(Target::AlgAes128GcmIv12Tag16HkdfSha256),
-        Core::AlgAes192GcmIv12Tag16HkdfSha256 => Ok(Target::AlgAes192GcmIv12Tag16HkdfSha256),
-        Core::AlgAes256GcmIv12Tag16HkdfSha256 => Ok(Target::AlgAes256GcmIv12Tag16HkdfSha256),
-        Core::AlgAes128GcmIv12Tag16HkdfSha256EcdsaP256 => {
-            Ok(Target::AlgAes128GcmIv12Tag16HkdfSha256EcdsaP256)
-        }
-        Core::AlgAes192GcmIv12Tag16HkdfSha384EcdsaP384 => {
-            Ok(Target::AlgAes192GcmIv12Tag16HkdfSha384EcdsaP384)
-        }
-        Core::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384 => {
-            Ok(Target::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384)
-        }
-        Core::AlgAes256GcmHkdfSha512CommitKey => Ok(Target::AlgAes256GcmHkdfSha512CommitKey),
-        Core::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384 => {
-            Ok(Target::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
-        }
+    let target = Target {
+        repr: u16::from_be_bytes(id),
+    };
+    match target {
+        Target::AlgAes128GcmIv12Tag16NoKdf
+        | Target::AlgAes192GcmIv12Tag16NoKdf
+        | Target::AlgAes256GcmIv12Tag16NoKdf
+        | Target::AlgAes128GcmIv12Tag16HkdfSha256
+        | Target::AlgAes192GcmIv12Tag16HkdfSha256
+        | Target::AlgAes256GcmIv12Tag16HkdfSha256
+        | Target::AlgAes128GcmIv12Tag16HkdfSha256EcdsaP256
+        | Target::AlgAes192GcmIv12Tag16HkdfSha384EcdsaP384
+        | Target::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384
+        | Target::AlgAes256GcmHkdfSha512CommitKey
+        | Target::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384 => Ok(target),
         //= spec/shim/esdk-shim.md#algorithm-suite-identifier
-        //= type=implication
-        //= reason=The core suite enum is non_exhaustive, so this match needs a wildcard arm, and that arm returns an error
         //# - The shim MUST return an error when the core ESDK produces an algorithm suite
         //# the shim does not define.
         _ => Err(shim_err(
