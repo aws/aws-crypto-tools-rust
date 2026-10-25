@@ -745,11 +745,6 @@ fn create_hierarchical_keyring_rejects_null_key_store() {
     //# - Creating a hierarchical keyring MUST require a key store handle, checked as defined in
     //# [Shim Specification: Handles and lifetimes](./shim.md#handles-and-lifetimes),
     //# and MUST provide it to the core ESDK.
-    //
-    //= spec/shim/shim.md#handles-and-lifetimes
-    //= type=test
-    //# - Before dereferencing a target-supplied resource handle, the shim MUST check it
-    //# and MUST return an error when a required handle is absent.
     let err = expect_err(create_hierarchical_keyring(
         &unset_hierarchical_keyring_input(),
     ));

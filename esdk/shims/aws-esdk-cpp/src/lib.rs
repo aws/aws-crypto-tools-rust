@@ -692,6 +692,8 @@ fn classify_core_error(e: &aws_esdk::Error) -> ffi::ShimErrorKind {
 fn require_handle<'a, T>(ptr: *const T, name: &str, operation: &str) -> Result<&'a T, String> {
     // Only validation right now is null-checking; could be extended in future (ex. method/field checks)
     //= spec/shim/shim.md#handles-and-lifetimes
+    //= type=implication
+    //= reason=Required handles go through require_handle, which errors on null; optional handles go through as_ref, which maps null to None
     //# - Before dereferencing a target-supplied resource handle, the shim MUST check it
     //# and MUST return an error when a required handle is absent.
     if ptr.is_null() {
