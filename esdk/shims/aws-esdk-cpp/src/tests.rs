@@ -1074,9 +1074,118 @@ fn create_raw_aes_keyring_rejects_unsupported_wrapping_alg() {
     );
 }
 
-// A message from the shim's keyring decrypts with a core keyring built from the same inputs.
+// Raw AES pass-through: encrypt with the shim's keyring, decrypt with a core keyring.
+
+fn shim_raw_aes(namespace: &str, name: &str, key: &[u8], alg: ffi::AesWrappingAlg) -> Box<Keyring> {
+    create_raw_aes_keyring(&ffi::RawAesKeyringInput {
+        key_namespace: namespace.to_string(),
+        key_name: name.to_string(),
+        wrapping_key: key,
+        wrapping_alg: alg,
+    })
+    .expect("shim keyring")
+}
+
+fn core_raw_aes(
+    namespace: &str,
+    name: &str,
+    key: &[u8],
+    alg: aws_crypto_mpl::types::AesWrappingAlg,
+) -> Keyring {
+    Keyring {
+        inner: SharedKeyring::new(
+            RawAesKeyring::builder()
+                .key_namespace(namespace)
+                .key_name(name)
+                .wrapping_key(key.to_vec())
+                .wrapping_alg(alg)
+                .build()
+                .expect("core keyring"),
+        ),
+    }
+}
+
+fn encrypt_with(keyring: &Keyring) -> Vec<u8> {
+    let mut input = unset_encrypt_input();
+    input.plaintext = b"raw aes inputs";
+    input.keyring = keyring as *const Keyring;
+    encrypt(&input).expect("encrypt").ciphertext
+}
+
+fn decrypt_with(ciphertext: &[u8], keyring: &Keyring) -> Result<Vec<u8>, String> {
+    let mut input = unset_decrypt_input();
+    input.ciphertext = ciphertext;
+    input.keyring = keyring as *const Keyring;
+    decrypt(&input).map(|out| out.plaintext)
+}
+
+const AES_256: ffi::AesWrappingAlg = ffi::AesWrappingAlg::AlgAes256GcmIv12Tag16;
+const CORE_AES_256: aws_crypto_mpl::types::AesWrappingAlg =
+    aws_crypto_mpl::types::AesWrappingAlg::AlgAes256GcmIv12Tag16;
+
 #[test]
-fn create_raw_aes_keyring_passes_its_inputs_to_the_core() {
+fn create_raw_aes_keyring_passes_namespace_and_name_to_the_core() {
+    let key = [0x2A; 32];
+    let ciphertext = encrypt_with(&shim_raw_aes("test-ns", "test-key", &key, AES_256));
+
+    //= spec/shim/esdk-shim.md#create-raw-aes-keyring
+    //= type=test
+    //= reason=Only a core keyring with the same namespace and name decrypts the shim keyring's message
+    //# - Creating a raw AES keyring MUST provide the target-supplied key namespace and
+    //# key name to the core ESDK.
+    assert!(
+        decrypt_with(
+            &ciphertext,
+            &core_raw_aes("test-ns", "test-key", &key, CORE_AES_256)
+        )
+        .is_ok()
+    );
+    assert!(
+        decrypt_with(
+            &ciphertext,
+            &core_raw_aes("other-ns", "test-key", &key, CORE_AES_256)
+        )
+        .is_err()
+    );
+    assert!(
+        decrypt_with(
+            &ciphertext,
+            &core_raw_aes("test-ns", "other-key", &key, CORE_AES_256)
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn create_raw_aes_keyring_passes_the_wrapping_key_unmodified() {
+    let key: Vec<u8> = (0..32).collect();
+    let ciphertext = encrypt_with(&shim_raw_aes("test-ns", "test-key", &key, AES_256));
+    let mut other_key = key.clone();
+    other_key[31] ^= 1;
+
+    //= spec/shim/esdk-shim.md#create-raw-aes-keyring
+    //= type=test
+    //= reason=Only a core keyring with the identical key bytes decrypts the shim keyring's message
+    //# - Creating a raw AES keyring MUST pass the target-supplied wrapping key to the
+    //# core ESDK unmodified.
+    assert!(
+        decrypt_with(
+            &ciphertext,
+            &core_raw_aes("test-ns", "test-key", &key, CORE_AES_256)
+        )
+        .is_ok()
+    );
+    assert!(
+        decrypt_with(
+            &ciphertext,
+            &core_raw_aes("test-ns", "test-key", &other_key, CORE_AES_256)
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn create_raw_aes_keyring_converts_the_wrapping_algorithm() {
     use aws_crypto_mpl::types::AesWrappingAlg as Core;
     let cases = [
         (
@@ -1096,50 +1205,21 @@ fn create_raw_aes_keyring_passes_its_inputs_to_the_core() {
         ),
     ];
     for (target_alg, core_alg, key_len) in cases {
-        let key: Vec<u8> = (0..key_len).collect();
+        let key = vec![0x2A; key_len];
+        let ciphertext = encrypt_with(&shim_raw_aes("test-ns", "test-key", &key, target_alg));
         //= spec/shim/esdk-shim.md#create-raw-aes-keyring
         //= type=test
-        //# - Creating a raw AES keyring MUST provide the target-supplied key namespace and
-        //# key name to the core ESDK.
-        //
-        //= spec/shim/esdk-shim.md#create-raw-aes-keyring
-        //= type=test
-        //# - Creating a raw AES keyring MUST pass the target-supplied wrapping key to the
-        //# core ESDK unmodified.
-        //
-        //= spec/shim/esdk-shim.md#create-raw-aes-keyring
-        //= type=test
+        //= reason=A core keyring with the matching core algorithm decrypts the shim keyring's message
         //# - Creating a raw AES keyring MUST provide the target-supplied wrapping algorithm
         //# to the core ESDK, converted as defined in
         //# [AES wrapping algorithm](#aes-wrapping-algorithm).
-        let shim_keyring = create_raw_aes_keyring(&ffi::RawAesKeyringInput {
-            key_namespace: "test-ns".to_string(),
-            key_name: "test-key".to_string(),
-            wrapping_key: &key,
-            wrapping_alg: target_alg,
-        })
-        .expect("shim keyring");
-        let core_keyring = Keyring {
-            inner: SharedKeyring::new(
-                RawAesKeyring::builder()
-                    .key_namespace("test-ns")
-                    .key_name("test-key")
-                    .wrapping_key(key.clone())
-                    .wrapping_alg(core_alg)
-                    .build()
-                    .expect("core keyring"),
-            ),
-        };
-
-        let mut enc = unset_encrypt_input();
-        enc.plaintext = b"raw aes inputs";
-        enc.keyring = &*shim_keyring as *const Keyring;
-        let ciphertext = encrypt(&enc).expect("encrypt").ciphertext;
-
-        let mut dec = unset_decrypt_input();
-        dec.ciphertext = &ciphertext;
-        dec.keyring = &core_keyring as *const Keyring;
-        assert_eq!(decrypt(&dec).expect("decrypt").plaintext, b"raw aes inputs");
+        assert!(
+            decrypt_with(
+                &ciphertext,
+                &core_raw_aes("test-ns", "test-key", &key, core_alg)
+            )
+            .is_ok()
+        );
     }
 }
 

@@ -1601,16 +1601,6 @@ fn create_hierarchical_keyring(
     let key_store = require_handle(input.key_store, "key_store", "create_hierarchical_keyring")?;
 
     //= spec/shim/esdk-shim.md#create-hierarchical-keyring
-    //= reason=The builder receives a cache only when the target supplied one; otherwise it keeps the core ESDK's default cache.
-    //# - When no cache is supplied, creating a hierarchical keyring MUST defer to the
-    //# core ESDK's default cache.
-    //
-    //= spec/shim/esdk-shim.md#create-hierarchical-keyring
-    //= reason=The cache handle's SharedCmc is passed to the builder, so the keyring refers to that exact cache.
-    //# - When a cache is supplied, creating a hierarchical keyring MUST reference that
-    //# exact cache, so several keyrings given the same cache share it.
-    //
-    //= spec/shim/esdk-shim.md#create-hierarchical-keyring
     //# - Creating a hierarchical keyring MAY be supplied with a
     //# [cryptographic materials cache](#create-cryptographic-materials-cache),
     //# checked as defined in
@@ -1633,7 +1623,14 @@ fn create_hierarchical_keyring(
         //# and time-to-live to the core ESDK.
         .ttl(ttl)
         .branch_key_id(input.branch_key_id.clone());
+    //= spec/shim/esdk-shim.md#create-hierarchical-keyring
+    //= reason=Without a cache the builder is left unset, and the core builds its default cache
+    //# - When no cache is supplied, creating a hierarchical keyring MUST defer to the
+    //# core ESDK's default cache.
     if let Some(cache) = cache {
+        //= spec/shim/esdk-shim.md#create-hierarchical-keyring
+        //# - When a cache is supplied, creating a hierarchical keyring MUST reference that
+        //# exact cache, so several keyrings given the same cache share it.
         builder = builder.cache(cache);
     }
     if let Some(partition_id) = partition_id {

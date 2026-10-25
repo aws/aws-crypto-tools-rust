@@ -403,10 +403,6 @@ void test_client_configuration() {
                                      Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16);
 
     // ForbidEncryptAllowDecrypt must forward ESDK Rust's behavior of rejecting committing policy in config
-    //= spec/shim/esdk-shim.md#client-configuration
-    //= type=test
-    //# The ESDK shim MAY expose a client-level configuration mirroring the core
-    //# ESDK's client configuration, applied to every operation of that client.
     Aws::Esdk::Client forbid_sdk(Aws::Esdk::Config().with_commitment_policy(
         Aws::Esdk::CommitmentPolicy::ForbidEncryptAllowDecrypt));
     CHECK_THROWS_ESDK(forbid_sdk.encrypt(
@@ -422,6 +418,29 @@ void test_client_configuration() {
     auto rt = default_sdk.encrypt(to_bytes("defaults"), keyring);
     auto pt = default_sdk.decrypt(rt.ciphertext, keyring);
     ESDK_CHECK(pt.plaintext == to_bytes("defaults"));
+}
+
+// A non-committing message: the forbid client encrypts and decrypts it,
+// while a client requiring commitment refuses to decrypt it.
+void test_client_configuration_applies_to_every_operation() {
+    std::vector<std::uint8_t> key(32, 0x2A);
+    Aws::Esdk::RawAesKeyring keyring("test-ns", "test-key", key,
+                                     Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16);
+    Aws::Esdk::Client forbid_sdk(Aws::Esdk::Config().with_commitment_policy(
+        Aws::Esdk::CommitmentPolicy::ForbidEncryptAllowDecrypt));
+    Aws::Esdk::Client require_sdk(Aws::Esdk::Config().with_commitment_policy(
+        Aws::Esdk::CommitmentPolicy::RequireEncryptRequireDecrypt));
+
+    auto encrypted = forbid_sdk.encrypt(to_bytes("client config"), keyring);
+    //= spec/shim/esdk-shim.md#client-configuration
+    //= type=test
+    //= reason=The client's commitment policy picks a non-committing suite on encrypt and gates decrypt
+    //# The ESDK shim MAY expose a client-level configuration mirroring the core
+    //# ESDK's client configuration, applied to every operation of that client.
+    ESDK_CHECK(encrypted.algorithm_suite_id ==
+               Aws::Esdk::AlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf);
+    ESDK_CHECK(forbid_sdk.decrypt(encrypted.ciphertext, keyring).plaintext == to_bytes("client config"));
+    CHECK_THROWS_ESDK(require_sdk.decrypt(encrypted.ciphertext, keyring));
 }
 
 void test_non_utf8_input_throws_validation() {
@@ -1002,6 +1021,7 @@ int main(int argc, char** argv) {
         test_error_kinds();
         test_values_this_library_does_not_know();
         test_client_configuration();
+        test_client_configuration_applies_to_every_operation();
         test_non_utf8_input_throws_validation();
         test_client_credentials();
         test_shared_http_client();
