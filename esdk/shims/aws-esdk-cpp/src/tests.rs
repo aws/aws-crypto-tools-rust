@@ -823,6 +823,10 @@ fn create_hierarchical_keyring_defers_to_the_default_cache() {
     let err = expect_err(create_hierarchical_keyring(
         &hierarchical_keyring_input_with_ttl(&key_store, ffi::Duration { secs: 5, nanos: 0 }),
     ));
+    assert!(
+        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, "")),
+        "unexpected error: {err}"
+    );
     //= spec/shim/esdk-shim.md#create-hierarchical-keyring
     //= type=test
     //= reason=ESDK Rust rejects the TTL against a storm-tracking cache with a 10 s grace period, which is its default cache
