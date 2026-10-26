@@ -822,10 +822,10 @@ fn create_hierarchical_keyring_defers_to_the_default_cache() {
     // Indirect assertion that not supplying a cache means the HKeyring gets a default cache.
     // No cache is supplied when creating this HKeyring, so it should get the ESDK Rust default cache.
     // The default cache is a storm tracking cache with a 10s grace period.
-    // The HKeyring's TTL == 5s is less than 10s, which is an invalid configuration error for the storm tracking cache.
+    // The HKeyring's TTL == 5s is less than 10s. This is an invalid configuration for the storm tracking cache and should result in an error.
     // If an error about storm tracking config was raised,
-    // then the default cache is probably a storm tracking cache,
-    // so not supplying a cache created the default cache.
+    // then the default cache is probably a storm tracking cache.
+    // So not supplying a cache created the default cache.
     let err = expect_err(create_hierarchical_keyring(
         &hierarchical_keyring_input_with_ttl(&key_store, ffi::Duration { secs: 5, nanos: 0 }),
     ));
@@ -850,8 +850,14 @@ fn create_hierarchical_keyring_uses_the_supplied_cache() {
     let ddb = create_ddb_client(&unset_client_config()).expect("ddb client");
     let key_store = create_keystore(&keystore_config_with_clients(&kms, &ddb)).expect("key store");
 
-    // The library rejects a TTL that does not exceed the cache's grace period.
-    // The default cache's is 10 s; a local cache has none, so 5 s passes only with it.
+    // Inverse of create_hierarchical_keyring_defers_to_the_default_cache's indirect testing logic.
+    // Indirect assertion that supplying a cache means the HKeyring uses that cache instead of the default.
+    // A local cache is supplied when creating this HKeyring. A local cache has no grace period.
+    // The HKeyring's TTL == 5s would be rejected by the default storm tracking cache (10s grace period),
+    // but is a valid configuration for the local cache.
+    // If no error was raised,
+    // then the HKeyring is probably not using the default cache.
+    // So supplying a cache made the HKeyring use the supplied cache.
     let mut input =
         hierarchical_keyring_input_with_ttl(&key_store, ffi::Duration { secs: 5, nanos: 0 });
     let cache = create_local_cmc(10).expect("local cache should build");
