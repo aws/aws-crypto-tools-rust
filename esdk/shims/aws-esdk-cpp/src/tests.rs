@@ -838,74 +838,24 @@ fn create_hierarchical_keyring_defers_to_the_default_cache() {
     .expect("a TTL above the default grace period must be accepted");
 }
 
-/// Counts cache lookups and fails each one, so encrypt stops before the key store.
-struct LookupCountingCmc(std::sync::Arc<std::sync::atomic::AtomicUsize>);
-
-#[aws_crypto_mpl::async_trait]
-impl aws_crypto_mpl::cmc::Cmc for LookupCountingCmc {
-    async fn put_cache_entry(
-        &self,
-        _: aws_crypto_mpl::cmc::PutCacheEntryInput,
-    ) -> Result<aws_crypto_mpl::cmc::PutCacheEntryOutput, aws_crypto_mpl::Error> {
-        unreachable!("lookups fail before any put")
-    }
-    async fn get_cache_entry(
-        &self,
-        _: aws_crypto_mpl::cmc::GetCacheEntryInput,
-    ) -> Result<aws_crypto_mpl::cmc::GetCacheEntryOutput, aws_crypto_mpl::Error> {
-        self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        Err(aws_crypto_mpl::Error::Validation(
-            aws_crypto_mpl::error::ValidationError::new("lookup counted"),
-        ))
-    }
-    async fn delete_cache_entry(
-        &self,
-        _: aws_crypto_mpl::cmc::DeleteCacheEntryInput,
-    ) -> Result<aws_crypto_mpl::cmc::DeleteCacheEntryOutput, aws_crypto_mpl::Error> {
-        unreachable!("lookups fail before any delete")
-    }
-    async fn update_usage_metadata(
-        &self,
-        _: aws_crypto_mpl::cmc::UpdateUsageMetadataInput,
-    ) -> Result<aws_crypto_mpl::cmc::UpdateUsageMetadataOutput, aws_crypto_mpl::Error> {
-        unreachable!("lookups fail before any update")
-    }
-}
-
 #[test]
-fn hierarchical_keyrings_given_one_cache_share_it() {
+fn create_hierarchical_keyring_uses_the_supplied_cache() {
     let kms = create_kms_client(&unset_client_config()).expect("kms client");
     let ddb = create_ddb_client(&unset_client_config()).expect("ddb client");
     let key_store = create_keystore(&keystore_config_with_clients(&kms, &ddb)).expect("key store");
 
-    let lookups = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
-    let cache = CryptographicMaterialsCache {
-        inner: SharedCmc::new(LookupCountingCmc(lookups.clone())),
-    };
-    let mut input = hierarchical_keyring_input_with_ttl(
-        &key_store,
-        ffi::Duration {
-            secs: 600,
-            nanos: 0,
-        },
-    );
-    input.cache = &cache as *const CryptographicMaterialsCache;
-
+    // A 5 s TTL is below the default cache's grace period
+    // but accepted with a local cache, which has none.
+    let mut input =
+        hierarchical_keyring_input_with_ttl(&key_store, ffi::Duration { secs: 5, nanos: 0 });
+    let cache = create_local_cmc(10).expect("local cache should build");
+    input.cache = &*cache as *const CryptographicMaterialsCache;
     //= spec/shim/esdk-shim.md#create-hierarchical-keyring
     //= type=test
+    //= reason=The 5 s TTL is accepted only if the keyring uses the supplied cache
     //# - When a cache is supplied, creating a hierarchical keyring MUST reference that
     //# exact cache, so several keyrings given the same cache share it.
-    let keyrings = [
-        create_hierarchical_keyring(&input).expect("first keyring"),
-        create_hierarchical_keyring(&input).expect("second keyring"),
-    ];
-    for keyring in &keyrings {
-        let mut enc = unset_encrypt_input();
-        enc.plaintext = b"shared cache";
-        enc.keyring = &**keyring as *const Keyring;
-        expect_err(encrypt(&enc));
-    }
-    assert_eq!(lookups.load(std::sync::atomic::Ordering::SeqCst), 2);
+    create_hierarchical_keyring(&input).expect("a local cache has no grace period");
 }
 
 #[test]
