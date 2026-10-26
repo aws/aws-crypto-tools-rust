@@ -1624,7 +1624,7 @@ fn create_hierarchical_keyring(
         .ttl(ttl)
         .branch_key_id(input.branch_key_id.clone());
     //= spec/shim/esdk-shim.md#create-hierarchical-keyring
-    //= reason=Without a cache the builder is left unset, and the core builds its default cache
+    //= reason=Without a cache the builder is left unset, and ESDK Rust builds its default cache
     //# - When no cache is supplied, creating a hierarchical keyring MUST defer to the
     //# core ESDK's default cache.
     if let Some(cache) = cache {

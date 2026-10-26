@@ -819,23 +819,19 @@ fn create_hierarchical_keyring_defers_to_the_default_cache() {
     let ddb = create_ddb_client(&unset_client_config()).expect("ddb client");
     let key_store = create_keystore(&keystore_config_with_clients(&kms, &ddb)).expect("key store");
 
-    // The default cache has a 10 s grace period, which a TTL must exceed.
-    //= spec/shim/esdk-shim.md#create-hierarchical-keyring
-    //= type=test
-    //# - When no cache is supplied, creating a hierarchical keyring MUST defer to the
-    //# core ESDK's default cache.
+    // No cache is supplied, and the TTL is below the default cache's 10 s grace period.
     let err = expect_err(create_hierarchical_keyring(
         &hierarchical_keyring_input_with_ttl(&key_store, ffi::Duration { secs: 5, nanos: 0 }),
     ));
+    //= spec/shim/esdk-shim.md#create-hierarchical-keyring
+    //= type=test
+    //= reason=ESDK Rust rejects the TTL against a storm-tracking cache with a 10 s grace period, which is its default cache
+    //# - When no cache is supplied, creating a hierarchical keyring MUST defer to the
+    //# core ESDK's default cache.
     assert!(
-        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, "")),
+        err.contains("storm-tracking grace period (10s)"),
         "unexpected error: {err}"
     );
-    create_hierarchical_keyring(&hierarchical_keyring_input_with_ttl(
-        &key_store,
-        ffi::Duration { secs: 11, nanos: 0 },
-    ))
-    .expect("a TTL above the default grace period must be accepted");
 }
 
 #[test]
@@ -844,7 +840,7 @@ fn create_hierarchical_keyring_uses_the_supplied_cache() {
     let ddb = create_ddb_client(&unset_client_config()).expect("ddb client");
     let key_store = create_keystore(&keystore_config_with_clients(&kms, &ddb)).expect("key store");
 
-    // The core rejects a TTL that does not exceed the cache's grace period.
+    // The library rejects a TTL that does not exceed the cache's grace period.
     // The default cache's is 10 s; a local cache has none, so 5 s passes only with it.
     let mut input =
         hierarchical_keyring_input_with_ttl(&key_store, ffi::Duration { secs: 5, nanos: 0 });
@@ -1024,7 +1020,7 @@ fn create_raw_aes_keyring_rejects_unsupported_wrapping_alg() {
     );
 }
 
-// Raw AES pass-through: encrypt with the shim's keyring, decrypt with a core keyring.
+// Raw AES pass-through: encrypt with the shim's keyring, decrypt with an ESDK Rust keyring.
 
 fn shim_raw_aes(namespace: &str, name: &str, key: &[u8], alg: ffi::AesWrappingAlg) -> Box<Keyring> {
     create_raw_aes_keyring(&ffi::RawAesKeyringInput {
@@ -1036,7 +1032,7 @@ fn shim_raw_aes(namespace: &str, name: &str, key: &[u8], alg: ffi::AesWrappingAl
     .expect("shim keyring")
 }
 
-fn core_raw_aes(
+fn rust_raw_aes(
     namespace: &str,
     name: &str,
     key: &[u8],
@@ -1050,7 +1046,7 @@ fn core_raw_aes(
                 .wrapping_key(key.to_vec())
                 .wrapping_alg(alg)
                 .build()
-                .expect("core keyring"),
+                .expect("ESDK Rust keyring"),
         ),
     }
 }
@@ -1070,7 +1066,7 @@ fn decrypt_with(ciphertext: &[u8], keyring: &Keyring) -> Result<Vec<u8>, String>
 }
 
 const AES_256: ffi::AesWrappingAlg = ffi::AesWrappingAlg::AlgAes256GcmIv12Tag16;
-const CORE_AES_256: aws_crypto_mpl::types::AesWrappingAlg =
+const RUST_AES_256: aws_crypto_mpl::types::AesWrappingAlg =
     aws_crypto_mpl::types::AesWrappingAlg::AlgAes256GcmIv12Tag16;
 
 #[test]
@@ -1080,27 +1076,27 @@ fn create_raw_aes_keyring_passes_namespace_and_name_to_the_core() {
 
     //= spec/shim/esdk-shim.md#create-raw-aes-keyring
     //= type=test
-    //= reason=Only a core keyring with the same namespace and name decrypts the shim keyring's message
+    //= reason=Only an ESDK Rust keyring with the same namespace and name decrypts the shim keyring's message
     //# - Creating a raw AES keyring MUST provide the target-supplied key namespace and
     //# key name to the core ESDK.
     assert!(
         decrypt_with(
             &ciphertext,
-            &core_raw_aes("test-ns", "test-key", &key, CORE_AES_256)
+            &rust_raw_aes("test-ns", "test-key", &key, RUST_AES_256)
         )
         .is_ok()
     );
     assert!(
         decrypt_with(
             &ciphertext,
-            &core_raw_aes("other-ns", "test-key", &key, CORE_AES_256)
+            &rust_raw_aes("other-ns", "test-key", &key, RUST_AES_256)
         )
         .is_err()
     );
     assert!(
         decrypt_with(
             &ciphertext,
-            &core_raw_aes("test-ns", "other-key", &key, CORE_AES_256)
+            &rust_raw_aes("test-ns", "other-key", &key, RUST_AES_256)
         )
         .is_err()
     );
@@ -1115,20 +1111,20 @@ fn create_raw_aes_keyring_passes_the_wrapping_key_unmodified() {
 
     //= spec/shim/esdk-shim.md#create-raw-aes-keyring
     //= type=test
-    //= reason=Only a core keyring with the identical key bytes decrypts the shim keyring's message
+    //= reason=Only an ESDK Rust keyring with the identical key bytes decrypts the shim keyring's message
     //# - Creating a raw AES keyring MUST pass the target-supplied wrapping key to the
     //# core ESDK unmodified.
     assert!(
         decrypt_with(
             &ciphertext,
-            &core_raw_aes("test-ns", "test-key", &key, CORE_AES_256)
+            &rust_raw_aes("test-ns", "test-key", &key, RUST_AES_256)
         )
         .is_ok()
     );
     assert!(
         decrypt_with(
             &ciphertext,
-            &core_raw_aes("test-ns", "test-key", &other_key, CORE_AES_256)
+            &rust_raw_aes("test-ns", "test-key", &other_key, RUST_AES_256)
         )
         .is_err()
     );
@@ -1159,14 +1155,14 @@ fn create_raw_aes_keyring_converts_the_wrapping_algorithm() {
         let ciphertext = encrypt_with(&shim_raw_aes("test-ns", "test-key", &key, target_alg));
         //= spec/shim/esdk-shim.md#create-raw-aes-keyring
         //= type=test
-        //= reason=A core keyring with the matching core algorithm decrypts the shim keyring's message
+        //= reason=An ESDK Rust keyring with the matching ESDK Rust algorithm decrypts the shim keyring's message
         //# - Creating a raw AES keyring MUST provide the target-supplied wrapping algorithm
         //# to the core ESDK, converted as defined in
         //# [AES wrapping algorithm](#aes-wrapping-algorithm).
         assert!(
             decrypt_with(
                 &ciphertext,
-                &core_raw_aes("test-ns", "test-key", &key, core_alg)
+                &rust_raw_aes("test-ns", "test-key", &key, core_alg)
             )
             .is_ok()
         );
