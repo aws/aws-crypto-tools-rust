@@ -246,9 +246,10 @@ fn test_plaintext_data_key_immutability() {
 
 #[test]
 fn test_plaintext_data_key_zeroize() {
+    use zeroize::Zeroize;
     let mut pdk = PlaintextDataKey::new(b"secret".to_vec());
     pdk.zeroize();
-    assert!(pdk.as_bytes().iter().all(|&b| b == 0));
+    assert!(pdk.is_empty());
 }
 
 #[test]
