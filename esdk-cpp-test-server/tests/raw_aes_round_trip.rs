@@ -1,3 +1,6 @@
+// Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 //! Offline end-to-end round trip through the C++ facade with a raw-AES keyring:
 //! CreateClient -> Encrypt -> Decrypt over the rpcv2Cbor wire. Needs no AWS
 //! access, so it always runs.
