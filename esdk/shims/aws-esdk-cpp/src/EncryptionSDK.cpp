@@ -579,15 +579,6 @@ EncryptResult Client::encrypt(const std::uint8_t* plaintext,
     in.encryption_context = detail::to_ec(options.encryption_context_);
     in.algorithm_suite_id = detail::to_opt(options.algorithm_suite_);
     in.frame_length = detail::to_opt(options.frame_length_);
-    //= spec/shim/esdk-shim.md#client-configuration
-    //= type=implication
-    //= reason=The commitment policy and encrypted data key cap are set only on the Client; per-call options have no field for either, so neither can be supplied twice.
-    //# - A configuration value the target supplies on both the client and a
-    //# per-operation input MUST be rejected as invalid input.
-    //
-    //= spec/shim/esdk-shim.md#client-configuration
-    //# - A configuration value the target supplies on neither the client nor the
-    //# operation MUST defer to the core ESDK's default.
     in.commitment_policy = detail::to_opt(commitment_policy_);
     in.max_encrypted_data_keys = detail::to_opt(max_encrypted_data_keys_);
     ::ffi::EncryptOutput out = detail::guard([&] { return ::ffi::encrypt(in); });
@@ -618,15 +609,6 @@ DecryptResult Client::decrypt(const std::uint8_t* ciphertext,
     in.keyring = &*keyring.impl_->handle;
     in.ciphertext = ::rust::Slice<const std::uint8_t>(ciphertext, ciphertext_len);
     in.encryption_context = detail::to_ec(options.encryption_context_);
-    //= spec/shim/esdk-shim.md#client-configuration
-    //= type=implication
-    //= reason=The commitment policy and encrypted data key cap are set only on the Client; per-call options have no field for either, so neither can be supplied twice.
-    //# - A configuration value the target supplies on both the client and a
-    //# per-operation input MUST be rejected as invalid input.
-    //
-    //= spec/shim/esdk-shim.md#client-configuration
-    //# - A configuration value the target supplies on neither the client nor the
-    //# operation MUST defer to the core ESDK's default.
     in.commitment_policy = detail::to_opt(commitment_policy_);
     in.max_encrypted_data_keys = detail::to_opt(max_encrypted_data_keys_);
     ::ffi::DecryptOutput out = detail::guard([&] { return ::ffi::decrypt(in); });
@@ -646,15 +628,6 @@ EncryptStream Client::create_encrypt_stream(const Keyring& keyring,
     in.encryption_context = detail::to_ec(options.encryption_context_);
     in.algorithm_suite_id = detail::to_opt(options.algorithm_suite_);
     in.frame_length = detail::to_opt(options.frame_length_);
-    //= spec/shim/esdk-shim.md#client-configuration
-    //= type=implication
-    //= reason=The commitment policy and encrypted data key cap are set only on the Client; per-call options have no field for either, so neither can be supplied twice.
-    //# - A configuration value the target supplies on both the client and a
-    //# per-operation input MUST be rejected as invalid input.
-    //
-    //= spec/shim/esdk-shim.md#client-configuration
-    //# - A configuration value the target supplies on neither the client nor the
-    //# operation MUST defer to the core ESDK's default.
     in.commitment_policy = detail::to_opt(commitment_policy_);
     in.max_encrypted_data_keys = detail::to_opt(max_encrypted_data_keys_);
     // Keyring MUST be retained.
@@ -669,15 +642,6 @@ DecryptStream Client::create_decrypt_stream(const Keyring& keyring,
     ::ffi::DecryptInput in{};
     in.keyring = &*keyring.impl_->handle;
     in.encryption_context = detail::to_ec(options.encryption_context_);
-    //= spec/shim/esdk-shim.md#client-configuration
-    //= type=implication
-    //= reason=The commitment policy and encrypted data key cap are set only on the Client; per-call options have no field for either, so neither can be supplied twice.
-    //# - A configuration value the target supplies on both the client and a
-    //# per-operation input MUST be rejected as invalid input.
-    //
-    //= spec/shim/esdk-shim.md#client-configuration
-    //# - A configuration value the target supplies on neither the client nor the
-    //# operation MUST defer to the core ESDK's default.
     in.commitment_policy = detail::to_opt(commitment_policy_);
     in.max_encrypted_data_keys = detail::to_opt(max_encrypted_data_keys_);
     // Keyring MUST be retained.

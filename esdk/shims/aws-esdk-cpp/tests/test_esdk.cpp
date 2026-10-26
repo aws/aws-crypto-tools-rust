@@ -410,10 +410,6 @@ void test_client_configuration() {
         Aws::Esdk::EncryptOptions().with_algorithm_suite(
             Aws::Esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)));
 
-    //= spec/shim/esdk-shim.md#client-configuration
-    //= type=test
-    //# - A configuration value the target supplies on neither the client nor the
-    //# operation MUST defer to the core ESDK's default.
     Aws::Esdk::Client default_sdk;
     auto rt = default_sdk.encrypt(to_bytes("defaults"), keyring);
     auto pt = default_sdk.decrypt(rt.ciphertext, keyring);
