@@ -819,8 +819,13 @@ fn create_hierarchical_keyring_defers_to_the_default_cache() {
     let ddb = create_ddb_client(&unset_client_config()).expect("ddb client");
     let key_store = create_keystore(&keystore_config_with_clients(&kms, &ddb)).expect("key store");
 
-    // With no cache supplied, the keyring uses the library's default cache, which refreshes entries 10 s before they expire.
-    // The library rejects a TTL that short, so a 5 s TTL fails with an error naming that 10 s grace period.
+    // Indirect assertion that not supplying a cache means the HKeyring gets a default cache.
+    // No cache is supplied when creating this HKeyring, so it should get the ESDK Rust default cache.
+    // The default cache is a storm tracking cache with a 10s grace period.
+    // The HKeyring's TTL == 5s is less than 10s, which is an invalid configuration error for the storm tracking cache.
+    // If an error about storm tracking config was raised,
+    // then the default cache is probably a storm tracking cache,
+    // so not supplying a cache created the default cache.
     let err = expect_err(create_hierarchical_keyring(
         &hierarchical_keyring_input_with_ttl(&key_store, ffi::Duration { secs: 5, nanos: 0 }),
     ));
