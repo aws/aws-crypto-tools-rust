@@ -420,8 +420,6 @@ void test_client_configuration() {
     ESDK_CHECK(pt.plaintext == to_bytes("defaults"));
 }
 
-// A non-committing message: the forbid client encrypts and decrypts it,
-// while a client requiring commitment refuses to decrypt it.
 void test_client_configuration_applies_to_every_operation() {
     std::vector<std::uint8_t> key(32, 0x2A);
     Aws::Esdk::RawAesKeyring keyring("test-ns", "test-key", key,
@@ -434,12 +432,15 @@ void test_client_configuration_applies_to_every_operation() {
     auto encrypted = forbid_sdk.encrypt(to_bytes("client config"), keyring);
     //= spec/shim/esdk-shim.md#client-configuration
     //= type=test
-    //= reason=The client's commitment policy picks a non-committing suite on encrypt and gates decrypt
     //# The ESDK shim MAY expose a client-level configuration mirroring the core
     //# ESDK's client configuration, applied to every operation of that client.
+    //
+    // Evidence config is applied: forbid_sdk alg suite is default for ForbidEncryptAllowDecrypt
     ESDK_CHECK(encrypted.algorithm_suite_id ==
                Aws::Esdk::AlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf);
+    // Evidence config is applied: forbid_sdk decrypts non-comitting suite
     ESDK_CHECK(forbid_sdk.decrypt(encrypted.ciphertext, keyring).plaintext == to_bytes("client config"));
+    // Evidence config is applied: require_sdk rejects decrypting non-committing suite
     CHECK_THROWS_ESDK(require_sdk.decrypt(encrypted.ciphertext, keyring));
 }
 
