@@ -819,11 +819,8 @@ fn create_hierarchical_keyring_defers_to_the_default_cache() {
     let ddb = create_ddb_client(&unset_client_config()).expect("ddb client");
     let key_store = create_keystore(&keystore_config_with_clients(&kms, &ddb)).expect("key store");
 
-    // With no cache supplied, the keyring uses the library's default cache.
-    // That cache starts refreshing an entry 10 s (its grace period) before the entry expires.
-    // A keyring caches entries for its TTL, so a TTL of 10 s or less would put every entry
-    // in the refresh window as soon as it is cached. The library rejects that keyring.
-    // A 5 s TTL therefore fails, and the error names the default cache's 10 s grace period.
+    // With no cache supplied, the keyring uses the library's default cache, which refreshes entries 10 s before they expire.
+    // The library rejects a TTL that short, so a 5 s TTL fails with an error naming that 10 s grace period.
     let err = expect_err(create_hierarchical_keyring(
         &hierarchical_keyring_input_with_ttl(&key_store, ffi::Duration { secs: 5, nanos: 0 }),
     ));
