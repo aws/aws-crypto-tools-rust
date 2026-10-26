@@ -152,7 +152,7 @@ fn test_hkdf_derivation_process() {
     //= type=test
     //= reason=The expected vector was computed with all-zero salt of hash length, no other salt would produce these bytes
     //# - If the algorithm suite's encryption key derivation settings specify a salt length of 0,
-    //# the salt MUST be a sequence of zero bytes as long as the hash function's output.
+    //# the salt MUST be all 0x00 bytes, with a length equal to the hash function's output length in bytes.
     //
     //= spec/client-apis/key-derivation.md#hkdf-encryption-key
     //= type=test

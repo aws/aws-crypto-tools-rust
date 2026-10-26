@@ -104,7 +104,7 @@ pub(crate) fn derive_key_v1(
 
             //= spec/client-apis/key-derivation.md#hkdf-encryption-key
             //# - If the algorithm suite's encryption key derivation settings specify a salt length of 0,
-            //# the salt MUST be a sequence of zero bytes as long as the hash function's output.
+            //# the salt MUST be all 0x00 bytes, with a length equal to the hash function's output length in bytes.
             let salt = vec![0u8; digest_length(alg)?];
 
             //= spec/client-apis/key-derivation.md#hkdf-encryption-key
