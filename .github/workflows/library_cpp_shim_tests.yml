@@ -1,0 +1,57 @@
+# Reusable workflow: build and test the aws-esdk-cpp C++ shim.
+name: Library C++ Shim Tests
+
+on:
+  workflow_call:
+
+jobs:
+  shim:
+    name: build + test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu, macos]
+    runs-on: ${{ matrix.os }}-latest
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      ESDK_TEST_KMS_KEY_ARN: arn:aws:kms:us-west-2:370957321024:key/9d989aa2-2f9c-438c-a745-cc57d3ad0126
+      ESDK_TEST_DDB_TABLE: KeyStoreDdbTable
+      ESDK_TEST_LOGICAL_KEYSTORE: KeyStoreDdbTable
+      ESDK_TEST_BRANCH_KEY_ID: 3ce7656b-e166-40f3-8c9b-a920ce6596cd
+      ESDK_TEST_REGION: us-west-2
+    defaults:
+      run:
+        working-directory: esdk/shims/aws-esdk-cpp
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: ./.github/actions/setup-rust
+        with:
+          components: clippy, rustfmt
+          workspaces: esdk/shims/aws-esdk-cpp
+          free-disk-space: "true"
+
+      # integration tests need real KMS + DynamoDB
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-region: us-west-2
+          role-to-assume: arn:aws:iam::370957321024:role/GitHub-CI-Public-ESDK-Dafny-Role-us-west-2
+
+      - name: Format check
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Build
+        run: cargo build --verbose
+
+      - name: Test (Rust unit + integration tests)
+        run: make test-ci-rust
+
+      - name: Build and run C++ facade, example, and integration and local-correctness tests
+        if: runner.os == 'Linux'
+        run: make test-ci-cpp

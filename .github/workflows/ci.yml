@@ -1,0 +1,295 @@
+# All CI for this repo.
+name: CI
+
+on:
+  # PRs only test projects the change affects (ex. mpl change tests mpl, esdk, shims, and mpl/esdk test servers)
+  pull_request:
+  # push to main tests everything
+  push:
+    branches:
+      - main
+  # Daily CI tests everything 
+  schedule:
+    - cron: "00 15 * * *" # 15:00 UTC (8AM PDT)
+  workflow_dispatch:
+
+# Pull requests cancel any previous CI run when a new run starts.
+# Otherwise (ex. push to main, daily CI), the run queues.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  detect:
+    name: Detect what to run
+    # Forks lack this repo's AWS role and secrets, so skip their scheduled runs.
+    if: github.event_name != 'schedule' || github.repository_owner == 'aws'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # dorny/paths-filter lists the PR's files through the GitHub API.
+      pull-requests: read
+    outputs:
+      jobs: ${{ steps.set.outputs.jobs }}
+    steps:
+      - uses: actions/checkout@v6
+
+      # Each filter matches its crate, plus the crates it depends on.
+      # ex. an mpl change re-tests mpl, esdk, the C++ shim, and their TestServers.
+      # A change to a `shared` path runs everything.
+      - name: Filter changed paths
+        if: github.event_name == 'pull_request'
+        id: filter
+        uses: dorny/paths-filter@v4
+        with:
+          # The default quantifier ignores '!' patterns; this makes them act as excludes.
+          predicate-quantifier: some-with-excludes
+          filters: |
+            prim: &prim
+              - 'prim/**'
+            mpl: &mpl
+              - *prim
+              - 'mpl/**'
+            esdk:
+              - *mpl
+              - 'esdk/**'
+              - '!esdk/test-server/**'
+              - '!esdk/shims/aws-esdk-cpp/test-server/**'
+            prim-test-server:
+              - *prim
+              - 'prim-test-server/**'
+            mpl-test-server:
+              - *mpl
+              - 'mpl-test-server/**'
+            esdk-test-server:
+              - *mpl
+              - 'esdk/**'
+              - '!esdk/shims/aws-esdk-cpp/test-server/**'
+            esdk-cpp-test-server:
+              - *mpl
+              - 'esdk/**'
+            shared:
+              - '.github/**'
+              - 'scripts/spec-source.json'
+              - 'scripts/resolve-spec.sh'
+              - 'errors.toml'
+              - 'xtask/**'
+
+      - name: Compute what to run
+        id: set
+        env:
+          # PRs only test the files that changed.
+          # Pushes to main/scheduled runs/"shared" files resolve to "all" and test everything.
+          CHANGES: >-
+            ${{ (github.event_name != 'pull_request' || contains(steps.filter.outputs.changes, '"shared"'))
+              && '"all"' || steps.filter.outputs.changes }}
+          # JOBS defines when/what to run.
+          # ex. `when` "esdk" changes, test `project` "esdk".
+          JOBS: |
+            {
+              "rust-tests": [
+                {"when": "esdk", "project": "esdk"},
+                {"when": "mpl", "project": "mpl"},
+                {"when": "prim", "project": "prim"}
+              ],
+              "supply-chain": [
+                {"when": "esdk", "project": "esdk"},
+                {"when": "mpl", "project": "mpl"},
+                {"when": "prim", "project": "prim"}
+              ],
+              "cpp-shim": [
+                {"when": "esdk"}
+              ],
+              "duvet": [
+                {"when": "esdk", "name": "esdk", "project": "esdk", "artifact": "esdk-duvet-report"},
+                {"when": "esdk", "name": "aws-esdk-cpp", "project": "esdk/shims/aws-esdk-cpp", "artifact": "aws-esdk-cpp-duvet-report"}
+              ],
+              "test-server-builds": [
+                {"when": "esdk-test-server", "name": "esdk-test-server", "server": "esdk/test-server"},
+                {"when": "esdk-cpp-test-server", "name": "esdk-cpp-test-server (ubuntu)", "server": "esdk/shims/aws-esdk-cpp/test-server", "prebuild": "esdk/shims/aws-esdk-cpp", "os": "ubuntu-latest"},
+                {"when": "esdk-cpp-test-server", "name": "esdk-cpp-test-server (macos)", "server": "esdk/shims/aws-esdk-cpp/test-server", "prebuild": "esdk/shims/aws-esdk-cpp", "os": "macos-latest"},
+                {"when": "mpl-test-server", "name": "mpl-test-server", "server": "mpl-test-server"},
+                {"when": "prim-test-server", "name": "prim-test-server", "server": "prim-test-server"}
+              ],
+              "esdk-test-server": [
+                {"when": "esdk-test-server", "focus": "rust"},
+                {"when": "esdk-cpp-test-server", "focus": "rust-cpp"}
+              ],
+              "mpl-test-server": [
+                {"when": "mpl-test-server"}
+              ],
+              "prim-test-server": [
+                {"when": "prim-test-server"}
+              ]
+            }
+        run: |
+          jobs=$(jq -cn --argjson changes "$CHANGES" --argjson jobs "$JOBS" '
+            $jobs
+            | map_values(map(select($changes == "all" or (.when | IN($changes[]))) | del(.when)))
+            | with_entries(select(.value != []))')
+          echo "jobs=$jobs" | tee -a "$GITHUB_OUTPUT"
+
+  rust-tests:
+    name: Rust tests
+    needs: detect
+    if: fromJSON(needs.detect.outputs.jobs)['rust-tests'] != null
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/library_rust_tests.yml
+    with:
+      projects: ${{ toJSON(fromJSON(needs.detect.outputs.jobs)['rust-tests'].*.project) }}
+
+  supply-chain:
+    name: Supply chain
+    needs: detect
+    if: fromJSON(needs.detect.outputs.jobs)['supply-chain'] != null
+    permissions:
+      contents: read
+    uses: ./.github/workflows/supply_chain.yml
+    with:
+      projects: ${{ toJSON(fromJSON(needs.detect.outputs.jobs)['supply-chain'].*.project) }}
+
+  cpp-shim:
+    name: C++ shim
+    needs: detect
+    if: fromJSON(needs.detect.outputs.jobs)['cpp-shim'] != null
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/library_cpp_shim_tests.yml
+
+  duvet:
+    name: Duvet
+    needs: detect
+    if: fromJSON(needs.detect.outputs.jobs)['duvet'] != null
+    permissions:
+      contents: read
+    uses: ./.github/workflows/duvet.yml
+    with:
+      projects: ${{ toJSON(fromJSON(needs.detect.outputs.jobs)['duvet']) }}
+
+  test-server-builds:
+    name: TestServer builds
+    needs: detect
+    if: fromJSON(needs.detect.outputs.jobs)['test-server-builds'] != null
+    permissions:
+      contents: read
+    uses: ./.github/workflows/test_server_build.yml
+    with:
+      builds: ${{ toJSON(fromJSON(needs.detect.outputs.jobs)['test-server-builds']) }}
+
+  # Cross-language TestServer runs.
+  esdk-test-server:
+    name: ESDK TestServer (${{ matrix.focus }})
+    needs: detect
+    if: fromJSON(needs.detect.outputs.jobs)['esdk-test-server'] != null
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.detect.outputs.jobs)['esdk-test-server'] }}
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    uses: aws/aws-crypto-tools-commons/.github/workflows/esdk-test-server-reusable.yml@lucmcdon/esdk-registry-move-rust-server-paths
+    with:
+      commons-ref: lucmcdon/esdk-registry-move-rust-server-paths
+      # Only run tests that involve the focus language (ex. skip Python <--> Java tests for this Rust repo)
+      focus: ${{ matrix.focus }}
+      checkout-languages: ${{ matrix.focus }}
+    secrets:
+      repo-pat: ${{ secrets.COMMONS_REPO_PAT }}
+
+  mpl-test-server:
+    name: MPL TestServer
+    needs: detect
+    if: fromJSON(needs.detect.outputs.jobs)['mpl-test-server'] != null
+    permissions:
+      contents: read
+      actions: read
+    uses: aws/aws-crypto-tools-commons/.github/workflows/mpl-test-server-reusable.yml@main
+    with:
+      focus: rust
+      checkout-languages: rust
+    secrets:
+      repo-pat: ${{ secrets.COMMONS_REPO_PAT }}
+
+  prim-test-server:
+    name: Primitives TestServer
+    needs: detect
+    if: fromJSON(needs.detect.outputs.jobs)['prim-test-server'] != null
+    permissions:
+      contents: read
+      actions: read
+    uses: aws/aws-crypto-tools-commons/.github/workflows/primitives-test-server-reusable.yml@main
+    with:
+      focus: rust
+      checkout-languages: rust
+    secrets:
+      repo-pat: ${{ secrets.COMMONS_REPO_PAT }}
+
+  # The generated error types must match errors.toml.
+  gen-errors:
+    name: Error codegen is current
+    needs: detect
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: ./.github/actions/setup-rust
+        with:
+          components: clippy, rustfmt
+          workspaces: xtask
+
+      - name: Format check
+        run: cargo fmt --manifest-path xtask/Cargo.toml -- --check
+
+      - name: Clippy
+        run: cargo clippy --manifest-path xtask/Cargo.toml --all-targets -- -D warnings
+
+      - name: Test the generator
+        run: cargo test --manifest-path xtask/Cargo.toml
+
+      - name: Check the generated files
+        run: cargo xtask gen-errors --check
+
+  # Every source file must start with the header in .github/not-grep.toml.
+  license-headers:
+    name: License headers
+    needs: detect
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: mattsb42-meta/not-grep@1.0.1
+
+  pr-ci-all-required:
+    if: always()
+    needs:
+      - detect
+      - rust-tests
+      - supply-chain
+      - cpp-shim
+      - duvet
+      - test-server-builds
+      - esdk-test-server
+      - mpl-test-server
+      - prim-test-server
+      - gen-errors
+      - license-headers
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check job results
+        env:
+          FAILED: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+        run: '[[ "$FAILED" == "false" ]]'

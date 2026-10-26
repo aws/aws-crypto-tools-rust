@@ -1,25 +1,29 @@
-# Runs cargo-deny for a single project (subdirectory).
-# This checks the project's dependencies for security advisories, bans, etc.
+# Reusable workflow: run cargo-deny for each project in `projects`, a JSON array of directories (e.g. ["mpl","esdk"]).
+# This checks each project's dependencies for security advisories, bans, etc.
 # and fails (denies) if there are issues.
 name: Supply Chain
 
 on:
   workflow_call:
     inputs:
-      project:
-        description: "Project subdirectory to check (e.g. esdk)."
+      projects:
+        description: "JSON array of project subdirectories to check (e.g. [\"mpl\",\"esdk\"])."
         required: true
         type: string
 
 jobs:
   cargo-deny:
-    name: cargo-deny (${{ inputs.project }})
+    name: ${{ matrix.project }}
+    strategy:
+      fail-fast: false
+      matrix:
+        project: ${{ fromJSON(inputs.projects) }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
     defaults:
       run:
-        working-directory: ${{ inputs.project }}
+        working-directory: ${{ matrix.project }}
     steps:
       - uses: actions/checkout@v6
         with:

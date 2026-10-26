@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <map>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -203,6 +204,15 @@ auto guard(F&& f) -> decltype(f()) {
 
 // Conversions from public type to FFI type
 
+// ::rust::String throws std::invalid_argument on non-UTF-8 input.
+::rust::String to_rust_string(const std::string& s, const std::string& name) {
+    try {
+        return ::rust::String(s);
+    } catch (const std::invalid_argument&) {
+        throw ValidationException(name + " must be valid UTF-8");
+    }
+}
+
 ::ffi::Duration to_ffi(std::chrono::nanoseconds d, const char* field) {
     if (d.count() < 0) {
         throw ValidationException(std::string(field) + " must not be negative");
@@ -227,8 +237,8 @@ auto guard(F&& f) -> decltype(f()) {
 ::ffi::OptU32 to_opt(const std::optional<std::uint32_t>& o) {
     return o ? ::ffi::OptU32{true, *o} : ::ffi::OptU32{false, 0};
 }
-::ffi::OptString to_opt(const std::optional<std::string>& o) {
-    return o ? ::ffi::OptString{true, ::rust::String(*o)} : ::ffi::OptString{false, {}};
+::ffi::OptString to_opt(const std::optional<std::string>& o, const std::string& name) {
+    return o ? ::ffi::OptString{true, to_rust_string(*o, name)} : ::ffi::OptString{false, {}};
 }
 ::ffi::OptAlgId to_opt(const std::optional<AlgorithmSuiteId>& o) {
     return o ? ::ffi::OptAlgId{true, to_ffi(*o)} : ::ffi::OptAlgId{false, {}};
@@ -241,8 +251,8 @@ auto guard(F&& f) -> decltype(f()) {
     ::rust::Vec<::ffi::EncryptionContextItem> out;
     for (const auto& kv : ec) {
         ::ffi::EncryptionContextItem item;
-        item.key = ::rust::String(kv.first);
-        item.value = ::rust::String(kv.second);
+        item.key = to_rust_string(kv.first, "encryption context keys");
+        item.value = to_rust_string(kv.second, "encryption context values");
         out.push_back(std::move(item));
     }
     return out;
@@ -293,9 +303,9 @@ struct ClientConfigImpl {
 struct CredentialsAccess {
     static ::ffi::Credentials to_ffi(const Credentials& c) {
         ::ffi::Credentials out;
-        out.access_key_id = ::rust::String(c.access_key_id_);
-        out.secret_access_key = ::rust::String(c.secret_access_key_);
-        out.session_token = to_opt(c.session_token_);
+        out.access_key_id = to_rust_string(c.access_key_id_, "access_key_id");
+        out.secret_access_key = to_rust_string(c.secret_access_key_, "secret_access_key");
+        out.session_token = to_opt(c.session_token_, "session_token");
         out.expiration = c.expiration_
             ? ::ffi::OptDuration{true, detail::to_ffi(c.expiration_->time_since_epoch(),
                                                       "credentials expiration")}
@@ -388,7 +398,7 @@ AwsSdkClientConfig& AwsSdkClientConfig::with_adaptive_retry(bool a) {
     return *this;
 }
 AwsSdkClientConfig& AwsSdkClientConfig::with_region(const std::string& r) {
-    impl_->cfg.region = ::ffi::OptString{true, ::rust::String(r)};
+    impl_->cfg.region = ::ffi::OptString{true, detail::to_rust_string(r, "region")};
     return *this;
 }
 AwsSdkClientConfig& AwsSdkClientConfig::with_credentials(const Credentials& credentials) {
@@ -418,7 +428,8 @@ KmsClient KmsClient::with_headers(
     const std::vector<std::pair<std::string, std::string>>& headers) const {
     ::rust::Vec<::ffi::HttpHeader> ffi_headers;
     for (const auto& [name, value] : headers) {
-        ffi_headers.push_back(::ffi::HttpHeader{::rust::String(name), ::rust::String(value)});
+        ffi_headers.push_back(::ffi::HttpHeader{detail::to_rust_string(name, "header names"),
+                                                detail::to_rust_string(value, "header values")});
     }
     return KmsClient(std::make_shared<detail::KmsClientImpl>(
         detail::Retained{},
@@ -458,13 +469,14 @@ KeyStore::KeyStore(const std::string& table_name,
           }(),
           detail::guard([&] {
               ::ffi::KeyStoreConfig c{};
-              c.ddb_table_name = ::rust::String(table_name);
-              c.logical_key_store_name = ::rust::String(logical_key_store_name);
+              c.ddb_table_name = detail::to_rust_string(table_name, "table_name");
+              c.logical_key_store_name =
+                  detail::to_rust_string(logical_key_store_name, "logical_key_store_name");
               c.kms_configuration_type = ::ffi::KmsConfigurationType::KmsKeyArn;
-              c.kms_configuration_value = ::rust::String(kms_arn);
-              c.id = detail::to_opt(options.key_store_id_);
+              c.kms_configuration_value = detail::to_rust_string(kms_arn, "kms_arn");
+              c.id = detail::to_opt(options.key_store_id_, "key_store_id");
               for (const auto& token : options.grant_tokens_) {
-                  c.grant_tokens.push_back(::rust::String(token));
+                  c.grant_tokens.push_back(detail::to_rust_string(token, "grant tokens"));
               }
               // A null handle tells the shim to defer to the core ESDK's default client.
               if (options.kms_client_) c.kms_client = &*options.kms_client_->impl_->handle;
@@ -525,10 +537,10 @@ HierarchicalKeyring::HierarchicalKeyring(KeyStore key_store,
                          : detail::Retained{key_store.impl_},
           detail::guard([&] {
               ::ffi::HierarchicalKeyringInput in{};
-              in.branch_key_id = ::rust::String(branch_key_id);
+              in.branch_key_id = detail::to_rust_string(branch_key_id, "branch_key_id");
               in.key_store = &*key_store.impl_->handle;
               in.ttl = detail::to_ffi(ttl, "ttl");
-              in.partition_id = detail::to_opt(options.partition_id_);
+              in.partition_id = detail::to_opt(options.partition_id_, "partition_id");
               // A null handle tells the shim to defer to the core ESDK's default cache.
               if (options.cache_) in.cache = &*options.cache_->impl_->handle;
               return ::ffi::create_hierarchical_keyring(in);
@@ -541,8 +553,8 @@ RawAesKeyring::RawAesKeyring(const std::string& key_namespace,
     : Keyring(std::make_shared<detail::KeyringImpl>(
           detail::Retained{}, detail::guard([&] {
               ::ffi::RawAesKeyringInput in{};
-              in.key_namespace = ::rust::String(key_namespace);
-              in.key_name = ::rust::String(key_name);
+              in.key_namespace = detail::to_rust_string(key_namespace, "key_namespace");
+              in.key_name = detail::to_rust_string(key_name, "key_name");
               in.wrapping_key =
                   ::rust::Slice<const std::uint8_t>(wrapping_key.data(), wrapping_key.size());
               in.wrapping_alg = detail::to_ffi(wrapping_alg);
