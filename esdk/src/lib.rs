@@ -214,7 +214,12 @@ pub use shapes::async_trait;
 /// Its resource modules and AWS SDK clients are also re-exported below,
 /// so most code never names it.
 pub use aws_crypto_mpl as mpl;
-pub use aws_crypto_mpl::{aws_config, aws_sdk_dynamodb, aws_sdk_kms};
+#[cfg(feature = "default-aws-sdk-clients")]
+pub use aws_crypto_mpl::aws_config;
+#[cfg(feature = "ddb")]
+pub use aws_crypto_mpl::aws_sdk_dynamodb;
+#[cfg(feature = "kms")]
+pub use aws_crypto_mpl::aws_sdk_kms;
 pub use aws_crypto_mpl::{cmc, cmm, key_store, keyring};
 
 pub(crate) mod key_derivation;

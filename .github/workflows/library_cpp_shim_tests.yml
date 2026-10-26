@@ -1,24 +1,8 @@
-# Run all tests for C++ shim (Rust/C++ unit/integ tests)
-name: aws-esdk-cpp shim
+# Reusable workflow: build and test the aws-esdk-cpp C++ shim.
+name: Library C++ Shim Tests
 
 on:
-  pull_request:
-    paths:
-      - "esdk/**"
-      - ".github/workflows/aws-esdk-cpp.yml"
-  push:
-    paths:
-      - "esdk/**"
-      - ".github/workflows/aws-esdk-cpp.yml"
-  workflow_dispatch:
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
-permissions:
-  contents: read
-  id-token: write
+  workflow_call:
 
 jobs:
   shim:
@@ -26,12 +10,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        os: [ubuntu, macos]
         include:
-          - os: linux
+          - os: ubuntu
             runner: codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}
           - os: macos
             runner: macos-latest
     runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      id-token: write
     env:
       ESDK_TEST_KMS_KEY_ARN: arn:aws:kms:us-west-2:370957321024:key/9d989aa2-2f9c-438c-a745-cc57d3ad0126
       ESDK_TEST_DDB_TABLE: KeyStoreDdbTable
@@ -42,16 +30,13 @@ jobs:
       run:
         working-directory: esdk/shims/aws-esdk-cpp
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      # GHA runners crash if they hold the statically linked aws-lc and AWS SDKs.
-      # Reclaim the large preinstalled toolchains this job does not use.
-      - name: Free disk space
-        if: runner.os == 'Linux'
-        run: |
-          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc \
-            /usr/local/share/boost /opt/hostedtoolcache/CodeQL
-          df -h /
+      - uses: ./.github/actions/setup-rust
+        with:
+          components: clippy, rustfmt
+          workspaces: esdk/shims/aws-esdk-cpp
+          free-disk-space: "true"
 
       # integration tests need real KMS + DynamoDB
       - name: Configure AWS credentials
@@ -59,22 +44,6 @@ jobs:
         with:
           aws-region: us-west-2
           role-to-assume: arn:aws:iam::370957321024:role/GitHub-CI-Public-ESDK-Dafny-Role-us-west-2
-
-      # aws-lc-sys needs Go to build
-      - name: Install Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: "stable"
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy, rustfmt
-
-      - name: Cache cargo build artifacts
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: esdk/shims/aws-esdk-cpp
 
       - name: Format check
         run: cargo fmt --all -- --check

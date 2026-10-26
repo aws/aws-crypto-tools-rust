@@ -1,0 +1,6 @@
+{
+  "spec": {
+    "url": "https://github.com/awslabs/aws-encryption-sdk-specification.git",
+    "ref": "aws-crypto-rust/cpp-shim-spec-integration"
+  }
+}

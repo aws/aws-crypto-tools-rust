@@ -226,9 +226,21 @@ fn test_plaintext_data_key_immutability_decryption() {
 
 #[test]
 fn test_plaintext_data_key_zeroize_decryption() {
+    use zeroize::Zeroize;
     let mut pdk = PlaintextDataKey::new(b"secret-dec".to_vec());
     pdk.zeroize();
-    assert!(pdk.as_bytes().iter().all(|&b| b == 0));
+    assert!(pdk.is_empty());
+}
+
+#[test]
+fn test_secret_keys_compare_with_ct_eq() {
+    let a = PlaintextDataKey::new(vec![1; 32]);
+    assert!(a.ct_eq(&PlaintextDataKey::new(vec![1; 32])));
+    assert!(!a.ct_eq(&PlaintextDataKey::new(vec![2; 32])));
+    assert!(!a.ct_eq(&PlaintextDataKey::new(vec![1; 16])));
+    let s = SymmetricSigningKey::new(vec![3; 32]);
+    assert!(s.ct_eq(&SymmetricSigningKey::new(vec![3; 32])));
+    assert!(!s.ct_eq(&SymmetricSigningKey::new(vec![4; 32])));
 }
 
 #[test]

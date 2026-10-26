@@ -1,34 +1,36 @@
-# Reusable workflow that builds and tests a single project (subdirectory) in
-# the monorepo. Callers pass the project directory name via the `project`
-# input (e.g. "mpl"). All cargo commands run scoped to that subdirectory.
+# Reusable workflow: build and test each project in `projects`, a JSON array of directories (e.g. ["mpl","esdk"]).
 name: Library Rust Tests
 
 on:
   workflow_call:
     inputs:
-      project:
-        description: "Project subdirectory to build and test (e.g. mpl, esdk)."
+      projects:
+        description: "JSON array of project subdirectories to build and test (e.g. [\"mpl\",\"esdk\"])."
         required: true
         type: string
 
 jobs:
   testRust:
-    name: ${{ inputs.project }} (${{ matrix.os }})
+    name: ${{ matrix.project }} (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
+        project: ${{ fromJSON(inputs.projects) }}
+        os: [ubuntu, macos, windows]
         include:
-          - os: linux
+          - os: ubuntu
             runner: codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}
           - os: macos
             runner: macos-latest
+          - os: windows
+            runner: windows-latest
     runs-on: ${{ matrix.runner }}
     permissions:
       id-token: write
       contents: read
     defaults:
       run:
-        working-directory: ${{ inputs.project }}
+        working-directory: ${{ matrix.project }}
     steps:
       - name: Support longpaths on Git checkout
         run: git config --global core.longpaths true
@@ -38,26 +40,27 @@ jobs:
         with:
           submodules: 'true'
 
-      # Required by aws-lc-fips-sys: its CMake build invokes Go to generate
-      # FIPS module artifacts. GitHub-hosted runners do not put `go` on PATH
-      # for this workflow by default.
-      - name: Install Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: 'stable'
+      # aws-lc-sys / aws-lc-fips-sys build AWS-LC with NASM (Netwide Assembler) on Windows.
+      # NASM is not on the Windows runner PATH by default but Unix runners already provide an assembler.
+      - name: Install NASM (Windows)
+        if: runner.os == 'Windows'
+        uses: ilammy/setup-nasm@v1
 
       - name: Install CMake
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y cmake
         working-directory: .
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/setup-rust
         with:
           components: clippy, rustfmt, llvm-tools-preview
+          workspaces: ${{ matrix.project }}
 
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Install cargo-hack
+        uses: taiki-e/install-action@cargo-hack
 
       # KMS-backed integration tests (e.g. tests/test_encrypt_decrypt.rs) call
       # kms:GenerateDataKey / kms:Decrypt against the shared AWS Crypto Tools
@@ -75,23 +78,37 @@ jobs:
           role-session-name: RustTests
           special-characters-workaround: "true" # Some environments (example: windowsOS) cannot tolerate special characters in a secret key.
 
-      - name: Cache cargo build artifacts
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: ${{ inputs.project }}
-
       - name: Format check
         run: cargo fmt --all -- --check
 
       # Match the coverage step's features so clippy lints feature-gated tests.
       - name: Clippy
-        run: cargo clippy --all-targets ${{ inputs.project != 'prim' && '--all-features' || '' }} -- -D warnings
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Clippy every feature combination
+        run: >-
+          cargo hack clippy --lib --feature-powerset --no-dev-deps
+          --exclude-features default
+          --mutually-exclusive-features aws-lc-sys,fips
+          --at-least-one-of aws-lc-sys,fips
+          -- -D warnings
+
+      - name: Clippy with default features plus fips
+        run: cargo clippy --lib --features fips -- -D warnings
+
+      # Broken intra-doc links and other rustdoc warnings fail the build.
+      # Docs don't vary by OS, so only Linux builds them.
+      - name: Docs
+        if: runner.os == 'Linux'
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --no-deps --all-features
 
       - name: Build
         run: cargo build --verbose
 
       - name: Run examples
-        if: inputs.project == 'esdk'
+        if: matrix.project == 'esdk'
         run: make examples
 
       # Line coverage does not need debug info, so build the coverage binaries
@@ -99,14 +116,8 @@ jobs:
       # coverage-instrumented); dropping debug info keeps the ubuntu link within
       # the hosted runner's memory. Harmless on macOS.
       #
-      # `prim` is deliberately excluded from `--all-features`. Its only
-      # non-default feature is `fips`, and `aws-lc-rs` treats `fips` as an
-      # override rather than an addition: with both features on it links
-      # `aws-lc-fips-sys` and ignores `aws-lc-sys`. Running coverage with
-      # `--all-features` would therefore measure the FIPS backend and leave the
-      # default (non-FIPS) backend that actually ships untested. `prim` has no
-      # `cfg(feature = ...)` code, so dropping `--all-features` costs no
-      # coverage — the FIPS backend gets its own parity step below.
+      # Default features, not `--all-features`: `--all-features` turns on `fips`,
+      # which replaces the default backend.
       #
       # TODO(esdk): esdk line-coverage gate is temporarily 80% (esdk is ~81%
       # today); raise it toward 100 as coverage fills in.
@@ -115,16 +126,18 @@ jobs:
       - name: Test + line coverage gate
         env:
           RUSTFLAGS: "-C debuginfo=0"
-        run: cargo llvm-cov ${{ inputs.project != 'prim' && '--all-features' || '' }} --workspace --fail-under-lines ${{ inputs.project == 'esdk' && '80' || '80' }} --verbose
+        run: cargo llvm-cov --workspace --fail-under-lines 80 --verbose
 
       # FIPS parity check for `prim`. `--no-default-features` is required to get
       # a FIPS-only build: `--features fips` alone leaves `default` enabled, so
       # both `aws-lc-sys` and `aws-lc-fips-sys` get compiled and only the latter
       # is used. Test-only — the coverage gate above already covers these lines
       # against the default backend, so this step exists to prove the same code
-      # passes when linked against AWS-LC-FIPS. Needs the Go step above.
+      # passes when linked against AWS-LC-FIPS.
+      # Needs Go, which setup-rust installs.
+      # Windows also needs the NASM step above.
       - name: Test FIPS-only backend
-        if: inputs.project == 'prim'
+        if: matrix.project == 'prim'
         env:
           RUSTFLAGS: "-C debuginfo=0"
         run: cargo test --no-default-features --features fips --verbose
