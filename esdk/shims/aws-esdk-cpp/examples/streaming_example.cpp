@@ -1,3 +1,6 @@
+// Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 // Example demonstrating use of streaming APIs.
 //
 // Streamed encrypt/decrypt is for data too large to hold in memory at once.

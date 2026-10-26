@@ -1,3 +1,6 @@
+// Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 // EncryptionSDK.h — public types for the C++ Shim for the AWS Encryption SDK for Rust
 
 #pragma once
@@ -818,6 +821,7 @@ public:
     EncryptOptions& with_algorithm_suite(AlgorithmSuiteId a) { algorithm_suite_ = a; return *this; }
     /// Key-value pairs to associate with the encrypted data.
     /// <https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/concepts.html#encryption-context>
+    /// Keys and values must be valid UTF-8; encrypt throws ValidationException otherwise.
     EncryptOptions& with_encryption_context(const std::map<std::string, std::string>& ec) { encryption_context_ = ec; return *this; }
     /// Length of each frame of framed data in bytes. Default 4096.
     EncryptOptions& with_frame_length(std::uint32_t n) { frame_length_ = n; return *this; }
@@ -831,6 +835,7 @@ class DecryptOptions {
 
 public:
     /// Encryption context to verify against the encrypted message; every entry must be present in the message's context.
+    /// Keys and values must be valid UTF-8; decrypt throws ValidationException otherwise.
     DecryptOptions& with_encryption_context(const std::map<std::string, std::string>& ec) { encryption_context_ = ec; return *this; }
 };
 

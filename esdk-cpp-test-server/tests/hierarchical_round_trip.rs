@@ -1,3 +1,6 @@
+// Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 //! Live end-to-end round trip through the C++ facade: CreateClient -> Encrypt
 //! -> Decrypt over the real rpcv2Cbor wire, against a hierarchical key store.
 //!
