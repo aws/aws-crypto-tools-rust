@@ -1,4 +1,4 @@
-# Automatically re-runs failed jobs from PR CI (and other listed workflows
+# Automatically re-runs failed jobs from CI (and other listed workflows
 # as they are added). Triggers when a listed workflow completes; if it
 # concluded as a failure, re-runs only the failed jobs.
 #
@@ -12,7 +12,7 @@ name: Retry Failed CI
 
 on:
   workflow_run:
-    workflows: ["PR CI"]
+    workflows: ["CI"]
     types:
       - completed
 
