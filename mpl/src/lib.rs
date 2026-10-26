@@ -19,13 +19,16 @@ pub use error::generated::Error;
 /// Put `#[async_trait]` on an `impl` of a [`Keyring`](keyring::Keyring), [`Cmm`](cmm::Cmm), [`Cmc`](cmc::Cmc), [`KeyStore`](key_store::KeyStore), or [`BranchKeySupplier`](keyring::BranchKeySupplier).
 pub use async_trait::async_trait;
 
+#[cfg(feature = "default-aws-sdk-clients")]
 pub use aws_config;
 
 // Both SDK clients appear in the key store `Builder`'s public signature,
 // and a key store `Error` carries their SDK errors as its source.
 // Downcasting that source needs the exact SDK version this crate uses,
 // which the consumer's own dependency might not resolve to.
+#[cfg(feature = "ddb")]
 pub use aws_sdk_dynamodb;
+#[cfg(feature = "kms")]
 pub use aws_sdk_kms;
 
 #[cfg(feature = "test-utils")]

@@ -1,39 +1,33 @@
-# Reusable workflow that runs duvet for a single project (subdirectory) and
-# uploads the HTML compliance report as a build artifact. Callers pass the
-# project directory name via the `project` input (e.g. "esdk", or a nested path
-# like "esdk/shims/aws-esdk-cpp"). The project must have a `.duvet/config.toml`
-# and a `make duvet` target.
+# Reusable workflow: run duvet for each project and upload its HTML compliance report.
+# `projects` is a JSON array of {name, project, artifact}:
+#   name      job name
+#   project   directory, e.g. esdk/shims/aws-esdk-cpp; needs a .duvet/config.toml and a `make duvet` target
+#   artifact  artifact name; GitHub rejects slashes, so it can't be the directory
 name: Duvet Report
 
 on:
   workflow_call:
     inputs:
-      project:
-        description: "Project subdirectory to run duvet in (e.g. esdk)."
+      projects:
+        description: "JSON array of {name, project, artifact} objects."
         required: true
         type: string
-      artifact-name:
-        description: >
-          Name for the uploaded report artifact. Defaults to
-          "<project>-duvet-report". Set this for nested project paths, whose
-          slashes are not allowed in an artifact name.
-        required: false
-        type: string
-        default: ""
 
 jobs:
   duvet:
-    name: duvet (${{ inputs.project }})
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(inputs.projects) }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
     defaults:
       run:
-        working-directory: ${{ inputs.project }}
+        working-directory: ${{ matrix.project }}
     steps:
       - uses: actions/checkout@v6
-        with:
-          submodules: 'true'
 
       # Install duvet at its latest published release, matching the duvet
       # workflow in aws-cryptographic-material-providers-library. duvet has no
@@ -49,6 +43,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ inputs.artifact-name != '' && inputs.artifact-name || format('{0}-duvet-report', inputs.project) }}
+          name: ${{ matrix.artifact }}
           include-hidden-files: true
-          path: ${{ inputs.project }}/.duvet/reports/report.html
+          path: ${{ matrix.project }}/.duvet/reports/report.html

@@ -1,0 +1,43 @@
+# Reusable workflow: run cargo-deny for each project in `projects`, a JSON array of directories (e.g. ["mpl","esdk"]).
+# This checks each project's dependencies for security advisories, bans, etc.
+# and fails (denies) if there are issues.
+name: Supply Chain
+
+on:
+  workflow_call:
+    inputs:
+      projects:
+        description: "JSON array of project subdirectories to check (e.g. [\"mpl\",\"esdk\"])."
+        required: true
+        type: string
+
+jobs:
+  cargo-deny:
+    name: ${{ matrix.project }}
+    strategy:
+      fail-fast: false
+      matrix:
+        project: ${{ fromJSON(inputs.projects) }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: ${{ matrix.project }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: 'true'
+
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@cargo-deny
+
+      # The RustSec advisory database updates independently of this repo,
+      # so a newly published advisory could turn this red without any code change.
+      # Run it on every PR for visibility, but do not block merges on it.
+      - name: cargo deny check advisories (non-blocking)
+        continue-on-error: true
+        run: cargo deny --config "$GITHUB_WORKSPACE/deny.toml" check advisories
+
+      - name: cargo deny check bans licenses sources
+        run: cargo deny --config "$GITHUB_WORKSPACE/deny.toml" check bans licenses sources
