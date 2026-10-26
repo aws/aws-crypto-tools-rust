@@ -278,7 +278,7 @@ impl LocalCmcBuilder {
 }
 
 #[async_trait]
-impl Cmc for LocalCmc {
+impl Cmc for crate::shared::Builtin<LocalCmc> {
     async fn put_cache_entry(
         &self,
         input: PutCacheEntryInput,

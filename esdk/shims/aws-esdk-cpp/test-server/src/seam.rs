@@ -1,3 +1,6 @@
+// Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 //! Safe wrappers over the C++ facade seam (src/seam.cpp).
 
 use std::ffi::{c_char, c_int, c_void, CStr, CString};

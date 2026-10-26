@@ -1,3 +1,6 @@
+// Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 //! Operation handlers: build a hierarchical keyring through the C++ shim and
 //! forward encrypt/decrypt to the facade via `spawn_blocking` (the shim drives
 //! its own runtime with `block_on`, which must not run on an async worker).

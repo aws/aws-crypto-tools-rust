@@ -12,6 +12,7 @@ use std::sync::Arc;
 use crate::structures::AesWrappingAlg;
 use async_trait::async_trait;
 use aws_mpl_primitives::{aes_decrypt, aes_encrypt, generate_random_bytes};
+use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 use crate::keyring::Keyring;
 use crate::keyring::{OnDecryptInput, OnDecryptOutput, OnEncryptInput, OnEncryptOutput};
@@ -68,6 +69,14 @@ struct RawAesKeyringInner {
     wrapping_alg: AesWrappingAlg,
 }
 
+impl Drop for RawAesKeyringInner {
+    fn drop(&mut self) {
+        self.wrapping_key.zeroize();
+    }
+}
+
+impl ZeroizeOnDrop for RawAesKeyringInner {}
+
 impl std::fmt::Debug for RawAesKeyring {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("RawAesKeyring")
@@ -83,6 +92,12 @@ impl std::fmt::Debug for RawAesKeyring {
 }
 
 impl RawAesKeyring {
+    /// `{key_namespace}/{key_name}`.
+    #[must_use]
+    pub fn name(&self) -> Cow<'_, str> {
+        Cow::Borrowed(&self.inner.name)
+    }
+
     /// Start a builder for `RawAesKeyring`.
     /// Every field is required.
     #[must_use]
@@ -213,6 +228,14 @@ pub struct RawAesKeyringBuilder {
     wrapping_alg: Option<AesWrappingAlg>,
 }
 
+impl Drop for RawAesKeyringBuilder {
+    fn drop(&mut self) {
+        self.wrapping_key.zeroize();
+    }
+}
+
+impl ZeroizeOnDrop for RawAesKeyringBuilder {}
+
 impl std::fmt::Debug for RawAesKeyringBuilder {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("RawAesKeyringBuilder")
@@ -322,11 +345,11 @@ impl RawAesKeyringBuilder {
     /// - [`Validation`](crate::Error::Validation): a field is unset,
     ///   the wrapping key's length does not match the wrapping algorithm,
     ///   or the key namespace is or starts with `aws-kms`.
-    pub fn build(self) -> Result<RawAesKeyring, Error> {
-        let key_namespace = required(self.key_namespace, "key_namespace")?;
-        let key_name = required(self.key_name, "key_name")?;
-        let wrapping_key = required(self.wrapping_key, "wrapping_key")?;
-        let wrapping_alg = required(self.wrapping_alg, "wrapping_alg")?;
+    pub fn build(mut self) -> Result<RawAesKeyring, Error> {
+        let key_namespace = required(self.key_namespace.take(), "key_namespace")?;
+        let key_name = required(self.key_name.take(), "key_name")?;
+        let mut wrapping_key = Zeroizing::new(required(self.wrapping_key.take(), "wrapping_key")?);
+        let wrapping_alg = required(self.wrapping_alg.take(), "wrapping_alg")?;
 
         // A prefix check, not an equality check: `aws-kms-hierarchy`,
         // `aws-kms-rsa` and `aws-kms-ecdh` are the key provider IDs of other
@@ -358,7 +381,7 @@ impl RawAesKeyringBuilder {
                 name: format!("{key_namespace}/{key_name}"),
                 key_namespace,
                 key_name,
-                wrapping_key,
+                wrapping_key: std::mem::take(&mut *wrapping_key),
                 wrapping_alg,
             }),
         })
@@ -366,10 +389,9 @@ impl RawAesKeyringBuilder {
 }
 
 #[async_trait]
-impl Keyring for RawAesKeyring {
-    /// `{key_namespace}/{key_name}`.
+impl Keyring for crate::shared::Builtin<RawAesKeyring> {
     fn name(&self) -> Cow<'_, str> {
-        Cow::Borrowed(&self.inner.name)
+        self.0.name()
     }
 
     async fn on_encrypt(&self, input: OnEncryptInput) -> Result<OnEncryptOutput, Error> {
