@@ -1,3 +1,6 @@
+// Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 //! Hand-rolled ESDK TestServer Language_Server for Rust.
 //!
 //! Speaks the rpcv2Cbor wire contract of the single source-of-truth Smithy model

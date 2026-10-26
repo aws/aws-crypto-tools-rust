@@ -1,0 +1,43 @@
+# cargo-deny config for every project in this repo.
+# 
+# cargo-deny audits dependencies against several checks:
+#  - advisories - known security vulnerabilities (RustSec advisory DB)
+#  - bans       - banned and duplicate crates
+#  - licenses   - only the allowlisted licenses below
+#  - sources    - crates only from crates.io
+#
+# CI runs it per project against each project's own dependency graph.
+# Can also be run locally from any project directory:
+#   cargo deny --config <repo-root>/deny.toml check
+
+[advisories]
+# Security advisories are errors.
+# Add a RustSec ID here, with a rationale, only to grant a reviewed, temporary exception.
+ignore = []
+
+[licenses]
+# List of licenses allowed to be used in dependencies.
+# Anything not listed fails.
+allow = [
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "MIT",
+    "MIT-0",
+    "ISC",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "Unicode-3.0",
+    "Zlib",
+    "OpenSSL",
+]
+
+[bans]
+# Dependency graphs legitimately resolve several crates at multiple versions (e.g. http 0.2 and 1.x).
+# Report duplicates without failing CI.
+multiple-versions = "warn"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

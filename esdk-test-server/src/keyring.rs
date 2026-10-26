@@ -1,3 +1,6 @@
+// Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 //! Translate the modeled CMM/Keyring configuration into an `aws-esdk`
 //! [`SharedKeyring`](aws_esdk::keyring::SharedKeyring).
 //!

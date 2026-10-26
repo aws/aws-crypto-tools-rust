@@ -7,7 +7,8 @@ use std::time::Duration;
 use aws_crypto_mpl::cmc::DefaultCmc;
 use aws_crypto_mpl::key_store::DynamoDbKeyStore;
 use aws_crypto_mpl::key_store::types::KmsConfiguration;
-use aws_crypto_mpl::keyring::HierarchicalKeyring;
+use aws_crypto_mpl::keyring::{HierarchicalKeyring, RawAesKeyring, SharedKeyring};
+use aws_crypto_mpl::types::AesWrappingAlg;
 use aws_esdk::Client;
 use aws_esdk::types::CommitmentPolicy;
 use log::info;
@@ -28,9 +29,32 @@ const BRANCH_KEY_STORE_NAME: &str = "KeyStoreDdbTable";
 const LOGICAL_KEY_STORE_NAME: &str = BRANCH_KEY_STORE_NAME;
 const BRANCH_KEY_ID: &str = "3f43a9af-08c5-4317-b694-3d3e883dcaef";
 
+// Raw AES keyring identity; the C++ benchmark uses the same values so the two
+// series are comparable.
+const RAW_AES_KEY_NAMESPACE: &str = "performance-test";
+const RAW_AES_KEY_NAME: &str = "raw-aes-256";
+
+/// Which keyring the benchmark exercises.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KeyringChoice {
+    Hierarchical,
+    RawAes,
+}
+
+impl KeyringChoice {
+    /// Name used in results metadata and CloudWatch log streams.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Hierarchical => "hierarchical",
+            Self::RawAes => "raw-aes",
+        }
+    }
+}
+
 pub struct EsdkBenchmark {
     pub esdk_client: Client,
-    pub keyring: HierarchicalKeyring,
+    pub keyring: SharedKeyring,
+    pub keyring_name: &'static str,
     pub config: TestConfig,
     pub results: Vec<BenchmarkResult>,
     pub cpu_count: usize,
@@ -38,7 +62,7 @@ pub struct EsdkBenchmark {
 }
 
 impl EsdkBenchmark {
-    pub async fn new(config_path: &str) -> Result<Self> {
+    pub async fn new(config_path: &str, keyring_choice: KeyringChoice) -> Result<Self> {
         let mut system = System::new_all();
         system.refresh_all();
         let cpu_count = system.cpus().len();
@@ -46,16 +70,19 @@ impl EsdkBenchmark {
 
         let config = load_config(config_path)?;
 
-        let (esdk_client, keyring) = Self::setup_esdk().await?;
+        let (esdk_client, keyring) = Self::setup_esdk(keyring_choice).await?;
 
         info!(
-            "Initialized ESDK Benchmark - CPU cores: {}, Memory: {:.1}GB",
-            cpu_count, total_memory_gb
+            "Initialized ESDK Benchmark ({} keyring) - CPU cores: {}, Memory: {:.1}GB",
+            keyring_choice.name(),
+            cpu_count,
+            total_memory_gb
         );
 
         Ok(Self {
             esdk_client,
             keyring,
+            keyring_name: keyring_choice.name(),
             config,
             results: Vec::new(),
             cpu_count,
@@ -63,11 +90,20 @@ impl EsdkBenchmark {
         })
     }
 
-    async fn setup_esdk() -> Result<(Client, HierarchicalKeyring)> {
+    async fn setup_esdk(keyring_choice: KeyringChoice) -> Result<(Client, SharedKeyring)> {
         let esdk_client = Client::builder()
             .commitment_policy(CommitmentPolicy::RequireEncryptRequireDecrypt)
             .build()?;
 
+        let keyring = match keyring_choice {
+            KeyringChoice::Hierarchical => SharedKeyring::new(Self::hierarchical_keyring().await?),
+            KeyringChoice::RawAes => SharedKeyring::new(Self::raw_aes_keyring()?),
+        };
+
+        Ok((esdk_client, keyring))
+    }
+
+    async fn hierarchical_keyring() -> Result<HierarchicalKeyring> {
         let sdk_config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
 
         let key_store = DynamoDbKeyStore::builder()
@@ -80,7 +116,7 @@ impl EsdkBenchmark {
             .await
             .map_err(|e| anyhow::anyhow!("failed to build the key store: {e}"))?;
 
-        let keyring = HierarchicalKeyring::builder()
+        HierarchicalKeyring::builder()
             .key_store(key_store)
             .branch_key_id(BRANCH_KEY_ID)
             .ttl(Duration::from_secs(600_000))
@@ -92,15 +128,26 @@ impl EsdkBenchmark {
             )
             .build()
             .await
-            .map_err(|e| anyhow::anyhow!("failed to create the hierarchical keyring: {e}"))?;
+            .map_err(|e| anyhow::anyhow!("failed to create the hierarchical keyring: {e}"))
+    }
 
-        Ok((esdk_client, keyring))
+    /// Raw AES keyring with a fixed 256-bit wrapping key. Wraps data keys
+    /// locally, so it needs no AWS resources or credentials.
+    fn raw_aes_keyring() -> Result<RawAesKeyring> {
+        RawAesKeyring::builder()
+            .key_namespace(RAW_AES_KEY_NAMESPACE)
+            .key_name(RAW_AES_KEY_NAME)
+            .wrapping_key(vec![0u8; 32])
+            .wrapping_alg(AesWrappingAlg::AlgAes256GcmIv12Tag16)
+            .build()
+            .map_err(|e| anyhow::anyhow!("failed to create raw AES keyring: {e}"))
     }
 
     pub fn save_results(&self, output_path: &str) -> Result<()> {
         crate::results::save_results(
             &self.results,
             output_path,
+            self.keyring_name,
             self.cpu_count,
             self.total_memory_gb,
         )

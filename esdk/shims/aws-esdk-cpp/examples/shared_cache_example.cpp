@@ -1,3 +1,6 @@
+// Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 // Shares one cache across two hierarchical keyrings.
 //
 // A hierarchical keyring caches branch key material so it does not call KMS on every message.
