@@ -1,0 +1,24 @@
+# Lives at the repo top level (not under db-esdk/) so it is not swept into the
+# db-esdk library's coverage-gated CI.
+[package]
+name = "aws-db-esdk-test-server"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+description = "Hand-rolled rpcv2Cbor Language_Server for the DB-ESDK TestServer, delegating to aws-db-esdk."
+
+[[bin]]
+name = "dbesdk-test-server"
+path = "src/main.rs"
+
+[dependencies]
+# Real product SDK under test, from this repo's working tree.
+aws-db-esdk = { path = "../db-esdk" }
+
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal"] }
+axum = "0.8"
+ciborium = "0.2"
+serde = { version = "1", features = ["derive"] }
+serde_bytes = "0.11"
+uuid = { version = "1", features = ["v4"] }

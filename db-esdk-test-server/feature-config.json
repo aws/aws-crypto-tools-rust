@@ -1,0 +1,19 @@
+{
+  "supportedFeatures": [
+    "raw-aes",
+    "aws-kms"
+  ],
+  "unsupportedFeatures": [
+    "raw-rsa",
+    "aws-kms-mrk",
+    "aws-kms-rsa",
+    "aws-kms-hierarchical",
+    "required-encryption-context-cmm",
+    "ddb-transforms",
+    "searchable-encryption",
+    "beacon-partitions",
+    "structured-encryption",
+    "plaintext-override",
+    "legacy-ddbec"
+  ]
+}
