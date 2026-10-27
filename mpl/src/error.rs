@@ -89,7 +89,7 @@
 //! let create = key_store
 //!     .create_key()
 //!     .branch_key_id("my-branch-key")
-//!     .encryption_context(aws_crypto_mpl::types::EncryptionContext::new());
+//!     .set_encryption_context(Some(aws_crypto_mpl::types::EncryptionContext::new()));
 //! match create.send().await {
 //!     Ok(_) => {}
 //!     // The branch key ID is in use; use the existing key or pick another ID.

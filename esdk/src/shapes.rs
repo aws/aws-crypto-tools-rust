@@ -525,14 +525,6 @@ impl<'a> EncryptInputBuilder<'a> {
         self
     }
 
-    /// Set the key-value pairs to associate with the encrypted data.
-    /// Default is empty.
-    #[must_use]
-    pub(crate) fn encryption_context(mut self, ec: impl Into<EncryptionContext>) -> Self {
-        self.encryption_context = Some(ec.into());
-        self
-    }
-
     /// Set the encryption context from an `Option`.
     /// `None` leaves it unset.
     /// To set a value, use [`Self::encryption_context`].
@@ -741,14 +733,6 @@ impl EncryptStreamInputBuilder {
         self
     }
 
-    /// Set the key-value pairs to associate with the encrypted data.
-    /// Default is empty.
-    #[must_use]
-    pub(crate) fn encryption_context(mut self, ec: impl Into<EncryptionContext>) -> Self {
-        self.encryption_context = Some(ec.into());
-        self
-    }
-
     /// Set the encryption context from an `Option`.
     /// `None` leaves it unset.
     /// To set a value, use [`Self::encryption_context`].
@@ -940,16 +924,6 @@ impl<'a> DecryptInputBuilder<'a> {
         self
     }
 
-    /// Set the encryption context to verify against the encrypted message.
-    /// If non-empty, decrypt requires every entry to be present in the message's encryption
-    /// context (subset check).
-    /// Default is empty.
-    #[must_use]
-    pub(crate) fn encryption_context(mut self, ec: impl Into<EncryptionContext>) -> Self {
-        self.encryption_context = Some(ec.into());
-        self
-    }
-
     /// Set the encryption context from an `Option`.
     /// `None` leaves it unset.
     /// To set a value, use [`Self::encryption_context`].
@@ -1087,16 +1061,6 @@ impl DecryptStreamInputBuilder {
         get_keyring: keyring -> SharedKeyring,
         get_cmm: cmm -> SharedCmm,
     );
-
-    /// Set the encryption context to verify against the encrypted message.
-    /// If non-empty, `decrypt_stream` requires every entry to be present in the message's
-    /// encryption context (subset check).
-    /// Default is empty.
-    #[must_use]
-    pub(crate) fn encryption_context(mut self, ec: impl Into<EncryptionContext>) -> Self {
-        self.encryption_context = Some(ec.into());
-        self
-    }
 
     /// Set the encryption context from an `Option`.
     /// `None` leaves it unset.

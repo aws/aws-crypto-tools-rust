@@ -139,16 +139,20 @@ impl BranchKeyMaterialsBuilder {
         &self.branch_key_version
     }
 
-    /// Set the custom encryption context of the branch key.
+    /// Adds a key-value pair to the custom encryption context of the branch key.
+    ///
+    /// To override the contents of this collection use [`set_encryption_context`](Self::set_encryption_context).
     /// Required.
     #[must_use]
-    pub fn encryption_context(mut self, encryption_context: impl Into<EncryptionContext>) -> Self {
-        self.encryption_context = Some(encryption_context.into());
+    pub fn encryption_context(mut self, k: impl Into<String>, v: impl Into<String>) -> Self {
+        self.encryption_context
+            .get_or_insert_with(Default::default)
+            .insert(k, v);
         self
     }
 
     /// Set or clear the encryption context from an `Option`.
-    /// To set a value, use [`Self::encryption_context`].
+    /// To add one entry, use [`Self::encryption_context`].
     #[must_use]
     pub fn set_encryption_context(mut self, encryption_context: Option<EncryptionContext>) -> Self {
         self.encryption_context = encryption_context;

@@ -111,18 +111,17 @@ impl OnDecryptFluentBuilder {
         self.inner.get_materials()
     }
 
-    /// Set the encrypted data keys to try.
+    /// Appends an item to the encrypted data keys to try.
+    ///
+    /// To override the contents of this collection use [`set_encrypted_data_keys`](Self::set_encrypted_data_keys).
     /// Required.
-    pub fn encrypted_data_keys(
-        mut self,
-        encrypted_data_keys: impl Into<Vec<EncryptedDataKey>>,
-    ) -> Self {
-        self.inner = self.inner.encrypted_data_keys(encrypted_data_keys);
+    pub fn encrypted_data_keys(mut self, input: EncryptedDataKey) -> Self {
+        self.inner = self.inner.encrypted_data_keys(input);
         self
     }
 
     /// Set or clear the encrypted data keys from an `Option`.
-    /// To set a value, use [`Self::encrypted_data_keys`].
+    /// To add one entry, use [`Self::encrypted_data_keys`].
     pub fn set_encrypted_data_keys(
         mut self,
         encrypted_data_keys: Option<Vec<EncryptedDataKey>>,

@@ -814,7 +814,7 @@ fn fixture_materials_with_ec(ec: EncryptionContext) -> BranchKeyMaterials {
         .branch_key(fixed_branch_key())
         .branch_key_id(FIXTURE_BRANCH_KEY_ID.to_string())
         .branch_key_version(FIXTURE_VERSION.to_string())
-        .encryption_context(ec)
+        .set_encryption_context(Some(ec))
         .build()
         .expect("BranchKeyMaterials::new must accept the fixture inputs")
 }
@@ -1071,7 +1071,7 @@ fn wrap_then_unwrap_with_different_branch_key_fails() {
         .branch_key(other_branch_key)
         .branch_key_id(FIXTURE_BRANCH_KEY_ID.to_string())
         .branch_key_version(FIXTURE_VERSION.to_string())
-        .encryption_context(EncryptionContext::new())
+        .set_encryption_context(Some(EncryptionContext::new()))
         .build()
         .expect("materials with different branch_key must construct");
 
@@ -1108,7 +1108,7 @@ fn wrap_then_unwrap_with_different_aad_branch_key_id_fails() {
         .branch_key(fixed_branch_key())
         .branch_key_id("different-branch-key-id".to_string())
         .branch_key_version(FIXTURE_VERSION.to_string())
-        .encryption_context(EncryptionContext::new())
+        .set_encryption_context(Some(EncryptionContext::new()))
         .build()
         .expect("BranchKeyMaterials::new must accept the alternate id");
 
@@ -1337,7 +1337,7 @@ fn fake_key_store_info() -> GetKeyStoreInfoOutput {
         .key_store_id("test-id")
         .key_store_name("test-table")
         .logical_key_store_name(FAKE_LOGICAL_KEY_STORE_NAME)
-        .grant_tokens(Vec::<String>::new())
+        .set_grant_tokens(Some(Vec::<String>::new()))
         .kms_configuration(KmsConfiguration::Discovery(
             Discovery::builder().build().unwrap(),
         ))
@@ -1399,7 +1399,7 @@ fn fake_branch_key_materials() -> BranchKeyMaterials {
         .branch_key(FAKE_BRANCH_KEY)
         .branch_key_id(FAKE_BRANCH_KEY_ID.to_string())
         .branch_key_version(FAKE_BRANCH_KEY_VERSION.to_string())
-        .encryption_context(EncryptionContext::new())
+        .set_encryption_context(Some(EncryptionContext::new()))
         .build()
         .unwrap()
 }
@@ -1725,7 +1725,7 @@ mod ondecrypt {
         let err = keyring
             .on_decrypt()
             .materials(dm)
-            .encrypted_data_keys(edks.to_vec())
+            .set_encrypted_data_keys(Some(edks.to_vec()))
             .send()
             .await
             .expect_err("on_decrypt must fail when materials already carry a plaintext data key");
@@ -1756,7 +1756,7 @@ mod ondecrypt {
         let _ = keyring
             .on_decrypt()
             .materials(empty_decryption_materials(suite_id))
-            .encrypted_data_keys(edks.to_vec())
+            .set_encrypted_data_keys(Some(edks.to_vec()))
             .send()
             .await
             .unwrap()
@@ -1781,7 +1781,7 @@ mod ondecrypt {
         let _ = keyring
             .on_decrypt()
             .materials(empty_decryption_materials(suite_id))
-            .encrypted_data_keys(edks.to_vec())
+            .set_encrypted_data_keys(Some(edks.to_vec()))
             .send()
             .await
             .unwrap()
@@ -1795,7 +1795,7 @@ mod ondecrypt {
         let _ = keyring
             .on_decrypt()
             .materials(empty_decryption_materials(suite_id))
-            .encrypted_data_keys(edks.to_vec())
+            .set_encrypted_data_keys(Some(edks.to_vec()))
             .send()
             .await
             .unwrap()
@@ -1827,7 +1827,7 @@ mod ondecrypt {
         let dm_out = keyring
             .on_decrypt()
             .materials(empty_decryption_materials(suite_id))
-            .encrypted_data_keys(edks.to_vec())
+            .set_encrypted_data_keys(Some(edks.to_vec()))
             .send()
             .await
             .expect("on_decrypt must succeed by falling through to the matching EDK")
@@ -1858,7 +1858,7 @@ mod ondecrypt {
         let dm_out = keyring
             .on_decrypt()
             .materials(empty_decryption_materials(suite_id))
-            .encrypted_data_keys(edks.to_vec())
+            .set_encrypted_data_keys(Some(edks.to_vec()))
             .send()
             .await
             .expect("on_decrypt must succeed by falling through to the matching EDK")
@@ -1887,7 +1887,7 @@ mod ondecrypt {
         let dm_out = keyring
             .on_decrypt()
             .materials(empty_decryption_materials(suite_id))
-            .encrypted_data_keys(edks.to_vec())
+            .set_encrypted_data_keys(Some(edks.to_vec()))
             .send()
             .await
             .expect("on_decrypt must succeed by falling through to the matching EDK")
@@ -1909,7 +1909,7 @@ mod ondecrypt {
         let err = keyring
             .on_decrypt()
             .materials(empty_decryption_materials(suite_id))
-            .encrypted_data_keys(Vec::new())
+            .set_encrypted_data_keys(Some(Vec::new()))
             .send()
             .await
             .expect_err("on_decrypt must fail when no EDK in the input matches the filter");
@@ -1940,7 +1940,7 @@ mod ondecrypt {
         let err = keyring
             .on_decrypt()
             .materials(empty_decryption_materials(suite_id))
-            .encrypted_data_keys(vec![foreign])
+            .set_encrypted_data_keys(Some(vec![foreign]))
             .send()
             .await
             .expect_err("an EDK from another provider MUST NOT be decrypted");
@@ -1986,7 +1986,7 @@ mod ondecrypt {
         let err = keyring
             .on_decrypt()
             .materials(empty_decryption_materials(suite_id))
-            .encrypted_data_keys(vec![truncated])
+            .set_encrypted_data_keys(Some(vec![truncated]))
             .send()
             .await
             .expect_err("on_decrypt must fail when every EDK attempt errors");
@@ -2019,7 +2019,7 @@ mod ondecrypt {
         let err = keyring
             .on_decrypt()
             .materials(empty_decryption_materials(suite_id))
-            .encrypted_data_keys(vec![truncated_4, truncated_8])
+            .set_encrypted_data_keys(Some(vec![truncated_4, truncated_8]))
             .send()
             .await
             .expect_err("on_decrypt must fail when every EDK attempt errors");
@@ -2142,7 +2142,7 @@ mod ondecrypt {
         let err = keyring
             .on_decrypt()
             .materials(empty_decryption_materials(suite_id))
-            .encrypted_data_keys(edks.to_vec())
+            .set_encrypted_data_keys(Some(edks.to_vec()))
             .send()
             .await
             // One candidate EDK, so the key store's error comes back unchanged.
@@ -2179,7 +2179,7 @@ mod ondecrypt {
         let dm_out = keyring
             .on_decrypt()
             .materials(empty_decryption_materials(suite_id))
-            .encrypted_data_keys(edks.to_vec())
+            .set_encrypted_data_keys(Some(edks.to_vec()))
             .send()
             .await
             .expect("on_decrypt with a supplier-resolved branch_key_id must succeed")

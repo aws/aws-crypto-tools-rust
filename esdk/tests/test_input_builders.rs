@@ -72,7 +72,7 @@ async fn test_encrypt_setters_take_effect() {
     let out = esdk
         .encrypt()
         .plaintext(&plaintext)
-        .encryption_context(ec())
+        .set_encryption_context(Some(ec()))
         .keyring(keyring.clone())
         .algorithm_suite_id(SUITE)
         .frame_length(frame_length())
@@ -105,7 +105,7 @@ async fn test_encrypt_setters_take_effect() {
         .set_algorithm_suite_id(None)
         .frame_length(frame_length())
         .set_frame_length(None)
-        .encryption_context(ec())
+        .set_encryption_context(Some(ec()))
         .set_encryption_context(None)
         .send()
         .await
@@ -143,7 +143,7 @@ async fn test_encrypt_stream_setters_take_effect() {
     let mut ct = Vec::new();
     let out = esdk
         .encrypt_stream()
-        .encryption_context(ec())
+        .set_encryption_context(Some(ec()))
         .keyring(keyring.clone())
         .algorithm_suite_id(SUITE)
         .frame_length(frame_length())
@@ -251,7 +251,7 @@ async fn test_decrypt_setters_take_effect() {
     let ct = esdk
         .encrypt()
         .plaintext(b"plaintext")
-        .encryption_context(ec())
+        .set_encryption_context(Some(ec()))
         .keyring(keyring.clone())
         .algorithm_suite_id(SUITE)
         .send()
@@ -263,7 +263,7 @@ async fn test_decrypt_setters_take_effect() {
     let out = esdk
         .decrypt()
         .ciphertext(&ct)
-        .encryption_context(ec())
+        .set_encryption_context(Some(ec()))
         .keyring(keyring.clone())
         .send()
         .await
@@ -274,7 +274,7 @@ async fn test_decrypt_setters_take_effect() {
     let err = esdk
         .decrypt()
         .ciphertext(&ct)
-        .encryption_context(conflicting_ec())
+        .set_encryption_context(Some(conflicting_ec()))
         .keyring(keyring.clone())
         .send()
         .await
@@ -294,7 +294,7 @@ async fn test_decrypt_setters_take_effect() {
     esdk.decrypt()
         .ciphertext(&ct)
         .keyring(keyring.clone())
-        .encryption_context(conflicting_ec())
+        .set_encryption_context(Some(conflicting_ec()))
         .set_encryption_context(None)
         .send()
         .await
@@ -324,7 +324,7 @@ async fn test_decrypt_stream_setters_take_effect() {
     let ct = esdk
         .encrypt()
         .plaintext(b"plaintext")
-        .encryption_context(ec())
+        .set_encryption_context(Some(ec()))
         .keyring(keyring.clone())
         .send()
         .await
@@ -334,7 +334,7 @@ async fn test_decrypt_stream_setters_take_effect() {
 
     let mut pt = Vec::new();
     esdk.decrypt_stream()
-        .encryption_context(ec())
+        .set_encryption_context(Some(ec()))
         .keyring(keyring.clone())
         .ciphertext(ct.as_slice())
         .plaintext(&mut pt)
@@ -345,7 +345,7 @@ async fn test_decrypt_stream_setters_take_effect() {
 
     let err = esdk
         .decrypt_stream()
-        .encryption_context(conflicting_ec())
+        .set_encryption_context(Some(conflicting_ec()))
         .keyring(keyring.clone())
         .ciphertext(ct.as_slice())
         .plaintext(Vec::new())
@@ -432,7 +432,7 @@ async fn test_getters_return_set_values() {
     assert!(b.get_algorithm_suite_id().is_none() && b.get_frame_length().is_none());
     let b = b
         .plaintext(&bytes)
-        .encryption_context(ec())
+        .set_encryption_context(Some(ec()))
         .keyring(keyring.clone())
         .cmm(cmm.clone())
         .algorithm_suite_id(SUITE)
@@ -451,7 +451,7 @@ async fn test_getters_return_set_values() {
     let b = b
         .plaintext(bytes.as_slice())
         .ciphertext(Vec::new())
-        .encryption_context(ec())
+        .set_encryption_context(Some(ec()))
         .keyring(keyring.clone())
         .cmm(cmm.clone())
         .algorithm_suite_id(SUITE)
@@ -469,7 +469,7 @@ async fn test_getters_return_set_values() {
     assert!(b.get_keyring().is_none() && b.get_cmm().is_none());
     let b = b
         .ciphertext(&bytes)
-        .encryption_context(ec())
+        .set_encryption_context(Some(ec()))
         .keyring(keyring.clone())
         .cmm(cmm.clone());
     assert_eq!(b.get_ciphertext(), &Some(bytes.as_slice()));
@@ -483,7 +483,7 @@ async fn test_getters_return_set_values() {
     let b = b
         .ciphertext(bytes.as_slice())
         .plaintext(Vec::new())
-        .encryption_context(ec())
+        .set_encryption_context(Some(ec()))
         .keyring(keyring)
         .cmm(cmm);
     assert!(b.get_ciphertext().is_some() && b.get_plaintext().is_some());

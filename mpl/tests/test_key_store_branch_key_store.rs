@@ -260,7 +260,7 @@ async fn get_key_store_info_returns_configured_values() {
         .kms_configuration(KmsConfiguration::KmsKeyArn(KMS_KEY_ARN.into()))
         .logical_key_store_name("my-logical")
         .id("my-id")
-        .grant_tokens(["grant-1", "grant-2"])
+        .set_grant_tokens(Some(["grant-1", "grant-2"].map(String::from).into()))
         .ddb_client(ddb)
         .kms_client(kms);
     let store = cfg.build().await.unwrap();

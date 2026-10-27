@@ -31,7 +31,7 @@ async fn encrypt_with(
     Client::default()
         .encrypt()
         .plaintext(b"hello")
-        .encryption_context(context())
+        .set_encryption_context(Some(context()))
         .keyring(keyring)
         .send()
         .await
@@ -315,7 +315,7 @@ async fn an_encryption_context_mismatch_names_the_key_not_the_value() {
     let err = Client::default()
         .decrypt()
         .ciphertext(&ciphertext)
-        .encryption_context(other)
+        .set_encryption_context(Some(other))
         .keyring(keyring)
         .send()
         .await
@@ -394,7 +394,7 @@ async fn create_key_condition_failure_is_an_already_exists_conflict() {
         .await
         .create_key()
         .branch_key_id(BRANCH_KEY_ID)
-        .encryption_context(EncryptionContext::new())
+        .set_encryption_context(Some(EncryptionContext::new()))
         .send()
         .await
         .unwrap_err();
@@ -609,7 +609,7 @@ async fn create_key_kms_access_denied_names_the_kms_key() {
         .await
         .create_key()
         .branch_key_id(BRANCH_KEY_ID)
-        .encryption_context(EncryptionContext::new())
+        .set_encryption_context(Some(EncryptionContext::new()))
         .send()
         .await
         .unwrap_err();

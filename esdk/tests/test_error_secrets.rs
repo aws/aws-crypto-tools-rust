@@ -74,9 +74,11 @@ impl Keyring for KnownDataKey {
         let m = input.materials();
         let m = EncryptionMaterials::builder()
             .algorithm_suite_id(m.algorithm_suite_id())
-            .encrypted_data_keys(m.encrypted_data_keys().to_vec())
-            .encryption_context(m.encryption_context().clone())
-            .required_encryption_context_keys(m.required_encryption_context_keys().clone())
+            .set_encrypted_data_keys(Some(m.encrypted_data_keys().to_vec()))
+            .set_encryption_context(Some(m.encryption_context().clone()))
+            .set_required_encryption_context_keys(Some(
+                m.required_encryption_context_keys().clone(),
+            ))
             .plaintext_data_key(PlaintextDataKey::new(vec![KEY_BYTE; 32]))
             .set_signing_key(m.signing_key().cloned())
             .set_symmetric_signing_keys(m.symmetric_signing_keys().map(<[_]>::to_vec))
@@ -92,7 +94,7 @@ impl Keyring for KnownDataKey {
         self.0
             .on_decrypt()
             .materials(materials)
-            .encrypted_data_keys(encrypted_data_keys)
+            .set_encrypted_data_keys(Some(encrypted_data_keys))
             .send()
             .await
     }
@@ -102,7 +104,7 @@ async fn ciphertext() -> Vec<u8> {
     Client::default()
         .encrypt()
         .plaintext(PLAINTEXT.as_bytes())
-        .encryption_context(context(EC_VALUE))
+        .set_encryption_context(Some(context(EC_VALUE)))
         .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
         .keyring(KnownDataKey(SharedKeyring::new(raw("name"))))
         .send()
@@ -166,7 +168,7 @@ async fn malformed_branch_key_records_contain_no_attribute_values() {
         let err = Client::default()
             .encrypt()
             .plaintext(PLAINTEXT.as_bytes())
-            .encryption_context(context(EC_VALUE))
+            .set_encryption_context(Some(context(EC_VALUE)))
             .keyring(fake.keyring().await)
             .send()
             .await
@@ -189,7 +191,7 @@ async fn kms_failures_contain_no_branch_key_bytes() {
     let err = Client::default()
         .encrypt()
         .plaintext(PLAINTEXT.as_bytes())
-        .encryption_context(context(EC_VALUE))
+        .set_encryption_context(Some(context(EC_VALUE)))
         .keyring(fake.keyring().await)
         .send()
         .await
@@ -203,7 +205,7 @@ async fn hierarchical_decrypt_error(fake: FakeAws) -> Error {
     let ciphertext = Client::default()
         .encrypt()
         .plaintext(PLAINTEXT.as_bytes())
-        .encryption_context(context(EC_VALUE))
+        .set_encryption_context(Some(context(EC_VALUE)))
         .keyring(FakeAws::ok().keyring().await)
         .send()
         .await
