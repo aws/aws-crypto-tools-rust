@@ -14,7 +14,7 @@ use crate::ddb::{self, Item};
 use crate::error::{Error, ser_err, val_err};
 use crate::structured::util::{FOOTER_FIELD, HEADER_FIELD};
 use crate::structured::{self, DEFAULT_SUITE};
-use crate::table_config::TableConfig;
+use crate::table_config::{TableConfig, check_attribute_name};
 use crate::types::{
     AlgorithmSuiteId, CryptoAction, EncryptedDataKey, EncryptionContext, PlaintextOverride,
 };
@@ -227,6 +227,9 @@ impl EncryptItemOutput {
 }
 
 async fn encrypt_item(config: &Config, item: Item) -> Result<EncryptItemOutput, Error> {
+    for name in item.keys() {
+        check_attribute_name("plaintext_item", name)?;
+    }
     if let Some(msg) = config.key_missing(&item, "Encrypt") {
         return Err(val_err(msg));
     }

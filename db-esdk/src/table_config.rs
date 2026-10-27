@@ -117,6 +117,33 @@ impl TableConfig {
     }
 }
 
+/// The most characters a DynamoDB attribute name may have.
+pub(crate) const MAX_ATTRIBUTE_NAME_LEN: usize = 65535;
+
+/// The most characters a DynamoDB key attribute name may have.
+const MAX_KEY_SCHEMA_NAME_LEN: usize = 255;
+
+/// Reject `name` in `field` when it is not a valid DynamoDB attribute name.
+pub(crate) fn check_attribute_name(field: &str, name: &str) -> Result<(), Error> {
+    if name.encode_utf16().count() > MAX_ATTRIBUTE_NAME_LEN {
+        return Err(val_err(format!(
+            "{field} has an attribute name longer than {MAX_ATTRIBUTE_NAME_LEN} characters"
+        )));
+    }
+    Ok(())
+}
+
+/// Reject `name` in `field` when it is not a valid DynamoDB key attribute name.
+fn check_key_schema_name(field: &str, name: &str) -> Result<(), Error> {
+    let len = name.encode_utf16().count();
+    if !(1..=MAX_KEY_SCHEMA_NAME_LEN).contains(&len) {
+        return Err(val_err(format!(
+            "{field} must have between 1 and {MAX_KEY_SCHEMA_NAME_LEN} characters"
+        )));
+    }
+    Ok(())
+}
+
 /// A builder for [`TableConfig`].
 #[derive(Clone, Debug, Default)]
 #[non_exhaustive]
@@ -306,14 +333,28 @@ impl TableConfigBuilder {
     /// # Errors
     ///
     /// A `Validation` error when the partition key name or the attribute actions are missing,
+    /// when a key name is empty or longer than 255 characters,
+    /// when an attribute name is longer than 65535 characters,
     /// or when not exactly one of a keyring and a CMM is set.
     pub fn build(self) -> Result<TableConfig, Error> {
         let partition_key_name = self
             .partition_key_name
             .ok_or_else(|| val_err("partition_key_name is required"))?;
+        check_key_schema_name("partition_key_name", &partition_key_name)?;
+        if let Some(sort) = &self.sort_key_name {
+            check_key_schema_name("sort_key_name", sort)?;
+        }
         let attribute_actions_on_encrypt = self
             .attribute_actions_on_encrypt
             .ok_or_else(|| val_err("attribute_actions_on_encrypt is required"))?;
+        for name in attribute_actions_on_encrypt.keys() {
+            check_attribute_name("attribute_actions_on_encrypt", name)?;
+        }
+        if let Some(names) = &self.allowed_unsigned_attributes {
+            for name in names {
+                check_attribute_name("allowed_unsigned_attributes", name)?;
+            }
+        }
         let materials = match (self.keyring, self.cmm) {
             (Some(_), Some(_)) => return Err(val_err("Cannot provide both a keyring and a CMM")),
             (None, None) => return Err(val_err("Must provide either a keyring or a CMM")),
