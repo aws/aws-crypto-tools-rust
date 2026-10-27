@@ -1273,7 +1273,7 @@ fn encrypt(input: &ffi::EncryptInput) -> Result<ffi::EncryptOutput, String> {
         encryption_context: encryption_context_core_to_target(output.encryption_context()),
         //= spec/shim/esdk-shim.md#encrypt-outputs
         //# - MUST return the core ESDK's ciphertext unmodified.
-        ciphertext: output.into_ciphertext(),
+        ciphertext: output.into_ciphertext().into_inner(),
     })
 }
 
@@ -1306,7 +1306,7 @@ fn decrypt(input: &ffi::DecryptInput) -> Result<ffi::DecryptOutput, String> {
         encryption_context: encryption_context_core_to_target(output.encryption_context()),
         //= spec/shim/esdk-shim.md#decrypt-outputs
         //# - MUST return the core ESDK's plaintext unmodified.
-        plaintext: output.into_plaintext(),
+        plaintext: output.into_plaintext().into_inner(),
     })
 }
 

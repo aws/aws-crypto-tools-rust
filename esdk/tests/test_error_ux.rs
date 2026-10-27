@@ -37,6 +37,7 @@ async fn encrypt_with(
         .await
         .unwrap()
         .into_ciphertext()
+        .into_inner()
 }
 
 async fn decrypt_with(
@@ -49,7 +50,7 @@ async fn decrypt_with(
         .keyring(keyring)
         .send()
         .await
-        .map(|out| out.into_plaintext())
+        .map(|out| out.into_plaintext().into_inner())
 }
 
 /// The error from decrypting, against `fake`, a message encrypted under the fake's branch key.
@@ -289,7 +290,8 @@ async fn a_tampered_frame_is_cryptographic() {
         .send()
         .await
         .unwrap()
-        .into_ciphertext();
+        .into_ciphertext()
+        .into_inner();
     // The last content byte of the final frame, just before its 16-byte tag.
     let i = ciphertext.len() - 17;
     ciphertext[i] ^= 1;

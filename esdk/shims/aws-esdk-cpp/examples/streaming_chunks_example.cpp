@@ -33,7 +33,7 @@ const char* PLAINTEXT_FILE = "streaming_chunks_example_plaintext.txt";
 const char* CIPHERTEXT_FILE = "streaming_chunks_example_ciphertext.bin";
 const char* DECRYPTED_FILE = "streaming_chunks_example_decrypted.txt";
 
-void append(std::vector<std::uint8_t>& dst, const Aws::Esdk::Bytes& src) {
+void append(std::vector<std::uint8_t>& dst, const Aws::Esdk::Plaintext& src) {
     dst.insert(dst.end(), src.begin(), src.end());
 }
 
@@ -84,7 +84,7 @@ int main() {
             char chunk[512];
             while (in.read(chunk, sizeof chunk), in.gcount() > 0) {
                 // Feed each chunk.
-                Aws::Esdk::Bytes produced =
+                Aws::Esdk::Ciphertext produced =
                     // write() returns the ciphertext produced so far, possibly empty until a frame fills.
                     enc.write(std::string_view(chunk, static_cast<std::size_t>(in.gcount())));
                 // You can forward the ciphertext produced so far to an output stream
@@ -96,7 +96,7 @@ int main() {
             // Check for EOF first so a truncated read never becomes a valid message.
             if (!in.eof() || in.bad())
                 throw std::runtime_error("failed reading plaintext file");
-            Aws::Esdk::Bytes trailing = enc.finish().trailing_output;
+            Aws::Esdk::Ciphertext trailing = enc.finish().trailing_output;
             out.write(reinterpret_cast<const char*>(trailing.data()), trailing.size());
             if (!out) throw std::runtime_error("failed writing ciphertext file");
         }

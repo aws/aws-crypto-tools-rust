@@ -143,6 +143,106 @@ const REDACTED: &str = "*** Sensitive Data Redacted ***";
 pub(crate) const DEFAULT_COMMITMENT_POLICY: CommitmentPolicy =
     CommitmentPolicy::RequireEncryptRequireDecrypt;
 
+/// Implements the shared read-only byte-buffer interface of an output newtype.
+macro_rules! output_bytes {
+    ($name:ident) => {
+        impl $name {
+            /// Consume the value and return its bytes.
+            #[must_use]
+            pub fn into_inner(self) -> Vec<u8> {
+                self.0
+            }
+
+            /// The number of bytes.
+            #[must_use]
+            pub const fn len(&self) -> usize {
+                self.0.len()
+            }
+
+            /// Whether there are no bytes.
+            #[must_use]
+            pub const fn is_empty(&self) -> bool {
+                self.0.is_empty()
+            }
+        }
+
+        impl std::ops::Deref for $name {
+            type Target = [u8];
+
+            fn deref(&self) -> &[u8] {
+                &self.0
+            }
+        }
+
+        impl AsRef<[u8]> for $name {
+            fn as_ref(&self) -> &[u8] {
+                &self.0
+            }
+        }
+
+        impl PartialEq<[u8]> for $name {
+            fn eq(&self, other: &[u8]) -> bool {
+                self.0 == other
+            }
+        }
+
+        impl PartialEq<&[u8]> for $name {
+            fn eq(&self, other: &&[u8]) -> bool {
+                self.0 == *other
+            }
+        }
+
+        impl<const N: usize> PartialEq<[u8; N]> for $name {
+            fn eq(&self, other: &[u8; N]) -> bool {
+                self.0 == other
+            }
+        }
+
+        impl PartialEq<Vec<u8>> for $name {
+            fn eq(&self, other: &Vec<u8>) -> bool {
+                self.0 == *other
+            }
+        }
+    };
+}
+
+/// Decrypted bytes returned by [`Client::decrypt`](crate::Client::decrypt).
+///
+/// Read it as `&[u8]` through [`Deref`](std::ops::Deref) or [`AsRef`], or take
+/// ownership of the bytes with [`into_inner`](Self::into_inner).
+/// `Debug` does not print the bytes.
+#[derive(Clone, PartialEq, Eq)]
+pub struct Plaintext(Vec<u8>);
+
+impl Plaintext {
+    pub(crate) const fn new(bytes: Vec<u8>) -> Self {
+        Self(bytes)
+    }
+}
+
+output_bytes!(Plaintext);
+
+impl std::fmt::Debug for Plaintext {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("Plaintext").field(&REDACTED).finish()
+    }
+}
+
+/// An encrypted message returned by [`Client::encrypt`](crate::Client::encrypt).
+///
+/// Read it as `&[u8]` through [`Deref`](std::ops::Deref) or [`AsRef`], or take
+/// ownership of the bytes with [`into_inner`](Self::into_inner).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Ciphertext(Vec<u8>);
+
+impl Ciphertext {
+    pub(crate) const fn new(bytes: Vec<u8>) -> Self {
+        Self(bytes)
+    }
+}
+
+output_bytes!(Ciphertext);
+
 #[derive(Debug, PartialEq, Eq, Clone)]
 #[non_exhaustive]
 /// Output of [`Client::encrypt`](crate::Client::encrypt).
@@ -164,7 +264,7 @@ pub struct EncryptOutput {
     /// Algorithm Suite. See <https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/supported-algorithms.html>
     pub(crate) algorithm_suite_id: AlgorithmSuiteId,
     /// Encrypted message bytes (the serialized AWS Encryption SDK message).
-    pub(crate) ciphertext: Vec<u8>,
+    pub(crate) ciphertext: Ciphertext,
     /// Encryption context associated with the encrypted message.
     pub(crate) encryption_context: EncryptionContext,
 }
@@ -184,13 +284,13 @@ impl EncryptOutput {
 
     /// The encrypted message bytes.
     #[must_use]
-    pub fn ciphertext(&self) -> &[u8] {
+    pub const fn ciphertext(&self) -> &Ciphertext {
         &self.ciphertext
     }
 
     /// Consume the output and return the ciphertext.
     #[must_use]
-    pub fn into_ciphertext(self) -> Vec<u8> {
+    pub fn into_ciphertext(self) -> Ciphertext {
         self.ciphertext
     }
 }
@@ -217,7 +317,7 @@ impl EncryptStreamOutput {
         &self.encryption_context
     }
 }
-#[derive(PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 #[non_exhaustive]
 /// Output of [`Client::decrypt`](crate::Client::decrypt).
 pub struct DecryptOutput {
@@ -228,19 +328,9 @@ pub struct DecryptOutput {
     /// Decrypted plaintext data
     //= spec/client-apis/decrypt.md#plaintext
     //= type=implication
-    //= reason=Vec<u8> is a sequence of bytes by definition
+    //= reason=Plaintext wraps a Vec<u8>, a sequence of bytes by definition
     //# This MUST be a sequence of bytes.
-    pub(crate) plaintext: Vec<u8>,
-}
-
-impl std::fmt::Debug for DecryptOutput {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("DecryptOutput")
-            .field("algorithm_suite_id", &self.algorithm_suite_id)
-            .field("encryption_context", &self.encryption_context)
-            .field("plaintext", &REDACTED)
-            .finish()
-    }
+    pub(crate) plaintext: Plaintext,
 }
 
 impl DecryptOutput {
@@ -258,13 +348,13 @@ impl DecryptOutput {
 
     /// The decrypted plaintext.
     #[must_use]
-    pub fn plaintext(&self) -> &[u8] {
+    pub const fn plaintext(&self) -> &Plaintext {
         &self.plaintext
     }
 
     /// Consume the output and return the plaintext.
     #[must_use]
-    pub fn into_plaintext(self) -> Vec<u8> {
+    pub fn into_plaintext(self) -> Plaintext {
         self.plaintext
     }
 }
