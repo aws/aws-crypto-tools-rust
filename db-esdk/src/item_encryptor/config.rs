@@ -16,9 +16,9 @@ use crate::structured::util::{
 use crate::table_config::{Materials, TableConfig};
 use crate::types::{AlgorithmSuiteId, CryptoAction, PlaintextOverride};
 
-const TABLE_NAME: &str = "aws-crypto-table-name";
-const PARTITION_NAME: &str = "aws-crypto-partition-name";
-const SORT_NAME: &str = "aws-crypto-sort-name";
+pub(crate) const TABLE_NAME: &str = "aws-crypto-table-name";
+pub(crate) const PARTITION_NAME: &str = "aws-crypto-partition-name";
+pub(crate) const SORT_NAME: &str = "aws-crypto-sort-name";
 
 /// A table configuration resolved for encrypting and decrypting items.
 #[derive(Clone, Debug)]

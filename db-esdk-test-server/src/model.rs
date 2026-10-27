@@ -148,6 +148,8 @@ pub struct Keyring {
     pub aws_kms: Option<AwsKmsKeyringConfig>,
     #[serde(rename = "RawAes", default)]
     pub raw_aes: Option<RawAesKeyringConfig>,
+    #[serde(rename = "AwsKmsHierarchical", default)]
+    pub aws_kms_hierarchical: Option<AwsKmsHierarchicalKeyringConfig>,
     #[serde(flatten)]
     pub other: HashMap<String, ciborium::Value>,
 }
@@ -158,6 +160,32 @@ pub struct AwsKmsKeyringConfig {
     pub kms_key_id: String,
     #[serde(rename = "grantTokens", default)]
     pub grant_tokens: Option<Vec<String>>,
+}
+
+/// A hierarchical keyring over a DynamoDB branch key store.
+/// Exactly one of `branch_key_id` and `branch_key_id_supplier` is set.
+#[derive(Debug, Deserialize)]
+pub struct AwsKmsHierarchicalKeyringConfig {
+    #[serde(rename = "branchKeyId", default)]
+    pub branch_key_id: Option<String>,
+    #[serde(rename = "branchKeyIdSupplier", default)]
+    pub branch_key_id_supplier: Option<DdbKeyBranchKeyIdSupplier>,
+    #[serde(rename = "keyStoreTableName")]
+    pub key_store_table_name: String,
+    #[serde(rename = "logicalKeyStoreName")]
+    pub logical_key_store_name: String,
+    #[serde(rename = "kmsKeyArn")]
+    pub kms_key_arn: String,
+    #[serde(rename = "ttlSeconds")]
+    pub ttl_seconds: i64,
+}
+
+/// Route each item to a branch key by the String value of one of its key attributes.
+#[derive(Debug, Deserialize)]
+pub struct DdbKeyBranchKeyIdSupplier {
+    #[serde(rename = "routeAttribute")]
+    pub route_attribute: String,
+    pub routes: HashMap<String, String>,
 }
 
 #[derive(Debug, Deserialize)]

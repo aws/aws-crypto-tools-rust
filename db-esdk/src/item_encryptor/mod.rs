@@ -3,7 +3,7 @@
 
 //! Encrypt and decrypt DynamoDB items directly, with no call to DynamoDB.
 
-mod config;
+pub(crate) mod config;
 
 use std::collections::HashMap;
 use std::sync::Arc;

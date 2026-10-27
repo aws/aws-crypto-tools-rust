@@ -2,13 +2,13 @@
   "supportedFeatures": [
     "raw-aes",
     "aws-kms",
-    "plaintext-override"
+    "plaintext-override",
+    "aws-kms-hierarchical"
   ],
   "unsupportedFeatures": [
     "raw-rsa",
     "aws-kms-mrk",
     "aws-kms-rsa",
-    "aws-kms-hierarchical",
     "required-encryption-context-cmm",
     "ddb-transforms",
     "searchable-encryption",

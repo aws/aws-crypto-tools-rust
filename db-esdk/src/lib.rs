@@ -25,6 +25,7 @@
 //! The keyrings, CMMs, caches, and key store come from the AWS Cryptographic Material Providers
 //! Library, re-exported here as [`keyring`], [`cmm`], [`cmc`], [`key_store`], and [`mpl`].
 
+mod branch_key_supplier;
 mod ddb;
 pub mod error;
 mod item_encryptor;
@@ -41,7 +42,18 @@ pub use table_config::{TableConfig, TableConfigBuilder};
 
 /// The AWS Cryptographic Material Providers Library this crate is built on.
 pub use aws_crypto_mpl as mpl;
-pub use aws_crypto_mpl::{cmc, cmm, key_store, keyring};
+pub use aws_crypto_mpl::{cmc, cmm, key_store};
+
+/// Keyrings: the Material Providers Library's, plus [`ItemKeySupplier`](keyring::ItemKeySupplier),
+/// which picks a [`HierarchicalKeyring`](keyring::HierarchicalKeyring)'s branch key from each
+/// item's primary key.
+pub mod keyring {
+    pub use crate::branch_key_supplier::{
+        GetBranchKeyIdFromItemKeyInput, GetBranchKeyIdFromItemKeyInputBuilder,
+        ItemKeyBranchKeySupplier, ItemKeySupplier,
+    };
+    pub use aws_crypto_mpl::keyring::*;
+}
 
 /// Put `#[async_trait]` on an `impl` of a [`Keyring`](keyring::Keyring) or [`Cmm`](cmm::Cmm).
 pub use aws_crypto_mpl::async_trait;
