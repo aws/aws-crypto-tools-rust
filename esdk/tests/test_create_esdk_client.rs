@@ -205,7 +205,7 @@ async fn test_encrypt_decrypt_accepts_all_optional_inputs() {
         //= type=test
         //= reason=the encryption context is populated; encrypt() succeeds
         //# - Encrypt operation input MUST accept an optional [Encryption Context](#encryption-context) argument.
-        .encryption_context(ec.clone())
+        .set_encryption_context(Some(ec.clone()))
         //= spec/client-apis/encrypt.md#input
         //= type=test
         //= reason=a keyring is set; encrypt() succeeds
@@ -232,7 +232,7 @@ async fn test_encrypt_decrypt_accepts_all_optional_inputs() {
         //= type=test
         //= reason=the encryption context is populated; decrypt() succeeds
         //# - Decrypt operation input MUST accept an optional [Encryption Context](#encryption-context) argument.
-        .encryption_context(ec.clone())
+        .set_encryption_context(Some(ec.clone()))
         //= spec/client-apis/decrypt.md#input
         //= type=test
         //= reason=a keyring is set; decrypt() succeeds
@@ -526,7 +526,7 @@ async fn test_esdk_encrypt_decrypt_round_trip() {
     let ct = esdk
         .encrypt()
         .plaintext(plaintext)
-        .encryption_context(ec.clone())
+        .set_encryption_context(Some(ec.clone()))
         .keyring(keyring.clone())
         .send()
         .await
@@ -539,7 +539,7 @@ async fn test_esdk_encrypt_decrypt_round_trip() {
     let pt = esdk
         .decrypt()
         .ciphertext(ct.ciphertext())
-        .encryption_context(ec)
+        .set_encryption_context(Some(ec))
         .keyring(keyring)
         .send()
         .await

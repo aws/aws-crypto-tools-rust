@@ -47,7 +47,7 @@ async fn test_signature_uses_signing_algorithm() {
     let output = Client::default()
         .encrypt()
         .plaintext(b"algorithm choice test")
-        .encryption_context(aws_esdk::types::EncryptionContext::new())
+        .set_encryption_context(Some(aws_esdk::types::EncryptionContext::new()))
         .keyring(keyring)
         .algorithm_suite_id(
             aws_esdk::types::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,
@@ -115,7 +115,7 @@ async fn test_signature_key_is_signing_key() {
     let output = Client::default()
         .encrypt()
         .plaintext(b"signing key direct test")
-        .encryption_context(aws_esdk::types::EncryptionContext::new())
+        .set_encryption_context(Some(aws_esdk::types::EncryptionContext::new()))
         .keyring(keyring)
         .algorithm_suite_id(
             aws_esdk::types::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,
@@ -306,7 +306,7 @@ async fn test_footer_equals_calculated() {
     let output = Client::default()
         .encrypt()
         .plaintext(b"footer equals calculated test")
-        .encryption_context(aws_esdk::types::EncryptionContext::new())
+        .set_encryption_context(Some(aws_esdk::types::EncryptionContext::new()))
         .keyring(keyring.clone())
         .algorithm_suite_id(
             aws_esdk::types::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,
@@ -343,7 +343,7 @@ async fn test_footer_equals_calculated() {
     let pt = Client::default()
         .decrypt()
         .ciphertext(ct)
-        .encryption_context(aws_esdk::types::EncryptionContext::new())
+        .set_encryption_context(Some(aws_esdk::types::EncryptionContext::new()))
         .keyring(keyring)
         .send()
         .await
@@ -381,7 +381,7 @@ async fn test_footer_serialized_releases_all_bytes() {
     let ct = Client::default()
         .encrypt()
         .plaintext(b"release all bytes test")
-        .encryption_context(aws_esdk::types::EncryptionContext::new())
+        .set_encryption_context(Some(aws_esdk::types::EncryptionContext::new()))
         .keyring(keyring.clone())
         .algorithm_suite_id(
             aws_esdk::types::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,

@@ -57,16 +57,20 @@ pub struct GetBranchKeyIdInputBuilder {
 }
 
 impl GetBranchKeyIdInputBuilder {
-    /// Set the encryption context of the message being encrypted or decrypted.
+    /// Adds a key-value pair to the encryption context of the message being encrypted or decrypted.
+    ///
+    /// To override the contents of this collection use [`set_encryption_context`](Self::set_encryption_context).
     /// Required.
     #[must_use]
-    pub fn encryption_context(mut self, encryption_context: impl Into<EncryptionContext>) -> Self {
-        self.encryption_context = Some(encryption_context.into());
+    pub fn encryption_context(mut self, k: impl Into<String>, v: impl Into<String>) -> Self {
+        self.encryption_context
+            .get_or_insert_with(Default::default)
+            .insert(k, v);
         self
     }
 
     /// Set or clear the encryption context from an `Option`.
-    /// To set a value, use [`Self::encryption_context`].
+    /// To add one entry, use [`Self::encryption_context`].
     #[must_use]
     pub fn set_encryption_context(mut self, encryption_context: Option<EncryptionContext>) -> Self {
         self.encryption_context = encryption_context;
@@ -224,15 +228,17 @@ impl GetBranchKeyIdFluentBuilder {
         &self.inner
     }
 
-    /// Set the encryption context of the message being encrypted or decrypted.
+    /// Adds a key-value pair to the encryption context of the message being encrypted or decrypted.
+    ///
+    /// To override the contents of this collection use [`set_encryption_context`](Self::set_encryption_context).
     /// Required.
-    pub fn encryption_context(mut self, encryption_context: impl Into<EncryptionContext>) -> Self {
-        self.inner = self.inner.encryption_context(encryption_context);
+    pub fn encryption_context(mut self, k: impl Into<String>, v: impl Into<String>) -> Self {
+        self.inner = self.inner.encryption_context(k, v);
         self
     }
 
     /// Set or clear the encryption context from an `Option`.
-    /// To set a value, use [`Self::encryption_context`].
+    /// To add one entry, use [`Self::encryption_context`].
     pub fn set_encryption_context(mut self, encryption_context: Option<EncryptionContext>) -> Self {
         self.inner = self.inner.set_encryption_context(encryption_context);
         self
@@ -838,7 +844,7 @@ impl HierarchicalKeyring {
         // the supplier path — a static branch key id never pays for it.
         Ok(supplier
             .get_branch_key_id()
-            .encryption_context(encryption_context.clone())
+            .set_encryption_context(Some(encryption_context.clone()))
             .send()
             .await?
             .into_branch_key_id())

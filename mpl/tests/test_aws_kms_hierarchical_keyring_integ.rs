@@ -166,7 +166,7 @@ fn fresh_materials() -> EncryptionMaterials {
     ec.insert("region", "us-west-2");
     EncryptionMaterials::builder()
         .algorithm_suite_id(non_signing_suite())
-        .encryption_context(ec)
+        .set_encryption_context(Some(ec))
         .build()
         .unwrap()
 }
@@ -250,13 +250,13 @@ async fn integ_on_decrypt_round_trips_through_real_key_store_and_kms() {
     // used; the AAD bound into the EDK ciphertext is computed over this EC.
     let dm_in = DecryptionMaterials::builder()
         .algorithm_suite_id(non_signing_suite())
-        .encryption_context(ec)
+        .set_encryption_context(Some(ec))
         .build()
         .unwrap();
     let dm_out = keyring
         .on_decrypt()
         .materials(dm_in)
-        .encrypted_data_keys(edks.to_vec())
+        .set_encrypted_data_keys(Some(edks.to_vec()))
         .send()
         .await
         .expect("on_decrypt against real key store must succeed for an EDK we just produced")
@@ -377,13 +377,13 @@ async fn run_round_trip(
 
     let dm_in = DecryptionMaterials::builder()
         .algorithm_suite_id(suite_id)
-        .encryption_context(ec)
+        .set_encryption_context(Some(ec))
         .build()
         .unwrap();
     let dm_out = keyring
         .on_decrypt()
         .materials(dm_in)
-        .encrypted_data_keys(edks.to_vec())
+        .set_encrypted_data_keys(Some(edks.to_vec()))
         .send()
         .await
         .expect("on_decrypt against real key store must succeed for an EDK we just produced")
@@ -417,7 +417,7 @@ async fn integ_on_encrypt_with_pre_existing_pdk_round_trips() {
     ec.insert("region", "us-west-2");
     let materials_in = EncryptionMaterials::builder()
         .algorithm_suite_id(suite)
-        .encryption_context(ec)
+        .set_encryption_context(Some(ec))
         .plaintext_data_key(aws_crypto_mpl::types::PlaintextDataKey::new(zeroed.clone()))
         .build()
         .unwrap();

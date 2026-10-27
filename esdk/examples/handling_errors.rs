@@ -203,7 +203,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     match key_store
         .create_key()
         .branch_key_id(BRANCH_KEY_ID)
-        .encryption_context(branch_key_context)
+        .set_encryption_context(Some(branch_key_context))
         .send()
         .await
     {
