@@ -13,6 +13,7 @@
 
 mod default_cmm;
 mod fluent_builders;
+mod required_encryption_context_cmm;
 mod types;
 
 use crate::Error;
@@ -22,6 +23,9 @@ use async_trait::async_trait;
 
 pub use default_cmm::DefaultCmm;
 pub use fluent_builders::{DecryptMaterialsFluentBuilder, GetEncryptionMaterialsFluentBuilder};
+pub use required_encryption_context_cmm::{
+    RequiredEncryptionContextCmm, RequiredEncryptionContextCmmBuilder,
+};
 pub use types::{
     DecryptMaterialsInput, DecryptMaterialsInputBuilder, DecryptMaterialsOutput,
     DecryptMaterialsOutputBuilder, GetEncryptionMaterialsInput, GetEncryptionMaterialsInputBuilder,
