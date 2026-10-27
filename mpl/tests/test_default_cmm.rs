@@ -182,6 +182,30 @@ async fn test_get_encryption_materials_no_suite_uses_commitment_policy_default()
 }
 
 #[tokio::test]
+async fn test_get_encryption_materials_forbid_no_suite_defaults_to_hkdf_sha384_ecdsa_p384() {
+    let keyring = MockKeyring::new();
+    let cmm = SharedCmm::new(DefaultCmm::new(keyring));
+    let request = cmm
+        .get_encryption_materials()
+        .set_encryption_context(Some(EncryptionContext::new()))
+        .commitment_policy(forbid_policy());
+    let materials = request.send().await.unwrap().into_encryption_materials();
+    assert_eq!(
+        materials.algorithm_suite_id(),
+        AlgorithmSuiteId::Esdk(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384)
+    );
+    // A signing suite: the CMM generates a signing key and publishes the
+    // verification key in the encryption context.
+    assert!(materials.signing_key().is_some());
+    assert!(
+        materials
+            .encryption_context()
+            .get("aws-crypto-public-key")
+            .is_some()
+    );
+}
+
+#[tokio::test]
 async fn test_get_encryption_materials_unsupported_suite_for_policy_fails() {
     let keyring = MockKeyring::new();
     let cmm = SharedCmm::new(DefaultCmm::new(keyring));
