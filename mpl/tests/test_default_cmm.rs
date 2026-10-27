@@ -810,3 +810,89 @@ async fn test_decrypt_materials_non_signing_suite_rejects_public_key_from_reprod
 
     assert!(err.is_validation(), "{:?}", err);
 }
+
+// The DBE commitment policy and suites through the default CMM (Dafny DefaultCMM.dfy):
+// the ECDSA suite gets a signing key and `aws-crypto-public-key`, the keyring adds a
+// symmetric signing key per EDK, and decryption recovers the same keys from the
+// stored context plus the reproduced one.
+#[tokio::test]
+async fn dbe_suite_round_trips_with_signing_keys() {
+    use aws_crypto_mpl::keyring::RawAesKeyring;
+    use aws_crypto_mpl::types::{AesWrappingAlg, DbeAlgorithmSuiteId, DbeCommitmentPolicy};
+    let keyring = RawAesKeyring::builder()
+        .key_namespace("ns")
+        .key_name("name")
+        .wrapping_key(vec![3u8; 32])
+        .wrapping_alg(AesWrappingAlg::AlgAes256GcmIv12Tag16)
+        .build()
+        .unwrap();
+    let cmm = SharedCmm::new(DefaultCmm::new(keyring));
+    let policy = CommitmentPolicy::Dbe(DbeCommitmentPolicy::RequireEncryptRequireDecrypt);
+    let suite = AlgorithmSuiteId::Dbe(
+        DbeAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384SymsigHmacSha384,
+    );
+    let mut ec = EncryptionContext::new();
+    ec.insert("stored", "a");
+    ec.insert("required", "b");
+
+    let enc = cmm
+        .get_encryption_materials()
+        .encryption_context(ec)
+        .commitment_policy(policy)
+        .required_encryption_context_keys(["required"])
+        .send()
+        .await
+        .unwrap()
+        .into_encryption_materials();
+    assert_eq!(
+        enc.algorithm_suite_id(),
+        suite,
+        "the DBE policy defaults to the ECDSA suite"
+    );
+    assert!(enc.signing_key().is_some());
+    assert!(
+        enc.encryption_context()
+            .contains_key("aws-crypto-public-key")
+    );
+    assert_eq!(enc.symmetric_signing_keys().unwrap().len(), 1);
+
+    // The stored context leaves out the required key; the reproduced context supplies it.
+    let mut stored = enc.encryption_context().clone();
+    stored.remove("required");
+    let mut reproduced = EncryptionContext::new();
+    reproduced.insert("required", "b");
+    let dec = cmm
+        .decrypt_materials()
+        .algorithm_suite_id(suite)
+        .commitment_policy(policy)
+        .encrypted_data_keys(enc.encrypted_data_keys().to_vec())
+        .encryption_context(stored)
+        .reproduced_encryption_context(reproduced)
+        .send()
+        .await
+        .unwrap()
+        .into_decryption_materials();
+    assert!(
+        dec.plaintext_data_key()
+            .unwrap()
+            .ct_eq(enc.plaintext_data_key().unwrap())
+    );
+    assert!(
+        dec.symmetric_signing_key()
+            .unwrap()
+            .ct_eq(&enc.symmetric_signing_keys().unwrap()[0])
+    );
+    assert!(dec.verification_key().is_some());
+    assert_eq!(dec.encryption_context(), enc.encryption_context());
+
+    // The DBE policy refuses an ESDK suite.
+    let err = cmm
+        .get_encryption_materials()
+        .encryption_context(EncryptionContext::new())
+        .commitment_policy(policy)
+        .algorithm_suite_id(signing_suite())
+        .send()
+        .await
+        .unwrap_err();
+    assert!(err.is_validation(), "{err:?}");
+}

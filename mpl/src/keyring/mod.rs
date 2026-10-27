@@ -86,6 +86,7 @@ use std::borrow::Cow;
 
 use async_trait::async_trait;
 
+pub(crate) mod edk_wrapping;
 mod fluent_builders;
 mod raw_aes_keyring;
 mod types;
