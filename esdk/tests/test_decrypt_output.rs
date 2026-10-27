@@ -25,7 +25,8 @@ async fn test_decrypt_output_includes_encryption_context() {
         .send()
         .await
         .unwrap()
-        .into_ciphertext();
+        .into_ciphertext()
+        .into_inner();
 
     let result = Client::default()
         .decrypt()
@@ -55,7 +56,8 @@ async fn test_decrypt_output_includes_algorithm_suite() {
         .send()
         .await
         .unwrap()
-        .into_ciphertext();
+        .into_ciphertext()
+        .into_inner();
 
     let result = Client::default()
         .decrypt()
@@ -86,7 +88,8 @@ async fn test_decrypt_no_unauthenticated_data_released() {
         .send()
         .await
         .unwrap()
-        .into_ciphertext();
+        .into_ciphertext()
+        .into_inner();
 
     // Tamper the first regular frame's auth tag: [seq_num(4)][IV(12)][content(10)][tag(16)].
     let body_start = find_body_start(&valid_ct, 10).expect("must find body");
@@ -136,7 +139,8 @@ async fn test_streaming_callers_must_discard_on_failure() {
         .send()
         .await
         .unwrap()
-        .into_ciphertext();
+        .into_ciphertext()
+        .into_inner();
 
     // Tamper with the last few bytes (signature area) to cause verification failure.
     let mut tampered_ct = valid_ct.clone();

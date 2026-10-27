@@ -94,10 +94,10 @@ int main() {
 
 `encrypt` and `decrypt` accept the payload as a `std::vector`, a `std::string_view`, a
 `std::span` (when available), or a raw pointer and length; `decrypt` also accepts
-`Aws::Esdk::Bytes`. You can pass a buffer (for example an mmap'd file) without
+`Aws::Esdk::Ciphertext`. You can pass a buffer (for example an mmap'd file) without
 copying it first. The streams' `write()` takes the same forms except `std::span`:
 a `std::vector`, a `std::string_view`, or a raw pointer and length, and the decrypt
-stream also takes `Aws::Esdk::Bytes`.
+stream also takes `Aws::Esdk::Ciphertext`.
 
 ## Streaming
 

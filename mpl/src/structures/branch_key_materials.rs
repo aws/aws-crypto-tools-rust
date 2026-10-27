@@ -6,6 +6,7 @@
 use super::encryption_context::EncryptionContext;
 use crate::Error;
 use crate::builder::required;
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 /// Materials for establishing a key hierarchy to reuse a data key that wraps other data keys.
 ///
@@ -165,20 +166,20 @@ impl BranchKeyMaterialsBuilder {
     /// # Errors
     ///
     /// - [`Validation`](crate::Error::Validation): a field is unset, or `branch_key_id` or `branch_key_version` is empty.
-    pub fn build(self) -> Result<BranchKeyMaterials, Error> {
-        let branch_key_id = required(self.branch_key_id, "branch_key_id")?;
+    pub fn build(mut self) -> Result<BranchKeyMaterials, Error> {
+        let branch_key_id = required(self.branch_key_id.take(), "branch_key_id")?;
         if branch_key_id.is_empty() {
             return Err(Error::validation("branch_key_id must not be empty"));
         }
-        let branch_key_version = required(self.branch_key_version, "branch_key_version")?;
+        let branch_key_version = required(self.branch_key_version.take(), "branch_key_version")?;
         if branch_key_version.is_empty() {
             return Err(Error::validation("branch_key_version must not be empty"));
         }
         Ok(BranchKeyMaterials {
-            branch_key: required(self.branch_key, "branch_key")?,
+            branch_key: required(self.branch_key.take(), "branch_key")?,
             branch_key_id,
             branch_key_version,
-            encryption_context: required(self.encryption_context, "encryption_context")?,
+            encryption_context: required(self.encryption_context.take(), "encryption_context")?,
         })
     }
 }
@@ -196,3 +197,19 @@ impl std::fmt::Debug for BranchKeyMaterialsBuilder {
             .finish()
     }
 }
+
+impl Drop for BranchKeyMaterials {
+    fn drop(&mut self) {
+        self.branch_key.zeroize();
+    }
+}
+
+impl ZeroizeOnDrop for BranchKeyMaterials {}
+
+impl Drop for BranchKeyMaterialsBuilder {
+    fn drop(&mut self) {
+        self.branch_key.zeroize();
+    }
+}
+
+impl ZeroizeOnDrop for BranchKeyMaterialsBuilder {}

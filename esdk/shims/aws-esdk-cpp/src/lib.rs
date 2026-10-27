@@ -138,7 +138,7 @@ use aws_crypto_mpl::aws_config;
 use aws_crypto_mpl::cmc::{
     DefaultCmc, LocalCmc, SharedCmc, StormTrackingCmc, StormTrackingCmcBuilder,
 };
-use aws_crypto_mpl::key_store::Client as KeyStoreClient;
+use aws_crypto_mpl::key_store::DynamoDbKeyStore;
 use aws_crypto_mpl::key_store::types::{Discovery, KmsConfiguration, MrDiscovery};
 use aws_crypto_mpl::keyring::HierarchicalKeyring;
 use aws_crypto_mpl::keyring::{RawAesKeyring, SharedKeyring};
@@ -500,7 +500,7 @@ struct MplDdbClient {
 }
 
 struct KeyStore {
-    inner: KeyStoreClient,
+    inner: DynamoDbKeyStore,
 }
 
 struct Keyring {
@@ -1277,7 +1277,7 @@ fn encrypt(input: &ffi::EncryptInput) -> Result<ffi::EncryptOutput, String> {
         encryption_context: encryption_context_core_to_target(output.encryption_context()),
         //= spec/shim/esdk-shim.md#encrypt-outputs
         //# - MUST return the core ESDK's ciphertext unmodified.
-        ciphertext: output.into_ciphertext(),
+        ciphertext: output.into_ciphertext().into_inner(),
     })
 }
 
@@ -1310,7 +1310,7 @@ fn decrypt(input: &ffi::DecryptInput) -> Result<ffi::DecryptOutput, String> {
         encryption_context: encryption_context_core_to_target(output.encryption_context()),
         //= spec/shim/esdk-shim.md#decrypt-outputs
         //# - MUST return the core ESDK's plaintext unmodified.
-        plaintext: output.into_plaintext(),
+        plaintext: output.into_plaintext().into_inner(),
     })
 }
 
@@ -1489,7 +1489,7 @@ fn ddb_client_with_credentials(
 //= spec/shim/esdk-shim.md#create-key-store
 //# - The shim MUST provide an operation that creates a key store backed by the core ESDK.
 fn create_keystore(input: &ffi::KeyStoreConfig) -> Result<Box<KeyStore>, String> {
-    let builder = KeyStoreClient::builder()
+    let builder = DynamoDbKeyStore::builder()
         //= spec/shim/esdk-shim.md#create-key-store
         //# - Creating a key store MUST provide the target-supplied table name and logical key
         //# store name to the core ESDK.
