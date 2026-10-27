@@ -12,8 +12,8 @@ use aws_crypto_mpl::aws_sdk_dynamodb;
 use aws_crypto_mpl::aws_sdk_kms;
 use aws_crypto_mpl::cmc::DefaultCmc;
 use aws_crypto_mpl::error::ConflictReason;
-use aws_crypto_mpl::key_store::Client as KeyStoreClient;
 use aws_crypto_mpl::key_store::types::{Discovery, KmsConfiguration};
+use aws_crypto_mpl::key_store::{DynamoDbKeyStore, SharedKeyStore};
 use aws_crypto_mpl::keyring::HierarchicalKeyring;
 use aws_crypto_mpl::types::EncryptionContext;
 use aws_esdk::Client;
@@ -39,7 +39,7 @@ async fn sdk_config() -> aws_config::SdkConfig {
         .await
 }
 
-async fn key_store(table: &str, kms_key_arn: &str) -> KeyStoreClient {
+async fn key_store(table: &str, kms_key_arn: &str) -> DynamoDbKeyStore {
     let config = sdk_config().await;
     key_store_with(
         table,
@@ -55,8 +55,8 @@ async fn key_store_with(
     kms_key_arn: &str,
     kms: aws_sdk_kms::Client,
     ddb: aws_sdk_dynamodb::Client,
-) -> KeyStoreClient {
-    KeyStoreClient::builder()
+) -> DynamoDbKeyStore {
+    DynamoDbKeyStore::builder()
         .ddb_table_name(table)
         .logical_key_store_name(TABLE)
         .kms_configuration(KmsConfiguration::KmsKeyArn(kms_key_arn.into()))
@@ -67,7 +67,10 @@ async fn key_store_with(
         .expect("the key store configuration is valid")
 }
 
-async fn encrypt_error(key_store: impl Into<KeyStoreClient>, branch_key_id: &str) -> Error {
+async fn encrypt_error(
+    key_store: impl aws_crypto_mpl::shared::IntoShared<SharedKeyStore>,
+    branch_key_id: &str,
+) -> Error {
     let keyring = HierarchicalKeyring::builder()
         .key_store(key_store)
         .branch_key_id(branch_key_id)
@@ -219,7 +222,7 @@ async fn integ_create_key_with_an_existing_id_is_an_already_exists_conflict() {
         .await
         .create_key()
         .branch_key_id(BRANCH_KEY_ID)
-        .encryption_context(EncryptionContext::from_iter([("purpose", "test")]))
+        .set_encryption_context(Some(EncryptionContext::from_iter([("purpose", "test")])))
         .send()
         .await
         .unwrap_err();
@@ -247,7 +250,7 @@ async fn integ_a_discovery_key_store_names_the_kms_key_from_the_record() {
     // A discovery key store calls the KMS key the record names.
     // The us-west-2 client cannot use the us-east-1 key, so AWS KMS rejects it.
     let config = sdk_config().await;
-    let key_store = KeyStoreClient::builder()
+    let key_store = DynamoDbKeyStore::builder()
         .ddb_table_name(TABLE)
         .logical_key_store_name(TABLE)
         .kms_configuration(KmsConfiguration::Discovery(

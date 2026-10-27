@@ -6,7 +6,7 @@
 use std::sync::{Arc, Mutex};
 
 use aws_config::FrameworkMetadata;
-use aws_crypto_mpl::key_store::Client as KeyStoreClient;
+use aws_crypto_mpl::key_store::DynamoDbKeyStore;
 use aws_crypto_mpl::key_store::types::KmsConfiguration;
 use aws_sdk_dynamodb::Client as DynamoDbClient;
 use aws_sdk_kms::Client as KmsClient;
@@ -108,8 +108,8 @@ fn ddb_client(capture: &Capture) -> DynamoDbClient {
     DynamoDbClient::from_conf(config)
 }
 
-async fn key_store(capture: &Capture, framework: Option<FrameworkMetadata>) -> KeyStoreClient {
-    KeyStoreClient::builder()
+async fn key_store(capture: &Capture, framework: Option<FrameworkMetadata>) -> DynamoDbKeyStore {
+    DynamoDbKeyStore::builder()
         .ddb_table_name(TABLE)
         .logical_key_store_name(TABLE)
         .kms_configuration(KmsConfiguration::KmsKeyArn(KEY_ARN.into()))
@@ -121,7 +121,7 @@ async fn key_store(capture: &Capture, framework: Option<FrameworkMetadata>) -> K
 }
 
 /// Sends every KMS operation the key store uses: GenerateDataKeyWithoutPlaintext, ReEncrypt, and Decrypt.
-async fn exercise(key_store: &KeyStoreClient) {
+async fn exercise(key_store: &DynamoDbKeyStore) {
     key_store.create_key().send().await.unwrap();
     key_store
         .get_active_branch_key()
