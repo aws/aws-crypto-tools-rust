@@ -26,7 +26,7 @@ async fn test_signing_suite_produces_footer() {
         "signing suite must produce a footer with a P-384 DER signature (64..=104 bytes), got: {sig_len}"
     );
     // Verify the ciphertext actually decrypts — proves the footer is valid, not just present.
-    let pt = decrypt_ciphertext(&ct).await.into_plaintext();
+    let pt = decrypt_ciphertext(&ct).await.into_plaintext().into_inner();
     assert_eq!(pt, b"signature presence test");
 }
 
@@ -348,7 +348,8 @@ async fn test_footer_equals_calculated() {
         .send()
         .await
         .unwrap()
-        .into_plaintext();
+        .into_plaintext()
+        .into_inner();
     assert_eq!(pt, b"footer equals calculated test");
 }
 
@@ -366,7 +367,7 @@ async fn test_no_signature_without_signing_suite() {
         !has_footer(&ct),
         "non-signing suite must NOT produce a trailing footer"
     );
-    let pt = decrypt_ciphertext(&ct).await.into_plaintext();
+    let pt = decrypt_ciphertext(&ct).await.into_plaintext().into_inner();
     assert_eq!(
         pt, b"no signature test",
         "round-trip with non-signing suite must succeed"
@@ -388,7 +389,8 @@ async fn test_footer_serialized_releases_all_bytes() {
         .send()
         .await
         .unwrap()
-        .into_ciphertext();
+        .into_ciphertext()
+        .into_inner();
 
     let (footer_offset, sig_len) = find_footer_offset(&ct);
     assert!(sig_len > 0, "footer must contain a signature");

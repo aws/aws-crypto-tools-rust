@@ -26,7 +26,8 @@ async fn test_verify_signature_fails_on_tampered_footer() {
         .send()
         .await
         .unwrap()
-        .into_ciphertext();
+        .into_ciphertext()
+        .into_inner();
 
     // Footer layout per the Message Footer spec: [signature length: UInt16 BE (2 bytes)][signature].
     // Flip a byte inside the signature itself (past the 2-byte length prefix) so verification fails.
@@ -208,7 +209,8 @@ async fn test_footer_wait_truncated_message_fails() {
         .send()
         .await
         .unwrap()
-        .into_ciphertext();
+        .into_ciphertext()
+        .into_inner();
 
     // Truncate the footer signature: keep sig_len but drop the signature bytes.
     let footer_offset = find_footer_offset_only(&valid_ct);

@@ -22,7 +22,7 @@ constexpr std::size_t THREADS = 8;
 constexpr std::size_t ITERS_PER_THREAD = 24;
 
 // V2 header: version (1) + algorithm suite id (2) + message id (32).
-std::vector<std::uint8_t> v2_message_id(const Aws::Esdk::Bytes& ct) {
+std::vector<std::uint8_t> v2_message_id(const Aws::Esdk::Ciphertext& ct) {
     if (ct.size() < 35 || ct[0] != 0x02) {
         return {};
     }
@@ -30,14 +30,14 @@ std::vector<std::uint8_t> v2_message_id(const Aws::Esdk::Bytes& ct) {
 }
 
 // V1 header: version (1) + type (1) + algorithm suite id (2) + message id (16).
-std::vector<std::uint8_t> v1_message_id(const Aws::Esdk::Bytes& ct) {
+std::vector<std::uint8_t> v1_message_id(const Aws::Esdk::Ciphertext& ct) {
     if (ct.size() < 20 || ct[0] != 0x01) {
         return {};
     }
     return std::vector<std::uint8_t>(ct.begin() + 4, ct.begin() + 20);
 }
 
-using ExtractId = std::vector<std::uint8_t> (*)(const Aws::Esdk::Bytes&);
+using ExtractId = std::vector<std::uint8_t> (*)(const Aws::Esdk::Ciphertext&);
 
 struct Collected {
     std::vector<std::vector<std::uint8_t>> message_ids;
