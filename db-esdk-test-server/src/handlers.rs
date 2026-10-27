@@ -174,9 +174,9 @@ async fn item_encryptor(config: DbeClientConfig) -> Result<ItemEncryptor, Server
         ));
     }
     if config.legacy_override.is_some() {
-        return Err(ServerError::generic(
-            "a legacy override is not supported by the native Rust language server",
-        ));
+        // The native library has no legacy DDBEC encryptor, so a legacy override
+        // fails as a library validation error, as the Dafny Rust library does.
+        return Err(ServerError::client("Legacy configuration unsupported."));
     }
     if config.search.is_some() {
         return Err(ServerError::generic(
