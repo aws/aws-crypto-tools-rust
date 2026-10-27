@@ -43,7 +43,7 @@ use std::num::NonZeroUsize;
 /// let output = esdk
 ///     .encrypt()
 ///     .plaintext(plaintext)
-///     .encryption_context(ec)
+///     .set_encryption_context(Some(ec))
 ///     .keyring(keyring)
 ///     .send()
 ///     .await?;
@@ -90,7 +90,7 @@ impl Client {
     ///
     /// - The fluent builder is configurable:
     ///   - [`plaintext(&[u8])`](EncryptFluentBuilder::plaintext) / [`set_plaintext(Option<&[u8]>)`](EncryptFluentBuilder::set_plaintext):<br>required: **true**<br>The data to encrypt.<br>
-    ///   - [`encryption_context(impl Into<EncryptionContext>)`](EncryptFluentBuilder::encryption_context) / [`set_encryption_context(Option<EncryptionContext>)`](EncryptFluentBuilder::set_encryption_context):<br>required: **false**<br>Key-value pairs bound to the message. They are authenticated, not encrypted, so never put secrets in them.<br>
+    ///   - [`encryption_context(impl Into<String>, impl Into<String>)`](EncryptFluentBuilder::encryption_context) / [`set_encryption_context(Option<EncryptionContext>)`](EncryptFluentBuilder::set_encryption_context):<br>required: **false**<br>Key-value pairs bound to the message. They are authenticated, not encrypted, so never put secrets in them.<br>
     ///   - [`algorithm_suite_id(AlgorithmSuiteId)`](EncryptFluentBuilder::algorithm_suite_id) / [`set_algorithm_suite_id(Option<AlgorithmSuiteId>)`](EncryptFluentBuilder::set_algorithm_suite_id):<br>required: **false**<br>The algorithm suite to encrypt with. Unset uses the default suite for the client's commitment policy.<br>
     ///   - [`frame_length(NonZeroU32)`](EncryptFluentBuilder::frame_length) / [`set_frame_length(Option<NonZeroU32>)`](EncryptFluentBuilder::set_frame_length):<br>required: **false**<br>Bytes of plaintext per frame. Default is 4096.<br>
     ///   - [`keyring(impl Keyring)`](EncryptFluentBuilder::keyring) / [`set_keyring(Option<SharedKeyring>)`](EncryptFluentBuilder::set_keyring):<br>required: **one of keyring or cmm**<br>The keyring that protects the message's data key. Set exactly one of a keyring or a CMM.<br>
@@ -114,7 +114,7 @@ impl Client {
     ///
     /// - The fluent builder is configurable:
     ///   - [`ciphertext(&[u8])`](DecryptFluentBuilder::ciphertext) / [`set_ciphertext(Option<&[u8]>)`](DecryptFluentBuilder::set_ciphertext):<br>required: **true**<br>The encrypted message to decrypt.<br>
-    ///   - [`encryption_context(impl Into<EncryptionContext>)`](DecryptFluentBuilder::encryption_context) / [`set_encryption_context(Option<EncryptionContext>)`](DecryptFluentBuilder::set_encryption_context):<br>required: **false**<br>Key-value pairs the message's encryption context must contain. Decrypt fails if a pair is missing from the message or has a different value.<br>
+    ///   - [`encryption_context(impl Into<String>, impl Into<String>)`](DecryptFluentBuilder::encryption_context) / [`set_encryption_context(Option<EncryptionContext>)`](DecryptFluentBuilder::set_encryption_context):<br>required: **false**<br>Key-value pairs the message's encryption context must contain. Decrypt fails if a pair is missing from the message or has a different value.<br>
     ///   - [`keyring(impl Keyring)`](DecryptFluentBuilder::keyring) / [`set_keyring(Option<SharedKeyring>)`](DecryptFluentBuilder::set_keyring):<br>required: **one of keyring or cmm**<br>The keyring that protects the message's data key. Set exactly one of a keyring or a CMM.<br>
     ///   - [`cmm(impl Cmm)`](DecryptFluentBuilder::cmm) / [`set_cmm(Option<SharedCmm>)`](DecryptFluentBuilder::set_cmm):<br>required: **one of keyring or cmm**<br>The cryptographic materials manager (CMM) that supplies the message's data key. Set exactly one of a keyring or a CMM.<br>
     /// - On success, responds with [`DecryptOutput`](crate::operation::decrypt::DecryptOutput) with field(s):
@@ -137,7 +137,7 @@ impl Client {
     /// - The fluent builder is configurable:
     ///   - [`plaintext(impl AsyncRead)`](EncryptStreamFluentBuilder::plaintext) / [`set_plaintext(Option<Box<dyn AsyncRead>>)`](EncryptStreamFluentBuilder::set_plaintext):<br>required: **true**<br>The reader the data to encrypt is read from, until end of stream.<br>
     ///   - [`ciphertext(impl AsyncWrite)`](EncryptStreamFluentBuilder::ciphertext) / [`set_ciphertext(Option<Box<dyn AsyncWrite>>)`](EncryptStreamFluentBuilder::set_ciphertext):<br>required: **true**<br>The writer the encrypted message is written to.<br>
-    ///   - [`encryption_context(impl Into<EncryptionContext>)`](EncryptStreamFluentBuilder::encryption_context) / [`set_encryption_context(Option<EncryptionContext>)`](EncryptStreamFluentBuilder::set_encryption_context):<br>required: **false**<br>Key-value pairs bound to the message. They are authenticated, not encrypted, so never put secrets in them.<br>
+    ///   - [`encryption_context(impl Into<String>, impl Into<String>)`](EncryptStreamFluentBuilder::encryption_context) / [`set_encryption_context(Option<EncryptionContext>)`](EncryptStreamFluentBuilder::set_encryption_context):<br>required: **false**<br>Key-value pairs bound to the message. They are authenticated, not encrypted, so never put secrets in them.<br>
     ///   - [`algorithm_suite_id(AlgorithmSuiteId)`](EncryptStreamFluentBuilder::algorithm_suite_id) / [`set_algorithm_suite_id(Option<AlgorithmSuiteId>)`](EncryptStreamFluentBuilder::set_algorithm_suite_id):<br>required: **false**<br>The algorithm suite to encrypt with. Unset uses the default suite for the client's commitment policy.<br>
     ///   - [`frame_length(NonZeroU32)`](EncryptStreamFluentBuilder::frame_length) / [`set_frame_length(Option<NonZeroU32>)`](EncryptStreamFluentBuilder::set_frame_length):<br>required: **false**<br>Bytes of plaintext per frame. Default is 4096.<br>
     ///   - [`keyring(impl Keyring)`](EncryptStreamFluentBuilder::keyring) / [`set_keyring(Option<SharedKeyring>)`](EncryptStreamFluentBuilder::set_keyring):<br>required: **one of keyring or cmm**<br>The keyring that protects the message's data key. Set exactly one of a keyring or a CMM.<br>
@@ -159,7 +159,7 @@ impl Client {
     /// - The fluent builder is configurable:
     ///   - [`ciphertext(impl AsyncRead)`](DecryptStreamFluentBuilder::ciphertext) / [`set_ciphertext(Option<Box<dyn AsyncRead>>)`](DecryptStreamFluentBuilder::set_ciphertext):<br>required: **true**<br>The reader the encrypted message is read from.<br>
     ///   - [`plaintext(impl AsyncWrite)`](DecryptStreamFluentBuilder::plaintext) / [`set_plaintext(Option<Box<dyn AsyncWrite>>)`](DecryptStreamFluentBuilder::set_plaintext):<br>required: **true**<br>The writer the decrypted data is written to. It receives plaintext before the whole message is verified.<br>
-    ///   - [`encryption_context(impl Into<EncryptionContext>)`](DecryptStreamFluentBuilder::encryption_context) / [`set_encryption_context(Option<EncryptionContext>)`](DecryptStreamFluentBuilder::set_encryption_context):<br>required: **false**<br>Key-value pairs the message's encryption context must contain. Decrypt fails if a pair is missing from the message or has a different value.<br>
+    ///   - [`encryption_context(impl Into<String>, impl Into<String>)`](DecryptStreamFluentBuilder::encryption_context) / [`set_encryption_context(Option<EncryptionContext>)`](DecryptStreamFluentBuilder::set_encryption_context):<br>required: **false**<br>Key-value pairs the message's encryption context must contain. Decrypt fails if a pair is missing from the message or has a different value.<br>
     ///   - [`keyring(impl Keyring)`](DecryptStreamFluentBuilder::keyring) / [`set_keyring(Option<SharedKeyring>)`](DecryptStreamFluentBuilder::set_keyring):<br>required: **one of keyring or cmm**<br>The keyring that protects the message's data key. Set exactly one of a keyring or a CMM.<br>
     ///   - [`cmm(impl Cmm)`](DecryptStreamFluentBuilder::cmm) / [`set_cmm(Option<SharedCmm>)`](DecryptStreamFluentBuilder::set_cmm):<br>required: **one of keyring or cmm**<br>The cryptographic materials manager (CMM) that supplies the message's data key. Set exactly one of a keyring or a CMM.<br>
     /// - On success, responds with [`DecryptStreamOutput`](crate::operation::decrypt_stream::DecryptStreamOutput) with field(s):

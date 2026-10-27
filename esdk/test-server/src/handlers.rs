@@ -137,7 +137,7 @@ impl AppState {
         let output = esdk
             .encrypt()
             .plaintext(&req.plaintext)
-            .encryption_context(ec)
+            .set_encryption_context(Some(ec))
             .keyring(keyring)
             .set_algorithm_suite_id(req.algorithm_suite_id.map(map_algorithm_suite))
             .set_frame_length(frame_length)
@@ -145,7 +145,7 @@ impl AppState {
             .await
             .map_err(|e| ServerError::esdk(e.to_string()))?;
         Ok(EncryptResponse {
-            ciphertext: output.into_ciphertext(),
+            ciphertext: output.into_ciphertext().into_inner(),
         })
     }
 
@@ -154,13 +154,13 @@ impl AppState {
         let output = esdk
             .decrypt()
             .ciphertext(&req.ciphertext)
-            .encryption_context(encryption_context(req.encryption_context))
+            .set_encryption_context(Some(encryption_context(req.encryption_context)))
             .keyring(keyring)
             .send()
             .await
             .map_err(|e| ServerError::esdk(e.to_string()))?;
         Ok(DecryptResponse {
-            plaintext: output.into_plaintext(),
+            plaintext: output.into_plaintext().into_inner(),
         })
     }
 

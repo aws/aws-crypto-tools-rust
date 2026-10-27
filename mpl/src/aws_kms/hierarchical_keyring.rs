@@ -57,16 +57,20 @@ pub struct GetBranchKeyIdInputBuilder {
 }
 
 impl GetBranchKeyIdInputBuilder {
-    /// Set the encryption context of the message being encrypted or decrypted.
+    /// Adds a key-value pair to the encryption context of the message being encrypted or decrypted.
+    ///
+    /// To override the contents of this collection use [`set_encryption_context`](Self::set_encryption_context).
     /// Required.
     #[must_use]
-    pub fn encryption_context(mut self, encryption_context: impl Into<EncryptionContext>) -> Self {
-        self.encryption_context = Some(encryption_context.into());
+    pub fn encryption_context(mut self, k: impl Into<String>, v: impl Into<String>) -> Self {
+        self.encryption_context
+            .get_or_insert_with(Default::default)
+            .insert(k, v);
         self
     }
 
     /// Set or clear the encryption context from an `Option`.
-    /// To set a value, use [`Self::encryption_context`].
+    /// To add one entry, use [`Self::encryption_context`].
     #[must_use]
     pub fn set_encryption_context(mut self, encryption_context: Option<EncryptionContext>) -> Self {
         self.encryption_context = encryption_context;
@@ -224,15 +228,17 @@ impl GetBranchKeyIdFluentBuilder {
         &self.inner
     }
 
-    /// Set the encryption context of the message being encrypted or decrypted.
+    /// Adds a key-value pair to the encryption context of the message being encrypted or decrypted.
+    ///
+    /// To override the contents of this collection use [`set_encryption_context`](Self::set_encryption_context).
     /// Required.
-    pub fn encryption_context(mut self, encryption_context: impl Into<EncryptionContext>) -> Self {
-        self.inner = self.inner.encryption_context(encryption_context);
+    pub fn encryption_context(mut self, k: impl Into<String>, v: impl Into<String>) -> Self {
+        self.inner = self.inner.encryption_context(k, v);
         self
     }
 
     /// Set or clear the encryption context from an `Option`.
-    /// To set a value, use [`Self::encryption_context`].
+    /// To add one entry, use [`Self::encryption_context`].
     pub fn set_encryption_context(mut self, encryption_context: Option<EncryptionContext>) -> Self {
         self.inner = self.inner.set_encryption_context(encryption_context);
         self
@@ -266,7 +272,7 @@ pub struct HierarchicalKeyring {
 }
 
 struct HierarchicalKeyringInner {
-    key_store: key_store::Client,
+    key_store: key_store::SharedKeyStore,
 
     ttl: Duration,
 
@@ -325,7 +331,7 @@ impl HierarchicalKeyring {
 
     /// The configured key store.
     #[must_use]
-    pub fn key_store(&self) -> &key_store::Client {
+    pub fn key_store(&self) -> &key_store::SharedKeyStore {
         &self.inner.key_store
     }
 
@@ -351,7 +357,7 @@ const DEFAULT_CACHE_ENTRY_CAPACITY: usize = 1000;
 /// [`HierarchicalKeyring::builder`].
 #[derive(Default)]
 pub struct HierarchicalKeyringBuilder {
-    key_store: Option<key_store::Client>,
+    key_store: Option<key_store::SharedKeyStore>,
     ttl: Option<Duration>,
     branch_key_id: Option<String>,
     branch_key_id_supplier: Option<SharedBranchKeySupplier>,
@@ -373,24 +379,24 @@ impl HierarchicalKeyringBuilder {
     /// The key store.
     /// Required.
     ///
-    /// Pass the [`key_store::Client`](crate::key_store::Client) that [`key_store::Client::builder`](crate::key_store::Client::builder) builds, or any [`KeyStore`](crate::key_store::KeyStore).
+    /// Pass a [`DynamoDbKeyStore`](crate::key_store::DynamoDbKeyStore), a [`SharedKeyStore`](crate::key_store::SharedKeyStore), or any [`KeyStore`](crate::key_store::KeyStore).
     #[must_use]
-    pub fn key_store(mut self, key_store: impl Into<key_store::Client>) -> Self {
-        self.key_store = Some(key_store.into());
+    pub fn key_store(mut self, key_store: impl IntoShared<key_store::SharedKeyStore>) -> Self {
+        self.key_store = Some(key_store.into_shared());
         self
     }
 
     /// Set or clear the key store from an `Option`.
     /// To set a value, use [`Self::key_store`].
     #[must_use]
-    pub fn set_key_store(mut self, key_store: Option<key_store::Client>) -> Self {
+    pub fn set_key_store(mut self, key_store: Option<key_store::SharedKeyStore>) -> Self {
         self.key_store = key_store;
         self
     }
 
     /// The key store, if set.
     #[must_use]
-    pub const fn get_key_store(&self) -> &Option<key_store::Client> {
+    pub const fn get_key_store(&self) -> &Option<key_store::SharedKeyStore> {
         &self.key_store
     }
 
@@ -520,7 +526,7 @@ impl HierarchicalKeyringBuilder {
     /// - [`Cryptographic`](crate::Error::Cryptographic): the random number generator failed while creating the default partition id.
     ///
     /// If the key store's [`get_key_store_info`](crate::key_store::KeyStore::get_key_store_info) fails, returns that error unchanged.
-    /// The key store [`key_store::Client::builder`](crate::key_store::Client::builder) builds does not fail it.
+    /// A [`DynamoDbKeyStore`](crate::key_store::DynamoDbKeyStore) does not fail it.
     pub async fn build(self) -> Result<HierarchicalKeyring, Error> {
         let Self {
             key_store,
@@ -838,7 +844,7 @@ impl HierarchicalKeyring {
         // the supplier path — a static branch key id never pays for it.
         Ok(supplier
             .get_branch_key_id()
-            .encryption_context(encryption_context.clone())
+            .set_encryption_context(Some(encryption_context.clone()))
             .send()
             .await?
             .into_branch_key_id())

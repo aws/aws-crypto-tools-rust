@@ -169,7 +169,7 @@ async fn shared_branch_key_supplier_fluent_builder_reaches_the_supplier() {
     encryption_context.insert("tenant", "tenant-a");
     let output = SharedBranchKeySupplier::new(Supplier)
         .get_branch_key_id()
-        .encryption_context(encryption_context)
+        .set_encryption_context(Some(encryption_context))
         .send()
         .await
         .unwrap();
