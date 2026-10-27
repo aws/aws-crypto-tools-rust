@@ -22,11 +22,12 @@ use crate::cmc::DefaultCmc;
 use crate::cmc::{CacheEntry, CachedMaterials, SharedCmc};
 use crate::key_store;
 use crate::keyring::Keyring;
+use crate::keyring::edk_wrapping;
 use crate::keyring::{OnDecryptInput, OnDecryptOutput, OnEncryptInput, OnEncryptOutput};
 use crate::shared::IntoShared;
 use crate::structures::{
-    AlgorithmSuite, BranchKeyMaterials, DecryptionMaterials, EncryptedDataKey, EncryptionContext,
-    PlaintextDataKey,
+    AlgorithmSuite, BranchKeyMaterials, DecryptionMaterials, EdkWrapping, EncryptedDataKey,
+    EncryptionContext, PlaintextDataKey, SymmetricSigningKey,
 };
 
 /// Input for [`BranchKeySupplier::get_branch_key_id`].
@@ -669,10 +670,15 @@ impl Keyring for crate::shared::Builtin<HierarchicalKeyring> {
             .map_err(|e| name_branch_key_in_cache_wait(e, &branch_key_id))?
             .into_entry();
 
-        let ciphertext = match cached {
+        let (ciphertext, signing_key) = match cached {
             Some(entry) if cache_entry_within_limits(&entry, self.inner.ttl) => {
                 let bkm = as_branch_key_materials(&entry)?;
-                branch_key_wrap::wrap(bkm, materials.encryption_context(), plaintext_dk.as_bytes())?
+                wrap_data_key(
+                    bkm,
+                    materials.algorithm_suite(),
+                    materials.encryption_context(),
+                    &plaintext_dk,
+                )?
             }
             _ => {
                 let bkm = self
@@ -698,10 +704,11 @@ impl Keyring for crate::shared::Builtin<HierarchicalKeyring> {
                     .send()
                     .await?;
 
-                branch_key_wrap::wrap(
+                wrap_data_key(
                     &bkm,
+                    materials.algorithm_suite(),
                     materials.encryption_context(),
-                    plaintext_dk.as_bytes(),
+                    &plaintext_dk,
                 )?
             }
         };
@@ -712,10 +719,15 @@ impl Keyring for crate::shared::Builtin<HierarchicalKeyring> {
             .ciphertext(ciphertext)
             .build()?;
 
-        let materials = if generated {
-            materials.add_data_key(plaintext_dk, edk)?
-        } else {
-            materials.add_encrypted_data_key(edk)?
+        let materials = match (generated, signing_key) {
+            (true, Some(signing_key)) => {
+                materials.add_data_key_with_symmetric_signing_key(plaintext_dk, edk, signing_key)?
+            }
+            (true, None) => materials.add_data_key(plaintext_dk, edk)?,
+            (false, Some(signing_key)) => {
+                materials.add_encrypted_data_key_with_symmetric_signing_key(edk, signing_key)?
+            }
+            (false, None) => materials.add_encrypted_data_key(edk)?,
         };
         OnEncryptOutput::builder().materials(materials).build()
     }
@@ -751,9 +763,13 @@ impl Keyring for crate::shared::Builtin<HierarchicalKeyring> {
             }
 
             match self.try_decrypt_edk(&materials, edk, &branch_key_id).await {
-                Ok(plaintext_dk_bytes) => {
-                    let materials =
-                        materials.add_data_key(PlaintextDataKey::new(plaintext_dk_bytes))?;
+                Ok((plaintext_dk, Some(signing_key))) => {
+                    let materials = materials
+                        .add_data_key_with_symmetric_signing_key(plaintext_dk, signing_key)?;
+                    return OnDecryptOutput::builder().materials(materials).build();
+                }
+                Ok((plaintext_dk, None)) => {
+                    let materials = materials.add_data_key(plaintext_dk)?;
                     return OnDecryptOutput::builder().materials(materials).build();
                 }
                 Err(e) => collected_errors.push(e),
@@ -849,7 +865,8 @@ impl HierarchicalKeyring {
     /// compute the cache identifier,
     /// get the branch key materials from the cache or else the key store,
     /// and unwrap the EDK ciphertext.
-    /// Returns the recovered plaintext data key bytes.
+    /// Returns the recovered plaintext data key, and the symmetric signing key
+    /// when the algorithm suite uses intermediate key wrapping.
     ///
     /// The caller (`on_decrypt`) is responsible for filtering the EDK
     /// list and for collecting per-EDK errors into the final error.
@@ -858,13 +875,23 @@ impl HierarchicalKeyring {
         materials: &DecryptionMaterials,
         edk: &EncryptedDataKey,
         branch_key_id: &str,
-    ) -> Result<Vec<u8>, Error> {
+    ) -> Result<(PlaintextDataKey, Option<SymmetricSigningKey>), Error> {
+        // With intermediate key wrapping the ciphertext is the encrypted
+        // plaintext data key followed by the branch key's wrapping of the
+        // intermediate key; otherwise it is the branch key's wrapping alone.
+        let suite = materials.algorithm_suite();
+        let (encrypted_pdk, ciphertext) = match suite.edk_wrapping() {
+            EdkWrapping::IntermediateKeyWrapping(_) => {
+                let (encrypted_pdk, wrapped) = edk_wrapping::split(&suite, edk.ciphertext())?;
+                (Some(encrypted_pdk), wrapped)
+            }
+            _ => (None, edk.ciphertext()),
+        };
         // Parse the 16-byte branch-key version out of the on-wire layout
         // `salt(16) || iv(12) || version(16) || encrypted_key(var) || tag(16)`.
         // branch_key_wrap::unwrap re-validates the full layout (including the
         // trailing 16-byte tag) before doing the AES-GCM open; here we only
         // need the slice for the version.
-        let ciphertext = edk.ciphertext();
         if ciphertext.len() < CIPHERTEXT_VERSION_OFFSET + CIPHERTEXT_VERSION_LEN {
             return Err(Error::new(
                 Kind::Cryptographic,
@@ -881,16 +908,31 @@ impl HierarchicalKeyring {
             .expect("16-byte slice into [u8; 16]");
 
         let branch_key_version = uuid_16_bytes_to_str(&version_bytes);
-        self.decrypt_edk_at_version(materials, edk, branch_key_id, &branch_key_version)
+        let unwrapped = self
+            .decrypt_edk_at_version(materials, ciphertext, branch_key_id, &branch_key_version)
             .await
-            .map_err(|e| e.at_branch_key_version(branch_key_id, &branch_key_version))
+            .map_err(|e| e.at_branch_key_version(branch_key_id, &branch_key_version))?;
+        let Some(encrypted_pdk) = encrypted_pdk else {
+            return Ok((PlaintextDataKey::new(unwrapped), None));
+        };
+        // The unwrapped bytes are the intermediate key; keys derived from it
+        // decrypt the plaintext data key and sign the message.
+        let aad = materials
+            .encryption_context()
+            .serialize()
+            .map_err(|e| Error::wrap("failed to serialize the encryption context", e))?;
+        let (plaintext_dk, signing_key) =
+            edk_wrapping::decrypt_pdk(&suite, &unwrapped, &aad, encrypted_pdk)
+                .map_err(|e| e.at_branch_key_version(branch_key_id, &branch_key_version))?;
+        Ok((plaintext_dk, Some(signing_key)))
     }
 
-    /// Unwrap `edk` with version `branch_key_version` of the branch key, from the cache or the key store.
+    /// Unwrap `ciphertext`, the branch key's wrapping in an EDK, with version
+    /// `branch_key_version` of the branch key, from the cache or the key store.
     async fn decrypt_edk_at_version(
         &self,
         materials: &DecryptionMaterials,
-        edk: &EncryptedDataKey,
+        ciphertext: &[u8],
         branch_key_id: &str,
         branch_key_version: &str,
     ) -> Result<Vec<u8>, Error> {
@@ -944,7 +986,7 @@ impl HierarchicalKeyring {
             }
         };
 
-        branch_key_wrap::unwrap(&bkm, materials.encryption_context(), edk.ciphertext())
+        branch_key_wrap::unwrap(&bkm, materials.encryption_context(), ciphertext)
     }
 }
 
@@ -957,6 +999,37 @@ fn name_branch_key_in_cache_wait(mut e: Error, branch_key_id: &str) -> Error {
         ));
     }
     e
+}
+
+/// The EDK ciphertext that wraps `plaintext_dk` under the branch key, and the
+/// symmetric signing key when the algorithm suite uses intermediate key wrapping.
+///
+/// With intermediate key wrapping, the branch key wraps a fresh intermediate key;
+/// keys derived from it encrypt the plaintext data key and sign the message.
+/// The ciphertext is the encrypted plaintext data key followed by that wrapping.
+fn wrap_data_key(
+    bkm: &BranchKeyMaterials,
+    suite: AlgorithmSuite,
+    encryption_context: &EncryptionContext,
+    plaintext_dk: &PlaintextDataKey,
+) -> Result<(Vec<u8>, Option<SymmetricSigningKey>), Error> {
+    match suite.edk_wrapping() {
+        EdkWrapping::IntermediateKeyWrapping(_) => {
+            let aad = encryption_context
+                .serialize()
+                .map_err(|e| Error::wrap("failed to serialize the encryption context", e))?;
+            let ikm = generate_random_data_key(suite)?;
+            let wrapped_ikm = branch_key_wrap::wrap(bkm, encryption_context, ikm.as_bytes())?;
+            let (mut ciphertext, signing_key) =
+                edk_wrapping::encrypt_pdk(&suite, ikm.as_bytes(), &aad, plaintext_dk)?;
+            ciphertext.extend_from_slice(&wrapped_ikm);
+            Ok((ciphertext, Some(signing_key)))
+        }
+        _ => Ok((
+            branch_key_wrap::wrap(bkm, encryption_context, plaintext_dk.as_bytes())?,
+            None,
+        )),
+    }
 }
 
 /// Generate a random plaintext data key of the algorithm suite's
