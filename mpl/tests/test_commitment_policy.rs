@@ -205,3 +205,30 @@ fn test_require_encrypt_require_decrypt_decrypt_only_committing_suites() {
     assert!(!policy.allows_for_decrypt(NON_COMMITTING));
     assert!(!policy.allows_for_decrypt(NON_COMMITTING_HKDF));
 }
+
+// DBE.REQUIRE_ENCRYPT_REQUIRE_DECRYPT allows exactly the DBE suites.
+#[test]
+fn dbe_policy_allows_only_dbe_suites() {
+    use aws_crypto_mpl::types::{
+        AlgorithmSuiteId, CommitmentPolicy, DbeAlgorithmSuiteId, DbeCommitmentPolicy,
+        EsdkAlgorithmSuiteId, EsdkCommitmentPolicy,
+    };
+    let dbe = CommitmentPolicy::Dbe(DbeCommitmentPolicy::RequireEncryptRequireDecrypt);
+    assert_eq!(
+        dbe.default_algorithm_suite_id(),
+        AlgorithmSuiteId::Dbe(
+            DbeAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384SymsigHmacSha384
+        )
+    );
+    for id in DbeAlgorithmSuiteId::ALL {
+        assert!(dbe.allows_for_encrypt(AlgorithmSuiteId::Dbe(*id)));
+        assert!(dbe.allows_for_decrypt(AlgorithmSuiteId::Dbe(*id)));
+        let esdk = CommitmentPolicy::Esdk(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt);
+        assert!(!esdk.allows_for_encrypt(AlgorithmSuiteId::Dbe(*id)));
+        assert!(!esdk.allows_for_decrypt(AlgorithmSuiteId::Dbe(*id)));
+    }
+    for id in EsdkAlgorithmSuiteId::ALL {
+        assert!(!dbe.allows_for_encrypt(AlgorithmSuiteId::Esdk(*id)));
+        assert!(!dbe.allows_for_decrypt(AlgorithmSuiteId::Esdk(*id)));
+    }
+}

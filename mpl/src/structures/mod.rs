@@ -15,14 +15,14 @@ pub mod encryption_materials;
 
 pub use aes_wrapping_alg::AesWrappingAlg;
 pub use algorithm_suite::{
-    AlgorithmSuite, AlgorithmSuiteId, AsymmetricSignatureAlgorithm, EncryptionAlgorithm,
-    EncryptionAlgorithmMode, EsdkAlgorithmSuiteId, Format, KeyDerivationAlgorithm,
-    PlaintextDataKey, SigningKey, SymmetricSignatureAlgorithm, SymmetricSigningKey,
-    VerificationKey,
+    AlgorithmSuite, AlgorithmSuiteId, AsymmetricSignatureAlgorithm, DbeAlgorithmSuiteId,
+    EdkWrapping, EncryptionAlgorithm, EncryptionAlgorithmMode, EsdkAlgorithmSuiteId, Format,
+    IntermediateKeyWrapping, KeyDerivationAlgorithm, PlaintextDataKey, SigningKey,
+    SymmetricSignatureAlgorithm, SymmetricSigningKey, VerificationKey,
 };
 pub use beacon_key_materials::{BeaconKeyMaterials, BeaconKeyMaterialsBuilder};
 pub use branch_key_materials::{BranchKeyMaterials, BranchKeyMaterialsBuilder};
-pub use commitment_policy::{CommitmentPolicy, EsdkCommitmentPolicy};
+pub use commitment_policy::{CommitmentPolicy, DbeCommitmentPolicy, EsdkCommitmentPolicy};
 pub use decryption_materials::{DecryptionMaterials, DecryptionMaterialsBuilder};
 pub use encrypted_data_key::{EncryptedDataKey, EncryptedDataKeyBuilder};
 pub use encryption_context::EncryptionContext;

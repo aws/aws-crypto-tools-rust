@@ -3,11 +3,7 @@
 
 //! Commitment policy enum and per-policy algorithm-suite predicates.
 
-use super::algorithm_suite::{AlgorithmSuiteId, EsdkAlgorithmSuiteId};
-
-// Only the ESDK format is implemented. The DBE.REQUIRE_ENCRYPT_REQUIRE_DECRYPT
-// commitment policy is excluded by the same rationale that excludes DBE/S3EC
-// algorithm suites in `algorithm_suite.rs`.
+use super::algorithm_suite::{AlgorithmSuiteId, DbeAlgorithmSuiteId, EsdkAlgorithmSuiteId};
 
 /// Union Commitment Policy ENUM across all supported formats. Each variant
 /// tags a format and carries that format's Format Commitment Policy ENUM,
@@ -19,6 +15,16 @@ use super::algorithm_suite::{AlgorithmSuiteId, EsdkAlgorithmSuiteId};
 pub enum CommitmentPolicy {
     /// ESDK format commitment policies.
     Esdk(EsdkCommitmentPolicy),
+    /// DBE format commitment policies.
+    Dbe(DbeCommitmentPolicy),
+}
+
+/// DBE Format Commitment Policy ENUM. Every DBE suite commits to its key.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum DbeCommitmentPolicy {
+    /// `DBE.REQUIRE_ENCRYPT_REQUIRE_DECRYPT` — encrypt and decrypt with DBE suites only.
+    RequireEncryptRequireDecrypt,
 }
 
 /// ESDK Format Commitment Policy ENUM. Its variants correspond 1:1 to the
@@ -41,17 +47,20 @@ impl CommitmentPolicy {
     /// Returns the algorithm suite that MUST be used for encryption when the
     /// caller does not specify one. Defined per-variant by `commitment-policy.md`.
     pub const fn default_algorithm_suite_id(self) -> AlgorithmSuiteId {
-        AlgorithmSuiteId::Esdk(match self {
+        match self {
             Self::Esdk(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt) => {
-                EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf
+                AlgorithmSuiteId::Esdk(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf)
             }
-            Self::Esdk(EsdkCommitmentPolicy::RequireEncryptAllowDecrypt) => {
-                EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384
-            }
-            Self::Esdk(EsdkCommitmentPolicy::RequireEncryptRequireDecrypt) => {
-                EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384
-            }
-        })
+            Self::Esdk(
+                EsdkCommitmentPolicy::RequireEncryptAllowDecrypt
+                | EsdkCommitmentPolicy::RequireEncryptRequireDecrypt,
+            ) => AlgorithmSuiteId::Esdk(
+                EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,
+            ),
+            Self::Dbe(DbeCommitmentPolicy::RequireEncryptRequireDecrypt) => AlgorithmSuiteId::Dbe(
+                DbeAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384SymsigHmacSha384,
+            ),
+        }
     }
 
     /// Returns true when this commitment policy permits the given algorithm
@@ -66,6 +75,13 @@ impl CommitmentPolicy {
                     EsdkCommitmentPolicy::RequireEncryptRequireDecrypt => committing,
                 }
             }
+            (
+                Self::Dbe(DbeCommitmentPolicy::RequireEncryptRequireDecrypt),
+                AlgorithmSuiteId::Dbe(_),
+            ) => true,
+            // A policy never permits another format's suites.
+            (Self::Esdk(_), AlgorithmSuiteId::Dbe(_))
+            | (Self::Dbe(_), AlgorithmSuiteId::Esdk(_)) => false,
         }
     }
 
@@ -80,6 +96,13 @@ impl CommitmentPolicy {
                     id.specification().key_commitment()
                 }
             },
+            (
+                Self::Dbe(DbeCommitmentPolicy::RequireEncryptRequireDecrypt),
+                AlgorithmSuiteId::Dbe(_),
+            ) => true,
+            // A policy never permits another format's suites.
+            (Self::Esdk(_), AlgorithmSuiteId::Dbe(_))
+            | (Self::Dbe(_), AlgorithmSuiteId::Esdk(_)) => false,
         }
     }
 }
