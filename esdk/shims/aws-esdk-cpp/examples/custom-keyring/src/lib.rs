@@ -1,3 +1,6 @@
+// Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 //! Your custom keyring, defined in Rust and exported to C++.
 //!
 //! Step 2 (`AuditKeyring`): define your keyring.

@@ -1,3 +1,6 @@
+// Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 // C ABI over the idiomatic C++ facade (aws/esdk/EncryptionSDK.h). The Rust
 // server calls these functions; each one runs entirely through Aws::Esdk:: so
 // the C++ shim surface is what gets exercised end to end.

@@ -1,3 +1,6 @@
+// Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 // Example demonstrating use of lower-level streaming APIs.
 //
 // The higher-level APIs in streaming_example.cpp are the right tool for most cases.

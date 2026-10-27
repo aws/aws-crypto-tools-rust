@@ -1,3 +1,6 @@
+// Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 //! Runnable entry point for the Rust Language_Server.
 //!
 //! Binds an rpcv2Cbor HTTP endpoint on a port taken from (in order) the first

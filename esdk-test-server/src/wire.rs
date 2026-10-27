@@ -1,3 +1,6 @@
+// Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 //! rpcv2Cbor HTTP wire layer.
 //!
 //! Routes `POST /service/{Service}/operation/{Operation}`, validates the
