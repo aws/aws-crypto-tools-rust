@@ -11,23 +11,24 @@ use crate::model::{
     AesWrappingAlg, AwsKmsDiscoveryKeyringConfig, AwsKmsHierarchicalKeyringConfig,
     AwsKmsKeyringConfig, AwsKmsMrkDiscoveryKeyringConfig, AwsKmsMultiKeyringConfig,
     DdbKeyBranchKeyIdSupplier, DiscoveryFilter as ModelDiscoveryFilter, Keyring,
-    MultiKeyringConfig, RawAesKeyringConfig,
+    MultiKeyringConfig, PaddingScheme, RawAesKeyringConfig, RawRsaKeyringConfig,
 };
 use aws_db_esdk::aws_sdk_dynamodb::types::AttributeValue;
 use aws_db_esdk::key_store::types::KmsConfiguration;
 use aws_db_esdk::keyring::{
     AwsKmsDiscoveryKeyring, AwsKmsKeyring, AwsKmsMrkDiscoveryKeyring, AwsKmsMrkKeyring,
-    DiscoveryFilter, GetBranchKeyIdFromItemKeyInput,
-    GetBranchKeyIdOutput, HierarchicalKeyring, ItemKeyBranchKeySupplier, ItemKeySupplier,
-    MultiKeyring, RawAesKeyring, SharedKeyring,
+    DiscoveryFilter, GetBranchKeyIdFromItemKeyInput, GetBranchKeyIdOutput, HierarchicalKeyring,
+    ItemKeyBranchKeySupplier, ItemKeySupplier, MultiKeyring, RawAesKeyring, RawRsaKeyring,
+    SharedKeyring,
 };
-use aws_db_esdk::types::AesWrappingAlg as MplAesWrappingAlg;
+use aws_db_esdk::types::{AesWrappingAlg as MplAesWrappingAlg, PaddingScheme as MplPaddingScheme};
 use aws_db_esdk::{async_trait, aws_config, aws_sdk_dynamodb, aws_sdk_kms, key_store, mpl};
 
 /// Build the keyring a modeled `Keyring` names; exactly one variant must be set.
 pub async fn keyring_for_config(keyring: &Keyring) -> Result<SharedKeyring, ServerError> {
     let set = usize::from(keyring.aws_kms.is_some())
         + usize::from(keyring.raw_aes.is_some())
+        + usize::from(keyring.raw_rsa.is_some())
         + usize::from(keyring.aws_kms_hierarchical.is_some())
         + usize::from(keyring.aws_kms_discovery.is_some())
         + usize::from(keyring.aws_kms_multi_keyring.is_some())
@@ -43,6 +44,9 @@ pub async fn keyring_for_config(keyring: &Keyring) -> Result<SharedKeyring, Serv
     }
     if let Some(raw_aes) = &keyring.raw_aes {
         return build_raw_aes(raw_aes);
+    }
+    if let Some(raw_rsa) = &keyring.raw_rsa {
+        return build_raw_rsa(raw_rsa);
     }
     if let Some(aws_kms) = &keyring.aws_kms {
         return build_aws_kms(aws_kms).await;
@@ -85,6 +89,25 @@ fn build_raw_aes(config: &RawAesKeyringConfig) -> Result<SharedKeyring, ServerEr
         .key_name(config.key_name.as_str())
         .wrapping_key(config.wrapping_key.clone())
         .wrapping_alg(alg)
+        .build()
+        .map_err(|e| ServerError::client(e.to_string()))?;
+    Ok(SharedKeyring::new(keyring))
+}
+
+fn build_raw_rsa(config: &RawRsaKeyringConfig) -> Result<SharedKeyring, ServerError> {
+    let padding_scheme = match config.padding_scheme {
+        PaddingScheme::Pkcs1 => MplPaddingScheme::Pkcs1,
+        PaddingScheme::OaepSha1Mgf1 => MplPaddingScheme::OaepSha1Mgf1,
+        PaddingScheme::OaepSha256Mgf1 => MplPaddingScheme::OaepSha256Mgf1,
+        PaddingScheme::OaepSha384Mgf1 => MplPaddingScheme::OaepSha384Mgf1,
+        PaddingScheme::OaepSha512Mgf1 => MplPaddingScheme::OaepSha512Mgf1,
+    };
+    let keyring = RawRsaKeyring::builder()
+        .key_namespace(config.key_namespace.as_str())
+        .key_name(config.key_name.as_str())
+        .padding_scheme(padding_scheme)
+        .set_public_key(config.public_key.clone())
+        .set_private_key(config.private_key.clone())
         .build()
         .map_err(|e| ServerError::client(e.to_string()))?;
     Ok(SharedKeyring::new(keyring))

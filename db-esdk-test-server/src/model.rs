@@ -148,6 +148,8 @@ pub struct Keyring {
     pub aws_kms: Option<AwsKmsKeyringConfig>,
     #[serde(rename = "RawAes", default)]
     pub raw_aes: Option<RawAesKeyringConfig>,
+    #[serde(rename = "RawRsa", default)]
+    pub raw_rsa: Option<RawRsaKeyringConfig>,
     #[serde(rename = "AwsKmsHierarchical", default)]
     pub aws_kms_hierarchical: Option<AwsKmsHierarchicalKeyringConfig>,
     #[serde(rename = "AwsKmsDiscovery", default)]
@@ -256,6 +258,34 @@ pub struct RawAesKeyringConfig {
     pub wrapping_key: Vec<u8>,
     #[serde(rename = "wrappingAlg")]
     pub wrapping_alg: AesWrappingAlg,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RawRsaKeyringConfig {
+    #[serde(rename = "keyNamespace")]
+    pub key_namespace: String,
+    #[serde(rename = "keyName")]
+    pub key_name: String,
+    #[serde(rename = "paddingScheme")]
+    pub padding_scheme: PaddingScheme,
+    #[serde(rename = "publicKey", default, with = "serde_bytes")]
+    pub public_key: Option<Vec<u8>>,
+    #[serde(rename = "privateKey", default, with = "serde_bytes")]
+    pub private_key: Option<Vec<u8>>,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+pub enum PaddingScheme {
+    #[serde(rename = "PKCS1")]
+    Pkcs1,
+    #[serde(rename = "OAEP_SHA1_MGF1")]
+    OaepSha1Mgf1,
+    #[serde(rename = "OAEP_SHA256_MGF1")]
+    OaepSha256Mgf1,
+    #[serde(rename = "OAEP_SHA384_MGF1")]
+    OaepSha384Mgf1,
+    #[serde(rename = "OAEP_SHA512_MGF1")]
+    OaepSha512Mgf1,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize)]

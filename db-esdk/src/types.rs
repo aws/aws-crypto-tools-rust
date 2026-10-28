@@ -3,7 +3,9 @@
 
 //! The data shapes of the DB-ESDK configuration and operations.
 
-pub use aws_crypto_mpl::types::{AesWrappingAlg, EncryptedDataKey, EncryptionContext};
+pub use aws_crypto_mpl::types::{
+    AesWrappingAlg, EncryptedDataKey, EncryptionContext, PaddingScheme,
+};
 
 /// A DB-ESDK algorithm suite.
 ///
