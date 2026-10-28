@@ -240,6 +240,24 @@ fn field_key_rejects_offset_that_overflows() {
 }
 
 #[test]
+fn field_keys_and_nonces_never_repeat_across_offsets() {
+    // Offsets are derived 3 apart, so adjacent fields' 44-byte streams never overlap.
+    let root = [7u8; KEY_SIZE];
+    let mut keys = std::collections::HashSet::new();
+    let mut nonces = std::collections::HashSet::new();
+    for offset in 0..2000 {
+        let fk = field_key(&root, offset).unwrap();
+        let (key, nonce) = fk.split_at(KEY_SIZE);
+        assert_eq!(nonce.len(), NONCE_SIZE);
+        assert!(keys.insert(key.to_vec()), "key repeats at offset {offset}");
+        assert!(
+            nonces.insert(nonce.to_vec()),
+            "nonce repeats at offset {offset}"
+        );
+    }
+}
+
+#[test]
 fn field_key_nonce_layout() {
     let mut expected = b"AwsDbeField".to_vec();
     expected.push(44);
