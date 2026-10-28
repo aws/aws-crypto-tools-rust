@@ -17,8 +17,9 @@ use aws_db_esdk::cmm::{
 use aws_db_esdk::keyring::RawAesKeyring;
 use aws_db_esdk::mpl::Error as MplError;
 use aws_db_esdk::mpl::types::{
-    AlgorithmSuiteId as MplAlgorithmSuiteId, DbeAlgorithmSuiteId, EncryptedDataKey,
-    EncryptionContext, EncryptionMaterials, EsdkAlgorithmSuiteId, PlaintextDataKey,
+    AlgorithmSuiteId as MplAlgorithmSuiteId, DbeAlgorithmSuiteId, DecryptionMaterials,
+    EncryptedDataKey, EncryptionContext, EncryptionMaterials, EsdkAlgorithmSuiteId,
+    PlaintextDataKey,
 };
 use aws_db_esdk::structured::{AuthenticateAction, StructuredDataTerminal, StructuredEncryption};
 use aws_db_esdk::types::{AesWrappingAlg, CryptoAction};
@@ -118,12 +119,33 @@ pub enum OnEncrypt {
 /// The message of the error [`OnEncrypt::Fail`] returns.
 pub const RECORDING_CMM_FAILURE: &str = "the recording CMM refused to supply materials";
 
-/// A CMM that records every `get_encryption_materials` input it receives,
+/// What a [`RecordingCmm`] does after recording a `decrypt_materials` call.
+#[derive(Clone, Copy, Debug)]
+pub enum OnDecrypt {
+    /// Forward the request unchanged to the default CMM.
+    Forward,
+    /// Forward the request, then return its materials under the symmetric DBE suite.
+    SymmetricSuite,
+    /// Return materials with a non-DBE (ESDK) algorithm suite.
+    EsdkMaterials,
+    /// Forward the request, then return its materials with only the header's stored encryption context.
+    StoredContextOnly,
+    /// Forward the request, then return its materials without a plaintext data key.
+    NoPlaintextKey,
+    /// Forward the request, then return its materials with an encryption context key too long to store in a header.
+    OversizedContext,
+    /// Fail with [`RECORDING_CMM_FAILURE`].
+    Fail,
+}
+
+/// A CMM that records every `get_encryption_materials` and `decrypt_materials` input it receives,
 /// over a default CMM with the same keyring as [`cmm`].
 pub struct RecordingCmm {
     inner: DefaultCmm,
     on_encrypt: OnEncrypt,
+    on_decrypt: OnDecrypt,
     calls: Arc<Mutex<Vec<GetEncryptionMaterialsInput>>>,
+    decrypt_calls: Arc<Mutex<Vec<DecryptMaterialsInput>>>,
 }
 
 /// A [`RecordingCmm`] and the list it records each `get_encryption_materials` input into.
@@ -134,9 +156,50 @@ pub fn recording_cmm(
     let cmm = RecordingCmm {
         inner: DefaultCmm::new(keyring_with_key(0x01)),
         on_encrypt,
+        on_decrypt: OnDecrypt::Forward,
         calls: Arc::clone(&calls),
+        decrypt_calls: Arc::new(Mutex::new(Vec::new())),
     };
     (SharedCmm::new(cmm), calls)
+}
+
+/// A [`RecordingCmm`] and the list it records each `decrypt_materials` input into.
+pub fn decrypt_recording_cmm(
+    on_decrypt: OnDecrypt,
+) -> (SharedCmm, Arc<Mutex<Vec<DecryptMaterialsInput>>>) {
+    let decrypt_calls = Arc::new(Mutex::new(Vec::new()));
+    let cmm = RecordingCmm {
+        inner: DefaultCmm::new(keyring_with_key(0x01)),
+        on_encrypt: OnEncrypt::Forward,
+        on_decrypt,
+        calls: Arc::new(Mutex::new(Vec::new())),
+        decrypt_calls: Arc::clone(&decrypt_calls),
+    };
+    (SharedCmm::new(cmm), decrypt_calls)
+}
+
+/// `materials` rebuilt with `suite` and `encryption_context`.
+/// A verification key is kept only if the new suite signs with ECDSA.
+fn rebuilt_materials(
+    materials: &DecryptionMaterials,
+    suite: MplAlgorithmSuiteId,
+    encryption_context: EncryptionContext,
+) -> Result<DecryptMaterialsOutput, MplError> {
+    let verification_key = if suite.has_asymmetric_signing() {
+        materials.verification_key().cloned()
+    } else {
+        None
+    };
+    let materials = DecryptionMaterials::builder()
+        .algorithm_suite_id(suite)
+        .encryption_context(encryption_context)
+        .set_plaintext_data_key(materials.plaintext_data_key().cloned())
+        .set_symmetric_signing_key(materials.symmetric_signing_key().cloned())
+        .set_verification_key(verification_key)
+        .build()?;
+    DecryptMaterialsOutput::builder()
+        .decryption_materials(materials)
+        .build()
 }
 
 /// The symmetric DBE suite, which needs no signing key in the materials.
@@ -224,15 +287,65 @@ impl Cmm for RecordingCmm {
         &self,
         input: DecryptMaterialsInput,
     ) -> Result<DecryptMaterialsOutput, MplError> {
-        self.inner
+        self.decrypt_calls.lock().unwrap().push(input.clone());
+        match self.on_decrypt {
+            OnDecrypt::Fail => return Err(MplError::validation(RECORDING_CMM_FAILURE)),
+            OnDecrypt::EsdkMaterials => {
+                let materials = DecryptionMaterials::builder()
+                    .algorithm_suite_id(MplAlgorithmSuiteId::Esdk(
+                        EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf,
+                    ))
+                    .encryption_context(input.encryption_context().clone())
+                    .plaintext_data_key(vec![7u8; 32])
+                    .build()?;
+                return DecryptMaterialsOutput::builder()
+                    .decryption_materials(materials)
+                    .build();
+            }
+            OnDecrypt::Forward
+            | OnDecrypt::SymmetricSuite
+            | OnDecrypt::StoredContextOnly
+            | OnDecrypt::NoPlaintextKey
+            | OnDecrypt::OversizedContext => {}
+        }
+        let stored = input.encryption_context().clone();
+        let out = self
+            .inner
             .decrypt_materials()
             .algorithm_suite_id(input.algorithm_suite_id())
             .commitment_policy(input.commitment_policy())
             .encrypted_data_keys(input.encrypted_data_keys().to_vec())
-            .encryption_context(input.encryption_context().clone())
+            .encryption_context(stored.clone())
             .set_reproduced_encryption_context(input.reproduced_encryption_context().cloned())
             .send()
-            .await
+            .await?;
+        let materials = out.decryption_materials();
+        match self.on_decrypt {
+            OnDecrypt::SymmetricSuite => rebuilt_materials(
+                materials,
+                MplAlgorithmSuiteId::Dbe(SYMMETRIC_DBE_SUITE),
+                materials.encryption_context().clone(),
+            ),
+            OnDecrypt::StoredContextOnly => {
+                rebuilt_materials(materials, materials.algorithm_suite_id(), stored)
+            }
+            OnDecrypt::NoPlaintextKey => {
+                let materials = DecryptionMaterials::builder()
+                    .algorithm_suite_id(materials.algorithm_suite_id())
+                    .encryption_context(materials.encryption_context().clone())
+                    .set_verification_key(materials.verification_key().cloned())
+                    .build()?;
+                DecryptMaterialsOutput::builder()
+                    .decryption_materials(materials)
+                    .build()
+            }
+            OnDecrypt::OversizedContext => {
+                let mut ec = materials.encryption_context().clone();
+                ec.insert("k".repeat(usize::from(u16::MAX) + 1), "v");
+                rebuilt_materials(materials, materials.algorithm_suite_id(), ec)
+            }
+            _ => Ok(out),
+        }
     }
 }
 

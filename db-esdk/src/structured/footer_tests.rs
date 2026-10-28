@@ -326,6 +326,11 @@ fn validate_rejects_tag_count_mismatch() {
     //= spec/structured-encryption/footer.md#recipient-tags
     //= type=test
     //# There MUST be one Recipient Tag for each Encrypted Data Key in the [header](./header.md#encrypted-data-keys)
+    //
+    //= spec/structured-encryption/decrypt-path-structure.md#verify-signatures
+    //= type=test
+    //# The number of [HMACs in the footer](./footer.md#hmacs)
+    //# MUST be the number of [Encrypted Data Keys in the header](./header.md#encrypted-data-keys).
     assert_eq!(err.kind(), Kind::Serialization);
 }
 

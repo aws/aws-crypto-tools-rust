@@ -49,6 +49,11 @@ impl DbeSuite {
             //# If this algorithm suite is not a
             //# [supported suite for Database Encryption (DBE)](../../submodules/MaterialProviders/aws-encryption-sdk-specification/framework/algorithm-suites.md#supported-algorithm-suites-enum),
             //# this operation MUST yield an error.
+            //
+            //= spec/structured-encryption/decrypt-path-structure.md#retrieve-decryption-materials
+            //# If this algorithm suite is not a
+            //# [supported suite for DBE](../../submodules/MaterialProviders/aws-encryption-sdk-specification/framework/algorithm-suites.md#supported-algorithm-suites-enum)
+            //# this operation MUST yield an error.
             return Err(val_err(
                 "the algorithm suite is not a DB-ESDK algorithm suite",
             ));

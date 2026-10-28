@@ -16,9 +16,9 @@ use aws_db_esdk::structured::{
 };
 use aws_db_esdk::types::{AlgorithmSuiteId, CryptoAction, EncryptionContext};
 use structured_api_support::{
-    BOOLEAN, FOOTER, HEADER, NULL, NUMBER, OnEncrypt, STRING, TABLE, TEST_BLOB_VALUE, blob, client,
-    cmm, recording_cmm, test_authenticate_schema, test_crypto_schema, test_crypto_schema_auth_only,
-    test_structured_data,
+    BOOLEAN, FOOTER, HEADER, NULL, NUMBER, OnDecrypt, OnEncrypt, STRING, TABLE, TEST_BLOB_VALUE,
+    blob, client, cmm, decrypt_recording_cmm, recording_cmm, test_authenticate_schema,
+    test_crypto_schema, test_crypto_schema_auth_only, test_structured_data,
 };
 
 const SIGNING_SUITE: AlgorithmSuiteId =
@@ -124,6 +124,10 @@ async fn round_trip_test_structured_data() {
     assert_eq!(enc.crypto_schema(), &test_crypto_schema_auth_only());
     assert_eq!(enc.parsed_header().algorithm_suite_id(), SIGNING_SUITE);
 
+    //= spec/structured-encryption/decrypt-structure.md#input
+    //= type=test
+    //= reason=no encryption context is set, and decrypt succeeds
+    //# The following inputs to this behavior MUST be OPTIONAL:
     let dec = client()
         .decrypt_structure()
         .table_name(TABLE)
@@ -141,9 +145,25 @@ async fn round_trip_test_structured_data() {
     //# ENCRYPT signifies that the [Terminal Value](#terminal-value) in the [Terminal Data](#terminal-data)
     //# MUST be attempted to be decrypted.
     assert_eq!(dec.plaintext_structure(), &test_structured_data());
+
+    //= spec/structured-encryption/decrypt-structure.md#behavior
+    //= type=test
+    //# The output [Crypto List](decrypt-path-structure.md#crypto-list) produced by [Decrypt Path Structure](decrypt-path-structure.md)
+    //# MUST be split into [Structured Data](decrypt-path-structure.md#structured-data) and [Crypto Schema](decrypt-path-structure.md#crypto-schema)
+    //# maps.
     assert_eq!(dec.crypto_schema(), &test_crypto_schema_auth_only());
     let header = dec.parsed_header();
+
+    //= spec/structured-encryption/decrypt-structure.md#output
+    //= type=test
+    //= reason=the output holds the plaintext structure and schema (above) and the parsed header
+    //# This operation MUST output the following:
     assert_eq!(header.algorithm_suite_id(), SIGNING_SUITE);
+
+    //= spec/structured-encryption/decrypt-path-structure.md#construct-decrypted-structured-data
+    //= type=test
+    //# The output MUST also include a [Parsed Header](#parsed-header) that contains
+    //# data that was serialized into the header included in the output Structured Data.
     assert_eq!(
         header.stored_encryption_context().get("some"),
         Some("value")
@@ -513,6 +533,22 @@ async fn path_structure_is_output_in_canonical_order() {
         .iter()
         .map(|x| (x.key().to_vec(), x.data().clone(), x.action()))
         .collect();
+
+    //= spec/structured-encryption/decrypt-path-structure.md#construct-decrypted-structured-data
+    //= type=test
+    //# - An entry MUST NOT exist with the key "aws_dbe_head" or "aws_dbe_foot".
+    //
+    //= spec/structured-encryption/decrypt-path-structure.md#construct-decrypted-structured-data
+    //= type=test
+    //= reason=all four non-header inputs come back, the DO_NOTHING one included
+    //# - For every entry in the [input Auth List](#auth-list), other than the header and footer,
+    //# an entry MUST exist with the same key in the output Crypto List.
+    //
+    //= spec/structured-encryption/decrypt-path-structure.md#construct-decrypted-structured-data
+    //= type=test
+    //= reason=the output is exactly these four input paths, nothing else
+    //# - For every entry in the output Crypto List
+    //# an entry MUST exist with the same key in the [input Auth List](#auth-list).
     assert_eq!(
         plain,
         [
@@ -522,6 +558,11 @@ async fn path_structure_is_output_in_canonical_order() {
             (path(&["a", "a"]), blob(), CryptoAction::EncryptAndSign),
         ]
     );
+
+    //= spec/structured-encryption/decrypt-path-structure.md#output
+    //= type=test
+    //= reason=the output holds the decrypted list (asserted above) and the parsed header
+    //# This operation MUST output the following:
     assert_eq!(dec.parsed_header().algorithm_suite_id(), SIGNING_SUITE);
     assert_eq!(dec.into_plaintext_structure().len(), 4);
 }
@@ -575,6 +616,11 @@ async fn nested_path_round_trip_through_builder_adders() {
         .send()
         .await
         .unwrap();
+
+    //= spec/structured-encryption/decrypt-path-structure.md#input
+    //= type=test
+    //= reason=no encryption context is set, and decrypt succeeds
+    //# The following inputs to this behavior MUST be OPTIONAL:
     let mut builder = client()
         .decrypt_path_structure()
         .table_name(TABLE)
@@ -587,8 +633,20 @@ async fn nested_path_round_trip_through_builder_adders() {
         panic!("expected one field, got {:?}", dec.plaintext_structure());
     };
     assert_eq!(item.key(), path(&["outer", "inner"]).as_slice());
-    assert_eq!(item.data().value(), b"nested");
-    assert_eq!(item.data().type_id(), STRING);
+    let stored = &enc.encrypted_structure()[0];
+    assert_eq!(stored.data().type_id(), [0xFF, 0xFF]);
+
+    //= spec/structured-encryption/decrypt-path-structure.md#construct-decrypted-structured-data
+    //= type=test
+    //= reason=stored as 0xFFFF, it comes back as the STRING type id and plaintext it was encrypted from
+    //# If the action is [ENCRYPT_AND_SIGN](./structures.md#encryptandsign)
+    //# this Terminal Data MUST have [Terminal Type ID](./structures.md#terminal-type-id)
+    //# equal to the first two bytes of the input Terminal Data's value,
+    //# and a value equal to the [decryption](#terminal-data-decryption) of the input Terminal Data's value.
+    assert_eq!(
+        item.data(),
+        &StructuredDataTerminal::new(STRING, b"nested".to_vec())
+    );
     assert_eq!(dec.parsed_header().algorithm_suite_id(), SYMMETRIC_SUITE);
 }
 
@@ -867,6 +925,129 @@ async fn encrypt_path_structure_needs_no_suite_or_context() {
         Some(MplAlgorithmSuiteId::Dbe(SIGNING_SUITE))
     );
     assert_eq!(enc.parsed_header().algorithm_suite_id(), SIGNING_SUITE);
+}
+
+#[tokio::test]
+async fn decrypt_materials_call_is_built_from_the_header() {
+    let enc = client()
+        .encrypt_structure()
+        .table_name(TABLE)
+        .plaintext_structure("pk", StructuredDataTerminal::new(STRING, b"a".to_vec()))
+        .crypto_schema("pk", CryptoAction::SignAndIncludeInEncryptionContext)
+        .plaintext_structure("secret", blob())
+        .crypto_schema("secret", CryptoAction::EncryptAndSign)
+        .cmm(cmm())
+        .algorithm_suite_id(SYMMETRIC_SUITE)
+        .encryption_context("some", "value")
+        .send()
+        .await
+        .unwrap();
+    let header = enc.parsed_header().clone();
+    let (spy, calls) = decrypt_recording_cmm(OnDecrypt::Forward);
+    client()
+        .decrypt_structure()
+        .table_name(TABLE)
+        .set_encrypted_structure(Some(enc.into_encrypted_structure()))
+        .authenticate_schema("pk", AuthenticateAction::Sign)
+        .authenticate_schema("secret", AuthenticateAction::Sign)
+        .authenticate_schema(HEADER, AuthenticateAction::DoNotSign)
+        .authenticate_schema(FOOTER, AuthenticateAction::DoNotSign)
+        .cmm(spy)
+        .encryption_context("some", "value")
+        .send()
+        .await
+        .unwrap();
+    let calls = calls.lock().unwrap();
+
+    //= spec/structured-encryption/decrypt-path-structure.md#retrieve-decryption-materials
+    //= type=test
+    //# This operation MUST obtain a set of decryption materials by calling
+    //# [Decrypt Materials](../../submodules/MaterialProviders/aws-encryption-sdk-specification/framework/cmm-interface.md#decrypt-materials)
+    //# on the [CMM](#cmm) calculated above.
+    assert_eq!(calls.len(), 1);
+    let input = &calls[0];
+
+    //= spec/structured-encryption/decrypt-path-structure.md#retrieve-decryption-materials
+    //= type=test
+    //= reason=the recorded request carries the header's suite, data keys, and stored context, and the DBE policy
+    //# The call to the CMM's Decrypt Materials operation MUST be constructed as follows:
+    assert_eq!(
+        (
+            input.algorithm_suite_id(),
+            input.commitment_policy(),
+            input.encrypted_data_keys(),
+            input.encryption_context(),
+        ),
+        (
+            MplAlgorithmSuiteId::Dbe(SYMMETRIC_SUITE),
+            CommitmentPolicy::Dbe(DbeCommitmentPolicy::RequireEncryptRequireDecrypt),
+            header.encrypted_data_keys(),
+            header.stored_encryption_context(),
+        )
+    );
+
+    //= spec/structured-encryption/decrypt-path-structure.md#retrieve-decryption-materials
+    //= type=test
+    //= reason=the reproduced context is the caller's plus the derived attribute entries
+    //# This operation MUST [calculate the appropriate CMM and encryption context](#create-new-encryption-context-and-cmm).
+    //
+    //= spec/structured-encryption/decrypt-path-structure.md#create-new-encryption-context-and-cmm
+    //= type=test
+    //= reason=a version 2 header: the pk entry and the legend are added to the caller's context
+    //# Otherwise, this operation MUST add an [entry](../dynamodb-encryption-client/encrypt-item.md#base-context-value-version-2) to the encryption context for every
+    //# [SIGN_AND_INCLUDE_IN_ENCRYPTION_CONTEXT Crypto Action](./structures.md#sign_and_include_in_encryption_context)
+    //# [Terminal Data](./structures.md#terminal-data)
+    //# in the input record, plus the Legend.
+    assert_eq!(
+        input.reproduced_encryption_context(),
+        Some(&context(&[
+            ("some", "value"),
+            ("aws-crypto-attr.pk", "a"),
+            ("aws-crypto-legend", "S"),
+        ]))
+    );
+}
+
+#[tokio::test]
+async fn version_1_decrypt_passes_the_cmm_and_context_unchanged() {
+    // No SIGN_AND_INCLUDE_IN_ENCRYPTION_CONTEXT field, so the header is version 1.
+    let enc = client()
+        .encrypt_structure()
+        .table_name(TABLE)
+        .set_plaintext_structure(Some(test_structured_data()))
+        .set_crypto_schema(Some(test_crypto_schema()))
+        .cmm(cmm())
+        .encryption_context("some", "value")
+        .send()
+        .await
+        .unwrap()
+        .into_encrypted_structure();
+    assert_eq!(enc[HEADER].value()[0], 1);
+    let (spy, calls) = decrypt_recording_cmm(OnDecrypt::Forward);
+    client()
+        .decrypt_structure()
+        .table_name(TABLE)
+        .set_encrypted_structure(Some(enc))
+        .set_authenticate_schema(Some(test_authenticate_schema()))
+        .cmm(spy)
+        .encryption_context("some", "value")
+        .send()
+        .await
+        .unwrap();
+    let calls = calls.lock().unwrap();
+    let [input] = calls.as_slice() else {
+        panic!("expected one call, got {}", calls.len());
+    };
+
+    //= spec/structured-encryption/decrypt-path-structure.md#create-new-encryption-context-and-cmm
+    //= type=test
+    //= reason=the input CMM receives the caller's context exactly, with no attribute entries added
+    //# If the version stored in the header is 1,
+    //# then the input cmm and encryption context MUST be used unchanged.
+    assert_eq!(
+        input.reproduced_encryption_context(),
+        Some(&context(&[("some", "value")]))
+    );
 }
 
 #[test]

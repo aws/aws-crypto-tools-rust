@@ -610,6 +610,9 @@ impl DecryptStructureFluentBuilder {
     ///   or the schema does not name exactly the fields of the structure.
     /// - Any error of the CMM, or of parsing, verifying, or decrypting the structure.
     pub async fn send(self) -> Result<DecryptStructureOutput, Error> {
+        //= spec/structured-encryption/decrypt-structure.md#input
+        //= reason=each of the four inputs is unwrapped by required(), which rejects it unset
+        //# The following inputs to this behavior are REQUIRED:
         let table = required(self.table_name, "table_name")?;
         let encrypted = to_inner_map(required(self.encrypted_structure, "encrypted_structure")?);
         let schema: HashMap<String, AuthAction> =
@@ -618,9 +621,16 @@ impl DecryptStructureFluentBuilder {
                 .map(|(k, a)| (k, a.into()))
                 .collect();
         let cmm = required(self.cmm, "cmm")?;
+
+        //= spec/structured-encryption/decrypt-structure.md#input
+        //= reason=the encryption context is passed on as an Option
+        //# The following inputs to this behavior MUST be OPTIONAL:
         let out =
             super::decrypt_structure(&table, encrypted, &schema, cmm, self.encryption_context)
                 .await?;
+
+        //= spec/structured-encryption/decrypt-structure.md#output
+        //# This operation MUST output the following:
         Ok(DecryptStructureOutput {
             plaintext_structure: from_inner_map(out.data),
             crypto_schema: out.schema,
@@ -899,14 +909,24 @@ impl DecryptPathStructureFluentBuilder {
     ///   or a path repeats.
     /// - Any error of the CMM, or of parsing, verifying, or decrypting the structure.
     pub async fn send(self) -> Result<DecryptPathStructureOutput, Error> {
+        //= spec/structured-encryption/decrypt-path-structure.md#input
+        //= reason=each of the three inputs is unwrapped by required(), which rejects it unset
+        //# The following inputs to this behavior are REQUIRED:
         let table = required(self.table_name, "table_name")?;
         let data = required(self.encrypted_structure, "encrypted_structure")?
             .into_iter()
             .map(AuthField::from)
             .collect();
         let cmm = required(self.cmm, "cmm")?;
+
+        //= spec/structured-encryption/decrypt-path-structure.md#input
+        //= reason=the encryption context is passed on as an Option
+        //# The following inputs to this behavior MUST be OPTIONAL:
         let (out, parsed_header) =
             super::decrypt_path_structure(&table, data, cmm, self.encryption_context).await?;
+
+        //= spec/structured-encryption/decrypt-path-structure.md#output
+        //# This operation MUST output the following:
         Ok(DecryptPathStructureOutput {
             plaintext_structure: out.into_iter().map(CryptoItem::from).collect(),
             parsed_header,

@@ -415,6 +415,12 @@ fn decrypt_rejects_changed_path() {
     let mut enc = crypt(Mode::Encrypt, suite(), &DATA_KEY, &MSG_ID, sample()).unwrap();
     enc[0].canon = b"z".to_vec();
     let err = crypt(Mode::Decrypt, suite(), &DATA_KEY, &MSG_ID, enc).unwrap_err();
+
+    //= spec/structured-encryption/decrypt-path-structure.md#terminal-data-decryption
+    //= type=test
+    //= reason=the value decrypts under its own canonical path only, so that path is the AAD
+    //# The output Terminal Data MUST have a [Terminal Value](./structures.md#terminal-type-id)
+    //# equal to the following decryption:
     assert_eq!(err.kind(), Kind::Cryptographic);
 }
 
@@ -434,6 +440,11 @@ fn decrypt_rejects_value_shorter_than_type_id_and_tag() {
         CryptoAction::EncryptAndSign,
     )];
     let err = crypt(Mode::Decrypt, suite(), &DATA_KEY, &MSG_ID, short).unwrap_err();
+
+    //= spec/structured-encryption/decrypt-path-structure.md#terminal-data-decryption
+    //= type=test
+    //= reason=a value with no room for the 2-byte type id and the tag cannot be deserialized
+    //# The input [Terminal Value](./structures.md#terminal-value) MUST be deserialized as follows:
     assert_eq!(err.kind(), Kind::Serialization);
     assert_eq!(
         err.message(),
@@ -447,7 +458,13 @@ fn crypt_round_trips_empty_value() {
     let data = vec![item("a", STRING, b"", CryptoAction::EncryptAndSign)];
     let enc = crypt(Mode::Encrypt, suite(), &DATA_KEY, &MSG_ID, data).unwrap();
     assert_eq!(enc[0].data.value.len(), 2 + AUTH_TAG_SIZE);
+    assert_eq!(enc[0].data.type_id, BYTES_TYPE_ID);
     let dec = crypt(Mode::Decrypt, suite(), &DATA_KEY, &MSG_ID, enc).unwrap();
+
+    //= spec/structured-encryption/decrypt-path-structure.md#terminal-data-decryption
+    //= type=test
+    //# The output Terminal Data MUST have a [Terminal Type Id](./structures.md#terminal-type-id)
+    //# equal to the deserialized Terminal Type Id.
     assert_eq!(dec[0].data, Terminal::new(STRING, Vec::new()));
 }
 

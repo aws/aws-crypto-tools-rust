@@ -55,6 +55,11 @@ const fn dbe_commitment_policy() -> CommitmentPolicy {
 /// What the header of an encrypted structure says.
 #[derive(Clone, Debug)]
 #[non_exhaustive]
+//= spec/structured-encryption/decrypt-path-structure.md#parsed-header
+//= type=implication
+//= reason=the struct always has the suite id, the stored context, the data keys, and the full context
+//# This structure MUST contain the following values,
+//# representing the deserialized form of the header of the input encrypted structure:
 pub struct ParsedHeader {
     pub(crate) algorithm_suite_id: AlgorithmSuiteId,
     pub(crate) encrypted_data_keys: Vec<EncryptedDataKey>,
@@ -255,6 +260,10 @@ fn require_context(
         //= spec/structured-encryption/encrypt-path-structure.md#create-new-encryption-context-and-cmm
         //# An error MUST be returned if any of the entries added to the encryption context in this step
         //# have the same key as any entry already in the encryption context.
+        //
+        //= spec/structured-encryption/decrypt-path-structure.md#create-new-encryption-context-and-cmm
+        //# An error MUST be returned if any of the entries added to the encryption context in this step
+        //# have the same key as any entry already in the encryption context.
         return Err(val_err(
             "Internal Error - Structured Encryption encryption context overlaps with Item Encryptor encryption context.",
         ));
@@ -265,6 +274,10 @@ fn require_context(
     }
 
     //= spec/structured-encryption/encrypt-path-structure.md#create-new-encryption-context-and-cmm
+    //# Then, this operation MUST create a [Required Encryption Context CMM](https://github.com/awslabs/private-aws-encryption-sdk-specification-staging/blob/dafny-verified/framework/required-encryption-context-cmm.md)
+    //# with the following inputs:
+    //
+    //= spec/structured-encryption/decrypt-path-structure.md#create-new-encryption-context-and-cmm
     //# Then, this operation MUST create a [Required Encryption Context CMM](https://github.com/awslabs/private-aws-encryption-sdk-specification-staging/blob/dafny-verified/framework/required-encryption-context-cmm.md)
     //# with the following inputs:
     required_context_cmm(cmm, keys)
@@ -529,11 +542,21 @@ pub(crate) async fn encrypt_path_structure(
 
 /// The header or footer terminal, which must be an unsigned binary field.
 fn get_binary<'a>(data: &'a [AuthField], name: &str) -> Result<&'a Terminal, Error> {
-    let item = data
-        .iter()
-        .find(|x| x.key.len() == 1 && x.key[0] == name)
-        .ok_or_else(|| ser_err(format!("the item has no {name} attribute")))?;
+    let Some(item) = data.iter().find(|x| x.key.len() == 1 && x.key[0] == name) else {
+        //= spec/structured-encryption/decrypt-path-structure.md#auth-list
+        //# This Auth List MUST contain data located at the [header index](./header.md#header-index)
+        //# and the [footer index](./footer.md#footer-index).
+        //
+        //= spec/structured-encryption/decrypt-path-structure.md#verify-signatures
+        //# A footer field MUST exist with the name `aws_dbe_foot`
+        return Err(ser_err(format!("the item has no {name} attribute")));
+    };
     if item.data.type_id != BYTES_TYPE_ID {
+        //= spec/structured-encryption/decrypt-path-structure.md#parse-the-header
+        //# The [Terminal Type Id](./structures.md#terminal-type-id) on this Terminal Data MUST be `0xFFFF`.
+        //
+        //= spec/structured-encryption/decrypt-path-structure.md#verify-signatures
+        //# The footer field TypeID MUST be 0xFFFF
         return Err(ser_err(format!(
             "the item's {name} attribute must be binary"
         )));
@@ -552,21 +575,60 @@ pub(crate) async fn decrypt_path_structure(
     cmm: SharedCmm,
     encryption_context: Option<EncryptionContext>,
 ) -> Result<(Vec<CryptoField>, ParsedHeader), Error> {
+    //= spec/structured-encryption/decrypt-path-structure.md#behavior
+    //= reason=these checks, and get_binary's below, all run before the CMM is called
+    //# All inputs MUST adhere to their requirements;
+    //# otherwise this operation MUST immediately yield an error.
     if !data.iter().any(|x| x.action == AuthAction::Sign) {
+        //= spec/structured-encryption/decrypt-path-structure.md#auth-list
+        //# The Auth List MUST include at least one [SIGN Authenticate Action](./structures.md#sign);
+        //# otherwise, this operation MUST yield an error.
         return Err(val_err("at least one attribute must be signed"));
     }
     if !has_no_duplicates(data.iter().map(|x| &x.key)) {
+        //= spec/structured-encryption/decrypt-path-structure.md#auth-list
+        //# The Auth List MUST NOT contain duplicate Paths.
         return Err(val_err("an attribute appears more than once"));
     }
+
+    // Parse the Header
+
+    //= spec/structured-encryption/decrypt-path-structure.md#behavior
+    //= reason=the footer is verified (?) before crypt decrypts any field; the CMM call consumes the parsed header
+    //# This operation MUST perform all the above steps,
+    //# and it MUST perform them in the above order.
+    //
+    //= spec/structured-encryption/decrypt-path-structure.md#parse-the-header
+    //# Given the [input data](#auth-list),
+    //# this operation MUST access the [Terminal Data](./structures.md#terminal-data)
+    //# at "aws_dbe_head".
     let header_bytes = get_binary(&data, HEADER_FIELD)?.value.clone();
     let footer_bytes = get_binary(&data, FOOTER_FIELD)?.value.clone();
+
+    //= spec/structured-encryption/decrypt-path-structure.md#parse-the-header
+    //# This operation MUST deserialize the header bytes
+    //# according to the [header format](./header.md).
     let head = PartialHeader::deserialize(&header_bytes)?;
     let header_suite = DbeSuite::from_flavor(head.flavor)?;
     let canon = for_decrypt(table, data, &head.legend)?;
 
+    // Retrieve Decryption Materials
+
+    //= spec/structured-encryption/decrypt-path-structure.md#retrieve-decryption-materials
+    //# This operation MUST [calculate the appropriate CMM and encryption context](#create-new-encryption-context-and-cmm).
     let mut ec = encryption_context.unwrap_or_default();
     let mut cmm = cmm;
+
+    //= spec/structured-encryption/decrypt-path-structure.md#create-new-encryption-context-and-cmm
+    //= reason=a version 1 header skips this branch, leaving cmm and ec as given
+    //# If the version stored in the header is 1,
+    //# then the input cmm and encryption context MUST be used unchanged.
     if head.version == 2 {
+        //= spec/structured-encryption/decrypt-path-structure.md#create-new-encryption-context-and-cmm
+        //# Otherwise, this operation MUST add an [entry](../dynamodb-encryption-client/encrypt-item.md#base-context-value-version-2) to the encryption context for every
+        //# [SIGN_AND_INCLUDE_IN_ENCRYPTION_CONTEXT Crypto Action](./structures.md#sign_and_include_in_encryption_context)
+        //# [Terminal Data](./structures.md#terminal-data)
+        //# in the input record, plus the Legend.
         let extra = v2_encryption_context(
             canon
                 .iter()
@@ -575,14 +637,39 @@ pub(crate) async fn decrypt_path_structure(
         )?;
         cmm = require_context(&mut ec, &extra, cmm)?;
     }
+
+    //= spec/structured-encryption/decrypt-path-structure.md#retrieve-decryption-materials
+    //# This operation MUST obtain a set of decryption materials by calling
+    //# [Decrypt Materials](../../submodules/MaterialProviders/aws-encryption-sdk-specification/framework/cmm-interface.md#decrypt-materials)
+    //# on the [CMM](#cmm) calculated above.
+    //
+    //= spec/structured-encryption/decrypt-path-structure.md#retrieve-decryption-materials
+    //# The call to the CMM's Decrypt Materials operation MUST be constructed as follows:
     let mat = cmm
         .decrypt_materials()
         .algorithm_suite_id(MplAlgorithmSuiteId::Dbe(header_suite.id))
         .commitment_policy(dbe_commitment_policy())
         .encrypted_data_keys(head.data_keys.clone())
         .encryption_context(head.enc_context.clone())
+        //= spec/structured-encryption/decrypt-path-structure.md#encryption-context
+        //= reason=the CMM checks the caller's context, as the reproduced context, against the keys' context
+        //# - This MUST include any key-values pairs that were used during the original [encryption](./encrypt-path-structure.md)
+        //# of the [input data](#auth-list),
+        //# but not stored in the [input Structured Data's header](./header.md#encryption-context).
+        //
+        //= spec/structured-encryption/decrypt-path-structure.md#encryption-context
+        //= reason=the CMM accepts a reproduced entry that equals the stored one
+        //# - This MAY include any key-values pairs that are stored
+        //# in the [input Structured Data's header](./header.md#encryption-context).
+        //
+        //= spec/structured-encryption/decrypt-path-structure.md#encryption-context
+        //= reason=the CMM rejects a reproduced entry that differs from the stored one
+        //# - This MUST NOT include any key-values pairs that were not
+        //# used during the original [encryption](./encrypt-structure.md) of the [input data](#auth-list).
         .reproduced_encryption_context(ec)
         .send()
+        //= spec/structured-encryption/decrypt-path-structure.md#behavior
+        //# If any of these steps fails, this operation MUST halt and indicate a failure to the caller.
         .await?
         .into_decryption_materials();
     if !valid_encryption_context(mat.encryption_context()) {
@@ -593,16 +680,59 @@ pub(crate) async fn decrypt_path_structure(
     let key = mat
         .plaintext_data_key()
         .ok_or_else(|| materials_err("the materials have no plaintext data key"))?;
+
+    //= spec/structured-encryption/decrypt-path-structure.md#retrieve-decryption-materials
+    //= reason=the suite comes from the materials only; commitment, footer, and decryption use it
+    //# The algorithm suite used in all further aspects of this operation MUST be
+    //# the algorithm suite in the
+    //# [decryption materials](../../submodules/MaterialProviders/aws-encryption-sdk-specification/framework/structures.md#decryption-materials)
+    //# returned from the Decrypt Materials call.
+    //
+    //= spec/structured-encryption/decrypt-path-structure.md#retrieve-decryption-materials
+    //= reason=it is not compared with the header's suite
+    //# Note that the algorithm suite in the retrieved decryption materials MAY be different from the input algorithm suite.
     let suite = DbeSuite::new(mat.algorithm_suite_id())?;
 
     //= spec/structured-encryption/header.md#commit-key
     //# The commit key calculation described above MUST be performed with the record's plaintext data key
     //# and the header's message id.
     let commit = crypt::commit_key(suite, key.as_bytes(), &head.msg_id)?;
+
+    //= spec/structured-encryption/decrypt-path-structure.md#parse-the-header
+    //# The header field value MUST be [verified](header.md#commitment-verification)
     PartialHeader::verify_commitment(suite.commit, &commit, &header_bytes)?;
+
+    // Verify Signatures
+
+    //= spec/structured-encryption/decrypt-path-structure.md#verify-signatures
+    //# This operation MUST deserialize the bytes in [Terminal Value](./structures.md#terminal-value)
+    //# according to the [footer format](./footer.md).
     let footer = Footer::deserialize(&footer_bytes, suite.signature != suite::Signature::None)?;
+
+    //= spec/structured-encryption/decrypt-path-structure.md#verify-signatures
+    //# The footer field value MUST be [verified](footer.md#footer-verification).
+    //
+    //= spec/structured-encryption/decrypt-path-structure.md#verify-signatures
+    //= reason=the ? returns before crypt decrypts any field
+    //# Decryption MUST fail immediately if verification fails.
     footer.validate(&mat, head.data_keys.len(), &canon, &header_bytes)?;
+
+    // Construct Decrypted Structured Data
+
     let decrypted = crypt::crypt(Mode::Decrypt, suite, key.as_bytes(), &head.msg_id, canon)?;
+
+    //= spec/structured-encryption/decrypt-path-structure.md#construct-decrypted-structured-data
+    //# - An entry MUST NOT exist with the key "aws_dbe_head" or "aws_dbe_foot".
+    //
+    //= spec/structured-encryption/decrypt-path-structure.md#construct-decrypted-structured-data
+    //= reason=crypt returns one entry per input entry; only the header and footer are dropped
+    //# - For every entry in the [input Auth List](#auth-list), other than the header and footer,
+    //# an entry MUST exist with the same key in the output Crypto List.
+    //
+    //= spec/structured-encryption/decrypt-path-structure.md#construct-decrypted-structured-data
+    //= reason=every output entry is an input entry; nothing is added
+    //# - For every entry in the output Crypto List
+    //# an entry MUST exist with the same key in the [input Auth List](#auth-list).
     let out = decrypted
         .into_iter()
         .filter(|x| !is_header_path(&x.key))
@@ -612,6 +742,10 @@ pub(crate) async fn decrypt_path_structure(
             action: x.action,
         })
         .collect();
+
+    //= spec/structured-encryption/decrypt-path-structure.md#construct-decrypted-structured-data
+    //# The output MUST also include a [Parsed Header](#parsed-header) that contains
+    //# data that was serialized into the header included in the output Structured Data.
     let parsed = ParsedHeader {
         algorithm_suite_id: header_suite.id,
         encrypted_data_keys: head.data_keys,
@@ -744,10 +878,17 @@ pub(crate) async fn decrypt_structure(
     encryption_context: Option<EncryptionContext>,
 ) -> Result<StructureOutput, Error> {
     if encrypted.len() != schema.len() || encrypted.keys().any(|k| !schema.contains_key(k)) {
+        //= spec/structured-encryption/decrypt-structure.md#behavior
+        //# The input [Structured Data](decrypt-path-structure.md#structured-data) and [Authenticate Schema](decrypt-path-structure.md#authenticate-schema)
+        //# MUST refer to the same set of locations.
         return Err(val_err(
             "DecryptStructure requires encryptedStructure and authenticateSchema have the same keys.",
         ));
     }
+
+    //= spec/structured-encryption/decrypt-structure.md#behavior
+    //# The input [Structured Data](decrypt-path-structure.md#structured-data) and [Authenticate Schema](decrypt-path-structure.md#authenticate-schema)
+    //# MUST be combined into a single [Auth List](decrypt-path-structure.md#auth-list).
     let list = sorted_entries(encrypted)
         .into_iter()
         .map(|(k, data)| AuthField {
@@ -756,7 +897,15 @@ pub(crate) async fn decrypt_structure(
             data,
         })
         .collect();
+
+    //= spec/structured-encryption/decrypt-structure.md#behavior
+    //# Decrypt Structure MUST then behave as [Decrypt Path Structure](decrypt-path-structure.md)
     let (out, parsed_header) = decrypt_path_structure(table, list, cmm, encryption_context).await?;
+
+    //= spec/structured-encryption/decrypt-structure.md#behavior
+    //# The output [Crypto List](decrypt-path-structure.md#crypto-list) produced by [Decrypt Path Structure](decrypt-path-structure.md)
+    //# MUST be split into [Structured Data](decrypt-path-structure.md#structured-data) and [Crypto Schema](decrypt-path-structure.md#crypto-schema)
+    //# maps.
     let (data, schema) = unbuild(out)?;
     Ok(StructureOutput {
         data,

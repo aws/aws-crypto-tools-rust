@@ -158,9 +158,22 @@ fn decrypt_terminal(fk: &[u8], path: &[u8], data: &Terminal) -> Result<Terminal,
             "an encrypted attribute is too short to be a ciphertext",
         ));
     }
+
+    //= spec/structured-encryption/decrypt-path-structure.md#terminal-data-decryption
+    //= reason=the first 2 bytes are the type id; the rest is the ciphertext, then the tag
+    //# The input [Terminal Value](./structures.md#terminal-value) MUST be deserialized as follows:
     let (ct, tag) = value[2..].split_at(value.len() - 2 - AUTH_TAG_SIZE);
     let mut plain = vec![0u8; ct.len()];
+
+    //= spec/structured-encryption/decrypt-path-structure.md#terminal-data-decryption
+    //= reason=AES-256-GCM is every DBE suite's encryption; the AAD is the canonical path
+    //# The output Terminal Data MUST have a [Terminal Value](./structures.md#terminal-type-id)
+    //# equal to the following decryption:
     aes_decrypt(AesGcm::Aes256Gcm, key, ct, tag, nonce, path, &mut plain)?;
+
+    //= spec/structured-encryption/decrypt-path-structure.md#terminal-data-decryption
+    //# The output Terminal Data MUST have a [Terminal Type Id](./structures.md#terminal-type-id)
+    //# equal to the deserialized Terminal Type Id.
     Ok(Terminal::new([value[0], value[1]], plain))
 }
 
@@ -221,6 +234,10 @@ pub(crate) fn crypt(
             //= spec/structured-encryption/encrypt-path-structure.md#encrypted-structured-data
             //# Otherwise, this Terminal Data MUST have [Terminal Type ID](./structures.md#terminal-type-id)
             //# and [Terminal Value](./structures.md#terminal-value) equal to the input Terminal Data's.
+            //
+            //= spec/structured-encryption/decrypt-path-structure.md#construct-decrypted-structured-data
+            //# Otherwise, this Terminal Data MUST have [Terminal Type ID](./structures.md#terminal-type-id) and
+            //# [Terminal Value](./structures.md#terminal-value) equal to the input Terminal Data.
             continue;
         }
         let slot = ((pos % FIELD_BATCH) * FIELD_STRIDE) as usize;
@@ -252,6 +269,12 @@ pub(crate) fn crypt(
             //# During [Decrypt Structure](decrypt-structure.md#decrypt-structure),
             //# ENCRYPT signifies that the [Terminal Value](#terminal-value) in the [Terminal Data](#terminal-data)
             //# MUST be attempted to be decrypted.
+            //
+            //= spec/structured-encryption/decrypt-path-structure.md#construct-decrypted-structured-data
+            //# If the action is [ENCRYPT_AND_SIGN](./structures.md#encryptandsign)
+            //# this Terminal Data MUST have [Terminal Type ID](./structures.md#terminal-type-id)
+            //# equal to the first two bytes of the input Terminal Data's value,
+            //# and a value equal to the [decryption](#terminal-data-decryption) of the input Terminal Data's value.
             Mode::Decrypt => decrypt_terminal(fk, &item.canon, &item.data)?,
         };
         pos += 1;
