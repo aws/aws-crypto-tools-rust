@@ -44,8 +44,8 @@ impl RsaPadding {
 fn pem_contents(key: &[u8], what: &str) -> Result<Vec<u8>, Error> {
     let key = std::str::from_utf8(key)
         .map_err(|_| serr(format!("the RSA {what} key is not UTF-8 PEM")))?;
-    let pem = pem::parse(key)
-        .map_err(|e| serr(format!("the RSA {what} key is not valid PEM: {e}")))?;
+    let pem =
+        pem::parse(key).map_err(|e| serr(format!("the RSA {what} key is not valid PEM: {e}")))?;
     Ok(pem.into_contents())
 }
 
