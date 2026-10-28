@@ -1,3 +1,6 @@
+// Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 //! Streaming round trips with a raw-AES keyring: EncryptStream <-> DecryptStream
 //! and each cross-mode pairing with the blob operations.
 

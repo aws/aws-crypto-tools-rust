@@ -195,9 +195,9 @@ jobs:
       contents: read
       actions: read
       id-token: write
-    uses: aws/aws-crypto-tools-commons/.github/workflows/esdk-test-server-reusable.yml@lucmcdon/esdk-registry-move-rust-server-paths
+    uses: aws/aws-crypto-tools-commons/.github/workflows/esdk-test-server-reusable.yml@main
     with:
-      commons-ref: lucmcdon/esdk-registry-move-rust-server-paths
+      commons-ref: main
       # Only run tests that involve the focus language (ex. skip Python <--> Java tests for this Rust repo)
       focus: ${{ matrix.focus }}
       checkout-languages: ${{ matrix.focus }}
