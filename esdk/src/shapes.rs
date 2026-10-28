@@ -134,22 +134,21 @@ pub use aws_crypto_mpl::types::EncryptionContext;
 /// the materials boundary.
 pub use aws_crypto_mpl::types::EsdkCommitmentPolicy as CommitmentPolicy;
 
-/// How [`Client::decrypt_stream`](crate::Client::decrypt_stream) handles a message
-/// whose algorithm suite has a signature algorithm.
+/// How [`Client::decrypt_stream`](crate::Client::decrypt_stream) handles a message with a signing algorithm suite.
 ///
 /// Plaintext written before the signature verifies is unverified:
 /// don't act on it until `send` returns `Ok`, and discard it on `Err`.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum SignedStreaming {
-    /// Decrypt a single-frame signed message, writing its plaintext only after the
-    /// signature verifies. Fail on a multi-frame signed message.
+    /// Fail on a multi-frame signed message.
+    /// A single-frame signed message decrypts, and its plaintext is written after the signature verifies.
     #[default]
     RejectMultiFrame,
-    /// Write each regular frame's plaintext as soon as its tag verifies, before the
-    /// signature verifies. Write the final frame only after the signature verifies.
+    /// Write each regular frame as soon as its tag verifies, before the signature verifies.
+    /// Hold the final frame until the signature verifies.
     ReleaseRegularFrames,
-    /// Fail right after parsing the header, before any plaintext is decrypted.
+    /// Fail right after parsing the header, before decrypting anything.
     RejectSigned,
 }
 
@@ -1084,7 +1083,7 @@ impl DecryptStreamInputBuilder {
         get_signed_streaming: signed_streaming -> SignedStreaming,
     );
 
-    /// Set how a signed message is streamed.
+    /// Set how `decrypt_stream` handles a signed message.
     /// Default is [`SignedStreaming::RejectMultiFrame`].
     #[must_use]
     pub(crate) const fn signed_streaming(mut self, signed_streaming: SignedStreaming) -> Self {
@@ -1092,7 +1091,7 @@ impl DecryptStreamInputBuilder {
         self
     }
 
-    /// Set how a signed message is streamed from an `Option`.
+    /// Set how `decrypt_stream` handles a signed message, from an `Option`.
     /// `None` leaves it unset.
     /// To set a value, use [`Self::signed_streaming`].
     #[must_use]

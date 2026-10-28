@@ -298,7 +298,7 @@ mod ffi {
         /// Whether to require committing algorithms on encrypt/decrypt.
         /// Core default is `EsdkCommitmentPolicy::RequireEncryptRequireDecrypt`
         pub commitment_policy: OptCommitmentPolicy,
-        /// How a signed message is streamed; only `create_decrypt_stream` reads it.
+        /// How `create_decrypt_stream` handles a signed message; `decrypt` ignores it.
         pub signed_streaming: OptSignedStreaming,
     }
 
@@ -799,7 +799,7 @@ fn alg_id_core_to_target(e: EsdkAlgorithmSuiteId) -> Result<ffi::EsdkAlgorithmSu
     }
 }
 
-// C++ to Rust for the signed-message streaming setting
+// C++ to Rust for SignedStreaming
 fn signed_streaming_target_to_core(x: ffi::SignedStreaming) -> Result<SignedStreaming, String> {
     use ffi::SignedStreaming as Target;
     match x {

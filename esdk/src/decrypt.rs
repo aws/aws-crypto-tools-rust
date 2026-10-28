@@ -23,8 +23,8 @@ use aws_mpl_primitives::{DigestContext, aes_decrypt, ecdsa_verify_context};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum DecryptMode {
-    /// Plaintext is released to the caller as each frame is decrypted;
-    /// the setting decides what happens to a signed message.
+    /// Writes plaintext to the caller as each frame decrypts.
+    /// The setting decides how a signed message is handled.
     Streaming(SignedStreaming),
     /// Plaintext is returned to the caller only after the whole message is
     /// decrypted and verified; multi-frame signed messages decrypt normally.
@@ -246,7 +246,7 @@ async fn decrypt_steps(
         step_parse_header(ciphertext, max_encrypted_data_keys).await?;
 
     //= spec/client-apis/decrypt.md#behavior
-    //= reason=SignedStreaming::RejectSigned is the option; the check runs before materials are fetched
+    //= reason=SignedStreaming::RejectSigned is the option; decrypt fails here, before fetching materials
     //# - The ESDK MUST provide a configuration option that causes the decryption operation
     //# to fail immediately after parsing the header if a signed algorithm suite is used.
     if mode.rejects_signed()

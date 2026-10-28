@@ -149,7 +149,6 @@ async fn test_decrypt_fails_with_trailing_bytes_after_message() {
     );
 }
 
-// By default, streaming a multi-frame signed message fails without releasing plaintext.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_streaming_fails_for_multi_frame_signed() {
     let keyring = test_keyring().await;

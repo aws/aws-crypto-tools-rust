@@ -285,7 +285,7 @@ int esdk_cpp_decrypt_stream(void* client,
         auto* keyring = reinterpret_cast<Aws::Esdk::Keyring*>(client);
         DecryptOptions options;
         options.with_encryption_context(to_map(ec_keys, ec_vals, ec_len));
-        // The commons suite streams multi-frame signed messages.
+        // The commons suite stream-decrypts multi-frame signed messages, which the default rejects.
         options.with_signed_streaming(Aws::Esdk::SignedStreaming::ReleaseRegularFrames);
 
         Client sdk = client_for(commitment_policy, max_encrypted_data_keys);

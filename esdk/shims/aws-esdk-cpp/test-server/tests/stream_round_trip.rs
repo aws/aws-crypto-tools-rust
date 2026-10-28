@@ -2,10 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! Offline streaming round trips through the C++ facade with a raw-AES keyring
-//! over the rpcv2Cbor wire: EncryptStream -> DecryptStream, plus each cross-mode
-//! pairing with the blob operations. The multi-frame plaintext spans several
-//! frames plus a partial final frame under the default signing suite. Needs no
-//! AWS access, so it always runs.
+//! over the rpcv2Cbor wire: EncryptStream -> DecryptStream,
+//! plus each cross-mode pairing with the blob operations.
+//! The multi-frame plaintext spans several frames plus a partial final frame,
+//! under the default signing suite.
+//! Needs no AWS access, so it always runs.
 
 use std::sync::Arc;
 

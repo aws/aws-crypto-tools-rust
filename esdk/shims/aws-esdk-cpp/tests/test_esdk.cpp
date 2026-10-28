@@ -618,7 +618,7 @@ void test_streaming() {
                                      .with_max_encrypted_data_keys(3)
                                      .with_commitment_policy(Aws::Esdk::CommitmentPolicy::RequireEncryptRequireDecrypt));
     // MUST be a non-signing suite to test round-trip here.
-    // Streamed decrypt of multi-frame signed messages is refused by any ESDK.
+    // By default, streamed decrypt refuses a multi-frame signed message.
     //
     //= spec/shim/esdk-shim.md#encrypt-stream-and-decrypt-stream
     //= type=test
@@ -900,7 +900,7 @@ void test_streaming_signed_message_refused() {
     // One-shot decrypt handles it.
     ESDK_CHECK(sdk.decrypt(ciphertext, keyring).plaintext == plaintext);
 
-    // Streamed decrypt refuses: it never releases plaintext it cannot yet verify.
+    // By default, streamed decrypt refuses: it releases no plaintext it cannot yet verify.
     //= spec/shim/esdk-shim.md#encrypt-stream-and-decrypt-stream
     //= type=test
     //# - Streamed decrypt MUST NOT release plaintext the core ESDK would not release,
@@ -946,7 +946,7 @@ void test_streaming_signed_message_settings() {
                      result.trailing_output.data() + result.trailing_output.size());
     ESDK_CHECK(recovered == plaintext);
 
-    // RejectMultiFrame, set explicitly, refuses the multi-frame signed message.
+    // RejectMultiFrame, set explicitly, refuses it.
     ++::esdk_test::g_checks;
     try {
         auto refuse = sdk.create_decrypt_stream(
@@ -960,7 +960,7 @@ void test_streaming_signed_message_settings() {
         // expected
     }
 
-    // RejectSigned fails on the header.
+    // RejectSigned fails at the header.
     ++::esdk_test::g_checks;
     try {
         auto reject = sdk.create_decrypt_stream(

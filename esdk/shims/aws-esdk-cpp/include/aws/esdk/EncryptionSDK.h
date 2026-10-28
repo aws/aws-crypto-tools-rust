@@ -453,16 +453,17 @@ enum class CommitmentPolicy : std::uint8_t {
     RequireEncryptRequireDecrypt = 3,
 };
 
-/// How a streamed decrypt handles a message whose algorithm suite signs.
-/// Plaintext a stream releases before finish() returns is unverified.
+/// How a streamed decrypt handles a message with a signing algorithm suite.
+/// Plaintext the stream releases before finish() returns is unverified.
 enum class SignedStreaming : std::uint8_t {
-    /// Decrypt a single-frame signed message, releasing its plaintext only after
-    /// the signature verifies. Fail on a multi-frame signed message. The default.
+    /// The default.
+    /// Fail on a multi-frame signed message.
+    /// A single-frame signed message decrypts, and its plaintext is released after the signature verifies.
     RejectMultiFrame = 1,
-    /// Release each regular frame's plaintext as soon as its tag verifies, before the
-    /// signature verifies. Release the final frame only after the signature verifies.
+    /// Release each regular frame as soon as its tag verifies, before the signature verifies.
+    /// Hold the final frame until the signature verifies.
     ReleaseRegularFrames = 2,
-    /// Fail right after parsing the header, before any plaintext is decrypted.
+    /// Fail right after parsing the header, before decrypting anything.
     RejectSigned = 3,
 };
 
@@ -856,8 +857,9 @@ public:
     /// Encryption context to verify against the encrypted message; every entry must be present in the message's context.
     /// Keys and values must be valid UTF-8; decrypt throws ValidationException otherwise.
     DecryptOptions& with_encryption_context(const std::map<std::string, std::string>& ec) { encryption_context_ = ec; return *this; }
-    /// How a signed message is streamed. Default SignedStreaming::RejectMultiFrame.
-    /// Only create_decrypt_stream reads this; decrypt ignores it.
+    /// How create_decrypt_stream handles a signed message.
+    /// Default SignedStreaming::RejectMultiFrame.
+    /// decrypt ignores it.
     DecryptOptions& with_signed_streaming(SignedStreaming s) { signed_streaming_ = s; return *this; }
 };
 

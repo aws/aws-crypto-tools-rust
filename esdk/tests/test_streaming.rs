@@ -13,7 +13,7 @@ use test_helpers::{
     multi_frame_unsigned_for_stream, test_keyring,
 };
 
-/// Stream-decrypt `ct` with `setting`, returning the result and every byte written.
+/// Stream-decrypt `ct` with `setting`, returning the result and the bytes written, even on failure.
 async fn decrypt_stream_with(
     keyring: RawAesKeyring,
     ct: &[u8],
@@ -179,7 +179,8 @@ async fn test_decrypt_stream_release_regular_frames_round_trips() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_decrypt_stream_release_regular_frames_holds_final_frame() {
-    // 3 frames of 10 bytes: the 2 regular frames are released, the final frame is not.
+    // Corrupt the signature.
+    // Of the three 10-byte frames, only the two regular frames reach the output.
     let (plaintext, keyring, mut ct) = multi_frame_signed_for_stream().await;
     let last = ct.len() - 1;
     ct[last] ^= 0x01;
@@ -196,8 +197,8 @@ async fn test_decrypt_stream_release_regular_frames_holds_final_frame() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_decrypt_stream_reject_signed_fails_after_header() {
-    // The wrong keyring proves the check runs before materials: the error is
-    // Validation, not a key error.
+    // This keyring cannot decrypt the message.
+    // A Validation error, not NoMatchingDataKey, shows decrypt fails before fetching materials.
     let ct = encrypt_with_signing_suite(b"single frame").await;
     //= spec/client-apis/decrypt.md#behavior
     //= type=test
