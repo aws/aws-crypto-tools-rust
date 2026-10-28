@@ -276,6 +276,48 @@ async fn dispatch(
                 .and_then(|resp| encode(&resp)),
             Err(e) => Err(e),
         },
+        "ExecuteStatementInputTransform" => match decode(&body) {
+            Ok(req) => state
+                .execute_statement_input_transform(req)
+                .await
+                .and_then(|resp| encode(&resp)),
+            Err(e) => Err(e),
+        },
+        "ExecuteStatementOutputTransform" => match decode(&body) {
+            Ok(req) => state
+                .execute_statement_output_transform(req)
+                .await
+                .and_then(|resp| encode(&resp)),
+            Err(e) => Err(e),
+        },
+        "BatchExecuteStatementInputTransform" => match decode(&body) {
+            Ok(req) => state
+                .batch_execute_statement_input_transform(req)
+                .await
+                .and_then(|resp| encode(&resp)),
+            Err(e) => Err(e),
+        },
+        "BatchExecuteStatementOutputTransform" => match decode(&body) {
+            Ok(req) => state
+                .batch_execute_statement_output_transform(req)
+                .await
+                .and_then(|resp| encode(&resp)),
+            Err(e) => Err(e),
+        },
+        "ExecuteTransactionInputTransform" => match decode(&body) {
+            Ok(req) => state
+                .execute_transaction_input_transform(req)
+                .await
+                .and_then(|resp| encode(&resp)),
+            Err(e) => Err(e),
+        },
+        "ExecuteTransactionOutputTransform" => match decode(&body) {
+            Ok(req) => state
+                .execute_transaction_output_transform(req)
+                .await
+                .and_then(|resp| encode(&resp)),
+            Err(e) => Err(e),
+        },
         other => Err(ServerError::generic(format!(
             "operation {other} is not supported by the native Rust language server"
         ))),

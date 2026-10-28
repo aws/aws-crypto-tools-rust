@@ -7,8 +7,10 @@
 //! and an output transform, run on the response before it is returned.
 //! A write's input transform encrypts the items it writes;
 //! a read's output transform decrypts the items it returns.
+//! A PartiQL statement on a configured table is rejected.
 //! A request for a table with no configuration passes through unchanged.
 
+mod partiql;
 mod read;
 mod write;
 

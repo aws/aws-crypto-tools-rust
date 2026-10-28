@@ -413,3 +413,53 @@ pub struct OutputTransformResponse<O> {
     #[serde(rename = "transformedOutput")]
     pub transformed_output: O,
 }
+
+/// An ExecuteStatement request: only the PartiQL statement is modeled.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExecuteStatementInput {
+    pub statement: String,
+}
+
+/// The items an ExecuteStatement response returns, if any.
+pub type ExecuteStatementOutput = ItemsOutput;
+
+/// One statement of a BatchExecuteStatement request.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BatchStatementRequest {
+    pub statement: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BatchExecuteStatementInput {
+    pub statements: Vec<BatchStatementRequest>,
+}
+
+/// One response of a BatchExecuteStatement: the item it returned, and its table.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct BatchStatementResponse {
+    #[serde(rename = "tableName", skip_serializing_if = "Option::is_none", default)]
+    pub table_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub item: Option<DdbItem>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct BatchExecuteStatementOutput {
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub responses: Option<Vec<BatchStatementResponse>>,
+}
+
+/// One statement of an ExecuteTransaction request.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ParameterizedStatement {
+    pub statement: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExecuteTransactionInput {
+    #[serde(rename = "transactStatements")]
+    pub transact_statements: Vec<ParameterizedStatement>,
+}
+
+/// The items an ExecuteTransaction response returns, one per statement.
+pub type ExecuteTransactionOutput = TransactGetItemsOutput;

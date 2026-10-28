@@ -11,8 +11,9 @@
 use std::collections::HashMap;
 
 use aws_db_esdk::aws_sdk_dynamodb::operation::{
-    batch_get_item, batch_write_item, delete_item, get_item, put_item, query, scan,
-    transact_get_items, transact_write_items, update_item,
+    batch_execute_statement, batch_get_item, batch_write_item, delete_item, execute_statement,
+    execute_transaction, get_item, put_item, query, scan, transact_get_items, transact_write_items,
+    update_item,
 };
 use aws_db_esdk::aws_sdk_dynamodb::types as ddb;
 use aws_db_esdk::transforms::Transforms;
@@ -21,12 +22,14 @@ use crate::error::ServerError;
 use crate::handlers::{from_ddb_item, table_config, to_ddb_item, AppState};
 use crate::model::DdbItem;
 use crate::transforms_model::{
-    AttributesOutput, BatchGetItemInput, BatchGetItemOutput, BatchWriteItemInput,
+    AttributesOutput, BatchExecuteStatementInput, BatchExecuteStatementOutput, BatchGetItemInput,
+    BatchGetItemOutput, BatchStatementRequest, BatchStatementResponse, BatchWriteItemInput,
     BatchWriteItemOutput, ConditionCheck, CreateTransformsClientRequest,
-    CreateTransformsClientResponse, Delete, DeleteItemInput, DeleteRequest, Get, GetItemInput,
+    CreateTransformsClientResponse, Delete, DeleteItemInput, DeleteRequest, ExecuteStatementInput,
+    ExecuteStatementOutput, ExecuteTransactionInput, ExecuteTransactionOutput, Get, GetItemInput,
     GetItemOutput, InputTransformRequest, InputTransformResponse, ItemResponse, ItemsOutput,
-    KeysAndAttributes, OutputTransformRequest, OutputTransformResponse, Put, PutItemInput,
-    PutRequest, QueryInput, ScanInput, TransactGetItem, TransactGetItemsInput,
+    KeysAndAttributes, OutputTransformRequest, OutputTransformResponse, ParameterizedStatement,
+    Put, PutItemInput, PutRequest, QueryInput, ScanInput, TransactGetItem, TransactGetItemsInput,
     TransactGetItemsOutput, TransactWriteItem, TransactWriteItemsInput, TransactWriteItemsOutput,
     Update, UpdateItemInput, WriteRequest, WriteRequestMap,
 };
@@ -487,6 +490,89 @@ fn from_transact_get(
     })
 }
 
+fn to_execute_statement(
+    i: ExecuteStatementInput,
+) -> Result<execute_statement::ExecuteStatementInput, ServerError> {
+    execute_statement::ExecuteStatementInput::builder()
+        .statement(i.statement)
+        .build()
+        .map_err(build_err)
+}
+
+fn from_execute_statement(i: execute_statement::ExecuteStatementInput) -> ExecuteStatementInput {
+    ExecuteStatementInput {
+        statement: i.statement.unwrap_or_default(),
+    }
+}
+
+fn to_batch_execute(
+    i: BatchExecuteStatementInput,
+) -> Result<batch_execute_statement::BatchExecuteStatementInput, ServerError> {
+    let statements = i
+        .statements
+        .into_iter()
+        .map(|s| {
+            ddb::BatchStatementRequest::builder()
+                .statement(s.statement)
+                .build()
+                .map_err(build_err)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    batch_execute_statement::BatchExecuteStatementInput::builder()
+        .set_statements(Some(statements))
+        .build()
+        .map_err(build_err)
+}
+
+fn from_batch_execute(
+    i: batch_execute_statement::BatchExecuteStatementInput,
+) -> BatchExecuteStatementInput {
+    BatchExecuteStatementInput {
+        statements: i
+            .statements
+            .unwrap_or_default()
+            .into_iter()
+            .map(|s| BatchStatementRequest {
+                statement: s.statement,
+            })
+            .collect(),
+    }
+}
+
+fn to_execute_transaction(
+    i: ExecuteTransactionInput,
+) -> Result<execute_transaction::ExecuteTransactionInput, ServerError> {
+    let statements = i
+        .transact_statements
+        .into_iter()
+        .map(|s| {
+            ddb::ParameterizedStatement::builder()
+                .statement(s.statement)
+                .build()
+                .map_err(build_err)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    execute_transaction::ExecuteTransactionInput::builder()
+        .set_transact_statements(Some(statements))
+        .build()
+        .map_err(build_err)
+}
+
+fn from_execute_transaction(
+    i: execute_transaction::ExecuteTransactionInput,
+) -> ExecuteTransactionInput {
+    ExecuteTransactionInput {
+        transact_statements: i
+            .transact_statements
+            .unwrap_or_default()
+            .into_iter()
+            .map(|s| ParameterizedStatement {
+                statement: s.statement,
+            })
+            .collect(),
+    }
+}
+
 impl AppState {
     /// Build and register transforms over the request's tables; returns their new id.
     pub async fn create_transforms_client(
@@ -850,6 +936,146 @@ impl AppState {
             .transpose()?;
         Ok(OutputTransformResponse {
             transformed_output: TransactGetItemsOutput { responses },
+        })
+    }
+    pub async fn execute_statement_input_transform(
+        &self,
+        req: InputTransformRequest<ExecuteStatementInput>,
+    ) -> Result<InputTransformResponse<ExecuteStatementInput>, ServerError> {
+        let t = self.transforms(&req.client_id)?;
+        let out = t
+            .execute_statement_input(to_execute_statement(req.sdk_input)?)
+            .await?;
+        Ok(InputTransformResponse {
+            transformed_input: from_execute_statement(out),
+        })
+    }
+
+    pub async fn execute_statement_output_transform(
+        &self,
+        req: OutputTransformRequest<ExecuteStatementOutput, ExecuteStatementInput>,
+    ) -> Result<OutputTransformResponse<ExecuteStatementOutput>, ServerError> {
+        let t = self.transforms(&req.client_id)?;
+        let output = execute_statement::ExecuteStatementOutput::builder()
+            .set_items(to_items(req.sdk_output.items)?)
+            .build();
+        let out = t
+            .execute_statement_output(output, &to_execute_statement(req.original_input)?)
+            .await?;
+        Ok(OutputTransformResponse {
+            transformed_output: ExecuteStatementOutput {
+                items: from_items(out.items)?,
+            },
+        })
+    }
+
+    pub async fn batch_execute_statement_input_transform(
+        &self,
+        req: InputTransformRequest<BatchExecuteStatementInput>,
+    ) -> Result<InputTransformResponse<BatchExecuteStatementInput>, ServerError> {
+        let t = self.transforms(&req.client_id)?;
+        let out = t
+            .batch_execute_statement_input(to_batch_execute(req.sdk_input)?)
+            .await?;
+        Ok(InputTransformResponse {
+            transformed_input: from_batch_execute(out),
+        })
+    }
+
+    pub async fn batch_execute_statement_output_transform(
+        &self,
+        req: OutputTransformRequest<BatchExecuteStatementOutput, BatchExecuteStatementInput>,
+    ) -> Result<OutputTransformResponse<BatchExecuteStatementOutput>, ServerError> {
+        let t = self.transforms(&req.client_id)?;
+        let responses = req
+            .sdk_output
+            .responses
+            .map(|v| {
+                v.into_iter()
+                    .map(|r| {
+                        Ok(ddb::BatchStatementResponse::builder()
+                            .set_table_name(r.table_name)
+                            .set_item(opt_item(r.item)?)
+                            .build())
+                    })
+                    .collect::<Result<Vec<_>, ServerError>>()
+            })
+            .transpose()?;
+        let output = batch_execute_statement::BatchExecuteStatementOutput::builder()
+            .set_responses(responses)
+            .build();
+        let out = t
+            .batch_execute_statement_output(output, &to_batch_execute(req.original_input)?)
+            .await?;
+        let responses = out
+            .responses
+            .map(|v| {
+                v.into_iter()
+                    .map(|r| {
+                        Ok(BatchStatementResponse {
+                            table_name: r.table_name,
+                            item: opt_from_item(r.item)?,
+                        })
+                    })
+                    .collect::<Result<Vec<_>, ServerError>>()
+            })
+            .transpose()?;
+        Ok(OutputTransformResponse {
+            transformed_output: BatchExecuteStatementOutput { responses },
+        })
+    }
+
+    pub async fn execute_transaction_input_transform(
+        &self,
+        req: InputTransformRequest<ExecuteTransactionInput>,
+    ) -> Result<InputTransformResponse<ExecuteTransactionInput>, ServerError> {
+        let t = self.transforms(&req.client_id)?;
+        let out = t
+            .execute_transaction_input(to_execute_transaction(req.sdk_input)?)
+            .await?;
+        Ok(InputTransformResponse {
+            transformed_input: from_execute_transaction(out),
+        })
+    }
+
+    pub async fn execute_transaction_output_transform(
+        &self,
+        req: OutputTransformRequest<ExecuteTransactionOutput, ExecuteTransactionInput>,
+    ) -> Result<OutputTransformResponse<ExecuteTransactionOutput>, ServerError> {
+        let t = self.transforms(&req.client_id)?;
+        let responses = req
+            .sdk_output
+            .responses
+            .map(|v| {
+                v.into_iter()
+                    .map(|r| {
+                        Ok(ddb::ItemResponse::builder()
+                            .set_item(opt_item(r.item)?)
+                            .build())
+                    })
+                    .collect::<Result<Vec<_>, ServerError>>()
+            })
+            .transpose()?;
+        let output = execute_transaction::ExecuteTransactionOutput::builder()
+            .set_responses(responses)
+            .build();
+        let out = t
+            .execute_transaction_output(output, &to_execute_transaction(req.original_input)?)
+            .await?;
+        let responses = out
+            .responses
+            .map(|v| {
+                v.into_iter()
+                    .map(|r| {
+                        Ok(ItemResponse {
+                            item: opt_from_item(r.item)?,
+                        })
+                    })
+                    .collect::<Result<Vec<_>, ServerError>>()
+            })
+            .transpose()?;
+        Ok(OutputTransformResponse {
+            transformed_output: ExecuteTransactionOutput { responses },
         })
     }
 }

@@ -10,13 +10,15 @@
 use std::collections::HashMap;
 
 use aws_crypto_mpl::aws_sdk_dynamodb::operation::{
-    batch_get_item, batch_write_item, delete_item, get_item, put_item, query, scan,
-    transact_get_items, transact_write_items, update_item,
+    batch_execute_statement, batch_get_item, batch_write_item, delete_item, execute_statement,
+    execute_transaction, get_item, put_item, query, scan, transact_get_items, transact_write_items,
+    update_item,
 };
 use aws_crypto_mpl::aws_sdk_dynamodb::types::{
-    AttributeValue, AttributeValueUpdate, Condition, ConditionalOperator, ExpectedAttributeValue,
-    KeysAndAttributes, ReturnConsumedCapacity, ReturnItemCollectionMetrics, ReturnValue,
-    ReturnValuesOnConditionCheckFailure, Select, TransactGetItem, TransactWriteItem, WriteRequest,
+    AttributeValue, AttributeValueUpdate, BatchStatementRequest, Condition, ConditionalOperator,
+    ExpectedAttributeValue, KeysAndAttributes, ParameterizedStatement, ReturnConsumedCapacity,
+    ReturnItemCollectionMetrics, ReturnValue, ReturnValuesOnConditionCheckFailure, Select,
+    TransactGetItem, TransactWriteItem, WriteRequest,
 };
 
 use super::build_error;
@@ -481,6 +483,108 @@ impl TransactGetItemsFluentBuilder {
             .map_err(|e| Error::from_ddb("TransactGetItems", None, e))?;
         self.transforms
             .transact_get_items_output(output, &input)
+            .await
+    }
+}
+
+fluent_builder! {
+    /// The ExecuteStatement operation. Set the request, then call [`send`](Self::send).
+    ExecuteStatementFluentBuilder(execute_statement::builders::ExecuteStatementFluentBuilder, execute_statement::ExecuteStatementInput) {
+        value statement, set_statement, get_statement: String;
+        list parameters, set_parameters, get_parameters: AttributeValue;
+        value consistent_read, set_consistent_read, get_consistent_read: bool;
+        value next_token, set_next_token, get_next_token: String;
+        value return_consumed_capacity, set_return_consumed_capacity, get_return_consumed_capacity: ReturnConsumedCapacity;
+        value limit, set_limit, get_limit: i32;
+        value return_values_on_condition_check_failure, set_return_values_on_condition_check_failure, get_return_values_on_condition_check_failure: ReturnValuesOnConditionCheckFailure;
+    }
+}
+
+impl ExecuteStatementFluentBuilder {
+    /// Run the PartiQL statement, unless it names a configured table.
+    ///
+    /// # Errors
+    ///
+    /// A `Validation` error, before any call to DynamoDB, when the statement names
+    /// a configured table, or when no table name can be read from it.
+    /// A failed DynamoDB call keeps DynamoDB's error: see [`Error::as_service_error`].
+    pub async fn send(self) -> Result<execute_statement::ExecuteStatementOutput, Error> {
+        let input = self.inner.as_input().clone().build().map_err(build_error)?;
+        let transformed = self
+            .transforms
+            .execute_statement_input(input.clone())
+            .await?;
+        let output = Self::with_input(self.inner, transformed)
+            .send()
+            .await
+            .map_err(|e| Error::from_ddb("ExecuteStatement", None, e))?;
+        self.transforms
+            .execute_statement_output(output, &input)
+            .await
+    }
+}
+
+fluent_builder! {
+    /// The BatchExecuteStatement operation. Set the request, then call [`send`](Self::send).
+    BatchExecuteStatementFluentBuilder(batch_execute_statement::builders::BatchExecuteStatementFluentBuilder, batch_execute_statement::BatchExecuteStatementInput) {
+        list statements, set_statements, get_statements: BatchStatementRequest;
+        value return_consumed_capacity, set_return_consumed_capacity, get_return_consumed_capacity: ReturnConsumedCapacity;
+    }
+}
+
+impl BatchExecuteStatementFluentBuilder {
+    /// Run the PartiQL statements, unless any names a configured table.
+    ///
+    /// # Errors
+    ///
+    /// A `Validation` error, before any call to DynamoDB, when a statement names
+    /// a configured table, or when no table name can be read from one.
+    /// A failed DynamoDB call keeps DynamoDB's error: see [`Error::as_service_error`].
+    pub async fn send(self) -> Result<batch_execute_statement::BatchExecuteStatementOutput, Error> {
+        let input = self.inner.as_input().clone().build().map_err(build_error)?;
+        let transformed = self
+            .transforms
+            .batch_execute_statement_input(input.clone())
+            .await?;
+        let output = Self::with_input(self.inner, transformed)
+            .send()
+            .await
+            .map_err(|e| Error::from_ddb("BatchExecuteStatement", None, e))?;
+        self.transforms
+            .batch_execute_statement_output(output, &input)
+            .await
+    }
+}
+
+fluent_builder! {
+    /// The ExecuteTransaction operation. Set the request, then call [`send`](Self::send).
+    ExecuteTransactionFluentBuilder(execute_transaction::builders::ExecuteTransactionFluentBuilder, execute_transaction::ExecuteTransactionInput) {
+        list transact_statements, set_transact_statements, get_transact_statements: ParameterizedStatement;
+        value client_request_token, set_client_request_token, get_client_request_token: String;
+        value return_consumed_capacity, set_return_consumed_capacity, get_return_consumed_capacity: ReturnConsumedCapacity;
+    }
+}
+
+impl ExecuteTransactionFluentBuilder {
+    /// Run the PartiQL statements in one transaction, unless any names a configured table.
+    ///
+    /// # Errors
+    ///
+    /// A `Validation` error, before any call to DynamoDB, when a statement names
+    /// a configured table, or when no table name can be read from one.
+    /// A failed DynamoDB call keeps DynamoDB's error: see [`Error::as_service_error`].
+    pub async fn send(self) -> Result<execute_transaction::ExecuteTransactionOutput, Error> {
+        let input = self.inner.as_input().clone().build().map_err(build_error)?;
+        let transformed = self
+            .transforms
+            .execute_transaction_input(input.clone())
+            .await?;
+        let output = Self::with_input(self.inner, transformed)
+            .send()
+            .await
+            .map_err(|e| Error::from_ddb("ExecuteTransaction", None, e))?;
+        self.transforms
+            .execute_transaction_output(output, &input)
             .await
     }
 }

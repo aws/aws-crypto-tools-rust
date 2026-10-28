@@ -15,7 +15,8 @@ use crate::table_config::TableConfig;
 use crate::transforms::Transforms;
 
 pub use operations::{
-    BatchGetItemFluentBuilder, BatchWriteItemFluentBuilder, DeleteItemFluentBuilder,
+    BatchExecuteStatementFluentBuilder, BatchGetItemFluentBuilder, BatchWriteItemFluentBuilder,
+    DeleteItemFluentBuilder, ExecuteStatementFluentBuilder, ExecuteTransactionFluentBuilder,
     GetItemFluentBuilder, PutItemFluentBuilder, QueryFluentBuilder, ScanFluentBuilder,
     TransactGetItemsFluentBuilder, TransactWriteItemsFluentBuilder, UpdateItemFluentBuilder,
 };
@@ -134,6 +135,30 @@ impl Client {
     #[must_use]
     pub fn transact_get_items(&self) -> TransactGetItemsFluentBuilder {
         TransactGetItemsFluentBuilder::new(self.ddb.transact_get_items(), self.transforms.clone())
+    }
+
+    /// Run a PartiQL statement. A statement on a configured table is rejected.
+    #[must_use]
+    pub fn execute_statement(&self) -> ExecuteStatementFluentBuilder {
+        ExecuteStatementFluentBuilder::new(self.ddb.execute_statement(), self.transforms.clone())
+    }
+
+    /// Run a batch of PartiQL statements. A statement on a configured table is rejected.
+    #[must_use]
+    pub fn batch_execute_statement(&self) -> BatchExecuteStatementFluentBuilder {
+        BatchExecuteStatementFluentBuilder::new(
+            self.ddb.batch_execute_statement(),
+            self.transforms.clone(),
+        )
+    }
+
+    /// Run PartiQL statements in one transaction. A statement on a configured table is rejected.
+    #[must_use]
+    pub fn execute_transaction(&self) -> ExecuteTransactionFluentBuilder {
+        ExecuteTransactionFluentBuilder::new(
+            self.ddb.execute_transaction(),
+            self.transforms.clone(),
+        )
     }
 }
 
