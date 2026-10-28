@@ -150,6 +150,12 @@ pub struct Keyring {
     pub raw_aes: Option<RawAesKeyringConfig>,
     #[serde(rename = "AwsKmsHierarchical", default)]
     pub aws_kms_hierarchical: Option<AwsKmsHierarchicalKeyringConfig>,
+    #[serde(rename = "AwsKmsDiscovery", default)]
+    pub aws_kms_discovery: Option<AwsKmsDiscoveryKeyringConfig>,
+    #[serde(rename = "AwsKmsMultiKeyring", default)]
+    pub aws_kms_multi_keyring: Option<AwsKmsMultiKeyringConfig>,
+    #[serde(rename = "Multi", default)]
+    pub multi: Option<MultiKeyringConfig>,
     #[serde(flatten)]
     pub other: HashMap<String, ciborium::Value>,
 }
@@ -160,6 +166,42 @@ pub struct AwsKmsKeyringConfig {
     pub kms_key_id: String,
     #[serde(rename = "grantTokens", default)]
     pub grant_tokens: Option<Vec<String>>,
+}
+
+/// A discovery keyring: decrypts with the AWS KMS key each data key names.
+#[derive(Debug, Deserialize)]
+pub struct AwsKmsDiscoveryKeyringConfig {
+    #[serde(rename = "discoveryFilter", default)]
+    pub discovery_filter: Option<DiscoveryFilter>,
+    #[serde(rename = "grantTokens", default)]
+    pub grant_tokens: Option<Vec<String>>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DiscoveryFilter {
+    pub partition: String,
+    #[serde(rename = "accountIds")]
+    pub account_ids: Vec<String>,
+}
+
+/// A multi-keyring of AWS KMS keyrings: a generator key and other keys.
+#[derive(Debug, Deserialize)]
+pub struct AwsKmsMultiKeyringConfig {
+    #[serde(default)]
+    pub generator: Option<String>,
+    #[serde(rename = "kmsKeyIds", default)]
+    pub kms_key_ids: Option<Vec<String>>,
+    #[serde(rename = "grantTokens", default)]
+    pub grant_tokens: Option<Vec<String>>,
+}
+
+/// A multi-keyring of modeled keyrings.
+#[derive(Debug, Deserialize)]
+pub struct MultiKeyringConfig {
+    #[serde(default)]
+    pub generator: Option<Box<Keyring>>,
+    #[serde(rename = "childKeyrings")]
+    pub child_keyrings: Vec<Keyring>,
 }
 
 /// A hierarchical keyring over a DynamoDB branch key store.

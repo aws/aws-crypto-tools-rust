@@ -8,14 +8,16 @@ use std::time::Duration;
 
 use crate::error::ServerError;
 use crate::model::{
-    AesWrappingAlg, AwsKmsHierarchicalKeyringConfig, AwsKmsKeyringConfig,
-    DdbKeyBranchKeyIdSupplier, Keyring, RawAesKeyringConfig,
+    AesWrappingAlg, AwsKmsDiscoveryKeyringConfig, AwsKmsHierarchicalKeyringConfig,
+    AwsKmsKeyringConfig, AwsKmsMultiKeyringConfig, DdbKeyBranchKeyIdSupplier, Keyring,
+    MultiKeyringConfig, RawAesKeyringConfig,
 };
 use aws_db_esdk::aws_sdk_dynamodb::types::AttributeValue;
 use aws_db_esdk::key_store::types::KmsConfiguration;
 use aws_db_esdk::keyring::{
-    AwsKmsKeyring, GetBranchKeyIdFromItemKeyInput, GetBranchKeyIdOutput, HierarchicalKeyring,
-    ItemKeyBranchKeySupplier, ItemKeySupplier, RawAesKeyring, SharedKeyring,
+    AwsKmsDiscoveryKeyring, AwsKmsKeyring, DiscoveryFilter, GetBranchKeyIdFromItemKeyInput,
+    GetBranchKeyIdOutput, HierarchicalKeyring, ItemKeyBranchKeySupplier, ItemKeySupplier,
+    MultiKeyring, RawAesKeyring, SharedKeyring,
 };
 use aws_db_esdk::types::AesWrappingAlg as MplAesWrappingAlg;
 use aws_db_esdk::{async_trait, aws_config, aws_sdk_dynamodb, aws_sdk_kms, key_store, mpl};
@@ -25,6 +27,9 @@ pub async fn keyring_for_config(keyring: &Keyring) -> Result<SharedKeyring, Serv
     let set = usize::from(keyring.aws_kms.is_some())
         + usize::from(keyring.raw_aes.is_some())
         + usize::from(keyring.aws_kms_hierarchical.is_some())
+        + usize::from(keyring.aws_kms_discovery.is_some())
+        + usize::from(keyring.aws_kms_multi_keyring.is_some())
+        + usize::from(keyring.multi.is_some())
         + keyring.other.len();
     if set != 1 {
         return Err(ServerError::generic(format!(
@@ -39,6 +44,15 @@ pub async fn keyring_for_config(keyring: &Keyring) -> Result<SharedKeyring, Serv
     }
     if let Some(hierarchical) = &keyring.aws_kms_hierarchical {
         return build_hierarchical(hierarchical).await;
+    }
+    if let Some(discovery) = &keyring.aws_kms_discovery {
+        return build_aws_kms_discovery(discovery).await;
+    }
+    if let Some(aws_kms_multi) = &keyring.aws_kms_multi_keyring {
+        return build_aws_kms_multi(aws_kms_multi).await;
+    }
+    if let Some(multi) = &keyring.multi {
+        return build_multi(multi).await;
     }
     let name = keyring.other.keys().next().map_or("", String::as_str);
     Err(ServerError::generic(format!(
@@ -87,6 +101,64 @@ async fn build_aws_kms(config: &AwsKmsKeyringConfig) -> Result<SharedKeyring, Se
         .kms_key_id(config.kms_key_id.as_str())
         .kms_client(aws_sdk_kms::Client::new(&sdk_config))
         .set_grant_tokens(config.grant_tokens.clone())
+        .build()
+        .map_err(|e| ServerError::client(e.to_string()))?;
+    Ok(SharedKeyring::new(keyring))
+}
+
+/// A discovery keyring with a KMS client in the ambient region.
+async fn build_aws_kms_discovery(
+    config: &AwsKmsDiscoveryKeyringConfig,
+) -> Result<SharedKeyring, ServerError> {
+    let discovery_filter = config
+        .discovery_filter
+        .as_ref()
+        .map(|filter| {
+            DiscoveryFilter::builder()
+                .partition(filter.partition.as_str())
+                .set_account_ids(Some(filter.account_ids.clone()))
+                .build()
+        })
+        .transpose()
+        .map_err(|e| ServerError::client(e.to_string()))?;
+    let sdk_config = sdk_config_for("").await;
+    let keyring = AwsKmsDiscoveryKeyring::builder()
+        .kms_client(aws_sdk_kms::Client::new(&sdk_config))
+        .set_discovery_filter(discovery_filter)
+        .set_grant_tokens(config.grant_tokens.clone())
+        .build()
+        .map_err(|e| ServerError::client(e.to_string()))?;
+    Ok(SharedKeyring::new(keyring))
+}
+
+/// A multi-keyring of AWS KMS keyrings, each with a KMS client in its key's region.
+async fn build_aws_kms_multi(
+    config: &AwsKmsMultiKeyringConfig,
+) -> Result<SharedKeyring, ServerError> {
+    let keyring = MultiKeyring::aws_kms()
+        .set_generator(config.generator.clone())
+        .set_kms_key_ids(config.kms_key_ids.clone())
+        .set_grant_tokens(config.grant_tokens.clone())
+        .sdk_config(sdk_config_for("").await)
+        .build()
+        .await
+        .map_err(|e| ServerError::client(e.to_string()))?;
+    Ok(SharedKeyring::new(keyring))
+}
+
+/// A multi-keyring of the modeled generator and child keyrings.
+async fn build_multi(config: &MultiKeyringConfig) -> Result<SharedKeyring, ServerError> {
+    let generator = match &config.generator {
+        Some(generator) => Some(Box::pin(keyring_for_config(generator)).await?),
+        None => None,
+    };
+    let mut child_keyrings = Vec::with_capacity(config.child_keyrings.len());
+    for child in &config.child_keyrings {
+        child_keyrings.push(Box::pin(keyring_for_config(child)).await?);
+    }
+    let keyring = MultiKeyring::builder()
+        .set_generator(generator)
+        .set_child_keyrings(Some(child_keyrings))
         .build()
         .map_err(|e| ServerError::client(e.to_string()))?;
     Ok(SharedKeyring::new(keyring))
