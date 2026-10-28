@@ -11,8 +11,10 @@
 use crate::error::ServerError;
 use crate::handlers::AppState;
 use crate::model::{
-    CreateClientRequest, DecryptItemRequest, EncryptItemRequest,
-    GetEncryptedDataKeyDescriptionRequest,
+    CreateClientRequest, CreateStructuredClientRequest, DecryptItemRequest,
+    DecryptPathStructureRequest, DecryptStructureRequest, EncryptItemRequest,
+    EncryptPathStructureRequest, EncryptStructureRequest, GetEncryptedDataKeyDescriptionRequest,
+    ResolveAuthActionsRequest,
 };
 use axum::body::{Body, Bytes};
 use axum::extract::{Path, State};
@@ -85,6 +87,48 @@ async fn dispatch(
                 Err(e) => Err(e),
             }
         }
+        "CreateStructuredClient" => match decode::<CreateStructuredClientRequest>(&body) {
+            Ok(req) => state
+                .create_structured_client(req)
+                .await
+                .and_then(|resp| encode(&resp)),
+            Err(e) => Err(e),
+        },
+        "EncryptStructure" => match decode::<EncryptStructureRequest>(&body) {
+            Ok(req) => state
+                .encrypt_structure(req)
+                .await
+                .and_then(|resp| encode(&resp)),
+            Err(e) => Err(e),
+        },
+        "DecryptStructure" => match decode::<DecryptStructureRequest>(&body) {
+            Ok(req) => state
+                .decrypt_structure(req)
+                .await
+                .and_then(|resp| encode(&resp)),
+            Err(e) => Err(e),
+        },
+        "EncryptPathStructure" => match decode::<EncryptPathStructureRequest>(&body) {
+            Ok(req) => state
+                .encrypt_path_structure(req)
+                .await
+                .and_then(|resp| encode(&resp)),
+            Err(e) => Err(e),
+        },
+        "DecryptPathStructure" => match decode::<DecryptPathStructureRequest>(&body) {
+            Ok(req) => state
+                .decrypt_path_structure(req)
+                .await
+                .and_then(|resp| encode(&resp)),
+            Err(e) => Err(e),
+        },
+        "ResolveAuthActions" => match decode::<ResolveAuthActionsRequest>(&body) {
+            Ok(req) => state
+                .resolve_auth_actions(req)
+                .await
+                .and_then(|resp| encode(&resp)),
+            Err(e) => Err(e),
+        },
         other => Err(ServerError::generic(format!(
             "operation {other} is not supported by the native Rust language server"
         ))),

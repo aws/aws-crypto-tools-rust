@@ -141,7 +141,7 @@ pub struct DbeClientConfig {
     pub search: Option<ciborium::Value>,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum CryptoAction {
     #[serde(rename = "ENCRYPT_AND_SIGN")]
     EncryptAndSign,
@@ -377,4 +377,135 @@ pub enum AesWrappingAlg {
     Aes192,
     #[serde(rename = "ALG_AES256_GCM_IV12_TAG16")]
     Aes256,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateStructuredClientRequest {
+    pub config: DbeClientConfig,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CreateStructuredClientResponse {
+    #[serde(rename = "clientId")]
+    pub client_id: String,
+}
+
+/// One structured-data terminal: opaque value bytes plus a 2-byte type id.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StructuredDataTerminal {
+    pub value: ByteBuf,
+    #[serde(rename = "typeId")]
+    pub type_id: ByteBuf,
+}
+
+/// A field name to terminal map.
+pub type StructuredDataMap = HashMap<String, StructuredDataTerminal>;
+
+#[derive(Debug, Deserialize)]
+pub struct EncryptStructureRequest {
+    #[serde(rename = "clientId")]
+    pub client_id: String,
+    #[serde(rename = "tableName")]
+    pub table_name: String,
+    #[serde(rename = "plaintextStructure")]
+    pub plaintext_structure: StructuredDataMap,
+    #[serde(rename = "cryptoSchema")]
+    pub crypto_schema: HashMap<String, CryptoAction>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct EncryptStructureResponse {
+    #[serde(rename = "encryptedStructure")]
+    pub encrypted_structure: StructuredDataMap,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DecryptStructureRequest {
+    #[serde(rename = "clientId")]
+    pub client_id: String,
+    #[serde(rename = "tableName")]
+    pub table_name: String,
+    #[serde(rename = "encryptedStructure")]
+    pub encrypted_structure: StructuredDataMap,
+    #[serde(rename = "authenticateSchema")]
+    pub authenticate_schema: HashMap<String, AuthenticateAction>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DecryptStructureResponse {
+    #[serde(rename = "plaintextStructure")]
+    pub plaintext_structure: StructuredDataMap,
+}
+
+/// One path-keyed Crypto Item.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PathCryptoItem {
+    pub path: Vec<String>,
+    pub data: StructuredDataTerminal,
+    pub action: CryptoAction,
+}
+
+/// One path-keyed Auth Item.
+#[derive(Debug, Clone, Deserialize)]
+pub struct PathAuthItem {
+    pub path: Vec<String>,
+    pub data: StructuredDataTerminal,
+    pub action: AuthenticateAction,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct EncryptPathStructureRequest {
+    #[serde(rename = "clientId")]
+    pub client_id: String,
+    #[serde(rename = "tableName")]
+    pub table_name: String,
+    #[serde(rename = "plaintextStructure")]
+    pub plaintext_structure: Vec<PathCryptoItem>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct EncryptPathStructureResponse {
+    #[serde(rename = "encryptedStructure")]
+    pub encrypted_structure: Vec<PathCryptoItem>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DecryptPathStructureRequest {
+    #[serde(rename = "clientId")]
+    pub client_id: String,
+    #[serde(rename = "tableName")]
+    pub table_name: String,
+    #[serde(rename = "encryptedStructure")]
+    pub encrypted_structure: Vec<PathAuthItem>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DecryptPathStructureResponse {
+    #[serde(rename = "plaintextStructure")]
+    pub plaintext_structure: Vec<PathCryptoItem>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ResolveAuthActionsRequest {
+    #[serde(rename = "tableName")]
+    pub table_name: String,
+    #[serde(rename = "authActions")]
+    pub auth_actions: Vec<PathAuthItem>,
+    #[serde(rename = "headerBytes")]
+    pub header_bytes: ByteBuf,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ResolveAuthActionsResponse {
+    #[serde(rename = "cryptoActions")]
+    pub crypto_actions: Vec<PathCryptoItem>,
+}
+
+/// Whether a field is within the signature scope on decrypt.
+#[derive(Debug, Clone, Copy, Deserialize)]
+pub enum AuthenticateAction {
+    #[serde(rename = "SIGN")]
+    Sign,
+    #[serde(rename = "DO_NOT_SIGN")]
+    DoNotSign,
 }

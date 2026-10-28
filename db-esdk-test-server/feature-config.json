@@ -7,13 +7,13 @@
     "aws-kms-hierarchical",
     "aws-kms-mrk",
     "aws-kms-rsa",
-    "required-encryption-context-cmm"
+    "required-encryption-context-cmm",
+    "structured-encryption"
   ],
   "unsupportedFeatures": [
     "ddb-transforms",
     "searchable-encryption",
     "beacon-partitions",
-    "structured-encryption",
     "legacy-ddbec"
   ]
 }

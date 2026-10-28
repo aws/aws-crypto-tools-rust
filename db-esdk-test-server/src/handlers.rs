@@ -13,6 +13,11 @@ use std::sync::Mutex;
 
 use aws_db_esdk::aws_sdk_dynamodb::primitives::Blob;
 use aws_db_esdk::aws_sdk_dynamodb::types::AttributeValue as DdbAttributeValue;
+use aws_db_esdk::cmm::{DefaultCmm, SharedCmm};
+use aws_db_esdk::structured::{
+    AuthItem, AuthenticateAction as DbeAuthenticateAction, CryptoItem, PathSegment,
+    StructuredDataTerminal as DbeTerminal, StructuredEncryption,
+};
 use aws_db_esdk::types::{
     AlgorithmSuiteId, CryptoAction as DbeCryptoAction, PlaintextOverride as DbePlaintextOverride,
 };
@@ -22,16 +27,32 @@ use serde_bytes::ByteBuf;
 use crate::error::ServerError;
 use crate::keyring::{cmm_for_config, keyring_for_config};
 use crate::model::{
-    AttributeValue, CreateClientRequest, CreateClientResponse, CryptoAction, DbeAlgorithmSuiteId,
-    DbeClientConfig, DdbItem, DecryptItemRequest, DecryptItemResponse, EncryptItemRequest,
-    EncryptItemResponse, EncryptedDataKeyDescription, GetEncryptedDataKeyDescriptionRequest,
-    GetEncryptedDataKeyDescriptionResponse, PlaintextOverride,
+    AttributeValue, AuthenticateAction, CreateClientRequest, CreateClientResponse,
+    CreateStructuredClientRequest, CreateStructuredClientResponse, CryptoAction,
+    DbeAlgorithmSuiteId, DbeClientConfig, DdbItem, DecryptItemRequest, DecryptItemResponse,
+    DecryptPathStructureRequest, DecryptPathStructureResponse, DecryptStructureRequest,
+    DecryptStructureResponse, EncryptItemRequest, EncryptItemResponse, EncryptPathStructureRequest,
+    EncryptPathStructureResponse, EncryptStructureRequest, EncryptStructureResponse,
+    EncryptedDataKeyDescription, GetEncryptedDataKeyDescriptionRequest,
+    GetEncryptedDataKeyDescriptionResponse, PathAuthItem, PathCryptoItem, PlaintextOverride,
+    ResolveAuthActionsRequest, ResolveAuthActionsResponse, StructuredDataMap,
+    StructuredDataTerminal,
 };
 
-/// Shared server state: the thread-safe `clientId -> ItemEncryptor` registry.
+/// Shared server state: the thread-safe `clientId -> ItemEncryptor` and
+/// `clientId -> StructuredClient` registries.
 #[derive(Default)]
 pub struct AppState {
     clients: Mutex<HashMap<String, ItemEncryptor>>,
+    structured_clients: Mutex<HashMap<String, StructuredClient>>,
+}
+
+/// A structured encryption client and the CMM and algorithm suite its config names.
+#[derive(Clone)]
+struct StructuredClient {
+    client: StructuredEncryption,
+    cmm: SharedCmm,
+    algorithm_suite_id: Option<AlgorithmSuiteId>,
 }
 
 const fn crypto_action(action: CryptoAction) -> DbeCryptoAction {
@@ -43,6 +64,99 @@ const fn crypto_action(action: CryptoAction) -> DbeCryptoAction {
         }
         CryptoAction::DoNothing => DbeCryptoAction::DoNothing,
     }
+}
+
+/// A library Crypto Action as the wire's; `None` for an action the model lacks.
+const fn from_crypto_action(action: DbeCryptoAction) -> Option<CryptoAction> {
+    Some(match action {
+        DbeCryptoAction::EncryptAndSign => CryptoAction::EncryptAndSign,
+        DbeCryptoAction::SignOnly => CryptoAction::SignOnly,
+        DbeCryptoAction::SignAndIncludeInEncryptionContext => {
+            CryptoAction::SignAndIncludeInEncryptionContext
+        }
+        DbeCryptoAction::DoNothing => CryptoAction::DoNothing,
+        _ => return None,
+    })
+}
+
+const fn authenticate_action(action: AuthenticateAction) -> DbeAuthenticateAction {
+    match action {
+        AuthenticateAction::Sign => DbeAuthenticateAction::Sign,
+        AuthenticateAction::DoNotSign => DbeAuthenticateAction::DoNotSign,
+    }
+}
+
+/// A wire terminal as the library's; the type id must be two bytes.
+fn to_terminal(t: StructuredDataTerminal) -> Result<DbeTerminal, ServerError> {
+    let type_id = <[u8; 2]>::try_from(t.type_id.as_slice()).map_err(|_| {
+        ServerError::client(format!("typeId must be 2 bytes, found {}", t.type_id.len()))
+    })?;
+    Ok(DbeTerminal::new(type_id, t.value.into_vec()))
+}
+
+fn from_terminal(t: DbeTerminal) -> StructuredDataTerminal {
+    StructuredDataTerminal {
+        type_id: ByteBuf::from(t.type_id().to_vec()),
+        value: ByteBuf::from(t.into_value()),
+    }
+}
+
+fn to_structure(map: StructuredDataMap) -> Result<HashMap<String, DbeTerminal>, ServerError> {
+    map.into_iter()
+        .map(|(k, v)| Ok((k, to_terminal(v)?)))
+        .collect()
+}
+
+fn from_structure(map: HashMap<String, DbeTerminal>) -> StructuredDataMap {
+    map.into_iter()
+        .map(|(k, v)| (k, from_terminal(v)))
+        .collect()
+}
+
+fn to_path(path: Vec<String>) -> Vec<PathSegment> {
+    path.into_iter().map(PathSegment::member).collect()
+}
+
+/// A library path as the wire's; only structure-member segments are modeled.
+fn from_path(path: &[PathSegment]) -> Result<Vec<String>, ServerError> {
+    path.iter()
+        .map(|segment| match segment {
+            PathSegment::Member(member) => Ok(member.key().to_owned()),
+            other => Err(ServerError::generic(format!(
+                "unsupported path segment {other:?}"
+            ))),
+        })
+        .collect()
+}
+
+fn to_crypto_item(item: PathCryptoItem) -> Result<CryptoItem, ServerError> {
+    Ok(CryptoItem::new(
+        to_path(item.path),
+        to_terminal(item.data)?,
+        crypto_action(item.action),
+    ))
+}
+
+fn to_auth_item(item: PathAuthItem) -> Result<AuthItem, ServerError> {
+    Ok(AuthItem::new(
+        to_path(item.path),
+        to_terminal(item.data)?,
+        authenticate_action(item.action),
+    ))
+}
+
+fn from_crypto_item(item: &CryptoItem) -> Result<PathCryptoItem, ServerError> {
+    Ok(PathCryptoItem {
+        path: from_path(item.key())?,
+        data: from_terminal(item.data().clone()),
+        action: from_crypto_action(item.action()).ok_or_else(|| {
+            ServerError::generic(format!("unsupported CryptoAction {:?}", item.action()))
+        })?,
+    })
+}
+
+fn from_crypto_items(items: &[CryptoItem]) -> Result<Vec<PathCryptoItem>, ServerError> {
+    items.iter().map(from_crypto_item).collect()
 }
 
 const fn algorithm_suite(id: DbeAlgorithmSuiteId) -> AlgorithmSuiteId {
@@ -169,6 +283,25 @@ fn from_ddb_item(item: HashMap<String, DdbAttributeValue>) -> Result<DdbItem, Se
         .collect()
 }
 
+/// The keyring or the CMM of `config`; exactly one must be set.
+async fn materials(
+    config: &DbeClientConfig,
+) -> Result<
+    (
+        Option<aws_db_esdk::keyring::SharedKeyring>,
+        Option<SharedCmm>,
+    ),
+    ServerError,
+> {
+    match (&config.keyring, &config.cmm) {
+        (Some(keyring), None) => Ok((Some(keyring_for_config(keyring).await?), None)),
+        (None, Some(cmm)) => Ok((None, Some(cmm_for_config(cmm).await?))),
+        _ => Err(ServerError::generic(
+            "DBEClientConfig must set exactly one of a keyring or a CMM",
+        )),
+    }
+}
+
 async fn item_encryptor(config: DbeClientConfig) -> Result<ItemEncryptor, ServerError> {
     if config.legacy_override.is_some() {
         // The native library has no legacy DDBEC encryptor, so a legacy override
@@ -180,15 +313,7 @@ async fn item_encryptor(config: DbeClientConfig) -> Result<ItemEncryptor, Server
             "a search config is not supported by the native Rust language server",
         ));
     }
-    let (keyring, cmm) = match (&config.keyring, &config.cmm) {
-        (Some(keyring), None) => (Some(keyring_for_config(keyring).await?), None),
-        (None, Some(cmm)) => (None, Some(cmm_for_config(cmm).await?)),
-        _ => {
-            return Err(ServerError::generic(
-                "DBEClientConfig must set exactly one of a keyring or a CMM",
-            ))
-        }
-    };
+    let (keyring, cmm) = materials(&config).await?;
     let table = TableConfig::builder()
         .partition_key_name(config.partition_key_name)
         .set_sort_key_name(config.sort_key_name)
@@ -287,6 +412,161 @@ impl AppState {
                 })
                 .collect(),
         })
+    }
+
+    /// Build and register a structured encryption client over the config's
+    /// keyring or CMM; returns its new id.
+    pub async fn create_structured_client(
+        &self,
+        req: CreateStructuredClientRequest,
+    ) -> Result<CreateStructuredClientResponse, ServerError> {
+        let cmm = match materials(&req.config).await? {
+            (Some(keyring), None) => SharedCmm::new(DefaultCmm::new(keyring)),
+            (None, Some(cmm)) => cmm,
+            _ => unreachable!("materials returns exactly one of a keyring or a CMM"),
+        };
+        let client = StructuredClient {
+            client: StructuredEncryption::new(),
+            cmm,
+            algorithm_suite_id: req.config.algorithm_suite_id.map(algorithm_suite),
+        };
+        let client_id = uuid::Uuid::new_v4().to_string();
+        self.structured_clients
+            .lock()
+            .expect("registry mutex")
+            .insert(client_id.clone(), client);
+        Ok(CreateStructuredClientResponse { client_id })
+    }
+
+    pub async fn encrypt_structure(
+        &self,
+        req: EncryptStructureRequest,
+    ) -> Result<EncryptStructureResponse, ServerError> {
+        let sc = self.structured_client(&req.client_id)?;
+        let output = sc
+            .client
+            .encrypt_structure()
+            .table_name(req.table_name)
+            .set_plaintext_structure(Some(to_structure(req.plaintext_structure)?))
+            .set_crypto_schema(Some(
+                req.crypto_schema
+                    .into_iter()
+                    .map(|(k, a)| (k, crypto_action(a)))
+                    .collect(),
+            ))
+            .cmm(sc.cmm)
+            .set_algorithm_suite_id(sc.algorithm_suite_id)
+            .send()
+            .await?;
+        Ok(EncryptStructureResponse {
+            encrypted_structure: from_structure(output.into_encrypted_structure()),
+        })
+    }
+
+    pub async fn decrypt_structure(
+        &self,
+        req: DecryptStructureRequest,
+    ) -> Result<DecryptStructureResponse, ServerError> {
+        let sc = self.structured_client(&req.client_id)?;
+        let output = sc
+            .client
+            .decrypt_structure()
+            .table_name(req.table_name)
+            .set_encrypted_structure(Some(to_structure(req.encrypted_structure)?))
+            .set_authenticate_schema(Some(
+                req.authenticate_schema
+                    .into_iter()
+                    .map(|(k, a)| (k, authenticate_action(a)))
+                    .collect(),
+            ))
+            .cmm(sc.cmm)
+            .send()
+            .await?;
+        Ok(DecryptStructureResponse {
+            plaintext_structure: from_structure(output.into_plaintext_structure()),
+        })
+    }
+
+    pub async fn encrypt_path_structure(
+        &self,
+        req: EncryptPathStructureRequest,
+    ) -> Result<EncryptPathStructureResponse, ServerError> {
+        let sc = self.structured_client(&req.client_id)?;
+        let items = req
+            .plaintext_structure
+            .into_iter()
+            .map(to_crypto_item)
+            .collect::<Result<_, _>>()?;
+        let output = sc
+            .client
+            .encrypt_path_structure()
+            .table_name(req.table_name)
+            .set_plaintext_structure(Some(items))
+            .cmm(sc.cmm)
+            .set_algorithm_suite_id(sc.algorithm_suite_id)
+            .send()
+            .await?;
+        Ok(EncryptPathStructureResponse {
+            encrypted_structure: from_crypto_items(output.encrypted_structure())?,
+        })
+    }
+
+    pub async fn decrypt_path_structure(
+        &self,
+        req: DecryptPathStructureRequest,
+    ) -> Result<DecryptPathStructureResponse, ServerError> {
+        let sc = self.structured_client(&req.client_id)?;
+        let items = req
+            .encrypted_structure
+            .into_iter()
+            .map(to_auth_item)
+            .collect::<Result<_, _>>()?;
+        let output = sc
+            .client
+            .decrypt_path_structure()
+            .table_name(req.table_name)
+            .set_encrypted_structure(Some(items))
+            .cmm(sc.cmm)
+            .send()
+            .await?;
+        Ok(DecryptPathStructureResponse {
+            plaintext_structure: from_crypto_items(output.plaintext_structure())?,
+        })
+    }
+
+    /// Resolve each terminal's Crypto Action from the header. Needs no client.
+    pub async fn resolve_auth_actions(
+        &self,
+        req: ResolveAuthActionsRequest,
+    ) -> Result<ResolveAuthActionsResponse, ServerError> {
+        let items = req
+            .auth_actions
+            .into_iter()
+            .map(to_auth_item)
+            .collect::<Result<_, _>>()?;
+        let output = StructuredEncryption::new()
+            .resolve_auth_actions()
+            .table_name(req.table_name)
+            .set_auth_actions(Some(items))
+            .header_bytes(req.header_bytes.into_vec())
+            .send()
+            .await?;
+        Ok(ResolveAuthActionsResponse {
+            crypto_actions: from_crypto_items(output.crypto_actions())?,
+        })
+    }
+
+    /// Look up a registered structured encryption client by id.
+    fn structured_client(&self, client_id: &str) -> Result<StructuredClient, ServerError> {
+        if client_id.is_empty() {
+            return Err(ServerError::generic("clientId must be non-empty"));
+        }
+        self.structured_clients
+            .lock()
+            .expect("registry mutex")
+            .get(client_id)
+            .cloned()
+            .ok_or_else(|| ServerError::generic(format!("unknown clientId: {client_id}")))
     }
 
     /// Look up a registered item encryptor by id.

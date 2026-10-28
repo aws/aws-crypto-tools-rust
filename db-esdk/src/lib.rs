@@ -30,7 +30,8 @@ mod ddb;
 mod edk_description;
 pub mod error;
 mod item_encryptor;
-mod structured;
+#[doc(hidden)]
+pub mod structured;
 mod table_config;
 pub mod types;
 

@@ -70,7 +70,7 @@ pub(crate) enum AuthAction {
 
 /// A field and the action to take on it when encrypting.
 #[derive(Clone, Debug)]
-pub(crate) struct CryptoItem {
+pub(crate) struct CryptoField {
     pub(crate) key: Path,
     pub(crate) data: Terminal,
     pub(crate) action: CryptoAction,
@@ -78,7 +78,7 @@ pub(crate) struct CryptoItem {
 
 /// A field of an item being decrypted and whether it is signed.
 #[derive(Clone, Debug)]
-pub(crate) struct AuthItem {
+pub(crate) struct AuthField {
     pub(crate) key: Path,
     pub(crate) data: Terminal,
     pub(crate) action: AuthAction,

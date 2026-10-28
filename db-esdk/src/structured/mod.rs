@@ -3,7 +3,11 @@
 
 //! Structured encryption: encrypt and sign a set of fields, each with its own crypto action,
 //! into fields plus a header and a footer; and the reverse.
+//!
+//! [`StructuredEncryption`] is the layer beneath the item encryptor.
+//! It is public only for the test server, and is not a supported API.
 
+mod api;
 mod crypt;
 mod footer;
 mod header;
@@ -19,6 +23,14 @@ use aws_crypto_mpl::types::{
 };
 use aws_mpl_primitives::generate_random_bytes;
 
+pub use api::{
+    AuthItem, AuthenticateAction, CryptoItem, DecryptPathStructureFluentBuilder,
+    DecryptPathStructureOutput, DecryptStructureFluentBuilder, DecryptStructureOutput,
+    EncryptPathStructureFluentBuilder, EncryptPathStructureOutput, EncryptStructureFluentBuilder,
+    EncryptStructureOutput, Path, PathSegment, ResolveAuthActionsFluentBuilder,
+    ResolveAuthActionsOutput, StructureSegment, StructuredDataTerminal, StructuredEncryption,
+};
+
 use crate::error::{Error, materials_err, ser_err, val_err};
 use crate::types::{AlgorithmSuiteId, CryptoAction};
 use crypt::Mode;
@@ -27,9 +39,9 @@ use header::MSGID_LEN;
 pub(crate) use header::{DBE_ALGORITHM_FAMILY, PartialHeader, valid_encryption_context};
 use suite::DbeSuite;
 use util::{
-    ATTR_PREFIX, AuthAction, AuthItem, BOOLEAN, BYTES_TYPE_ID, CanonItem, CryptoItem, FOOTER_FIELD,
-    HEADER_FIELD, LEGEND, NULL, NUMBER, RESERVED_CRYPTO_CONTEXT_PREFIX, STRING, Terminal,
-    canon_path, is_auth_attr, path_to_string,
+    ATTR_PREFIX, AuthAction, AuthField, BOOLEAN, BYTES_TYPE_ID, CanonItem, CryptoField,
+    FOOTER_FIELD, HEADER_FIELD, LEGEND, NULL, NUMBER, RESERVED_CRYPTO_CONTEXT_PREFIX, STRING,
+    Terminal, canon_path, is_auth_attr, path_to_string,
 };
 
 /// The default DBE algorithm suite: ECDSA P-384 and HMAC-SHA-384 signatures.
@@ -42,11 +54,38 @@ const fn dbe_commitment_policy() -> CommitmentPolicy {
 
 /// What the header of an encrypted structure says.
 #[derive(Clone, Debug)]
-pub(crate) struct ParsedHeader {
+#[non_exhaustive]
+pub struct ParsedHeader {
     pub(crate) algorithm_suite_id: AlgorithmSuiteId,
     pub(crate) encrypted_data_keys: Vec<EncryptedDataKey>,
     pub(crate) stored_encryption_context: EncryptionContext,
     pub(crate) encryption_context: EncryptionContext,
+}
+
+impl ParsedHeader {
+    /// The algorithm suite the structure was encrypted with.
+    #[must_use]
+    pub const fn algorithm_suite_id(&self) -> AlgorithmSuiteId {
+        self.algorithm_suite_id
+    }
+
+    /// The encrypted data keys stored in the header.
+    #[must_use]
+    pub fn encrypted_data_keys(&self) -> &[EncryptedDataKey] {
+        &self.encrypted_data_keys
+    }
+
+    /// The encryption context stored in the header.
+    #[must_use]
+    pub const fn stored_encryption_context(&self) -> &EncryptionContext {
+        &self.stored_encryption_context
+    }
+
+    /// The full encryption context of the materials, stored and not stored.
+    #[must_use]
+    pub const fn encryption_context(&self) -> &EncryptionContext {
+        &self.encryption_context
+    }
 }
 
 fn header_path() -> Vec<String> {
@@ -67,7 +106,7 @@ fn has_no_duplicates<'a>(paths: impl Iterator<Item = &'a Vec<String>>) -> bool {
 }
 
 /// Canonicalize `data` in `table` and sort it by canonical path.
-fn for_encrypt(table: &str, data: Vec<CryptoItem>) -> Vec<CanonItem> {
+fn for_encrypt(table: &str, data: Vec<CryptoField>) -> Vec<CanonItem> {
     let mut list: Vec<CanonItem> = data
         .into_iter()
         .map(|x| CanonItem {
@@ -92,8 +131,8 @@ const fn legend_to_action(v: u8) -> CryptoAction {
 }
 
 /// Canonicalize and sort `data`, then take each signed field's action from the legend.
-fn for_decrypt(table: &str, data: Vec<AuthItem>, legend: &[u8]) -> Result<Vec<CanonItem>, Error> {
-    let mut sorted: Vec<(Vec<u8>, AuthItem)> = data
+fn for_decrypt(table: &str, data: Vec<AuthField>, legend: &[u8]) -> Result<Vec<CanonItem>, Error> {
+    let mut sorted: Vec<(Vec<u8>, AuthField)> = data
         .into_iter()
         .map(|x| (canon_path(table, &x.key), x))
         .collect();
@@ -208,11 +247,11 @@ pub(crate) fn required_context_cmm(cmm: SharedCmm, keys: Vec<String>) -> Result<
 /// Returns the fields with the header and footer appended, and the parsed header.
 pub(crate) async fn encrypt_path_structure(
     table: &str,
-    data: Vec<CryptoItem>,
+    data: Vec<CryptoField>,
     cmm: SharedCmm,
     algorithm_suite_id: Option<AlgorithmSuiteId>,
     encryption_context: Option<EncryptionContext>,
-) -> Result<(Vec<CryptoItem>, ParsedHeader), Error> {
+) -> Result<(Vec<CryptoField>, ParsedHeader), Error> {
     if let Some(ec) = &encryption_context
         && ec
             .iter()
@@ -293,20 +332,20 @@ pub(crate) async fn encrypt_path_structure(
     let footer = Footer::create(suite, &mat, &encrypted, &header_bytes)?;
 
     let header_suite = DbeSuite::from_flavor(head.flavor)?;
-    let mut out: Vec<CryptoItem> = encrypted
+    let mut out: Vec<CryptoField> = encrypted
         .into_iter()
-        .map(|x| CryptoItem {
+        .map(|x| CryptoField {
             key: x.key,
             data: x.data,
             action: x.action,
         })
         .collect();
-    out.push(CryptoItem {
+    out.push(CryptoField {
         key: header_path(),
         data: Terminal::new(BYTES_TYPE_ID, header_bytes),
         action: CryptoAction::DoNothing,
     });
-    out.push(CryptoItem {
+    out.push(CryptoField {
         key: footer_path(),
         data: footer.into_terminal(),
         action: CryptoAction::DoNothing,
@@ -321,7 +360,7 @@ pub(crate) async fn encrypt_path_structure(
 }
 
 /// The header or footer terminal, which must be an unsigned binary field.
-fn get_binary<'a>(data: &'a [AuthItem], name: &str) -> Result<&'a Terminal, Error> {
+fn get_binary<'a>(data: &'a [AuthField], name: &str) -> Result<&'a Terminal, Error> {
     let item = data
         .iter()
         .find(|x| x.key.len() == 1 && x.key[0] == name)
@@ -339,10 +378,10 @@ fn get_binary<'a>(data: &'a [AuthItem], name: &str) -> Result<&'a Terminal, Erro
 /// Returns the fields without the header and footer, each with the action the header recorded.
 pub(crate) async fn decrypt_path_structure(
     table: &str,
-    data: Vec<AuthItem>,
+    data: Vec<AuthField>,
     cmm: SharedCmm,
     encryption_context: Option<EncryptionContext>,
-) -> Result<(Vec<CryptoItem>, ParsedHeader), Error> {
+) -> Result<(Vec<CryptoField>, ParsedHeader), Error> {
     if !data.iter().any(|x| x.action == AuthAction::Sign) {
         return Err(val_err("At least one Authenticate Action must be SIGN"));
     }
@@ -391,7 +430,7 @@ pub(crate) async fn decrypt_path_structure(
     let out = decrypted
         .into_iter()
         .filter(|x| !is_header_path(&x.key))
-        .map(|x| CryptoItem {
+        .map(|x| CryptoField {
             key: x.key,
             data: x.data,
             action: x.action,
@@ -404,6 +443,34 @@ pub(crate) async fn decrypt_path_structure(
         encryption_context: mat.encryption_context().clone(),
     };
     Ok((out, parsed))
+}
+
+/// The action the header's legend gives each field of `data`, which must hold the header and footer.
+/// Needs no materials: nothing is verified or decrypted.
+pub(crate) fn resolve_auth_actions(
+    table: &str,
+    data: Vec<AuthField>,
+    header_bytes: &[u8],
+) -> Result<Vec<CryptoField>, Error> {
+    if !has_no_duplicates(data.iter().map(|x| &x.key)) {
+        return Err(val_err("Duplicate Paths"));
+    }
+    let head = PartialHeader::deserialize(header_bytes)?;
+    if !data.iter().any(|x| x.key == header_path()) {
+        return Err(val_err("Header Required"));
+    }
+    if !data.iter().any(|x| x.key == footer_path()) {
+        return Err(val_err("Footer Required"));
+    }
+    let canon = for_decrypt(table, data, &head.legend)?;
+    Ok(canon
+        .into_iter()
+        .map(|x| CryptoField {
+            key: x.key,
+            data: x.data,
+            action: x.action,
+        })
+        .collect())
 }
 
 /// A structure of top-level fields and the result of encrypting or decrypting it.
@@ -424,7 +491,7 @@ fn sorted_keys<V>(map: &HashMap<String, V>) -> Vec<&String> {
 
 /// Split a list of single-member paths back into a map of fields and a map of signed actions.
 fn unbuild(
-    list: Vec<CryptoItem>,
+    list: Vec<CryptoField>,
 ) -> Result<(HashMap<String, Terminal>, HashMap<String, CryptoAction>), Error> {
     let mut data = HashMap::with_capacity(list.len());
     let mut schema = HashMap::with_capacity(list.len());
@@ -456,7 +523,7 @@ pub(crate) async fn encrypt_structure(
     }
     let list = sorted_keys(plaintext)
         .into_iter()
-        .map(|k| CryptoItem {
+        .map(|k| CryptoField {
             key: vec![k.clone()],
             data: plaintext[k].clone(),
             action: schema[k],
@@ -487,7 +554,7 @@ pub(crate) async fn decrypt_structure(
     }
     let list = sorted_keys(encrypted)
         .into_iter()
-        .map(|k| AuthItem {
+        .map(|k| AuthField {
             key: vec![k.clone()],
             data: encrypted[k].clone(),
             action: schema[k],
