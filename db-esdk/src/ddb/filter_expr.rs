@@ -728,3 +728,7 @@ pub(crate) fn eval_expr(
         _ => Err(eval_err("ended with bad stack")),
     }
 }
+
+#[cfg(test)]
+#[path = "filter_expr_tests.rs"]
+mod tests;
