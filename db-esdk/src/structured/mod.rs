@@ -483,10 +483,10 @@ pub(crate) struct StructureOutput {
     pub(crate) parsed_header: ParsedHeader,
 }
 
-fn sorted_keys<V>(map: &HashMap<String, V>) -> Vec<&String> {
-    let mut keys: Vec<&String> = map.keys().collect();
-    keys.sort_by(|a, b| util::utf16_cmp(a, b));
-    keys
+fn sorted_entries<V>(map: HashMap<String, V>) -> Vec<(String, V)> {
+    let mut entries: Vec<(String, V)> = map.into_iter().collect();
+    entries.sort_by(|a, b| util::utf16_cmp(&a.0, &b.0));
+    entries
 }
 
 /// A record's fields and the action taken on each.
@@ -513,7 +513,7 @@ fn unbuild(list: Vec<CryptoField>) -> Result<FieldsAndActions, Error> {
 /// Encrypt and sign a structure of top-level fields.
 pub(crate) async fn encrypt_structure(
     table: &str,
-    plaintext: &HashMap<String, Terminal>,
+    plaintext: HashMap<String, Terminal>,
     schema: &HashMap<String, CryptoAction>,
     cmm: SharedCmm,
     algorithm_suite_id: Option<AlgorithmSuiteId>,
@@ -522,12 +522,12 @@ pub(crate) async fn encrypt_structure(
     if plaintext.len() != schema.len() || plaintext.keys().any(|k| !schema.contains_key(k)) {
         return Err(val_err("Crypto Keys don't match."));
     }
-    let list = sorted_keys(plaintext)
+    let list = sorted_entries(plaintext)
         .into_iter()
-        .map(|k| CryptoField {
-            key: vec![k.clone()],
-            data: plaintext[k].clone(),
-            action: schema[k],
+        .map(|(k, data)| CryptoField {
+            action: schema[&k],
+            key: vec![k],
+            data,
         })
         .collect();
     let (out, parsed_header) =
@@ -543,7 +543,7 @@ pub(crate) async fn encrypt_structure(
 /// Verify and decrypt a structure of top-level fields.
 pub(crate) async fn decrypt_structure(
     table: &str,
-    encrypted: &HashMap<String, Terminal>,
+    encrypted: HashMap<String, Terminal>,
     schema: &HashMap<String, AuthAction>,
     cmm: SharedCmm,
     encryption_context: Option<EncryptionContext>,
@@ -553,12 +553,12 @@ pub(crate) async fn decrypt_structure(
             "DecryptStructure requires encryptedStructure and authenticateSchema have the same keys.",
         ));
     }
-    let list = sorted_keys(encrypted)
+    let list = sorted_entries(encrypted)
         .into_iter()
-        .map(|k| AuthField {
-            key: vec![k.clone()],
-            data: encrypted[k].clone(),
-            action: schema[k],
+        .map(|(k, data)| AuthField {
+            action: schema[&k],
+            key: vec![k],
+            data,
         })
         .collect();
     let (out, parsed_header) = decrypt_path_structure(table, list, cmm, encryption_context).await?;

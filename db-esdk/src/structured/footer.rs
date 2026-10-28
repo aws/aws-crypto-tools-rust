@@ -30,9 +30,10 @@ pub(crate) struct Footer {
     sig: Option<Vec<u8>>,
 }
 
-fn canonical_field(item: &CanonItem) -> Result<Vec<u8>, Error> {
+/// Append the canonical form of `item` to `out`.
+fn canonical_field(item: &CanonItem, out: &mut Vec<u8>) -> Result<(), Error> {
     let value = &item.data.value;
-    let mut out = item.canon.clone();
+    out.extend_from_slice(&item.canon);
     if item.action == CryptoAction::EncryptAndSign {
         if value.len() < 2 {
             return Err(ser_err("Bad length."));
@@ -45,7 +46,7 @@ fn canonical_field(item: &CanonItem) -> Result<Vec<u8>, Error> {
         out.extend_from_slice(&item.data.type_id);
     }
     out.extend_from_slice(value);
-    Ok(out)
+    Ok(())
 }
 
 /// SHA-384 of the header, the encryption context, and every signed field in canonical order.
@@ -55,13 +56,18 @@ fn canon_hash(
     ec: &EncryptionContext,
 ) -> Result<[u8; CANONICAL_HASH_SIZE], Error> {
     let aad = serialize_context(ec);
-    let mut record = Vec::with_capacity(header.len() + 8 + aad.len());
+    let fields: usize = data
+        .iter()
+        .filter(|x| x.action != CryptoAction::DoNothing)
+        .map(|x| x.canon.len() + 8 + PLAINTEXT.len() + 2 + x.data.value.len())
+        .sum();
+    let mut record = Vec::with_capacity(header.len() + 8 + aad.len() + fields);
     record.extend_from_slice(header);
     record.extend_from_slice(&u64_len(aad.len()).to_be_bytes());
     record.extend_from_slice(&aad);
     for item in data {
         if item.action != CryptoAction::DoNothing {
-            record.extend_from_slice(&canonical_field(item)?);
+            canonical_field(item, &mut record)?;
         }
     }
     let mut out = [0u8; CANONICAL_HASH_SIZE];

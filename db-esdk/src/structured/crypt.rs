@@ -52,23 +52,43 @@ fn field_key_nonce(offset: u32) -> Vec<u8> {
     out
 }
 
-/// The AES-GCM key and nonce of the encrypted field at `offset`.
+/// Bytes of key stream each field takes: three AES blocks, of which the first
+/// `KEY_SIZE + NONCE_SIZE` are the field's key and nonce.
+const FIELD_STRIDE: usize = 48;
+/// Fields whose keys one key-stream call derives. Bounds the stream buffer.
+const FIELD_BATCH: u32 = 64;
+
+/// The AES-GCM keys and nonces of the `count` encrypted fields from `offset`,
+/// `FIELD_STRIDE` bytes apart.
+///
+/// Field `i` is keyed by the AES-CTR stream at counter block `3 * i`, so consecutive
+/// fields are consecutive blocks of one stream: one call derives them all.
+fn field_keys(root: &[u8], offset: u32, count: u32) -> Result<Zeroizing<Vec<u8>>, Error> {
+    if offset
+        .checked_add(count)
+        .is_none_or(|end| end > ONE_THIRD_MAX_INT)
+    {
+        return Err(val_err("Too many encrypted fields."));
+    }
+    let nonce = field_key_nonce(offset * 3);
+    let len = count
+        .checked_mul(FIELD_STRIDE as u32)
+        .ok_or_else(|| internal_err("field key size"))?;
+    Ok(Zeroizing::new(aes_kdf_ctr_stream(&nonce, root, len)?))
+}
+
+/// The AES-GCM key and nonce of the encrypted field at `offset`, on its own.
+#[cfg(test)]
 fn field_key(root: &[u8], offset: u32) -> Result<Zeroizing<Vec<u8>>, Error> {
     if offset >= ONE_THIRD_MAX_INT {
         return Err(val_err("Too many encrypted fields."));
     }
-    let nonce = field_key_nonce(offset * 3);
-    let len = u32::try_from(KEY_SIZE + NONCE_SIZE).map_err(|_| internal_err("field key size"))?;
-    Ok(Zeroizing::new(aes_kdf_ctr_stream(&nonce, root, len)?))
+    let mut fk = field_keys(root, offset, 1)?;
+    fk.truncate(KEY_SIZE + NONCE_SIZE);
+    Ok(fk)
 }
 
-fn encrypt_terminal(
-    root: &[u8],
-    offset: u32,
-    path: &[u8],
-    data: &Terminal,
-) -> Result<Terminal, Error> {
-    let fk = field_key(root, offset)?;
+fn encrypt_terminal(fk: &[u8], path: &[u8], data: &Terminal) -> Result<Terminal, Error> {
     let (key, nonce) = fk.split_at(KEY_SIZE);
     let mut out = Vec::with_capacity(2 + data.value.len() + AUTH_TAG_SIZE);
     out.extend_from_slice(&data.type_id);
@@ -76,13 +96,7 @@ fn encrypt_terminal(
     Ok(Terminal::new(BYTES_TYPE_ID, out))
 }
 
-fn decrypt_terminal(
-    root: &[u8],
-    offset: u32,
-    path: &[u8],
-    data: &Terminal,
-) -> Result<Terminal, Error> {
-    let fk = field_key(root, offset)?;
+fn decrypt_terminal(fk: &[u8], path: &[u8], data: &Terminal) -> Result<Terminal, Error> {
     let (key, nonce) = fk.split_at(KEY_SIZE);
     let value = &data.value;
     if value.len() < AUTH_TAG_SIZE + 2 {
@@ -107,19 +121,31 @@ pub(crate) fn crypt(
     if u32::try_from(data.len()).is_err() {
         return Err(val_err("Too many fields."));
     }
+    let total = u32::try_from(
+        data.iter()
+            .filter(|x| x.action == CryptoAction::EncryptAndSign)
+            .count(),
+    )
+    .map_err(|_| val_err("Too many encrypted fields."))?;
+    let mut data = data;
     let mut pos: u32 = 0;
-    data.into_iter()
-        .map(|mut item| {
-            if item.action == CryptoAction::EncryptAndSign {
-                item.data = match mode {
-                    Mode::Encrypt => encrypt_terminal(&root, pos, &item.canon, &item.data)?,
-                    Mode::Decrypt => decrypt_terminal(&root, pos, &item.canon, &item.data)?,
-                };
-                pos += 1;
-            }
-            Ok(item)
-        })
-        .collect()
+    let mut keys = Zeroizing::new(Vec::new());
+    for item in &mut data {
+        if item.action != CryptoAction::EncryptAndSign {
+            continue;
+        }
+        let slot = (pos % FIELD_BATCH) as usize * FIELD_STRIDE;
+        if slot == 0 {
+            keys = field_keys(&root, pos, FIELD_BATCH.min(total - pos))?;
+        }
+        let fk = &keys[slot..slot + KEY_SIZE + NONCE_SIZE];
+        item.data = match mode {
+            Mode::Encrypt => encrypt_terminal(fk, &item.canon, &item.data)?,
+            Mode::Decrypt => decrypt_terminal(fk, &item.canon, &item.data)?,
+        };
+        pos += 1;
+    }
+    Ok(data)
 }
 
 #[cfg(test)]

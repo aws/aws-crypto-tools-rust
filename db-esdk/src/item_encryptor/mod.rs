@@ -258,7 +258,7 @@ async fn encrypt_item(config: &Config, item: Item) -> Result<EncryptItemOutput, 
     )?;
     let out = structured::encrypt_structure(
         &config.logical_table_name,
-        &plaintext,
+        plaintext,
         &schema,
         cmm,
         config.algorithm_suite_id,
@@ -386,7 +386,7 @@ async fn decrypt_item(config: &Config, item: Item) -> Result<DecryptItemOutput, 
     )?;
     let out = structured::decrypt_structure(
         &config.logical_table_name,
-        &encrypted,
+        encrypted,
         &auth,
         cmm,
         Some(context),

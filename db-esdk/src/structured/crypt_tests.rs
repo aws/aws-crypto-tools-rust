@@ -421,3 +421,74 @@ fn crypt_encrypts_first_field_under_root_key_offset_zero() {
     aes_decrypt(AesGcm::Aes256Gcm, key, ct, tag, nonce, b"c", &mut plain).unwrap();
     assert_eq!(plain, b"secret two");
 }
+
+// One key-stream call for many fields gives each field the key it gets on its own.
+#[test]
+fn batched_field_keys_match_single_field_keys() {
+    let root = [7u8; KEY_SIZE];
+    for start in [0, 5, ONE_THIRD_MAX_INT - 70] {
+        let batch = field_keys(&root, start, 70).unwrap();
+        assert_eq!(batch.len(), 70 * FIELD_STRIDE);
+        for i in 0..70u32 {
+            let at = i as usize * FIELD_STRIDE;
+            let single = field_key(&root, start + i).unwrap();
+            assert_eq!(
+                &batch[at..at + KEY_SIZE + NONCE_SIZE],
+                single.as_slice(),
+                "offset {}",
+                start + i
+            );
+        }
+    }
+    let err = field_keys(&root, ONE_THIRD_MAX_INT - 1, 2).unwrap_err();
+    assert_eq!(err.kind(), Kind::Validation);
+}
+
+// Across more than one key batch, encrypted field `n` opens under field_key(root, n).
+#[test]
+fn crypt_uses_field_offset_across_key_batches() {
+    let root = unhex("2c8aa8ac569062534c6cc5bfbbe5ed90967d7311a3f925169433151865270700");
+    let names: Vec<String> = (0..200).map(|i| format!("f{i:03}")).collect();
+    let data: Vec<CanonItem> = names
+        .iter()
+        .enumerate()
+        .map(|(i, n)| {
+            let action = if i % 3 == 0 {
+                CryptoAction::SignOnly
+            } else {
+                CryptoAction::EncryptAndSign
+            };
+            item(n, STRING, n.as_bytes(), action)
+        })
+        .collect();
+    let enc = crypt(Mode::Encrypt, suite(), &DATA_KEY, &MSG_ID, data.clone()).unwrap();
+    let mut offset = 0;
+    for (e, original) in enc.iter().zip(&data) {
+        if original.action != CryptoAction::EncryptAndSign {
+            assert_eq!(e.data, original.data);
+            continue;
+        }
+        let fk = field_key(&root, offset).unwrap();
+        let (key, nonce) = fk.split_at(KEY_SIZE);
+        let value = &e.data.value;
+        let (ct, tag) = value[2..].split_at(value.len() - 2 - AUTH_TAG_SIZE);
+        let mut plain = vec![0u8; ct.len()];
+        aes_decrypt(
+            AesGcm::Aes256Gcm,
+            key,
+            ct,
+            tag,
+            nonce,
+            &original.canon,
+            &mut plain,
+        )
+        .unwrap();
+        assert_eq!(plain, original.data.value);
+        offset += 1;
+    }
+    assert!(offset > FIELD_BATCH);
+    let dec = crypt(Mode::Decrypt, suite(), &DATA_KEY, &MSG_ID, enc).unwrap();
+    for (d, original) in dec.iter().zip(&data) {
+        assert_eq!(d.data, original.data);
+    }
+}

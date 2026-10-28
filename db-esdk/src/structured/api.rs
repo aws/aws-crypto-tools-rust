@@ -409,7 +409,7 @@ impl EncryptStructureFluentBuilder {
         let cmm = required(self.cmm, "cmm")?;
         let out = super::encrypt_structure(
             &table,
-            &plaintext,
+            plaintext,
             &schema,
             cmm,
             self.algorithm_suite_id,
@@ -577,7 +577,7 @@ impl DecryptStructureFluentBuilder {
                 .collect();
         let cmm = required(self.cmm, "cmm")?;
         let out =
-            super::decrypt_structure(&table, &encrypted, &schema, cmm, self.encryption_context)
+            super::decrypt_structure(&table, encrypted, &schema, cmm, self.encryption_context)
                 .await?;
         Ok(DecryptStructureOutput {
             plaintext_structure: from_inner_map(out.data),

@@ -115,9 +115,15 @@ fn keypair() -> SignatureKeyPair {
 const CANON_HASH: &str = "6bbc5fedf86f0e566b8e19342671b09e95e0e213d1dd49d83e1937fe246fe6f1c64eb1f7a41f332c984fd4cca70d2398";
 const TAG: &str = "6b04e5a8c6da421226f60fadd1d721e7c09f421802c432a4b3947175dbd7c5a8ddecc01195e2b9f9f4ca4e7283890bd9";
 
+fn canonical(item: &CanonItem) -> Result<Vec<u8>, Error> {
+    let mut out = Vec::new();
+    canonical_field(item, &mut out)?;
+    Ok(out)
+}
+
 #[test]
 fn canonical_encrypted_field_layout() {
-    let got = canonical_field(&fields()[0]).unwrap();
+    let got = canonical(&fields()[0]).unwrap();
     let mut expected = b"A".to_vec();
     expected.extend_from_slice(&2u64.to_be_bytes());
     expected.extend_from_slice(b"ENCRYPTED");
@@ -127,7 +133,7 @@ fn canonical_encrypted_field_layout() {
 
 #[test]
 fn canonical_plaintext_field_layout() {
-    let got = canonical_field(&fields()[1]).unwrap();
+    let got = canonical(&fields()[1]).unwrap();
     let mut expected = b"B".to_vec();
     expected.extend_from_slice(&2u64.to_be_bytes());
     expected.extend_from_slice(b"PLAINTEXT");
@@ -139,7 +145,7 @@ fn canonical_plaintext_field_layout() {
 #[test]
 fn canonical_encrypted_field_needs_type_id() {
     let short = item(b"A", BYTES_TYPE_ID, &[0x00], CryptoAction::EncryptAndSign);
-    let err = canonical_field(&short).unwrap_err();
+    let err = canonical(&short).unwrap_err();
     assert_eq!(err.kind(), Kind::Serialization);
 }
 

@@ -57,25 +57,25 @@ fn has_duplicates<T: Ord>(items: impl IntoIterator<Item = T>) -> bool {
     !items.into_iter().all(|x| seen.insert(x))
 }
 
-fn collect_strings(sorted: &[String]) -> Result<Vec<u8>, String> {
-    let mut out = u32_be(sorted.len())?.to_vec();
+fn collect_strings(sorted: &[String], out: &mut Vec<u8>) -> Result<(), String> {
+    out.extend_from_slice(&u32_be(sorted.len())?);
     for s in sorted {
         out.extend_from_slice(&u32_be(s.len())?);
         out.extend_from_slice(s.as_bytes());
     }
-    Ok(out)
+    Ok(())
 }
 
-fn string_set_to_bytes(ss: &[String]) -> Result<Vec<u8>, String> {
+fn string_set_to_bytes(ss: &[String], out: &mut Vec<u8>) -> Result<(), String> {
     if has_duplicates(ss) {
         return Err("String Set had duplicate values".to_owned());
     }
     let mut sorted = ss.to_vec();
     sorted.sort_by(|a, b| utf16_cmp(a, b));
-    collect_strings(&sorted)
+    collect_strings(&sorted, out)
 }
 
-fn number_set_to_bytes(ns: &[String]) -> Result<Vec<u8>, String> {
+fn number_set_to_bytes(ns: &[String], out: &mut Vec<u8>) -> Result<(), String> {
     if has_duplicates(ns) {
         return Err("Number Set had duplicate values".to_owned());
     }
@@ -87,81 +87,100 @@ fn number_set_to_bytes(ns: &[String]) -> Result<Vec<u8>, String> {
         return Err("Number Set had duplicate values after normalization.".to_owned());
     }
     norm.sort_by(|a, b| utf16_cmp(a, b));
-    collect_strings(&norm)
+    collect_strings(&norm, out)
 }
 
-fn binary_set_to_bytes(bs: &[Blob]) -> Result<Vec<u8>, String> {
+fn binary_set_to_bytes(bs: &[Blob], out: &mut Vec<u8>) -> Result<(), String> {
     if has_duplicates(bs.iter().map(Blob::as_ref)) {
         return Err("Binary Set had duplicate values".to_owned());
     }
     let mut sorted: Vec<&[u8]> = bs.iter().map(Blob::as_ref).collect();
     sorted.sort_unstable();
-    let mut out = u32_be(sorted.len())?.to_vec();
+    out.extend_from_slice(&u32_be(sorted.len())?);
     for b in sorted {
         out.extend_from_slice(&u32_be(b.len())?);
         out.extend_from_slice(b);
     }
-    Ok(out)
+    Ok(())
 }
 
-fn serialize_map_item(key: &str, value: &[u8]) -> Result<Vec<u8>, String> {
-    if key.is_empty() || key.len() > MAX_ATTR_NAME_LEN {
-        return Err("Attribute name must be between 1 and 65535 UTF-8 bytes".to_owned());
-    }
-    let mut out = STRING.to_vec();
-    out.extend_from_slice(&u32_be(key.len())?);
-    out.extend_from_slice(key.as_bytes());
-    out.extend_from_slice(value);
-    Ok(out)
-}
-
-fn map_to_bytes(m: &HashMap<String, AttributeValue>, depth: u64) -> Result<Vec<u8>, String> {
+fn map_to_bytes(
+    m: &HashMap<String, AttributeValue>,
+    depth: u64,
+    out: &mut Vec<u8>,
+) -> Result<(), String> {
     let mut keys: Vec<&String> = m.keys().collect();
     keys.sort_by(|a, b| utf16_cmp(a, b));
-    let mut out = u32_be(keys.len())?.to_vec();
+    out.extend_from_slice(&u32_be(keys.len())?);
     for k in keys {
-        let val = attr_to_bytes(&m[k], true, depth + 1)?;
-        out.extend_from_slice(&serialize_map_item(k, &val)?);
+        // A bad value is reported before a bad name.
+        let name_ok = !k.is_empty() && k.len() <= MAX_ATTR_NAME_LEN;
+        if name_ok {
+            out.extend_from_slice(&STRING);
+            out.extend_from_slice(&u32_be(k.len())?);
+            out.extend_from_slice(k.as_bytes());
+        }
+        write_attr(&m[k], true, depth + 1, out)?;
+        if !name_ok {
+            return Err("Attribute name must be between 1 and 65535 UTF-8 bytes".to_owned());
+        }
     }
-    Ok(out)
+    Ok(())
 }
 
-fn list_to_bytes(l: &[AttributeValue], depth: u64) -> Result<Vec<u8>, String> {
-    let mut out = u32_be(l.len())?.to_vec();
+fn list_to_bytes(l: &[AttributeValue], depth: u64, out: &mut Vec<u8>) -> Result<(), String> {
+    out.extend_from_slice(&u32_be(l.len())?);
     for v in l {
-        out.extend_from_slice(&attr_to_bytes(v, true, depth + 1)?);
+        write_attr(v, true, depth + 1, out)?;
     }
-    Ok(out)
+    Ok(())
 }
 
-/// The serialized value of `a`; with `prefix`, preceded by its type id and length.
-fn attr_to_bytes(a: &AttributeValue, prefix: bool, depth: u64) -> Result<Vec<u8>, String> {
+/// Append the serialized value of `a` to `out`; with `prefix`, preceded by its type id and length.
+fn write_attr(
+    a: &AttributeValue,
+    prefix: bool,
+    depth: u64,
+    out: &mut Vec<u8>,
+) -> Result<(), String> {
     if depth > MAX_STRUCTURE_DEPTH {
         return Err(format!(
             "Depth of attribute structure to serialize exceeds limit of {MAX_STRUCTURE_DEPTH}"
         ));
     }
-    let base = match a {
-        AttributeValue::S(s) => s.as_bytes().to_vec(),
-        AttributeValue::N(n) => normalize_number(n)?.into_bytes(),
-        AttributeValue::B(b) => b.as_ref().to_vec(),
-        AttributeValue::Ss(ss) => string_set_to_bytes(ss)?,
-        AttributeValue::Ns(ns) => number_set_to_bytes(ns)?,
-        AttributeValue::Bs(bs) => binary_set_to_bytes(bs)?,
-        AttributeValue::M(m) => map_to_bytes(m, depth)?,
-        AttributeValue::L(l) => list_to_bytes(l, depth)?,
-        AttributeValue::Null(_) => Vec::new(),
-        AttributeValue::Bool(b) => vec![u8::from(*b)],
-        _ => return Err("Unsupported AttributeValue type".to_owned()),
-    };
-    if prefix {
-        let mut out = type_id(a)?.to_vec();
-        out.extend_from_slice(&u32_be(base.len())?);
-        out.extend_from_slice(&base);
-        Ok(out)
+    // The type id and a length placeholder, filled in once the value is written.
+    let len_at = if prefix {
+        out.extend_from_slice(&type_id(a)?);
+        out.extend_from_slice(&[0; LENGTH_LEN]);
+        Some(out.len())
     } else {
-        Ok(base)
+        None
+    };
+    match a {
+        AttributeValue::S(s) => out.extend_from_slice(s.as_bytes()),
+        AttributeValue::N(n) => out.extend_from_slice(normalize_number(n)?.as_bytes()),
+        AttributeValue::B(b) => out.extend_from_slice(b.as_ref()),
+        AttributeValue::Ss(ss) => string_set_to_bytes(ss, out)?,
+        AttributeValue::Ns(ns) => number_set_to_bytes(ns, out)?,
+        AttributeValue::Bs(bs) => binary_set_to_bytes(bs, out)?,
+        AttributeValue::M(m) => map_to_bytes(m, depth, out)?,
+        AttributeValue::L(l) => list_to_bytes(l, depth, out)?,
+        AttributeValue::Null(_) => {}
+        AttributeValue::Bool(b) => out.push(u8::from(*b)),
+        _ => return Err("Unsupported AttributeValue type".to_owned()),
     }
+    if let Some(body) = len_at {
+        let len = u32_be(out.len() - body)?;
+        out[body - LENGTH_LEN..body].copy_from_slice(&len);
+    }
+    Ok(())
+}
+
+/// The serialized value of `a`; with `prefix`, preceded by its type id and length.
+fn attr_to_bytes(a: &AttributeValue, prefix: bool, depth: u64) -> Result<Vec<u8>, String> {
+    let mut out = Vec::new();
+    write_attr(a, prefix, depth, &mut out)?;
+    Ok(out)
 }
 
 /// The serialized value of a top-level attribute, without its type id.
@@ -301,7 +320,8 @@ fn bytes_to_attr(
             }
             let count = read_u32(value, pos)?;
             let mut p = pos + LENGTH_LEN;
-            let mut m = HashMap::new();
+            // Every entry takes at least PREFIX_LEN bytes, which bounds the capacity.
+            let mut m = HashMap::with_capacity(count.min((value.len() - p) / PREFIX_LEN));
             for _ in 0..count {
                 if value.len() - p < PREFIX_LEN {
                     return Err("Out of bytes reading Map Key".to_owned());
@@ -343,7 +363,7 @@ fn bytes_to_attr(
             }
             let count = read_u32(value, pos)?;
             let mut p = pos + LENGTH_LEN;
-            let mut l = Vec::new();
+            let mut l = Vec::with_capacity(count.min((value.len() - p) / PREFIX_LEN));
             for _ in 0..count {
                 if value.len() - p < PREFIX_LEN {
                     return Err("Out of bytes reading Type of List element".to_owned());
