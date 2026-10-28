@@ -64,6 +64,12 @@ jobs:
             mpl-test-server:
               - *mpl
               - 'mpl-test-server/**'
+            db-esdk: &db-esdk
+              - *mpl
+              - 'db-esdk/**'
+            db-esdk-test-server:
+              - *db-esdk
+              - 'db-esdk-test-server/**'
             esdk-test-server:
               - *mpl
               - 'esdk/**'
@@ -92,11 +98,13 @@ jobs:
             {
               "rust-tests": [
                 {"when": "esdk", "project": "esdk"},
+                {"when": "db-esdk", "project": "db-esdk"},
                 {"when": "mpl", "project": "mpl"},
                 {"when": "prim", "project": "prim"}
               ],
               "supply-chain": [
                 {"when": "esdk", "project": "esdk"},
+                {"when": "db-esdk", "project": "db-esdk"},
                 {"when": "mpl", "project": "mpl"},
                 {"when": "prim", "project": "prim"}
               ],
@@ -105,14 +113,16 @@ jobs:
               ],
               "duvet": [
                 {"when": "esdk", "name": "esdk", "project": "esdk", "artifact": "esdk-duvet-report"},
-                {"when": "esdk", "name": "aws-esdk-cpp", "project": "esdk/shims/aws-esdk-cpp", "artifact": "aws-esdk-cpp-duvet-report"}
+                {"when": "esdk", "name": "aws-esdk-cpp", "project": "esdk/shims/aws-esdk-cpp", "artifact": "aws-esdk-cpp-duvet-report"},
+                {"when": "db-esdk", "name": "db-esdk", "project": "db-esdk", "artifact": "db-esdk-duvet-report"}
               ],
               "test-server-builds": [
                 {"when": "esdk-test-server", "name": "esdk-test-server", "server": "esdk/test-server"},
                 {"when": "esdk-cpp-test-server", "name": "esdk-cpp-test-server (ubuntu)", "server": "esdk/shims/aws-esdk-cpp/test-server", "prebuild": "esdk/shims/aws-esdk-cpp", "os": "ubuntu-latest"},
                 {"when": "esdk-cpp-test-server", "name": "esdk-cpp-test-server (macos)", "server": "esdk/shims/aws-esdk-cpp/test-server", "prebuild": "esdk/shims/aws-esdk-cpp", "os": "macos-latest"},
                 {"when": "mpl-test-server", "name": "mpl-test-server", "server": "mpl-test-server"},
-                {"when": "prim-test-server", "name": "prim-test-server", "server": "prim-test-server"}
+                {"when": "prim-test-server", "name": "prim-test-server", "server": "prim-test-server"},
+                {"when": "db-esdk-test-server", "name": "db-esdk-test-server", "server": "db-esdk-test-server"}
               ],
               "esdk-test-server": [
                 {"when": "esdk-test-server", "focus": "rust"},
@@ -123,6 +133,9 @@ jobs:
               ],
               "prim-test-server": [
                 {"when": "prim-test-server"}
+              ],
+              "db-esdk-test-server": [
+                {"when": "db-esdk-test-server"}
               ]
             }
         run: |
@@ -232,6 +245,21 @@ jobs:
     secrets:
       repo-pat: ${{ secrets.COMMONS_REPO_PAT }}
 
+  db-esdk-test-server:
+    name: DB-ESDK TestServer
+    needs: detect
+    if: fromJSON(needs.detect.outputs.jobs)['db-esdk-test-server'] != null
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    # Builds the rust-native server (db-esdk-test-server/) from this commit's checkout.
+    uses: aws/aws-crypto-tools-commons/.github/workflows/dbesdk-test-server-reusable.yml@main
+    with:
+      commons-ref: main
+      # Only run tests that involve the native server (ex. skip Java <--> .NET tests for this Rust repo)
+      focus: rust-native
+
   # The generated error types must match errors.toml.
   gen-errors:
     name: Error codegen is current
@@ -285,6 +313,7 @@ jobs:
       - esdk-test-server
       - mpl-test-server
       - prim-test-server
+      - db-esdk-test-server
       - gen-errors
       - license-headers
     runs-on: ubuntu-latest
