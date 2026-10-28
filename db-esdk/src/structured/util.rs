@@ -8,8 +8,12 @@ use crate::types::CryptoAction;
 /// Prefix of every attribute name this library reserves.
 pub(crate) const RESERVED_PREFIX: &str = "aws_dbe_";
 /// The attribute that holds the header.
+//= spec/structured-encryption/encrypt-path-structure.md#header-field
+//# The Header Field name MUST be `aws_dbe_head`
 pub(crate) const HEADER_FIELD: &str = "aws_dbe_head";
 /// The attribute that holds the footer.
+//= spec/structured-encryption/encrypt-path-structure.md#footer-field
+//# The Footer Field name MUST be `aws_dbe_foot`
 pub(crate) const FOOTER_FIELD: &str = "aws_dbe_foot";
 
 /// Prefix of every encryption context key this library reserves.

@@ -7,9 +7,19 @@
 #![allow(dead_code)]
 
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
-use aws_db_esdk::cmm::{DefaultCmm, SharedCmm};
+use aws_db_esdk::async_trait;
+use aws_db_esdk::cmm::{
+    Cmm, DecryptMaterialsInput, DecryptMaterialsOutput, DefaultCmm, GetEncryptionMaterialsInput,
+    GetEncryptionMaterialsOutput, SharedCmm,
+};
 use aws_db_esdk::keyring::RawAesKeyring;
+use aws_db_esdk::mpl::Error as MplError;
+use aws_db_esdk::mpl::types::{
+    AlgorithmSuiteId as MplAlgorithmSuiteId, DbeAlgorithmSuiteId, EncryptedDataKey,
+    EncryptionContext, EncryptionMaterials, EsdkAlgorithmSuiteId, PlaintextDataKey,
+};
 use aws_db_esdk::structured::{AuthenticateAction, StructuredDataTerminal, StructuredEncryption};
 use aws_db_esdk::types::{AesWrappingAlg, CryptoAction};
 
@@ -67,21 +77,163 @@ pub fn test_authenticate_schema() -> HashMap<String, AuthenticateAction> {
     ])
 }
 
-/// A default CMM over a Raw AES keyring with a fixed 32-byte key,
+/// A Raw AES keyring with a fixed 32-byte key of `key_byte`,
 /// standing in for the reference's KMS keyring so the tests run offline.
-pub fn cmm_with_key(key_byte: u8) -> SharedCmm {
-    let keyring = RawAesKeyring::builder()
+fn keyring_with_key(key_byte: u8) -> RawAesKeyring {
+    RawAesKeyring::builder()
         .key_namespace("structured-api-test")
         .key_name("aes-key")
         .wrapping_key(vec![key_byte; 32])
         .wrapping_alg(AesWrappingAlg::AlgAes256GcmIv12Tag16)
         .build()
-        .unwrap();
-    SharedCmm::new(DefaultCmm::new(keyring))
+        .unwrap()
+}
+
+/// A default CMM over [`keyring_with_key`].
+pub fn cmm_with_key(key_byte: u8) -> SharedCmm {
+    SharedCmm::new(DefaultCmm::new(keyring_with_key(key_byte)))
 }
 
 pub fn cmm() -> SharedCmm {
     cmm_with_key(0x01)
+}
+
+/// What a [`RecordingCmm`] does after recording a `get_encryption_materials` call.
+#[derive(Clone, Copy, Debug)]
+pub enum OnEncrypt {
+    /// Forward the request unchanged to the default CMM.
+    Forward,
+    /// Forward the request, but ask for this algorithm suite instead.
+    OverrideSuite(MplAlgorithmSuiteId),
+    /// Return materials with a non-DBE (ESDK) algorithm suite.
+    EsdkMaterials,
+    /// Return materials with a DBE algorithm suite but no plaintext data key.
+    NoPlaintextKey,
+    /// Return materials whose encryption context has a key too long to store in the header.
+    OversizedContext,
+    /// Fail with [`RECORDING_CMM_FAILURE`].
+    Fail,
+}
+
+/// The message of the error [`OnEncrypt::Fail`] returns.
+pub const RECORDING_CMM_FAILURE: &str = "the recording CMM refused to supply materials";
+
+/// A CMM that records every `get_encryption_materials` input it receives,
+/// over a default CMM with the same keyring as [`cmm`].
+pub struct RecordingCmm {
+    inner: DefaultCmm,
+    on_encrypt: OnEncrypt,
+    calls: Arc<Mutex<Vec<GetEncryptionMaterialsInput>>>,
+}
+
+/// A [`RecordingCmm`] and the list it records each `get_encryption_materials` input into.
+pub fn recording_cmm(
+    on_encrypt: OnEncrypt,
+) -> (SharedCmm, Arc<Mutex<Vec<GetEncryptionMaterialsInput>>>) {
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let cmm = RecordingCmm {
+        inner: DefaultCmm::new(keyring_with_key(0x01)),
+        on_encrypt,
+        calls: Arc::clone(&calls),
+    };
+    (SharedCmm::new(cmm), calls)
+}
+
+/// The symmetric DBE suite, which needs no signing key in the materials.
+const SYMMETRIC_DBE_SUITE: DbeAlgorithmSuiteId =
+    DbeAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeySymsigHmacSha384;
+
+/// Materials built directly, bypassing any keyring.
+/// With a plaintext data key they carry one encrypted data key (and its symmetric signing key);
+/// without one they carry none, since the MPL allows encrypted data keys only alongside it.
+fn direct_materials(
+    suite: MplAlgorithmSuiteId,
+    plaintext_data_key: Option<PlaintextDataKey>,
+    encryption_context: EncryptionContext,
+) -> Result<GetEncryptionMaterialsOutput, MplError> {
+    let has_key = plaintext_data_key.is_some();
+    let mut materials = EncryptionMaterials::builder()
+        .algorithm_suite_id(suite)
+        .encryption_context(encryption_context)
+        .set_plaintext_data_key(plaintext_data_key);
+    if has_key {
+        materials = materials.encrypted_data_keys(vec![
+            EncryptedDataKey::builder()
+                .key_provider_id("p")
+                .key_provider_info(Vec::new())
+                .ciphertext(vec![1])
+                .build()?,
+        ]);
+        if suite.has_symmetric_signing() {
+            // 48 bytes: an HMAC-SHA-384 key.
+            materials = materials.symmetric_signing_keys(vec![vec![9u8; 48].into()]);
+        }
+    }
+    GetEncryptionMaterialsOutput::builder()
+        .encryption_materials(materials.build()?)
+        .build()
+}
+
+#[async_trait]
+impl Cmm for RecordingCmm {
+    async fn get_encryption_materials(
+        &self,
+        input: GetEncryptionMaterialsInput,
+    ) -> Result<GetEncryptionMaterialsOutput, MplError> {
+        self.calls.lock().unwrap().push(input.clone());
+        let suite = match self.on_encrypt {
+            OnEncrypt::Forward => input.algorithm_suite_id(),
+            OnEncrypt::OverrideSuite(suite) => Some(suite),
+            OnEncrypt::EsdkMaterials => {
+                return direct_materials(
+                    MplAlgorithmSuiteId::Esdk(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf),
+                    Some(vec![7u8; 32].into()),
+                    input.encryption_context().clone(),
+                );
+            }
+            OnEncrypt::NoPlaintextKey => {
+                return direct_materials(
+                    MplAlgorithmSuiteId::Dbe(SYMMETRIC_DBE_SUITE),
+                    None,
+                    input.encryption_context().clone(),
+                );
+            }
+            OnEncrypt::OversizedContext => {
+                let mut ec = input.encryption_context().clone();
+                ec.insert("k".repeat(usize::from(u16::MAX) + 1), "v");
+                return direct_materials(
+                    MplAlgorithmSuiteId::Dbe(SYMMETRIC_DBE_SUITE),
+                    Some(vec![7u8; 32].into()),
+                    ec,
+                );
+            }
+            OnEncrypt::Fail => return Err(MplError::validation(RECORDING_CMM_FAILURE)),
+        };
+        self.inner
+            .get_encryption_materials()
+            .encryption_context(input.encryption_context().clone())
+            .commitment_policy(input.commitment_policy())
+            .set_algorithm_suite_id(suite)
+            .set_required_encryption_context_keys(input.required_encryption_context_keys().cloned())
+            .set_max_plaintext_length(input.max_plaintext_length())
+            .send()
+            .await
+    }
+
+    async fn decrypt_materials(
+        &self,
+        input: DecryptMaterialsInput,
+    ) -> Result<DecryptMaterialsOutput, MplError> {
+        self.inner
+            .decrypt_materials()
+            .algorithm_suite_id(input.algorithm_suite_id())
+            .commitment_policy(input.commitment_policy())
+            .encrypted_data_keys(input.encrypted_data_keys().to_vec())
+            .encryption_context(input.encryption_context().clone())
+            .set_reproduced_encryption_context(input.reproduced_encryption_context().cloned())
+            .send()
+            .await
+    }
 }
 
 pub const fn client() -> StructuredEncryption {

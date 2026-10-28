@@ -228,6 +228,12 @@ fn field_key_matches_reference_vectors() {
         let key = unhex(input);
         assert_eq!(key.len(), KEY_SIZE);
         let got = field_key(&key, *offset).unwrap();
+
+        //= spec/structured-encryption/encrypt-path-structure.md#calculate-cipherkey-and-nonce
+        //= type=test
+        //# The `FieldKey` for a given key and offset MUST be the first 44 bytes
+        //# of the aes256ctr_stream
+        //# of the `FieldRootKey` and the `FieldKeyNonce` of three times the given offset.
         assert_eq!(got.as_slice(), unhex(output).as_slice(), "offset {offset}");
     }
 }
@@ -263,6 +269,15 @@ fn field_key_nonce_layout() {
     let mut expected = b"AwsDbeField".to_vec();
     expected.push(44);
     expected.extend_from_slice(&[0x01, 0x02, 0x03, 0x04]);
+
+    //= spec/structured-encryption/encrypt-path-structure.md#calculate-cipherkey-and-nonce
+    //= type=test
+    //# The `FieldKeyNonce` for a given offset MUST be 16 bytes comprised of
+    //# | Field | Length | Interpretation |
+    //# | ------------- | -------- | -------------- |
+    //# | "AwsDbeField" | 11 | Literal Ascii String |
+    //# | 0x2c | 1 | 44, the length of the eventual FieldKey |
+    //# | offset | 4 | 32 bit integer representation of offset |
     assert_eq!(field_key_nonce(0x0102_0304), expected);
 }
 
@@ -302,8 +317,13 @@ fn crypt_round_trip_encrypts_only_encrypt_and_sign() {
     for (orig, enc) in original.iter().zip(&encrypted) {
         assert_eq!(enc.canon, orig.canon);
         if orig.action == CryptoAction::EncryptAndSign {
-            // The encrypted value is the plaintext type id, the ciphertext, then the tag.
+            //= spec/structured-encryption/encrypt-path-structure.md#terminal-data-encryption
+            //= type=test
+            //# The output encrypted Terminal Data MUST have a [Terminal Type Id](./structures.md#terminal-type-id)
+            //# equal `0xFFFF`.
             assert_eq!(enc.data.type_id, BYTES_TYPE_ID);
+
+            // The encrypted value is the plaintext type id, the ciphertext, then the tag.
             assert_eq!(&enc.data.value[..2], &orig.data.type_id);
             assert_eq!(
                 enc.data.value.len(),
@@ -371,6 +391,12 @@ fn crypt_depends_on_data_key_and_message_id() {
         sample(),
     )
     .unwrap();
+
+    //= spec/structured-encryption/encrypt-path-structure.md#calculate-cipherkey-and-nonce
+    //= type=test
+    //= reason=changing either the data key or the message id changes the ciphertext
+    //# The `FieldRootKey` MUST be generated with the plaintext data key in the encryption materials
+    //# and the Message ID generated for this Encrypted Structured Data.
     assert_ne!(base[0].data.value, other_key[0].data.value);
     assert_ne!(base[0].data.value, other_id[0].data.value);
 }
@@ -557,7 +583,39 @@ fn crypt_encrypts_first_field_under_root_key_offset_zero() {
     let (key, nonce) = fk.split_at(KEY_SIZE);
     let (ct, tag) = value[2..].split_at(value.len() - 2 - AUTH_TAG_SIZE);
     let mut plain = vec![0u8; ct.len()];
+
+    //= spec/structured-encryption/encrypt-path-structure.md#calculate-info
+    //= type=test
+    //= reason=the root key was computed independently with this info; any other info fails to open
+    //# The `info` used for the HKDF function MUST be
+    //# | Field | Length |
+    //# | -------------------- | -------- |
+    //# | "AWS_DBE_DERIVE_KEY" | 18 |
+    //# | Message ID | 32 |
+    //
+    //= spec/structured-encryption/encrypt-path-structure.md#calculate-cipherkey-and-nonce
+    //= type=test
+    //= reason=the root key was computed independently with HKDF-SHA-512 and no salt; it opens the field
+    //# The HKDF algorithm used to calculate the Field Root Key MUST be the
+    //# [Encryption Key KDF](../../submodules/MaterialProviders/aws-encryption-sdk-specification/framework/algorithm-suites.md#algorithm-suites-encryption-key-derivation-settings)
+    //# indicated by the algorithm suite, using a provided plaintext data key, no salt,
+    //# and an info as calculated [above](#calculate-info)
     aes_decrypt(AesGcm::Aes256Gcm, key, ct, tag, nonce, b"a", &mut plain).unwrap();
+
+    //= spec/structured-encryption/encrypt-path-structure.md#calculate-cipherkey-and-nonce
+    //= type=test
+    //= reason=the field opens with the field key's first 32 bytes as the AES key
+    //# The `Cipherkey` MUST be the first 32 bytes of the `FieldKey`
+    //
+    //= spec/structured-encryption/encrypt-path-structure.md#calculate-cipherkey-and-nonce
+    //= type=test
+    //= reason=the field opens with the field key's last 12 bytes as the nonce
+    //# The `Nonce` MUST be the remaining 12 bytes of the `FieldKey`
+    //
+    //= spec/structured-encryption/encrypt-path-structure.md#encrypted-terminal-value
+    //= type=test
+    //= reason=AES-256-GCM with the canonical path "a" as AAD gives back the terminal value
+    //# The Encrypted Terminal Value MUST be derived according to the following encryption:
     assert_eq!(plain, b"secret one");
 
     // "c" is the second encrypted field, so it uses offset 1 ("b" is not encrypted).

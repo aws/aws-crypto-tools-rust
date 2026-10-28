@@ -181,8 +181,16 @@ fn v2_encryption_context<'a>(
     let mut by_key: std::collections::BTreeMap<String, &Terminal> =
         std::collections::BTreeMap::new();
     for (path, data) in fields {
+        //= spec/structured-encryption/encrypt-path-structure.md#encryption-context-naming
+        //# When a key-value pair is added to the encryption context,
+        //# the key MUST be the concatenation of the literal
+        //# "aws-crypto-attr." and the member strings of the
+        //# path joined by the '.' character.
         let key = format!("{ATTR_PREFIX}{}", path_to_string(path));
         if by_key.contains_key(&key) {
+            //= spec/structured-encryption/encrypt-path-structure.md#encryption-context-naming
+            //# An error MUST be returned if an attempt is made to add two
+            //# different attributes that produce the same encryption context key.
             return Err(val_err(format!(
                 "{key} appears twice in encryption context."
             )));
@@ -223,6 +231,13 @@ fn v2_encryption_context<'a>(
         ec.insert(key, value);
         legend.push(legend_char);
     }
+
+    //= spec/structured-encryption/encrypt-path-structure.md#create-new-encryption-context-and-cmm
+    //= reason=one character per entry, in by_key's BTreeMap order, which is UTF-8 byte order
+    //# The Legend MUST be named "aws-crypto-legend" and be a string with one character per attribute added above,
+    //# with a one-to-one correspondence with the attributes sorted by their UTF8 encoding,
+    //# each character designating the original type of the attribute,
+    //# to allow reversing of the [encoding](../dynamodb-encryption-client/encrypt-item.md#base-context-value-version-2).
     ec.insert(LEGEND, legend);
     Ok(ec)
 }
@@ -237,6 +252,9 @@ fn require_context(
         return Ok(cmm);
     }
     if extra.keys().any(|k| ec.contains_key(k)) {
+        //= spec/structured-encryption/encrypt-path-structure.md#create-new-encryption-context-and-cmm
+        //# An error MUST be returned if any of the entries added to the encryption context in this step
+        //# have the same key as any entry already in the encryption context.
         return Err(val_err(
             "Internal Error - Structured Encryption encryption context overlaps with Item Encryptor encryption context.",
         ));
@@ -245,6 +263,10 @@ fn require_context(
     for (k, v) in extra.iter() {
         ec.insert(k, v);
     }
+
+    //= spec/structured-encryption/encrypt-path-structure.md#create-new-encryption-context-and-cmm
+    //# Then, this operation MUST create a [Required Encryption Context CMM](https://github.com/awslabs/private-aws-encryption-sdk-specification-staging/blob/dafny-verified/framework/required-encryption-context-cmm.md)
+    //# with the following inputs:
     required_context_cmm(cmm, keys)
 }
 
@@ -266,6 +288,15 @@ pub(crate) async fn encrypt_path_structure(
     algorithm_suite_id: Option<AlgorithmSuiteId>,
     encryption_context: Option<EncryptionContext>,
 ) -> Result<(Vec<CryptoField>, ParsedHeader), Error> {
+    //= spec/structured-encryption/encrypt-path-structure.md#encryption-context
+    //= type=exception
+    //= reason=Like the reference, this rejects aws-crypto- values; the item encryptor passes aws-crypto- keys
+    //# The operation MUST fail if an encryption context is provided which contains a key with the prefix `aws-crypto-`.
+    //
+    //= spec/structured-encryption/encrypt-path-structure.md#behavior
+    //= reason=these four input checks all run before the CMM is called
+    //# All inputs MUST adhere to their requirements;
+    //# otherwise this operation MUST immediately yield an error.
     if let Some(ec) = &encryption_context
         && ec
             .iter()
@@ -276,24 +307,46 @@ pub(crate) async fn encrypt_path_structure(
         )));
     }
     if !data.iter().any(|k| is_auth_attr(k.action)) {
+        //= spec/structured-encryption/encrypt-path-structure.md#crypto-list
+        //# The Crypto List MUST include at least one [Crypto Action](./structures.md#crypto-action)
+        //# that is not [DO_NOTHING](./structures.md#do_nothing).
         return Err(val_err(
             "At least one field in the Crypto Schema must be ENCRYPT_AND_SIGN, SIGN_AND_INCLUDE_IN_ENCRYPTION_CONTEXT or SIGN_ONLY.",
         ));
     }
     if data.iter().any(|x| is_header_path(&x.key)) {
+        //= spec/structured-encryption/encrypt-path-structure.md#crypto-list
+        //# This Crypto List MUST NOT already contain data located at the [header index](./header.md#header-index)
+        //# or the [footer index](./footer.md#footer-index).
         return Err(val_err(format!(
             "The paths {HEADER_FIELD} and {FOOTER_FIELD} are reserved."
         )));
     }
     if !has_no_duplicates(data.iter().map(|x| &x.key)) {
+        //= spec/structured-encryption/encrypt-path-structure.md#crypto-list
+        //# The [paths](./structures.md#path) in the input [Crypto List](./structures.md#crypto-list) MUST be unique.
         return Err(val_err("an attribute appears more than once"));
     }
+
+    //= spec/structured-encryption/encrypt-path-structure.md#retrieve-encryption-materials
+    //# This operation MUST [calculate the appropriate CMM and encryption context](#create-new-encryption-context-and-cmm).
     let mut ec = encryption_context.unwrap_or_default();
     let mut cmm = cmm;
+
+    //= spec/structured-encryption/encrypt-path-structure.md#create-new-encryption-context-and-cmm
+    //= reason=with no such field this branch is skipped, leaving cmm and ec as given
+    //# If no [Crypto Action](./structures.md#crypto-action) is configured to be
+    //# [SIGN_AND_INCLUDE_IN_ENCRYPTION_CONTEXT Crypto Action](./structures.md#sign_and_include_in_encryption_context)
+    //# then the input cmm and encryption context MUST be used unchanged.
     if data
         .iter()
         .any(|x| x.action == CryptoAction::SignAndIncludeInEncryptionContext)
     {
+        //= spec/structured-encryption/encrypt-path-structure.md#create-new-encryption-context-and-cmm
+        //# Otherwise, this operation MUST add an [entry](../dynamodb-encryption-client/encrypt-item.md#base-context-value-version-2) to the encryption context for every
+        //# [SIGN_AND_INCLUDE_IN_ENCRYPTION_CONTEXT Crypto Action](./structures.md#sign_and_include_in_encryption_context)
+        //# [Terminal Data](./structures.md#terminal-data)
+        //# in the input record, plus the Legend.
         let extra = v2_encryption_context(
             data.iter()
                 .filter(|x| x.action == CryptoAction::SignAndIncludeInEncryptionContext)
@@ -301,6 +354,16 @@ pub(crate) async fn encrypt_path_structure(
         )?;
         cmm = require_context(&mut ec, &extra, cmm)?;
     }
+
+    //= spec/structured-encryption/encrypt-path-structure.md#calculate-intermediate-encrypted-structured-data
+    //= reason=for_encrypt maps each input field to one entry with its canonical path
+    //# For every entry
+    //# in the input [Crypto List](#crypto-list)
+    //# there MUST be an entry with the same [canonical path](./header.md#canonical-path)
+    //# in Intermediate Encrypted Structured Data.
+    //
+    //= spec/structured-encryption/encrypt-path-structure.md#calculate-intermediate-encrypted-structured-data
+    //# There MUST be no other entries in the Intermediate Encrypted Structured Data.
     let canon = for_encrypt(table, data);
 
     let encrypted_count = canon
@@ -312,23 +375,73 @@ pub(crate) async fn encrypt_path_structure(
         .filter(|x| x.action == CryptoAction::EncryptAndSign)
         .map(|x| x.data.value.len())
         .sum();
+
+    //= spec/structured-encryption/encrypt-path-structure.md#retrieve-encryption-materials
+    //# - Max Plaintext Length: This field MUST be the result of the calculation `encryptedTerminalDataNum * 2 + totalEncryptedTerminalValuesSize`
     let max_length = u64::try_from(2 * encrypted_count + encrypted_size)
         .ok()
         .filter(|n| *n < u64::try_from(i64::MAX).unwrap_or(u64::MAX))
+        // No test reaches this error: the encrypted values would total about i64::MAX bytes.
         .ok_or_else(|| val_err("the item is too large to encrypt"))?;
+
+    //= spec/structured-encryption/encrypt-path-structure.md#retrieve-encryption-materials
+    //# - Algorithm Suite: If provided, this is the [input algorithm suite](#algorithm-suite);
+    //# otherwise, this field MUST be the algorithm suite corresponding to the enum
+    //# [DBE.ALG_AES_256_GCM_HKDF_SHA512_COMMIT_KEY_ECDSA_P384_SYMSIG_HMAC_SHA384](../../submodules/MaterialProviders/aws-encryption-sdk-specification/framework/algorithm-suites.md#supported-algorithm-suites-enum).
     let suite_id = algorithm_suite_id.unwrap_or(DEFAULT_SUITE);
+
+    //= spec/structured-encryption/encrypt-path-structure.md#behavior
+    //= type=implication
+    //= reason=each step consumes the previous one's output: materials, then crypt, then the footer over its output
+    //# This operation MUST perform all the above steps,
+    //# and it MUST perform them in the above order.
+    //
+    //= spec/structured-encryption/encrypt-path-structure.md#retrieve-encryption-materials
+    //# This operation MUST obtain a set of encryption materials by calling
+    //# [Get Encryption Materials](../../submodules/MaterialProviders/aws-encryption-sdk-specification/framework/cmm-interface.md#get-encryption-materials)
+    //# on the [CMM](#cmm) calculated above.
+    //
+    //= spec/structured-encryption/encrypt-path-structure.md#retrieve-encryption-materials
+    //# This operation MUST call Get Encryption Materials on the CMM as follows.
     let mat = cmm
         .get_encryption_materials()
+        //= spec/structured-encryption/encrypt-path-structure.md#retrieve-encryption-materials
+        //# - Encryption Context: This MUST be the encryption context calculated above.
         .encryption_context(ec)
+        //= spec/structured-encryption/encrypt-path-structure.md#retrieve-encryption-materials
+        //# - Commitment Policy: This MUST be
+        //# [REQUIRE_ENCRYPT_REQUIRE_DECRYPT](../../submodules/MaterialProviders/aws-encryption-sdk-specification/framework/commitment-policy.md#esdkrequire_encrypt_require_decrypt).
         .commitment_policy(dbe_commitment_policy())
+        //= spec/structured-encryption/encrypt-path-structure.md#algorithm-suite
+        //# The [algorithm suite](../../submodules/MaterialProviders/aws-encryption-sdk-specification/framework/algorithm-suites.md) that SHOULD be used for encryption.
+        //
+        //= spec/structured-encryption/encrypt-path-structure.md#algorithm-suite
+        //= type=implication
+        //= reason=the input is a DbeAlgorithmSuiteId, which names only DBE suites
+        //# This algorithm suite MUST be a
+        //# [supported suite for Database Encryption (DBE)](../../submodules/MaterialProviders/aws-encryption-sdk-specification/framework/algorithm-suites.md#supported-algorithm-suites-enum);
+        //# otherwise, this operation MUST yield an error.
         .algorithm_suite_id(MplAlgorithmSuiteId::Dbe(suite_id))
         .max_plaintext_length(max_length)
         .send()
+        //= spec/structured-encryption/encrypt-path-structure.md#behavior
+        //# If any of these steps fails, this operation MUST halt and indicate a failure to the caller.
         .await?
         .into_encryption_materials();
     let key = mat
         .plaintext_data_key()
         .ok_or_else(|| materials_err("the materials have no plaintext data key"))?;
+
+    //= spec/structured-encryption/encrypt-path-structure.md#retrieve-encryption-materials
+    //= reason=the suite comes from the materials only; the header flavor and footer use it too
+    //# The algorithm suite used in all aspects of this operation MUST be
+    //# the algorithm suite in the
+    //# [encryption materials](../../submodules/MaterialProviders/aws-encryption-sdk-specification/framework/structures.md#encryption-materials)
+    //# returned from the Get Encryption Materials call.
+    //
+    //= spec/structured-encryption/encrypt-path-structure.md#retrieve-encryption-materials
+    //= reason=it is not compared with the requested suite_id
+    //# Note that the algorithm suite in the retrieved encryption materials MAY be different from the input algorithm suite.
     let suite = DbeSuite::new(mat.algorithm_suite_id())?;
     if !valid_encryption_context(mat.encryption_context()) {
         return Err(val_err(
@@ -340,6 +453,10 @@ pub(crate) async fn encrypt_path_structure(
 
     //= spec/structured-encryption/header.md#message-id
     //# Implementations MUST generate a fresh 256-bit random MessageID, from a cryptographically secure source, for each record encrypted.
+    //
+    //= spec/structured-encryption/encrypt-path-structure.md#calculate-intermediate-encrypted-structured-data
+    //# The process used to generate this identifier MUST use a good source of randomness
+    //# to make the chance of duplicate identifiers negligible.
     generate_random_bytes(&mut msg_id)?;
     let head = PartialHeader::create(&canon, msg_id, &mat)?;
 
@@ -347,14 +464,32 @@ pub(crate) async fn encrypt_path_structure(
     //# The commit key calculation described above MUST be performed with the record's plaintext data key
     //# and the header's message id.
     let commit = crypt::commit_key(suite, key.as_bytes(), &head.msg_id)?;
+
+    //= spec/structured-encryption/encrypt-path-structure.md#header-field
+    //# The Header Field Value MUST be the full serialized [header](header.md) with commitment.
     let header_bytes = head.serialize_with_commitment(suite.commit, &commit)?;
+
+    // No test reaches this error: it needs about 1.4 billion fields in one item.
     if u32::try_from(canon.len()).map_or(true, |n| n >= crypt::ONE_THIRD_MAX_INT) {
         return Err(val_err("the item has too many encrypted attributes"));
     }
+
+    //= spec/structured-encryption/encrypt-path-structure.md#calculate-cipherkey-and-nonce
+    //# The `FieldRootKey` MUST be generated with the plaintext data key in the encryption materials
+    //# and the Message ID generated for this Encrypted Structured Data.
     let encrypted = crypt::crypt(Mode::Encrypt, suite, key.as_bytes(), &head.msg_id, canon)?;
     let footer = Footer::create(suite, &mat, &encrypted, &header_bytes)?;
 
     let header_suite = DbeSuite::from_flavor(head.flavor)?;
+
+    //= spec/structured-encryption/encrypt-path-structure.md#encrypted-structured-data
+    //# - For every entry in the input [Crypto List](#crypto-list)
+    //# an entry MUST exist with the same [path](./structures.md#path) in the final Encrypted Structured Data.
+    //
+    //= spec/structured-encryption/encrypt-path-structure.md#encrypted-structured-data
+    //= reason=out starts as exactly the encrypted fields; only the header and footer are added
+    //# - For every entry in the final Encrypted Structured Data, other than the header and footer,
+    //# an entry MUST exist with the same [path](./structures.md#path) in the input [Crypto List](#crypto-list).
     let mut out: Vec<CryptoField> = encrypted
         .into_iter()
         .map(|x| CryptoField {
@@ -363,13 +498,23 @@ pub(crate) async fn encrypt_path_structure(
             action: x.action,
         })
         .collect();
+
+    //= spec/structured-encryption/encrypt-path-structure.md#encrypted-structured-data
+    //# - The [Header Field](#header-field) MUST exist in the final Encrypted Structured Data
     out.push(CryptoField {
         key: header_path(),
+        //= spec/structured-encryption/encrypt-path-structure.md#header-field
+        //# The Header Field TypeID MUST be 0xFFFF
         data: Terminal::new(BYTES_TYPE_ID, header_bytes),
         action: CryptoAction::DoNothing,
     });
+
+    //= spec/structured-encryption/encrypt-path-structure.md#encrypted-structured-data
+    //# - The [Footer Field](#footer-field) MUST exist in the final Encrypted Structured Data
     out.push(CryptoField {
         key: footer_path(),
+        //= spec/structured-encryption/encrypt-path-structure.md#footer-field
+        //# The Footer Field Value MUST be the serialized [footer](footer.md).
         data: footer.into_terminal(),
         action: CryptoAction::DoNothing,
     });
@@ -553,10 +698,17 @@ pub(crate) async fn encrypt_structure(
     encryption_context: Option<EncryptionContext>,
 ) -> Result<StructureOutput, Error> {
     if plaintext.len() != schema.len() || plaintext.keys().any(|k| !schema.contains_key(k)) {
+        //= spec/structured-encryption/encrypt-structure.md#behavior
+        //# The input [Structured Data](encrypt-path-structure.md#structured-data) and [Crypto Schema](encrypt-path-structure.md#crypto-schema)
+        //# MUST refer to the same set of locations.
         return Err(val_err(
             "the item's attributes do not match the attribute actions: each attribute needs exactly one action",
         ));
     }
+
+    //= spec/structured-encryption/encrypt-structure.md#behavior
+    //# The input [Structured Data](encrypt-path-structure.md#structured-data) and [Crypto Schema](encrypt-path-structure.md#crypto-schema)
+    //# MUST be combined into a single [Crypto List](encrypt-path-structure.md#crypto-list).
     let list = sorted_entries(plaintext)
         .into_iter()
         .map(|(k, data)| CryptoField {
@@ -565,8 +717,16 @@ pub(crate) async fn encrypt_structure(
             data,
         })
         .collect();
+
+    //= spec/structured-encryption/encrypt-structure.md#behavior
+    //# Encrypt Structure MUST then behave as [Encrypt Path Structure](encrypt-path-structure.md)
     let (out, parsed_header) =
         encrypt_path_structure(table, list, cmm, algorithm_suite_id, encryption_context).await?;
+
+    //= spec/structured-encryption/encrypt-structure.md#behavior
+    //# The output [Crypto List](encrypt-path-structure.md#crypto-list) produced by [Encrypt Path Structure](encrypt-path-structure.md)
+    //# MUST be split into [Structured Data](encrypt-path-structure.md#structured-data) and [Crypto Schema](encrypt-path-structure.md#crypto-schema)
+    //# maps.
     let (data, schema) = unbuild(out)?;
     Ok(StructureOutput {
         data,

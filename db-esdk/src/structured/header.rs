@@ -217,6 +217,11 @@ impl PartialHeader {
         let mut stored = EncryptionContext::new();
         for (k, v) in mat.encryption_context().iter() {
             if !required.contains(k) {
+                //= spec/structured-encryption/encrypt-path-structure.md#header-field
+                //# The encryption context field serialized in the header MUST contain all key-value
+                //# pairs of the encryption context in the [encryption materials](#retrieve-encryption-materials)
+                //# that are not included in the
+                //# [required encryption context keys](../framework/structures.md#required-encryption-context-keys) list.
                 stored.insert(k, v);
             }
         }

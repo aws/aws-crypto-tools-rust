@@ -435,10 +435,17 @@ impl EncryptStructureFluentBuilder {
     ///   or the schema does not name exactly the fields of the structure.
     /// - Any error of the CMM, or of serializing or encrypting the structure.
     pub async fn send(self) -> Result<EncryptStructureOutput, Error> {
+        //= spec/structured-encryption/encrypt-structure.md#input
+        //= reason=each of the four inputs is unwrapped by required(), which rejects it unset
+        //# The following inputs to this behavior are REQUIRED:
         let table = required(self.table_name, "table_name")?;
         let plaintext = to_inner_map(required(self.plaintext_structure, "plaintext_structure")?);
         let schema = required(self.crypto_schema, "crypto_schema")?;
         let cmm = required(self.cmm, "cmm")?;
+
+        //= spec/structured-encryption/encrypt-structure.md#input
+        //= reason=the algorithm suite and encryption context are passed on as Options
+        //# The following inputs to this behavior MUST be OPTIONAL:
         let out = super::encrypt_structure(
             &table,
             plaintext,
@@ -448,6 +455,9 @@ impl EncryptStructureFluentBuilder {
             self.encryption_context,
         )
         .await?;
+
+        //= spec/structured-encryption/encrypt-structure.md#output
+        //# This operation MUST output the following:
         Ok(EncryptStructureOutput {
             encrypted_structure: from_inner_map(out.data),
             crypto_schema: out.schema,
@@ -749,12 +759,19 @@ impl EncryptPathStructureFluentBuilder {
     ///   a path repeats, or a terminal is at the header or footer path.
     /// - Any error of the CMM, or of serializing or encrypting the structure.
     pub async fn send(self) -> Result<EncryptPathStructureOutput, Error> {
+        //= spec/structured-encryption/encrypt-path-structure.md#input
+        //= reason=each of the three inputs is unwrapped by required(), which rejects it unset
+        //# The following inputs to this behavior are REQUIRED:
         let table = required(self.table_name, "table_name")?;
         let data = required(self.plaintext_structure, "plaintext_structure")?
             .into_iter()
             .map(CryptoField::from)
             .collect();
         let cmm = required(self.cmm, "cmm")?;
+
+        //= spec/structured-encryption/encrypt-path-structure.md#input
+        //= reason=the algorithm suite and encryption context are passed on as Options
+        //# The following inputs to this behavior MUST be OPTIONAL:
         let (out, parsed_header) = super::encrypt_path_structure(
             &table,
             data,
@@ -763,6 +780,9 @@ impl EncryptPathStructureFluentBuilder {
             self.encryption_context,
         )
         .await?;
+
+        //= spec/structured-encryption/encrypt-path-structure.md#output
+        //# This operation MUST output the following:
         Ok(EncryptPathStructureOutput {
             encrypted_structure: out.into_iter().map(CryptoItem::from).collect(),
             parsed_header,

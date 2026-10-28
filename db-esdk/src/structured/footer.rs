@@ -225,6 +225,9 @@ impl Footer {
         if let Some(sig) = &self.sig {
             out.extend_from_slice(sig);
         }
+
+        //= spec/structured-encryption/encrypt-path-structure.md#footer-field
+        //# The Footer Field TypeID MUST be 0xFFFF
         Terminal::new(BYTES_TYPE_ID, out)
     }
 

@@ -14,8 +14,9 @@ use aws_db_esdk::structured::{
 };
 use aws_db_esdk::types::{AlgorithmSuiteId, CryptoAction, EncryptionContext};
 use structured_api_support::{
-    BOOLEAN, FOOTER, HEADER, NUMBER, STRING, TABLE, blob, client, cmm, cmm_with_key,
-    test_authenticate_schema, test_crypto_schema, test_structured_data,
+    BOOLEAN, FOOTER, HEADER, NUMBER, OnEncrypt, RECORDING_CMM_FAILURE, STRING, TABLE, blob, client,
+    cmm, cmm_with_key, recording_cmm, test_authenticate_schema, test_crypto_schema,
+    test_structured_data,
 };
 
 type Structure = HashMap<String, StructuredDataTerminal>;
@@ -113,6 +114,11 @@ async fn tampered_header_commitment_fails() {
         *v.last_mut().unwrap() ^= 1;
     });
     let err = decrypt(data).await.unwrap_err();
+
+    //= spec/structured-encryption/encrypt-path-structure.md#header-field
+    //= type=test
+    //= reason=flipping the value's last byte fails the key commitment check, so the value ends in it
+    //# The Header Field Value MUST be the full serialized [header](header.md) with commitment.
     assert_cryptographic(
         &err,
         "the item's header (aws_dbe_head) failed its key commitment check: the header was changed, or the data key is not the one it was written with",
@@ -452,6 +458,11 @@ async fn encrypt_requires_a_signed_field() {
         None,
     )
     .await;
+
+    //= spec/structured-encryption/encrypt-path-structure.md#crypto-list
+    //= type=test
+    //# The Crypto List MUST include at least one [Crypto Action](./structures.md#crypto-action)
+    //# that is not [DO_NOTHING](./structures.md#do_nothing).
     assert_validation(&err, "At least one field in the Crypto Schema must be");
 }
 
@@ -466,6 +477,11 @@ async fn encrypt_rejects_header_and_footer_paths() {
             None,
         )
         .await;
+
+        //= spec/structured-encryption/encrypt-path-structure.md#crypto-list
+        //= type=test
+        //# This Crypto List MUST NOT already contain data located at the [header index](./header.md#header-index)
+        //# or the [footer index](./footer.md#footer-index).
         assert_validation(&err, "are reserved.");
     }
 }
@@ -474,11 +490,17 @@ async fn encrypt_rejects_header_and_footer_paths() {
 async fn encrypt_rejects_duplicate_paths() {
     let item = CryptoItem::new(path(&["a"]), blob(), CryptoAction::SignOnly);
     let err = encrypt_path(vec![item.clone(), item], None).await;
+
+    //= spec/structured-encryption/encrypt-path-structure.md#crypto-list
+    //= type=test
+    //# The [paths](./structures.md#path) in the input [Crypto List](./structures.md#crypto-list) MUST be unique.
     assert_validation(&err, "an attribute appears more than once");
 }
 
 #[tokio::test]
 async fn encrypt_rejects_reserved_encryption_context_values() {
+    // Adjacent guard for encrypt-path-structure.md#encryption-context (an exception):
+    // like the reference, encrypt rejects aws-crypto- values, not keys.
     let mut ec = EncryptionContext::new();
     ec.insert("k", "aws-crypto-x");
     let err = encrypt_path(
@@ -509,6 +531,11 @@ async fn encrypt_rejects_context_overlapping_an_attribute_entry() {
         Some(ec),
     )
     .await;
+
+    //= spec/structured-encryption/encrypt-path-structure.md#create-new-encryption-context-and-cmm
+    //= type=test
+    //# An error MUST be returned if any of the entries added to the encryption context in this step
+    //# have the same key as any entry already in the encryption context.
     assert_validation(&err, "overlaps with Item Encryptor encryption context");
 }
 
@@ -523,6 +550,11 @@ async fn encrypt_rejects_paths_with_the_same_context_key() {
         )
     };
     let err = encrypt_path(vec![item(&["a.b"]), item(&["a", "b"])], None).await;
+
+    //= spec/structured-encryption/encrypt-path-structure.md#encryption-context-naming
+    //= type=test
+    //# An error MUST be returned if an attempt is made to add two
+    //# different attributes that produce the same encryption context key.
     assert_validation(
         &err,
         "aws-crypto-attr.a.b appears twice in encryption context.",
@@ -570,11 +602,154 @@ async fn encrypt_schema_must_match_structure() {
             .send()
             .await
             .unwrap_err();
+
+        //= spec/structured-encryption/encrypt-structure.md#behavior
+        //= type=test
+        //# The input [Structured Data](encrypt-path-structure.md#structured-data) and [Crypto Schema](encrypt-path-structure.md#crypto-schema)
+        //# MUST refer to the same set of locations.
         assert_validation(
             &err,
             "the item's attributes do not match the attribute actions: each attribute needs exactly one action",
         );
     }
+}
+
+#[tokio::test]
+async fn encrypt_structure_enforces_path_structure_rules() {
+    // A rule only Encrypt Path Structure checks: some field must be signed.
+    let schema = test_crypto_schema()
+        .into_keys()
+        .map(|k| (k, CryptoAction::DoNothing))
+        .collect();
+    let err = client()
+        .encrypt_structure()
+        .table_name(TABLE)
+        .set_plaintext_structure(Some(test_structured_data()))
+        .set_crypto_schema(Some(schema))
+        .cmm(cmm())
+        .send()
+        .await
+        .unwrap_err();
+
+    //= spec/structured-encryption/encrypt-structure.md#behavior
+    //= type=test
+    //# Encrypt Structure MUST then behave as [Encrypt Path Structure](encrypt-path-structure.md)
+    assert_validation(&err, "At least one field in the Crypto Schema must be");
+}
+
+#[tokio::test]
+async fn invalid_input_fails_before_calling_the_cmm() {
+    let signed = || CryptoItem::new(path(&["a"]), blob(), CryptoAction::SignOnly);
+    let mut reserved = EncryptionContext::new();
+    reserved.insert("k", "aws-crypto-x");
+    let cases = [
+        (
+            vec![CryptoItem::new(
+                path(&["a"]),
+                blob(),
+                CryptoAction::DoNothing,
+            )],
+            None,
+        ),
+        (
+            vec![
+                signed(),
+                CryptoItem::new(path(&[HEADER]), blob(), CryptoAction::DoNothing),
+            ],
+            None,
+        ),
+        (vec![signed(), signed()], None),
+        (vec![signed()], Some(reserved)),
+    ];
+    for (items, ec) in cases {
+        let (cmm, calls) = recording_cmm(OnEncrypt::Forward);
+        let err = client()
+            .encrypt_path_structure()
+            .table_name(TABLE)
+            .set_plaintext_structure(Some(items))
+            .cmm(cmm)
+            .set_encryption_context(ec)
+            .send()
+            .await
+            .unwrap_err();
+        assert!(matches!(err, Error::Validation(_)), "{err:?}");
+
+        //= spec/structured-encryption/encrypt-path-structure.md#behavior
+        //= type=test
+        //# All inputs MUST adhere to their requirements;
+        //# otherwise this operation MUST immediately yield an error.
+        assert!(calls.lock().unwrap().is_empty(), "{err:?}");
+    }
+}
+
+#[tokio::test]
+async fn failed_materials_step_fails_the_encrypt() {
+    let (cmm, calls) = recording_cmm(OnEncrypt::Fail);
+    let err = client()
+        .encrypt_structure()
+        .table_name(TABLE)
+        .set_plaintext_structure(Some(test_structured_data()))
+        .set_crypto_schema(Some(test_crypto_schema()))
+        .cmm(cmm)
+        .send()
+        .await
+        .unwrap_err();
+    assert_eq!(calls.lock().unwrap().len(), 1);
+
+    //= spec/structured-encryption/encrypt-path-structure.md#behavior
+    //= type=test
+    //# If any of these steps fails, this operation MUST halt and indicate a failure to the caller.
+    assert_validation(&err, "a keyring, CMM, key store, or cache failed");
+    let source = std::error::Error::source(&err).map(ToString::to_string);
+    assert!(
+        source.is_some_and(|s| s.contains(RECORDING_CMM_FAILURE)),
+        "{err:?}"
+    );
+}
+
+#[tokio::test]
+async fn materials_with_a_non_dbe_suite_fail() {
+    let err = encrypt_with(OnEncrypt::EsdkMaterials).await;
+
+    //= spec/structured-encryption/encrypt-path-structure.md#retrieve-encryption-materials
+    //= type=test
+    //# If this algorithm suite is not a
+    //# [supported suite for Database Encryption (DBE)](../../submodules/MaterialProviders/aws-encryption-sdk-specification/framework/algorithm-suites.md#supported-algorithm-suites-enum),
+    //# this operation MUST yield an error.
+    assert_validation(&err, "the algorithm suite is not a DB-ESDK algorithm suite");
+}
+
+/// Encrypt `test_structured_data` with the materials `on_encrypt` returns.
+async fn encrypt_with(on_encrypt: OnEncrypt) -> Error {
+    let (cmm, _) = recording_cmm(on_encrypt);
+    client()
+        .encrypt_structure()
+        .table_name(TABLE)
+        .set_plaintext_structure(Some(test_structured_data()))
+        .set_crypto_schema(Some(test_crypto_schema()))
+        .cmm(cmm)
+        .send()
+        .await
+        .unwrap_err()
+}
+
+#[tokio::test]
+async fn materials_without_a_plaintext_data_key_fail() {
+    // Adjacent guard for encrypt-path-structure.md#calculate-cipherkey-and-nonce: the FieldRootKey needs the materials' plaintext data key; materials without one are rejected.
+    let err = encrypt_with(OnEncrypt::NoPlaintextKey).await;
+    assert!(matches!(err, Error::InvalidMaterials(_)), "{err:?}");
+    assert!(
+        err.message()
+            .contains("the materials have no plaintext data key"),
+        "{err:?}"
+    );
+}
+
+#[tokio::test]
+async fn materials_context_too_large_for_the_header_fails() {
+    // Adjacent guard for encrypt-path-structure.md#header-field: the header must store the materials' encryption context; a context too large to serialize is rejected.
+    let err = encrypt_with(OnEncrypt::OversizedContext).await;
+    assert_validation(&err, "the materials' encryption context cannot be stored");
 }
 
 #[tokio::test]
@@ -665,7 +840,7 @@ async fn every_required_input_is_checked() {
             .cmm(cmm())
     };
 
-    let cases: Vec<(&str, Result<(), Error>)> = vec![
+    let encrypt_cases: Vec<(&str, Result<(), Error>)> = vec![
         (
             "table_name",
             encrypt().set_table_name(None).send().await.map(drop),
@@ -683,6 +858,41 @@ async fn every_required_input_is_checked() {
             encrypt().set_crypto_schema(None).send().await.map(drop),
         ),
         ("cmm", encrypt().set_cmm(None).send().await.map(drop)),
+    ];
+    for (name, result) in encrypt_cases {
+        let err = result.unwrap_err();
+
+        //= spec/structured-encryption/encrypt-structure.md#input
+        //= type=test
+        //# The following inputs to this behavior are REQUIRED:
+        assert_validation(&err, &format!("{name} is required"));
+    }
+
+    let encrypt_path_cases: Vec<(&str, Result<(), Error>)> = vec![
+        (
+            "table_name",
+            encrypt_path().set_table_name(None).send().await.map(drop),
+        ),
+        (
+            "plaintext_structure",
+            encrypt_path()
+                .set_plaintext_structure(None)
+                .send()
+                .await
+                .map(drop),
+        ),
+        ("cmm", encrypt_path().set_cmm(None).send().await.map(drop)),
+    ];
+    for (name, result) in encrypt_path_cases {
+        let err = result.unwrap_err();
+
+        //= spec/structured-encryption/encrypt-path-structure.md#input
+        //= type=test
+        //# The following inputs to this behavior are REQUIRED:
+        assert_validation(&err, &format!("{name} is required"));
+    }
+
+    let cases: Vec<(&str, Result<(), Error>)> = vec![
         (
             "table_name",
             decrypt().set_table_name(None).send().await.map(drop),
@@ -704,19 +914,6 @@ async fn every_required_input_is_checked() {
                 .map(drop),
         ),
         ("cmm", decrypt().set_cmm(None).send().await.map(drop)),
-        (
-            "table_name",
-            encrypt_path().set_table_name(None).send().await.map(drop),
-        ),
-        (
-            "plaintext_structure",
-            encrypt_path()
-                .set_plaintext_structure(None)
-                .send()
-                .await
-                .map(drop),
-        ),
-        ("cmm", encrypt_path().set_cmm(None).send().await.map(drop)),
         (
             "table_name",
             decrypt_path().set_table_name(None).send().await.map(drop),

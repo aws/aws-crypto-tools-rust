@@ -600,6 +600,14 @@ fn create_from_materials() {
         &["req"],
     );
     let head = PartialHeader::create(&sample_schema(), MSG_ID, &mat).unwrap();
+
+    //= spec/structured-encryption/encrypt-path-structure.md#header-field
+    //= type=test
+    //= reason=the materials' context is {abc, req} with req required; only abc is stored
+    //# The encryption context field serialized in the header MUST contain all key-value
+    //# pairs of the encryption context in the [encryption materials](#retrieve-encryption-materials)
+    //# that are not included in the
+    //# [required encryption context keys](../framework/structures.md#required-encryption-context-keys) list.
     assert_same_header(&head, &reference_header());
     assert_eq!(head.serialize(), reference_header_bytes());
 }
