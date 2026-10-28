@@ -216,7 +216,7 @@ fn v2_encryption_context<'a>(
 /// Add `extra` to `ec`, and wrap `cmm` so the new entries are required and never stored.
 fn require_context(
     ec: &mut EncryptionContext,
-    extra: EncryptionContext,
+    extra: &EncryptionContext,
     cmm: SharedCmm,
 ) -> Result<SharedCmm, Error> {
     if extra.is_empty() {
@@ -285,7 +285,7 @@ pub(crate) async fn encrypt_path_structure(
                 .filter(|x| x.action == CryptoAction::SignAndIncludeInEncryptionContext)
                 .map(|x| (x.key.as_slice(), &x.data)),
         )?;
-        cmm = require_context(&mut ec, extra, cmm)?;
+        cmm = require_context(&mut ec, &extra, cmm)?;
     }
     let canon = for_encrypt(table, data);
 
@@ -403,7 +403,7 @@ pub(crate) async fn decrypt_path_structure(
                 .filter(|x| x.action == CryptoAction::SignAndIncludeInEncryptionContext)
                 .map(|x| (x.key.as_slice(), &x.data)),
         )?;
-        cmm = require_context(&mut ec, extra, cmm)?;
+        cmm = require_context(&mut ec, &extra, cmm)?;
     }
     let mat = cmm
         .decrypt_materials()

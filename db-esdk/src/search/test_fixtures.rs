@@ -203,7 +203,8 @@ pub(crate) fn spec_beacon(name: &str, value: &[u8], bits: u8) -> String {
     let key = &hmac_keys(&[name], &BEACON_KEY)[name];
     let mut out = [0u8; 48];
     hmac(DigestAlg::Sha384, key, value, &mut out).unwrap();
-    let hex: String = out[..8].iter().map(|b| format!("{b:02x}")).collect();
+    let first8: [u8; 8] = out[..8].try_into().unwrap();
+    let hex = format!("{:016x}", u64::from_be_bytes(first8));
     hex[16 - usize::from(bits / 4)..].to_owned()
 }
 

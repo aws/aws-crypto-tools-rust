@@ -254,7 +254,7 @@ fn signed_round_trip_and_tamper() {
     assert_eq!(&stored.value[..RECIPIENT_TAG_SIZE], unhex(TAG).as_slice());
 
     let footer = Footer::deserialize(&stored.value, true).unwrap();
-    let dec = dec_materials(ECDSA, &SYM_KEY, Some(kp.verification_key.clone()));
+    let dec = dec_materials(ECDSA, &SYM_KEY, Some(kp.verification_key));
     footer.validate(&dec, 1, &fields(), HEADER).unwrap();
 
     // Another signer's verification key fails.
@@ -265,7 +265,7 @@ fn signed_round_trip_and_tamper() {
     assert_eq!(err.kind(), Kind::Cryptographic);
 
     // So does a footer whose tag is still good but whose signature (inside r) was altered.
-    let mut bad = stored.value.clone();
+    let mut bad = stored.value;
     bad[RECIPIENT_TAG_SIZE + 10] ^= 1;
     let bad = Footer::deserialize(&bad, true).unwrap();
     let err = bad.validate(&dec, 1, &fields(), HEADER).unwrap_err();

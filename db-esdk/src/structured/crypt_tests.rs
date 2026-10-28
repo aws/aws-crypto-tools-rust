@@ -428,9 +428,9 @@ fn batched_field_keys_match_single_field_keys() {
     let root = [7u8; KEY_SIZE];
     for start in [0, 5, ONE_THIRD_MAX_INT - 70] {
         let batch = field_keys(&root, start, 70).unwrap();
-        assert_eq!(batch.len(), 70 * FIELD_STRIDE);
+        assert_eq!(batch.len(), (70 * FIELD_STRIDE) as usize);
         for i in 0..70u32 {
-            let at = i as usize * FIELD_STRIDE;
+            let at = (i * FIELD_STRIDE) as usize;
             let single = field_key(&root, start + i).unwrap();
             assert_eq!(
                 &batch[at..at + KEY_SIZE + NONCE_SIZE],

@@ -10,7 +10,7 @@ pub use aws_crypto_mpl::types::{
 /// A DB-ESDK algorithm suite.
 ///
 /// The DB-ESDK uses only the DBE suites of the Material Providers Library.
-/// The default, [`AlgAes256GcmHkdfSha512CommitKeyEcdsaP384SymsigHmacSha384`](Self::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384SymsigHmacSha384),
+/// The default, [`AlgAes256GcmHkdfSha512CommitKeyEcdsaP384SymsigHmacSha384`](AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384SymsigHmacSha384),
 /// signs each item with ECDSA P-384 and with HMAC-SHA-384.
 pub use aws_crypto_mpl::types::DbeAlgorithmSuiteId as AlgorithmSuiteId;
 

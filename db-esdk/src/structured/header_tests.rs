@@ -10,6 +10,9 @@ use crate::error::Kind;
 use crate::structured::util::{CryptoField, Terminal};
 use crate::types::AlgorithmSuiteId;
 
+/// The version byte, the flavor byte, and the message id.
+const PREFIX_LEN: usize = 1 + 1 + MSGID_LEN;
+
 const MSG_ID: [u8; MSGID_LEN] = [
     1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
     27, 28, 29, 30, 31, 32,

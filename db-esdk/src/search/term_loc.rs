@@ -56,7 +56,7 @@ impl TermLoc {
     }
 
     /// Whether the path is a whole top-level attribute, with no selectors.
-    pub(crate) fn is_whole_attribute(&self) -> bool {
+    pub(crate) const fn is_whole_attribute(&self) -> bool {
         self.selectors.is_empty()
     }
 

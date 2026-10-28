@@ -285,7 +285,6 @@ pub(crate) fn parsed_expr_to_string(expr: &[Token]) -> String {
 /// How many tokens from `pos` make a value: 1 for an attribute or value, 4 for `size(x)`, else 0.
 fn var_or_size(input: &[Token], pos: usize) -> usize {
     match input.get(pos) {
-        None => 0,
         Some(t) if t.is_var() => 1,
         Some(Token::Size)
             if pos + 3 < input.len()
@@ -295,7 +294,7 @@ fn var_or_size(input: &[Token], pos: usize) -> usize {
         {
             4
         }
-        Some(_) => 0,
+        _ => 0,
     }
 }
 
@@ -342,7 +341,7 @@ pub(crate) fn convert_to_prefix(input: &[Token]) -> Vec<Token> {
             out.extend([Token::Between, Token::Open]);
             out.extend_from_slice(&input[pos..pos + b0]);
             out.push(Token::Comma);
-            out.extend_from_slice(&input[pos + b0 + 1..pos + b0 + b1 + 1]);
+            out.extend_from_slice(&input[pos + b0 + 1..=pos + b0 + b1]);
             out.push(Token::Comma);
             out.extend_from_slice(&input[pos + b0 + b1 + 2..pos + b0 + b1 + b2 + 2]);
             out.push(Token::Close);
@@ -590,9 +589,9 @@ fn apply_function(t: &Token, stack: &[StackValue]) -> Result<StackValue, Error> 
                 return Err(eval_err("No Stack for Between"));
             }
             match (top(3), top(2), top(1)) {
-                (StackValue::Str(m), StackValue::Str(l), StackValue::Str(r)) => {
-                    Ok(StackValue::Bool(attribute_le(l, m)? && attribute_le(m, r)?))
-                }
+                (StackValue::Str(value), StackValue::Str(low), StackValue::Str(high)) => Ok(
+                    StackValue::Bool(attribute_le(low, value)? && attribute_le(value, high)?),
+                ),
                 _ => Err(eval_err("Wrong Types for Between")),
             }
         }

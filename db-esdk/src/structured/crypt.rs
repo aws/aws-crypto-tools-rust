@@ -54,7 +54,7 @@ fn field_key_nonce(offset: u32) -> Vec<u8> {
 
 /// Bytes of key stream each field takes: three AES blocks, of which the first
 /// `KEY_SIZE + NONCE_SIZE` are the field's key and nonce.
-const FIELD_STRIDE: usize = 48;
+const FIELD_STRIDE: u32 = 48;
 /// Fields whose keys one key-stream call derives. Bounds the stream buffer.
 const FIELD_BATCH: u32 = 64;
 
@@ -72,7 +72,7 @@ fn field_keys(root: &[u8], offset: u32, count: u32) -> Result<Zeroizing<Vec<u8>>
     }
     let nonce = field_key_nonce(offset * 3);
     let len = count
-        .checked_mul(FIELD_STRIDE as u32)
+        .checked_mul(FIELD_STRIDE)
         .ok_or_else(|| internal_err("field key size"))?;
     Ok(Zeroizing::new(aes_kdf_ctr_stream(&nonce, root, len)?))
 }
@@ -134,7 +134,7 @@ pub(crate) fn crypt(
         if item.action != CryptoAction::EncryptAndSign {
             continue;
         }
-        let slot = (pos % FIELD_BATCH) as usize * FIELD_STRIDE;
+        let slot = ((pos % FIELD_BATCH) * FIELD_STRIDE) as usize;
         if slot == 0 {
             keys = field_keys(&root, pos, FIELD_BATCH.min(total - pos))?;
         }

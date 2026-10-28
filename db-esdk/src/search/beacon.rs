@@ -68,7 +68,7 @@ fn hex_char(x: u8) -> char {
 }
 
 /// The rightmost `bits` bits of the 8-byte `bytes`, as lowercase hex.
-fn bytes_to_hex(bytes: &[u8; 8], bits: u8) -> String {
+fn bytes_to_hex(bytes: [u8; 8], bits: u8) -> String {
     let num_bytes = usize::from(bits.div_ceil(8));
     let num_chars = usize::from(bits.div_ceil(4));
     let top_bits = match bits % 4 {
@@ -98,7 +98,7 @@ fn basic_hash(val: &[u8], key: &[u8], length: u8) -> Result<String, Error> {
     hmac(DigestAlg::Sha384, key, val, &mut out)?;
     let mut first = [0u8; 8];
     first.copy_from_slice(&out[..8]);
-    Ok(bytes_to_hex(&first, length))
+    Ok(bytes_to_hex(first, length))
 }
 
 impl StandardInfo {
@@ -235,6 +235,14 @@ impl BeaconPart {
     }
 }
 
+/// Greatest common divisor of two partition counts.
+const fn gcd(mut a: u8, mut b: u8) -> u8 {
+    while b != 0 {
+        (a, b) = (b, a % b);
+    }
+    a
+}
+
 /// Least common multiple of two partition counts, capped at `max`.
 pub(crate) fn lcm_partition(a: u8, b: u8, max: u8) -> u8 {
     if a == 1 || b == max || a == b {
@@ -242,12 +250,7 @@ pub(crate) fn lcm_partition(a: u8, b: u8, max: u8) -> u8 {
     } else if b == 1 || a == max {
         a.min(max)
     } else {
-        let (x, y) = (u32::from(a), u32::from(b));
-        let mut g = (x, y);
-        while g.1 != 0 {
-            g = (g.1, g.0 % g.1);
-        }
-        let lcm = x / g.0 * y;
+        let lcm = u32::from(a) / u32::from(gcd(a, b)) * u32::from(b);
         if lcm < u32::from(max) {
             u8::try_from(lcm).unwrap_or(max)
         } else {

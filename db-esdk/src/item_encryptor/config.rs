@@ -198,13 +198,14 @@ impl Config {
         }
         let mut msg = format!("On {tag} : ");
         if pk_missing {
-            msg.push_str(&format!(
-                "Partition key '{}' does not exist in item. ",
-                self.partition_key_name
-            ));
+            msg.push_str("Partition key '");
+            msg.push_str(&self.partition_key_name);
+            msg.push_str("' does not exist in item. ");
         }
         if let Some(s) = self.sort_key_name.as_ref().filter(|_| sk_missing) {
-            msg.push_str(&format!("Sort key '{s}' does not exist in item. "));
+            msg.push_str("Sort key '");
+            msg.push_str(s);
+            msg.push_str("' does not exist in item. ");
         }
         let mut names: Vec<&String> = item.keys().collect();
         names.sort_by(|a, b| utf16_cmp(a, b));
@@ -217,7 +218,9 @@ impl Config {
                 .collect::<Vec<_>>()
                 .join(" ")
         };
-        msg.push_str(&format!("Item contains these attributes : {names}."));
+        msg.push_str("Item contains these attributes : ");
+        msg.push_str(&names);
+        msg.push('.');
         Some(msg)
     }
 

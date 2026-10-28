@@ -5,6 +5,7 @@
 
 use std::collections::HashMap;
 use std::fmt::Write as _;
+use std::hash::BuildHasher;
 
 use aws_crypto_mpl::aws_sdk_dynamodb::types::AttributeValue;
 use aws_crypto_mpl::types::{AlgorithmSuiteId as MplAlgorithmSuiteId, EdkWrapping};
@@ -68,8 +69,8 @@ impl EncryptedDataKeyDescription {
 ///
 /// A [`Validation`](Error::Validation) error when the item has no binary `aws_dbe_head`,
 /// and a [`Serialization`](Error::Serialization) error when the header is malformed.
-pub fn describe_encrypted_data_keys(
-    item: &HashMap<String, AttributeValue>,
+pub fn describe_encrypted_data_keys<S: BuildHasher>(
+    item: &HashMap<String, AttributeValue, S>,
 ) -> Result<Vec<EncryptedDataKeyDescription>, Error> {
     match item.get(HEADER_FIELD) {
         Some(AttributeValue::B(header)) => describe_header_encrypted_data_keys(header.as_ref()),

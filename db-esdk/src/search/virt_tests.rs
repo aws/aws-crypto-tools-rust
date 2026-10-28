@@ -4,7 +4,6 @@
 //! Tests ported from the reference implementation's `Virtual.dfy`.
 
 use super::*;
-use crate::search::info::VirtPart;
 use crate::search::test_fixtures::{item, n, s};
 
 const MIXED: &str = "aBcD\u{f1}\u{d1}eF";

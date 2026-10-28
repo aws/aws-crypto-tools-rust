@@ -898,7 +898,7 @@ pub enum BeaconStyle {
 impl BeaconStyle {
     /// A [`PartOnly`](Self::PartOnly) style.
     #[must_use]
-    pub fn part_only() -> Self {
+    pub const fn part_only() -> Self {
         Self::PartOnly(PartOnly::new())
     }
 
@@ -912,7 +912,7 @@ impl BeaconStyle {
 
     /// An [`AsSet`](Self::AsSet) style.
     #[must_use]
-    pub fn as_set() -> Self {
+    pub const fn as_set() -> Self {
         Self::AsSet(AsSet::new())
     }
 
@@ -1740,13 +1740,13 @@ pub enum VirtualTransform {
 impl VirtualTransform {
     /// An [`Upper`](Self::Upper) transform.
     #[must_use]
-    pub fn upper() -> Self {
+    pub const fn upper() -> Self {
         Self::Upper(Upper::new())
     }
 
     /// A [`Lower`](Self::Lower) transform.
     #[must_use]
-    pub fn lower() -> Self {
+    pub const fn lower() -> Self {
         Self::Lower(Lower::new())
     }
 

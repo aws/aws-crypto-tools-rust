@@ -7,7 +7,6 @@
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
 use aws_crypto_mpl::Error as MplError;
 use aws_crypto_mpl::async_trait;
@@ -773,33 +772,36 @@ fn beacon_styles() {
 
 #[test]
 fn compound_beacon_builder_checks_split_and_lists() {
-    let base = || CompoundBeacon::builder().name("c").split(".");
+    let split_dot = || CompoundBeacon::builder().name("c").split(".");
     assert_eq!(
         validation_message(CompoundBeacon::builder().name("c").build()),
         "split is required"
     );
     for split in ["", "..", "ab"] {
         assert_eq!(
-            validation_message(base().split(split).build()),
+            validation_message(split_dot().split(split).build()),
             "split must be exactly one character"
         );
     }
     // One character, even when it is more than one byte.
-    assert_eq!(base().split("\u{e9}").build().unwrap().split(), '\u{e9}');
     assert_eq!(
-        validation_message(base().set_encrypted(Some(vec![])).build()),
+        split_dot().split("\u{e9}").build().unwrap().split(),
+        '\u{e9}'
+    );
+    assert_eq!(
+        validation_message(split_dot().set_encrypted(Some(vec![])).build()),
         "encrypted must not be empty"
     );
     assert_eq!(
-        validation_message(base().set_signed(Some(vec![])).build()),
+        validation_message(split_dot().set_signed(Some(vec![])).build()),
         "signed must not be empty"
     );
     assert_eq!(
-        validation_message(base().set_constructors(Some(vec![])).build()),
+        validation_message(split_dot().set_constructors(Some(vec![])).build()),
         "constructors must not be empty"
     );
     assert_eq!(
-        validation_message(base().set_name(None).build()),
+        validation_message(split_dot().set_name(None).build()),
         "name is required"
     );
 
@@ -817,10 +819,10 @@ fn compound_beacon_builder_checks_split_and_lists() {
     assert_eq!(beacon.signed()[0].prefix(), "Y_");
     assert_eq!(beacon.constructors()[0].parts()[0].name(), "Name");
 
-    let bare = base().build().unwrap();
-    assert!(bare.encrypted().is_empty());
-    assert!(bare.signed().is_empty());
-    assert!(bare.constructors().is_empty());
+    let no_lists = split_dot().build().unwrap();
+    assert!(no_lists.encrypted().is_empty());
+    assert!(no_lists.signed().is_empty());
+    assert!(no_lists.constructors().is_empty());
 }
 
 #[test]
@@ -1163,22 +1165,22 @@ async fn virt_and_beacon_same_loc() {
 async fn ns_with_eb() {
     let standards = || Some(vec![std2(), std4(), std6(), name_title_beacon(), title_b()]);
     // A compound beacon named like an encrypted attribute is allowed when it has an encrypted part.
-    let dup_name_s = compound(
+    let with_encrypted_part = compound(
         "Name",
         Some(vec![title_p()]),
         Some(vec![year(), month()]),
         None,
     );
     let version = lotsa_beacons(store())
-        .set_compound_beacons(Some(vec![dup_name_s]))
+        .set_compound_beacons(Some(vec![with_encrypted_part]))
         .set_standard_beacons(standards());
     let info = convert_with(&[], version).unwrap();
     assert_eq!(info.version.beacons["Name"].beacon_name(), "aws_dbe_b_Name");
 
     // A fully signed one is written to the attribute of its name, so it is not.
-    let dup_name_ns = compound("Name", None, Some(vec![year(), month()]), None);
+    let fully_signed = compound("Name", None, Some(vec![year(), month()]), None);
     let version = lotsa_beacons(store())
-        .set_compound_beacons(Some(vec![dup_name_ns]))
+        .set_compound_beacons(Some(vec![fully_signed]))
         .set_standard_beacons(standards());
     assert_eq!(
         validation_message(convert_with(&[], version)),

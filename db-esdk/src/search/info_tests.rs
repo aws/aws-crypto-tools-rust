@@ -4,10 +4,6 @@
 //! Tests of the beacon values a checked beacon version computes for an item.
 //! The vectors are from `Beacon.dfy`, computed with the beacon key `[1,2,3,4,5]`.
 
-use std::collections::HashMap;
-
-use aws_crypto_mpl::aws_sdk_dynamodb::types::AttributeValue;
-
 use super::*;
 use crate::search::config::tests::{
     compound, convert_with, encrypted_part, fake_key_store, lotsa_beacons, multi_source,
@@ -88,7 +84,7 @@ async fn beacon_values() {
         .await
         .unwrap();
     assert_ne!(changed["aws_dbe_b_std4"], s(STD4_BEACON));
-    let mut rest = changed.clone();
+    let mut rest = changed;
     rest.remove("aws_dbe_b_std4");
     let mut expected = expected_encrypted_beacons();
     expected.remove("aws_dbe_b_std4");

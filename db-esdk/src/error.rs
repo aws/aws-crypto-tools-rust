@@ -193,6 +193,7 @@ mod tests {
     use super::*;
     use aws_crypto_mpl::aws_sdk_dynamodb::config::http::HttpResponse;
     use aws_crypto_mpl::aws_sdk_dynamodb::error::SdkError;
+    use aws_crypto_mpl::aws_sdk_dynamodb::operation::get_item::GetItemError;
     use aws_crypto_mpl::aws_sdk_dynamodb::operation::put_item::PutItemError;
     use aws_crypto_mpl::aws_sdk_dynamodb::types::error::ConditionalCheckFailedException;
     use aws_smithy_types::body::SdkBody;
@@ -292,7 +293,6 @@ mod tests {
     fn as_service_error_needs_the_matching_operation() {
         let err = Error::from_ddb("PutItem", None, generic("ValidationException", 400));
         assert!(err.as_service_error::<PutItemError>().is_some());
-        use aws_crypto_mpl::aws_sdk_dynamodb::operation::get_item::GetItemError;
         assert!(err.as_service_error::<GetItemError>().is_none());
         assert!(val_err("x").as_service_error::<PutItemError>().is_none());
     }

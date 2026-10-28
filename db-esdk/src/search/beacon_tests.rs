@@ -3,9 +3,6 @@
 
 //! Tests ported from the reference implementation's `Beacon.dfy` and `BeaconPartition.dfy`.
 
-use std::collections::HashMap;
-
-use aws_crypto_mpl::aws_sdk_dynamodb::types::AttributeValue;
 use aws_smithy_types::Blob;
 
 use super::*;
@@ -102,11 +99,11 @@ fn bytes_to_hex_truncates_to_the_rightmost_bits() {
     let bytes = [1, 2, 3, 4, 5, 6, 7, 0xb7];
     let expected = ["1", "3", "7", "7", "17", "37", "37", "b7"];
     for (bits, want) in (1..=8).zip(expected) {
-        assert_eq!(bytes_to_hex(&bytes, bits), want, "bits {bits}");
+        assert_eq!(bytes_to_hex(bytes, bits), want, "bits {bits}");
     }
-    assert_eq!(bytes_to_hex(&bytes, 9), "1b7");
-    assert_eq!(bytes_to_hex(&bytes, 12), "7b7");
-    assert_eq!(bytes_to_hex(&bytes, 64), "01020304050607b7");
+    assert_eq!(bytes_to_hex(bytes, 9), "1b7");
+    assert_eq!(bytes_to_hex(bytes, 12), "7b7");
+    assert_eq!(bytes_to_hex(bytes, 64), "01020304050607b7");
 }
 
 #[test]

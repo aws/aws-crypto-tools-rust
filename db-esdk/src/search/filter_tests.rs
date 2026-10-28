@@ -1490,7 +1490,7 @@ fn add_context_renames_changed_values() {
     assert_eq!(vals, old);
 
     let (filter, vals) = add_context(
-        old.clone(),
+        old,
         "x = :a AND y = :b",
         &values(&[(":a", s("9")), (":b", s("2"))]),
     )

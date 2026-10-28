@@ -92,6 +92,7 @@ fn filter_err(expr: &str, item: &Item, values: &Item) -> Error {
 }
 
 #[test]
+#[allow(clippy::many_single_char_names)] // a..f name the strings in their order
 fn unicode_less() {
     // A..F are strictly increasing in code point order, though D, E and F are surrogate
     // pairs in UTF-16 and so sort below C there.
@@ -261,10 +262,10 @@ fn parse_stops_at_unknown_character() {
 
 #[test]
 fn extract_attributes_cases() {
+    type Case<'a> = (&'a str, Option<&'a HashMap<String, String>>, &'a [&'a str]);
     let attr_map = names(&[("#one", "two"), ("#three", "four")]);
     let m = Some(&attr_map);
     let none: &[&str] = &[];
-    type Case<'a> = (&'a str, Option<&'a HashMap<String, String>>, &'a [&'a str]);
     let cases: [Case<'_>; 21] = [
         ("", None, none),
         ("", m, none),
@@ -688,7 +689,7 @@ fn stack_shape_errors() {
     let values = map(&[(":x", ds("x"))]);
     let t = Token::Value(":x".to_owned());
     // `:x = :x = :x`: the second `=` compares a boolean with a value.
-    let rpn = [t.clone(), t.clone(), Token::Eq, t.clone(), Token::Eq];
+    let rpn = [t.clone(), t.clone(), Token::Eq, t, Token::Eq];
     let err = eval_expr(&rpn, &item, None, &values).unwrap_err();
     assert!(matches!(err, Error::Validation(..)));
     assert_eq!(err.message(), "wrong types for comparison");

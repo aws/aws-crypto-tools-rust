@@ -171,7 +171,7 @@ pub(crate) enum Beacon {
 
 impl Beacon {
     /// Whether any value of the beacon is encrypted, so its value is an HMAC.
-    pub(crate) fn is_encrypted(&self) -> bool {
+    pub(crate) const fn is_encrypted(&self) -> bool {
         match self {
             Self::Standard(_) => true,
             Self::Compound(c) => c.num_signed < c.parts.len(),
@@ -179,7 +179,7 @@ impl Beacon {
     }
 
     /// Whether this is a part-only standard beacon.
-    pub(crate) fn is_part_only(&self) -> bool {
+    pub(crate) const fn is_part_only(&self) -> bool {
         matches!(self, Self::Standard(s) if s.part_only)
     }
 }

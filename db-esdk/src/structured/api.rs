@@ -941,6 +941,7 @@ impl ResolveAuthActionsFluentBuilder {
     ///   or the header or footer terminal is missing.
     /// - [`Serialization`](crate::Error::Serialization): the header does not parse,
     ///   or its legend does not match the signed terminals.
+    #[allow(clippy::unused_async, clippy::unused_async_trait_impl)] // `send` is async on every fluent builder
     pub async fn send(self) -> Result<ResolveAuthActionsOutput, Error> {
         let table = required(self.table_name, "table_name")?;
         let data = required(self.auth_actions, "auth_actions")?

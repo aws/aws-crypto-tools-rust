@@ -200,10 +200,11 @@ struct Read {
 }
 
 fn read_u32(x: &[u8], pos: usize) -> Result<usize, String> {
-    let bytes = x
+    let bytes: [u8; LENGTH_LEN] = x
         .get(pos..pos + LENGTH_LEN)
+        .and_then(|b| b.try_into().ok())
         .ok_or_else(|| "Length of 4-byte integer was less than 4".to_owned())?;
-    let n = u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+    let n = u32::from_be_bytes(bytes);
     usize::try_from(n).map_err(|_| "Length was too big".to_owned())
 }
 
@@ -953,7 +954,7 @@ mod tests {
         // A key length of 65536 with that many key bytes present, so the length check fails.
         let map_bytes = [
             &[0, 0, 0, 1, 0, 1, 0, 1, 0, 0][..],
-            &[0x41; 65_536],
+            &vec![0x41; 65_536],
             &[0, 1, 0, 0, 0, 0],
         ]
         .concat();

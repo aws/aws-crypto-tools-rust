@@ -4,10 +4,7 @@
 //! Tests of beacon key lookup and caching, including the reference implementation's
 //! shared-cache tests from `Beacon.dfy`, with in-memory key stores.
 
-use aws_crypto_mpl::shared::IntoShared;
-
 use super::*;
-use crate::error::Error;
 use crate::search::test_fixtures::{BEACON_KEY, FakeKeyStore, hmac_keys};
 
 const KEY_ID: &str = "040a32a8-3737-4f16-a3ba-bd4449556d73";
@@ -74,7 +71,7 @@ fn assert_store_failed(r: Result<MaybeKeyMap, Error>) {
     }
 }
 
-fn val_msg(err: Error) -> String {
+fn val_msg(err: &Error) -> String {
     assert!(matches!(err, Error::Validation(_)), "{err:?}");
     err.message().to_owned()
 }
@@ -92,7 +89,7 @@ fn zero_ttl_is_rejected() {
         None,
     )
     .unwrap_err();
-    assert_eq!(val_msg(err), "Beacon Cache TTL must be at least 1.");
+    assert_eq!(val_msg(&err), "Beacon Cache TTL must be at least 1.");
 }
 
 #[test]
@@ -140,7 +137,7 @@ async fn key_id_must_fit_the_key_source() {
     for id in [MaybeKeyId::ShouldHave, MaybeKeyId::Id("x".to_owned())] {
         let err = single.get_key_map(&names(), &id).await.unwrap_err();
         assert_eq!(
-            val_msg(err),
+            val_msg(&err),
             "KeyID should not be supplied with a SingleKeyStore"
         );
     }
@@ -150,7 +147,7 @@ async fn key_id_must_fit_the_key_source() {
         .await
         .unwrap_err();
     assert_eq!(
-        val_msg(err),
+        val_msg(&err),
         "Fixed KeyID must not be supplied with a MultiKeyStore"
     );
     assert!(matches!(

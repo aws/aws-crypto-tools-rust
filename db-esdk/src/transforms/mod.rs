@@ -10,6 +10,10 @@
 //! A PartiQL statement on a configured table is rejected.
 //! A request for a table with no configuration passes through unchanged.
 
+// Every transform is `async`, so callers await each one the same way,
+// including the pass-through transforms that have nothing to await yet.
+#![allow(clippy::unused_async, clippy::unused_async_trait_impl)]
+
 mod partiql;
 mod read;
 mod resolve;

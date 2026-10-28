@@ -4,8 +4,7 @@
 //! The parameters of a DBE algorithm suite that structured encryption uses.
 
 use aws_crypto_mpl::types::{
-    AlgorithmSuite, AlgorithmSuiteId as MplAlgorithmSuiteId, AsymmetricSignatureAlgorithm,
-    KeyDerivationAlgorithm,
+    AlgorithmSuiteId as MplAlgorithmSuiteId, AsymmetricSignatureAlgorithm, KeyDerivationAlgorithm,
 };
 use aws_mpl_primitives::DigestAlg;
 
@@ -46,7 +45,7 @@ impl DbeSuite {
         let MplAlgorithmSuiteId::Dbe(dbe) = id else {
             return Err(val_err("Invalid Algorithm Suite"));
         };
-        let spec: AlgorithmSuite = id.specification();
+        let spec = id.specification();
         if spec.id()[0] != DBE_ALGORITHM_FAMILY || spec.encryption_key_length() != 32 {
             return Err(val_err("Invalid Algorithm Suite"));
         }

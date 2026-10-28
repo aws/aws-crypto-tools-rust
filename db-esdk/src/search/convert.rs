@@ -701,12 +701,16 @@ fn required_parts(constructor: &[ConstructorPartInfo]) -> BTreeSet<usize> {
         .collect()
 }
 
+/// Whether one of two prefixes begins with the other.
+fn prefixes_overlap(x: &str, y: &str) -> bool {
+    x.starts_with(y) || y.starts_with(x)
+}
+
 /// Reject parts where one prefix begins with another.
 fn check_prefixes(name: &str, parts: &[BeaconPart]) -> Result<(), Error> {
     for (i, a) in parts.iter().enumerate() {
         for (j, b) in parts.iter().enumerate() {
-            if i != j && (a.prefix().starts_with(b.prefix()) || b.prefix().starts_with(a.prefix()))
-            {
+            if i != j && prefixes_overlap(a.prefix(), b.prefix()) {
                 return Err(val_err(format!(
                     "Compound beacon {name} defines part {} with prefix {} which is incompatible with part {} which has a prefix of {}.",
                     a.name(),

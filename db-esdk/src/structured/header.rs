@@ -18,7 +18,6 @@ use crate::types::CryptoAction;
 
 pub(crate) const MSGID_LEN: usize = 32;
 pub(crate) const COMMITMENT_LEN: usize = 32;
-const PREFIX_LEN: usize = 1 + 1 + MSGID_LEN;
 const UINT8_LIMIT: usize = 256;
 const UINT16_LIMIT: usize = 65_536;
 
@@ -213,20 +212,19 @@ impl PartialHeader {
 
     /// Parse a serialized header, commitment included.
     pub(crate) fn deserialize(data: &[u8]) -> Result<Self, Error> {
-        if data.len() < PREFIX_LEN {
+        let Some(([version, flavor], rest)) = data.split_first_chunk::<2>() else {
             return Err(ser_err("Serialized PartialHeader too short."));
-        }
-        let version = data[0];
+        };
+        let Some((&msg_id, legend_data)) = rest.split_first_chunk::<MSGID_LEN>() else {
+            return Err(ser_err("Serialized PartialHeader too short."));
+        };
+        let (version, flavor) = (*version, *flavor);
         if !valid_version(version) {
             return Err(ser_err("Invalid Version Number"));
         }
-        let flavor = data[1];
         if !valid_flavor(flavor) {
             return Err(ser_err("Invalid Flavor"));
         }
-        let mut msg_id = [0u8; MSGID_LEN];
-        msg_id.copy_from_slice(&data[2..PREFIX_LEN]);
-        let legend_data = &data[PREFIX_LEN..];
         let (legend, legend_len) = get_legend(legend_data)?;
         let context_data = &legend_data[legend_len..];
         let (enc_context, context_len) = get_context(context_data)?;
