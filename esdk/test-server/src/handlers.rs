@@ -184,7 +184,7 @@ impl AppState {
         esdk.encrypt_stream()
             .plaintext(req.plaintext.as_slice())
             .ciphertext(&mut ciphertext)
-            .encryption_context(encryption_context(req.encryption_context))
+            .set_encryption_context(Some(encryption_context(req.encryption_context)))
             .keyring(keyring)
             .set_algorithm_suite_id(req.algorithm_suite_id.map(map_algorithm_suite))
             .set_frame_length(frame_length)
@@ -204,7 +204,7 @@ impl AppState {
         esdk.decrypt_stream()
             .ciphertext(req.ciphertext.as_slice())
             .plaintext(&mut plaintext)
-            .encryption_context(encryption_context(req.encryption_context))
+            .set_encryption_context(Some(encryption_context(req.encryption_context)))
             .keyring(keyring)
             .send()
             .await
