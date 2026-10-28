@@ -403,7 +403,10 @@ impl BeaconVersionBuilder {
     /// What picks the partition an item is written in.
     /// Optional: the default picks a random partition.
     #[must_use]
-    pub fn partition_selector(mut self, selector: impl IntoShared<SharedPartitionSelector>) -> Self {
+    pub fn partition_selector(
+        mut self,
+        selector: impl IntoShared<SharedPartitionSelector>,
+    ) -> Self {
         self.partition_selector = Some(selector.into_shared());
         self
     }

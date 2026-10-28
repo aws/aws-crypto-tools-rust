@@ -134,13 +134,13 @@ impl Footer {
             if len < RECIPIENT_TAG_SIZE + SIGNATURE_SIZE {
                 return Err(ser_err("Footer too short."));
             }
-            if (len - SIGNATURE_SIZE) % RECIPIENT_TAG_SIZE != 0 {
+            if !(len - SIGNATURE_SIZE).is_multiple_of(RECIPIENT_TAG_SIZE) {
                 return Err(ser_err("Mangled signed footer has strange size"));
             }
             let (t, s) = data.split_at(len - SIGNATURE_SIZE);
             (t, Some(s.to_vec()))
         } else {
-            if len % RECIPIENT_TAG_SIZE != 0 {
+            if !len.is_multiple_of(RECIPIENT_TAG_SIZE) {
                 return Err(ser_err("Mangled unsigned footer has strange size"));
             }
             if len < RECIPIENT_TAG_SIZE {

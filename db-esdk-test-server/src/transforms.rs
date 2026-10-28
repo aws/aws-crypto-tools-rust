@@ -27,12 +27,11 @@ use crate::transforms_model::{
     BatchWriteItemOutput, ConditionCheck, CreateTransformsClientRequest,
     CreateTransformsClientResponse, Delete, DeleteItemInput, DeleteRequest, ExecuteStatementInput,
     ExecuteStatementOutput, ExecuteTransactionInput, ExecuteTransactionOutput, Get, GetItemInput,
-    GetNumberOfQueriesResponse,
-    GetItemOutput, InputTransformRequest, InputTransformResponse, ItemResponse, ItemsOutput,
-    KeysAndAttributes, OutputTransformRequest, OutputTransformResponse, ParameterizedStatement,
-    Put, PutItemInput, PutRequest, QueryInput, ScanInput, TransactGetItem, TransactGetItemsInput,
-    TransactGetItemsOutput, TransactWriteItem, TransactWriteItemsInput, TransactWriteItemsOutput,
-    Update, UpdateItemInput, WriteRequest, WriteRequestMap,
+    GetItemOutput, GetNumberOfQueriesResponse, InputTransformRequest, InputTransformResponse,
+    ItemResponse, ItemsOutput, KeysAndAttributes, OutputTransformRequest, OutputTransformResponse,
+    ParameterizedStatement, Put, PutItemInput, PutRequest, QueryInput, ScanInput, TransactGetItem,
+    TransactGetItemsInput, TransactGetItemsOutput, TransactWriteItem, TransactWriteItemsInput,
+    TransactWriteItemsOutput, Update, UpdateItemInput, WriteRequest, WriteRequestMap,
 };
 
 /// A wire shape the AWS SDK's builder rejected.
@@ -829,9 +828,7 @@ impl AppState {
         req: InputTransformRequest<QueryInput>,
     ) -> Result<GetNumberOfQueriesResponse, ServerError> {
         let t = self.transforms(&req.client_id)?;
-        let count = t
-            .get_number_of_queries(&to_query(req.sdk_input)?)
-            .await?;
+        let count = t.get_number_of_queries(&to_query(req.sdk_input)?).await?;
         Ok(GetNumberOfQueriesResponse {
             number_of_queries: i32::from(count),
         })

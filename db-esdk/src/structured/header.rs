@@ -142,7 +142,7 @@ impl PartialHeader {
         msg_id: [u8; MSGID_LEN],
         mat: &EncryptionMaterials,
     ) -> Result<Self, Error> {
-        if u64::try_from(schema.len()).unwrap_or(u64::MAX) >= u64::from(u32::MAX) + 1 {
+        if u64::try_from(schema.len()).unwrap_or(u64::MAX) > u64::from(u32::MAX) {
             return Err(val_err("Unexpected large schema"));
         }
         if !valid_encryption_context(mat.encryption_context()) {

@@ -489,10 +489,11 @@ fn sorted_keys<V>(map: &HashMap<String, V>) -> Vec<&String> {
     keys
 }
 
+/// A record's fields and the action taken on each.
+type FieldsAndActions = (HashMap<String, Terminal>, HashMap<String, CryptoAction>);
+
 /// Split a list of single-member paths back into a map of fields and a map of signed actions.
-fn unbuild(
-    list: Vec<CryptoField>,
-) -> Result<(HashMap<String, Terminal>, HashMap<String, CryptoAction>), Error> {
+fn unbuild(list: Vec<CryptoField>) -> Result<FieldsAndActions, Error> {
     let mut data = HashMap::with_capacity(list.len());
     let mut schema = HashMap::with_capacity(list.len());
     for item in list {
