@@ -4,11 +4,10 @@
 //! HKDF tests ported from Dafny [`TestAwsCryptographyPrimitivesHKDF.dfy`]
 //! and [`TestHKDF_Rfc5869TestVectors.dfy`].
 //!
-//! The Dafny tests use the RFC 5869 vectors with L = 42 or 82. Prim's
-//! `hkdf` and `hkdf_expand` restrict output length to 16/24/32 bytes
-//! (`get_len` in `src/hkdf.rs`), so this port asks for L=32 and compares
-//! against the first 32 bytes of each RFC OKM. HKDF-Expand output is
-//! prefix-stable, so the comparison is exact, not approximate.
+//! The Dafny tests use the RFC 5869 vectors with L = 42 or 82. This port
+//! asks for L=32 and compares against the first 32 bytes of each RFC OKM.
+//! HKDF-Expand output is prefix-stable, so the comparison is exact, not
+//! approximate.
 //!
 //! [`TestAwsCryptographyPrimitivesHKDF.dfy`]: https://github.com/aws/aws-cryptographic-material-providers-library/blob/main/AwsCryptographyPrimitives/test/TestAwsCryptographyPrimitivesHKDF.dfy
 //! [`TestHKDF_Rfc5869TestVectors.dfy`]: https://github.com/aws/aws-cryptographic-material-providers-library/blob/main/AwsCryptographyPrimitives/test/TestHKDF_Rfc5869TestVectors.dfy
@@ -162,11 +161,21 @@ fn test_hkdf_no_salt_sha512() -> Result<(), Error> {
     Ok(())
 }
 
-// Error paths — required for 100% coverage of `get_len`.
+// The full 42-byte OKM of RFC 5869 A.1: lengths other than 16/24/32 work.
+#[test]
+fn test_hkdf_rfc5869_a1_full_length() -> Result<(), Error> {
+    let mut okm = [0u8; 42];
+    hkdf(DigestAlg::Sha256, &A1_SALT, &A1_IKM, &[&A1_INFO], &mut okm)?;
+    assert_eq!(okm[..32], A1_OKM32);
+    assert_eq!(okm[32..], [52, 0, 114, 8, 213, 184, 135, 24, 88, 101]);
+    Ok(())
+}
+
+// Error paths: HKDF output is at most 255 times the digest length.
 
 #[test]
 fn test_hkdf_bad_okm_length() {
-    let mut okm = [0u8; 20]; // Not 16/24/32.
+    let mut okm = vec![0u8; 255 * 32 + 1];
     let err = hkdf(DigestAlg::Sha256, &A1_SALT, &A1_IKM, &[&A1_INFO], &mut okm).unwrap_err();
     assert!(err.is_cryptographic(), "{:?}", err);
 }
@@ -174,7 +183,7 @@ fn test_hkdf_bad_okm_length() {
 #[test]
 fn test_hkdf_expand_bad_okm_length() {
     let prk = hkdf_extract(DigestAlg::Sha256, &A1_SALT, &A1_IKM);
-    let mut okm = [0u8; 5];
+    let mut okm = vec![0u8; 255 * 32 + 1];
     let err = hkdf_expand(&prk, &[&A1_INFO], &mut okm).unwrap_err();
     assert!(err.is_cryptographic(), "{:?}", err);
 }
