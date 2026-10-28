@@ -121,3 +121,7 @@ pub(crate) fn crypt(
         })
         .collect()
 }
+
+#[cfg(test)]
+#[path = "crypt_tests.rs"]
+mod tests;

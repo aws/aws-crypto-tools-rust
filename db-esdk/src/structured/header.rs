@@ -420,3 +420,7 @@ fn get_data_keys(data: &[u8]) -> Result<(Vec<EncryptedDataKey>, usize), Error> {
     }
     Ok((keys, pos))
 }
+
+#[cfg(test)]
+#[path = "header_tests.rs"]
+mod tests;

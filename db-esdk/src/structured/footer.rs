@@ -203,3 +203,7 @@ impl Footer {
         Ok(())
     }
 }
+
+#[cfg(test)]
+#[path = "footer_tests.rs"]
+mod tests;

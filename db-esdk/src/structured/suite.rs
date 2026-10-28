@@ -76,3 +76,7 @@ impl DbeSuite {
         Self::new(id)
     }
 }
+
+#[cfg(test)]
+#[path = "suite_tests.rs"]
+mod tests;
