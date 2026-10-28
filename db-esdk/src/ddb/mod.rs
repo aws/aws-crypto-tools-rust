@@ -3,7 +3,9 @@
 
 //! DynamoDB attribute values as structured-encryption terminals, and back.
 
+pub(crate) mod filter_expr;
 mod number;
+pub(crate) mod update_expr;
 
 use std::collections::{BTreeSet, HashMap};
 

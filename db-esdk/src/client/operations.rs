@@ -1,0 +1,342 @@
+// Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
+//! The fluent builders of [`Client`](super::Client)'s operations.
+//!
+//! Each wraps the AWS SDK's fluent builder of the same name and has the same setters.
+//! Its `send` runs the operation's input transform, sends the transformed request,
+//! and runs the output transform on the response.
+
+use std::collections::HashMap;
+
+use aws_crypto_mpl::aws_sdk_dynamodb::operation::{
+    batch_write_item, delete_item, get_item, put_item, transact_write_items, update_item,
+};
+use aws_crypto_mpl::aws_sdk_dynamodb::types::{
+    AttributeValue, AttributeValueUpdate, ConditionalOperator, ExpectedAttributeValue,
+    ReturnConsumedCapacity, ReturnItemCollectionMetrics, ReturnValue,
+    ReturnValuesOnConditionCheckFailure, TransactWriteItem, WriteRequest,
+};
+
+use super::build_error;
+use crate::error::Error;
+use crate::transforms::Transforms;
+
+/// One setter, its `set_` form, and its getter, forwarded to the AWS SDK's fluent builder.
+macro_rules! setter {
+    (value $field:ident, $set:ident, $get:ident: $ty:ty) => {
+        #[doc = concat!("Set `", stringify!($field), "`, as on the AWS SDK's fluent builder.")]
+        #[must_use]
+        pub fn $field(mut self, input: impl Into<$ty>) -> Self {
+            self.inner = self.inner.$field(input.into());
+            self
+        }
+
+        #[doc = concat!("Set or clear `", stringify!($field), "`.")]
+        #[must_use]
+        pub fn $set(mut self, input: Option<$ty>) -> Self {
+            self.inner = self.inner.$set(input);
+            self
+        }
+
+        #[doc = concat!("The `", stringify!($field), "` set so far.")]
+        #[must_use]
+        pub fn $get(&self) -> &Option<$ty> {
+            self.inner.$get()
+        }
+    };
+    (map $field:ident, $set:ident, $get:ident: $ty:ty) => {
+        #[doc = concat!("Add one entry to `", stringify!($field), "`, as on the AWS SDK's fluent builder.")]
+        #[must_use]
+        pub fn $field(mut self, key: impl Into<String>, value: impl Into<$ty>) -> Self {
+            self.inner = self.inner.$field(key.into(), value.into());
+            self
+        }
+
+        #[doc = concat!("Replace or clear the whole `", stringify!($field), "` map.")]
+        #[must_use]
+        pub fn $set(mut self, input: Option<HashMap<String, $ty>>) -> Self {
+            self.inner = self.inner.$set(input);
+            self
+        }
+
+        #[doc = concat!("The `", stringify!($field), "` map set so far.")]
+        #[must_use]
+        pub fn $get(&self) -> &Option<HashMap<String, $ty>> {
+            self.inner.$get()
+        }
+    };
+    (list $field:ident, $set:ident, $get:ident: $ty:ty) => {
+        #[doc = concat!("Add one element to `", stringify!($field), "`, as on the AWS SDK's fluent builder.")]
+        #[must_use]
+        pub fn $field(mut self, input: impl Into<$ty>) -> Self {
+            self.inner = self.inner.$field(input.into());
+            self
+        }
+
+        #[doc = concat!("Replace or clear the whole `", stringify!($field), "` list.")]
+        #[must_use]
+        pub fn $set(mut self, input: Option<Vec<$ty>>) -> Self {
+            self.inner = self.inner.$set(input);
+            self
+        }
+
+        #[doc = concat!("The `", stringify!($field), "` list set so far.")]
+        #[must_use]
+        pub fn $get(&self) -> &Option<Vec<$ty>> {
+            self.inner.$get()
+        }
+    };
+}
+
+/// A fluent builder wrapping the AWS SDK's, with every member's setters,
+/// and `with_input`, which sets every member from a whole input.
+macro_rules! fluent_builder {
+    (
+        $(#[$doc:meta])*
+        $name:ident($sdk:ty, $input:ty) {
+            $($kind:ident $field:ident, $set:ident, $get:ident: $ty:ty;)*
+        }
+    ) => {
+        $(#[$doc])*
+        #[derive(Clone, Debug)]
+        #[non_exhaustive]
+        pub struct $name {
+            inner: $sdk,
+            transforms: Transforms,
+        }
+
+        impl $name {
+            pub(super) const fn new(inner: $sdk, transforms: Transforms) -> Self {
+                Self { inner, transforms }
+            }
+
+            $(setter!($kind $field, $set, $get: $ty);)*
+
+            /// The AWS SDK builder with every member set from `input`.
+            fn with_input(inner: $sdk, input: $input) -> $sdk {
+                inner$(.$set(input.$field))*
+            }
+        }
+    };
+}
+
+fluent_builder! {
+    /// The PutItem operation. Set the request, then call [`send`](Self::send).
+    PutItemFluentBuilder(put_item::builders::PutItemFluentBuilder, put_item::PutItemInput) {
+        value table_name, set_table_name, get_table_name: String;
+        map item, set_item, get_item: AttributeValue;
+        map expected, set_expected, get_expected: ExpectedAttributeValue;
+        value return_values, set_return_values, get_return_values: ReturnValue;
+        value return_consumed_capacity, set_return_consumed_capacity, get_return_consumed_capacity: ReturnConsumedCapacity;
+        value return_item_collection_metrics, set_return_item_collection_metrics, get_return_item_collection_metrics: ReturnItemCollectionMetrics;
+        value conditional_operator, set_conditional_operator, get_conditional_operator: ConditionalOperator;
+        value condition_expression, set_condition_expression, get_condition_expression: String;
+        map expression_attribute_names, set_expression_attribute_names, get_expression_attribute_names: String;
+        map expression_attribute_values, set_expression_attribute_values, get_expression_attribute_values: AttributeValue;
+        value return_values_on_condition_check_failure, set_return_values_on_condition_check_failure, get_return_values_on_condition_check_failure: ReturnValuesOnConditionCheckFailure;
+    }
+}
+
+impl PutItemFluentBuilder {
+    /// Encrypt and sign the item when its table is configured, then write it.
+    ///
+    /// # Errors
+    ///
+    /// A `Validation` error when the request is invalid for an encrypted table,
+    /// for example a condition expression that reads an encrypted attribute.
+    /// Encryption errors keep their variant.
+    /// A failed DynamoDB call keeps DynamoDB's error: see [`Error::as_service_error`].
+    pub async fn send(self) -> Result<put_item::PutItemOutput, Error> {
+        let input = self.inner.as_input().clone().build().map_err(build_error)?;
+        let transformed = self.transforms.put_item_input(input.clone()).await?;
+        let output = Self::with_input(self.inner, transformed)
+            .send()
+            .await
+            .map_err(|e| Error::from_ddb("PutItem", input.table_name.as_deref(), e))?;
+        self.transforms.put_item_output(output, &input).await
+    }
+}
+
+fluent_builder! {
+    /// The GetItem operation. Set the request, then call [`send`](Self::send).
+    GetItemFluentBuilder(get_item::builders::GetItemFluentBuilder, get_item::GetItemInput) {
+        value table_name, set_table_name, get_table_name: String;
+        map key, set_key, get_key: AttributeValue;
+        list attributes_to_get, set_attributes_to_get, get_attributes_to_get: String;
+        value consistent_read, set_consistent_read, get_consistent_read: bool;
+        value return_consumed_capacity, set_return_consumed_capacity, get_return_consumed_capacity: ReturnConsumedCapacity;
+        value projection_expression, set_projection_expression, get_projection_expression: String;
+        map expression_attribute_names, set_expression_attribute_names, get_expression_attribute_names: String;
+    }
+}
+
+impl GetItemFluentBuilder {
+    /// Read the item, then verify and decrypt it when its table is configured.
+    ///
+    /// # Errors
+    ///
+    /// A `Serialization` error when the item is not a well-formed encrypted item,
+    /// and a `Cryptographic` error when its signature does not verify.
+    /// Decryption errors keep their variant.
+    /// A failed DynamoDB call keeps DynamoDB's error: see [`Error::as_service_error`].
+    pub async fn send(self) -> Result<get_item::GetItemOutput, Error> {
+        let input = self.inner.as_input().clone().build().map_err(build_error)?;
+        let transformed = self.transforms.get_item_input(input.clone()).await?;
+        let output = Self::with_input(self.inner, transformed)
+            .send()
+            .await
+            .map_err(|e| Error::from_ddb("GetItem", input.table_name.as_deref(), e))?;
+        self.transforms.get_item_output(output, &input).await
+    }
+}
+
+fluent_builder! {
+    /// The UpdateItem operation. Set the request, then call [`send`](Self::send).
+    UpdateItemFluentBuilder(update_item::builders::UpdateItemFluentBuilder, update_item::UpdateItemInput) {
+        value table_name, set_table_name, get_table_name: String;
+        map key, set_key, get_key: AttributeValue;
+        map attribute_updates, set_attribute_updates, get_attribute_updates: AttributeValueUpdate;
+        map expected, set_expected, get_expected: ExpectedAttributeValue;
+        value conditional_operator, set_conditional_operator, get_conditional_operator: ConditionalOperator;
+        value return_values, set_return_values, get_return_values: ReturnValue;
+        value return_consumed_capacity, set_return_consumed_capacity, get_return_consumed_capacity: ReturnConsumedCapacity;
+        value return_item_collection_metrics, set_return_item_collection_metrics, get_return_item_collection_metrics: ReturnItemCollectionMetrics;
+        value update_expression, set_update_expression, get_update_expression: String;
+        value condition_expression, set_condition_expression, get_condition_expression: String;
+        map expression_attribute_names, set_expression_attribute_names, get_expression_attribute_names: String;
+        map expression_attribute_values, set_expression_attribute_values, get_expression_attribute_values: AttributeValue;
+        value return_values_on_condition_check_failure, set_return_values_on_condition_check_failure, get_return_values_on_condition_check_failure: ReturnValuesOnConditionCheckFailure;
+    }
+}
+
+impl UpdateItemFluentBuilder {
+    /// Update the item. On a configured table, the update must not touch a signed attribute,
+    /// and a returned whole item is verified and decrypted.
+    ///
+    /// # Errors
+    ///
+    /// A `Validation` error when the update expression names a signed attribute,
+    /// or the response returns part of an item that includes a signed attribute.
+    /// Decryption errors keep their variant.
+    /// A failed DynamoDB call keeps DynamoDB's error: see [`Error::as_service_error`].
+    pub async fn send(self) -> Result<update_item::UpdateItemOutput, Error> {
+        let input = self.inner.as_input().clone().build().map_err(build_error)?;
+        let transformed = self.transforms.update_item_input(input.clone()).await?;
+        let output = Self::with_input(self.inner, transformed)
+            .send()
+            .await
+            .map_err(|e| Error::from_ddb("UpdateItem", input.table_name.as_deref(), e))?;
+        self.transforms.update_item_output(output, &input).await
+    }
+}
+
+fluent_builder! {
+    /// The DeleteItem operation. Set the request, then call [`send`](Self::send).
+    DeleteItemFluentBuilder(delete_item::builders::DeleteItemFluentBuilder, delete_item::DeleteItemInput) {
+        value table_name, set_table_name, get_table_name: String;
+        map key, set_key, get_key: AttributeValue;
+        map expected, set_expected, get_expected: ExpectedAttributeValue;
+        value conditional_operator, set_conditional_operator, get_conditional_operator: ConditionalOperator;
+        value return_values, set_return_values, get_return_values: ReturnValue;
+        value return_consumed_capacity, set_return_consumed_capacity, get_return_consumed_capacity: ReturnConsumedCapacity;
+        value return_item_collection_metrics, set_return_item_collection_metrics, get_return_item_collection_metrics: ReturnItemCollectionMetrics;
+        value condition_expression, set_condition_expression, get_condition_expression: String;
+        map expression_attribute_names, set_expression_attribute_names, get_expression_attribute_names: String;
+        map expression_attribute_values, set_expression_attribute_values, get_expression_attribute_values: AttributeValue;
+        value return_values_on_condition_check_failure, set_return_values_on_condition_check_failure, get_return_values_on_condition_check_failure: ReturnValuesOnConditionCheckFailure;
+    }
+}
+
+impl DeleteItemFluentBuilder {
+    /// Delete the item. On a configured table, the condition must not read an encrypted attribute,
+    /// and a returned old item is verified and decrypted.
+    ///
+    /// # Errors
+    ///
+    /// A `Validation` error when the condition expression reads an encrypted attribute.
+    /// Decryption errors keep their variant.
+    /// A failed DynamoDB call keeps DynamoDB's error: see [`Error::as_service_error`].
+    pub async fn send(self) -> Result<delete_item::DeleteItemOutput, Error> {
+        let input = self.inner.as_input().clone().build().map_err(build_error)?;
+        let transformed = self.transforms.delete_item_input(input.clone()).await?;
+        let output = Self::with_input(self.inner, transformed)
+            .send()
+            .await
+            .map_err(|e| Error::from_ddb("DeleteItem", input.table_name.as_deref(), e))?;
+        self.transforms.delete_item_output(output, &input).await
+    }
+}
+
+fluent_builder! {
+    /// The BatchWriteItem operation. Set the request, then call [`send`](Self::send).
+    BatchWriteItemFluentBuilder(batch_write_item::builders::BatchWriteItemFluentBuilder, batch_write_item::BatchWriteItemInput) {
+        map request_items, set_request_items, get_request_items: Vec<WriteRequest>;
+        value return_consumed_capacity, set_return_consumed_capacity, get_return_consumed_capacity: ReturnConsumedCapacity;
+        value return_item_collection_metrics, set_return_item_collection_metrics, get_return_item_collection_metrics: ReturnItemCollectionMetrics;
+    }
+}
+
+impl BatchWriteItemFluentBuilder {
+    /// Encrypt and sign each item written to a configured table, then write the batch.
+    ///
+    /// Each unprocessed put request in the response holds the original plaintext item,
+    /// so it can be sent again with this client.
+    ///
+    /// # Errors
+    ///
+    /// A `Validation` error when a put request writes an attribute whose name begins with `aws_dbe_`.
+    /// Encryption errors keep their variant.
+    /// A failed DynamoDB call keeps DynamoDB's error: see [`Error::as_service_error`].
+    pub async fn send(self) -> Result<batch_write_item::BatchWriteItemOutput, Error> {
+        let input = self.inner.as_input().clone().build().map_err(build_error)?;
+        let transformed = self
+            .transforms
+            .batch_write_item_input(input.clone())
+            .await?;
+        let output = Self::with_input(self.inner, transformed)
+            .send()
+            .await
+            .map_err(|e| Error::from_ddb("BatchWriteItem", None, e))?;
+        self.transforms
+            .batch_write_item_output(output, &input)
+            .await
+    }
+}
+
+fluent_builder! {
+    /// The TransactWriteItems operation. Set the request, then call [`send`](Self::send).
+    TransactWriteItemsFluentBuilder(transact_write_items::builders::TransactWriteItemsFluentBuilder, transact_write_items::TransactWriteItemsInput) {
+        list transact_items, set_transact_items, get_transact_items: TransactWriteItem;
+        value return_consumed_capacity, set_return_consumed_capacity, get_return_consumed_capacity: ReturnConsumedCapacity;
+        value return_item_collection_metrics, set_return_item_collection_metrics, get_return_item_collection_metrics: ReturnItemCollectionMetrics;
+        value client_request_token, set_client_request_token, get_client_request_token: String;
+    }
+}
+
+impl TransactWriteItemsFluentBuilder {
+    /// Encrypt and sign each item put in a configured table, check every other action,
+    /// then write the transaction.
+    ///
+    /// # Errors
+    ///
+    /// A `Validation` error when an action sets no operation,
+    /// a condition expression reads an encrypted attribute,
+    /// or an update expression names a signed attribute.
+    /// Encryption errors keep their variant.
+    /// A failed DynamoDB call keeps DynamoDB's error: see [`Error::as_service_error`].
+    pub async fn send(self) -> Result<transact_write_items::TransactWriteItemsOutput, Error> {
+        let input = self.inner.as_input().clone().build().map_err(build_error)?;
+        let transformed = self
+            .transforms
+            .transact_write_items_input(input.clone())
+            .await?;
+        let output = Self::with_input(self.inner, transformed)
+            .send()
+            .await
+            .map_err(|e| Error::from_ddb("TransactWriteItems", None, e))?;
+        self.transforms
+            .transact_write_items_output(output, &input)
+            .await
+    }
+}

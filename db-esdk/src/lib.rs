@@ -16,6 +16,8 @@
 //!
 //! Configure each table with a [`TableConfig`]: which attributes to encrypt, which to sign,
 //! and the keyring or CMM that protects each item's data key.
+//! A [`Client`] has the operations of the AWS SDK's DynamoDB client: it encrypts items before
+//! writing them, and verifies and decrypts them after reading them.
 //! An [`ItemEncryptor`] encrypts and decrypts items of one table with no call to DynamoDB.
 //!
 //! Every item is signed. Its encrypted attributes become binary, and two attributes are added:
@@ -26,6 +28,7 @@
 //! Library, re-exported here as [`keyring`], [`cmm`], [`cmc`], [`key_store`], and [`mpl`].
 
 mod branch_key_supplier;
+pub mod client;
 mod ddb;
 mod edk_description;
 pub mod error;
@@ -33,8 +36,11 @@ mod item_encryptor;
 #[doc(hidden)]
 pub mod structured;
 mod table_config;
+#[doc(hidden)]
+pub mod transforms;
 pub mod types;
 
+pub use client::Client;
 pub use edk_description::{
     EncryptedDataKeyDescription, describe_encrypted_data_keys, describe_header_encrypted_data_keys,
 };

@@ -103,6 +103,77 @@ pub(crate) fn internal_err(msg: impl Into<String>) -> Error {
     Error::new(Kind::Internal, msg)
 }
 
+/// The DynamoDB error codes that mean the request conflicts with the item's current state.
+const DDB_CONFLICT_CODES: [&str; 2] = [
+    "ConditionalCheckFailedException",
+    "TransactionConflictException",
+];
+
+impl Error {
+    /// Classify a failed DynamoDB call `operation` on `table`.
+    ///
+    /// The SDK error is the source, so [`as_service_error`](Self::as_service_error) finds it.
+    #[track_caller]
+    pub(crate) fn from_ddb<E>(
+        operation: &str,
+        table: Option<&str>,
+        err: aws_crypto_mpl::aws_sdk_dynamodb::error::SdkError<E>,
+    ) -> Self
+    where
+        E: ProvideErrorMetadata + std::error::Error + Send + Sync + 'static,
+    {
+        let resource = table.map(|t| Resource::DynamoDbTable(DynamoDbTable::new(t)));
+        let meta = err.as_service_error().map(|e| e.meta().clone());
+        let code = meta.as_ref().and_then(|m| m.code()).map(str::to_owned);
+        if let Some(code) = code.as_deref()
+            && DDB_CONFLICT_CODES.contains(&code)
+        {
+            let concurrent = code == "TransactionConflictException";
+            let request_id = err.request_id().map(str::to_owned);
+            let mut error =
+                Self::with_cause(Kind::Conflict, format!("DynamoDB {operation} failed"), err)
+                    .about(Some(Service::DynamoDb), resource);
+            error.set_sdk(Some(code.to_owned()), request_id, meta);
+            if concurrent {
+                error.set_reason(ConflictReason::ConcurrentModification);
+            }
+            return error;
+        }
+        Self::from_mpl_parts(&aws_crypto_mpl::Error::from_sdk(
+            Service::DynamoDb,
+            &format!("DynamoDB {operation}"),
+            resource,
+            err,
+        ))
+    }
+
+    /// DynamoDB's own error, when this error is a failed DynamoDB call on your table.
+    ///
+    /// `E` is the operation's error type, such as
+    /// [`PutItemError`](crate::aws_sdk_dynamodb::operation::put_item::PutItemError),
+    /// so code written for `aws_sdk_dynamodb` can match it as before.
+    /// `None` when DynamoDB did not fail, for example when encryption failed,
+    /// or when the failure is of a different operation.
+    ///
+    /// ```
+    /// use aws_db_esdk::Error;
+    /// use aws_db_esdk::aws_sdk_dynamodb::operation::put_item::PutItemError;
+    ///
+    /// fn already_exists(err: &Error) -> bool {
+    ///     matches!(
+    ///         err.as_service_error(),
+    ///         Some(PutItemError::ConditionalCheckFailedException(_))
+    ///     )
+    /// }
+    /// ```
+    #[must_use]
+    pub fn as_service_error<E: std::error::Error + 'static>(&self) -> Option<&E> {
+        std::error::Error::source(self)?
+            .downcast_ref::<aws_crypto_mpl::aws_sdk_dynamodb::error::SdkError<E>>()?
+            .as_service_error()
+    }
+}
+
 impl From<aws_crypto_mpl::Error> for Error {
     #[track_caller]
     fn from(item: aws_crypto_mpl::Error) -> Self {

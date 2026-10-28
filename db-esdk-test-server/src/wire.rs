@@ -129,6 +129,97 @@ async fn dispatch(
                 .and_then(|resp| encode(&resp)),
             Err(e) => Err(e),
         },
+        "CreateTransformsClient" => match decode(&body) {
+            Ok(req) => state
+                .create_transforms_client(req)
+                .await
+                .and_then(|resp| encode(&resp)),
+            Err(e) => Err(e),
+        },
+        "PutItemInputTransform" => match decode(&body) {
+            Ok(req) => state
+                .put_item_input_transform(req)
+                .await
+                .and_then(|resp| encode(&resp)),
+            Err(e) => Err(e),
+        },
+        "PutItemOutputTransform" => match decode(&body) {
+            Ok(req) => state
+                .put_item_output_transform(req)
+                .await
+                .and_then(|resp| encode(&resp)),
+            Err(e) => Err(e),
+        },
+        "GetItemInputTransform" => match decode(&body) {
+            Ok(req) => state
+                .get_item_input_transform(req)
+                .await
+                .and_then(|resp| encode(&resp)),
+            Err(e) => Err(e),
+        },
+        "GetItemOutputTransform" => match decode(&body) {
+            Ok(req) => state
+                .get_item_output_transform(req)
+                .await
+                .and_then(|resp| encode(&resp)),
+            Err(e) => Err(e),
+        },
+        "UpdateItemInputTransform" => match decode(&body) {
+            Ok(req) => state
+                .update_item_input_transform(req)
+                .await
+                .and_then(|resp| encode(&resp)),
+            Err(e) => Err(e),
+        },
+        "UpdateItemOutputTransform" => match decode(&body) {
+            Ok(req) => state
+                .update_item_output_transform(req)
+                .await
+                .and_then(|resp| encode(&resp)),
+            Err(e) => Err(e),
+        },
+        "DeleteItemInputTransform" => match decode(&body) {
+            Ok(req) => state
+                .delete_item_input_transform(req)
+                .await
+                .and_then(|resp| encode(&resp)),
+            Err(e) => Err(e),
+        },
+        "DeleteItemOutputTransform" => match decode(&body) {
+            Ok(req) => state
+                .delete_item_output_transform(req)
+                .await
+                .and_then(|resp| encode(&resp)),
+            Err(e) => Err(e),
+        },
+        "BatchWriteItemInputTransform" => match decode(&body) {
+            Ok(req) => state
+                .batch_write_item_input_transform(req)
+                .await
+                .and_then(|resp| encode(&resp)),
+            Err(e) => Err(e),
+        },
+        "BatchWriteItemOutputTransform" => match decode(&body) {
+            Ok(req) => state
+                .batch_write_item_output_transform(req)
+                .await
+                .and_then(|resp| encode(&resp)),
+            Err(e) => Err(e),
+        },
+        "TransactWriteItemsInputTransform" => match decode(&body) {
+            Ok(req) => state
+                .transact_write_items_input_transform(req)
+                .await
+                .and_then(|resp| encode(&resp)),
+            Err(e) => Err(e),
+        },
+        "TransactWriteItemsOutputTransform" => match decode(&body) {
+            Ok(req) => state
+                .transact_write_items_output_transform(req)
+                .await
+                .and_then(|resp| encode(&resp)),
+            Err(e) => Err(e),
+        },
         other => Err(ServerError::generic(format!(
             "operation {other} is not supported by the native Rust language server"
         ))),

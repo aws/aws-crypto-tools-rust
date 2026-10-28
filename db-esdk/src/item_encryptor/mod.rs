@@ -54,6 +54,11 @@ impl ItemEncryptor {
             encrypted_item: None,
         }
     }
+
+    /// The resolved table configuration.
+    pub(crate) fn config(&self) -> &Config {
+        &self.config
+    }
 }
 
 /// A builder for [`ItemEncryptor`].

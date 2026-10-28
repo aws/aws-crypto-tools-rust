@@ -18,6 +18,7 @@ use aws_db_esdk::structured::{
     AuthItem, AuthenticateAction as DbeAuthenticateAction, CryptoItem, PathSegment,
     StructuredDataTerminal as DbeTerminal, StructuredEncryption,
 };
+use aws_db_esdk::transforms::Transforms;
 use aws_db_esdk::types::{
     AlgorithmSuiteId, CryptoAction as DbeCryptoAction, PlaintextOverride as DbePlaintextOverride,
 };
@@ -45,6 +46,7 @@ use crate::model::{
 pub struct AppState {
     clients: Mutex<HashMap<String, ItemEncryptor>>,
     structured_clients: Mutex<HashMap<String, StructuredClient>>,
+    pub(crate) transforms_clients: Mutex<HashMap<String, Transforms>>,
 }
 
 /// A structured encryption client and the CMM and algorithm suite its config names.
@@ -273,11 +275,15 @@ pub fn from_ddb(value: DdbAttributeValue) -> Result<AttributeValue, ServerError>
     Ok(out)
 }
 
-fn to_ddb_item(item: DdbItem) -> Result<HashMap<String, DdbAttributeValue>, ServerError> {
+pub(crate) fn to_ddb_item(
+    item: DdbItem,
+) -> Result<HashMap<String, DdbAttributeValue>, ServerError> {
     item.into_iter().map(|(k, v)| Ok((k, to_ddb(v)?))).collect()
 }
 
-fn from_ddb_item(item: HashMap<String, DdbAttributeValue>) -> Result<DdbItem, ServerError> {
+pub(crate) fn from_ddb_item(
+    item: HashMap<String, DdbAttributeValue>,
+) -> Result<DdbItem, ServerError> {
     item.into_iter()
         .map(|(k, v)| Ok((k, from_ddb(v)?)))
         .collect()
@@ -302,7 +308,8 @@ async fn materials(
     }
 }
 
-async fn item_encryptor(config: DbeClientConfig) -> Result<ItemEncryptor, ServerError> {
+/// The library's table configuration for the wire's `config`.
+pub(crate) async fn table_config(config: DbeClientConfig) -> Result<TableConfig, ServerError> {
     if config.legacy_override.is_some() {
         // The native library has no legacy DDBEC encryptor, so a legacy override
         // fails as a library validation error, as the Dafny Rust library does.
@@ -330,9 +337,15 @@ async fn item_encryptor(config: DbeClientConfig) -> Result<ItemEncryptor, Server
         .set_plaintext_override(config.plaintext_override.map(plaintext_override))
         .set_keyring(keyring)
         .set_cmm(cmm)
+        .set_logical_table_name(Some(config.logical_table_name))
         .build()?;
+    Ok(table)
+}
+
+async fn item_encryptor(config: DbeClientConfig) -> Result<ItemEncryptor, ServerError> {
+    let name = config.logical_table_name.clone();
     Ok(ItemEncryptor::builder()
-        .table(config.logical_table_name, table)
+        .table(name, table_config(config).await?)
         .build()?)
 }
 
