@@ -946,6 +946,20 @@ void test_streaming_signed_message_settings() {
                      result.trailing_output.data() + result.trailing_output.size());
     ESDK_CHECK(recovered == plaintext);
 
+    // RejectMultiFrame, set explicitly, refuses the multi-frame signed message.
+    ++::esdk_test::g_checks;
+    try {
+        auto refuse = sdk.create_decrypt_stream(
+            keyring, Aws::Esdk::DecryptOptions().with_signed_streaming(
+                         Aws::Esdk::SignedStreaming::RejectMultiFrame));
+        refuse.write(ciphertext.data(), ciphertext.size());
+        refuse.finish();
+        ++::esdk_test::g_failures;
+        std::cerr << "FAIL: RejectMultiFrame streamed decrypt of a multi-frame signed message did not throw\n";
+    } catch (const Aws::Esdk::ValidationException&) {
+        // expected
+    }
+
     // RejectSigned fails on the header.
     ++::esdk_test::g_checks;
     try {
@@ -1080,7 +1094,7 @@ int main(int argc, char** argv) {
         test_decrypt_stream_write_string_view();
         test_streaming();
         test_streaming_signed_message_refused();
-    test_streaming_signed_message_settings();
+        test_streaming_signed_message_settings();
         test_streaming_plaintext_length_bound();
         test_streaming_pump();
         test_streaming_pump_io_failure();
