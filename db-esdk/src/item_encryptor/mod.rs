@@ -368,15 +368,17 @@ async fn decrypt_item(config: &Config, item: Item) -> Result<DecryptItemOutput, 
     let encrypted =
         ddb::item_to_structured(&item, &config.attribute_actions_on_encrypt).map_err(ser_err)?;
     let header = match item.get(HEADER_FIELD) {
-        None => return Err(ser_err("Header field, \"aws_dbe_head\", not in item.")),
+        None => return Err(ser_err("the item has no aws_dbe_head attribute")),
         Some(AttributeValue::B(b)) => b.as_ref(),
-        Some(_) => return Err(ser_err("Header field, \"aws_dbe_head\", not binary")),
+        Some(_) => return Err(ser_err("the item's aws_dbe_head attribute is not binary")),
     };
     let version = *header
         .first()
-        .ok_or_else(|| ser_err("Unexpected empty header field."))?;
+        .ok_or_else(|| ser_err("the item's aws_dbe_head attribute is empty"))?;
     if version != 1 && version != 2 {
-        return Err(ser_err("Header attribute has unexpected version number"));
+        return Err(ser_err(
+            "the item's aws_dbe_head attribute has an unknown version",
+        ));
     }
     let context = config.encryption_context(version, &encrypted)?;
     let auth = config.authenticate_schema(&encrypted);

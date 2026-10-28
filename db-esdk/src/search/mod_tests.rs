@@ -353,7 +353,7 @@ fn beacon_names() {
         [(String::new(), CryptoAction::EncryptAndSign)].into();
     assert_eq!(
         val_msg(search_info(actions, version)),
-        "Path specification must not be empty."
+        "a beacon or virtual field path must not be empty"
     );
 
     // A long name is accepted.

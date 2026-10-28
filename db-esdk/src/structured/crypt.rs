@@ -68,12 +68,12 @@ fn field_keys(root: &[u8], offset: u32, count: u32) -> Result<Zeroizing<Vec<u8>>
         .checked_add(count)
         .is_none_or(|end| end > ONE_THIRD_MAX_INT)
     {
-        return Err(val_err("Too many encrypted fields."));
+        return Err(val_err("the item has too many encrypted attributes"));
     }
     let nonce = field_key_nonce(offset * 3);
     let len = count
         .checked_mul(FIELD_STRIDE)
-        .ok_or_else(|| internal_err("field key size"))?;
+        .ok_or_else(|| internal_err("the field key length overflowed"))?;
     Ok(Zeroizing::new(aes_kdf_ctr_stream(&nonce, root, len)?))
 }
 
@@ -81,7 +81,7 @@ fn field_keys(root: &[u8], offset: u32, count: u32) -> Result<Zeroizing<Vec<u8>>
 #[cfg(test)]
 fn field_key(root: &[u8], offset: u32) -> Result<Zeroizing<Vec<u8>>, Error> {
     if offset >= ONE_THIRD_MAX_INT {
-        return Err(val_err("Too many encrypted fields."));
+        return Err(val_err("the item has too many encrypted attributes"));
     }
     let mut fk = field_keys(root, offset, 1)?;
     fk.truncate(KEY_SIZE + NONCE_SIZE);
@@ -100,7 +100,9 @@ fn decrypt_terminal(fk: &[u8], path: &[u8], data: &Terminal) -> Result<Terminal,
     let (key, nonce) = fk.split_at(KEY_SIZE);
     let value = &data.value;
     if value.len() < AUTH_TAG_SIZE + 2 {
-        return Err(ser_err("cipherTxt too short."));
+        return Err(ser_err(
+            "an encrypted attribute is too short to be a ciphertext",
+        ));
     }
     let (ct, tag) = value[2..].split_at(value.len() - 2 - AUTH_TAG_SIZE);
     let mut plain = vec![0u8; ct.len()];
@@ -119,14 +121,14 @@ pub(crate) fn crypt(
     let mut root = Zeroizing::new(vec![0u8; KEY_SIZE]);
     hkdf_no_salt(suite.kdf, key, &[LABEL_ENCRYPTION_KEY, msg_id], &mut root)?;
     if u32::try_from(data.len()).is_err() {
-        return Err(val_err("Too many fields."));
+        return Err(val_err("the item has too many attributes"));
     }
     let total = u32::try_from(
         data.iter()
             .filter(|x| x.action == CryptoAction::EncryptAndSign)
             .count(),
     )
-    .map_err(|_| val_err("Too many encrypted fields."))?;
+    .map_err(|_| val_err("the item has too many encrypted attributes"))?;
     let mut data = data;
     let mut pos: u32 = 0;
     let mut keys = Zeroizing::new(Vec::new());

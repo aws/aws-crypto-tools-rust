@@ -35,7 +35,9 @@ fn digest_of(kdf: KeyDerivationAlgorithm) -> Result<DigestAlg, Error> {
         KeyDerivationAlgorithm::HkdfSha256 => Ok(DigestAlg::Sha256),
         KeyDerivationAlgorithm::HkdfSha384 => Ok(DigestAlg::Sha384),
         KeyDerivationAlgorithm::HkdfSha512 => Ok(DigestAlg::Sha512),
-        _ => Err(val_err("Invalid Algorithm Suite")),
+        _ => Err(val_err(
+            "the algorithm suite is not a DB-ESDK algorithm suite",
+        )),
     }
 }
 
@@ -43,22 +45,32 @@ impl DbeSuite {
     /// Resolve `id`, which must be a DBE suite.
     pub(crate) fn new(id: MplAlgorithmSuiteId) -> Result<Self, Error> {
         let MplAlgorithmSuiteId::Dbe(dbe) = id else {
-            return Err(val_err("Invalid Algorithm Suite"));
+            return Err(val_err(
+                "the algorithm suite is not a DB-ESDK algorithm suite",
+            ));
         };
         let spec = id.specification();
         if spec.id()[0] != DBE_ALGORITHM_FAMILY || spec.encryption_key_length() != 32 {
-            return Err(val_err("Invalid Algorithm Suite"));
+            return Err(val_err(
+                "the algorithm suite is not a DB-ESDK algorithm suite",
+            ));
         }
         let commit = spec
             .commit_kdf()
-            .ok_or_else(|| val_err("Invalid Algorithm Suite"))?;
+            .ok_or_else(|| val_err("the algorithm suite is not a DB-ESDK algorithm suite"))?;
         let signature = match spec.asymmetric_signature_algorithm() {
             None => Signature::None,
             Some(AsymmetricSignatureAlgorithm::EcdsaP384) => Signature::EcdsaP384,
-            Some(_) => return Err(val_err("Invalid Algorithm Suite")),
+            Some(_) => {
+                return Err(val_err(
+                    "the algorithm suite is not a DB-ESDK algorithm suite",
+                ));
+            }
         };
         if spec.symmetric_signature_algorithm().is_none() {
-            return Err(val_err("Invalid Algorithm Suite"));
+            return Err(val_err(
+                "the algorithm suite is not a DB-ESDK algorithm suite",
+            ));
         }
         Ok(Self {
             id: dbe,
@@ -71,7 +83,7 @@ impl DbeSuite {
     /// The suite with on-wire id `[0x67, flavor]`.
     pub(crate) fn from_flavor(flavor: u8) -> Result<Self, Error> {
         let id = MplAlgorithmSuiteId::from_id_bytes([DBE_ALGORITHM_FAMILY, flavor])
-            .ok_or_else(|| val_err("Invalid Algorithm Suite"))?;
+            .ok_or_else(|| val_err("the algorithm suite is not a DB-ESDK algorithm suite"))?;
         Self::new(id)
     }
 }

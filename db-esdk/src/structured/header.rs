@@ -94,11 +94,15 @@ fn make_legend(schema: &[CanonItem]) -> Result<Vec<u8>, Error> {
         .filter_map(|x| action_legend(x.action))
         .collect();
     if legend.len() + 1 >= UINT16_LIMIT {
-        return Err(val_err("Legend Too Long."));
+        return Err(val_err(
+            "too many signed attributes: an item can sign at most 65534",
+        ));
     }
     let auth_count = schema.iter().filter(|x| is_auth_attr(x.action)).count();
     if auth_count != legend.len() {
-        return Err(internal_err("Internal Error : bad legend calculation."));
+        return Err(internal_err(
+            "the header legend does not match the signed attributes",
+        ));
     }
     Ok(legend)
 }
@@ -142,29 +146,39 @@ impl PartialHeader {
         mat: &EncryptionMaterials,
     ) -> Result<Self, Error> {
         if u64::try_from(schema.len()).unwrap_or(u64::MAX) > u64::from(u32::MAX) {
-            return Err(val_err("Unexpected large schema"));
+            return Err(val_err("the item has too many attributes"));
         }
         if !valid_encryption_context(mat.encryption_context()) {
-            return Err(val_err("Invalid Encryption Context"));
+            return Err(val_err(
+                "the encryption context cannot be stored: it has 65536 or more entries, or a key or value of 65536 or more bytes",
+            ));
         }
         let edks = mat.encrypted_data_keys();
         if edks.is_empty() {
-            return Err(val_err("There must be at least one data key"));
+            return Err(val_err(
+                "the encryption materials have no encrypted data keys",
+            ));
         }
         if edks.len() >= UINT8_LIMIT {
-            return Err(val_err("Too many data keys."));
+            return Err(val_err(
+                "the encryption materials have more than 255 encrypted data keys",
+            ));
         }
         if !edks.iter().all(valid_data_key) {
-            return Err(val_err("Invalid Data Key"));
+            return Err(val_err(
+                "an encrypted data key cannot be stored: a field of it is 65536 or more bytes",
+            ));
         }
         let id = mat.algorithm_suite().id();
         if id[0] != DBE_ALGORITHM_FAMILY {
             return Err(val_err(
-                "Algorithm Suite not suitable for structured encryption.",
+                "the materials use an algorithm suite that is not a DB-ESDK algorithm suite",
             ));
         }
         if !valid_flavor(id[1]) {
-            return Err(val_err("Algorithm Suite has unexpected flavor."));
+            return Err(val_err(
+                "the materials use an unknown DB-ESDK algorithm suite",
+            ));
         }
         let legend = make_legend(schema)?;
         let required = mat.required_encryption_context_keys();
@@ -175,7 +189,9 @@ impl PartialHeader {
             }
         }
         if !valid_encryption_context(&stored) {
-            return Err(val_err("Invalid Encryption Context"));
+            return Err(val_err(
+                "the encryption context cannot be stored: it has 65536 or more entries, or a key or value of 65536 or more bytes",
+            ));
         }
         Ok(Self {
             version: version_from_schema(schema),
@@ -213,17 +229,21 @@ impl PartialHeader {
     /// Parse a serialized header, commitment included.
     pub(crate) fn deserialize(data: &[u8]) -> Result<Self, Error> {
         let Some(([version, flavor], rest)) = data.split_first_chunk::<2>() else {
-            return Err(ser_err("Serialized PartialHeader too short."));
+            return Err(ser_err("the item's header (aws_dbe_head) is too short"));
         };
         let Some((&msg_id, legend_data)) = rest.split_first_chunk::<MSGID_LEN>() else {
-            return Err(ser_err("Serialized PartialHeader too short."));
+            return Err(ser_err("the item's header (aws_dbe_head) is too short"));
         };
         let (version, flavor) = (*version, *flavor);
         if !valid_version(version) {
-            return Err(ser_err("Invalid Version Number"));
+            return Err(ser_err(
+                "the item's header (aws_dbe_head) has an unknown version",
+            ));
         }
         if !valid_flavor(flavor) {
-            return Err(ser_err("Invalid Flavor"));
+            return Err(ser_err(
+                "the item's header (aws_dbe_head) names an unknown algorithm suite",
+            ));
         }
         let (legend, legend_len) = get_legend(legend_data)?;
         let context_data = &legend_data[legend_len..];
@@ -232,12 +252,12 @@ impl PartialHeader {
         let (data_keys, keys_len) = get_data_keys(keys_data)?;
         let trailing = &keys_data[keys_len..];
         if trailing.len() < COMMITMENT_LEN {
-            return Err(ser_err(
-                "Invalid header serialization: unexpected end of data.",
-            ));
+            return Err(ser_err("the item's header (aws_dbe_head) ends early"));
         }
         if trailing.len() > COMMITMENT_LEN {
-            return Err(ser_err("Invalid header serialization: unexpected bytes."));
+            return Err(ser_err(
+                "the item's header (aws_dbe_head) has extra bytes at the end",
+            ));
         }
         Ok(Self {
             version,
@@ -256,12 +276,16 @@ impl PartialHeader {
         data: &[u8],
     ) -> Result<(), Error> {
         if data.len() <= COMMITMENT_LEN {
-            return Err(ser_err("Serialized header too short"));
+            return Err(ser_err(
+                "the item's header (aws_dbe_head) is too short to hold its commitment",
+            ));
         }
         let (body, stored) = data.split_at(data.len() - COMMITMENT_LEN);
         let calculated = header_commitment(hmac_alg, commit_key, body)?;
         if !constant_time_equal(stored, &calculated) {
-            return Err(crate::error::crypt_err("Key commitment mismatch."));
+            return Err(crate::error::crypt_err(
+                "the item's header (aws_dbe_head) failed its key commitment check: the header was changed, or the data key is not the one it was written with",
+            ));
         }
         Ok(())
     }
@@ -278,7 +302,7 @@ fn header_commitment(
     let mut out = [0u8; COMMITMENT_LEN];
     out.copy_from_slice(
         full.get(..COMMITMENT_LEN)
-            .ok_or_else(|| internal_err("HMAC did not produce enough bits"))?,
+            .ok_or_else(|| internal_err("the HMAC output is shorter than the header commitment"))?,
     );
     Ok(out)
 }
@@ -298,26 +322,29 @@ fn read_u16(data: &[u8], pos: usize) -> usize {
 
 fn get_legend(data: &[u8]) -> Result<(Vec<u8>, usize), Error> {
     if data.len() < 2 {
-        return Err(ser_err("Unexpected end of header data."));
+        return Err(ser_err("the item's header (aws_dbe_head) ends early"));
     }
     let size = read_u16(data, 0) + 2;
     if size > data.len() {
-        return Err(ser_err("Unexpected end of header data."));
+        return Err(ser_err("the item's header (aws_dbe_head) ends early"));
     }
     let legend = data[2..size].to_vec();
     if !legend.iter().copied().all(valid_legend_byte) {
-        return Err(ser_err("Invalid byte in stored legend"));
+        return Err(ser_err(
+            "the item's header (aws_dbe_head) has an unknown byte in its legend",
+        ));
     }
     Ok((legend, size))
 }
 
 fn utf8(bytes: &[u8]) -> Result<String, Error> {
-    String::from_utf8(bytes.to_vec()).map_err(|_| ser_err("Invalid UTF8 found in header."))
+    String::from_utf8(bytes.to_vec())
+        .map_err(|_| ser_err("the item's header (aws_dbe_head) has a string that is not UTF-8"))
 }
 
 fn get_context(data: &[u8]) -> Result<(EncryptionContext, usize), Error> {
     if data.len() < 2 {
-        return Err(ser_err("Unexpected end of header data."));
+        return Err(ser_err("the item's header (aws_dbe_head) ends early"));
     }
     let count = read_u16(data, 0);
     let mut pos = 2usize;
@@ -325,26 +352,30 @@ fn get_context(data: &[u8]) -> Result<(EncryptionContext, usize), Error> {
     let mut prev_key: Vec<u8> = Vec::new();
     for _ in 0..count {
         if map.len() + 1 >= UINT16_LIMIT {
-            return Err(ser_err("Too much context"));
+            return Err(ser_err(
+                "the item's header (aws_dbe_head) has too many encryption context entries",
+            ));
         }
         if pos + 2 > data.len() {
-            return Err(ser_err("Unexpected end of header data."));
+            return Err(ser_err("the item's header (aws_dbe_head) ends early"));
         }
         let key_len = read_u16(data, pos);
         if key_len + 4 + pos > data.len() {
-            return Err(ser_err("Unexpected end of header data."));
+            return Err(ser_err("the item's header (aws_dbe_head) ends early"));
         }
         let key = &data[pos + 2..pos + 2 + key_len];
         let key_str = utf8(key)?;
         let value_len = read_u16(data, pos + 2 + key_len);
         let kv_len = 2 + key_len + 2 + value_len;
         if kv_len + pos > data.len() {
-            return Err(ser_err("Unexpected end of header data."));
+            return Err(ser_err("the item's header (aws_dbe_head) ends early"));
         }
         let value = utf8(&data[pos + key_len + 4..pos + kv_len])?;
         // Keys must be strictly ascending, which also rules out duplicates.
         if !bytes_less(&prev_key, key) {
-            return Err(ser_err("Context keys out of order."));
+            return Err(ser_err(
+                "the item's header (aws_dbe_head) has encryption context keys that are not in sorted order",
+            ));
         }
         prev_key = key.to_vec();
         map.insert(key_str, value);
@@ -365,30 +396,30 @@ fn bytes_less(a: &[u8], b: &[u8]) -> bool {
 fn get_one_data_key(data: &[u8], pos: usize) -> Result<(EncryptedDataKey, usize), Error> {
     let size = data.len();
     if 2 + pos >= size {
-        return Err(ser_err("Unexpected end of header data."));
+        return Err(ser_err("the item's header (aws_dbe_head) ends early"));
     }
     let prov_id_size = read_u16(data, pos);
     if prov_id_size + 2 + pos >= size {
-        return Err(ser_err("Unexpected end of header data."));
+        return Err(ser_err("the item's header (aws_dbe_head) ends early"));
     }
     let prov_id = utf8(&data[pos + 2..pos + 2 + prov_id_size])?;
     let part1 = 2 + prov_id_size;
     if part1 + 2 + pos > size {
-        return Err(ser_err("Unexpected end of header data."));
+        return Err(ser_err("the item's header (aws_dbe_head) ends early"));
     }
     let prov_info_size = read_u16(data, pos + part1);
     let part2 = part1 + 2 + prov_info_size;
     if part2 + pos >= size {
-        return Err(ser_err("Unexpected end of header data."));
+        return Err(ser_err("the item's header (aws_dbe_head) ends early"));
     }
     let prov_info = data[pos + part1 + 2..pos + part2].to_vec();
     if part2 + 2 + pos > size {
-        return Err(ser_err("Unexpected end of header data."));
+        return Err(ser_err("the item's header (aws_dbe_head) ends early"));
     }
     let cipher_size = read_u16(data, pos + part2);
     let part3 = part2 + 2 + cipher_size;
     if part3 + pos > size {
-        return Err(ser_err("Unexpected end of header data."));
+        return Err(ser_err("the item's header (aws_dbe_head) ends early"));
     }
     let cipher = data[pos + part2 + 2..pos + part3].to_vec();
     let edk = EncryptedDataKey::builder()
@@ -401,20 +432,24 @@ fn get_one_data_key(data: &[u8], pos: usize) -> Result<(EncryptedDataKey, usize)
 
 fn get_data_keys(data: &[u8]) -> Result<(Vec<EncryptedDataKey>, usize), Error> {
     let Some(&count) = data.first() else {
-        return Err(ser_err("Unexpected end of header data."));
+        return Err(ser_err("the item's header (aws_dbe_head) ends early"));
     };
     let mut keys = Vec::with_capacity(usize::from(count));
     let mut pos = 1usize;
     for _ in 0..count {
         if keys.len() >= 255 {
-            return Err(ser_err("Too Many Data Keys"));
+            return Err(ser_err(
+                "the item's header (aws_dbe_head) has too many encrypted data keys",
+            ));
         }
         let (edk, len) = get_one_data_key(data, pos)?;
         keys.push(edk);
         pos += len;
     }
     if keys.is_empty() {
-        return Err(ser_err("At least one Data Key required"));
+        return Err(ser_err(
+            "the item's header (aws_dbe_head) has no encrypted data keys",
+        ));
     }
     Ok((keys, pos))
 }

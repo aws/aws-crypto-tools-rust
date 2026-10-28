@@ -109,7 +109,10 @@ fn round_trip_with_commitment_and_tamper() {
     assert_same_header(&PartialHeader::deserialize(&bad).unwrap(), &head);
     let err = PartialHeader::verify_commitment(DigestAlg::Sha512, &key, &bad).unwrap_err();
     assert_eq!(err.kind(), Kind::Cryptographic);
-    assert_eq!(err.message(), "Key commitment mismatch.");
+    assert_eq!(
+        err.message(),
+        "the item's header (aws_dbe_head) failed its key commitment check: the header was changed, or the data key is not the one it was written with"
+    );
 
     let err = PartialHeader::verify_commitment(DigestAlg::Sha512, &[0u8; 32], &ser).unwrap_err();
     assert_eq!(err.kind(), Kind::Cryptographic);
@@ -143,7 +146,10 @@ fn context_serialization_and_duplicate_key() {
     ];
     let err = get_context(&bad).unwrap_err();
     assert_eq!(err.kind(), Kind::Serialization);
-    assert_eq!(err.message(), "Context keys out of order.");
+    assert_eq!(
+        err.message(),
+        "the item's header (aws_dbe_head) has encryption context keys that are not in sorted order"
+    );
 }
 
 // Header.dfy TestOutOfOrderContext.
@@ -155,7 +161,10 @@ fn context_out_of_order() {
     ];
     let err = get_context(&bad).unwrap_err();
     assert_eq!(err.kind(), Kind::Serialization);
-    assert_eq!(err.message(), "Context keys out of order.");
+    assert_eq!(
+        err.message(),
+        "the item's header (aws_dbe_head) has encryption context keys that are not in sorted order"
+    );
 }
 
 // The reference starts the order check from an empty previous key and requires strictly
@@ -170,7 +179,7 @@ fn context_empty_key_rejected_empty_value_accepted() {
     let empty_key = [0, 1, 0, 0, 0, 1, b'x'];
     assert_eq!(
         get_context(&empty_key).unwrap_err().message(),
-        "Context keys out of order."
+        "the item's header (aws_dbe_head) has encryption context keys that are not in sorted order"
     );
 }
 
@@ -185,19 +194,23 @@ fn context_truncations_and_bad_utf8() {
     ] {
         let err = get_context(bad).unwrap_err();
         assert_eq!(err.kind(), Kind::Serialization);
-        assert_eq!(err.message(), "Unexpected end of header data.", "{bad:?}");
+        assert_eq!(
+            err.message(),
+            "the item's header (aws_dbe_head) ends early",
+            "{bad:?}"
+        );
     }
     assert_eq!(
         get_context(&[0, 1, 0, 1, 0xFF, 0, 0])
             .unwrap_err()
             .message(),
-        "Invalid UTF8 found in header."
+        "the item's header (aws_dbe_head) has a string that is not UTF-8"
     );
     assert_eq!(
         get_context(&[0, 1, 0, 1, b'a', 0, 1, 0xFF])
             .unwrap_err()
             .message(),
-        "Invalid UTF8 found in header."
+        "the item's header (aws_dbe_head) has a string that is not UTF-8"
     );
 }
 
@@ -303,19 +316,25 @@ fn deserialize_rejects_bad_prefix() {
     };
     assert_eq!(
         ser_message(&good[..PREFIX_LEN - 1]),
-        "Serialized PartialHeader too short."
+        "the item's header (aws_dbe_head) is too short"
     );
     for version in [0u8, 3] {
         let mut bad = good.clone();
         bad[0] = version;
-        assert_eq!(ser_message(&bad), "Invalid Version Number");
+        assert_eq!(
+            ser_message(&bad),
+            "the item's header (aws_dbe_head) has an unknown version"
+        );
     }
     let mut v2 = good.clone();
     v2[0] = 2;
     assert_eq!(PartialHeader::deserialize(&v2).unwrap().version, 2);
     let mut bad = good.clone();
     bad[1] = 2;
-    assert_eq!(ser_message(&bad), "Invalid Flavor");
+    assert_eq!(
+        ser_message(&bad),
+        "the item's header (aws_dbe_head) names an unknown algorithm suite"
+    );
     let mut flavor0 = good;
     flavor0[1] = 0;
     assert_eq!(PartialHeader::deserialize(&flavor0).unwrap().flavor, 0);
@@ -326,15 +345,24 @@ fn deserialize_rejects_bad_legend() {
     let mut bad = reference_header_bytes();
     bad.extend_from_slice(&[0u8; COMMITMENT_LEN]);
     bad[PREFIX_LEN + 3] = b'x';
-    assert_eq!(ser_message(&bad), "Invalid byte in stored legend");
+    assert_eq!(
+        ser_message(&bad),
+        "the item's header (aws_dbe_head) has an unknown byte in its legend"
+    );
 
     let prefix = reference_header_bytes()[..PREFIX_LEN].to_vec();
     let mut one_byte = prefix.clone();
     one_byte.push(0);
-    assert_eq!(ser_message(&one_byte), "Unexpected end of header data.");
+    assert_eq!(
+        ser_message(&one_byte),
+        "the item's header (aws_dbe_head) ends early"
+    );
     let mut long = prefix;
     long.extend_from_slice(&[0, 3, E, S]);
-    assert_eq!(ser_message(&long), "Unexpected end of header data.");
+    assert_eq!(
+        ser_message(&long),
+        "the item's header (aws_dbe_head) ends early"
+    );
 }
 
 #[test]
@@ -343,13 +371,13 @@ fn deserialize_rejects_bad_trailer() {
     short.extend_from_slice(&[0u8; COMMITMENT_LEN - 1]);
     assert_eq!(
         ser_message(&short),
-        "Invalid header serialization: unexpected end of data."
+        "the item's header (aws_dbe_head) ends early"
     );
     let mut long = reference_header_bytes();
     long.extend_from_slice(&[0u8; COMMITMENT_LEN + 1]);
     assert_eq!(
         ser_message(&long),
-        "Invalid header serialization: unexpected bytes."
+        "the item's header (aws_dbe_head) has extra bytes at the end"
     );
 }
 
@@ -370,7 +398,11 @@ fn data_keys_truncations() {
     for cut in 0..keys.len() {
         let err = get_data_keys(&keys[..cut]).unwrap_err();
         assert_eq!(err.kind(), Kind::Serialization, "cut {cut}");
-        assert_eq!(err.message(), "Unexpected end of header data.", "cut {cut}");
+        assert_eq!(
+            err.message(),
+            "the item's header (aws_dbe_head) ends early",
+            "cut {cut}"
+        );
     }
 }
 
@@ -378,13 +410,13 @@ fn data_keys_truncations() {
 fn data_keys_count_and_utf8() {
     assert_eq!(
         get_data_keys(&[0]).unwrap_err().message(),
-        "At least one Data Key required"
+        "the item's header (aws_dbe_head) has no encrypted data keys"
     );
     assert_eq!(
         get_data_keys(&[1, 0, 1, 0xFF, 0, 0, 0, 0])
             .unwrap_err()
             .message(),
-        "Invalid UTF8 found in header."
+        "the item's header (aws_dbe_head) has a string that is not UTF-8"
     );
     // Two keys: the second starts right after the first.
     let two = serialize_data_keys(&[edk("a", &[1], &[2]), edk("b", &[], &[3, 4])]);
@@ -461,16 +493,25 @@ fn create_rejects_bad_materials() {
     let big = "x".repeat(UINT16_LIMIT);
     let mat = dbe_materials(one(), context(&[("k", big.as_str())]), &[]);
     let err = PartialHeader::create(&schema, MSG_ID, &mat).unwrap_err();
-    assert_eq!(err.message(), "Invalid Encryption Context");
+    assert_eq!(
+        err.message(),
+        "the encryption context cannot be stored: it has 65536 or more entries, or a key or value of 65536 or more bytes"
+    );
 
     let mat = dbe_materials(Vec::new(), EncryptionContext::new(), &[]);
     let err = PartialHeader::create(&schema, MSG_ID, &mat).unwrap_err();
-    assert_eq!(err.message(), "There must be at least one data key");
+    assert_eq!(
+        err.message(),
+        "the encryption materials have no encrypted data keys"
+    );
 
     let many: Vec<_> = (0..UINT8_LIMIT).map(|_| edk("p", &[], &[1])).collect();
     let mat = dbe_materials(many, EncryptionContext::new(), &[]);
     let err = PartialHeader::create(&schema, MSG_ID, &mat).unwrap_err();
-    assert_eq!(err.message(), "Too many data keys.");
+    assert_eq!(
+        err.message(),
+        "the encryption materials have more than 255 encrypted data keys"
+    );
 
     let mat = dbe_materials(
         vec![edk("p", &[], &vec![0u8; UINT16_LIMIT])],
@@ -478,7 +519,10 @@ fn create_rejects_bad_materials() {
         &[],
     );
     let err = PartialHeader::create(&schema, MSG_ID, &mat).unwrap_err();
-    assert_eq!(err.message(), "Invalid Data Key");
+    assert_eq!(
+        err.message(),
+        "an encrypted data key cannot be stored: a field of it is 65536 or more bytes"
+    );
 
     let mat = EncryptionMaterials::builder()
         .algorithm_suite_id(MplAlgorithmSuiteId::Esdk(
@@ -492,7 +536,7 @@ fn create_rejects_bad_materials() {
     assert_eq!(err.kind(), Kind::Validation);
     assert_eq!(
         err.message(),
-        "Algorithm Suite not suitable for structured encryption."
+        "the materials use an algorithm suite that is not a DB-ESDK algorithm suite"
     );
 }
 

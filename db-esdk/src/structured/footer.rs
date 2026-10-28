@@ -36,7 +36,9 @@ fn canonical_field(item: &CanonItem, out: &mut Vec<u8>) -> Result<(), Error> {
     out.extend_from_slice(&item.canon);
     if item.action == CryptoAction::EncryptAndSign {
         if value.len() < 2 {
-            return Err(ser_err("Bad length."));
+            return Err(ser_err(
+                "an encrypted attribute is too short to hold its type",
+            ));
         }
         out.extend_from_slice(&u64_len(value.len() - 2).to_be_bytes());
         out.extend_from_slice(ENCRYPTED);
@@ -138,19 +140,23 @@ impl Footer {
         let len = data.len();
         let (tags_data, sig) = if has_sig {
             if len < RECIPIENT_TAG_SIZE + SIGNATURE_SIZE {
-                return Err(ser_err("Footer too short."));
+                return Err(ser_err("the item's footer (aws_dbe_foot) is too short"));
             }
             if !(len - SIGNATURE_SIZE).is_multiple_of(RECIPIENT_TAG_SIZE) {
-                return Err(ser_err("Mangled signed footer has strange size"));
+                return Err(ser_err(
+                    "the item's footer (aws_dbe_foot) has the wrong length for an algorithm suite with ECDSA",
+                ));
             }
             let (t, s) = data.split_at(len - SIGNATURE_SIZE);
             (t, Some(s.to_vec()))
         } else {
             if !len.is_multiple_of(RECIPIENT_TAG_SIZE) {
-                return Err(ser_err("Mangled unsigned footer has strange size"));
+                return Err(ser_err(
+                    "the item's footer (aws_dbe_foot) has the wrong length for an algorithm suite without ECDSA",
+                ));
             }
             if len < RECIPIENT_TAG_SIZE {
-                return Err(ser_err("Footer too short."));
+                return Err(ser_err("the item's footer (aws_dbe_foot) is too short"));
             }
             (data, None)
         };
@@ -171,7 +177,7 @@ impl Footer {
     ) -> Result<(), Error> {
         if edk_count != self.tags.len() {
             return Err(ser_err(
-                "There are a different number of recipient tags in the stored header than there are in the decryption materials.",
+                "the item's footer (aws_dbe_foot) has a different number of recipient tags than its header has encrypted data keys",
             ));
         }
         let hash = canon_hash(data, header, mat.encryption_context())?;
@@ -190,7 +196,7 @@ impl Footer {
             .is_some();
         if self.sig.is_some() != has_ecdsa {
             return Err(crypt_err(
-                "Internal error. Signature both does and does not exist.",
+                "the item's footer (aws_dbe_foot) does not match the algorithm suite: one has an ECDSA signature and the other does not",
             ));
         }
         if let Some(sig) = &self.sig {
@@ -203,7 +209,9 @@ impl Footer {
                 &hash,
                 sig,
             )? {
-                return Err(crypt_err("Signature did not verify"));
+                return Err(crypt_err(
+                    "the item's ECDSA signature did not verify: the item was changed after it was written",
+                ));
             }
         }
         Ok(())

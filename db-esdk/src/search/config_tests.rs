@@ -1625,13 +1625,13 @@ async fn version_numbers_must_be_one() {
     table.search.as_mut().unwrap().write_version = 2;
     assert_eq!(
         validation_message(convert(&table)),
-        "writeVersion must be '1'."
+        "write_version must be 1"
     );
     table.search.as_mut().unwrap().write_version = 1;
     table.search.as_mut().unwrap().versions[0].version = 2;
     assert_eq!(
         validation_message(convert(&table)),
-        "Version number in BeaconVersion must be '1'."
+        "the beacon version's version must be 1"
     );
     table.search.as_mut().unwrap().versions[0].version = 1;
     table.search.as_mut().unwrap().versions[0]
@@ -1644,7 +1644,7 @@ async fn version_numbers_must_be_one() {
     table.search.as_mut().unwrap().versions.clear();
     assert_eq!(
         validation_message(convert(&table)),
-        "search config must be have exactly one version."
+        "the search config must have exactly one beacon version"
     );
 }
 
@@ -1728,7 +1728,7 @@ async fn duplicate_names() {
     ));
     assert_eq!(
         validation_message(convert_with(&[], version)),
-        "Duplicate CompoundBeacon name : Name"
+        "two compound beacons are named Name"
     );
     let version = lotsa_beacons(store()).virtual_fields(name_title_field());
     assert_eq!(
@@ -1802,7 +1802,7 @@ async fn bad_locations_are_rejected() {
     let version = lotsa_beacons(store()).standard_beacons(standard("bad", 16, Some("std4[x]")));
     assert_eq!(
         validation_message(convert_with(&[], version)),
-        "Unexpected character in number : x"
+        "a list index in a path has a character that is not a digit: x"
     );
 }
 
@@ -2016,7 +2016,7 @@ async fn cache_ttl_must_be_at_least_one_second() {
     );
     assert_eq!(
         validation_message(convert_with(&[], lotsa_beacons(store()).key_source(single))),
-        "Beacon Cache TTL must be at least 1."
+        "the beacon key cache TTL must be at least 1 second"
     );
     let multi = BeaconKeySource::Multi(
         MultiKeyStore::builder()
@@ -2027,6 +2027,6 @@ async fn cache_ttl_must_be_at_least_one_second() {
     );
     assert_eq!(
         validation_message(convert_with(&[], lotsa_beacons(store()).key_source(multi))),
-        "Beacon Cache TTL must be at least 1."
+        "the beacon key cache TTL must be at least 1 second"
     );
 }

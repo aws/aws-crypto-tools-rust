@@ -103,7 +103,10 @@ async fn tampered_header_message_id_fails_key_commitment() {
     // Byte 2 is the first byte of the message id, from which the commitment key is derived.
     let data = with_value(encrypted_default().await, HEADER, |v| v[2] ^= 1);
     let err = decrypt(data).await.unwrap_err();
-    assert_cryptographic(&err, "Key commitment mismatch.");
+    assert_cryptographic(
+        &err,
+        "the item's header (aws_dbe_head) failed its key commitment check: the header was changed, or the data key is not the one it was written with",
+    );
 }
 
 #[tokio::test]
@@ -112,15 +115,24 @@ async fn tampered_header_commitment_fails() {
         *v.last_mut().unwrap() ^= 1;
     });
     let err = decrypt(data).await.unwrap_err();
-    assert_cryptographic(&err, "Key commitment mismatch.");
+    assert_cryptographic(
+        &err,
+        "the item's header (aws_dbe_head) failed its key commitment check: the header was changed, or the data key is not the one it was written with",
+    );
 }
 
 #[tokio::test]
 async fn tampered_header_version_and_flavor_fail_to_parse() {
     let data = with_value(encrypted_default().await, HEADER, |v| v[0] = 3);
-    assert_serialization(&decrypt(data).await.unwrap_err(), "Invalid Version Number");
+    assert_serialization(
+        &decrypt(data).await.unwrap_err(),
+        "the item's header (aws_dbe_head) has an unknown version",
+    );
     let data = with_value(encrypted_default().await, HEADER, |v| v[1] = 2);
-    assert_serialization(&decrypt(data).await.unwrap_err(), "Invalid Flavor");
+    assert_serialization(
+        &decrypt(data).await.unwrap_err(),
+        "the item's header (aws_dbe_head) names an unknown algorithm suite",
+    );
 }
 
 #[tokio::test]
@@ -159,13 +171,19 @@ async fn truncated_footer_fails_to_parse() {
     let data = with_value(encrypted_default().await, FOOTER, |v| {
         v.pop();
     });
-    assert_serialization(&decrypt(data).await.unwrap_err(), "Footer too short.");
+    assert_serialization(
+        &decrypt(data).await.unwrap_err(),
+        "the item's footer (aws_dbe_foot) is too short",
+    );
     let symmetric =
         encrypted(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeySymsigHmacSha384).await;
     let data = with_value(symmetric, FOOTER, |v| {
         v.pop();
     });
-    assert_serialization(&decrypt(data).await.unwrap_err(), "Mangled unsigned footer");
+    assert_serialization(
+        &decrypt(data).await.unwrap_err(),
+        "has the wrong length for an algorithm suite without ECDSA",
+    );
 }
 
 #[tokio::test]
@@ -291,14 +309,20 @@ async fn schema_change_is_detected_from_the_legend() {
     let err = decrypt_with(encrypted_default().await, schema, None)
         .await
         .unwrap_err();
-    assert_serialization(&err, "something that was unsigned is now signed.");
+    assert_serialization(
+        &err,
+        "an attribute written as unsigned is now configured as signed",
+    );
 
     let mut schema = test_authenticate_schema();
     schema.insert("bar".to_owned(), AuthenticateAction::DoNotSign);
     let err = decrypt_with(encrypted_default().await, schema, None)
         .await
         .unwrap_err();
-    assert_serialization(&err, "something that was signed is now unsigned.");
+    assert_serialization(
+        &err,
+        "an attribute written as signed is now configured as unsigned",
+    );
 }
 
 // ----- decrypt validation -----
@@ -312,7 +336,7 @@ async fn decrypt_requires_a_signed_field() {
     let err = decrypt_with(encrypted_default().await, schema, None)
         .await
         .unwrap_err();
-    assert_validation(&err, "At least one Authenticate Action must be SIGN");
+    assert_validation(&err, "at least one attribute must be signed");
 }
 
 #[tokio::test]
@@ -341,19 +365,22 @@ async fn decrypt_header_and_footer_must_be_present_binary_and_unsigned() {
         let mut schema = test_authenticate_schema();
         schema.remove(field);
         let err = decrypt_with(data, schema, None).await.unwrap_err();
-        assert_serialization(&err, &format!("The field name {field} is required."));
+        assert_serialization(&err, &format!("the item has no {field} attribute"));
 
         let data = encrypted_default().await;
         let mut data_wrong_type = data.clone();
         let value = data_wrong_type.remove(field).unwrap().into_value();
         data_wrong_type.insert(field.to_owned(), StructuredDataTerminal::new(STRING, value));
         let err = decrypt(data_wrong_type).await.unwrap_err();
-        assert_serialization(&err, &format!("{field} must be a binary Terminal."));
+        assert_serialization(
+            &err,
+            &format!("the item's {field} attribute must be binary"),
+        );
 
         let mut schema = test_authenticate_schema();
         schema.insert(field.to_owned(), AuthenticateAction::Sign);
         let err = decrypt_with(data, schema, None).await.unwrap_err();
-        assert_validation(&err, &format!("{field} must be DO_NOT_SIGN."));
+        assert_validation(&err, &format!("the {field} attribute must not be signed"));
     }
 }
 
@@ -369,7 +396,7 @@ async fn decrypt_path_rejects_duplicate_paths() {
         .send()
         .await
         .unwrap_err();
-    assert_validation(&err, "Duplicate Paths");
+    assert_validation(&err, "an attribute appears more than once");
 }
 
 // ----- encrypt validation -----
@@ -419,7 +446,7 @@ async fn encrypt_rejects_header_and_footer_paths() {
 async fn encrypt_rejects_duplicate_paths() {
     let item = CryptoItem::new(path(&["a"]), blob(), CryptoAction::SignOnly);
     let err = encrypt_path(vec![item.clone(), item], None).await;
-    assert_validation(&err, "Duplicate Paths");
+    assert_validation(&err, "an attribute appears more than once");
 }
 
 #[tokio::test]
@@ -477,9 +504,13 @@ async fn encrypt_rejects_paths_with_the_same_context_key() {
 #[tokio::test]
 async fn encrypt_rejects_malformed_context_values() {
     for (type_id, value, msg) in [
-        (STRING, vec![0xFF], "string was not UTF8."),
-        (NUMBER, vec![0xFF], "number was not UTF8."),
-        (BOOLEAN, vec![1, 1], "boolean was not of length 1."),
+        (STRING, vec![0xFF], "has a string value that is not UTF-8"),
+        (NUMBER, vec![0xFF], "has a number value that is not UTF-8"),
+        (
+            BOOLEAN,
+            vec![1, 1],
+            "has a boolean value that is not 1 byte",
+        ),
     ] {
         let err = encrypt_path(
             vec![CryptoItem::new(
@@ -511,7 +542,10 @@ async fn encrypt_schema_must_match_structure() {
             .send()
             .await
             .unwrap_err();
-        assert_validation(&err, "Crypto Keys don't match.");
+        assert_validation(
+            &err,
+            "the item's attributes do not match the attribute actions: each attribute needs exactly one action",
+        );
     }
 }
 
@@ -545,31 +579,31 @@ async fn resolve_auth_actions_failures() {
     dup.push(item("foo", sign));
     assert_validation(
         &resolve(dup, header.clone()).await.unwrap_err(),
-        "Duplicate Paths",
+        "an attribute appears more than once",
     );
 
     assert_serialization(
         &resolve(all(), header[..10].to_vec()).await.unwrap_err(),
-        "Serialized PartialHeader too short.",
+        "the item's header (aws_dbe_head) is too short",
     );
 
     let no_header = vec![item("foo", sign), item("bar", sign), item(FOOTER, unsigned)];
     assert_validation(
         &resolve(no_header, header.clone()).await.unwrap_err(),
-        "Header Required",
+        "the item has no aws_dbe_head attribute",
     );
 
     let no_footer = vec![item("foo", sign), item("bar", sign), item(HEADER, unsigned)];
     assert_validation(
         &resolve(no_footer, header.clone()).await.unwrap_err(),
-        "Footer Required",
+        "the item has no aws_dbe_foot attribute",
     );
 
     let mut extra_signed = all();
     extra_signed.push(item("fizzbuzz", sign));
     assert_serialization(
         &resolve(extra_signed, header).await.unwrap_err(),
-        "something that was unsigned is now signed.",
+        "an attribute written as unsigned is now configured as signed",
     );
 }
 

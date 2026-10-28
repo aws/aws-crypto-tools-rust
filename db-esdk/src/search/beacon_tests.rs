@@ -131,7 +131,7 @@ fn spec_beacon_fixture_matches_reference_vectors() {
 fn hash_str_without_a_key_fails() {
     let keys = hmac_keys(&["other"], &BEACON_KEY);
     let err = std_info("Name", 32, 1).hash_str("x", &keys, 0);
-    assert_eq!(val_msg(err), "Internal Error, no key for Name");
+    assert_eq!(val_msg(err), "no HMAC key for beacon Name");
 }
 
 #[test]

@@ -958,7 +958,7 @@ fn write_version_must_be_one() {
         .search(search)
         .build()
         .unwrap();
-    assert_eq!(val_msg(convert(&table)), "writeVersion must be '1'.");
+    assert_eq!(val_msg(convert(&table)), "write_version must be 1");
 }
 
 #[test]
@@ -970,7 +970,7 @@ fn exactly_one_version() {
     table.search.as_mut().unwrap().versions.clear();
     assert_eq!(
         val_msg(convert(&table)),
-        "search config must be have exactly one version."
+        "the search config must have exactly one beacon version"
     );
 }
 
@@ -978,7 +978,7 @@ fn exactly_one_version() {
 fn version_must_be_one() {
     let mut v = lotsa();
     v.version = 2;
-    assert_eq!(fail(v), "Version number in BeaconVersion must be '1'.");
+    assert_eq!(fail(v), "the beacon version's version must be 1");
 }
 
 #[test]
@@ -992,7 +992,10 @@ fn needs_a_standard_beacon() {
 fn cache_ttl_must_not_be_zero() {
     let mut v = lotsa();
     v.key_source = single_source("foo", 0);
-    assert_eq!(fail(v), "Beacon Cache TTL must be at least 1.");
+    assert_eq!(
+        fail(v),
+        "the beacon key cache TTL must be at least 1 second"
+    );
 }
 
 #[test]
@@ -1161,7 +1164,7 @@ fn standard_beacon_on_unencrypted_field() {
 fn standard_beacon_bad_location() {
     assert_eq!(
         fail(bare(vec![std_beacon("bad", 24, Some("std2["))])),
-        "List index must end with ]"
+        "a list index in a path must be written as [N]"
     );
 }
 
@@ -1224,18 +1227,21 @@ fn virtual_field_bad_location() {
         "Bad",
         vec![vpart("Name[x]", VirtualTransform::lower())],
     )]);
-    assert_eq!(fail(v), "Unexpected character in number : x");
+    assert_eq!(
+        fail(v),
+        "a list index in a path has a character that is not a digit: x"
+    );
 }
 
 #[test]
 fn duplicate_compound_beacon() {
     let mut v = bare(vec![name_b(), title_b()]);
     v.compound_beacons = Some(vec![name_title(), name_title()]);
-    assert_eq!(fail(v), "Duplicate CompoundBeacon name : NameTitle");
+    assert_eq!(fail(v), "two compound beacons are named NameTitle");
     // A compound beacon may not take a standard beacon's name either.
     let mut v = bare(vec![name_b(), title_b()]);
     v.compound_beacons = Some(vec![compound("Name", vec![title_p()], vec![], None)]);
-    assert_eq!(fail(v), "Duplicate CompoundBeacon name : Name");
+    assert_eq!(fail(v), "two compound beacons are named Name");
 }
 
 /// A version with `NameB` and `TitleB`, and one compound beacon `C` of Name and Title.

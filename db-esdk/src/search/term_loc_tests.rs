@@ -44,12 +44,21 @@ fn parse_paths() {
 
 #[test]
 fn parse_errors() {
-    assert_eq!(parse_err(""), "Path specification must not be empty.");
-    assert_eq!(parse_err("a[1"), "List index must end with ]");
-    assert_eq!(parse_err("a[1x]"), "Unexpected character in number : x");
+    assert_eq!(
+        parse_err(""),
+        "a beacon or virtual field path must not be empty"
+    );
+    assert_eq!(
+        parse_err("a[1"),
+        "a list index in a path must be written as [N]"
+    );
+    assert_eq!(
+        parse_err("a[1x]"),
+        "a list index in a path has a character that is not a digit: x"
+    );
     assert_eq!(
         parse_err("a[99999999999999999999]"),
-        "Number is too big for list index : 99999999999999999999"
+        "a list index in a path is too big: 99999999999999999999"
     );
 }
 
@@ -105,20 +114,20 @@ fn get_terminal_errors() {
     };
     assert_eq!(
         err(vec![Selector::List(0)], top),
-        "Tried to access map with index"
+        "the path uses a list index on a map"
     );
     let list = AttributeValue::L(vec![]);
     assert_eq!(
         err(vec![Selector::Map("x".to_owned())], &list),
-        "Tried to access list with key"
+        "the path uses a map key on a list"
     );
     assert_eq!(
         err(vec![Selector::List(0)], &list),
-        "Tried to access beyond the end of the list"
+        "the path's list index is past the end of the list"
     );
     assert_eq!(
         err(vec![Selector::Map("zz".to_owned())], top),
-        "Tried to access zz which is not in the map."
+        "the path\'s key zz is not in the map"
     );
     let kinds = [
         (s("x"), "string"),
@@ -150,28 +159,28 @@ fn term_to_string() {
     assert_eq!(get("missing").unwrap(), None);
     assert_eq!(
         get("bin").unwrap_err().message(),
-        "Can't convert Binary to string"
+        "a beacon cannot be built from a binary value"
     );
     assert_eq!(
         get("a.b").unwrap_err().message(),
-        "Can't convert List to string."
+        "a beacon cannot be built from a list"
     );
     assert_eq!(
         get("a").unwrap_err().message(),
-        "Can't convert Map to string."
+        "a beacon cannot be built from a map"
     );
     for (v, msg) in [
         (
             AttributeValue::Ss(vec![]),
-            "Can't convert String Set to string.",
+            "a beacon cannot be built from a string set; use a set beacon",
         ),
         (
             AttributeValue::Ns(vec![]),
-            "Can't convert Number Set to string.",
+            "a beacon cannot be built from a number set",
         ),
         (
             AttributeValue::Bs(vec![]),
-            "Can't convert Binary Set to string.",
+            "a beacon cannot be built from a binary set",
         ),
     ] {
         assert_eq!(attr_value_to_string(&v).unwrap_err().message(), msg);

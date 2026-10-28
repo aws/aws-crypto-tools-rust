@@ -39,7 +39,7 @@ impl TermLoc {
     /// Parse a path: `name`, followed by `.key` and `[index]` segments.
     pub(crate) fn parse(s: &str) -> Result<Self, Error> {
         if s.is_empty() {
-            return Err(val_err("Path specification must not be empty."));
+            return Err(val_err("a beacon or virtual field path must not be empty"));
         }
         let Some(pos) = find_start_of_next(s) else {
             return Ok(Self::attribute(s));
@@ -105,26 +105,24 @@ fn get_terminal<'a>(
     match v {
         AttributeValue::L(l) => {
             let Selector::List(pos) = first else {
-                return Err(val_err("Tried to access list with key"));
+                return Err(val_err("the path uses a map key on a list"));
             };
             let next = usize::try_from(*pos)
                 .ok()
                 .and_then(|p| l.get(p))
-                .ok_or_else(|| val_err("Tried to access beyond the end of the list"))?;
+                .ok_or_else(|| val_err("the path's list index is past the end of the list"))?;
             get_terminal(next, rest, names)
         }
         AttributeValue::M(m) => {
             let Selector::Map(key) = first else {
-                return Err(val_err("Tried to access map with index"));
+                return Err(val_err("the path uses a list index on a map"));
             };
             let next = match m.get(key) {
                 Some(n) => n,
                 None => names
                     .and_then(|n| n.get(key))
                     .and_then(|real| m.get(real))
-                    .ok_or_else(|| {
-                        val_err(format!("Tried to access {key} which is not in the map."))
-                    })?,
+                    .ok_or_else(|| val_err(format!("the path's key {key} is not in the map")))?,
             };
             get_terminal(next, rest, names)
         }
@@ -150,12 +148,14 @@ fn attr_value_to_string(v: &AttributeValue) -> Result<String, Error> {
         AttributeValue::S(s) | AttributeValue::N(s) => Ok(s.clone()),
         AttributeValue::Bool(b) => Ok(if *b { "true" } else { "false" }.to_owned()),
         AttributeValue::Null(_) => Ok("null".to_owned()),
-        AttributeValue::B(_) => Err(val_err("Can't convert Binary to string")),
-        AttributeValue::Ss(_) => Err(val_err("Can't convert String Set to string.")),
-        AttributeValue::Ns(_) => Err(val_err("Can't convert Number Set to string.")),
-        AttributeValue::Bs(_) => Err(val_err("Can't convert Binary Set to string.")),
-        AttributeValue::L(_) => Err(val_err("Can't convert List to string.")),
-        _ => Err(val_err("Can't convert Map to string.")),
+        AttributeValue::B(_) => Err(val_err("a beacon cannot be built from a binary value")),
+        AttributeValue::Ss(_) => Err(val_err(
+            "a beacon cannot be built from a string set; use a set beacon",
+        )),
+        AttributeValue::Ns(_) => Err(val_err("a beacon cannot be built from a number set")),
+        AttributeValue::Bs(_) => Err(val_err("a beacon cannot be built from a binary set")),
+        AttributeValue::L(_) => Err(val_err("a beacon cannot be built from a list")),
+        _ => Err(val_err("a beacon cannot be built from a map")),
     }
 }
 
@@ -200,7 +200,7 @@ fn selector(s: &str) -> Result<Selector, Error> {
     let inner = s
         .strip_prefix('[')
         .and_then(|r| r.strip_suffix(']'))
-        .ok_or_else(|| val_err("List index must end with ]"))?;
+        .ok_or_else(|| val_err("a list index in a path must be written as [N]"))?;
     number(inner).map(Selector::List)
 }
 
@@ -209,10 +209,12 @@ fn number(s: &str) -> Result<u64, Error> {
     let mut acc: u64 = 0;
     for c in s.chars() {
         let Some(d) = c.to_digit(10) else {
-            return Err(val_err(format!("Unexpected character in number : {c}")));
+            return Err(val_err(format!(
+                "a list index in a path has a character that is not a digit: {c}"
+            )));
         };
         if acc >= 0x0fff_ffff_ffff_ffff {
-            return Err(val_err(format!("Number is too big for list index : {s}")));
+            return Err(val_err(format!("a list index in a path is too big: {s}")));
         }
         acc = acc * 10 + u64::from(d);
     }

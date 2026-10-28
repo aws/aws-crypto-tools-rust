@@ -665,18 +665,51 @@ fn malformed_expressions_fail_validation() {
     let item = map(&[("one", ds("abc")), ("two", ds("abd"))]);
     let values = Item::new();
     let cases = [
-        ("one < :missing", "wrong types for comparison"),
-        ("not one", "wrong type for Not"),
-        ("not", "Empty stack for unary op"),
-        ("one", "ended with bad stack"),
-        ("one two", "ended with bad stack"),
-        ("one and two", "wrong types for boolean binary"),
-        ("and", "Empty stack for binary op"),
-        ("one between :missing and two", "Wrong Types for Between"),
-        ("begins_with(one, :missing)", "Wrong Types for BeginsWith"),
-        ("contains(one, :missing)", "Wrong Types for contains"),
-        ("size(:missing) = one", "Wrong Types for Size"),
-        ("attribute_exists()", "Empty stack for function call"),
+        (
+            "one < :missing",
+            "the filter expression compares something that is not a value",
+        ),
+        (
+            "not one",
+            "the filter expression's NOT operand is not true or false",
+        ),
+        ("not", "the filter expression's NOT has no operand"),
+        (
+            "one",
+            "the filter expression does not evaluate to true or false",
+        ),
+        (
+            "one two",
+            "the filter expression does not evaluate to true or false",
+        ),
+        (
+            "one and two",
+            "the filter expression has an AND or OR operand that is not true or false",
+        ),
+        (
+            "and",
+            "the filter expression has an operator with a missing operand",
+        ),
+        (
+            "one between :missing and two",
+            "the filter expression's BETWEEN operands must be values",
+        ),
+        (
+            "begins_with(one, :missing)",
+            "the filter expression's begins_with operands must be values",
+        ),
+        (
+            "contains(one, :missing)",
+            "the filter expression's contains operands must be values",
+        ),
+        (
+            "size(:missing) = one",
+            "the filter expression's size operand must be a value",
+        ),
+        (
+            "attribute_exists()",
+            "the filter expression has a function with missing arguments",
+        ),
     ];
     for (expr, msg) in cases {
         assert_eq!(filter_err(expr, &item, &values).message(), msg, "{expr}");
@@ -692,9 +725,15 @@ fn stack_shape_errors() {
     let rpn = [t.clone(), t.clone(), Token::Eq, t, Token::Eq];
     let err = eval_expr(&rpn, &item, None, &values).unwrap_err();
     assert!(matches!(err, Error::Validation(..)));
-    assert_eq!(err.message(), "wrong types for comparison");
+    assert_eq!(
+        err.message(),
+        "the filter expression compares something that is not a value"
+    );
     let err = eval_expr(&[Token::Between], &item, None, &values).unwrap_err();
-    assert_eq!(err.message(), "Empty stack for function call");
+    assert_eq!(
+        err.message(),
+        "the filter expression has a function with missing arguments"
+    );
     let err = eval_expr(&[Token::In], &item, None, &values).unwrap_err();
-    assert_eq!(err.message(), "In has no args");
+    assert_eq!(err.message(), "the filter expression's IN has no values");
 }

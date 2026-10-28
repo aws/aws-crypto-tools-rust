@@ -153,10 +153,12 @@ pub(crate) fn convert(table: &TableConfig) -> Result<Option<SearchInfo>, Error> 
         return Ok(None);
     };
     if search.write_version != 1 {
-        return Err(val_err("writeVersion must be '1'."));
+        return Err(val_err("write_version must be 1"));
     }
     let [version] = search.versions.as_slice() else {
-        return Err(val_err("search config must be have exactly one version."));
+        return Err(val_err(
+            "the search config must have exactly one beacon version",
+        ));
     };
     let outer = Outer {
         actions: &table.attribute_actions_on_encrypt,
@@ -179,7 +181,9 @@ pub(crate) fn convert(table: &TableConfig) -> Result<Option<SearchInfo>, Error> 
         )));
     }
     if !signed.iter().all(|s| is_valid_attribute_name(s)) {
-        return Err(val_err("Beacon configured with bad name"));
+        return Err(val_err(
+            "a signed beacon's name is not a valid attribute name",
+        ));
     }
     Ok(Some(SearchInfo { version }))
 }
@@ -187,7 +191,7 @@ pub(crate) fn convert(table: &TableConfig) -> Result<Option<SearchInfo>, Error> 
 /// Check and convert one beacon version.
 fn convert_version(outer: &Outer<'_>, config: &BeaconVersion) -> Result<BeaconVersionInfo, Error> {
     if config.version != 1 {
-        return Err(val_err("Version number in BeaconVersion must be '1'."));
+        return Err(val_err("the beacon version's version must be 1"));
     }
     if config.standard_beacons.is_empty() {
         return Err(val_err("At least one standard beacon must be configured."));
@@ -775,7 +779,7 @@ fn create_compound_beacon(
     )?;
 
     if converted.contains_key(name) {
-        return Err(val_err(format!("Duplicate CompoundBeacon name : {name}")));
+        return Err(val_err(format!("two compound beacons are named {name}")));
     }
     if beacon.constructors.as_ref().is_some_and(Vec::is_empty) {
         return Err(val_err(format!(

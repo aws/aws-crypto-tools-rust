@@ -209,7 +209,10 @@ fn virtual_field_part_that_is_not_a_string_fails() {
     it.insert("bar".to_owned(), AttributeValue::Ss(vec!["a".to_owned()]));
     let err = my_field().value(&it).unwrap_err();
     assert!(matches!(err, Error::Validation(_)));
-    assert_eq!(err.message(), "Can't convert String Set to string.");
+    assert_eq!(
+        err.message(),
+        "a beacon cannot be built from a string set; use a set beacon"
+    );
 }
 
 #[test]

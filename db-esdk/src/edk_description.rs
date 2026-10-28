@@ -74,7 +74,7 @@ pub fn describe_encrypted_data_keys<S: BuildHasher>(
 ) -> Result<Vec<EncryptedDataKeyDescription>, Error> {
     match item.get(HEADER_FIELD) {
         Some(AttributeValue::B(header)) => describe_header_encrypted_data_keys(header.as_ref()),
-        _ => Err(val_err("Header not found in the DynamoDB item.")),
+        _ => Err(val_err("the item has no binary aws_dbe_head attribute")),
     }
 }
 
@@ -102,7 +102,7 @@ pub fn describe_header_encrypted_data_keys(
                 });
             }
             let info = std::str::from_utf8(edk.key_provider_info())
-                .map_err(|_| ser_err("Invalid UTF-8 in key provider info."))?
+                .map_err(|_| ser_err("an encrypted data key's key provider info is not UTF-8"))?
                 .to_owned();
             let branch_key_version = if key_provider_id == HIERARCHY_PROVIDER_ID {
                 Some(branch_key_version(edk.ciphertext(), header.flavor)?)
@@ -123,21 +123,23 @@ pub fn describe_header_encrypted_data_keys(
 fn branch_key_version(ciphertext: &[u8], flavor: u8) -> Result<String, Error> {
     // The header flavor is the second byte of the DBE suite id.
     let suite = MplAlgorithmSuiteId::from_id_bytes([DBE_ALGORITHM_FAMILY, flavor])
-        .ok_or_else(|| ser_err("Invalid format flavor."))?
+        .ok_or_else(|| {
+            ser_err("the item's header (aws_dbe_head) names an unknown algorithm suite")
+        })?
         .specification();
     // With intermediate key wrapping, the encrypted plaintext data key comes first,
     // and the material the branch key wrapped follows it.
     let provider_wrapped = match suite.edk_wrapping() {
         EdkWrapping::IntermediateKeyWrapping(_) => ciphertext
             .get(suite.encryption_key_length() + suite.authentication_tag_length()..)
-            .ok_or_else(|| ser_err("Unable to deserialize Intermediate Key Wrapped material."))?,
+            .ok_or_else(|| ser_err("a hierarchical keyring's encrypted data key is too short"))?,
         _ => ciphertext,
     };
     let start = SALT_LENGTH + IV_LENGTH;
     let version: &[u8; VERSION_LENGTH] = provider_wrapped
         .get(start..start + VERSION_LENGTH)
         .and_then(|v| v.try_into().ok())
-        .ok_or_else(|| ser_err("Incorrect ciphertext structure length."))?;
+        .ok_or_else(|| ser_err("a hierarchical keyring's encrypted data key is too short"))?;
     Ok(uuid_string(version))
 }
 
@@ -331,7 +333,7 @@ mod tests {
         for item in [wrong_name, not_binary] {
             match describe_encrypted_data_keys(&item) {
                 Err(Error::Validation(e)) => {
-                    assert_eq!(e.message(), "Header not found in the DynamoDB item.");
+                    assert_eq!(e.message(), "the item has no binary aws_dbe_head attribute");
                 }
                 other => panic!("{other:?}"),
             }
@@ -349,7 +351,7 @@ mod tests {
     fn malformed_header_fails() {
         assert_eq!(
             serialization_message(describe_header_encrypted_data_keys(&[1, 1])),
-            "Serialized PartialHeader too short."
+            "the item's header (aws_dbe_head) is too short"
         );
     }
 
@@ -358,7 +360,7 @@ mod tests {
         let bytes = header(1, vec![edk("aws-kms", &[0xFF], &[1])]);
         assert_eq!(
             serialization_message(describe_header_encrypted_data_keys(&bytes)),
-            "Invalid UTF-8 in key provider info."
+            "an encrypted data key's key provider info is not UTF-8"
         );
     }
 
@@ -368,13 +370,13 @@ mod tests {
         let bytes = header(1, vec![edk("aws-kms-hierarchy", b"id", &[0; 47])]);
         assert_eq!(
             serialization_message(describe_header_encrypted_data_keys(&bytes)),
-            "Unable to deserialize Intermediate Key Wrapped material."
+            "a hierarchical keyring's encrypted data key is too short"
         );
         // Long enough for the data key, too short for the branch key version.
         let bytes = header(1, vec![edk("aws-kms-hierarchy", b"id", &[0; 48 + 43])]);
         assert_eq!(
             serialization_message(describe_header_encrypted_data_keys(&bytes)),
-            "Incorrect ciphertext structure length."
+            "a hierarchical keyring's encrypted data key is too short"
         );
         let bytes = header(1, vec![edk("aws-kms-hierarchy", b"id", &[0; 48 + 44])]);
         assert_eq!(
@@ -389,7 +391,7 @@ mod tests {
             branch_key_version(&HIERARCHY_CIPHERTEXT, 2)
                 .unwrap_err()
                 .message(),
-            "Invalid format flavor."
+            "the item's header (aws_dbe_head) names an unknown algorithm suite"
         );
     }
 }

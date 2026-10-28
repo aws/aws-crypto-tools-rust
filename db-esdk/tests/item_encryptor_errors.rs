@@ -209,18 +209,18 @@ async fn decrypt_rejects_missing_partition_key() {
 async fn decrypt_rejects_malformed_header_attribute() {
     let encrypted = encrypted_v1_item().await;
     let cases: [(Option<AttributeValue>, &str); 4] = [
-        (None, "Header field, \"aws_dbe_head\", not in item."),
+        (None, "the item has no aws_dbe_head attribute"),
         (
             Some(s("text")),
-            "Header field, \"aws_dbe_head\", not binary",
+            "the item's aws_dbe_head attribute is not binary",
         ),
         (
             Some(AttributeValue::B(Blob::new(Vec::new()))),
-            "Unexpected empty header field.",
+            "the item's aws_dbe_head attribute is empty",
         ),
         (
             Some(AttributeValue::B(Blob::new(vec![3]))),
-            "Header attribute has unexpected version number",
+            "the item's aws_dbe_head attribute has an unknown version",
         ),
     ];
     for (header, expected) in cases {
@@ -345,7 +345,7 @@ async fn allow_plaintext_read_still_verifies_items_with_a_footer_only() {
     let encryptor = encryptor_with(PlaintextOverride::ForbidPlaintextWriteAllowPlaintextRead);
     assert_eq!(
         serialization_message(decrypt(&encryptor, item).await),
-        "Header field, \"aws_dbe_head\", not in item."
+        "the item has no aws_dbe_head attribute"
     );
 }
 
@@ -383,7 +383,7 @@ async fn removed_signed_attribute_fails() {
     item.remove("sign");
     assert_eq!(
         serialization_message(decrypt(&default_encryptor(), item).await),
-        "Schema changed : something that was signed is now unsigned."
+        "the attribute actions do not match the item: an attribute written as signed is now configured as unsigned"
     );
 }
 
@@ -393,7 +393,7 @@ async fn added_signed_attribute_fails() {
     item.insert("sign2".to_owned(), s("added"));
     assert_eq!(
         serialization_message(decrypt(&default_encryptor(), item).await),
-        "Schema changed : something that was unsigned is now signed."
+        "the attribute actions do not match the item: an attribute written as unsigned is now configured as signed"
     );
 }
 

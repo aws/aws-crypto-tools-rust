@@ -245,7 +245,7 @@ impl BeaconVersionInfo {
                             .and_then(|n| n.get(s))
                             .cloned()
                             .ok_or_else(|| {
-                                val_err(format!("Name {s} not in ExpressionAttributeNameMap."))
+                                val_err(format!("the expression uses {s}, which is not in ExpressionAttributeNames"))
                             })?
                     } else {
                         s.clone()
@@ -274,7 +274,9 @@ impl BeaconVersionInfo {
                 }
                 Token::Value(name) => {
                     let old_value = old_values.get(name).ok_or_else(|| {
-                        val_err(format!("{name} not found in ExpressionAttributeValueMap"))
+                        val_err(format!(
+                            "the expression uses {name}, which is not in ExpressionAttributeValues"
+                        ))
                     })?;
                     let eb = self.beacon_for_value(expr, pos, names.as_ref(), old_values)?;
                     let new_value = match eb.beacon {
@@ -412,7 +414,9 @@ impl BeaconVersionInfo {
                 continue;
             };
             let old_value = values.get(name).ok_or_else(|| {
-                val_err(format!("{name} not found in ExpressionAttributeValueMap"))
+                val_err(format!(
+                    "the expression uses {name}, which is not in ExpressionAttributeValues"
+                ))
             })?;
             if let AttributeValue::S(s) = old_value {
                 let attr = attr_for_value(&parsed, pos);
@@ -473,7 +477,9 @@ impl BeaconVersionInfo {
                 continue;
             };
             let old_value = values.get(name).ok_or_else(|| {
-                val_err(format!("{name} not found in ExpressionAttributeValueMap"))
+                val_err(format!(
+                    "the expression uses {name}, which is not in ExpressionAttributeValues"
+                ))
             })?;
             let s = match old_value {
                 AttributeValue::S(s) => s.as_str(),
@@ -764,7 +770,9 @@ fn make_new_name(prev: &str, values: &Values, value: &AttributeValue) -> Result<
             }
         }
     }
-    Err(val_err("Could not find new name"))
+    Err(val_err(
+        "could not pick an unused expression attribute value name",
+    ))
 }
 
 /// A character that can be part of a value name.

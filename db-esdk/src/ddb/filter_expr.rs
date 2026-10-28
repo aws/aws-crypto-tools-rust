@@ -526,7 +526,9 @@ fn apply_binary_comp(op: &Token, x: &AttributeValue, y: &AttributeValue) -> Resu
         Token::Lt => Ok(!attribute_le(y, x)?),
         Token::Ge => attribute_le(y, x),
         Token::Gt => Ok(!attribute_le(x, y)?),
-        _ => Err(eval_err("invalid op in apply_binary_bool")),
+        _ => Err(eval_err(
+            "the filter expression has an operator that is not a comparison, AND, or OR",
+        )),
     }
 }
 
@@ -536,7 +538,9 @@ fn apply_binary(op: &Token, x: &StackValue, y: &StackValue) -> Result<StackValue
             (StackValue::Str(x), StackValue::Str(y)) => {
                 Ok(StackValue::Bool(apply_binary_comp(op, x, y)?))
             }
-            _ => Err(eval_err("wrong types for comparison")),
+            _ => Err(eval_err(
+                "the filter expression compares something that is not a value",
+            )),
         }
     } else {
         match (x, y, op) {
@@ -544,10 +548,12 @@ fn apply_binary(op: &Token, x: &StackValue, y: &StackValue) -> Result<StackValue
                 Ok(StackValue::Bool(*x && *y))
             }
             (StackValue::Bool(x), StackValue::Bool(y), Token::Or) => Ok(StackValue::Bool(*x || *y)),
-            (StackValue::Bool(_), StackValue::Bool(_), _) => {
-                Err(eval_err("invalid op in apply_binary_bool"))
-            }
-            _ => Err(eval_err("wrong types for boolean binary")),
+            (StackValue::Bool(_), StackValue::Bool(_), _) => Err(eval_err(
+                "the filter expression has an operator that is not a comparison, AND, or OR",
+            )),
+            _ => Err(eval_err(
+                "the filter expression has an AND or OR operand that is not true or false",
+            )),
         }
     }
 }
@@ -586,19 +592,23 @@ fn apply_function(t: &Token, stack: &[StackValue]) -> Result<StackValue, Error> 
     match t {
         Token::Between => {
             if n < 3 {
-                return Err(eval_err("No Stack for Between"));
+                return Err(eval_err(
+                    "the filter expression's BETWEEN has too few operands",
+                ));
             }
             match (top(3), top(2), top(1)) {
                 (StackValue::Str(value), StackValue::Str(low), StackValue::Str(high)) => Ok(
                     StackValue::Bool(attribute_le(low, value)? && attribute_le(value, high)?),
                 ),
-                _ => Err(eval_err("Wrong Types for Between")),
+                _ => Err(eval_err(
+                    "the filter expression's BETWEEN operands must be values",
+                )),
             }
         }
         Token::In => {
             let num = strings_following(stack);
             if num == 0 {
-                return Err(eval_err("In has no args"));
+                return Err(eval_err("the filter expression's IN has no values"));
             }
             let target = stack[n - num].get_str();
             Ok(StackValue::Bool(
@@ -607,19 +617,25 @@ fn apply_function(t: &Token, stack: &[StackValue]) -> Result<StackValue, Error> 
         }
         Token::AttributeExists => {
             if n < 1 {
-                return Err(eval_err("No Stack for AttributeExists"));
+                return Err(eval_err(
+                    "the filter expression's attribute_exists or attribute_not_exists has no operand",
+                ));
             }
             Ok(StackValue::Bool(*top(1) != StackValue::DoesNotExist))
         }
         Token::AttributeNotExists => {
             if n < 1 {
-                return Err(eval_err("No Stack for AttributeExists"));
+                return Err(eval_err(
+                    "the filter expression's attribute_exists or attribute_not_exists has no operand",
+                ));
             }
             Ok(StackValue::Bool(*top(1) == StackValue::DoesNotExist))
         }
         Token::AttributeType => {
             if n < 2 {
-                return Err(eval_err("No Stack for AttributeType"));
+                return Err(eval_err(
+                    "the filter expression's attribute_type has too few operands",
+                ));
             }
             Ok(StackValue::Bool(
                 attr_type_to_str(&top(2).get_str()) == attr_to_str(&top(1).get_str()),
@@ -627,35 +643,45 @@ fn apply_function(t: &Token, stack: &[StackValue]) -> Result<StackValue, Error> 
         }
         Token::BeginsWith => {
             if n < 2 {
-                return Err(eval_err("No Stack for BeginsWith"));
+                return Err(eval_err(
+                    "the filter expression's begins_with has too few operands",
+                ));
             }
             match (top(2), top(1)) {
                 (StackValue::Str(h), StackValue::Str(nd)) => {
                     Ok(StackValue::Bool(begins_with(h, nd)))
                 }
-                _ => Err(eval_err("Wrong Types for BeginsWith")),
+                _ => Err(eval_err(
+                    "the filter expression's begins_with operands must be values",
+                )),
             }
         }
         Token::Contains => {
             if n < 2 {
-                return Err(eval_err("No Stack for contains"));
+                return Err(eval_err(
+                    "the filter expression's contains has too few operands",
+                ));
             }
             match (top(2), top(1)) {
                 (StackValue::Str(h), StackValue::Str(nd)) => {
                     Ok(StackValue::Bool(does_contain(h, nd)))
                 }
-                _ => Err(eval_err("Wrong Types for contains")),
+                _ => Err(eval_err(
+                    "the filter expression's contains operands must be values",
+                )),
             }
         }
         Token::Size => {
             if n < 1 {
-                return Err(eval_err("No Stack for Size"));
+                return Err(eval_err("the filter expression's size has no operand"));
             }
             match top(1) {
                 StackValue::Str(v) => {
                     Ok(StackValue::Str(AttributeValue::N(get_size(v).to_string())))
                 }
-                _ => Err(eval_err("Wrong Types for Size")),
+                _ => Err(eval_err(
+                    "the filter expression's size operand must be a value",
+                )),
             }
         }
         _ => Ok(StackValue::Bool(true)),
@@ -698,13 +724,19 @@ pub(crate) fn eval_expr(
             ),
             Token::Attr(s) => stack.push(stack_value_from_attr(s, item, names)),
             Token::Not => match stack.pop() {
-                None => return Err(eval_err("Empty stack for unary op")),
+                None => return Err(eval_err("the filter expression's NOT has no operand")),
                 Some(StackValue::Bool(b)) => stack.push(StackValue::Bool(!b)),
-                Some(_) => return Err(eval_err("wrong type for Not")),
+                Some(_) => {
+                    return Err(eval_err(
+                        "the filter expression's NOT operand is not true or false",
+                    ));
+                }
             },
             t if t.is_binary() => {
                 if stack.len() < 2 {
-                    return Err(eval_err("Empty stack for binary op"));
+                    return Err(eval_err(
+                        "the filter expression has an operator with a missing operand",
+                    ));
                 }
                 let y = stack.pop().unwrap_or(StackValue::DoesNotExist);
                 let x = stack.pop().unwrap_or(StackValue::DoesNotExist);
@@ -713,7 +745,9 @@ pub(crate) fn eval_expr(
             t if t.is_function() => {
                 let num = num_args(t, &stack);
                 if stack.len() < num {
-                    return Err(eval_err("Empty stack for function call"));
+                    return Err(eval_err(
+                        "the filter expression has a function with missing arguments",
+                    ));
                 }
                 let val = apply_function(t, &stack)?;
                 stack.truncate(stack.len() - num);
@@ -724,7 +758,9 @@ pub(crate) fn eval_expr(
     }
     match stack.as_slice() {
         [StackValue::Bool(b)] => Ok(*b),
-        _ => Err(eval_err("ended with bad stack")),
+        _ => Err(eval_err(
+            "the filter expression does not evaluate to true or false",
+        )),
     }
 }
 

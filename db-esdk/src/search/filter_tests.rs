@@ -1305,7 +1305,10 @@ fn beacon_key_id_sources() {
         "Multiple values found for TheKeyField in query : k1, k2",
     );
     let err = key_id(Some("TheKeyField = :missing"), None).unwrap_err();
-    assert_validation(&err, ":missing not found in ExpressionAttributeValueMap");
+    assert_validation(
+        &err,
+        "the expression uses :missing, which is not in ExpressionAttributeValues",
+    );
 }
 
 // ---- BeaconPartition.dfy: GetNumberOfQueries ----
@@ -1394,7 +1397,10 @@ fn number_of_queries_edges() {
     let err = bv
         .get_num_queries(Some("std2 = :v"), Some(&Values::new()))
         .unwrap_err();
-    assert_validation(&err, ":v not found in ExpressionAttributeValueMap");
+    assert_validation(
+        &err,
+        "the expression uses :v, which is not in ExpressionAttributeValues",
+    );
 }
 
 // ---- partitions in one query ----
@@ -1522,7 +1528,10 @@ fn make_new_name_skips_taken_names() {
         }
     }
     let err = make_new_name(":a", &all, &v).unwrap_err();
-    assert_validation(&err, "Could not find new name");
+    assert_validation(
+        &err,
+        "could not pick an unused expression attribute value name",
+    );
 }
 
 #[test]
@@ -1617,12 +1626,12 @@ async fn beaconize_errors() {
         (
             "#missing = :a",
             vec![(":a", s("x"))],
-            "Name #missing not in ExpressionAttributeNameMap.",
+            "the expression uses #missing, which is not in ExpressionAttributeNames",
         ),
         (
             "A = :nope",
             vec![],
-            ":nope not found in ExpressionAttributeValueMap",
+            "the expression uses :nope, which is not in ExpressionAttributeValues",
         ),
         (
             "size(std2) = :a",

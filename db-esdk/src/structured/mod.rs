@@ -145,7 +145,7 @@ fn for_decrypt(table: &str, data: Vec<AuthField>, legend: &[u8]) -> Result<Vec<C
         } else {
             let Some(&byte) = legend.get(legend_pos) else {
                 return Err(ser_err(
-                    "Schema changed : something that was unsigned is now signed.",
+                    "the attribute actions do not match the item: an attribute written as unsigned is now configured as signed",
                 ));
             };
             legend_pos += 1;
@@ -160,7 +160,7 @@ fn for_decrypt(table: &str, data: Vec<AuthField>, legend: &[u8]) -> Result<Vec<C
     }
     if legend_pos != legend.len() {
         return Err(ser_err(
-            "Schema changed : something that was signed is now unsigned.",
+            "the attribute actions do not match the item: an attribute written as signed is now configured as unsigned",
         ));
     }
     Ok(out)
@@ -191,16 +191,20 @@ fn v2_encryption_context<'a>(
         let (legend_char, value) = if attr.type_id == NULL {
             ('L', "null".to_owned())
         } else if attr.type_id == STRING {
-            let s = String::from_utf8(attr.value.clone())
-                .map_err(|_| ser_err("Internal Error : string was not UTF8."))?;
+            let s = String::from_utf8(attr.value.clone()).map_err(|_| {
+                ser_err("an encryption context attribute has a string value that is not UTF-8")
+            })?;
             ('S', s)
         } else if attr.type_id == NUMBER {
-            let s = String::from_utf8(attr.value.clone())
-                .map_err(|_| ser_err("Internal Error : number was not UTF8."))?;
+            let s = String::from_utf8(attr.value.clone()).map_err(|_| {
+                ser_err("an encryption context attribute has a number value that is not UTF-8")
+            })?;
             ('N', s)
         } else if attr.type_id == BOOLEAN {
             let [b] = attr.value.as_slice() else {
-                return Err(ser_err("Internal Error : boolean was not of length 1."));
+                return Err(ser_err(
+                    "an encryption context attribute has a boolean value that is not 1 byte",
+                ));
             };
             ('L', if *b == 0 { "false" } else { "true" }.to_owned())
         } else {
@@ -272,7 +276,7 @@ pub(crate) async fn encrypt_path_structure(
         )));
     }
     if !has_no_duplicates(data.iter().map(|x| &x.key)) {
-        return Err(val_err("Duplicate Paths"));
+        return Err(val_err("an attribute appears more than once"));
     }
     let mut ec = encryption_context.unwrap_or_default();
     let mut cmm = cmm;
@@ -301,7 +305,7 @@ pub(crate) async fn encrypt_path_structure(
     let max_length = u64::try_from(2 * encrypted_count + encrypted_size)
         .ok()
         .filter(|n| *n < u64::try_from(i64::MAX).unwrap_or(u64::MAX))
-        .ok_or_else(|| val_err("Encrypted Size too long."))?;
+        .ok_or_else(|| val_err("the item is too large to encrypt"))?;
     let suite_id = algorithm_suite_id.unwrap_or(DEFAULT_SUITE);
     let mat = cmm
         .get_encryption_materials()
@@ -314,10 +318,12 @@ pub(crate) async fn encrypt_path_structure(
         .into_encryption_materials();
     let key = mat
         .plaintext_data_key()
-        .ok_or_else(|| materials_err("Encryption material has no key"))?;
+        .ok_or_else(|| materials_err("the materials have no plaintext data key"))?;
     let suite = DbeSuite::new(mat.algorithm_suite_id())?;
     if !valid_encryption_context(mat.encryption_context()) {
-        return Err(val_err("Bad encryption context"));
+        return Err(val_err(
+            "the materials' encryption context cannot be stored: it has 65536 or more entries, or a key or value of 65536 or more bytes",
+        ));
     }
 
     let mut msg_id = [0u8; MSGID_LEN];
@@ -326,7 +332,7 @@ pub(crate) async fn encrypt_path_structure(
     let commit = crypt::commit_key(suite, key.as_bytes(), &head.msg_id)?;
     let header_bytes = head.serialize_with_commitment(suite.commit, &commit)?;
     if u32::try_from(canon.len()).map_or(true, |n| n >= crypt::ONE_THIRD_MAX_INT) {
-        return Err(val_err("Too many encrypted fields"));
+        return Err(val_err("the item has too many encrypted attributes"));
     }
     let encrypted = crypt::crypt(Mode::Encrypt, suite, key.as_bytes(), &head.msg_id, canon)?;
     let footer = Footer::create(suite, &mat, &encrypted, &header_bytes)?;
@@ -364,12 +370,14 @@ fn get_binary<'a>(data: &'a [AuthField], name: &str) -> Result<&'a Terminal, Err
     let item = data
         .iter()
         .find(|x| x.key.len() == 1 && x.key[0] == name)
-        .ok_or_else(|| ser_err(format!("The field name {name} is required.")))?;
+        .ok_or_else(|| ser_err(format!("the item has no {name} attribute")))?;
     if item.data.type_id != BYTES_TYPE_ID {
-        return Err(ser_err(format!("{name} must be a binary Terminal.")));
+        return Err(ser_err(format!(
+            "the item's {name} attribute must be binary"
+        )));
     }
     if item.action != AuthAction::DoNotSign {
-        return Err(val_err(format!("{name} must be DO_NOT_SIGN.")));
+        return Err(val_err(format!("the {name} attribute must not be signed")));
     }
     Ok(&item.data)
 }
@@ -383,10 +391,10 @@ pub(crate) async fn decrypt_path_structure(
     encryption_context: Option<EncryptionContext>,
 ) -> Result<(Vec<CryptoField>, ParsedHeader), Error> {
     if !data.iter().any(|x| x.action == AuthAction::Sign) {
-        return Err(val_err("At least one Authenticate Action must be SIGN"));
+        return Err(val_err("at least one attribute must be signed"));
     }
     if !has_no_duplicates(data.iter().map(|x| &x.key)) {
-        return Err(val_err("Duplicate Paths"));
+        return Err(val_err("an attribute appears more than once"));
     }
     let header_bytes = get_binary(&data, HEADER_FIELD)?.value.clone();
     let footer_bytes = get_binary(&data, FOOTER_FIELD)?.value.clone();
@@ -416,11 +424,13 @@ pub(crate) async fn decrypt_path_structure(
         .await?
         .into_decryption_materials();
     if !valid_encryption_context(mat.encryption_context()) {
-        return Err(val_err("Bad encryption context"));
+        return Err(val_err(
+            "the materials' encryption context cannot be stored: it has 65536 or more entries, or a key or value of 65536 or more bytes",
+        ));
     }
     let key = mat
         .plaintext_data_key()
-        .ok_or_else(|| materials_err("Encryption material has no key"))?;
+        .ok_or_else(|| materials_err("the materials have no plaintext data key"))?;
     let suite = DbeSuite::new(mat.algorithm_suite_id())?;
     let commit = crypt::commit_key(suite, key.as_bytes(), &head.msg_id)?;
     PartialHeader::verify_commitment(suite.commit, &commit, &header_bytes)?;
@@ -453,14 +463,14 @@ pub(crate) fn resolve_auth_actions(
     header_bytes: &[u8],
 ) -> Result<Vec<CryptoField>, Error> {
     if !has_no_duplicates(data.iter().map(|x| &x.key)) {
-        return Err(val_err("Duplicate Paths"));
+        return Err(val_err("an attribute appears more than once"));
     }
     let head = PartialHeader::deserialize(header_bytes)?;
     if !data.iter().any(|x| x.key == header_path()) {
-        return Err(val_err("Header Required"));
+        return Err(val_err("the item has no aws_dbe_head attribute"));
     }
     if !data.iter().any(|x| x.key == footer_path()) {
-        return Err(val_err("Footer Required"));
+        return Err(val_err("the item has no aws_dbe_foot attribute"));
     }
     let canon = for_decrypt(table, data, &head.legend)?;
     Ok(canon
@@ -500,7 +510,9 @@ fn unbuild(list: Vec<CryptoField>) -> Result<FieldsAndActions, Error> {
         let [key] = <[String; 1]>::try_from(item.key)
             .map_err(|_| crate::error::internal_err("expected a top-level field"))?;
         if data.contains_key(&key) {
-            return Err(val_err(format!("Duplicate Key {key}")));
+            return Err(val_err(format!(
+                "the attribute {key} appears more than once"
+            )));
         }
         if is_auth_attr(item.action) {
             schema.insert(key.clone(), item.action);
@@ -520,7 +532,9 @@ pub(crate) async fn encrypt_structure(
     encryption_context: Option<EncryptionContext>,
 ) -> Result<StructureOutput, Error> {
     if plaintext.len() != schema.len() || plaintext.keys().any(|k| !schema.contains_key(k)) {
-        return Err(val_err("Crypto Keys don't match."));
+        return Err(val_err(
+            "the item's attributes do not match the attribute actions: each attribute needs exactly one action",
+        ));
     }
     let list = sorted_entries(plaintext)
         .into_iter()

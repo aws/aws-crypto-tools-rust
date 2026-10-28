@@ -97,7 +97,9 @@ impl KeySource {
         partition_id: Option<&str>,
     ) -> Result<Self, Error> {
         if ttl.as_secs() == 0 {
-            return Err(val_err("Beacon Cache TTL must be at least 1."));
+            return Err(val_err(
+                "the beacon key cache TTL must be at least 1 second",
+            ));
         }
         let partition_id = match partition_id {
             Some(id) => id.as_bytes().to_vec(),
@@ -199,9 +201,9 @@ impl KeySource {
             .send()
             .await?
             .into_beacon_key_materials();
-        let beacon_key = materials
-            .beacon_key()
-            .ok_or_else(|| materials_err("beacon key unexpectedly empty"))?;
+        let beacon_key = materials.beacon_key().ok_or_else(|| {
+            materials_err("the key store returned beacon key materials with no beacon key")
+        })?;
         let keys = derive_hmac_keys(beacon_names, beacon_key)?;
         let to_cache = BeaconKeyMaterials::builder()
             .beacon_key_id(materials.beacon_key_id())
@@ -237,11 +239,16 @@ impl KeySource {
 /// The HMAC keys of a cached beacon key entry.
 fn cached_hmac_keys(entry: &CacheEntry, key_id: &str) -> Result<BTreeMap<String, Vec<u8>>, Error> {
     match entry.materials() {
-        CachedMaterials::BeaconKey(m) if m.beacon_key_id() == key_id => m
-            .hmac_keys()
-            .cloned()
-            .ok_or_else(|| materials_err("Invalid Material Type.")),
-        _ => Err(materials_err("Invalid Material Type.")),
+        CachedMaterials::BeaconKey(m) if m.beacon_key_id() == key_id => {
+            m.hmac_keys().cloned().ok_or_else(|| {
+                materials_err(
+                    "the cache entry for this beacon key does not hold its beacon key materials",
+                )
+            })
+        }
+        _ => Err(materials_err(
+            "the cache entry for this beacon key does not hold its beacon key materials",
+        )),
     }
 }
 

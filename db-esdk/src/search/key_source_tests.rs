@@ -89,7 +89,10 @@ fn zero_ttl_is_rejected() {
         None,
     )
     .unwrap_err();
-    assert_eq!(val_msg(&err), "Beacon Cache TTL must be at least 1.");
+    assert_eq!(
+        val_msg(&err),
+        "the beacon key cache TTL must be at least 1 second"
+    );
 }
 
 #[test]
@@ -197,7 +200,10 @@ async fn missing_beacon_key_is_invalid_materials() {
         .await
         .unwrap_err();
     assert!(matches!(err, Error::InvalidMaterials(_)), "{err:?}");
-    assert_eq!(err.message(), "beacon key unexpectedly empty");
+    assert_eq!(
+        err.message(),
+        "the key store returned beacon key materials with no beacon key"
+    );
 }
 
 /// A good key store fills a shared cache; a failing key store with the same logical name
@@ -329,7 +335,10 @@ fn cached_entry_for_another_key_is_invalid() {
     );
     let err = cached_hmac_keys(&e, "k2").unwrap_err();
     assert!(matches!(err, Error::InvalidMaterials(_)), "{err:?}");
-    assert_eq!(err.message(), "Invalid Material Type.");
+    assert_eq!(
+        err.message(),
+        "the cache entry for this beacon key does not hold its beacon key materials"
+    );
 }
 
 #[tokio::test]

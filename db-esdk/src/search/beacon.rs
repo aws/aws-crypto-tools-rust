@@ -132,7 +132,7 @@ impl StandardInfo {
     ) -> Result<String, Error> {
         let key = keys
             .get(self.key_name())
-            .ok_or_else(|| val_err(format!("Internal Error, no key for {}", self.key_name())))?;
+            .ok_or_else(|| val_err(format!("no HMAC key for beacon {}", self.key_name())))?;
         self.hash(val.as_bytes(), key, partition)
     }
 
@@ -503,7 +503,7 @@ impl CompoundInfo {
             }
         }
         if acc.is_empty() {
-            return Err(val_err("Internal Error : Empty beacon created."));
+            return Err(val_err("the compound beacon has no parts in this item"));
         }
         Ok(Some(acc))
     }

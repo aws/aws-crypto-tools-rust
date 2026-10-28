@@ -373,7 +373,10 @@ fn decrypt_rejects_value_shorter_than_type_id_and_tag() {
     )];
     let err = crypt(Mode::Decrypt, suite(), &DATA_KEY, &MSG_ID, short).unwrap_err();
     assert_eq!(err.kind(), Kind::Serialization);
-    assert_eq!(err.message(), "cipherTxt too short.");
+    assert_eq!(
+        err.message(),
+        "an encrypted attribute is too short to be a ciphertext"
+    );
 }
 
 // An empty plaintext encrypts to just the type id and the tag, and decrypts back.

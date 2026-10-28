@@ -270,7 +270,10 @@ fn signed_round_trip_and_tamper() {
     let bad = Footer::deserialize(&bad, true).unwrap();
     let err = bad.validate(&dec, 1, &fields(), HEADER).unwrap_err();
     assert_eq!(err.kind(), Kind::Cryptographic);
-    assert_eq!(err.message(), "Signature did not verify");
+    assert_eq!(
+        err.message(),
+        "the item's ECDSA signature did not verify: the item was changed after it was written"
+    );
 }
 
 #[test]
