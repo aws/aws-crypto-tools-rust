@@ -14,6 +14,7 @@ use aws_db_esdk::aws_sdk_dynamodb::operation::batch_get_item::{
     BatchGetItemInput, BatchGetItemOutput,
 };
 use aws_db_esdk::aws_sdk_dynamodb::operation::get_item::{GetItemInput, GetItemOutput};
+use aws_db_esdk::aws_sdk_dynamodb::operation::put_item::PutItemInput;
 use aws_db_esdk::aws_sdk_dynamodb::operation::query::{QueryInput, QueryOutput};
 use aws_db_esdk::aws_sdk_dynamodb::operation::scan::{ScanInput, ScanOutput};
 use aws_db_esdk::aws_sdk_dynamodb::operation::transact_get_items::{
@@ -23,7 +24,6 @@ use aws_db_esdk::aws_sdk_dynamodb::types::{
     AttributeValue, ComparisonOperator, Condition, ConditionalOperator, Get, ItemResponse,
     KeysAndAttributes, TransactGetItem,
 };
-use aws_db_esdk::aws_sdk_dynamodb::operation::put_item::PutItemInput;
 use aws_db_esdk::transforms::Transforms;
 use transforms_support::{Item, expect_validation, item, s, transforms};
 
@@ -184,7 +184,10 @@ async fn query_input_legacy_parameters() {
             "Legacy parameter 'AttributesToGet' not supported in Query with Encryption",
         ),
         (
-            base().key_conditions("bar", condition.clone()).build().unwrap(),
+            base()
+                .key_conditions("bar", condition.clone())
+                .build()
+                .unwrap(),
             "Legacy parameter 'KeyConditions' not supported in Query with Encryption",
         ),
         (
@@ -213,7 +216,10 @@ async fn query_input_expression_length() {
         .key_condition_expression(ok)
         .build()
         .unwrap();
-    assert_eq!(transforms().query_input(input.clone()).await.unwrap(), input);
+    assert_eq!(
+        transforms().query_input(input.clone()).await.unwrap(),
+        input
+    );
 
     let long = "a".repeat(4097);
     let input = QueryInput::builder()
@@ -280,7 +286,10 @@ async fn query_output_original_expression_too_long() {
 async fn get_number_of_queries_without_beacons() {
     let t = transforms();
     for table in ["foo", "no_such_table"] {
-        assert_eq!(t.get_number_of_queries(&query_input(table)).await.unwrap(), 1);
+        assert_eq!(
+            t.get_number_of_queries(&query_input(table)).await.unwrap(),
+            1
+        );
     }
 }
 

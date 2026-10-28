@@ -268,7 +268,11 @@ mod tests {
 
     #[track_caller]
     fn expect_table(statement: &str, table: &str) {
-        assert_eq!(table_from_statement(statement).unwrap(), table, "{statement:?}");
+        assert_eq!(
+            table_from_statement(statement).unwrap(),
+            table,
+            "{statement:?}"
+        );
     }
 
     #[track_caller]

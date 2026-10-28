@@ -286,7 +286,10 @@ fn constructor(parts: &[(&str, bool)]) -> Constructor {
                 .unwrap()
         })
         .collect();
-    Constructor::builder().set_parts(Some(parts)).build().unwrap()
+    Constructor::builder()
+        .set_parts(Some(parts))
+        .build()
+        .unwrap()
 }
 
 /// `GetLotsaBeacons` (single key store, key id `foo`) or `GetLotsaBeaconsMulti`

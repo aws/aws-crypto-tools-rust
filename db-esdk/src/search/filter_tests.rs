@@ -1717,3 +1717,35 @@ fn filter_results_applies_key_and_filter() {
         .unwrap();
     assert_eq!(out, vec![simple_item(), other]);
 }
+
+/// `attr_for_value` finds the attribute a value is compared to, in each place a value can
+/// appear: either side of a comparison, `contains` and `begins_with`, both `BETWEEN`
+/// bounds, and every member of an `IN` list.
+#[test]
+fn attr_for_value_each_shape() {
+    let cases: &[(&str, &str, Option<&str>)] = &[
+        (":v = A", ":v", Some("A")),
+        ("A < :v", ":v", Some("A")),
+        ("contains(A, :v)", ":v", Some("A")),
+        ("begins_with(A, :v)", ":v", Some("A")),
+        ("A BETWEEN :lo AND :hi", ":lo", Some("A")),
+        ("A BETWEEN :lo AND :hi", ":hi", Some("A")),
+        ("A IN (:x, :y, :z)", ":x", Some("A")),
+        ("A IN (:x, :y, :z)", ":z", Some("A")),
+        ("size(A) = :v", ":v", None),
+        (":v", ":v", None),
+        ("(:x, :v)", ":v", None),
+    ];
+    for (expr, value, want) in cases {
+        let parsed = parse_expr(expr);
+        let pos = parsed
+            .iter()
+            .position(|t| *t == Token::Value((*value).to_owned()))
+            .unwrap();
+        let got = attr_for_value(&parsed, pos).map(|t| match t {
+            Token::Attr(a) => a.as_str(),
+            other => panic!("{expr}: not an attribute: {other:?}"),
+        });
+        assert_eq!(got, *want, "{expr} / {value}");
+    }
+}

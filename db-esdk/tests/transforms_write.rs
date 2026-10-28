@@ -22,8 +22,7 @@ use aws_db_esdk::aws_sdk_dynamodb::operation::transact_write_items::{
 use aws_db_esdk::aws_sdk_dynamodb::operation::update_item::{UpdateItemInput, UpdateItemOutput};
 use aws_db_esdk::aws_sdk_dynamodb::types::{
     AttributeValue, ConditionCheck, ConditionalOperator, Delete, DeleteRequest,
-    ExpectedAttributeValue, Put, PutRequest, ReturnValue, TransactWriteItem, Update,
-    WriteRequest,
+    ExpectedAttributeValue, Put, PutRequest, ReturnValue, TransactWriteItem, Update, WriteRequest,
 };
 use aws_db_esdk::transforms::Transforms;
 use aws_db_esdk::types::PlaintextOverride;
@@ -88,7 +87,14 @@ async fn put_item_input_encrypts_and_signs() {
     names.sort_unstable();
     assert_eq!(
         names,
-        ["aws_dbe_foot", "aws_dbe_head", "bar", "encrypt", "plain", "sign"]
+        [
+            "aws_dbe_foot",
+            "aws_dbe_head",
+            "bar",
+            "encrypt",
+            "plain",
+            "sign"
+        ]
     );
 
     // The GetItem output transform decrypts it back to the original.
@@ -531,7 +537,9 @@ async fn delete_item_output_decrypts_old_item() {
     let old = encrypt(&t, item_n(4)).await;
     let out = t
         .delete_item_output(
-            DeleteItemOutput::builder().set_attributes(Some(old)).build(),
+            DeleteItemOutput::builder()
+                .set_attributes(Some(old))
+                .build(),
             &delete_input("foo"),
         )
         .await
@@ -824,7 +832,10 @@ async fn batch_write_item_force_plaintext_write() {
     // Writes are plaintext, so neither the request nor the unprocessed items change.
     let t = transforms_with_override(PlaintextOverride::ForcePlaintextWriteAllowPlaintextRead);
     let input = batch_input(&[("foo", vec![make_put(item_n(1))])]);
-    assert_eq!(t.batch_write_item_input(input.clone()).await.unwrap(), input);
+    assert_eq!(
+        t.batch_write_item_input(input.clone()).await.unwrap(),
+        input
+    );
     let output = BatchWriteItemOutput::builder()
         .unprocessed_items("foo", vec![make_put(item_n(1))])
         .build();

@@ -14,12 +14,12 @@ use aws_db_esdk::aws_sdk_dynamodb::operation::put_item::PutItemInput;
 use aws_db_esdk::aws_sdk_dynamodb::operation::query::{QueryInput, QueryOutput};
 use aws_db_esdk::aws_sdk_dynamodb::operation::scan::{ScanInput, ScanOutput};
 use aws_db_esdk::aws_sdk_dynamodb::types::AttributeValue;
-use aws_db_esdk::transforms::{ResolveAttributesInput, Transforms};
 use aws_db_esdk::keyring::{
     GetBranchKeyIdFromItemKeyInput, GetBranchKeyIdOutput, HierarchicalKeyring,
     ItemKeyBranchKeySupplier, ItemKeySupplier,
 };
 use aws_db_esdk::search::SearchConfig;
+use aws_db_esdk::transforms::{ResolveAttributesInput, Transforms};
 use aws_db_esdk::types::PlaintextOverride;
 use aws_db_esdk::{TableConfig, async_trait};
 use transforms_support::{
@@ -108,7 +108,9 @@ async fn put_item_input_multi_fail() {
 /// `TestPutItemInputMultiForceAllow`: a plaintext write is not encrypted, so it needs no key.
 #[tokio::test]
 async fn put_item_input_multi_force_allow() {
-    let t = multi_transforms_static(Some(PlaintextOverride::ForcePlaintextWriteAllowPlaintextRead));
+    let t = multi_transforms_static(Some(
+        PlaintextOverride::ForcePlaintextWriteAllowPlaintextRead,
+    ));
     let out = put(&t, multi_item("id")).await;
     assert_eq!(out, multi_item("id"));
 }
@@ -154,10 +156,7 @@ async fn query_output_filters_beacon_false_positives() {
         .items(other)
         .count(2)
         .build();
-    let out = t
-        .query_output(output, &query_name("MyName"))
-        .await
-        .unwrap();
+    let out = t.query_output(output, &query_name("MyName")).await.unwrap();
     assert_eq!(out.items, Some(vec![simple_item_read()]));
     assert_eq!(out.count, 1);
 }
@@ -165,7 +164,12 @@ async fn query_output_filters_beacon_false_positives() {
 #[tokio::test]
 async fn get_number_of_queries_with_beacons() {
     let t = beacon_transforms();
-    assert_eq!(t.get_number_of_queries(&query_name("MyName")).await.unwrap(), 1);
+    assert_eq!(
+        t.get_number_of_queries(&query_name("MyName"))
+            .await
+            .unwrap(),
+        1
+    );
     expect_validation(
         t.get_number_of_queries(
             &QueryInput::builder()
@@ -311,7 +315,10 @@ async fn resolve_attributes_with_search() {
 
 #[tokio::test]
 async fn resolve_attributes_without_search() {
-    for (t, table) in [(transforms(), "foo"), (beacon_transforms(), "no_such_table")] {
+    for (t, table) in [
+        (transforms(), "foo"),
+        (beacon_transforms(), "no_such_table"),
+    ] {
         let out = t
             .resolve_attributes(resolve_input(table, simple_item()))
             .await
@@ -337,7 +344,10 @@ fn resolve_attributes_input_requires_fields() {
     assert_eq!(input.table_name(), "foo");
     assert_eq!(input.item(), &simple_item());
     for (b, missing) in [
-        (ResolveAttributesInput::builder().item(simple_item()), "table_name"),
+        (
+            ResolveAttributesInput::builder().item(simple_item()),
+            "table_name",
+        ),
         (ResolveAttributesInput::builder().table_name("foo"), "item"),
     ] {
         expect_validation(b.build(), &format!("{missing} is required"));

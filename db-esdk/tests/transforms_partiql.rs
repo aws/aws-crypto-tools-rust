@@ -30,7 +30,12 @@ fn batch_execute_statement(statements: &[&str]) -> BatchExecuteStatementInput {
         .set_statements(Some(
             statements
                 .iter()
-                .map(|st| BatchStatementRequest::builder().statement(*st).build().unwrap())
+                .map(|st| {
+                    BatchStatementRequest::builder()
+                        .statement(*st)
+                        .build()
+                        .unwrap()
+                })
                 .collect(),
         ))
         .build()
@@ -69,7 +74,10 @@ async fn execute_statement_input_encrypted() {
     let result = transforms()
         .execute_statement_input(execute_statement("update \"foo\""))
         .await;
-    expect_validation(result, "ExecuteStatement not Supported on encrypted tables.");
+    expect_validation(
+        result,
+        "ExecuteStatement not Supported on encrypted tables.",
+    );
 }
 
 #[tokio::test]
@@ -156,7 +164,10 @@ async fn execute_transaction_input() {
     let result = transforms()
         .execute_transaction_input(execute_transaction(&["update foo"]))
         .await;
-    expect_validation(result, "ExecuteTransaction not Supported on encrypted tables.");
+    expect_validation(
+        result,
+        "ExecuteTransaction not Supported on encrypted tables.",
+    );
 }
 
 #[tokio::test]
