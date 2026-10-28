@@ -79,6 +79,8 @@ impl Transforms {
             ));
         }
         if !no_map(input.key_conditions.as_ref()) {
+            //= spec/dynamodb-encryption-client/ddb-support.md#queryinputforbeacons
+            //# The KeyConditions property MUST NOT be defined on [QueryInput](#queryinput).
             return Err(val_err(
                 "Legacy parameter 'KeyConditions' not supported in Query with Encryption",
             ));
@@ -185,6 +187,8 @@ impl Transforms {
         )
         .await?;
         if table.search.is_some() && output.count != 0 {
+            //= spec/dynamodb-encryption-client/ddb-support.md#queryoutputforbeacons
+            //# The `Count` field, MUST be updated to reflect the new item count.
             output.count = i32::try_from(items.len()).unwrap_or(i32::MAX);
         }
         output.items = Some(items);

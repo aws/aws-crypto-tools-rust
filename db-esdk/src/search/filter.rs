@@ -17,7 +17,7 @@ use crate::ddb::filter_expr::{
     Token, convert_to_prefix, convert_to_rpn, eval_expr, parse_expr, parsed_expr_to_string,
 };
 use crate::error::{Error, val_err};
-use crate::search::beacon::{MaybeKeyId, MaybeKeyMap, attr_type_to_str, lcm_partition};
+use crate::search::beacon::{HmacKeyMap, MaybeKeyId, MaybeKeyMap, attr_type_to_str, lcm_partition};
 use crate::search::info::{BEACON_PREFIX, Beacon, BeaconPart, BeaconVersionInfo};
 use crate::search::key_source::KeyLocation;
 use crate::types::CryptoAction;
@@ -92,6 +92,8 @@ impl BeaconVersionInfo {
         let name = real_name(t.as_str());
         if let Some(b) = self.beacons.get(name) {
             if b.is_part_only() {
+                //= spec/searchable-encryption/beacons.md#partonly-initialization
+                //# A query MUST fail if it tries to search on a PartOnly beacon directly.
                 return Err(val_err(format!(
                     "Field {name} is encrypted, and has a PartOnly beacon, and so can only be used as part of a compound beacon."
                 )));
@@ -256,13 +258,21 @@ impl BeaconVersionInfo {
                         Some(beacon) if !exclude => {
                             is_allowed_on_beacon(expr, pos, &old_name)?;
                             if op_needs_beacon(expr, pos) {
+                                //= spec/dynamodb-encryption-client/ddb-support.md#queryinputforbeacons
+                                //# For any operand in the KeyConditionExpression or FilterExpression which is a beacon name,
+                                //# the name MUST be replaced by the internal beacon name (i.e.
                                 let new_name = beacon.beacon_name().to_owned();
                                 if is_indirect {
                                     if let Some(n) = names.as_mut() {
+                                        //= spec/dynamodb-encryption-client/ddb-support.md#queryinputforbeacons
+                                        //# If the name is used indirectly through the ExpressionAttributeNames mapping,
+                                        //# the name MUST be changed in the ExpressionAttributeNames.
                                         n.insert(s.clone(), new_name);
                                     }
                                     acc.push(token.clone());
                                 } else {
+                                    //= spec/dynamodb-encryption-client/ddb-support.md#queryinputforbeacons
+                                    //# If the name is used directly in the expression, the name MUST be changed in the expression.
                                     acc.push(Token::Attr(new_name));
                                 }
                             } else {
@@ -279,6 +289,17 @@ impl BeaconVersionInfo {
                         ))
                     })?;
                     let eb = self.beacon_for_value(expr, pos, names.as_ref(), old_values)?;
+
+                    //= spec/dynamodb-encryption-client/ddb-support.md#queryinputforbeacons
+                    //# Similarly, any values in ExpressionAttributeValues that are referred to by a beacon name
+                    //# MUST be changed to the beacon value, as calculated defined in [beacons](../searchable-encryption/beacons.md#beacon-value).
+                    //
+                    //= spec/dynamodb-encryption-client/ddb-support.md#queryinputforbeacons
+                    //= reason=Beacon::get_beacon_value looks the HMAC key up in keys by the beacon's key name
+                    //# The [hmac key](./search-config.md#hmac-key-generation) used
+                    //# MUST be obtained from the [Beacon Key Materials](../searchable-encryption/search-config.md#beacon-key-materials)
+                    //# [HMAC Keys map](../searchable-encryption/search-config.md#hmac-keys) using the beacon name
+                    //# as the key.
                     let new_value = match eb.beacon {
                         None => old_value.clone(),
                         Some(b) => b.get_beacon_value(
@@ -290,6 +311,10 @@ impl BeaconVersionInfo {
                         )?,
                     };
                     if new_values.get(name).is_some_and(|v| *v != new_value) {
+                        //= spec/dynamodb-encryption-client/ddb-support.md#queryinputforbeacons
+                        //# If a single value in ExpressionAttributeValues is used in more than one context,
+                        //# for example an expression of `this = :foo OR that = :foo` where `this` and `that`
+                        //# are both beacons, this operation MUST fail.
                         return Err(val_err(format!(
                             "{name} used in two different contexts, which is not allowed."
                         )));
@@ -321,6 +346,9 @@ impl BeaconVersionInfo {
         for item in items {
             let mut with_beacons = item.clone();
             with_beacons.extend(self.generate_plain_beacons(&item, partition)?);
+
+            //= spec/dynamodb-encryption-client/ddb-support.md#queryoutputforbeacons
+            //# Any items that do not match MUST be discarded.
             if eval_expr(parsed, &with_beacons, names, values)? {
                 out.push(item);
             }
@@ -338,6 +366,11 @@ impl BeaconVersionInfo {
         names: Option<&Names>,
         values: Option<&Values>,
     ) -> Result<Vec<Item>, Error> {
+        //= spec/dynamodb-encryption-client/ddb-support.md#queryoutputforbeacons
+        //= type=exception
+        //= reason=Results are re-filtered whenever there is an expression; without encrypted values every item DynamoDB returned is kept
+        //# If the [QueryObject does not have encrypted values](#queryobject-has-encrypted-values)
+        //# then QueryOutputForBeacons MUST not filter the results and MUST return.
         if items.is_empty() || (key_expr.is_none() && filter_expr.is_none()) {
             return Ok(items);
         }
@@ -357,6 +390,10 @@ impl BeaconVersionInfo {
                 partition,
             )?;
             let rpn = convert_to_rpn(&convert_to_prefix(&ctx.expr));
+
+            //= spec/dynamodb-encryption-client/ddb-support.md#queryoutputforbeacons
+            //# For each item, we MUST evaluate the query expressions supplied in the QueryInput
+            //# against the decrypted field values returned by the query.
             items = self.filter_items(&rpn, items, ctx.names.as_ref(), &ctx.values, partition)?;
         }
         Ok(items)
@@ -499,6 +536,38 @@ impl BeaconVersionInfo {
         Ok(result)
     }
 
+    /// Whether an attribute in the expressions of `context` is encrypted,
+    /// or has a beacon whose value is an HMAC: only then does the rewrite need beacon keys.
+    fn has_encrypted_values(&self, context: &ExprContext) -> bool {
+        let names = context.names.as_ref();
+        let is_encrypted = |name: &str| {
+            self.encrypted_fields.contains(name)
+                || self.beacons.get(name).is_some_and(Beacon::is_encrypted)
+        };
+        let tokens = [&context.key_expr, &context.filter_expr]
+            .into_iter()
+            .flatten()
+            .flat_map(|e| parse_expr(e));
+        for t in tokens {
+            let Token::Attr(s) = t else {
+                continue;
+            };
+            let name = real_name(&s);
+            let indirect = names.and_then(|n| n.get(name)).map(|n| real_name(n));
+            if is_encrypted(name) || indirect.is_some_and(is_encrypted) {
+                //= spec/dynamodb-encryption-client/ddb-support.md#queryobject-has-encrypted-values
+                //# If there are any ExpressionAttributeValues that are referred to by
+                //# a beacon name that contain encrypted values (ENCRYPT_AND_SIGN field)
+                //# then QueryObject has encrypted values MUST return true.
+                return true;
+            }
+        }
+
+        //= spec/dynamodb-encryption-client/ddb-support.md#queryobject-has-encrypted-values
+        //# Otherwise it MUST return false.
+        false
+    }
+
     /// Rewrite the expressions of `context` onto beacons, for `partition`.
     pub(crate) async fn beaconize(
         &self,
@@ -509,7 +578,19 @@ impl BeaconVersionInfo {
         if context.key_expr.is_none() && context.filter_expr.is_none() {
             return Ok(context.clone());
         }
-        let keys = self.get_key_map(key_id).await?;
+        let keys = if self.has_encrypted_values(context) {
+            //= spec/dynamodb-encryption-client/ddb-support.md#queryinputforbeacons
+            //# If the [QueryObject has encrypted values](#queryobject-has-encrypted-values)
+            //# then QueryInputForBeacons MUST obtain [Beacon Key Materials](../searchable-encryption/search-config.md#beacon-key-materials)
+            //# from [Get beacon key for query](../searchable-encryption/search-config.md#get-beacon-key-for-query).
+            self.get_key_map(key_id).await?
+        } else {
+            //= spec/dynamodb-encryption-client/ddb-support.md#queryinputforbeacons
+            //= reason=Only an HMAC reads the key map, and no operand here has an HMAC beacon
+            //# If the [QueryObject does not have encrypted values](#queryobject-has-encrypted-values)
+            //# then QueryInputForBeacons MUST NOT attempt to obtain [Beacon Key Materials](../searchable-encryption/search-config.md#beacon-key-materials).
+            MaybeKeyMap::Keys(HmacKeyMap::new())
+        };
         let empty = Values::new();
         let values = context.values.as_ref().unwrap_or(&empty);
         let mut new_values = Values::new();
@@ -552,6 +633,12 @@ impl BeaconVersionInfo {
         {
             return self.beaconize(context, key_id, partition).await;
         }
+
+        //= spec/dynamodb-encryption-client/ddb-support.md#filter-expressions-for-query
+        //# if [GetNumberOfQueries](./ddb-get-number-of-queries.md) returns a number less than the configured
+        //# [maximum number of partitions](../searchable-encryption/search-config.md#max-partitions)
+        //# then the FilterExpression MUST be augmented to match against partitions greater than
+        //# the limit returned from GetNumberOfQueries.
         let mut curr = partition;
         let mut exprs: Vec<String> = Vec::new();
         let mut values = Values::new();
@@ -580,6 +667,9 @@ impl BeaconVersionInfo {
             }
             curr += queries;
         }
+
+        //= spec/dynamodb-encryption-client/ddb-support.md#filter-expressions-for-query
+        //# The FilterExpression sent to DynamoDB MUST be the `OR` combination of all of these expressions.
         let filter = if let [only] = exprs.as_slice() {
             only.clone()
         } else {
@@ -622,6 +712,8 @@ fn can_beacon(b: &Beacon, op: &Token, value: &str, values: &Values) -> Result<()
                     if c.is_less_than_comparable(&pieces)? {
                         Ok(())
                     } else {
+                        //= spec/searchable-encryption/beacons.md#lessthancomparable
+                        //# A Query MUST fail if it uses `<`, `<=`, `>`, or `>=` on a value that is not LessThanComparable.
                         Err(val_err(format!(
                             "The operation '{}' cannot be used with a compound beacon, unless the value is LessThanComparable : {val}",
                             op.as_str()
@@ -674,6 +766,8 @@ fn can_between(b: &Beacon, left: &str, right: &str, values: &Values) -> Result<(
     if left_less && right_less {
         Ok(())
     } else {
+        //= spec/searchable-encryption/beacons.md#betweencomparable
+        //# A Query MUST fail if it uses BETWEEN on values that are not BetweenComparable.
         Err(val_err(format!(
             "To use BETWEEN with a compound beacon, the part after any common prefix must be LessThanComparable : BETWEEN {left_val} AND {right_val}"
         )))

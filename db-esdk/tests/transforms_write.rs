@@ -165,6 +165,10 @@ async fn put_item_input_reserved_attributes() {
     let mut it = item_n(1);
     it.insert("aws_dbe_zzz".into(), s("x"));
     it.insert("aws_dbe_head".into(), s("x"));
+
+    //= spec/dynamodb-encryption-client/ddb-support.md#writable
+    //= type=test
+    //# Writeable MUST reject any item containing an attribute which begins with `aws_dbe_`.
     expect_validation(
         transforms().put_item_input(put_input("foo", it)).await,
         "Writing reserved attributes not allowed : aws_dbe_head\naws_dbe_zzz",
@@ -180,6 +184,10 @@ async fn put_item_input_condition_on_encrypted() {
         .expression_attribute_names("#e", "encrypt")
         .build()
         .unwrap();
+
+    //= spec/dynamodb-encryption-client/ddb-support.md#testconditionexpression
+    //= type=test
+    //# TestConditionExpression MUST fail if any operand in the condition expression is an encrypted attribute name.
     expect_validation(
         transforms().put_item_input(input).await,
         "Condition Expressions forbidden on encrypted attributes : encrypt",
@@ -300,6 +308,9 @@ async fn update_item_input_passthrough() {
 
 #[tokio::test]
 async fn update_item_input_update_expression_signed() {
+    //= spec/dynamodb-encryption-client/ddb-support.md#testupdateexpression
+    //= type=test
+    //# TestUpdateExpression MUST fail if any operand in the update expression is a signed attribute name.
     expect_validation(
         transforms()
             .update_item_input(update_input("foo", Some("SET sign = :p")))
@@ -310,6 +321,9 @@ async fn update_item_input_update_expression_signed() {
 
 #[tokio::test]
 async fn update_item_input_update_expression_encrypted() {
+    //= spec/dynamodb-encryption-client/ddb-support.md#testupdateexpression
+    //= type=test
+    //# TestUpdateExpression MUST fail if any operand in the update expression is a signed attribute name.
     expect_validation(
         transforms()
             .update_item_input(update_input("foo", Some("SET encrypt = :p")))
@@ -337,6 +351,10 @@ async fn update_item_input_update_expression_names() {
         .expression_attribute_names("#s", "sign")
         .build()
         .unwrap();
+
+    //= spec/dynamodb-encryption-client/ddb-support.md#testupdateexpression
+    //= type=test
+    //# TestUpdateExpression MUST fail if any operand in the update expression is a signed attribute name.
     expect_validation(
         transforms().update_item_input(input).await,
         "Update Expressions forbidden on signed attributes : sign",
@@ -491,6 +509,10 @@ async fn delete_item_input_condition_on_encrypted() {
         .condition_expression("encrypt = :v")
         .build()
         .unwrap();
+
+    //= spec/dynamodb-encryption-client/ddb-support.md#testconditionexpression
+    //= type=test
+    //# TestConditionExpression MUST fail if any operand in the condition expression is an encrypted attribute name.
     expect_validation(
         transforms().delete_item_input(input).await,
         "Condition Expressions forbidden on encrypted attributes : encrypt",
@@ -615,6 +637,10 @@ async fn batch_write_item_input_encrypts_puts_only() {
 async fn batch_write_item_input_reserved_attribute() {
     let mut it = item_n(1);
     it.insert("aws_dbe_b_x".into(), s("x"));
+
+    //= spec/dynamodb-encryption-client/ddb-support.md#writable
+    //= type=test
+    //# Writeable MUST reject any item containing an attribute which begins with `aws_dbe_`.
     expect_validation(
         transforms()
             .batch_write_item_input(batch_input(&[("foo", vec![make_put(it)])]))
@@ -1009,6 +1035,7 @@ async fn transact_write_items_input_rejections() {
             "Condition Expressions forbidden on encrypted attributes : encrypt",
         ),
     ];
+    // Writeable, TestConditionExpression and TestUpdateExpression are each cited by their dedicated tests.
     for (action, message) in cases {
         expect_validation(
             transforms()

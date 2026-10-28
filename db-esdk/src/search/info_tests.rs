@@ -7,7 +7,7 @@
 use super::*;
 use crate::search::config::tests::{
     compound, convert_with, encrypted_part, fake_key_store, lotsa_beacons, multi_source,
-    simple_item, standard, styled, validation_message,
+    simple_item, standard, styled, table_with, validation_message, year,
 };
 use crate::search::config::{BeaconStyle, BeaconVersionBuilder};
 use crate::types::CryptoAction;
@@ -181,6 +181,10 @@ async fn part_only_beacon_is_not_stored() {
 
     let bv = with_part(styled("partOnly", 23, BeaconStyle::part_only()));
     assert!(bv.beacons["partOnly"].is_part_only());
+
+    //= spec/searchable-encryption/beacons.md#partonly-initialization
+    //= type=test
+    //# The Standard Beacon MUST NOT be stored in the item for a PartOnly beacon.
     assert_eq!(
         bv.generate_encrypted_beacons(&my_item, &MaybeKeyId::DontUse, 0)
             .await
@@ -241,4 +245,115 @@ async fn single_key_store_takes_no_key_id() {
     let names: Vec<&str> = keys.keys().map(String::as_str).collect();
     assert_eq!(names, bv.standard_names);
     assert!(keys.values().all(|k| k.len() == 64));
+}
+
+#[tokio::test]
+async fn signed_beacon_name_must_not_be_configured() {
+    // A fully signed compound beacon `name`, on a table with `extra` actions and unauthenticated settings.
+    let case = |name: &str,
+                extra: &[(&str, CryptoAction)],
+                unsigned: Option<&str>,
+                unsigned_prefix: Option<&str>| {
+        let (store, _) = fake_key_store();
+        let version = lotsa_beacons(store)
+            .compound_beacons(compound(name, None, Some(vec![year()]), None))
+            .build()
+            .unwrap();
+        let mut table = table_with(extra, version);
+        table.builder = table
+            .builder
+            .set_allowed_unsigned_attributes(unsigned.map(|u| vec![u.to_owned()]))
+            .set_allowed_unsigned_attribute_prefix(unsigned_prefix.map(str::to_owned));
+        validation_message(table.convert())
+    };
+    let cases = [
+        (
+            case("Sig", &[("Sig", CryptoAction::SignOnly)], None, None),
+            "Sig not allowed as a CompoundBeacon because it is already an unencrypted attribute.",
+        ),
+        (
+            case("Sig", &[("Sig", CryptoAction::EncryptAndSign)], None, None),
+            "Sig not allowed as a CompoundBeacon because a fully signed beacon cannot have the same name as an existing attribute.",
+        ),
+        (
+            case("Sig", &[], Some("Sig"), None),
+            "Sig not allowed as a CompoundBeacon because it is already an allowed unauthenticated attribute.",
+        ),
+        (
+            case("un_Sig", &[], None, Some("un_")),
+            "un_Sig not allowed as a CompoundBeacon because it begins with the allowed unauthenticated prefix.",
+        ),
+    ];
+    for (got, want) in cases {
+        //= spec/searchable-encryption/beacons.md#signed-beacons
+        //= type=test
+        //# Initialization MUST fail if `NAME` is explicitly configured with an
+        //# [attribute actions](../dynamodb-encryption-client/ddb-item-encryptor.md#attribute-actions) or
+        //# [unauthenticated attributes](../dynamodb-encryption-client/ddb-item-encryptor.md#unauthenticated-attributes),
+        //# or begins with the [unauthenticated attribute prefix](../dynamodb-encryption-client/ddb-item-encryptor.md#unauthenticated-attribute-prefix).
+        assert_eq!(got, want);
+    }
+}
+
+#[tokio::test]
+async fn signed_beacon_is_written_sign_only() {
+    use aws_crypto_mpl::aws_sdk_dynamodb::operation::get_item::{GetItemInput, GetItemOutput};
+    use aws_crypto_mpl::aws_sdk_dynamodb::operation::put_item::PutItemInput;
+
+    let (store, _) = fake_key_store();
+    let table = table_with(
+        &[("foo", CryptoAction::SignOnly)],
+        lotsa_beacons(store).build().unwrap(),
+    )
+    .builder
+    .build()
+    .unwrap();
+    let transforms = crate::transforms::Transforms::builder()
+        .table_encryption_configs("Foo", table)
+        .build()
+        .unwrap();
+    let mut plaintext = simple_item();
+    plaintext.insert("foo".to_owned(), s("pk"));
+    let written = transforms
+        .put_item_input(
+            PutItemInput::builder()
+                .table_name("Foo")
+                .set_item(Some(plaintext))
+                .build()
+                .unwrap(),
+        )
+        .await
+        .unwrap()
+        .item
+        .unwrap();
+    // JustSigned is written in plaintext: it is not encrypted.
+    assert_eq!(written["JustSigned"], s("Y_1984.M_May"));
+
+    let read = |item: Item| {
+        let transforms = transforms.clone();
+        async move {
+            transforms
+                .get_item_output(
+                    GetItemOutput::builder().set_item(Some(item)).build(),
+                    &GetItemInput::builder()
+                        .table_name("Foo")
+                        .set_key(Some(HashMap::new()))
+                        .build()
+                        .unwrap(),
+                )
+                .await
+        }
+    };
+    let untouched = read(written.clone()).await.unwrap().item.unwrap();
+    assert_eq!(untouched["JustSigned"], s("Y_1984.M_May"));
+
+    let mut tampered = written;
+    tampered.insert("JustSigned".to_owned(), s("Y_1985.M_May"));
+    let err = read(tampered).await.unwrap_err();
+
+    //= spec/searchable-encryption/beacons.md#signed-beacons
+    //= type=test
+    //= reason=JustSigned is written in plaintext, yet changing it fails signature verification
+    //# `NAME` MUST be automatically configured with an attribute action of SIGN_ONLY.
+    assert!(matches!(err, Error::Cryptographic(_)), "{err:?}");
 }

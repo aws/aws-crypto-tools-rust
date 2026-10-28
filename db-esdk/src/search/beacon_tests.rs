@@ -49,6 +49,13 @@ async fn beaconize(info: &SearchInfo, ctx: &ExprContext) -> Result<ExprContext, 
     info.version.beaconize(ctx, &MaybeKeyId::DontUse, 0).await
 }
 
+/// The beacon value that the query `Mixed = :mixed` uses for `value`.
+async fn mixed_query(info: &SearchInfo, value: &str) -> AttributeValue {
+    let ctx = filter("Mixed = :mixed", values(&[(":mixed", s(value))]));
+    let out = beaconize(info, &ctx).await.unwrap();
+    out.values.unwrap()[":mixed"].clone()
+}
+
 async fn encrypted(info: &SearchInfo, item: &Item, partition: u8) -> Result<Item, Error> {
     info.version
         .generate_encrypted_beacons(item, &MaybeKeyId::DontUse, partition)
@@ -59,15 +66,29 @@ async fn encrypted(info: &SearchInfo, item: &Item, partition: u8) -> Result<Item
 fn hmac_and_partitioned_hash() {
     let b = std_info("foo", 8, 5);
     let key = [1, 2];
+
+    //= spec/searchable-encryption/beacons.md#basichash
+    //= type=test
+    //# - basicHash MUST calculate the [HmacSha384](https://www.ietf.org/rfc/rfc2104.txt)
+    //# of the input bytes and the [hmac key](./search-config.md#hmac-key-generation), and keep the first 8 bytes.
     assert_eq!(
         basic_hash(&[1, 2, 3], &key, 64).unwrap(),
         "2793938b26e9527e"
     );
+
+    //= spec/searchable-encryption/beacons.md#getpart-for-a-standard-beacon
+    //= type=test
+    //# - getPart MUST return the [basicHash](#basichash) of the input and the configured [beacon length](#beacon-length).
     assert_eq!(b.hash(&[1, 2, 3], &key, 0).unwrap(), "7e");
     assert_eq!(
         basic_hash(&[1, 2, 3, 1], &key, 64).unwrap(),
         "2a64f214bc00211d"
     );
+
+    //= spec/searchable-encryption/beacons.md#beacon-partition-encoding
+    //= type=test
+    //= reason=partition 1's beacon is the basic hash of the input with byte 1 appended
+    //# Otherwise, a single byte with a value equal to this calculated partition number, MUST be appended to the input sequence of bytes.
     assert_eq!(b.hash(&[1, 2, 3], &key, 1).unwrap(), "1d");
     assert_eq!(
         basic_hash(&[1, 2, 3, 2], &key, 64).unwrap(),
@@ -82,12 +103,22 @@ fn hmac_and_partitioned_hash() {
 #[test]
 fn partition_is_constrained_to_the_beacons_partitions() {
     let key = [1, 2];
+
     // Partition 6 of a 5-partition beacon is partition 1.
+    //= spec/searchable-encryption/beacons.md#beacon-constraint
+    //= type=test
+    //# If an item is being written or queried as partition `X`, but the [standard beacon](#standard-beacon-initialization) is constrained to only `N` partitions,
+    //# then the partition used to [encode](#beacon-partition-encoding) the beacon MUST be `X % N`, where `%` is the modulo or remainder operation.
     assert_eq!(
         std_info("foo", 8, 5).hash(&[1, 2, 3], &key, 6).unwrap(),
         "1d"
     );
+
     // Partition 5 of a 5-partition beacon is partition 0, which appends no byte.
+    //= spec/searchable-encryption/beacons.md#beacon-partition-encoding
+    //= type=test
+    //= reason=matches the beacon of [1, 2, 3] with nothing appended ("7e" in hmac_and_partitioned_hash)
+    //# If this number is zero, then the input sequence of bytes MUST be returned unchanged.
     assert_eq!(
         std_info("foo", 8, 5).hash(&[1, 2, 3], &key, 5).unwrap(),
         "7e"
@@ -99,8 +130,21 @@ fn bytes_to_hex_truncates_to_the_rightmost_bits() {
     let bytes = [1, 2, 3, 4, 5, 6, 7, 0xb7];
     let expected = ["1", "3", "7", "7", "17", "37", "37", "b7"];
     for (bits, want) in (1..=8).zip(expected) {
+        //= spec/searchable-encryption/beacons.md#basichash
+        //= type=test
+        //# - basicHash MUST return the rightmost [beacon length](#beacon-length) bits of these 8 bytes as a hexadecimal string.
         assert_eq!(bytes_to_hex(bytes, bits), want, "bits {bits}");
     }
+
+    // Even all-zero bits make one hex digit.
+    //= spec/searchable-encryption/beacons.md#basichash
+    //= type=test
+    //# - basicHash MUST produce a non-empty string as output.
+    assert_eq!(bytes_to_hex([0; 8], 1), "0");
+
+    //= spec/searchable-encryption/beacons.md#basichash
+    //= type=test
+    //# - the length of the returned string MUST be (`beacon length`/4) rounded up.
     assert_eq!(bytes_to_hex(bytes, 9), "1b7");
     assert_eq!(bytes_to_hex(bytes, 12), "7b7");
     assert_eq!(bytes_to_hex(bytes, 64), "01020304050607b7");
@@ -110,6 +154,19 @@ fn bytes_to_hex_truncates_to_the_rightmost_bits() {
 fn one_beacon_value() {
     assert_eq!(beacon_value("std2", "1.23", 24), STD2_BEACON);
     assert_eq!(beacon_value("Name", "MyName", 32), NAME_BEACON);
+
+    // Non-ASCII input tells UTF-8 apart from any single-byte encoding.
+    let unicode = "\u{540D}\u{524D}";
+
+    //= spec/searchable-encryption/beacons.md#string-hash
+    //= type=test
+    //# - string hash MUST return the [basic hash](#basichash) of the UTF8 representation
+    //# of the input string, the HMAC key from the [key materials](./search-config.md#get-beacon-key-materials)
+    //# associated with this beacon, and the beacon length associated with this beacon.
+    assert_eq!(
+        beacon_value("Name", unicode, 32),
+        spec_beacon("Name", unicode.as_bytes(), 32)
+    );
     assert_eq!(beacon_value("Title", "MyTitle", 32), TITLE_BEACON);
     assert_eq!(beacon_value("std4", "abc", 24), STD4_BEACON);
     assert_eq!(beacon_value("std6", "666", 26), STD6_BEACON);
@@ -150,6 +207,10 @@ async fn beacon_values() {
         .version
         .generate_signed_beacons(&simple_item(), 0)
         .unwrap();
+
+    //= spec/searchable-encryption/beacons.md#signed-beacons
+    //= type=test
+    //# The beacon value MUST be stored as `NAME`, rather than the usual `aws_dbe_b_NAME`.
     assert_eq!(signed, item(&[("JustSigned", s("Y_1984.M_May"))]));
     let attrs = encrypted(&info, &simple_item(), 0).await.unwrap();
     let expected = item(&[
@@ -166,6 +227,21 @@ async fn beacon_values() {
         ("aws_dbe_b_std4", s(STD4_BEACON)),
         ("aws_dbe_b_YearName", s(&format!("Y_1984.N_{NAME_BEACON}"))),
     ]);
+
+    //= spec/searchable-encryption/beacons.md#value-for-a-non-set-standard-beacon
+    //= type=test
+    //# - This operation MUST return the [basicHash](#basichash) of the resulting bytes and the configured [beacon length](#beacon-length).
+    //
+    //= spec/searchable-encryption/beacons.md#part-value-calculation
+    //= type=test
+    //# If the part is a [encrypted part](#encrypted-part-initialization),
+    //# the part value MUST be the concatenation of the part's prefix
+    //# and the [string hash](#string-hash) of the input string.
+    //
+    //= spec/searchable-encryption/beacons.md#part-value-calculation
+    //= type=test
+    //# If the part is a [signed part](#signed-part-initialization),
+    //# the part value MUST be the concatenation of the part's prefix and the input string.
     assert_eq!(attrs, expected);
 }
 
@@ -190,6 +266,18 @@ async fn numbers_normalize() {
     let mut odd = simple_item();
     odd.insert("std2".to_owned(), n("000001.23000000"));
     let attrs = encrypted(&info, &odd, 0).await.unwrap();
+
+    //= spec/searchable-encryption/beacons.md#value-for-a-non-set-standard-beacon
+    //= type=test
+    //= reason=the denormalized number serializes like "1.23", so it has std2's beacon
+    //# - This operation MUST convert the attribute value of the associated field to
+    //# a sequence of bytes, as per [attribute serialization](../dynamodb-encryption-client/ddb-attribute-serialization.md).
+    //
+    //= spec/searchable-encryption/beacons.md#value-for-a-non-set-standard-beacon
+    //= type=test
+    //# - The returned
+    //# [AttributeValue](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_AttributeValue.html)
+    //# MUST be type "S" String.
     assert_eq!(attrs["aws_dbe_b_std2"], s(STD2_BEACON));
 }
 
@@ -199,6 +287,10 @@ async fn compound_part_containing_split_fails() {
     let mut bad = simple_item();
     bad.insert("Name".to_owned(), s("A.B"));
     let err = encrypted(&info, &bad, 0).await;
+
+    //= spec/searchable-encryption/beacons.md#value-for-a-compound-beacon
+    //= type=test
+    //# - This operation MUST fail if any plaintext value used in the construction contains the split character.
     assert_eq!(
         val_msg(err),
         "Part Name for beacon Mixed has value 'A.B' which contains the split character .'."
@@ -208,26 +300,44 @@ async fn compound_part_containing_split_fails() {
 #[tokio::test]
 async fn compound_queries() {
     let info = lotsa_info();
-    let expect_ok = [
-        ("N_MyName.Y_1984", format!("N_{NAME_BEACON}.Y_1984")),
-        ("N_MyName", format!("N_{NAME_BEACON}")),
-        ("Y_1984", "Y_1984".to_owned()),
-        ("M_bar", "M_bar".to_owned()),
-    ];
-    for (value, want) in expect_ok {
-        let ctx = filter("Mixed = :mixed", values(&[(":mixed", s(value))]));
-        let out = beaconize(&info, &ctx).await.unwrap();
-        assert_eq!(out.values.unwrap()[":mixed"], s(&want), "{value}");
-    }
+
+    //= spec/searchable-encryption/beacons.md#getpart-for-a-compound-beacon
+    //= type=test
+    //# - The string MUST be split on the `split character` into pieces.
+    //
+    //= spec/searchable-encryption/beacons.md#getpart-for-a-compound-beacon
+    //= type=test
+    //# - The value returned MUST be these part values, joined with the `split character`.
+    assert_eq!(
+        mixed_query(&info, "N_MyName.Y_1984").await,
+        s(&format!("N_{NAME_BEACON}.Y_1984"))
+    );
+
+    //= spec/searchable-encryption/beacons.md#getpart-for-a-compound-beacon
+    //= type=test
+    //= reason=the N_ prefix picks encrypted part Name (hashed), the Y_ prefix signed part Year (kept)
+    //# - For each piece, a [part](#part) MUST be identified
+    //# by matching the prefix of a [part](#part)
+    //# to the beginning of the piece.
+    assert_eq!(
+        (
+            mixed_query(&info, "N_MyName").await,
+            mixed_query(&info, "Y_1984").await
+        ),
+        (s(&format!("N_{NAME_BEACON}")), s("Y_1984"))
+    );
+    assert_eq!(mixed_query(&info, "M_bar").await, s("M_bar"));
     // Title parts hash: `T_` and 8 hex digits, the signed part unchanged.
     let title_foo = format!("T_{}", spec_beacon("Title", b"foo", 32));
     for (value, want) in [
         ("T_foo", title_foo.clone()),
         ("T_foo.M_bar", format!("{title_foo}.M_bar")),
     ] {
-        let ctx = filter("Mixed = :mixed", values(&[(":mixed", s(value))]));
-        let out = beaconize(&info, &ctx).await.unwrap();
-        assert_eq!(out.values.unwrap()[":mixed"], s(&want), "{value}");
+        //= spec/searchable-encryption/beacons.md#getpart-for-a-compound-beacon
+        //= type=test
+        //# - The [Part Value](#part-value-calculation) MUST be calculated for each piece,
+        //# using the prefix and length from the discovered part.
+        assert_eq!(mixed_query(&info, value).await, s(&want), "{value}");
     }
 
     for (value, parsed) in [
@@ -393,6 +503,10 @@ async fn part_only_not_stored() {
         ])
     );
     let err = beaconize(&info, &ctx).await;
+
+    //= spec/searchable-encryption/beacons.md#partonly-initialization
+    //= type=test
+    //# A query MUST fail if it tries to search on a PartOnly beacon directly.
     assert_eq!(
         val_msg(err),
         "Field partOnly is encrypted, and has a PartOnly beacon, and so can only be used as part of a compound beacon."
@@ -440,6 +554,10 @@ async fn share_same_beacon() {
 
     let info = with_extra(styled("partOnly", Some(BeaconStyle::shared("std2"))));
     let attrs = encrypted(&info, &my_item, 0).await.unwrap();
+
+    //= spec/searchable-encryption/beacons.md#shared-initialization
+    //= type=test
+    //# This beacon MUST calculate its [value](#beacon-value) as if it were the `other` beacon.
     assert_eq!(
         attrs,
         item(&[
@@ -496,6 +614,22 @@ async fn set_not_set() {
     let info = with_extra(styled("partOnly", Some(BeaconStyle::as_set())));
     let my_item = item(&[("std2", s("abc")), ("partOnly", ss(&["abc", "def", "ghi"]))]);
     let attrs = encrypted(&info, &my_item, 0).await.unwrap();
+
+    //= spec/searchable-encryption/beacons.md#value-for-a-standard-beacon
+    //= type=test
+    //# - If this beacon is marked AsSet then this operation MUST return the
+    //# [set value](#value-for-a-set-standard-beacon),
+    //# otherwise it MUST return the [non-set value](#value-for-a-non-set-standard-beacon)
+    //
+    //= spec/searchable-encryption/beacons.md#asset-initialization
+    //= type=test
+    //# - The Standard Beacon MUST be stored in the item as a Set,
+    //# comprised of the [beacon values](#beacon-value) of all the elements in the original Set.
+    //
+    //= spec/searchable-encryption/beacons.md#value-for-a-set-standard-beacon
+    //= type=test
+    //= reason=928d9b is partOnly's scalar beacon of "abc" (share_same_beacon)
+    //# - This operation MUST return a set containing the [basicHash](#basichash) of the resulting bytes and the configured [beacon length](#beacon-length).
     assert_eq!(
         attrs,
         item(&[
@@ -506,6 +640,11 @@ async fn set_not_set() {
 
     let bad = item(&[("std2", s("abc")), ("partOnly", s("abc"))]);
     let err = encrypted(&info, &bad, 0).await;
+
+    //= spec/searchable-encryption/beacons.md#asset-initialization
+    //= type=test
+    //# - Writing an item MUST fail if the item contains this beacon's attribute,
+    //# and that attribute is not of type Set.
     assert_eq!(
         val_msg(err),
         "Beacon partOnly has style AsSet, but attribute has type S."
@@ -521,18 +660,38 @@ async fn set_beacon_removes_duplicate_values() {
         AttributeValue::Ns(vec!["1".to_owned(), "1.0".to_owned(), "2".to_owned()]),
     )]);
     let attrs = encrypted(&info, &my_item, 0).await.unwrap();
-    let AttributeValue::Ss(set) = &attrs["aws_dbe_b_nums"] else {
-        panic!("expected a string set, got {attrs:?}");
-    };
-    assert_eq!(set.len(), 2);
-    assert_ne!(set[0], set[1]);
+    let one = spec_beacon("nums", b"1", 24);
+    let two = spec_beacon("nums", b"2", 24);
+
+    //= spec/searchable-encryption/beacons.md#value-for-a-set-standard-beacon
+    //= type=test
+    //= reason=without attribute serialization, "1" and "1.0" would have different beacons
+    //# - This operation MUST convert the value of each item in the set to
+    //# a sequence of bytes, as per [attribute serialization](../dynamodb-encryption-client/ddb-attribute-serialization.md).
+    //
+    //= spec/searchable-encryption/beacons.md#value-for-a-set-standard-beacon
+    //= type=test
+    //# - The resulting set MUST NOT contain duplicates.
+    assert_eq!(attrs["aws_dbe_b_nums"], ss(&[&one, &two]));
 
     let bins = item(&[(
         "nums",
         AttributeValue::Bs(vec![Blob::new(vec![1]), Blob::new(vec![2])]),
     )]);
     let attrs = encrypted(&info, &bins, 0).await.unwrap();
-    assert!(matches!(&attrs["aws_dbe_b_nums"], AttributeValue::Ss(v) if v.len() == 2));
+
+    //= spec/searchable-encryption/beacons.md#value-for-a-set-standard-beacon
+    //= type=test
+    //# - The returned
+    //# [AttributeValue](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_AttributeValue.html)
+    //# MUST be type "SS" StringSet.
+    assert_eq!(
+        attrs["aws_dbe_b_nums"],
+        ss(&[
+            &spec_beacon("nums", &[1], 24),
+            &spec_beacon("nums", &[2], 24)
+        ])
+    );
 }
 
 #[tokio::test]
@@ -540,6 +699,11 @@ async fn shared_set() {
     let info = with_extra(styled("partOnly", Some(BeaconStyle::shared_set("std2"))));
     let my_item = item(&[("std2", s("abc")), ("partOnly", ss(&["abc", "def", "ghi"]))]);
     let attrs = encrypted(&info, &my_item, 0).await.unwrap();
+
+    //= spec/searchable-encryption/beacons.md#sharedset-initialization
+    //= type=test
+    //= reason=a set whose first element "abc" has std2's beacon 51e1da
+    //# A SharedSet Beacon MUST behave both as [Shared](#shared-initialization) and [AsSet](#asset-initialization).
     assert_eq!(
         attrs,
         item(&[
@@ -631,11 +795,19 @@ async fn compound_query_value_errors() {
     let cmp = &info.version.beacons["NameTitle"];
 
     let err = cmp.get_beacon_value(&n("1"), &keys, true, false, 0);
+
+    //= spec/searchable-encryption/beacons.md#getpart-for-a-compound-beacon
+    //= type=test
+    //# - getPart MUST take a string as input and produce a string.
     assert_eq!(
         val_msg(err),
         "CompoundBeacon NameTitle can only be queried as a string, not as N"
     );
     let err = cmp.get_beacon_value(&s("X_1"), &keys, true, false, 0);
+
+    //= spec/searchable-encryption/beacons.md#getpart-for-a-compound-beacon
+    //= type=test
+    //# - If no such part exists, this operation MUST fail.
     assert_eq!(
         val_msg(err),
         "Value X_1 for beacon NameTitle does not match the prefix of any configured part."
@@ -661,6 +833,8 @@ fn part_value_with_split_fails() {
     };
     let part = &cmp.parts[0];
     let err = cmp.part_value_calc("a.b", &MaybeKeyMap::DontUseKeys, part, 0);
+
+    // The query-path guard for beacons.md#value-for-a-compound-beacon: no part value contains the split character.
     assert_eq!(
         val_msg(err),
         "Value 'a.b' for beacon part Name contains the split character '.'."
@@ -683,6 +857,133 @@ fn less_than_comparable() {
     assert_eq!(
         val_msg(err),
         "Value Q_1 for beacon Mixed does not match the prefix of any configured part."
+    );
+}
+
+#[tokio::test]
+async fn less_than_on_a_non_less_than_comparable_value_fails() {
+    let info = lotsa_info();
+    let ctx = filter("Mixed < :v", values(&[(":v", s("N_MyName"))]));
+    let err = beaconize(&info, &ctx).await;
+
+    //= spec/searchable-encryption/beacons.md#lessthancomparable
+    //= type=test
+    //# A Query MUST fail if it uses `<`, `<=`, `>`, or `>=` on a value that is not LessThanComparable.
+    assert_eq!(
+        val_msg(err),
+        "The operation '<' cannot be used with a compound beacon, unless the value is LessThanComparable : N_MyName"
+    );
+}
+
+#[tokio::test]
+async fn between_on_non_between_comparable_values_fails() {
+    let info = lotsa_info();
+    let ctx = filter(
+        "NameTitle BETWEEN :a AND :b",
+        values(&[(":a", s("T_ATitle")), (":b", s("T_MyTitle"))]),
+    );
+    let err = beaconize(&info, &ctx).await;
+
+    //= spec/searchable-encryption/beacons.md#betweencomparable
+    //= type=test
+    //# A Query MUST fail if it uses BETWEEN on values that are not BetweenComparable.
+    assert_eq!(
+        val_msg(err),
+        "To use BETWEEN with a compound beacon, the part after any common prefix must be LessThanComparable : BETWEEN T_ATitle AND T_MyTitle"
+    );
+}
+
+#[tokio::test]
+async fn default_constructor_requires_every_part() {
+    // YearName has no constructors: its default one is Year, then Name, both required.
+    let info = lotsa_info();
+    let attrs = encrypted(&info, &simple_item(), 0).await.unwrap();
+    let mut no_year = simple_item();
+    no_year.remove("Year");
+    let no_year_attrs = encrypted(&info, &no_year, 0).await.unwrap();
+    assert_eq!(no_year_attrs["aws_dbe_b_Name"], s(NAME_BEACON));
+
+    //= spec/searchable-encryption/beacons.md#default-construction
+    //= type=test
+    //= reason=the signed Y_ part precedes the encrypted N_ part, and without Year there is no value
+    //# - This default constructor MUST be all of the signed parts,
+    //# followed by all the encrypted parts, all parts being required.
+    assert_eq!(
+        (
+            attrs.get("aws_dbe_b_YearName"),
+            no_year_attrs.get("aws_dbe_b_YearName")
+        ),
+        (Some(&s(&format!("Y_1984.N_{NAME_BEACON}"))), None)
+    );
+}
+
+#[tokio::test]
+async fn compound_uses_the_first_constructor_that_succeeds() {
+    // Mixed's constructors are [Name, Year], then [Title, optional Month].
+    let info = lotsa_info();
+    let attrs = encrypted(&info, &simple_item(), 0).await.unwrap();
+    // Both constructors could build a value; the first wins.
+    assert_eq!(
+        attrs["aws_dbe_b_Mixed"],
+        s(&format!("N_{NAME_BEACON}.Y_1984"))
+    );
+
+    let mut no_name = simple_item();
+    no_name.remove("Name");
+    let attrs = encrypted(&info, &no_name, 0).await.unwrap();
+
+    //= spec/searchable-encryption/beacons.md#value-for-a-compound-beacon
+    //= type=test
+    //# - This operation MUST iterate through all constructors, in order, using the first that succeeds.
+    assert_eq!(
+        attrs["aws_dbe_b_Mixed"],
+        s(&format!("T_{TITLE_BEACON}.M_May"))
+    );
+
+    let title_only = item(&[("Title", s("MyTitle"))]);
+    let attrs = encrypted(&info, &title_only, 0).await.unwrap();
+
+    //= spec/searchable-encryption/beacons.md#value-for-a-compound-beacon
+    //= type=test
+    //# - For that constructor, hash MUST join the [part value](#part-value) for each part
+    //# on the `split character`,
+    //# excluding parts that are not required and with a source field that is not available.
+    assert_eq!(attrs["aws_dbe_b_Mixed"], s(&format!("T_{TITLE_BEACON}")));
+
+    let year_only = item(&[("Year", n("1984"))]);
+    let attrs = encrypted(&info, &year_only, 0).await.unwrap();
+
+    //= spec/searchable-encryption/beacons.md#value-for-a-compound-beacon
+    //= type=test
+    //# - If no constructor succeeds, this operation MUST return no value.
+    assert!(!attrs.contains_key("aws_dbe_b_Mixed"), "{attrs:?}");
+}
+
+#[test]
+fn compound_value_is_never_empty() {
+    // A validated configuration always has a required part; build one without, directly.
+    let info = lotsa_info();
+    let Beacon::Compound(cmp) = &info.version.beacons["NameTitle"] else {
+        panic!("NameTitle is a compound beacon");
+    };
+    let mut all_optional = cmp.clone();
+    all_optional.constructors = vec![vec![ConstructorPartInfo {
+        part: 0,
+        required: false,
+    }]];
+    let err = Beacon::Compound(all_optional).attr_hash(
+        &item(&[]),
+        &info.version.virtual_fields,
+        &MaybeKeyMap::DontUseKeys,
+        0,
+    );
+
+    //= spec/searchable-encryption/beacons.md#value-for-a-compound-beacon
+    //= type=test
+    //# - If a string is returned, it MUST NOT be empty.
+    assert_eq!(
+        val_msg(err),
+        "the compound beacon has no parts in this item"
     );
 }
 
@@ -808,7 +1109,14 @@ async fn beacon_partition_encoding() {
     let attrs1 = encrypted(&info, &simple_item(), 1).await.unwrap();
     // Partition 0 appends no byte, so it matches the unpartitioned beacon.
     assert_eq!(attrs0["aws_dbe_b_Name"], s(NAME_BEACON));
-    assert_ne!(attrs1["aws_dbe_b_Name"], attrs0["aws_dbe_b_Name"]);
+
+    //= spec/searchable-encryption/beacons.md#value-for-a-non-set-standard-beacon
+    //= type=test
+    //# - The serialized form MUST be augmented as per [beacon partition encoding](#beacon-partition-encoding).
+    assert_eq!(
+        attrs1["aws_dbe_b_Name"],
+        s(&spec_beacon("Name", b"MyName\x01", 32))
+    );
     // Partition 6 of a 5-partition beacon is partition 1.
     let attrs6 = encrypted(&info, &simple_item(), 6).await.unwrap();
     assert_eq!(attrs6["aws_dbe_b_Name"], attrs1["aws_dbe_b_Name"]);
@@ -853,6 +1161,10 @@ async fn missing_beacon_attribute_with_partitions() {
     let info = search_info(full_actions(), version).unwrap();
     let it = item(&[("std2", n("1.23")), ("Title", s("MyTitle"))]);
     let attrs = encrypted(&info, &it, 2).await.unwrap();
+
+    //= spec/searchable-encryption/beacons.md#value-for-a-standard-beacon
+    //= type=test
+    //# - This operation MUST return no value if the associated field does not exist in the record
     assert!(attrs.is_empty(), "{attrs:?}");
 }
 

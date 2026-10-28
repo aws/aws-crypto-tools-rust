@@ -461,7 +461,12 @@ fn lotsa_beacons_convert() {
             number_of_partitions: 1,
         }
     );
+
     // A beacon without a location beacons the attribute of its own name.
+    //= spec/searchable-encryption/beacons.md#standard-beacon-initialization
+    //= type=test
+    //# If no [terminal location](virtual.md#terminal-location) is provided,
+    //# the `name` MUST be used as the [terminal location](virtual.md#terminal-location).
     assert_eq!(standard(&info, "std2").loc, loc("std2"));
     // A beacon may be defined on a virtual field.
     assert_eq!(standard(&info, "NameTitleField").loc, loc("NameTitleField"));
@@ -469,6 +474,12 @@ fn lotsa_beacons_convert() {
     let js = compound_info(&info, "JustSigned");
     assert_eq!(js.beacon_name, "JustSigned");
     assert_eq!(js.num_signed, 2);
+
+    //= spec/searchable-encryption/beacons.md#signed-part-initialization
+    //= type=test
+    //= reason=Year is configured without a location, and Month with Date.Month
+    //# If no [terminal location](virtual.md#terminal-location) is provided,
+    //# the `name` MUST be used as the [terminal location](virtual.md#terminal-location).
     assert_eq!(
         js.parts,
         [
@@ -484,7 +495,11 @@ fn lotsa_beacons_convert() {
             },
         ]
     );
+
     // Without constructors, the default one requires every part.
+    //= spec/searchable-encryption/beacons.md#default-construction
+    //= type=test
+    //# - If no constructors are configured, a default constructor MUST be generated.
     assert_eq!(js.constructors, [vec![cp(0, true), cp(1, true)]]);
 
     let yn = compound_info(&info, "YearName");
@@ -661,6 +676,10 @@ fn two_beacons_one_location() {
         title_b(),
         std_beacon("fred", 16, Some("std6[0]")),
     ];
+
+    //= spec/searchable-encryption/beacons.md#standard-beacon-initialization
+    //= type=test
+    //# Initialization MUST fail if two standard beacons are configured with the same location.
     assert_eq!(
         fail(v),
         "Beacon fred is defined on location std6[0], but beacon std6 is already defined on that location."
@@ -696,6 +715,13 @@ fn signed_compound_may_not_share_attribute_name() {
     let mut v = lotsa();
     v.standard_beacons = vec![std2(), std4(), std6(), name_title_beacon(), title_b()];
     v.compound_beacons = Some(vec![compound("Name", vec![], vec![year(), month()], None)]);
+
+    //= spec/searchable-encryption/beacons.md#signed-beacons
+    //= type=test
+    //# Initialization MUST fail if `NAME` is explicitly configured with an
+    //# [attribute actions](../dynamodb-encryption-client/ddb-item-encryptor.md#attribute-actions) or
+    //# [unauthenticated attributes](../dynamodb-encryption-client/ddb-item-encryptor.md#unauthenticated-attributes),
+    //# or begins with the [unauthenticated attribute prefix](../dynamodb-encryption-client/ddb-item-encryptor.md#unauthenticated-attribute-prefix).
     assert_eq!(
         fail(v),
         "Name not allowed as a CompoundBeacon because a fully signed beacon cannot have the same name as an existing attribute."
@@ -713,6 +739,11 @@ fn bad_prefix() {
         vec![],
         None,
     )]);
+
+    //= spec/searchable-encryption/beacons.md#initialization-failure
+    //= type=test
+    //# Initialization MUST fail if any `prefix` in any [part](#part) is a prefix of
+    //# the `prefix` of any other [part](#part).
     assert_eq!(
         fail(v),
         "Compound beacon BadPrefix defines part Title with prefix T_ which is incompatible with part TooBad which has a prefix of T."
@@ -725,10 +756,17 @@ fn bad_prefix_signed_vs_encrypted() {
     let bad_prefix2 = || compound("BadPrefix2", vec![name_p()], vec![nothing()], None);
     let mut v = bare(vec![name_b()]);
     v.compound_beacons = Some(vec![bad_prefix2()]);
+
+    //= spec/searchable-encryption/beacons.md#initialization-failure
+    //= type=test
+    //# Initialization MUST fail if any [signed-part](#signed-part-initialization) contains
+    //# anything but SIGN_ONLY fields.
     assert_eq!(
         fail(v.clone()),
         "Signed Part Nothing is built from Nothing which is not SIGN_ONLY."
     );
+
+    // Rejected by beacons.md#initialization-failure: no prefix begins another part's prefix.
     assert_eq!(
         val_msg(run(with_action("Nothing", CryptoAction::SignOnly), v)),
         "Compound beacon BadPrefix2 defines part Nothing with prefix N__ which is incompatible with part Name which has a prefix of N_."
@@ -740,6 +778,10 @@ fn unused_part_only() {
     let mut v = lotsa();
     v.standard_beacons
         .push(styled("badBeacon", 24, BeaconStyle::part_only()));
+
+    //= spec/searchable-encryption/beacons.md#partonly-initialization
+    //= type=test
+    //# Initialization MUST fail if the configuration does not use a PartOnly in a [compound beacon](#compound-beacon).
     assert_eq!(
         val_msg(run(
             with_action("badBeacon", CryptoAction::EncryptAndSign),
@@ -758,6 +800,10 @@ fn compound_with_unknown() {
         vec![],
         None,
     ));
+
+    //= spec/searchable-encryption/beacons.md#compound-beacon
+    //= type=test
+    //# The name MUST be the name of a configured standard beacon.
     assert_eq!(
         fail(v),
         "Compound beacon NameUnknown refers to standard beacon Unknown which is not configured."
@@ -775,6 +821,10 @@ fn set_in_compound() {
         vec![],
         None,
     ));
+
+    //= spec/searchable-encryption/beacons.md#asset-initialization
+    //= type=test
+    //# - initialization MUST fail if any compound beacon has an AsSet beacon as a part.
     assert_eq!(
         val_msg(run(
             with_action("setBeacon", CryptoAction::EncryptAndSign),
@@ -790,6 +840,8 @@ fn set_in_global_parts() {
     v.standard_beacons
         .push(styled("setBeacon", 24, BeaconStyle::as_set()));
     v.encrypted_parts = Some(vec![enc_part("setBeacon", "S_")]);
+
+    // Rejected by beacons.md#asset-initialization: no AsSet beacon as a compound beacon part.
     assert_eq!(
         val_msg(run(
             with_action("setBeacon", CryptoAction::EncryptAndSign),
@@ -815,6 +867,9 @@ fn share_fail(beacons: Vec<StandardBeacon>, keep_compound: bool) -> String {
 
 #[test]
 fn shared_bad_reference_to_compound() {
+    //= spec/searchable-encryption/beacons.md#shared-initialization
+    //= type=test
+    //# This name MUST be the name of a previously defined Standard Beacon.
     assert_eq!(
         share_fail(
             vec![styled("shareBeacon", 24, BeaconStyle::shared("NameTitle"))],
@@ -855,6 +910,7 @@ fn self_share() {
 
 #[test]
 fn shared_bad_reference_non_existent() {
+    // Rejected by beacons.md#shared-initialization: other names a standard beacon.
     assert_eq!(
         share_fail(
             vec![styled(
@@ -870,6 +926,9 @@ fn shared_bad_reference_non_existent() {
 
 #[test]
 fn shared_bad_length() {
+    //= spec/searchable-encryption/beacons.md#shared-initialization
+    //= type=test
+    //# This beacon's [length](#beacon-length) MUST be equal to the `other` beacon's [length](#beacon-length).
     assert_eq!(
         share_fail(
             vec![styled("shareBeacon", 23, BeaconStyle::shared("std2"))],
@@ -883,6 +942,8 @@ fn shared_bad_length() {
 fn global_part_not_exist() {
     let mut v = lotsa();
     v.encrypted_parts = Some(vec![enc_part("NotExist", "Q_")]);
+
+    // Rejected by beacons.md#compound-beacon: an encrypted part names a configured standard beacon.
     assert_eq!(
         fail(v),
         "Global Parts List refers to standard beacon NotExist which is not configured."
@@ -939,6 +1000,10 @@ fn compound_no_constructor() {
     v.compound_beacons = Some(vec![compound("compoundDefault", vec![], vec![], None)]);
     v.signed_parts = Some(vec![month()]);
     v.encrypted_parts = Some(vec![name_p(), title_p()]);
+
+    //= spec/searchable-encryption/beacons.md#default-construction
+    //= type=test
+    //# - Initialization MUST fail if no constructors are configured, and no local parts are configured.
     assert_eq!(
         fail(v),
         "Compound beacon compoundDefault defines no constructors, and also no local parts. Cannot make a default constructor from global parts."
@@ -1028,6 +1093,11 @@ fn beacon_partitions_below_maximum() {
     let mut v = lotsa();
     v.maximum_number_of_partitions = Some(5);
     v.standard_beacons[1].number_of_partitions = Some(5);
+
+    //= spec/searchable-encryption/beacons.md#standard-beacon-initialization
+    //= type=test
+    //# Initialization MUST fail if [number of partitions](#beacon-constraint) is specified, and is greater than or equal to
+    //# the maximum number of partitions specified in the [beacon version](search-config.md#beacon-version-initialization).
     assert_eq!(
         fail(v),
         "Constrained numberOfPartitions for  std4 is 5 but it must be less than the maximumNumberOfPartitions 5"
@@ -1267,14 +1337,30 @@ fn constructor_checks() {
             vec![ctor(&[])],
             "Every constructor must have at least one part.",
         ),
+        //= spec/searchable-encryption/beacons.md#initialization-failure
+        //= type=test
+        //# Initialization MUST fail if any [constructor](#constructor-initialization) is configured without at least one
+        //# required part.
         (
             vec![ctor(&[("Name", false)])],
             "A Constructor for beacon C lacks any required parts",
         ),
+        //= spec/searchable-encryption/beacons.md#constructor-part-initialization
+        //= type=test
+        //# This name MUST match the name of one of the [encrypted](#encrypted-part-initialization) or [signed](#signed-part-initialization) parts.
+        //
+        //= spec/searchable-encryption/beacons.md#initialization-failure
+        //= type=test
+        //# Initialization MUST fail if any [constructor](#constructor-initialization) is configured with a field name
+        //# that is not a defined [part](#part).
         (
             vec![ctor(&[("Bogus", true)])],
             "Constructor refers to part name Bogus but there is no part by that name.",
         ),
+        //= spec/searchable-encryption/beacons.md#initialization-failure
+        //= type=test
+        //# Initialization MUST fail if two [constructors](#constructor-initialization) are configured
+        //# with the same set of required parts.
         (
             vec![
                 ctor(&[("Name", true), ("Title", false)]),
@@ -1347,6 +1433,8 @@ fn local_prefix_must_differ_from_global() {
     v.encrypted_parts = None;
     v.compound_beacons.as_mut().unwrap()[0].signed =
         Some(vec![signed_part("Month", "Y_", Some("Date.Month"))]);
+
+    // Rejected by beacons.md#initialization-failure: no prefix begins another part's prefix.
     assert_eq!(
         fail(v),
         "Compound beacon C defines signed part Month with prefix Y_ which is already defined as the prefix of a global part."

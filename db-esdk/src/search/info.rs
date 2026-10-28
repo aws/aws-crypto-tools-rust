@@ -76,6 +76,9 @@ impl BeaconVersionInfo {
                 BeaconKind::Signed => !beacon.is_encrypted(),
                 BeaconKind::Encrypted => beacon.is_encrypted(),
             };
+
+            //= spec/searchable-encryption/beacons.md#partonly-initialization
+            //# The Standard Beacon MUST NOT be stored in the item for a PartOnly beacon.
             if !of_kind || beacon.is_part_only() {
                 continue;
             }

@@ -13,10 +13,10 @@ use std::time::Duration;
 use aws_db_esdk::aws_sdk_dynamodb::operation::put_item::PutItemInput;
 use aws_db_esdk::aws_sdk_dynamodb::operation::query::{QueryInput, QueryOutput};
 use aws_db_esdk::aws_sdk_dynamodb::operation::scan::{ScanInput, ScanOutput};
-use aws_db_esdk::aws_sdk_dynamodb::types::AttributeValue;
+use aws_db_esdk::aws_sdk_dynamodb::types::{AttributeValue, ComparisonOperator, Condition};
 use aws_db_esdk::keyring::{
     GetBranchKeyIdFromItemKeyInput, GetBranchKeyIdOutput, HierarchicalKeyring,
-    ItemKeyBranchKeySupplier, ItemKeySupplier,
+    ItemKeyBranchKeySupplier, ItemKeySupplier, MultiKeyring,
 };
 use aws_db_esdk::search::SearchConfig;
 use aws_db_esdk::transforms::{ResolveAttributesInput, Transforms};
@@ -25,7 +25,8 @@ use aws_db_esdk::{TableConfig, async_trait};
 use transforms_support::{
     Item, NAME_BEACON, STD2_BEACON, STD4_BEACON, STD6_BEACON, TITLE_BEACON, beacon_transforms,
     expect_validation, fake_key_store, item, lotsa_beacons, multi_actions,
-    multi_transforms_hierarchical, multi_transforms_static, s, simple_item, transforms,
+    multi_transforms_hierarchical, multi_transforms_static, s, simple_item, static_keyring,
+    transforms,
 };
 
 fn put_input(it: Item) -> PutItemInput {
@@ -120,6 +121,11 @@ async fn put_item_multi_hierarchical_beacons_use_the_item_key() {
     let t = multi_transforms_hierarchical("id1").await;
     let out = put(&t, multi_item("id1")).await;
     // The fake key store gives every branch key id the same beacon key.
+    //= spec/dynamodb-encryption-client/ddb-support.md#getencryptedbeacons
+    //= type=test
+    //= reason=NAME_BEACON is an HMAC under the key store's beacon key, so the beacon key was fetched
+    //# To obtain [Beacon Key Materials] GetEncryptedBeacons
+    //# MUST call [Get beacon key after encrypt](../searchable-encryption/search-config.md#get-beacon-key-after-encrypt).
     assert_eq!(beacon(&out, "Name"), NAME_BEACON);
     assert!(matches!(out["aws_dbe_head"], AttributeValue::B(_)));
 }
@@ -157,8 +163,68 @@ async fn query_output_filters_beacon_false_positives() {
         .count(2)
         .build();
     let out = t.query_output(output, &query_name("MyName")).await.unwrap();
+
+    //= spec/dynamodb-encryption-client/ddb-support.md#removebeacons
+    //= type=test
+    //# RemoveBeacons MUST remove any attributes whose name begins with `aws_dbe_`,
+    //# and leave all other attributes unchanged.
+    //
+    //= spec/dynamodb-encryption-client/ddb-support.md#queryoutputforbeacons
+    //= type=test
+    //# Any items that do not match MUST be discarded.
     assert_eq!(out.items, Some(vec![simple_item_read()]));
+
+    //= spec/dynamodb-encryption-client/ddb-support.md#queryoutputforbeacons
+    //= type=test
+    //# The `Count` field, MUST be updated to reflect the new item count.
     assert_eq!(out.count, 1);
+}
+
+#[tokio::test]
+async fn query_input_rejects_key_conditions() {
+    let condition = Condition::builder()
+        .comparison_operator(ComparisonOperator::Eq)
+        .attribute_value_list(s("MyName"))
+        .build()
+        .unwrap();
+    let input = QueryInput::builder()
+        .table_name("foo")
+        .key_conditions("Name", condition)
+        .build()
+        .unwrap();
+
+    //= spec/dynamodb-encryption-client/ddb-support.md#queryinputforbeacons
+    //= type=test
+    //# The KeyConditions property MUST NOT be defined on [QueryInput](#queryinput).
+    expect_validation(
+        beacon_transforms().query_input(input).await,
+        "Legacy parameter 'KeyConditions' not supported in Query with Encryption",
+    );
+}
+
+#[tokio::test]
+async fn query_output_filter_error_fails_the_query() {
+    let t = beacon_transforms();
+    let mine = put(&t, simple_item()).await;
+    // DynamoDB compared beacons; the plaintext re-filter cannot read `:y` as a number.
+    let input = QueryInput::builder()
+        .table_name("foo")
+        .key_condition_expression("Name = :n")
+        .filter_expression("Year < :y")
+        .expression_attribute_values(":n", s("MyName"))
+        .expression_attribute_values(":y", AttributeValue::N("foo".into()))
+        .build()
+        .unwrap();
+    let output = QueryOutput::builder().items(mine).count(1).build();
+
+    //= spec/dynamodb-encryption-client/ddb-support.md#queryoutputforbeacons
+    //= type=test
+    //# For this reason,
+    //# any error encountered during filtering MUST result in a failure of the query operation.
+    expect_validation(
+        t.query_output(output, &input).await,
+        "Number needs digits either before or after the decimal point. when parsing 'foo'.",
+    );
 }
 
 #[tokio::test]
@@ -248,7 +314,75 @@ async fn query_output_multi_drops_items_of_other_tenants() {
         .unwrap();
     let output = QueryOutput::builder().items(mine).items(theirs).build();
     let out = t.query_output(output, &input).await.unwrap();
+
+    //= spec/dynamodb-encryption-client/ddb-support.md#queryoutputforbeacons
+    //= type=test
+    //= reason=Only the id1 item is kept, so the expected id is the query's TheKeyField value
+    //# If the [Beacon Key Source](../searchable-encryption/search-config.md#beacon-key-source) for the configured table
+    //# is a [Multi Key Store](../searchable-encryption/search-config.md#multi-key-store-initialization)
+    //# you MUST construct an `expected beacon key id` equal to the [Beacon Key Id](../searchable-encryption/search-config.md#beacon-key-materials)
+    //# on materials obtained from [Get beacon key for query](../searchable-encryption/search-config.md#get-beacon-key-for-query)
+    //# These [Beacon Key Materials](../searchable-encryption/search-config.md#beacon-key-materials)
+    //# SHOULD then be discarded.
+    //
+    //= spec/dynamodb-encryption-client/ddb-support.md#queryoutputforbeacons
+    //= type=test
+    //# Using the constructed `expected beacon key id`,
+    //# for each item the result
+    //# the [Get beacon key id from Parsed Header](../searchable-encryption/search-config.md#get-beacon-key-id-from-parsed-header)
+    //# MUST match the `expected beacon key id`.
+    //
+    //= spec/dynamodb-encryption-client/ddb-support.md#queryoutputforbeacons
+    //= type=test
+    //# If [Get beacon key id from Parsed Header](../searchable-encryption/search-config.md#get-beacon-key-id-from-parsed-header)
+    //# fails or an item does not match it MUST be discarded.
     assert_eq!(out.items, Some(vec![mine_read]));
+}
+
+/// An item whose header has two encrypted data keys has no single beacon key id:
+/// the query fails instead of discarding the item, as in the reference implementation.
+#[tokio::test]
+async fn query_output_multi_fails_on_an_item_with_two_data_keys() {
+    let hierarchical = HierarchicalKeyring::builder()
+        .key_store(fake_key_store())
+        .branch_key_id("id1")
+        .ttl(Duration::from_secs(3600))
+        .build()
+        .await
+        .unwrap();
+    let keyring = MultiKeyring::builder()
+        .generator(hierarchical)
+        .child_keyrings(static_keyring())
+        .build()
+        .unwrap();
+    // Writing with search refuses two data keys, so write the item without it.
+    let config = multi_actions(TableConfig::builder())
+        .logical_table_name("foo")
+        .partition_key_name("bar")
+        .allowed_unsigned_attributes("plain")
+        .keyring(keyring)
+        .build()
+        .unwrap();
+    let writer = Transforms::builder()
+        .table_encryption_configs("foo", config)
+        .build()
+        .unwrap();
+    let two_keys = put(&writer, multi_item("id1")).await;
+    let input = QueryInput::builder()
+        .table_name("foo")
+        .key_condition_expression("Name = :n AND TheKeyField = :k")
+        .expression_attribute_values(":n", s("MyName"))
+        .expression_attribute_values(":k", s("id1"))
+        .build()
+        .unwrap();
+    let output = QueryOutput::builder().items(two_keys).build();
+    expect_validation(
+        multi_transforms_hierarchical("id1")
+            .await
+            .query_output(output, &input)
+            .await,
+        "Query result has more than one Encrypted Data Key",
+    );
 }
 
 // --- Scan ---

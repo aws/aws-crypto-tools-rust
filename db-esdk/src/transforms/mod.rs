@@ -127,6 +127,8 @@ impl TransformsBuilder {
             if let Some(search) = &search {
                 // A fully signed compound beacon is written in plaintext, as a SIGN_ONLY attribute.
                 for beacon in search.version.signed_beacon_names() {
+                    //= spec/searchable-encryption/beacons.md#signed-beacons
+                    //# `NAME` MUST be automatically configured with an attribute action of SIGN_ONLY.
                     config
                         .attribute_actions_on_encrypt
                         .insert(beacon, CryptoAction::SignOnly);
@@ -166,6 +168,9 @@ fn is_writeable(item: &Item) -> Result<(), Error> {
         return Ok(());
     }
     reserved.sort_unstable();
+
+    //= spec/dynamodb-encryption-client/ddb-support.md#writable
+    //# Writeable MUST reject any item containing an attribute which begins with `aws_dbe_`.
     Err(val_err(format!(
         "Writing reserved attributes not allowed : {}",
         reserved.join("\n")
@@ -199,6 +204,8 @@ fn test_condition_expression(
     if attrs.is_empty() {
         Ok(())
     } else {
+        //= spec/dynamodb-encryption-client/ddb-support.md#testconditionexpression
+        //# TestConditionExpression MUST fail if any operand in the condition expression is an encrypted attribute name.
         Err(val_err(format!(
             "Condition Expressions forbidden on encrypted attributes : {}",
             attrs.join(",")
@@ -223,6 +230,8 @@ fn test_update_expression(
     if attrs.is_empty() {
         Ok(())
     } else {
+        //= spec/dynamodb-encryption-client/ddb-support.md#testupdateexpression
+        //# TestUpdateExpression MUST fail if any operand in the update expression is a signed attribute name.
         Err(val_err(format!(
             "Update Expressions forbidden on signed attributes : {}",
             attrs.join(",")
@@ -355,6 +364,14 @@ async fn decrypt_search_results(
     values: Option<&HashMap<String, AttributeValue>>,
     what: &str,
 ) -> Result<Vec<Item>, Error> {
+    //= spec/dynamodb-encryption-client/ddb-support.md#queryoutputforbeacons
+    //= reason=get_beacon_key_id gives the id the query fetches its key materials under; none are kept here
+    //# If the [Beacon Key Source](../searchable-encryption/search-config.md#beacon-key-source) for the configured table
+    //# is a [Multi Key Store](../searchable-encryption/search-config.md#multi-key-store-initialization)
+    //# you MUST construct an `expected beacon key id` equal to the [Beacon Key Id](../searchable-encryption/search-config.md#beacon-key-materials)
+    //# on materials obtained from [Get beacon key for query](../searchable-encryption/search-config.md#get-beacon-key-for-query)
+    //# These [Beacon Key Materials](../searchable-encryption/search-config.md#beacon-key-materials)
+    //# SHOULD then be discarded.
     let key_id = match &table.search {
         None => MaybeKeyId::DontUse,
         Some(search) => search
@@ -375,7 +392,17 @@ async fn decrypt_search_results(
                     "{what} result has more than one Encrypted Data Key"
                 )));
             };
+
+            //= spec/dynamodb-encryption-client/ddb-support.md#queryoutputforbeacons
+            //# Using the constructed `expected beacon key id`,
+            //# for each item the result
+            //# the [Get beacon key id from Parsed Header](../searchable-encryption/search-config.md#get-beacon-key-id-from-parsed-header)
+            //# MUST match the `expected beacon key id`.
             if key.key_provider_info() != id.as_bytes() {
+                //= spec/dynamodb-encryption-client/ddb-support.md#queryoutputforbeacons
+                //= reason=Deviation: a header without exactly one EDK fails the query; an item with no parsed header is kept
+                //# If [Get beacon key id from Parsed Header](../searchable-encryption/search-config.md#get-beacon-key-id-from-parsed-header)
+                //# fails or an item does not match it MUST be discarded.
                 continue;
             }
         }
@@ -383,6 +410,10 @@ async fn decrypt_search_results(
     }
     validate_expression_length(key_expr, "KeyConditionExpression")?;
     validate_expression_length(filter_expr, "FilterExpression")?;
+
+    //= spec/dynamodb-encryption-client/ddb-support.md#queryoutputforbeacons
+    //# For this reason,
+    //# any error encountered during filtering MUST result in a failure of the query operation.
     let filtered = match &table.search {
         None => decrypted,
         Some(search) => {
@@ -396,6 +427,9 @@ async fn decrypt_search_results(
 
 /// `item` without the attributes whose names begin with `aws_dbe_`.
 fn remove_beacons(item: HashMap<String, AttributeValue>) -> Item {
+    //= spec/dynamodb-encryption-client/ddb-support.md#removebeacons
+    //# RemoveBeacons MUST remove any attributes whose name begins with `aws_dbe_`,
+    //# and leave all other attributes unchanged.
     item.into_iter()
         .filter(|(k, _)| !k.starts_with(RESERVED_PREFIX))
         .collect()
