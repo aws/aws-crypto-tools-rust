@@ -150,6 +150,8 @@ pub struct Keyring {
     pub raw_aes: Option<RawAesKeyringConfig>,
     #[serde(rename = "RawRsa", default)]
     pub raw_rsa: Option<RawRsaKeyringConfig>,
+    #[serde(rename = "AwsKmsRsa", default)]
+    pub aws_kms_rsa: Option<AwsKmsRsaKeyringConfig>,
     #[serde(rename = "AwsKmsHierarchical", default)]
     pub aws_kms_hierarchical: Option<AwsKmsHierarchicalKeyringConfig>,
     #[serde(rename = "AwsKmsDiscovery", default)]
@@ -174,6 +176,28 @@ pub struct AwsKmsKeyringConfig {
     pub kms_key_id: String,
     #[serde(rename = "grantTokens", default)]
     pub grant_tokens: Option<Vec<String>>,
+}
+
+/// An AWS KMS RSA keyring: wraps client-side with the key's public key, unwraps with KMS.
+/// Without `public_key`, the server fetches it with KMS `GetPublicKey`.
+#[derive(Debug, Deserialize)]
+pub struct AwsKmsRsaKeyringConfig {
+    #[serde(rename = "kmsKeyId")]
+    pub kms_key_id: String,
+    #[serde(rename = "publicKey", default, with = "serde_bytes")]
+    pub public_key: Option<Vec<u8>>,
+    #[serde(rename = "encryptionAlgorithm", default)]
+    pub encryption_algorithm: Option<KmsRsaEncryptionAlgorithm>,
+    #[serde(rename = "grantTokens", default)]
+    pub grant_tokens: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+pub enum KmsRsaEncryptionAlgorithm {
+    #[serde(rename = "RSAES_OAEP_SHA_1")]
+    OaepSha1,
+    #[serde(rename = "RSAES_OAEP_SHA_256")]
+    OaepSha256,
 }
 
 /// A discovery keyring: decrypts with the AWS KMS key each data key names.

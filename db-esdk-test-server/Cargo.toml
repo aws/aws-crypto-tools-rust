@@ -18,6 +18,7 @@ aws-db-esdk = { path = "../db-esdk" }
 
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal"] }
 axum = "0.8"
+base64 = "0.23.1"
 ciborium = "0.2"
 serde = { version = "1", features = ["derive"] }
 serde_bytes = "0.11"

@@ -10,25 +10,30 @@ use crate::error::ServerError;
 use crate::model::{
     AesWrappingAlg, AwsKmsDiscoveryKeyringConfig, AwsKmsHierarchicalKeyringConfig,
     AwsKmsKeyringConfig, AwsKmsMrkDiscoveryKeyringConfig, AwsKmsMultiKeyringConfig,
-    DdbKeyBranchKeyIdSupplier, DiscoveryFilter as ModelDiscoveryFilter, Keyring,
-    MultiKeyringConfig, PaddingScheme, RawAesKeyringConfig, RawRsaKeyringConfig,
+    AwsKmsRsaKeyringConfig, DdbKeyBranchKeyIdSupplier, DiscoveryFilter as ModelDiscoveryFilter,
+    Keyring, KmsRsaEncryptionAlgorithm, MultiKeyringConfig, PaddingScheme, RawAesKeyringConfig,
+    RawRsaKeyringConfig,
 };
 use aws_db_esdk::aws_sdk_dynamodb::types::AttributeValue;
+use aws_db_esdk::aws_sdk_kms::types::EncryptionAlgorithmSpec;
 use aws_db_esdk::key_store::types::KmsConfiguration;
 use aws_db_esdk::keyring::{
     AwsKmsDiscoveryKeyring, AwsKmsKeyring, AwsKmsMrkDiscoveryKeyring, AwsKmsMrkKeyring,
-    DiscoveryFilter, GetBranchKeyIdFromItemKeyInput, GetBranchKeyIdOutput, HierarchicalKeyring,
-    ItemKeyBranchKeySupplier, ItemKeySupplier, MultiKeyring, RawAesKeyring, RawRsaKeyring,
-    SharedKeyring,
+    AwsKmsRsaKeyring, DiscoveryFilter, GetBranchKeyIdFromItemKeyInput, GetBranchKeyIdOutput,
+    HierarchicalKeyring, ItemKeyBranchKeySupplier, ItemKeySupplier, MultiKeyring, RawAesKeyring,
+    RawRsaKeyring, SharedKeyring,
 };
 use aws_db_esdk::types::{AesWrappingAlg as MplAesWrappingAlg, PaddingScheme as MplPaddingScheme};
 use aws_db_esdk::{async_trait, aws_config, aws_sdk_dynamodb, aws_sdk_kms, key_store, mpl};
+use base64::engine::general_purpose::STANDARD;
+use base64::Engine as _;
 
 /// Build the keyring a modeled `Keyring` names; exactly one variant must be set.
 pub async fn keyring_for_config(keyring: &Keyring) -> Result<SharedKeyring, ServerError> {
     let set = usize::from(keyring.aws_kms.is_some())
         + usize::from(keyring.raw_aes.is_some())
         + usize::from(keyring.raw_rsa.is_some())
+        + usize::from(keyring.aws_kms_rsa.is_some())
         + usize::from(keyring.aws_kms_hierarchical.is_some())
         + usize::from(keyring.aws_kms_discovery.is_some())
         + usize::from(keyring.aws_kms_multi_keyring.is_some())
@@ -50,6 +55,9 @@ pub async fn keyring_for_config(keyring: &Keyring) -> Result<SharedKeyring, Serv
     }
     if let Some(aws_kms) = &keyring.aws_kms {
         return build_aws_kms(aws_kms).await;
+    }
+    if let Some(aws_kms_rsa) = &keyring.aws_kms_rsa {
+        return build_aws_kms_rsa(aws_kms_rsa).await;
     }
     if let Some(hierarchical) = &keyring.aws_kms_hierarchical {
         return build_hierarchical(hierarchical).await;
@@ -141,6 +149,66 @@ async fn build_aws_kms(config: &AwsKmsKeyringConfig) -> Result<SharedKeyring, Se
         .build()
         .map_err(|e| ServerError::client(e.to_string()))?;
     Ok(SharedKeyring::new(keyring))
+}
+
+/// An AWS KMS RSA keyring with a KMS client in its key's region.
+///
+/// Without a configured public key, the key's public key is fetched once with
+/// KMS `GetPublicKey` (DER) and PEM-encoded. The encryption algorithm defaults
+/// to RSAES-OAEP-SHA-256.
+async fn build_aws_kms_rsa(config: &AwsKmsRsaKeyringConfig) -> Result<SharedKeyring, ServerError> {
+    let sdk_config = sdk_config_for(&config.kms_key_id).await;
+    let kms_client = aws_sdk_kms::Client::new(&sdk_config);
+    let public_key = match &config.public_key {
+        Some(key) => to_public_key_pem(key),
+        None => {
+            let response = kms_client
+                .get_public_key()
+                .key_id(config.kms_key_id.as_str())
+                .send()
+                .await
+                .map_err(|e| {
+                    ServerError::generic(format!(
+                        "KMS GetPublicKey failed: {}",
+                        aws_sdk_kms::error::DisplayErrorContext(&e)
+                    ))
+                })?;
+            let der = response.public_key.ok_or_else(|| {
+                ServerError::generic("KMS GetPublicKey returned no public key".to_owned())
+            })?;
+            to_public_key_pem(der.as_ref())
+        }
+    };
+    let encryption_algorithm = match config.encryption_algorithm {
+        Some(KmsRsaEncryptionAlgorithm::OaepSha1) => EncryptionAlgorithmSpec::RsaesOaepSha1,
+        Some(KmsRsaEncryptionAlgorithm::OaepSha256) | None => {
+            EncryptionAlgorithmSpec::RsaesOaepSha256
+        }
+    };
+    let keyring = AwsKmsRsaKeyring::builder()
+        .kms_key_id(config.kms_key_id.as_str())
+        .public_key(public_key)
+        .encryption_algorithm(encryption_algorithm)
+        .kms_client(kms_client)
+        .set_grant_tokens(config.grant_tokens.clone())
+        .build()
+        .map_err(|e| ServerError::client(e.to_string()))?;
+    Ok(SharedKeyring::new(keyring))
+}
+
+/// A PEM `PUBLIC KEY` block of a DER X.509 `SubjectPublicKeyInfo`; PEM input passes through.
+fn to_public_key_pem(key: &[u8]) -> Vec<u8> {
+    if key.starts_with(b"-----BEGIN") {
+        return key.to_vec();
+    }
+    let encoded = STANDARD.encode(key);
+    let mut pem = String::from("-----BEGIN PUBLIC KEY-----\n");
+    for line in encoded.as_bytes().chunks(64) {
+        pem.push_str(&String::from_utf8_lossy(line));
+        pem.push('\n');
+    }
+    pem.push_str("-----END PUBLIC KEY-----\n");
+    pem.into_bytes()
 }
 
 /// A discovery keyring with a KMS client in the ambient region.
