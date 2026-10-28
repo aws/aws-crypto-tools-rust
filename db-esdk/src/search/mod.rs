@@ -20,6 +20,8 @@ mod key_source;
 pub(crate) mod partition;
 pub(crate) mod support;
 pub(crate) mod term_loc;
+#[cfg(test)]
+pub(crate) mod test_fixtures;
 pub(crate) mod virt;
 
 pub use config::{
@@ -37,3 +39,7 @@ pub use partition::{
     GetPartitionNumberInput, GetPartitionNumberInputBuilder, GetPartitionNumberOutput,
     GetPartitionNumberOutputBuilder, PartitionSelector, SharedPartitionSelector,
 };
+
+#[cfg(test)]
+#[path = "mod_tests.rs"]
+mod tests;

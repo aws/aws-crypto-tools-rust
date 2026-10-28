@@ -272,3 +272,7 @@ fn derive_hmac_keys(
         })
         .collect()
 }
+
+#[cfg(test)]
+#[path = "key_source_tests.rs"]
+mod tests;
