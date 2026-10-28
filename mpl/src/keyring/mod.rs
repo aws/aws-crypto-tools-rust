@@ -90,6 +90,7 @@ pub(crate) mod edk_wrapping;
 mod fluent_builders;
 mod multi_keyring;
 mod raw_aes_keyring;
+mod raw_rsa_keyring;
 mod types;
 
 #[cfg(feature = "kms")]
@@ -117,6 +118,7 @@ pub use crate::aws_kms::multi_keyrings::{
 pub use fluent_builders::{OnDecryptFluentBuilder, OnEncryptFluentBuilder};
 pub use multi_keyring::{MultiKeyring, MultiKeyringBuilder};
 pub use raw_aes_keyring::{RawAesKeyring, RawAesKeyringBuilder};
+pub use raw_rsa_keyring::{RawRsaKeyring, RawRsaKeyringBuilder};
 pub use types::{
     OnDecryptInput, OnDecryptInputBuilder, OnDecryptOutput, OnDecryptOutputBuilder, OnEncryptInput,
     OnEncryptInputBuilder, OnEncryptOutput, OnEncryptOutputBuilder,

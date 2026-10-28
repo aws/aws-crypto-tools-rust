@@ -175,6 +175,7 @@ macro_rules! fluent_keyring {
 
 fluent_keyring!(
     super::RawAesKeyring,
+    super::RawRsaKeyring,
     super::MultiKeyring,
     crate::aws_kms::hierarchical_keyring::HierarchicalKeyring
 );

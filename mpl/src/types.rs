@@ -9,7 +9,7 @@ pub use crate::structures::{
     BeaconKeyMaterials, BranchKeyMaterials, CommitmentPolicy, DbeAlgorithmSuiteId,
     DbeCommitmentPolicy, DecryptionMaterials, EdkWrapping, EncryptedDataKey, EncryptionAlgorithm,
     EncryptionAlgorithmMode, EncryptionContext, EncryptionMaterials, EsdkAlgorithmSuiteId,
-    EsdkCommitmentPolicy, Format, IntermediateKeyWrapping, KeyDerivationAlgorithm,
+    EsdkCommitmentPolicy, Format, IntermediateKeyWrapping, KeyDerivationAlgorithm, PaddingScheme,
     PlaintextDataKey, SigningKey, SymmetricSignatureAlgorithm, SymmetricSigningKey,
     VerificationKey,
 };
