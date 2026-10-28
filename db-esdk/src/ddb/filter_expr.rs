@@ -60,6 +60,17 @@ pub(crate) fn extract_attributes(
     out
 }
 
+/// Every attribute `expr` names, in order, each `#name` resolved through `names`.
+pub(crate) fn all_attributes(expr: &str, names: Option<&HashMap<String, String>>) -> Vec<String> {
+    parse_expr(expr)
+        .into_iter()
+        .filter_map(|t| match t {
+            Token::Attr(name) => Some(attr_name(name, names)),
+            _ => None,
+        })
+        .collect()
+}
+
 /// A function that ignores the value of the attribute it is given.
 const fn is_special(t: &Token) -> bool {
     matches!(

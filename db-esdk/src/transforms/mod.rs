@@ -196,6 +196,48 @@ fn test_update_expression(
     }
 }
 
+/// The longest key condition or filter expression a search request may have, in UTF-16 code units.
+const MAX_EXPRESSION_LENGTH: usize = 4096;
+
+/// Reject expression `name` when it is longer than [`MAX_EXPRESSION_LENGTH`].
+fn validate_expression_length(expr: Option<&str>, name: &str) -> Result<(), Error> {
+    match expr {
+        Some(e) if e.encode_utf16().count() > MAX_EXPRESSION_LENGTH => Err(val_err(format!(
+            "{name} exceeds maximum length of {MAX_EXPRESSION_LENGTH} characters."
+        ))),
+        _ => Ok(()),
+    }
+}
+
+/// Reject a key condition or filter expression that reads an encrypted attribute:
+/// with no beacons, an encrypted attribute cannot be searched.
+fn test_beaconize(
+    table: &ItemEncryptor,
+    key_expr: Option<&str>,
+    filter_expr: Option<&str>,
+    names: Option<&HashMap<String, String>>,
+) -> Result<(), Error> {
+    let actions = &table.config().attribute_actions_on_encrypt;
+    for expr in [key_expr, filter_expr].into_iter().flatten() {
+        if let Some(attr) = filter_expr::all_attributes(expr, names)
+            .into_iter()
+            .find(|a| is_encrypted(actions, a))
+        {
+            return Err(val_err(format!("Query is using encrypted field : {attr}.")));
+        }
+    }
+    Ok(())
+}
+
+/// Verify and decrypt each item read from `table`, in order.
+async fn decrypt_all(table: &ItemEncryptor, items: Vec<Item>) -> Result<Vec<Item>, Error> {
+    let mut out = Vec::with_capacity(items.len());
+    for item in items {
+        out.push(decrypt(table, item).await?);
+    }
+    Ok(out)
+}
+
 /// Encrypt and sign an item about to be written to `table`.
 async fn encrypt(table: &ItemEncryptor, item: Item) -> Result<Item, Error> {
     Ok(table

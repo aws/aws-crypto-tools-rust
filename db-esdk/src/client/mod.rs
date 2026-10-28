@@ -15,8 +15,9 @@ use crate::table_config::TableConfig;
 use crate::transforms::Transforms;
 
 pub use operations::{
-    BatchWriteItemFluentBuilder, DeleteItemFluentBuilder, GetItemFluentBuilder,
-    PutItemFluentBuilder, TransactWriteItemsFluentBuilder, UpdateItemFluentBuilder,
+    BatchGetItemFluentBuilder, BatchWriteItemFluentBuilder, DeleteItemFluentBuilder,
+    GetItemFluentBuilder, PutItemFluentBuilder, QueryFluentBuilder, ScanFluentBuilder,
+    TransactGetItemsFluentBuilder, TransactWriteItemsFluentBuilder, UpdateItemFluentBuilder,
 };
 
 /// A DynamoDB client that encrypts and signs each item before it is written,
@@ -105,6 +106,34 @@ impl Client {
             self.ddb.transact_write_items(),
             self.transforms.clone(),
         )
+    }
+
+    /// Query a table, verifying and decrypting each item when the table is configured.
+    ///
+    /// On a configured table the query must not read an encrypted attribute.
+    #[must_use]
+    pub fn query(&self) -> QueryFluentBuilder {
+        QueryFluentBuilder::new(self.ddb.query(), self.transforms.clone())
+    }
+
+    /// Scan a table, verifying and decrypting each item when the table is configured.
+    ///
+    /// On a configured table the filter must not read an encrypted attribute.
+    #[must_use]
+    pub fn scan(&self) -> ScanFluentBuilder {
+        ScanFluentBuilder::new(self.ddb.scan(), self.transforms.clone())
+    }
+
+    /// Read items from several tables, verifying and decrypting each item of a configured table.
+    #[must_use]
+    pub fn batch_get_item(&self) -> BatchGetItemFluentBuilder {
+        BatchGetItemFluentBuilder::new(self.ddb.batch_get_item(), self.transforms.clone())
+    }
+
+    /// Read items in one transaction, verifying and decrypting each item of a configured table.
+    #[must_use]
+    pub fn transact_get_items(&self) -> TransactGetItemsFluentBuilder {
+        TransactGetItemsFluentBuilder::new(self.ddb.transact_get_items(), self.transforms.clone())
     }
 }
 

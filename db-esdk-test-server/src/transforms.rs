@@ -11,7 +11,8 @@
 use std::collections::HashMap;
 
 use aws_db_esdk::aws_sdk_dynamodb::operation::{
-    batch_write_item, delete_item, get_item, put_item, transact_write_items, update_item,
+    batch_get_item, batch_write_item, delete_item, get_item, put_item, query, scan,
+    transact_get_items, transact_write_items, update_item,
 };
 use aws_db_esdk::aws_sdk_dynamodb::types as ddb;
 use aws_db_esdk::transforms::Transforms;
@@ -20,12 +21,14 @@ use crate::error::ServerError;
 use crate::handlers::{from_ddb_item, table_config, to_ddb_item, AppState};
 use crate::model::DdbItem;
 use crate::transforms_model::{
-    AttributesOutput, BatchWriteItemInput, BatchWriteItemOutput, ConditionCheck,
-    CreateTransformsClientRequest, CreateTransformsClientResponse, Delete, DeleteItemInput,
-    DeleteRequest, GetItemInput, GetItemOutput, InputTransformRequest, InputTransformResponse,
-    OutputTransformRequest, OutputTransformResponse, Put, PutItemInput, PutRequest,
-    TransactWriteItem, TransactWriteItemsInput, TransactWriteItemsOutput, Update, UpdateItemInput,
-    WriteRequest, WriteRequestMap,
+    AttributesOutput, BatchGetItemInput, BatchGetItemOutput, BatchWriteItemInput,
+    BatchWriteItemOutput, ConditionCheck, CreateTransformsClientRequest,
+    CreateTransformsClientResponse, Delete, DeleteItemInput, DeleteRequest, Get, GetItemInput,
+    GetItemOutput, InputTransformRequest, InputTransformResponse, ItemResponse, ItemsOutput,
+    KeysAndAttributes, OutputTransformRequest, OutputTransformResponse, Put, PutItemInput,
+    PutRequest, QueryInput, ScanInput, TransactGetItem, TransactGetItemsInput,
+    TransactGetItemsOutput, TransactWriteItem, TransactWriteItemsInput, TransactWriteItemsOutput,
+    Update, UpdateItemInput, WriteRequest, WriteRequestMap,
 };
 
 /// A wire shape the AWS SDK's builder rejected.
@@ -349,6 +352,141 @@ fn from_transact_write(
     })
 }
 
+fn to_items(
+    items: Option<Vec<DdbItem>>,
+) -> Result<Option<Vec<HashMap<String, ddb::AttributeValue>>>, ServerError> {
+    items
+        .map(|v| v.into_iter().map(to_ddb_item).collect::<Result<_, _>>())
+        .transpose()
+}
+
+fn from_items(
+    items: Option<Vec<HashMap<String, ddb::AttributeValue>>>,
+) -> Result<Option<Vec<DdbItem>>, ServerError> {
+    items
+        .map(|v| v.into_iter().map(from_ddb_item).collect::<Result<_, _>>())
+        .transpose()
+}
+
+fn to_scan(i: ScanInput) -> Result<scan::ScanInput, ServerError> {
+    scan::ScanInput::builder()
+        .table_name(i.table_name)
+        .set_filter_expression(i.filter_expression)
+        .set_expression_attribute_names(i.expression_attribute_names)
+        .set_expression_attribute_values(opt_item(i.expression_attribute_values)?)
+        .build()
+        .map_err(build_err)
+}
+
+fn from_scan(i: scan::ScanInput) -> Result<ScanInput, ServerError> {
+    Ok(ScanInput {
+        table_name: i.table_name.unwrap_or_default(),
+        filter_expression: i.filter_expression,
+        expression_attribute_names: i.expression_attribute_names,
+        expression_attribute_values: opt_from_item(i.expression_attribute_values)?,
+    })
+}
+
+fn to_query(i: QueryInput) -> Result<query::QueryInput, ServerError> {
+    query::QueryInput::builder()
+        .table_name(i.table_name)
+        .set_key_condition_expression(i.key_condition_expression)
+        .set_filter_expression(i.filter_expression)
+        .set_expression_attribute_names(i.expression_attribute_names)
+        .set_expression_attribute_values(opt_item(i.expression_attribute_values)?)
+        .build()
+        .map_err(build_err)
+}
+
+fn from_query(i: query::QueryInput) -> Result<QueryInput, ServerError> {
+    Ok(QueryInput {
+        table_name: i.table_name.unwrap_or_default(),
+        key_condition_expression: i.key_condition_expression,
+        filter_expression: i.filter_expression,
+        expression_attribute_names: i.expression_attribute_names,
+        expression_attribute_values: opt_from_item(i.expression_attribute_values)?,
+    })
+}
+
+fn to_batch_get(i: BatchGetItemInput) -> Result<batch_get_item::BatchGetItemInput, ServerError> {
+    let request_items = i
+        .request_items
+        .into_iter()
+        .map(|(t, k)| {
+            let keys = to_items(Some(k.keys))?;
+            let ka = ddb::KeysAndAttributes::builder()
+                .set_keys(keys)
+                .build()
+                .map_err(build_err)?;
+            Ok((t, ka))
+        })
+        .collect::<Result<HashMap<_, _>, ServerError>>()?;
+    batch_get_item::BatchGetItemInput::builder()
+        .set_request_items(Some(request_items))
+        .build()
+        .map_err(build_err)
+}
+
+fn from_batch_get(i: batch_get_item::BatchGetItemInput) -> Result<BatchGetItemInput, ServerError> {
+    Ok(BatchGetItemInput {
+        request_items: i
+            .request_items
+            .unwrap_or_default()
+            .into_iter()
+            .map(|(t, k)| {
+                Ok((
+                    t,
+                    KeysAndAttributes {
+                        keys: from_items(Some(k.keys))?.unwrap_or_default(),
+                    },
+                ))
+            })
+            .collect::<Result<_, ServerError>>()?,
+    })
+}
+
+fn to_transact_get(
+    i: TransactGetItemsInput,
+) -> Result<transact_get_items::TransactGetItemsInput, ServerError> {
+    let items = i
+        .transact_items
+        .into_iter()
+        .map(|t| {
+            let get = ddb::Get::builder()
+                .table_name(t.get.table_name)
+                .set_key(Some(to_ddb_item(t.get.key)?))
+                .build()
+                .map_err(build_err)?;
+            Ok(ddb::TransactGetItem::builder().get(get).build())
+        })
+        .collect::<Result<Vec<_>, ServerError>>()?;
+    transact_get_items::TransactGetItemsInput::builder()
+        .set_transact_items(Some(items))
+        .build()
+        .map_err(build_err)
+}
+
+fn from_transact_get(
+    i: transact_get_items::TransactGetItemsInput,
+) -> Result<TransactGetItemsInput, ServerError> {
+    Ok(TransactGetItemsInput {
+        transact_items: i
+            .transact_items
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|t| t.get)
+            .map(|g| {
+                Ok(TransactGetItem {
+                    get: Get {
+                        table_name: g.table_name,
+                        key: from_ddb_item(g.key)?,
+                    },
+                })
+            })
+            .collect::<Result<_, ServerError>>()?,
+    })
+}
+
 impl AppState {
     /// Build and register transforms over the request's tables; returns their new id.
     pub async fn create_transforms_client(
@@ -558,6 +696,160 @@ impl AppState {
             .await?;
         Ok(OutputTransformResponse {
             transformed_output: TransactWriteItemsOutput {},
+        })
+    }
+
+    pub async fn scan_input_transform(
+        &self,
+        req: InputTransformRequest<ScanInput>,
+    ) -> Result<InputTransformResponse<ScanInput>, ServerError> {
+        let t = self.transforms(&req.client_id)?;
+        let out = t.scan_input(to_scan(req.sdk_input)?).await?;
+        Ok(InputTransformResponse {
+            transformed_input: from_scan(out)?,
+        })
+    }
+
+    pub async fn scan_output_transform(
+        &self,
+        req: OutputTransformRequest<ItemsOutput, ScanInput>,
+    ) -> Result<OutputTransformResponse<ItemsOutput>, ServerError> {
+        let t = self.transforms(&req.client_id)?;
+        let output = scan::ScanOutput::builder()
+            .set_items(to_items(req.sdk_output.items)?)
+            .build();
+        let out = t.scan_output(output, &to_scan(req.original_input)?).await?;
+        Ok(OutputTransformResponse {
+            transformed_output: ItemsOutput {
+                items: from_items(out.items)?,
+            },
+        })
+    }
+
+    pub async fn query_input_transform(
+        &self,
+        req: InputTransformRequest<QueryInput>,
+    ) -> Result<InputTransformResponse<QueryInput>, ServerError> {
+        let t = self.transforms(&req.client_id)?;
+        let out = t.query_input(to_query(req.sdk_input)?).await?;
+        Ok(InputTransformResponse {
+            transformed_input: from_query(out)?,
+        })
+    }
+
+    pub async fn query_output_transform(
+        &self,
+        req: OutputTransformRequest<ItemsOutput, QueryInput>,
+    ) -> Result<OutputTransformResponse<ItemsOutput>, ServerError> {
+        let t = self.transforms(&req.client_id)?;
+        let output = query::QueryOutput::builder()
+            .set_items(to_items(req.sdk_output.items)?)
+            .build();
+        let out = t
+            .query_output(output, &to_query(req.original_input)?)
+            .await?;
+        Ok(OutputTransformResponse {
+            transformed_output: ItemsOutput {
+                items: from_items(out.items)?,
+            },
+        })
+    }
+
+    pub async fn batch_get_item_input_transform(
+        &self,
+        req: InputTransformRequest<BatchGetItemInput>,
+    ) -> Result<InputTransformResponse<BatchGetItemInput>, ServerError> {
+        let t = self.transforms(&req.client_id)?;
+        let out = t.batch_get_item_input(to_batch_get(req.sdk_input)?).await?;
+        Ok(InputTransformResponse {
+            transformed_input: from_batch_get(out)?,
+        })
+    }
+
+    pub async fn batch_get_item_output_transform(
+        &self,
+        req: OutputTransformRequest<BatchGetItemOutput, BatchGetItemInput>,
+    ) -> Result<OutputTransformResponse<BatchGetItemOutput>, ServerError> {
+        let t = self.transforms(&req.client_id)?;
+        let responses = req
+            .sdk_output
+            .responses
+            .map(|m| {
+                m.into_iter()
+                    .map(|(k, v)| Ok((k, to_items(Some(v))?.unwrap_or_default())))
+                    .collect::<Result<HashMap<_, _>, ServerError>>()
+            })
+            .transpose()?;
+        let output = batch_get_item::BatchGetItemOutput::builder()
+            .set_responses(responses)
+            .build();
+        let out = t
+            .batch_get_item_output(output, &to_batch_get(req.original_input)?)
+            .await?;
+        let responses = out
+            .responses
+            .map(|m| {
+                m.into_iter()
+                    .map(|(k, v)| Ok((k, from_items(Some(v))?.unwrap_or_default())))
+                    .collect::<Result<HashMap<_, _>, ServerError>>()
+            })
+            .transpose()?;
+        Ok(OutputTransformResponse {
+            transformed_output: BatchGetItemOutput { responses },
+        })
+    }
+
+    pub async fn transact_get_items_input_transform(
+        &self,
+        req: InputTransformRequest<TransactGetItemsInput>,
+    ) -> Result<InputTransformResponse<TransactGetItemsInput>, ServerError> {
+        let t = self.transforms(&req.client_id)?;
+        let out = t
+            .transact_get_items_input(to_transact_get(req.sdk_input)?)
+            .await?;
+        Ok(InputTransformResponse {
+            transformed_input: from_transact_get(out)?,
+        })
+    }
+
+    pub async fn transact_get_items_output_transform(
+        &self,
+        req: OutputTransformRequest<TransactGetItemsOutput, TransactGetItemsInput>,
+    ) -> Result<OutputTransformResponse<TransactGetItemsOutput>, ServerError> {
+        let t = self.transforms(&req.client_id)?;
+        let responses = req
+            .sdk_output
+            .responses
+            .map(|v| {
+                v.into_iter()
+                    .map(|r| {
+                        Ok(ddb::ItemResponse::builder()
+                            .set_item(opt_item(r.item)?)
+                            .build())
+                    })
+                    .collect::<Result<Vec<_>, ServerError>>()
+            })
+            .transpose()?;
+        let output = transact_get_items::TransactGetItemsOutput::builder()
+            .set_responses(responses)
+            .build();
+        let out = t
+            .transact_get_items_output(output, &to_transact_get(req.original_input)?)
+            .await?;
+        let responses = out
+            .responses
+            .map(|v| {
+                v.into_iter()
+                    .map(|r| {
+                        Ok(ItemResponse {
+                            item: opt_from_item(r.item)?,
+                        })
+                    })
+                    .collect::<Result<Vec<_>, ServerError>>()
+            })
+            .transpose()?;
+        Ok(OutputTransformResponse {
+            transformed_output: TransactGetItemsOutput { responses },
         })
     }
 }

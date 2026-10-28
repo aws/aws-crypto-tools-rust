@@ -10,12 +10,13 @@
 use std::collections::HashMap;
 
 use aws_crypto_mpl::aws_sdk_dynamodb::operation::{
-    batch_write_item, delete_item, get_item, put_item, transact_write_items, update_item,
+    batch_get_item, batch_write_item, delete_item, get_item, put_item, query, scan,
+    transact_get_items, transact_write_items, update_item,
 };
 use aws_crypto_mpl::aws_sdk_dynamodb::types::{
-    AttributeValue, AttributeValueUpdate, ConditionalOperator, ExpectedAttributeValue,
-    ReturnConsumedCapacity, ReturnItemCollectionMetrics, ReturnValue,
-    ReturnValuesOnConditionCheckFailure, TransactWriteItem, WriteRequest,
+    AttributeValue, AttributeValueUpdate, Condition, ConditionalOperator, ExpectedAttributeValue,
+    KeysAndAttributes, ReturnConsumedCapacity, ReturnItemCollectionMetrics, ReturnValue,
+    ReturnValuesOnConditionCheckFailure, Select, TransactGetItem, TransactWriteItem, WriteRequest,
 };
 
 use super::build_error;
@@ -337,6 +338,149 @@ impl TransactWriteItemsFluentBuilder {
             .map_err(|e| Error::from_ddb("TransactWriteItems", None, e))?;
         self.transforms
             .transact_write_items_output(output, &input)
+            .await
+    }
+}
+
+fluent_builder! {
+    /// The Query operation. Set the request, then call [`send`](Self::send).
+    QueryFluentBuilder(query::builders::QueryFluentBuilder, query::QueryInput) {
+        value table_name, set_table_name, get_table_name: String;
+        value index_name, set_index_name, get_index_name: String;
+        value select, set_select, get_select: Select;
+        list attributes_to_get, set_attributes_to_get, get_attributes_to_get: String;
+        value limit, set_limit, get_limit: i32;
+        value consistent_read, set_consistent_read, get_consistent_read: bool;
+        map key_conditions, set_key_conditions, get_key_conditions: Condition;
+        map query_filter, set_query_filter, get_query_filter: Condition;
+        value conditional_operator, set_conditional_operator, get_conditional_operator: ConditionalOperator;
+        value scan_index_forward, set_scan_index_forward, get_scan_index_forward: bool;
+        map exclusive_start_key, set_exclusive_start_key, get_exclusive_start_key: AttributeValue;
+        value return_consumed_capacity, set_return_consumed_capacity, get_return_consumed_capacity: ReturnConsumedCapacity;
+        value projection_expression, set_projection_expression, get_projection_expression: String;
+        value filter_expression, set_filter_expression, get_filter_expression: String;
+        value key_condition_expression, set_key_condition_expression, get_key_condition_expression: String;
+        map expression_attribute_names, set_expression_attribute_names, get_expression_attribute_names: String;
+        map expression_attribute_values, set_expression_attribute_values, get_expression_attribute_values: AttributeValue;
+    }
+}
+
+impl QueryFluentBuilder {
+    /// Query the table, then verify and decrypt each item when the table is configured.
+    ///
+    /// # Errors
+    ///
+    /// A `Validation` error when, on a configured table, the request sets a legacy parameter,
+    /// or its key condition or filter expression reads an encrypted attribute.
+    /// Decryption errors keep their variant.
+    /// A failed DynamoDB call keeps DynamoDB's error: see [`Error::as_service_error`].
+    pub async fn send(self) -> Result<query::QueryOutput, Error> {
+        let input = self.inner.as_input().clone().build().map_err(build_error)?;
+        let transformed = self.transforms.query_input(input.clone()).await?;
+        let output = Self::with_input(self.inner, transformed)
+            .send()
+            .await
+            .map_err(|e| Error::from_ddb("Query", input.table_name.as_deref(), e))?;
+        self.transforms.query_output(output, &input).await
+    }
+}
+
+fluent_builder! {
+    /// The Scan operation. Set the request, then call [`send`](Self::send).
+    ScanFluentBuilder(scan::builders::ScanFluentBuilder, scan::ScanInput) {
+        value table_name, set_table_name, get_table_name: String;
+        value index_name, set_index_name, get_index_name: String;
+        list attributes_to_get, set_attributes_to_get, get_attributes_to_get: String;
+        value limit, set_limit, get_limit: i32;
+        value select, set_select, get_select: Select;
+        map scan_filter, set_scan_filter, get_scan_filter: Condition;
+        value conditional_operator, set_conditional_operator, get_conditional_operator: ConditionalOperator;
+        map exclusive_start_key, set_exclusive_start_key, get_exclusive_start_key: AttributeValue;
+        value return_consumed_capacity, set_return_consumed_capacity, get_return_consumed_capacity: ReturnConsumedCapacity;
+        value total_segments, set_total_segments, get_total_segments: i32;
+        value segment, set_segment, get_segment: i32;
+        value projection_expression, set_projection_expression, get_projection_expression: String;
+        value filter_expression, set_filter_expression, get_filter_expression: String;
+        map expression_attribute_names, set_expression_attribute_names, get_expression_attribute_names: String;
+        map expression_attribute_values, set_expression_attribute_values, get_expression_attribute_values: AttributeValue;
+        value consistent_read, set_consistent_read, get_consistent_read: bool;
+    }
+}
+
+impl ScanFluentBuilder {
+    /// Scan the table, then verify and decrypt each item when the table is configured.
+    ///
+    /// # Errors
+    ///
+    /// A `Validation` error when, on a configured table, the request sets a legacy parameter,
+    /// or its filter expression reads an encrypted attribute.
+    /// Decryption errors keep their variant.
+    /// A failed DynamoDB call keeps DynamoDB's error: see [`Error::as_service_error`].
+    pub async fn send(self) -> Result<scan::ScanOutput, Error> {
+        let input = self.inner.as_input().clone().build().map_err(build_error)?;
+        let transformed = self.transforms.scan_input(input.clone()).await?;
+        let output = Self::with_input(self.inner, transformed)
+            .send()
+            .await
+            .map_err(|e| Error::from_ddb("Scan", input.table_name.as_deref(), e))?;
+        self.transforms.scan_output(output, &input).await
+    }
+}
+
+fluent_builder! {
+    /// The BatchGetItem operation. Set the request, then call [`send`](Self::send).
+    BatchGetItemFluentBuilder(batch_get_item::builders::BatchGetItemFluentBuilder, batch_get_item::BatchGetItemInput) {
+        map request_items, set_request_items, get_request_items: KeysAndAttributes;
+        value return_consumed_capacity, set_return_consumed_capacity, get_return_consumed_capacity: ReturnConsumedCapacity;
+    }
+}
+
+impl BatchGetItemFluentBuilder {
+    /// Read items from several tables, then verify and decrypt each item of a configured table.
+    ///
+    /// # Errors
+    ///
+    /// Decryption errors keep their variant.
+    /// A failed DynamoDB call keeps DynamoDB's error: see [`Error::as_service_error`].
+    pub async fn send(self) -> Result<batch_get_item::BatchGetItemOutput, Error> {
+        let input = self.inner.as_input().clone().build().map_err(build_error)?;
+        let transformed = self.transforms.batch_get_item_input(input.clone()).await?;
+        let output = Self::with_input(self.inner, transformed)
+            .send()
+            .await
+            .map_err(|e| Error::from_ddb("BatchGetItem", None, e))?;
+        self.transforms.batch_get_item_output(output, &input).await
+    }
+}
+
+fluent_builder! {
+    /// The TransactGetItems operation. Set the request, then call [`send`](Self::send).
+    TransactGetItemsFluentBuilder(transact_get_items::builders::TransactGetItemsFluentBuilder, transact_get_items::TransactGetItemsInput) {
+        list transact_items, set_transact_items, get_transact_items: TransactGetItem;
+        value return_consumed_capacity, set_return_consumed_capacity, get_return_consumed_capacity: ReturnConsumedCapacity;
+    }
+}
+
+impl TransactGetItemsFluentBuilder {
+    /// Read items in one transaction, then verify and decrypt each item of a configured table.
+    ///
+    /// # Errors
+    ///
+    /// A `Validation` error when the response has a different number of items than the request has gets.
+    /// Decryption errors keep their variant.
+    /// A failed DynamoDB call keeps DynamoDB's error: see [`Error::as_service_error`].
+    pub async fn send(self) -> Result<transact_get_items::TransactGetItemsOutput, Error> {
+        let input = self.inner.as_input().clone().build().map_err(build_error)?;
+        let transformed = self
+            .transforms
+            .transact_get_items_input(input.clone())
+            .await?;
+        let output = Self::with_input(self.inner, transformed)
+            .send()
+            .await
+            .map_err(|e| Error::from_ddb("TransactGetItems", None, e))?;
+        self.transforms
+            .transact_get_items_output(output, &input)
             .await
     }
 }

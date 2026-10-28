@@ -220,6 +220,62 @@ async fn dispatch(
                 .and_then(|resp| encode(&resp)),
             Err(e) => Err(e),
         },
+        "ScanInputTransform" => match decode(&body) {
+            Ok(req) => state
+                .scan_input_transform(req)
+                .await
+                .and_then(|resp| encode(&resp)),
+            Err(e) => Err(e),
+        },
+        "ScanOutputTransform" => match decode(&body) {
+            Ok(req) => state
+                .scan_output_transform(req)
+                .await
+                .and_then(|resp| encode(&resp)),
+            Err(e) => Err(e),
+        },
+        "QueryInputTransform" => match decode(&body) {
+            Ok(req) => state
+                .query_input_transform(req)
+                .await
+                .and_then(|resp| encode(&resp)),
+            Err(e) => Err(e),
+        },
+        "QueryOutputTransform" => match decode(&body) {
+            Ok(req) => state
+                .query_output_transform(req)
+                .await
+                .and_then(|resp| encode(&resp)),
+            Err(e) => Err(e),
+        },
+        "BatchGetItemInputTransform" => match decode(&body) {
+            Ok(req) => state
+                .batch_get_item_input_transform(req)
+                .await
+                .and_then(|resp| encode(&resp)),
+            Err(e) => Err(e),
+        },
+        "BatchGetItemOutputTransform" => match decode(&body) {
+            Ok(req) => state
+                .batch_get_item_output_transform(req)
+                .await
+                .and_then(|resp| encode(&resp)),
+            Err(e) => Err(e),
+        },
+        "TransactGetItemsInputTransform" => match decode(&body) {
+            Ok(req) => state
+                .transact_get_items_input_transform(req)
+                .await
+                .and_then(|resp| encode(&resp)),
+            Err(e) => Err(e),
+        },
+        "TransactGetItemsOutputTransform" => match decode(&body) {
+            Ok(req) => state
+                .transact_get_items_output_transform(req)
+                .await
+                .and_then(|resp| encode(&resp)),
+            Err(e) => Err(e),
+        },
         other => Err(ServerError::generic(format!(
             "operation {other} is not supported by the native Rust language server"
         ))),

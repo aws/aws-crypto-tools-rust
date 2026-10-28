@@ -257,6 +257,118 @@ pub struct ConditionCheck {
     pub expression_attribute_values: Option<DdbItem>,
 }
 
+/// A Scan request: the table, and the filter expression with its name and value maps.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScanInput {
+    #[serde(rename = "tableName")]
+    pub table_name: String,
+    #[serde(
+        rename = "filterExpression",
+        skip_serializing_if = "Option::is_none",
+        default
+    )]
+    pub filter_expression: Option<String>,
+    #[serde(
+        rename = "expressionAttributeNames",
+        skip_serializing_if = "Option::is_none",
+        default
+    )]
+    pub expression_attribute_names: Option<ExpressionAttributeNameMap>,
+    #[serde(
+        rename = "expressionAttributeValues",
+        skip_serializing_if = "Option::is_none",
+        default
+    )]
+    pub expression_attribute_values: Option<DdbItem>,
+}
+
+/// The items a Scan or Query response returns, if any.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ItemsOutput {
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub items: Option<Vec<DdbItem>>,
+}
+
+/// A Query request: the table, and the key condition and filter expressions with their name and value maps.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QueryInput {
+    #[serde(rename = "tableName")]
+    pub table_name: String,
+    #[serde(
+        rename = "keyConditionExpression",
+        skip_serializing_if = "Option::is_none",
+        default
+    )]
+    pub key_condition_expression: Option<String>,
+    #[serde(
+        rename = "filterExpression",
+        skip_serializing_if = "Option::is_none",
+        default
+    )]
+    pub filter_expression: Option<String>,
+    #[serde(
+        rename = "expressionAttributeNames",
+        skip_serializing_if = "Option::is_none",
+        default
+    )]
+    pub expression_attribute_names: Option<ExpressionAttributeNameMap>,
+    #[serde(
+        rename = "expressionAttributeValues",
+        skip_serializing_if = "Option::is_none",
+        default
+    )]
+    pub expression_attribute_values: Option<DdbItem>,
+}
+
+/// The keys a BatchGetItem request reads from one table.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KeysAndAttributes {
+    pub keys: Vec<DdbItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BatchGetItemInput {
+    #[serde(rename = "requestItems")]
+    pub request_items: HashMap<String, KeysAndAttributes>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct BatchGetItemOutput {
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub responses: Option<HashMap<String, Vec<DdbItem>>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Get {
+    #[serde(rename = "tableName")]
+    pub table_name: String,
+    pub key: DdbItem,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TransactGetItem {
+    pub get: Get,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TransactGetItemsInput {
+    #[serde(rename = "transactItems")]
+    pub transact_items: Vec<TransactGetItem>,
+}
+
+/// One item of a TransactGetItems response; absent when the get matched nothing.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ItemResponse {
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub item: Option<DdbItem>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct TransactGetItemsOutput {
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub responses: Option<Vec<ItemResponse>>,
+}
+
 /// The attributes a PutItem, UpdateItem, or DeleteItem response returns, if any.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct AttributesOutput {
