@@ -257,3 +257,180 @@ fn find_token_len(s: &str) -> usize {
             .unwrap_or(bytes.len()),
     }
 }
+
+/// Ported from the Dafny `DynamoDbEncryptionTransforms/test/DdbStatement.dfy`.
+#[cfg(test)]
+mod tests {
+    use super::table_from_statement;
+    use crate::error::Error;
+
+    const NO_TABLE: &str = "Unable to extract table name from PartiQL statement.";
+
+    #[track_caller]
+    fn expect_table(statement: &str, table: &str) {
+        assert_eq!(table_from_statement(statement).unwrap(), table, "{statement:?}");
+    }
+
+    #[track_caller]
+    fn expect_no_table(statement: &str) {
+        match table_from_statement(statement) {
+            Err(Error::Validation(e)) => assert_eq!(e.message(), NO_TABLE, "{statement:?}"),
+            other => panic!("{statement:?}: expected no table, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn empty_statement() {
+        expect_no_table("");
+    }
+
+    #[test]
+    fn invalid_statement() {
+        expect_no_table("stuff junk");
+    }
+
+    #[test]
+    fn statement_invalid_table() {
+        expect_no_table("select blah blah from f where");
+    }
+
+    #[test]
+    fn select_statement_case() {
+        expect_table("SeLeCt blah blah FrOm foo where", "foo");
+    }
+
+    #[test]
+    fn invalid_statements() {
+        for statement in [
+            "select",
+            "select blah blah blah",
+            "select blah blah from",
+            "insert",
+            "insert blah blah blah",
+            "insert into",
+            "insert !into blah",
+            "delete",
+            "delete blah blah blah",
+            "delete from",
+            "delete !from blah",
+            "update",
+            "  update        ",
+            "update b",
+        ] {
+            expect_no_table(statement);
+        }
+    }
+
+    #[test]
+    fn table_quotes() {
+        expect_table("select * from foo", "foo");
+        expect_table("select * from \"foo\"", "foo");
+        expect_table("select * from \"f o o\"", "f o o");
+        expect_table("insert into foo", "foo");
+        expect_table("insert into \"foo\"", "foo");
+        expect_table("insert into \" foo \"", " foo ");
+        expect_table("delete from foo", "foo");
+        expect_table("delete from \"foo\"", "foo");
+        expect_table("delete from \"   fo   o\"", "   fo   o");
+        expect_table("update foo", "foo");
+        expect_table("update \"foo\"", "foo");
+        expect_table("update \"f\to\no\"", "f\to\no");
+    }
+
+    #[test]
+    fn exists_statement() {
+        expect_table("exists(select * from foo", "foo");
+        expect_table("\t  ExIsTs \r(\t\n SeLeCt * from foo", "foo");
+        expect_table("exists(select * from \"foo\"", "foo");
+        expect_table("exists(select * from \"foo.bar\"", "foo");
+    }
+
+    #[test]
+    fn exists_statement_errors() {
+        for statement in [
+            "exists",
+            "exists()",
+            "exists select blah",
+            "exists(select)",
+            "exists(select * )",
+            "exists(select * from)",
+            "exists(update blah)",
+            "exists(delete from blah)",
+            "exists(insert into blah)",
+        ] {
+            expect_no_table(statement);
+        }
+    }
+
+    #[test]
+    fn select_statement() {
+        expect_table("select blah blah from foo where", "foo");
+        expect_table("select\nblah\nblah\n\t  from\t\n  \t\n  foo where", "foo");
+    }
+
+    #[test]
+    fn select_statement_with_index() {
+        expect_table("select * from foo.bar where", "foo");
+    }
+
+    // https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/ql-reference.update.html
+    #[test]
+    fn update_from_docs() {
+        expect_table(
+            "UPDATE \"Music\" SET AwardsWon=1 SET AwardDetail={'Grammys':[2020, 2018]}  WHERE Artist='Acme Band' AND SongTitle='PartiQL Rocks",
+            "Music",
+        );
+        expect_table(
+            "UPDATE \"Music\"\nSET AwardsWon=1\nSET AwardDetail={'Grammys':[2020, 2018]}\nWHERE Artist='Acme Band' AND SongTitle='PartiQL Rocks'\nRETURNING ALL OLD *",
+            "Music",
+        );
+    }
+
+    // https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/ql-reference.select.html
+    #[test]
+    fn select_from_docs() {
+        expect_table(
+            "SELECT OrderID, Total\nFROM \"Orders\"\nWHERE OrderID IN [1, 2, 3] ORDER BY OrderID DESC",
+            "Orders",
+        );
+        expect_table(
+            "SELECT Devices.FireStick.DateWatched[0]\nFROM WatchList\nWHERE CustomerID= 'C1' AND MovieID= 'M1'",
+            "WatchList",
+        );
+        expect_table(
+            "SELECT *\nFROM \"Orders\"\nWHERE OrderID IN [100, 300, 234]",
+            "Orders",
+        );
+    }
+
+    // https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/ql-reference.delete.html
+    #[test]
+    fn delete_from_docs() {
+        expect_table(
+            "DELETE FROM \"Music\" WHERE \"Artist\" = 'Acme Band' AND \"SongTitle\" = 'PartiQL Rocks' RETURNING ALL OLD *\n",
+            "Music",
+        );
+    }
+
+    // https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/ql-functions.exists.html
+    #[test]
+    fn exists_from_docs() {
+        expect_table(
+            "EXISTS(\n    SELECT * FROM \"Music\"\n    WHERE \"Artist\" = 'Acme Band' AND \"SongTitle\" = 'PartiQL Rocks')\n",
+            "Music",
+        );
+    }
+
+    // https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/ql-reference.insert.html
+    #[test]
+    fn insert_from_docs() {
+        expect_table(
+            "INSERT INTO \"Music\" value {'Artist' : 'Acme Band','SongTitle' : 'PartiQL Rocks'}\n",
+            "Music",
+        );
+        expect_table(
+            "INSERT INTO \"Mu s ic\" value {'Artist' : 'Acme Band','SongTitle' : 'PartiQL Rocks'}\n",
+            "Mu s ic",
+        );
+    }
+}
