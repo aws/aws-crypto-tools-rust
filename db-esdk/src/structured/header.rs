@@ -66,6 +66,10 @@ fn valid_data_key(k: &EncryptedDataKey) -> bool {
 
 /// The header version for a schema: 2 when any field is `SIGN_AND_INCLUDE_IN_ENCRYPTION_CONTEXT`.
 pub(crate) fn version_from_schema(data: &[CanonItem]) -> u8 {
+    //= spec/structured-encryption/header.md#format-version
+    //# If any [Crypto Action](./structures.md#crypto-action) is configured as
+    //# [SIGN_AND_INCLUDE_IN_ENCRYPTION_CONTEXT Crypto Action](./structures.md#sign_and_include_in_encryption_context)
+    //# the Version MUST be 0x02; otherwise, Version MUST be 0x01.
     if data
         .iter()
         .any(|x| x.action == CryptoAction::SignAndIncludeInEncryptionContext)
@@ -77,6 +81,8 @@ pub(crate) fn version_from_schema(data: &[CanonItem]) -> u8 {
 }
 
 const fn action_legend(action: CryptoAction) -> Option<u8> {
+    //= spec/structured-encryption/header.md#encrypt-legend-bytes
+    //# Each Crypto Action MUST be encoded as follows
     match action {
         CryptoAction::EncryptAndSign => Some(ENCRYPT_AND_SIGN_LEGEND),
         CryptoAction::SignAndIncludeInEncryptionContext => {
@@ -89,6 +95,9 @@ const fn action_legend(action: CryptoAction) -> Option<u8> {
 
 /// One legend byte per signed field, in canonical order.
 fn make_legend(schema: &[CanonItem]) -> Result<Vec<u8>, Error> {
+    //= spec/structured-encryption/header.md#encrypt-legend-bytes
+    //= reason=for_encrypt sorts schema by canonical path; one byte per signed field in that order
+    //# The Encrypt Legend Bytes MUST be serialized as follows:
     let legend: Vec<u8> = schema
         .iter()
         .filter_map(|x| action_legend(x.action))
@@ -100,6 +109,9 @@ fn make_legend(schema: &[CanonItem]) -> Result<Vec<u8>, Error> {
     }
     let auth_count = schema.iter().filter(|x| is_auth_attr(x.action)).count();
     if auth_count != legend.len() {
+        //= spec/structured-encryption/header.md#encrypt-legend-bytes
+        //# The length of this serialized value (in bytes) MUST equal the number of authenticated fields indicated
+        //# by the caller's [Authenticate Schema](./structures.md#authenticate-schema).
         return Err(internal_err(
             "the header legend does not match the signed attributes",
         ));
@@ -115,8 +127,18 @@ fn u16_len(len: usize) -> [u8; 2] {
 /// The count of pairs, then each key and value with its 16-bit length, in byte order of the keys.
 pub(crate) fn serialize_context(ec: &EncryptionContext) -> Vec<u8> {
     let mut out = Vec::new();
+
+    //= spec/structured-encryption/header.md#encryption-context
+    //# The Encryption Context MUST be serialized as follows
     out.extend_from_slice(&u16_len(ec.len()));
+
+    //= spec/structured-encryption/header.md#key-value-pair-entries
+    //= reason=BTreeMap<String, _> iterates keys in UTF-8 byte order
+    //# These entries MUST have entries sorted, by key,
+    //# in ascending order according to the UTF-8 encoded binary value.
     for (k, v) in ec.as_map() {
+        //= spec/structured-encryption/header.md#key-value-pair-entries
+        //# Each Key Value Pair MUST be serialized as follows
         out.extend_from_slice(&u16_len(k.len()));
         out.extend_from_slice(k.as_bytes());
         out.extend_from_slice(&u16_len(v.len()));
@@ -126,8 +148,12 @@ pub(crate) fn serialize_context(ec: &EncryptionContext) -> Vec<u8> {
 }
 
 fn serialize_data_keys(keys: &[EncryptedDataKey]) -> Vec<u8> {
+    //= spec/structured-encryption/header.md#encrypted-data-keys
+    //# The Encrypted Data Keys MUST be serialized as follows
     let mut out = vec![u8::try_from(keys.len()).unwrap_or(u8::MAX)];
     for k in keys {
+        //= spec/structured-encryption/header.md#encrypted-data-key-entries
+        //# Each Encrypted Data Key MUST be serialized as follows
         out.extend_from_slice(&u16_len(k.key_provider_id().len()));
         out.extend_from_slice(k.key_provider_id().as_bytes());
         out.extend_from_slice(&u16_len(k.key_provider_info().len()));
@@ -155,6 +181,8 @@ impl PartialHeader {
         }
         let edks = mat.encrypted_data_keys();
         if edks.is_empty() {
+            //= spec/structured-encryption/header.md#encrypted-data-key-count
+            //# This value MUST be greater than 0.
             return Err(val_err(
                 "the encryption materials have no encrypted data keys",
             ));
@@ -171,10 +199,14 @@ impl PartialHeader {
         }
         let id = mat.algorithm_suite().id();
         if id[0] != DBE_ALGORITHM_FAMILY {
+            //= spec/structured-encryption/header.md#format-flavor
+            //# The algorithm suite indicated by the flavor MUST be a
+            //# [DBE supported algorithm suite](../../submodules/MaterialProviders/aws-encryption-sdk-specification/framework/algorithm-suites.md#supported-algorithm-suites-enum).
             return Err(val_err(
                 "the materials use an algorithm suite that is not a DB-ESDK algorithm suite",
             ));
         }
+        // Not reachable through the typed MPL suite ids: every DB-ESDK suite has a valid flavor.
         if !valid_flavor(id[1]) {
             return Err(val_err(
                 "the materials use an unknown DB-ESDK algorithm suite",
@@ -185,6 +217,11 @@ impl PartialHeader {
         let mut stored = EncryptionContext::new();
         for (k, v) in mat.encryption_context().iter() {
             if !required.contains(k) {
+                //= spec/structured-encryption/encrypt-path-structure.md#header-field
+                //# The encryption context field serialized in the header MUST contain all key-value
+                //# pairs of the encryption context in the [encryption materials](#retrieve-encryption-materials)
+                //# that are not included in the
+                //# [required encryption context keys](../framework/structures.md#required-encryption-context-keys) list.
                 stored.insert(k, v);
             }
         }
@@ -205,8 +242,15 @@ impl PartialHeader {
 
     /// The header bytes before the commitment.
     pub(crate) fn serialize(&self) -> Vec<u8> {
+        //= spec/structured-encryption/header.md#partial-header
+        //# The Partial Header MUST be
         let mut out = vec![self.version, self.flavor];
         out.extend_from_slice(&self.msg_id);
+
+        // Encrypt Legend
+
+        //= spec/structured-encryption/header.md#encrypt-legend
+        //# The Encrypt Legend MUST be serialized as
         out.extend_from_slice(&u16_len(self.legend.len()));
         out.extend_from_slice(&self.legend);
         out.extend_from_slice(&serialize_context(&self.enc_context));
@@ -222,12 +266,17 @@ impl PartialHeader {
     ) -> Result<Vec<u8>, Error> {
         let mut body = self.serialize();
         let commitment = header_commitment(hmac_alg, commit_key, &body)?;
+
+        //= spec/structured-encryption/header.md#full-header-value
+        //# The value of the header MUST be
         body.extend_from_slice(&commitment);
         Ok(body)
     }
 
     /// Parse a serialized header, commitment included.
     pub(crate) fn deserialize(data: &[u8]) -> Result<Self, Error> {
+        //= spec/structured-encryption/header.md#partial-header
+        //# The Partial Header MUST be
         let Some(([version, flavor], rest)) = data.split_first_chunk::<2>() else {
             return Err(ser_err("the item's header (aws_dbe_head) is too short"));
         };
@@ -236,11 +285,16 @@ impl PartialHeader {
         };
         let (version, flavor) = (*version, *flavor);
         if !valid_version(version) {
+            //= spec/structured-encryption/header.md#format-version
+            //# The Version MUST be `0x01` or `0x02`.
             return Err(ser_err(
                 "the item's header (aws_dbe_head) has an unknown version",
             ));
         }
         if !valid_flavor(flavor) {
+            //= spec/structured-encryption/header.md#format-flavor
+            //# The algorithm suite indicated by the flavor MUST be a
+            //# [DBE supported algorithm suite](../../submodules/MaterialProviders/aws-encryption-sdk-specification/framework/algorithm-suites.md#supported-algorithm-suites-enum).
             return Err(ser_err(
                 "the item's header (aws_dbe_head) names an unknown algorithm suite",
             ));
@@ -251,6 +305,9 @@ impl PartialHeader {
         let keys_data = &context_data[context_len..];
         let (data_keys, keys_len) = get_data_keys(keys_data)?;
         let trailing = &keys_data[keys_len..];
+
+        //= spec/structured-encryption/header.md#full-header-value
+        //# The value of the header MUST be
         if trailing.len() < COMMITMENT_LEN {
             return Err(ser_err("the item's header (aws_dbe_head) ends early"));
         }
@@ -282,6 +339,11 @@ impl PartialHeader {
         }
         let (body, stored) = data.split_at(data.len() - COMMITMENT_LEN);
         let calculated = header_commitment(hmac_alg, commit_key, body)?;
+
+        //= spec/structured-encryption/header.md#commitment-verification
+        //= type=implication
+        //= reason=constant_time_equal wraps aws_lc_rs::constant_time::verify_slices_are_equal
+        //# Header commitment comparisons MUST be constant time operations.
         if !constant_time_equal(stored, &calculated) {
             return Err(crate::error::crypt_err(
                 "the item's header (aws_dbe_head) failed its key commitment check: the header was changed, or the data key is not the one it was written with",
@@ -298,6 +360,12 @@ fn header_commitment(
     data: &[u8],
 ) -> Result<[u8; COMMITMENT_LEN], Error> {
     let mut full = vec![0u8; digest_len(hmac_alg)];
+
+    //= spec/structured-encryption/header.md#commitment-calculation
+    //= type=exception
+    //= reason=uses the suite's commit-KDF hash (HMAC-SHA-512), as the reference and every DB-ESDK implementation do; spec erratum pending
+    //# The Header Commitment MUST be calculated as a the first 32 bytes of an HmacSha384,
+    //# with the serialized partial header as the message, and the Commit Key as the key.
     hmac(hmac_alg, commit_key, data, &mut full)?;
     let mut out = [0u8; COMMITMENT_LEN];
     out.copy_from_slice(
@@ -324,12 +392,17 @@ fn get_legend(data: &[u8]) -> Result<(Vec<u8>, usize), Error> {
     if data.len() < 2 {
         return Err(ser_err("the item's header (aws_dbe_head) ends early"));
     }
+
+    //= spec/structured-encryption/header.md#encrypt-legend
+    //# The Encrypt Legend MUST be serialized as
     let size = read_u16(data, 0) + 2;
     if size > data.len() {
         return Err(ser_err("the item's header (aws_dbe_head) ends early"));
     }
     let legend = data[2..size].to_vec();
     if !legend.iter().copied().all(valid_legend_byte) {
+        //= spec/structured-encryption/header.md#encrypt-legend-bytes
+        //# Each Crypto Action MUST be encoded as follows
         return Err(ser_err(
             "the item's header (aws_dbe_head) has an unknown byte in its legend",
         ));
@@ -346,11 +419,15 @@ fn get_context(data: &[u8]) -> Result<(EncryptionContext, usize), Error> {
     if data.len() < 2 {
         return Err(ser_err("the item's header (aws_dbe_head) ends early"));
     }
+
+    //= spec/structured-encryption/header.md#encryption-context
+    //# The Encryption Context MUST be serialized as follows
     let count = read_u16(data, 0);
     let mut pos = 2usize;
     let mut map: BTreeMap<String, String> = BTreeMap::new();
     let mut prev_key: Vec<u8> = Vec::new();
     for _ in 0..count {
+        // Not reachable: `count` is a u16, so the map never holds 65535 entries here.
         if map.len() + 1 >= UINT16_LIMIT {
             return Err(ser_err(
                 "the item's header (aws_dbe_head) has too many encryption context entries",
@@ -359,6 +436,9 @@ fn get_context(data: &[u8]) -> Result<(EncryptionContext, usize), Error> {
         if pos + 2 > data.len() {
             return Err(ser_err("the item's header (aws_dbe_head) ends early"));
         }
+
+        //= spec/structured-encryption/header.md#key-value-pair-entries
+        //# Each Key Value Pair MUST be serialized as follows
         let key_len = read_u16(data, pos);
         if key_len + 4 + pos > data.len() {
             return Err(ser_err("the item's header (aws_dbe_head) ends early"));
@@ -373,6 +453,12 @@ fn get_context(data: &[u8]) -> Result<(EncryptionContext, usize), Error> {
         let value = utf8(&data[pos + key_len + 4..pos + kv_len])?;
         // Keys must be strictly ascending, which also rules out duplicates.
         if !bytes_less(&prev_key, key) {
+            //= spec/structured-encryption/header.md#key-value-pair-entries
+            //# This sequence MUST NOT contain duplicate entries.
+            //
+            //= spec/structured-encryption/header.md#key-value-pair-entries
+            //# These entries MUST have entries sorted, by key,
+            //# in ascending order according to the UTF-8 encoded binary value.
             return Err(ser_err(
                 "the item's header (aws_dbe_head) has encryption context keys that are not in sorted order",
             ));
@@ -398,6 +484,9 @@ fn get_one_data_key(data: &[u8], pos: usize) -> Result<(EncryptedDataKey, usize)
     if 2 + pos >= size {
         return Err(ser_err("the item's header (aws_dbe_head) ends early"));
     }
+
+    //= spec/structured-encryption/header.md#encrypted-data-key-entries
+    //# Each Encrypted Data Key MUST be serialized as follows
     let prov_id_size = read_u16(data, pos);
     if prov_id_size + 2 + pos >= size {
         return Err(ser_err("the item's header (aws_dbe_head) ends early"));
@@ -431,6 +520,8 @@ fn get_one_data_key(data: &[u8], pos: usize) -> Result<(EncryptedDataKey, usize)
 }
 
 fn get_data_keys(data: &[u8]) -> Result<(Vec<EncryptedDataKey>, usize), Error> {
+    //= spec/structured-encryption/header.md#encrypted-data-keys
+    //# The Encrypted Data Keys MUST be serialized as follows
     let Some(&count) = data.first() else {
         return Err(ser_err("the item's header (aws_dbe_head) ends early"));
     };
@@ -447,6 +538,8 @@ fn get_data_keys(data: &[u8]) -> Result<(Vec<EncryptedDataKey>, usize), Error> {
         pos += len;
     }
     if keys.is_empty() {
+        //= spec/structured-encryption/header.md#encrypted-data-key-count
+        //# This value MUST be greater than 0.
         return Err(ser_err(
             "the item's header (aws_dbe_head) has no encrypted data keys",
         ));

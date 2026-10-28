@@ -73,6 +73,9 @@ fn ser_message(data: &[u8]) -> String {
 
 #[test]
 fn serialize_matches_spec_layout() {
+    //= spec/structured-encryption/header.md#partial-header
+    //= type=test
+    //# The Partial Header MUST be
     assert_eq!(reference_header().serialize(), reference_header_bytes());
 }
 
@@ -82,6 +85,11 @@ fn round_trip() {
     let head = reference_header();
     let mut ser = head.serialize();
     ser.extend_from_slice(&head.msg_id);
+
+    //= spec/structured-encryption/header.md#partial-header
+    //= type=test
+    //= reason=deserialize recovers every field of the spec-layout bytes
+    //# The Partial Header MUST be
     assert_same_header(&PartialHeader::deserialize(&ser).unwrap(), &head);
 }
 
@@ -100,6 +108,10 @@ fn round_trip_with_commitment_and_tamper() {
     let body = head.serialize();
     let mut full = [0u8; 64];
     hmac(DigestAlg::Sha512, &key, &body, &mut full).unwrap();
+
+    //= spec/structured-encryption/header.md#full-header-value
+    //= type=test
+    //# The value of the header MUST be
     assert_eq!(&ser[..body.len()], body.as_slice());
     assert_eq!(&ser[body.len()..], &full[..COMMITMENT_LEN]);
 
@@ -135,6 +147,14 @@ fn context_serialization_and_duplicate_key() {
         0, 2, 0, 3, b'a', b'b', b'c', 0, 3, b'd', b'e', b'f', 0, 3, b'c', b'b', b'a', 0, 3, b'f',
         b'e', b'd',
     ];
+
+    //= spec/structured-encryption/header.md#encryption-context
+    //= type=test
+    //# The Encryption Context MUST be serialized as follows
+    //
+    //= spec/structured-encryption/header.md#key-value-pair-entries
+    //= type=test
+    //# Each Key Value Pair MUST be serialized as follows
     assert_eq!(ser, expected);
     let (parsed, len) = get_context(&ser).unwrap();
     assert_eq!(parsed, ec);
@@ -150,6 +170,22 @@ fn context_serialization_and_duplicate_key() {
         err.message(),
         "the item's header (aws_dbe_head) has encryption context keys that are not in sorted order"
     );
+
+    // The same key twice in a row: only a strict order check rejects this.
+    let duplicate = [
+        0, 2, 0, 3, b'a', b'b', b'c', 0, 3, b'd', b'e', b'f', 0, 3, b'a', b'b', b'c', 0, 3, b'd',
+        b'e', b'f',
+    ];
+    let err = get_context(&duplicate).unwrap_err();
+    assert_eq!(err.kind(), Kind::Serialization);
+
+    //= spec/structured-encryption/header.md#key-value-pair-entries
+    //= type=test
+    //# This sequence MUST NOT contain duplicate entries.
+    assert_eq!(
+        err.message(),
+        "the item's header (aws_dbe_head) has encryption context keys that are not in sorted order"
+    );
 }
 
 // Header.dfy TestOutOfOrderContext.
@@ -161,10 +197,32 @@ fn context_out_of_order() {
     ];
     let err = get_context(&bad).unwrap_err();
     assert_eq!(err.kind(), Kind::Serialization);
+
+    //= spec/structured-encryption/header.md#key-value-pair-entries
+    //= type=test
+    //# These entries MUST have entries sorted, by key,
+    //# in ascending order according to the UTF-8 encoded binary value.
     assert_eq!(
         err.message(),
         "the item's header (aws_dbe_head) has encryption context keys that are not in sorted order"
     );
+}
+
+// U+FFFF sorts before U+1F600 by UTF-8 bytes but after it by UTF-16 code units,
+// so this order shows the writer sorts keys by their UTF-8 bytes.
+#[test]
+fn serialize_context_sorts_keys_by_utf8_bytes() {
+    let ec = context(&[("\u{1F600}", "x"), ("a", "y"), ("\u{FFFF}", "z")]);
+    let expected = [
+        0, 3, 0, 1, b'a', 0, 1, b'y', 0, 3, 0xEF, 0xBF, 0xBF, 0, 1, b'z', 0, 4, 0xF0, 0x9F, 0x98,
+        0x80, 0, 1, b'x',
+    ];
+
+    //= spec/structured-encryption/header.md#key-value-pair-entries
+    //= type=test
+    //# These entries MUST have entries sorted, by key,
+    //# in ascending order according to the UTF-8 encoded binary value.
+    assert_eq!(serialize_context(&ec), expected);
 }
 
 // The reference starts the order check from an empty previous key and requires strictly
@@ -177,8 +235,10 @@ fn context_empty_key_rejected_empty_value_accepted() {
     assert_eq!(len, ok.len());
 
     let empty_key = [0, 1, 0, 0, 0, 1, b'x'];
+    let err = get_context(&empty_key).unwrap_err();
+    assert_eq!(err.kind(), Kind::Serialization);
     assert_eq!(
-        get_context(&empty_key).unwrap_err().message(),
+        err.message(),
         "the item's header (aws_dbe_head) has encryption context keys that are not in sorted order"
     );
 }
@@ -194,6 +254,11 @@ fn context_truncations_and_bad_utf8() {
     ] {
         let err = get_context(bad).unwrap_err();
         assert_eq!(err.kind(), Kind::Serialization);
+
+        //= spec/structured-encryption/header.md#key-value-pair-entries
+        //= type=test
+        //= reason=each case is shorter than a length field says, so the reader honors every length
+        //# Each Key Value Pair MUST be serialized as follows
         assert_eq!(
             err.message(),
             "the item's header (aws_dbe_head) ends early",
@@ -240,6 +305,11 @@ fn legend_order_alpha() {
         crypto("mno", CryptoAction::SignOnly),
         crypto("pqr", CryptoAction::DoNothing),
     ]);
+
+    //= spec/structured-encryption/header.md#encrypt-legend-bytes
+    //= type=test
+    //# The length of this serialized value (in bytes) MUST equal the number of authenticated fields indicated
+    //# by the caller's [Authenticate Schema](./structures.md#authenticate-schema).
     assert_eq!(legend, [E, S, E, S]);
 }
 
@@ -269,6 +339,10 @@ fn legend_order_length_shuffled() {
         crypto("zz", CryptoAction::SignOnly),
         crypto("aaaa", CryptoAction::SignOnly),
     ]);
+
+    //= spec/structured-encryption/header.md#encrypt-legend-bytes
+    //= type=test
+    //# The Encrypt Legend Bytes MUST be serialized as follows:
     assert_eq!(legend, [E, S, E, S]);
 }
 
@@ -279,7 +353,17 @@ fn legend_and_version_for_sign_and_include() {
         crypto("b", CryptoAction::EncryptAndSign),
     ];
     let schema = crate::structured::for_encrypt("name", fields);
+
+    //= spec/structured-encryption/header.md#encrypt-legend-bytes
+    //= type=test
+    //# Each Crypto Action MUST be encoded as follows
     assert_eq!(make_legend(&schema).unwrap(), [0x63, E]);
+
+    //= spec/structured-encryption/header.md#format-version
+    //= type=test
+    //# If any [Crypto Action](./structures.md#crypto-action) is configured as
+    //# [SIGN_AND_INCLUDE_IN_ENCRYPTION_CONTEXT Crypto Action](./structures.md#sign_and_include_in_encryption_context)
+    //# the Version MUST be 0x02; otherwise, Version MUST be 0x01.
     assert_eq!(version_from_schema(&schema), 2);
 
     let schema = crate::structured::for_encrypt(
@@ -321,6 +405,10 @@ fn deserialize_rejects_bad_prefix() {
     for version in [0u8, 3] {
         let mut bad = good.clone();
         bad[0] = version;
+
+        //= spec/structured-encryption/header.md#format-version
+        //= type=test
+        //# The Version MUST be `0x01` or `0x02`.
         assert_eq!(
             ser_message(&bad),
             "the item's header (aws_dbe_head) has an unknown version"
@@ -331,6 +419,11 @@ fn deserialize_rejects_bad_prefix() {
     assert_eq!(PartialHeader::deserialize(&v2).unwrap().version, 2);
     let mut bad = good.clone();
     bad[1] = 2;
+
+    //= spec/structured-encryption/header.md#format-flavor
+    //= type=test
+    //# The algorithm suite indicated by the flavor MUST be a
+    //# [DBE supported algorithm suite](../../submodules/MaterialProviders/aws-encryption-sdk-specification/framework/algorithm-suites.md#supported-algorithm-suites-enum).
     assert_eq!(
         ser_message(&bad),
         "the item's header (aws_dbe_head) names an unknown algorithm suite"
@@ -345,6 +438,10 @@ fn deserialize_rejects_bad_legend() {
     let mut bad = reference_header_bytes();
     bad.extend_from_slice(&[0u8; COMMITMENT_LEN]);
     bad[PREFIX_LEN + 3] = b'x';
+
+    //= spec/structured-encryption/header.md#encrypt-legend-bytes
+    //= type=test
+    //# Each Crypto Action MUST be encoded as follows
     assert_eq!(
         ser_message(&bad),
         "the item's header (aws_dbe_head) has an unknown byte in its legend"
@@ -359,6 +456,10 @@ fn deserialize_rejects_bad_legend() {
     );
     let mut long = prefix;
     long.extend_from_slice(&[0, 3, E, S]);
+
+    //= spec/structured-encryption/header.md#encrypt-legend
+    //= type=test
+    //# The Encrypt Legend MUST be serialized as
     assert_eq!(
         ser_message(&long),
         "the item's header (aws_dbe_head) ends early"
@@ -369,6 +470,10 @@ fn deserialize_rejects_bad_legend() {
 fn deserialize_rejects_bad_trailer() {
     let mut short = reference_header_bytes();
     short.extend_from_slice(&[0u8; COMMITMENT_LEN - 1]);
+
+    //= spec/structured-encryption/header.md#full-header-value
+    //= type=test
+    //# The value of the header MUST be
     assert_eq!(
         ser_message(&short),
         "the item's header (aws_dbe_head) ends early"
@@ -385,6 +490,10 @@ fn deserialize_rejects_bad_trailer() {
 #[test]
 fn data_keys_truncations() {
     let keys = serialize_data_keys(&reference_header().data_keys);
+
+    //= spec/structured-encryption/header.md#encrypted-data-keys
+    //= type=test
+    //# The Encrypted Data Keys MUST be serialized as follows
     assert_eq!(
         keys,
         [
@@ -392,6 +501,10 @@ fn data_keys_truncations() {
         ]
     );
     let (parsed, len) = get_data_keys(&keys).unwrap();
+
+    //= spec/structured-encryption/header.md#encrypted-data-key-entries
+    //= type=test
+    //# Each Encrypted Data Key MUST be serialized as follows
     assert_eq!(parsed, reference_header().data_keys);
     assert_eq!(len, keys.len());
 
@@ -408,8 +521,14 @@ fn data_keys_truncations() {
 
 #[test]
 fn data_keys_count_and_utf8() {
+    let err = get_data_keys(&[0]).unwrap_err();
+    assert_eq!(err.kind(), Kind::Serialization);
+
+    //= spec/structured-encryption/header.md#encrypted-data-key-count
+    //= type=test
+    //# This value MUST be greater than 0.
     assert_eq!(
-        get_data_keys(&[0]).unwrap_err().message(),
+        err.message(),
         "the item's header (aws_dbe_head) has no encrypted data keys"
     );
     assert_eq!(
@@ -481,6 +600,14 @@ fn create_from_materials() {
         &["req"],
     );
     let head = PartialHeader::create(&sample_schema(), MSG_ID, &mat).unwrap();
+
+    //= spec/structured-encryption/encrypt-path-structure.md#header-field
+    //= type=test
+    //= reason=the materials' context is {abc, req} with req required; only abc is stored
+    //# The encryption context field serialized in the header MUST contain all key-value
+    //# pairs of the encryption context in the [encryption materials](#retrieve-encryption-materials)
+    //# that are not included in the
+    //# [required encryption context keys](../framework/structures.md#required-encryption-context-keys) list.
     assert_same_header(&head, &reference_header());
     assert_eq!(head.serialize(), reference_header_bytes());
 }
@@ -500,6 +627,11 @@ fn create_rejects_bad_materials() {
 
     let mat = dbe_materials(Vec::new(), EncryptionContext::new(), &[]);
     let err = PartialHeader::create(&schema, MSG_ID, &mat).unwrap_err();
+    assert_eq!(err.kind(), Kind::Validation);
+
+    //= spec/structured-encryption/header.md#encrypted-data-key-count
+    //= type=test
+    //# This value MUST be greater than 0.
     assert_eq!(
         err.message(),
         "the encryption materials have no encrypted data keys"
@@ -534,6 +666,11 @@ fn create_rejects_bad_materials() {
         .unwrap();
     let err = PartialHeader::create(&schema, MSG_ID, &mat).unwrap_err();
     assert_eq!(err.kind(), Kind::Validation);
+
+    //= spec/structured-encryption/header.md#format-flavor
+    //= type=test
+    //# The algorithm suite indicated by the flavor MUST be a
+    //# [DBE supported algorithm suite](../../submodules/MaterialProviders/aws-encryption-sdk-specification/framework/algorithm-suites.md#supported-algorithm-suites-enum).
     assert_eq!(
         err.message(),
         "the materials use an algorithm suite that is not a DB-ESDK algorithm suite"

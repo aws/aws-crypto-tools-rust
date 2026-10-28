@@ -15,8 +15,23 @@ use crate::types::{AlgorithmSuiteId, CryptoAction, EncryptionContext};
 /// A serialized value and its two-byte type id.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[non_exhaustive]
+//= spec/structured-encryption/structures.md#overview
+//= type=implication
+//# These structures define a group of related fields that MUST hold certain properties.
+//
+//= spec/structured-encryption/structures.md#overview
+//= type=implication
+//# Wherever these structures are referenced in this specification,
+//# implementations MUST ensure that all properties of a structure's fields are upheld.
 pub struct StructuredDataTerminal {
+    //= spec/structured-encryption/structures.md#terminal-value
+    //= type=implication
+    //# Terminal Value MUST be a sequence of bytes, and MAY be empty (zero-length).
     value: Vec<u8>,
+
+    //= spec/structured-encryption/structures.md#terminal-type-id
+    //= type=implication
+    //# A Terminal Type ID MUST be a 2 byte value that is used to identify how callers interpret [Terminal Value](#terminal-value).
     type_id: [u8; 2],
 }
 
@@ -84,6 +99,9 @@ impl StructureSegment {
 #[non_exhaustive]
 pub enum PathSegment {
     /// A member of a structure.
+    //= spec/structured-encryption/structures.md#path-segment
+    //= type=implication
+    //# A path segment MUST be a string, designating the name of a member of a structure.
     Member(StructureSegment),
 }
 
@@ -132,6 +150,9 @@ impl From<AuthenticateAction> for AuthAction {
 /// A terminal, where it is, and what to do with it when encrypting.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
+//= spec/structured-encryption/structures.md#crypto-item
+//= type=implication
+//# A crypto item MUST consist of
 pub struct CryptoItem {
     key: Path,
     data: StructuredDataTerminal,
@@ -183,6 +204,9 @@ impl From<CryptoField> for CryptoItem {
 /// A terminal of a structure being decrypted, where it is, and whether it is signed.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
+//= spec/structured-encryption/structures.md#auth-item
+//= type=implication
+//# An auth item MUST consist of
 pub struct AuthItem {
     key: Path,
     data: StructuredDataTerminal,
@@ -291,6 +315,14 @@ impl StructuredEncryption {
 #[derive(Clone, Debug, Default)]
 pub struct EncryptStructureFluentBuilder {
     table_name: Option<String>,
+
+    //= spec/structured-encryption/structures.md#structured-data-map
+    //= type=implication
+    //# A Structured Data Map MUST consist of:
+    //
+    //= spec/structured-encryption/structures.md#structured-data-map
+    //= type=implication
+    //# - This map MUST NOT allow duplicate key values
     plaintext_structure: Option<HashMap<String, StructuredDataTerminal>>,
     crypto_schema: Option<HashMap<String, CryptoAction>>,
     cmm: Option<SharedCmm>,
@@ -403,10 +435,17 @@ impl EncryptStructureFluentBuilder {
     ///   or the schema does not name exactly the fields of the structure.
     /// - Any error of the CMM, or of serializing or encrypting the structure.
     pub async fn send(self) -> Result<EncryptStructureOutput, Error> {
+        //= spec/structured-encryption/encrypt-structure.md#input
+        //= reason=each of the four inputs is unwrapped by required(), which rejects it unset
+        //# The following inputs to this behavior are REQUIRED:
         let table = required(self.table_name, "table_name")?;
         let plaintext = to_inner_map(required(self.plaintext_structure, "plaintext_structure")?);
         let schema = required(self.crypto_schema, "crypto_schema")?;
         let cmm = required(self.cmm, "cmm")?;
+
+        //= spec/structured-encryption/encrypt-structure.md#input
+        //= reason=the algorithm suite and encryption context are passed on as Options
+        //# The following inputs to this behavior MUST be OPTIONAL:
         let out = super::encrypt_structure(
             &table,
             plaintext,
@@ -416,6 +455,9 @@ impl EncryptStructureFluentBuilder {
             self.encryption_context,
         )
         .await?;
+
+        //= spec/structured-encryption/encrypt-structure.md#output
+        //# This operation MUST output the following:
         Ok(EncryptStructureOutput {
             encrypted_structure: from_inner_map(out.data),
             crypto_schema: out.schema,
@@ -568,6 +610,9 @@ impl DecryptStructureFluentBuilder {
     ///   or the schema does not name exactly the fields of the structure.
     /// - Any error of the CMM, or of parsing, verifying, or decrypting the structure.
     pub async fn send(self) -> Result<DecryptStructureOutput, Error> {
+        //= spec/structured-encryption/decrypt-structure.md#input
+        //= reason=each of the four inputs is unwrapped by required(), which rejects it unset
+        //# The following inputs to this behavior are REQUIRED:
         let table = required(self.table_name, "table_name")?;
         let encrypted = to_inner_map(required(self.encrypted_structure, "encrypted_structure")?);
         let schema: HashMap<String, AuthAction> =
@@ -576,9 +621,16 @@ impl DecryptStructureFluentBuilder {
                 .map(|(k, a)| (k, a.into()))
                 .collect();
         let cmm = required(self.cmm, "cmm")?;
+
+        //= spec/structured-encryption/decrypt-structure.md#input
+        //= reason=the encryption context is passed on as an Option
+        //# The following inputs to this behavior MUST be OPTIONAL:
         let out =
             super::decrypt_structure(&table, encrypted, &schema, cmm, self.encryption_context)
                 .await?;
+
+        //= spec/structured-encryption/decrypt-structure.md#output
+        //# This operation MUST output the following:
         Ok(DecryptStructureOutput {
             plaintext_structure: from_inner_map(out.data),
             crypto_schema: out.schema,
@@ -626,6 +678,10 @@ impl DecryptStructureOutput {
 #[derive(Clone, Debug, Default)]
 pub struct EncryptPathStructureFluentBuilder {
     table_name: Option<String>,
+
+    //= spec/structured-encryption/structures.md#crypto-list
+    //= type=implication
+    //# A crypto list MUST be a sequence of [crypto item](#crypto-item)
     plaintext_structure: Option<Vec<CryptoItem>>,
     cmm: Option<SharedCmm>,
     algorithm_suite_id: Option<AlgorithmSuiteId>,
@@ -713,12 +769,19 @@ impl EncryptPathStructureFluentBuilder {
     ///   a path repeats, or a terminal is at the header or footer path.
     /// - Any error of the CMM, or of serializing or encrypting the structure.
     pub async fn send(self) -> Result<EncryptPathStructureOutput, Error> {
+        //= spec/structured-encryption/encrypt-path-structure.md#input
+        //= reason=each of the three inputs is unwrapped by required(), which rejects it unset
+        //# The following inputs to this behavior are REQUIRED:
         let table = required(self.table_name, "table_name")?;
         let data = required(self.plaintext_structure, "plaintext_structure")?
             .into_iter()
             .map(CryptoField::from)
             .collect();
         let cmm = required(self.cmm, "cmm")?;
+
+        //= spec/structured-encryption/encrypt-path-structure.md#input
+        //= reason=the algorithm suite and encryption context are passed on as Options
+        //# The following inputs to this behavior MUST be OPTIONAL:
         let (out, parsed_header) = super::encrypt_path_structure(
             &table,
             data,
@@ -727,6 +790,9 @@ impl EncryptPathStructureFluentBuilder {
             self.encryption_context,
         )
         .await?;
+
+        //= spec/structured-encryption/encrypt-path-structure.md#output
+        //# This operation MUST output the following:
         Ok(EncryptPathStructureOutput {
             encrypted_structure: out.into_iter().map(CryptoItem::from).collect(),
             parsed_header,
@@ -766,6 +832,10 @@ impl EncryptPathStructureOutput {
 #[derive(Clone, Debug, Default)]
 pub struct DecryptPathStructureFluentBuilder {
     table_name: Option<String>,
+
+    //= spec/structured-encryption/structures.md#auth-list
+    //= type=implication
+    //# An auth list MUST be a sequence of [auth item](#auth-item)
     encrypted_structure: Option<Vec<AuthItem>>,
     cmm: Option<SharedCmm>,
     encryption_context: Option<EncryptionContext>,
@@ -839,14 +909,24 @@ impl DecryptPathStructureFluentBuilder {
     ///   or a path repeats.
     /// - Any error of the CMM, or of parsing, verifying, or decrypting the structure.
     pub async fn send(self) -> Result<DecryptPathStructureOutput, Error> {
+        //= spec/structured-encryption/decrypt-path-structure.md#input
+        //= reason=each of the three inputs is unwrapped by required(), which rejects it unset
+        //# The following inputs to this behavior are REQUIRED:
         let table = required(self.table_name, "table_name")?;
         let data = required(self.encrypted_structure, "encrypted_structure")?
             .into_iter()
             .map(AuthField::from)
             .collect();
         let cmm = required(self.cmm, "cmm")?;
+
+        //= spec/structured-encryption/decrypt-path-structure.md#input
+        //= reason=the encryption context is passed on as an Option
+        //# The following inputs to this behavior MUST be OPTIONAL:
         let (out, parsed_header) =
             super::decrypt_path_structure(&table, data, cmm, self.encryption_context).await?;
+
+        //= spec/structured-encryption/decrypt-path-structure.md#output
+        //# This operation MUST output the following:
         Ok(DecryptPathStructureOutput {
             plaintext_structure: out.into_iter().map(CryptoItem::from).collect(),
             parsed_header,
@@ -943,6 +1023,9 @@ impl ResolveAuthActionsFluentBuilder {
     ///   or its legend does not match the signed terminals.
     #[allow(clippy::unused_async, clippy::unused_async_trait_impl)] // `send` is async on every fluent builder
     pub async fn send(self) -> Result<ResolveAuthActionsOutput, Error> {
+        //= spec/structured-encryption/resolve-auth-actions.md#input
+        //= reason=each of the three inputs is unwrapped by required(), which rejects it unset
+        //# The following inputs to this behavior are REQUIRED:
         let table = required(self.table_name, "table_name")?;
         let data = required(self.auth_actions, "auth_actions")?
             .into_iter()
@@ -950,6 +1033,9 @@ impl ResolveAuthActionsFluentBuilder {
             .collect();
         let header = required(self.header_bytes, "header_bytes")?;
         let out = super::resolve_auth_actions(&table, data, &header)?;
+
+        //= spec/structured-encryption/resolve-auth-actions.md#output
+        //# This operation MUST output the following:
         Ok(ResolveAuthActionsOutput {
             crypto_actions: out.into_iter().map(CryptoItem::from).collect(),
         })

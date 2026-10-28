@@ -5,6 +5,7 @@ use aws_crypto_mpl::types::AlgorithmSuiteId as MplAlgorithmSuiteId;
 
 use super::*;
 use crate::error::Kind;
+use crate::structured::header::COMMITMENT_LEN;
 use crate::structured::util::{NUMBER, STRING};
 use crate::types::AlgorithmSuiteId;
 
@@ -227,6 +228,12 @@ fn field_key_matches_reference_vectors() {
         let key = unhex(input);
         assert_eq!(key.len(), KEY_SIZE);
         let got = field_key(&key, *offset).unwrap();
+
+        //= spec/structured-encryption/encrypt-path-structure.md#calculate-cipherkey-and-nonce
+        //= type=test
+        //# The `FieldKey` for a given key and offset MUST be the first 44 bytes
+        //# of the aes256ctr_stream
+        //# of the `FieldRootKey` and the `FieldKeyNonce` of three times the given offset.
         assert_eq!(got.as_slice(), unhex(output).as_slice(), "offset {offset}");
     }
 }
@@ -262,6 +269,15 @@ fn field_key_nonce_layout() {
     let mut expected = b"AwsDbeField".to_vec();
     expected.push(44);
     expected.extend_from_slice(&[0x01, 0x02, 0x03, 0x04]);
+
+    //= spec/structured-encryption/encrypt-path-structure.md#calculate-cipherkey-and-nonce
+    //= type=test
+    //# The `FieldKeyNonce` for a given offset MUST be 16 bytes comprised of
+    //# | Field | Length | Interpretation |
+    //# | ------------- | -------- | -------------- |
+    //# | "AwsDbeField" | 11 | Literal Ascii String |
+    //# | 0x2c | 1 | 44, the length of the eventual FieldKey |
+    //# | offset | 4 | 32 bit integer representation of offset |
     assert_eq!(field_key_nonce(0x0102_0304), expected);
 }
 
@@ -301,8 +317,13 @@ fn crypt_round_trip_encrypts_only_encrypt_and_sign() {
     for (orig, enc) in original.iter().zip(&encrypted) {
         assert_eq!(enc.canon, orig.canon);
         if orig.action == CryptoAction::EncryptAndSign {
-            // The encrypted value is the plaintext type id, the ciphertext, then the tag.
+            //= spec/structured-encryption/encrypt-path-structure.md#terminal-data-encryption
+            //= type=test
+            //# The output encrypted Terminal Data MUST have a [Terminal Type Id](./structures.md#terminal-type-id)
+            //# equal `0xFFFF`.
             assert_eq!(enc.data.type_id, BYTES_TYPE_ID);
+
+            // The encrypted value is the plaintext type id, the ciphertext, then the tag.
             assert_eq!(&enc.data.value[..2], &orig.data.type_id);
             assert_eq!(
                 enc.data.value.len(),
@@ -319,8 +340,43 @@ fn crypt_round_trip_encrypts_only_encrypt_and_sign() {
 
     let decrypted = crypt(Mode::Decrypt, suite(), &DATA_KEY, &MSG_ID, encrypted).unwrap();
     for (orig, dec) in original.iter().zip(&decrypted) {
+        //= spec/structured-encryption/header.md#encrypt-legend-bytes
+        //= type=test
+        //= reason=EncryptAndSign values come back as plaintext only because decrypt ran on them
+        //# This indicates that this field MUST be attempted to be decrypted during decryption.
         assert_eq!(dec.data, orig.data);
     }
+}
+
+// The values are one byte, too short to be ciphertexts, so decrypt fails if it touches them.
+#[test]
+fn decrypt_skips_sign_only_and_context_fields() {
+    let data = vec![
+        item("a", STRING, b"x", CryptoAction::SignOnly),
+        item(
+            "b",
+            STRING,
+            b"y",
+            CryptoAction::SignAndIncludeInEncryptionContext,
+        ),
+    ];
+    let out = crypt(Mode::Decrypt, suite(), &DATA_KEY, &MSG_ID, data.clone()).unwrap();
+
+    //= spec/structured-encryption/header.md#encrypt-legend-bytes
+    //= type=test
+    //# This indicates that this field MUST NOT be attempted to be decrypted during decryption.
+    assert_eq!(
+        out.iter().map(|x| &x.data).collect::<Vec<_>>(),
+        data.iter().map(|x| &x.data).collect::<Vec<_>>()
+    );
+
+    let encrypted = vec![item("c", STRING, b"z", CryptoAction::EncryptAndSign)];
+    let err = crypt(Mode::Decrypt, suite(), &DATA_KEY, &MSG_ID, encrypted).unwrap_err();
+    assert_eq!(err.kind(), Kind::Serialization);
+    assert_eq!(
+        err.message(),
+        "an encrypted attribute is too short to be a ciphertext"
+    );
 }
 
 #[test]
@@ -335,6 +391,12 @@ fn crypt_depends_on_data_key_and_message_id() {
         sample(),
     )
     .unwrap();
+
+    //= spec/structured-encryption/encrypt-path-structure.md#calculate-cipherkey-and-nonce
+    //= type=test
+    //= reason=changing either the data key or the message id changes the ciphertext
+    //# The `FieldRootKey` MUST be generated with the plaintext data key in the encryption materials
+    //# and the Message ID generated for this Encrypted Structured Data.
     assert_ne!(base[0].data.value, other_key[0].data.value);
     assert_ne!(base[0].data.value, other_id[0].data.value);
 }
@@ -353,6 +415,12 @@ fn decrypt_rejects_changed_path() {
     let mut enc = crypt(Mode::Encrypt, suite(), &DATA_KEY, &MSG_ID, sample()).unwrap();
     enc[0].canon = b"z".to_vec();
     let err = crypt(Mode::Decrypt, suite(), &DATA_KEY, &MSG_ID, enc).unwrap_err();
+
+    //= spec/structured-encryption/decrypt-path-structure.md#terminal-data-decryption
+    //= type=test
+    //= reason=the value decrypts under its own canonical path only, so that path is the AAD
+    //# The output Terminal Data MUST have a [Terminal Value](./structures.md#terminal-type-id)
+    //# equal to the following decryption:
     assert_eq!(err.kind(), Kind::Cryptographic);
 }
 
@@ -372,6 +440,11 @@ fn decrypt_rejects_value_shorter_than_type_id_and_tag() {
         CryptoAction::EncryptAndSign,
     )];
     let err = crypt(Mode::Decrypt, suite(), &DATA_KEY, &MSG_ID, short).unwrap_err();
+
+    //= spec/structured-encryption/decrypt-path-structure.md#terminal-data-decryption
+    //= type=test
+    //= reason=a value with no room for the 2-byte type id and the tag cannot be deserialized
+    //# The input [Terminal Value](./structures.md#terminal-value) MUST be deserialized as follows:
     assert_eq!(err.kind(), Kind::Serialization);
     assert_eq!(
         err.message(),
@@ -385,7 +458,13 @@ fn crypt_round_trips_empty_value() {
     let data = vec![item("a", STRING, b"", CryptoAction::EncryptAndSign)];
     let enc = crypt(Mode::Encrypt, suite(), &DATA_KEY, &MSG_ID, data).unwrap();
     assert_eq!(enc[0].data.value.len(), 2 + AUTH_TAG_SIZE);
+    assert_eq!(enc[0].data.type_id, BYTES_TYPE_ID);
     let dec = crypt(Mode::Decrypt, suite(), &DATA_KEY, &MSG_ID, enc).unwrap();
+
+    //= spec/structured-encryption/decrypt-path-structure.md#terminal-data-decryption
+    //= type=test
+    //# The output Terminal Data MUST have a [Terminal Type Id](./structures.md#terminal-type-id)
+    //# equal to the deserialized Terminal Type Id.
     assert_eq!(dec[0].data, Terminal::new(STRING, Vec::new()));
 }
 
@@ -394,10 +473,119 @@ fn crypt_round_trips_empty_value() {
 #[test]
 fn commit_key_known_answer() {
     let ck = commit_key(suite(), &DATA_KEY, &MSG_ID).unwrap();
+
+    //= spec/structured-encryption/header.md#commit-key
+    //= type=test
+    //# The calculated Commitment Key MUST have length equal to the
+    //# [algorithm suite's encryption key length](../../submodules/MaterialProviders/aws-encryption-sdk-specification/framework/algorithm-suites.md#algorithm-suites-encryption-settings).
+    assert_eq!(ck.len(), 32);
+
+    //= spec/structured-encryption/header.md#commit-key
+    //= type=test
+    //= reason=known answer computed independently with HKDF-SHA-512, the DBE commit KDF
+    //# The HKDF used to calculate the Commitment Key MUST be the
+    //# [Commit Key KDF](../../submodules/MaterialProviders/aws-encryption-sdk-specification/framework/algorithm-suites.md#algorithm-suites-commit-key-derivation-settings)
+    //# indicated by the algorithm suite.
+    //
+    //= spec/structured-encryption/header.md#commit-key
+    //= type=test
+    //= reason=vector computed with info "AWS_DBE_COMMIT_KEY" || message id; other info gives another key
+    //# The `info` used for the HKDF function MUST be
+    //# | Field | Length |
+    //# | -------------------- | -------- |
+    //# | "AWS_DBE_COMMIT_KEY" | 18 |
+    //# | Message ID | 32 |
+    //
+    //= spec/structured-encryption/header.md#commit-key
+    //= type=test
+    //= reason=vector computed with no salt over the data key; a salt gives another key
+    //# The HKDF calculation MUST use a supplied key, no salt, and an `info` as described above.
     assert_eq!(
         ck.as_slice(),
         unhex("e1f9dd71239213dc41d6253307bca4f5ff62e06df2866480e87b01415fc7b01b").as_slice()
     );
+}
+
+/// Returns materials with the plaintext data key `DATA_KEY`, so a test can recompute
+/// what encryption derived from it.
+struct FixedKeyCmm;
+
+#[aws_crypto_mpl::async_trait]
+impl aws_crypto_mpl::cmm::Cmm for FixedKeyCmm {
+    async fn get_encryption_materials(
+        &self,
+        _input: aws_crypto_mpl::cmm::GetEncryptionMaterialsInput,
+    ) -> Result<aws_crypto_mpl::cmm::GetEncryptionMaterialsOutput, aws_crypto_mpl::Error> {
+        let mat = aws_crypto_mpl::types::EncryptionMaterials::builder()
+            .algorithm_suite_id(MplAlgorithmSuiteId::Dbe(
+                AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeySymsigHmacSha384,
+            ))
+            .encryption_context(aws_crypto_mpl::types::EncryptionContext::default())
+            .plaintext_data_key(DATA_KEY.to_vec())
+            .encrypted_data_keys(vec![
+                aws_crypto_mpl::types::EncryptedDataKey::builder()
+                    .key_provider_id("p")
+                    .key_provider_info(vec![1])
+                    .ciphertext(vec![2])
+                    .build()?,
+            ])
+            .symmetric_signing_keys(vec![aws_crypto_mpl::types::SymmetricSigningKey::from(
+                vec![5u8; 48],
+            )])
+            .build()?;
+        Ok(mat.into())
+    }
+
+    async fn decrypt_materials(
+        &self,
+        _input: aws_crypto_mpl::cmm::DecryptMaterialsInput,
+    ) -> Result<aws_crypto_mpl::cmm::DecryptMaterialsOutput, aws_crypto_mpl::Error> {
+        Err(aws_crypto_mpl::Error::validation("this CMM only encrypts"))
+    }
+}
+
+// Recomputes the stored commitment, HMAC-SHA-512 over the partial header (see
+// `header_commitment`), with a commit key from the CMM's data key and the header's message
+// id. It fails if encryption derives the commit key from another key or another id.
+#[tokio::test]
+async fn stored_commitment_uses_data_key_and_header_message_id() {
+    let (out, _) = crate::structured::encrypt_path_structure(
+        "t",
+        vec![crate::structured::util::CryptoField {
+            key: vec!["a".to_owned()],
+            data: Terminal::new(BYTES_TYPE_ID, vec![1, 2, 3]),
+            action: CryptoAction::EncryptAndSign,
+        }],
+        aws_crypto_mpl::cmm::SharedCmm::new(FixedKeyCmm),
+        Some(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeySymsigHmacSha384),
+        None,
+    )
+    .await
+    .unwrap();
+    let head = &out
+        .iter()
+        .find(|x| x.key == [crate::structured::util::HEADER_FIELD])
+        .unwrap()
+        .data
+        .value;
+    let (partial, stored) = head.split_at(head.len() - COMMITMENT_LEN);
+    let msg_id: [u8; MSGID_LEN] = partial[2..2 + MSGID_LEN].try_into().unwrap();
+    let ck = commit_key(suite(), &DATA_KEY, &msg_id).unwrap();
+    let mut full = [0u8; 64];
+    aws_mpl_primitives::hmac(
+        aws_mpl_primitives::DigestAlg::Sha512,
+        &ck,
+        partial,
+        &mut full,
+    )
+    .unwrap();
+
+    //= spec/structured-encryption/header.md#commit-key
+    //= type=test
+    //= reason=expected commitment is recomputed from DATA_KEY and the message id in the header
+    //# The commit key calculation described above MUST be performed with the record's plaintext data key
+    //# and the header's message id.
+    assert_eq!(stored, &full[..COMMITMENT_LEN]);
 }
 
 // The field root key is HKDF-SHA-512 (no salt) of the data key, info "AWS_DBE_DERIVE_KEY" ||
@@ -412,7 +600,39 @@ fn crypt_encrypts_first_field_under_root_key_offset_zero() {
     let (key, nonce) = fk.split_at(KEY_SIZE);
     let (ct, tag) = value[2..].split_at(value.len() - 2 - AUTH_TAG_SIZE);
     let mut plain = vec![0u8; ct.len()];
+
+    //= spec/structured-encryption/encrypt-path-structure.md#calculate-info
+    //= type=test
+    //= reason=the root key was computed independently with this info; any other info fails to open
+    //# The `info` used for the HKDF function MUST be
+    //# | Field | Length |
+    //# | -------------------- | -------- |
+    //# | "AWS_DBE_DERIVE_KEY" | 18 |
+    //# | Message ID | 32 |
+    //
+    //= spec/structured-encryption/encrypt-path-structure.md#calculate-cipherkey-and-nonce
+    //= type=test
+    //= reason=the root key was computed independently with HKDF-SHA-512 and no salt; it opens the field
+    //# The HKDF algorithm used to calculate the Field Root Key MUST be the
+    //# [Encryption Key KDF](../../submodules/MaterialProviders/aws-encryption-sdk-specification/framework/algorithm-suites.md#algorithm-suites-encryption-key-derivation-settings)
+    //# indicated by the algorithm suite, using a provided plaintext data key, no salt,
+    //# and an info as calculated [above](#calculate-info)
     aes_decrypt(AesGcm::Aes256Gcm, key, ct, tag, nonce, b"a", &mut plain).unwrap();
+
+    //= spec/structured-encryption/encrypt-path-structure.md#calculate-cipherkey-and-nonce
+    //= type=test
+    //= reason=the field opens with the field key's first 32 bytes as the AES key
+    //# The `Cipherkey` MUST be the first 32 bytes of the `FieldKey`
+    //
+    //= spec/structured-encryption/encrypt-path-structure.md#calculate-cipherkey-and-nonce
+    //= type=test
+    //= reason=the field opens with the field key's last 12 bytes as the nonce
+    //# The `Nonce` MUST be the remaining 12 bytes of the `FieldKey`
+    //
+    //= spec/structured-encryption/encrypt-path-structure.md#encrypted-terminal-value
+    //= type=test
+    //= reason=AES-256-GCM with the canonical path "a" as AAD gives back the terminal value
+    //# The Encrypted Terminal Value MUST be derived according to the following encryption:
     assert_eq!(plain, b"secret one");
 
     // "c" is the second encrypted field, so it uses offset 1 ("b" is not encrypted).

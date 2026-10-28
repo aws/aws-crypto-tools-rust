@@ -3,6 +3,9 @@
 
 use std::cmp::Ordering;
 
+use aws_crypto_mpl::aws_sdk_dynamodb::primitives::Blob;
+use aws_crypto_mpl::aws_sdk_dynamodb::types::AttributeValue;
+
 use super::*;
 
 fn path(segments: &[&str]) -> Path {
@@ -17,6 +20,15 @@ fn canon_path_spec_example() {
     expected.push(b'$');
     expected.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0, 4]);
     expected.extend_from_slice(b"name");
+
+    //= spec/structured-encryption/header.md#canonical-path
+    //= type=test
+    //# The canonical path MUST start with the UTF8 encoded table name.
+    //
+    //= spec/structured-encryption/header.md#canonical-path
+    //= type=test
+    //# For Structured Data in Structured Data Maps, this MUST be a 0x24 byte ($ in UTF-8),
+    //# followed by the length of the key, followed by the key as a UTF8 string.
     assert_eq!(canon_path("example_table", &path(&["name"])), expected);
 }
 
@@ -30,6 +42,14 @@ fn canon_path_nested_segments_in_order() {
     expected.push(b'$');
     expected.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0, 2]);
     expected.extend_from_slice(b"bc");
+
+    //= spec/structured-encryption/header.md#canonical-path
+    //= type=test
+    //# This MUST be followed by the depth of the Terminal within Structured Data.
+    //
+    //= spec/structured-encryption/header.md#canonical-path
+    //= type=test
+    //# This MUST be followed by the encoding for each Structured Data in the path, including the Terminal itself.
     assert_eq!(canon_path("t", &path(&["a", "bc"])), expected);
 }
 
@@ -76,6 +96,41 @@ fn terminal_encode_is_base64_of_type_id_and_value() {
 fn path_to_string_joins_with_dots() {
     assert_eq!(path_to_string(&path(&["a", "b", "c"])), "a.b.c");
     assert_eq!(path_to_string(&path(&["only"])), "only");
+}
+
+#[test]
+fn reserved_ff_type_ids_are_not_decoded() {
+    for reserved in [[0xFF, 0x00], [0xFF, 0x01], [0xFF, 0xFE]] {
+        let result = crate::ddb::terminal_to_attr(&Terminal::new(reserved, vec![]));
+
+        //= spec/structured-encryption/structures.md#terminal-type-id
+        //= type=test
+        //# Any other value prefixed by 0xFF is reserved and MUST NOT be used.
+        assert_eq!(
+            result,
+            Err("Unsupported TerminalTypeId".to_owned()),
+            "{reserved:?}"
+        );
+    }
+    assert_eq!(
+        crate::ddb::terminal_to_attr(&Terminal::new(BINARY, vec![])),
+        Ok(AttributeValue::B(Blob::new(vec![])))
+    );
+}
+
+#[test]
+fn terminal_value_is_read_as_its_type_id() {
+    let decode = |type_id| crate::ddb::terminal_to_attr(&Terminal::new(type_id, b"12".to_vec()));
+
+    //= spec/structured-encryption/structures.md#terminal-value
+    //= type=test
+    //# If these bytes are to be deserialized, these bytes MUST be interpreted as the type indicated in this Terminal Data's [Terminal Type ID](#terminal-type-id).D
+    assert_eq!(decode(STRING), Ok(AttributeValue::S("12".to_owned())));
+    assert_eq!(decode(NUMBER), Ok(AttributeValue::N("12".to_owned())));
+    assert_eq!(
+        decode(BINARY),
+        Ok(AttributeValue::B(Blob::new(b"12".to_vec())))
+    );
 }
 
 #[test]
