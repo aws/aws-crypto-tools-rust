@@ -147,6 +147,7 @@ async fn tampered_header_stored_encryption_context_fails() {
 
 #[tokio::test]
 async fn tampered_footer_recipient_tag_fails() {
+    // End-to-end guard for footer.md#recipient-tag-verification (cited in footer_tests.rs).
     let data = with_value(encrypted_default().await, FOOTER, |v| v[0] ^= 1);
     let err = decrypt(data).await.unwrap_err();
     assert_cryptographic(
@@ -157,15 +158,17 @@ async fn tampered_footer_recipient_tag_fails() {
 
 #[tokio::test]
 async fn tampered_footer_signature_fails() {
+    // End-to-end guard for footer.md#signature-verification (cited in footer_tests.rs).
     let data = with_value(encrypted_default().await, FOOTER, |v| {
         *v.last_mut().unwrap() ^= 1;
     });
     let err = decrypt(data).await.unwrap_err();
-    assert!(matches!(err, Error::Cryptographic(_)), "{err:?}");
+    assert_cryptographic(&err, "the item's ECDSA signature did not verify");
 }
 
 #[tokio::test]
 async fn truncated_footer_fails_to_parse() {
+    // End-to-end guard for footer.md#footer-format: tags, then a signature only for ECDSA suites.
     let data = with_value(encrypted_default().await, FOOTER, |v| {
         v.pop();
     });

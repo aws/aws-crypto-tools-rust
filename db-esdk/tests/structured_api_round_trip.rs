@@ -143,6 +143,13 @@ async fn footer_holds_signature_only_for_the_signing_suite() {
             .await
             .unwrap();
         let data = enc.encrypted_structure();
+
+        //= spec/structured-encryption/footer.md#signature
+        //= type=test
+        //# The signature MUST be included in the footer if the flavor
+        //# in the [header](./header.md#format-flavor) is 0x01
+        //# and MUST NOT be included in the footer if the flavor
+        //# in the [header](./header.md#format-flavor) is 0x00.
         assert_eq!(data[FOOTER].value().len(), footer_len, "{suite:?}");
         // Header: version 1 (no SIGN_AND_INCLUDE_IN_ENCRYPTION_CONTEXT field), then the flavor.
         let flavor = u8::from(suite == SIGNING_SUITE);

@@ -9,7 +9,7 @@ use aws_mpl_primitives::{SignatureKeyPair, ecdsa_generate_keypair};
 
 use super::*;
 use crate::error::Kind;
-use crate::structured::util::{NUMBER, STRING};
+use crate::structured::util::{CryptoField, NUMBER, STRING};
 use crate::types::AlgorithmSuiteId;
 
 const SYMSIG: AlgorithmSuiteId = AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeySymsigHmacSha384;
@@ -128,6 +128,17 @@ fn canonical_encrypted_field_layout() {
     expected.extend_from_slice(&2u64.to_be_bytes());
     expected.extend_from_slice(b"ENCRYPTED");
     expected.extend_from_slice(&[0x00, 0x01, 0xAA, 0xBB]);
+
+    //= spec/structured-encryption/footer.md#canonical-encrypted-field
+    //= type=test
+    //# The canonical form of an encrypted field MUST be
+    //# | Field | Length (bytes) | Interpreted as |
+    //# | ----- | -------------- | -------------- |
+    //# | The [canonical path](./header.md#canonical-path) of the field name | Variable | Bytes |
+    //# | encrypted data length - 2 | 8 | 64-bit integer |
+    //# | "ENCRYPTED" | 9 | Literal Ascii text |
+    //# | TypeID | 2 | the type ID of the unencrypted Terminal |
+    //# | value | Variable | the encrypted Terminal value |
     assert_eq!(got, expected);
 }
 
@@ -139,11 +150,23 @@ fn canonical_plaintext_field_layout() {
     expected.extend_from_slice(b"PLAINTEXT");
     expected.extend_from_slice(&NUMBER);
     expected.extend_from_slice(b"42");
+
+    //= spec/structured-encryption/footer.md#canonical-plaintext-field
+    //= type=test
+    //# The canonical form of a plaintext field MUST be
+    //# | Field | Length (bytes) | Interpreted as |
+    //# | ----- | -------------- | -------------- |
+    //# | The [canonical path](./header.md#canonical-path) of the field name | Variable | Bytes |
+    //# | data length | 8 | 64-bit integer |
+    //# | "PLAINTEXT" | 9 | Literal Ascii text |
+    //# | TypeID | 2 | the type ID of the Terminal |
+    //# | value | Variable | the Terminal value |
     assert_eq!(got, expected);
 }
 
 #[test]
 fn canonical_encrypted_field_needs_type_id() {
+    // Guards canonical-encrypted-field: "encrypted data length - 2" needs a 2-byte type ID.
     let short = item(b"A", BYTES_TYPE_ID, &[0x00], CryptoAction::EncryptAndSign);
     let err = canonical(&short).unwrap_err();
     assert_eq!(err.kind(), Kind::Serialization);
@@ -152,9 +175,53 @@ fn canonical_encrypted_field_needs_type_id() {
 #[test]
 fn canon_hash_known_answer_skips_unsigned_fields() {
     let hash = canon_hash(&fields(), HEADER, &ec()).unwrap();
+
+    //= spec/structured-encryption/footer.md#hash-calculation
+    //= type=test
+    //# The canonical hash of a record MUST be the SHA384 of the canonical form of the record.
     assert_eq!(hash.as_slice(), unhex(CANON_HASH).as_slice());
     let signed_only: Vec<_> = fields().into_iter().take(2).collect();
     assert_eq!(canon_hash(&signed_only, HEADER, &ec()).unwrap(), hash);
+}
+
+// Fields given out of order are hashed in canonical-path order, after the header and the AAD.
+#[test]
+fn canon_hash_orders_fields_by_canonical_path() {
+    // An encrypted value starts with its plaintext type ID.
+    let field = |name: &str, value: &[u8], action| CryptoField {
+        key: vec![name.to_owned()],
+        data: Terminal::new(NUMBER, value.to_vec()),
+        action,
+    };
+    let sorted = crate::structured::for_encrypt(
+        "t",
+        vec![
+            field("B", b"1", CryptoAction::SignOnly),
+            field("A", &[0x00, 0x01, 0xAA], CryptoAction::EncryptAndSign),
+        ],
+    );
+    assert_eq!(sorted[0].key, ["A"]);
+    assert_eq!(sorted[1].key, ["B"]);
+
+    let aad = serialize_context(&ec());
+    let mut record = HEADER.to_vec();
+    record.extend_from_slice(&u64::try_from(aad.len()).unwrap().to_be_bytes());
+    record.extend_from_slice(&aad);
+    record.extend_from_slice(&canonical(&sorted[0]).unwrap());
+    record.extend_from_slice(&canonical(&sorted[1]).unwrap());
+    let mut expected = [0u8; CANONICAL_HASH_SIZE];
+    digest(DigestAlg::Sha384, &record, &mut expected).unwrap();
+
+    //= spec/structured-encryption/footer.md#canonical-record
+    //= type=test
+    //# The canonical form of a record MUST be
+    //# | Field | Length (bytes) | Interpreted as |
+    //# | ----- | -------------- | -------------- |
+    //# | header | Variable | The full serialized header with commitment |
+    //# | AAD Length | 8 | 64-bit integer, the length of the following AAD data |
+    //# | AAD | Variable | The serialization of the Encryption Context from the Encryption Materials |
+    //# | Field Data | Variable | For each [signed field](#signed-fields), ordered lexicographically by [canonical path](./header.md#canonical-path), the [canonical field](#canonical-field).
+    assert_eq!(canon_hash(&sorted, HEADER, &ec()).unwrap(), expected);
 }
 
 #[test]
@@ -170,6 +237,25 @@ fn create_writes_one_tag_per_key_in_key_order() {
     assert_eq!(term.type_id, BYTES_TYPE_ID);
     let mut expected = unhex(TAG);
     expected.extend_from_slice(&other_tag);
+
+    //= spec/structured-encryption/footer.md#recipient-tags
+    //= type=test
+    //# There MUST be one Recipient Tag for each Encrypted Data Key in the [header](./header.md#encrypted-data-keys)
+    //
+    //= spec/structured-encryption/footer.md#recipient-tags
+    //= type=test
+    //# the Recipient Tag MUST be MUST be calculated over the [Canonical Hash](#canonical-hash)
+    //# using the [symmetric signature algorithm](../../submodules/MaterialProviders/aws-encryption-sdk-specification/framework/algorithm-suites.md#algorithm-suites-signature-settings)
+    //# indicated in the algorithm suite,
+    //# and the
+    //# [symmetric signing keys](../../submodules/MaterialProviders/aws-encryption-sdk-specification/framework/structures.md#symmetric-signing-keys)
+    //# in the encryption materials.
+    //
+    //= spec/structured-encryption/footer.md#recipient-tags
+    //= type=test
+    //# the HMAC values MUST have the same order as the
+    //# [symmetric signing keys](../../submodules/MaterialProviders/aws-encryption-sdk-specification/framework/structures.md#symmetric-signing-keys)
+    //# used to calculate them.
     assert_eq!(term.value, expected);
 }
 
@@ -202,6 +288,7 @@ fn unsigned_round_trip_and_tamper() {
 }
 
 // Any one matching tag is enough: the second recipient's key verifies.
+// A key that matches no tag fails.
 #[test]
 fn validate_accepts_any_matching_tag() {
     let other = [6u8; 48];
@@ -212,6 +299,18 @@ fn validate_accepts_any_matching_tag() {
     let footer = Footer::deserialize(&stored.value, false).unwrap();
     let dec = dec_materials(SYMSIG, &other, None);
     footer.validate(&dec, 2, &fields(), HEADER).unwrap();
+
+    let not_a_recipient = dec_materials(SYMSIG, &[9u8; 48], None);
+    let err = footer
+        .validate(&not_a_recipient, 2, &fields(), HEADER)
+        .unwrap_err();
+
+    //= spec/structured-encryption/footer.md#recipient-tag-verification
+    //= type=test
+    //= reason=the second recipient's key verified above, matching only the second tag; a key matching no tag is rejected here
+    //# Verification MUST fail unless at least one of the [Recipient Tags](#recipient-tags)
+    //# matches a calculated recipient tag using the provided symmetricSigningKey.
+    assert_eq!(err.kind(), Kind::Cryptographic);
 }
 
 #[test]
@@ -223,11 +322,16 @@ fn validate_rejects_tag_count_mismatch() {
     let footer = Footer::deserialize(&stored.value, false).unwrap();
     let dec = dec_materials(SYMSIG, &SYM_KEY, None);
     let err = footer.validate(&dec, 2, &fields(), HEADER).unwrap_err();
+
+    //= spec/structured-encryption/footer.md#recipient-tags
+    //= type=test
+    //# There MUST be one Recipient Tag for each Encrypted Data Key in the [header](./header.md#encrypted-data-keys)
     assert_eq!(err.kind(), Kind::Serialization);
 }
 
 #[test]
 fn validate_needs_symmetric_signing_key() {
+    // Guards recipient-tag-verification: the tag is calculated "using the provided symmetricSigningKey".
     let mat = enc_materials(SYMSIG, &[SYM_KEY], None);
     let stored = Footer::create(suite(SYMSIG), &mat, &fields(), HEADER)
         .unwrap()
@@ -250,8 +354,32 @@ fn signed_round_trip_and_tamper() {
     let stored = Footer::create(suite(ECDSA), &mat, &fields(), HEADER)
         .unwrap()
         .into_terminal();
+
+    //= spec/structured-encryption/footer.md#footer-format
+    //= type=test
+    //# The [Terminal Value](./structures.md#terminal-value) of the footer MUST be
     assert_eq!(stored.value.len(), RECIPIENT_TAG_SIZE + SIGNATURE_SIZE);
     assert_eq!(&stored.value[..RECIPIENT_TAG_SIZE], unhex(TAG).as_slice());
+
+    //= spec/structured-encryption/footer.md#signature
+    //= type=test
+    //# The `signature`, if it exists, MUST be calculated over the [Canonical Hash](#canonical-hash),
+    //# using the asymmetric signing key in the encryption materials.
+    //
+    //= spec/structured-encryption/footer.md#signature
+    //= type=test
+    //# The `signature`, if it exists, MUST be calculated using the
+    //# [asymmetric signature algorithm](../../submodules/MaterialProviders/aws-encryption-sdk-specification/framework/algorithm-suites.md#algorithm-suites-signature-settings)
+    //# indicated by the algorithm suite.
+    assert!(
+        ecdsa_verify(
+            EcdsaSignatureAlgorithm::EcdsaP384,
+            &kp.verification_key,
+            &unhex(CANON_HASH),
+            &stored.value[RECIPIENT_TAG_SIZE..],
+        )
+        .unwrap()
+    );
 
     let footer = Footer::deserialize(&stored.value, true).unwrap();
     let dec = dec_materials(ECDSA, &SYM_KEY, Some(kp.verification_key));
@@ -269,6 +397,12 @@ fn signed_round_trip_and_tamper() {
     bad[RECIPIENT_TAG_SIZE + 10] ^= 1;
     let bad = Footer::deserialize(&bad, true).unwrap();
     let err = bad.validate(&dec, 1, &fields(), HEADER).unwrap_err();
+
+    //= spec/structured-encryption/footer.md#signature-verification
+    //= type=test
+    //# If the footer contains a signature, this signature MUST be verified using the
+    //# [asymmetric signature algorithm](../../submodules/MaterialProviders/aws-encryption-sdk-specification/framework/algorithm-suites.md#algorithm-suites-signature-settings)
+    //# indicated by the algorithm suite.
     assert_eq!(err.kind(), Kind::Cryptographic);
     assert_eq!(
         err.message(),
@@ -278,6 +412,7 @@ fn signed_round_trip_and_tamper() {
 
 #[test]
 fn signed_validate_needs_verification_key() {
+    // Guards signature-verification: a signature cannot be verified without a verification key.
     let kp = keypair();
     let mat = enc_materials(ECDSA, &[SYM_KEY], Some(kp.signing_key));
     let stored = Footer::create(suite(ECDSA), &mat, &fields(), HEADER)
@@ -301,6 +436,13 @@ fn validate_rejects_signature_presence_mismatch() {
     let err = unsigned
         .validate(&ecdsa_dec, 1, &fields(), HEADER)
         .unwrap_err();
+
+    //= spec/structured-encryption/footer.md#signature
+    //= type=test
+    //# The signature MUST be included in the footer if the flavor
+    //# in the [header](./header.md#format-flavor) is 0x01
+    //# and MUST NOT be included in the footer if the flavor
+    //# in the [header](./header.md#format-flavor) is 0x00.
     assert_eq!(err.kind(), Kind::Cryptographic);
 
     let kp = keypair();
@@ -318,6 +460,7 @@ fn validate_rejects_signature_presence_mismatch() {
 
 #[test]
 fn create_needs_signing_key_for_ecdsa_suite() {
+    // Guards signature: it is calculated "using the asymmetric signing key in the encryption materials".
     let mat = enc_materials(ECDSA, &[SYM_KEY], None);
     let err = Footer::create(suite(ECDSA), &mat, &fields(), HEADER).unwrap_err();
     assert_eq!(err.kind(), Kind::InvalidMaterials);
@@ -325,6 +468,7 @@ fn create_needs_signing_key_for_ecdsa_suite() {
 
 #[test]
 fn create_needs_symmetric_signing_keys() {
+    // Guards recipient-tags: they are calculated with "the symmetric signing keys in the encryption materials".
     let mat = EncryptionMaterials::builder()
         .algorithm_suite_id(MplAlgorithmSuiteId::Esdk(
             EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf,
@@ -339,6 +483,7 @@ fn create_needs_symmetric_signing_keys() {
 
 #[test]
 fn deserialize_unsigned_sizes() {
+    // Guards footer-format: without a signature the footer is whole 48-byte recipient tags.
     assert_eq!(
         Footer::deserialize(&[0u8; 2 * RECIPIENT_TAG_SIZE], false)
             .unwrap()
@@ -354,10 +499,19 @@ fn deserialize_unsigned_sizes() {
 
 #[test]
 fn deserialize_signed_sizes() {
-    let footer =
-        Footer::deserialize(&[0u8; 2 * RECIPIENT_TAG_SIZE + SIGNATURE_SIZE], true).unwrap();
-    assert_eq!(footer.tags.len(), 2);
-    assert_eq!(footer.sig.as_deref().map(<[u8]>::len), Some(SIGNATURE_SIZE));
+    let mut data = vec![1u8; RECIPIENT_TAG_SIZE];
+    data.extend_from_slice(&[2u8; RECIPIENT_TAG_SIZE]);
+    data.extend_from_slice(&[3u8; SIGNATURE_SIZE]);
+    let footer = Footer::deserialize(&data, true).unwrap();
+
+    //= spec/structured-encryption/footer.md#footer-format
+    //= type=test
+    //# The [Terminal Value](./structures.md#terminal-value) of the footer MUST be
+    assert_eq!(
+        footer.tags,
+        [vec![1u8; RECIPIENT_TAG_SIZE], vec![2u8; RECIPIENT_TAG_SIZE]]
+    );
+    assert_eq!(footer.sig, Some(vec![3u8; SIGNATURE_SIZE]));
     for len in [
         0,
         SIGNATURE_SIZE,
