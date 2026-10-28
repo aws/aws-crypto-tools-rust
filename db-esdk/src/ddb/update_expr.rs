@@ -95,3 +95,60 @@ fn find_token(s: &[char]) -> (usize, Option<String>) {
         (1, None)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Ported from DynamoDbEncryption/test/UpdateExpr.dfy TestExamples: the examples from
+    // https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Expressions.UpdateExpressions.html
+    #[test]
+    fn extract_attrs_examples() {
+        let cases: [(&str, &[&str]); 11] = [
+            (
+                "SET ProductCategory = :c, Price = :p",
+                &["ProductCategory", "Price"],
+            ),
+            ("SET RelatedItems[1] = :ri", &["RelatedItems"]),
+            ("SET #pr.#5star[1] = :r5, #pr.#3star = :r3", &["#pr", "#pr"]),
+            ("SET Price = Price - :p", &["Price", "Price"]),
+            ("SET #ri = list_append(#ri, :vals)", &["#ri", "#ri"]),
+            ("SET #ri = list_append(:vals, #ri)", &["#ri", "#ri"]),
+            ("SET Price = if_not_exists(Price, :p)", &["Price", "Price"]),
+            (
+                "REMOVE Brand, InStock, QuantityOnHand",
+                &["Brand", "InStock", "QuantityOnHand"],
+            ),
+            (
+                "REMOVE RelatedItems[1], RelatedItems[2]",
+                &["RelatedItems", "RelatedItems"],
+            ),
+            ("ADD QuantityOnHand :q", &["QuantityOnHand"]),
+            ("DELETE Color :p", &["Color"]),
+        ];
+        for (expr, expected) in cases {
+            assert_eq!(extract_attrs(expr), expected, "{expr}");
+            assert_eq!(extract_attributes(expr, None), expected, "{expr}");
+        }
+    }
+
+    #[test]
+    fn extract_attributes_resolves_names() {
+        let names = HashMap::from([("#pr".to_owned(), "foo".to_owned())]);
+        assert_eq!(
+            extract_attributes("SET #pr.#5star[1] = :r5, #pr.#3star = :r3", Some(&names)),
+            ["foo", "foo"]
+        );
+        // A placeholder missing from the map is kept as written.
+        assert_eq!(
+            extract_attributes("SET #pr = :a, #other = :b", Some(&names)),
+            ["foo", "#other"]
+        );
+    }
+
+    #[test]
+    fn numbers_and_empty_input_name_no_attribute() {
+        assert_eq!(extract_attrs(""), Vec::<String>::new());
+        assert_eq!(extract_attrs("SET a = 12 + :v1"), ["a"]);
+    }
+}
