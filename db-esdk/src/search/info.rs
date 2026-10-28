@@ -280,3 +280,7 @@ pub(crate) struct VirtPart {
     pub(crate) loc: TermLoc,
     pub(crate) transforms: Vec<VirtualTransform>,
 }
+
+#[cfg(test)]
+#[path = "info_tests.rs"]
+mod tests;
