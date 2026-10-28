@@ -396,7 +396,7 @@ impl<'a> DecryptStreamFluentBuilder<'a> {
     decrypt_members!();
     material_source_members!();
     member!(
-        /// What `send` does with a message that has a signing algorithm suite.
+        /// Specifies what `send` does with a message that has a signing algorithm suite.
         /// Default is [`SignedStreaming::RejectMultiFrame`].
         signed_streaming(SignedStreaming), set_signed_streaming, get_signed_streaming -> SignedStreaming
     );

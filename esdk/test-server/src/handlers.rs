@@ -210,7 +210,8 @@ impl AppState {
             .plaintext(&mut plaintext)
             .set_encryption_context(Some(encryption_context(req.encryption_context)))
             .keyring(keyring)
-            // The commons suite runs streamed decrypt on multi-frame signed messages, which the default rejects.
+            // The commons suite assumes the default is streamed decrypt on multi-frame signed messages.
+            // The default for ESDK Rust/C++ is to reject this, so override the default.
             .signed_streaming(SignedStreaming::ReleaseRegularFrames)
             .send()
             .await

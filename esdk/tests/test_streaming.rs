@@ -186,6 +186,7 @@ async fn test_decrypt_stream_release_regular_frames_holds_final_frame() {
     ct[last] ^= 0x01;
     //= spec/client-apis/decrypt.md#decrypt-the-message-body
     //= type=test
+    //= reason=The final frame is not released on err
     //# Any plaintext decrypted from [nonframed data](../data-format/message-body.md#nonframed-data) or
     //# a final frame in a streamed Decrypt operation MUST NOT be released until [signature verification](#verify-the-signature)
     //# successfully completes.
@@ -202,6 +203,7 @@ async fn test_decrypt_stream_reject_signed_fails_after_header() {
     let ct = encrypt_with_signing_suite(b"single frame").await;
     //= spec/client-apis/decrypt.md#behavior
     //= type=test
+    //= reason=The configuration option is `SignedStreaming::RejectSigned`; setting this causes decryption to fail
     //# - The ESDK MUST provide a configuration option that causes the decryption operation
     //# to fail immediately after parsing the header if a signed algorithm suite is used.
     let (result, output) =
