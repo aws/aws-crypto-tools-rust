@@ -13,7 +13,7 @@ use crate::error::{Error, val_err};
 use crate::structured::util::{
     ATTR_PREFIX, AuthAction, RESERVED_CRYPTO_CONTEXT_PREFIX, RESERVED_PREFIX, Terminal, utf16_cmp,
 };
-use crate::table_config::{Materials, TableConfig};
+use crate::table_config::{Materials, TableConfig, check_table_name};
 use crate::types::{AlgorithmSuiteId, CryptoAction, PlaintextOverride};
 
 pub(crate) const TABLE_NAME: &str = "aws-crypto-table-name";
@@ -45,12 +45,22 @@ const fn action_str(action: CryptoAction) -> &'static str {
 }
 
 fn allowed_unsigned(names: Option<&[String]>, prefix: Option<&str>, attr: &str) -> bool {
+    //= spec/dynamodb-encryption-client/decrypt-item.md#signature-scope
+    //# An Attribute on a DynamoDB Item MUST NOT be considered as within the signature scope
+    //# if it's Attribute Name is included in [Unauthenticated Attributes](./ddb-table-encryption-config.md#unauthenticated-attributes)
+    //# or if it's Attribute Name begins with the prefix specified in
+    //# [Unauthenticated Attribute Prefix](./ddb-table-encryption-config.md#unauthenticated-attribute-prefix).
     names.is_some_and(|n| n.iter().any(|x| x == attr))
         || prefix.is_some_and(|p| attr.starts_with(p))
         || attr.starts_with(RESERVED_PREFIX)
 }
 
 fn version_from_actions(actions: &HashMap<String, CryptoAction>) -> u8 {
+    //= spec/dynamodb-encryption-client/ddb-table-encryption-config.md#configuration-version
+    //# If any of the [Attribute Actions](#attribute-actions) are configured as
+    //# [SIGN_AND_INCLUDE_IN_ENCRYPTION_CONTEXT](../structured-encryption/structures.md#contextandsign)
+    //# then the configuration version MUST be 2; otherwise,
+    //# the configuration version MUST be 1.
     if actions
         .values()
         .any(|a| *a == CryptoAction::SignAndIncludeInEncryptionContext)
@@ -62,6 +72,10 @@ fn version_from_actions(actions: &HashMap<String, CryptoAction>) -> u8 {
 }
 
 const fn key_action(version: u8) -> CryptoAction {
+    //= spec/dynamodb-encryption-client/ddb-table-encryption-config.md#key-action
+    //# if the [configuration version](#configuration-version) is 2, then
+    //# the key action MUST be [SIGN_AND_INCLUDE_IN_ENCRYPTION_CONTEXT](../structured-encryption/structures.md#contextandsign);
+    //# otherwise, the key action MUST be [SIGN_ONLY](../structured-encryption/structures.md#signonly).
     if version == 2 {
         CryptoAction::SignAndIncludeInEncryptionContext
     } else {
@@ -71,10 +85,19 @@ const fn key_action(version: u8) -> CryptoAction {
 
 impl Config {
     /// Validate `table` as the configuration of table `name`.
+    ///
+    /// A `Validation` error when `name` has fewer than 3 or more than 255 characters,
+    /// or when `table` does not fit its attribute actions.
     pub(crate) fn new(name: String, table: TableConfig) -> Result<Self, Error> {
+        //= spec/dynamodb-encryption-client/ddb-table-encryption-config.md#dynamodb-table-name
+        //# This Table Name MUST be a valid DynamoDB Table Name.
+        check_table_name(&name)?;
         let actions = &table.attribute_actions_on_encrypt;
         let version = version_from_actions(actions);
         let key_action = key_action(version);
+        //= spec/dynamodb-encryption-client/ddb-table-encryption-config.md#attribute-actions
+        //# The [Key Action](#key-action)
+        //# MUST be configured to the partition attribute and, if present, sort attribute.
         if actions.get(&table.partition_key_name) != Some(&key_action) {
             return Err(val_err(format!(
                 "Partition key attribute action MUST be {}",
@@ -106,6 +129,11 @@ impl Config {
                 } else {
                     "it also begins with the reserved prefix."
                 };
+
+                //= spec/dynamodb-encryption-client/decrypt-item.md#signature-scope
+                //# If an Authenticate Action other than DO_NOTHING is configured for an attribute name included in [Unauthenticated Attributes](./ddb-table-encryption-config.md#unauthenticated-attributes)
+                //# or beginning with the prefix specified in [Unauthenticated Attribute Prefix](./ddb-table-encryption-config.md#unauthenticated-attribute-prefix),
+                //# this operation MUST yield an error.
                 return Err(val_err(format!(
                     "Attribute {attr} is configured as {} but {why}",
                     action_str(action)
@@ -120,10 +148,19 @@ impl Config {
         }
         let cmm = match table.materials {
             Materials::Cmm(c) => c,
+            //= spec/dynamodb-encryption-client/ddb-table-encryption-config.md#cmm
+            //# If not supplied during initialization,
+            //# the CMM considered "configured" to this
+            //# Item Encryptor MUST be a
+            //# [default CMM](https://github.com/awslabs/aws-encryption-sdk-specification/blob/master/framework/default-cmm.md)
+            //# constructed using the [supplied keyring](#keyring) as input.
             Materials::Keyring(k) => SharedCmm::new(DefaultCmm::new(k)),
         };
         Ok(Self {
             version,
+            //= spec/dynamodb-encryption-client/ddb-table-encryption-config.md#structure
+            //= reason=Every Config has a logical name; an unset one defaults to the physical table name
+            //# - [Logical Table Name](#logical-table-name)
             logical_table_name: table.logical_table_name.unwrap_or(name),
             partition_key_name: table.partition_key_name,
             sort_key_name: table.sort_key_name,
@@ -132,12 +169,16 @@ impl Config {
             allowed_unsigned_attributes: table.allowed_unsigned_attributes,
             allowed_unsigned_attribute_prefix: table.allowed_unsigned_attribute_prefix,
             algorithm_suite_id: table.algorithm_suite_id,
+            //= spec/dynamodb-encryption-client/ddb-table-encryption-config.md#plaintext-policy
+            //# If not specified, encryption and decryption MUST behave according to `FORBID_PLAINTEXT_WRITE_FORBID_PLAINTEXT_READ`.
             plaintext_override: table.plaintext_override.unwrap_or_default(),
         })
     }
 
     /// Whether `attr` is covered by the signature.
     pub(crate) fn in_signature_scope(&self, attr: &str) -> bool {
+        //= spec/dynamodb-encryption-client/decrypt-item.md#signature-scope
+        //# Otherwise, Attributes MUST be considered as within the signature scope.
         !allowed_unsigned(
             self.allowed_unsigned_attributes.as_deref(),
             self.allowed_unsigned_attribute_prefix.as_deref(),
@@ -152,12 +193,26 @@ impl Config {
     ) -> Result<HashMap<String, CryptoAction>, Error> {
         let mut errors = Vec::new();
         let mut out = HashMap::with_capacity(item.len());
+
+        //= spec/dynamodb-encryption-client/encrypt-item.md#behavior
+        //# - The Crypto Schema MUST NOT contain more Crypto Actions than those specified by the previous point.
         for k in item.keys() {
             if let Some(a) = self.attribute_actions_on_encrypt.get(k) {
+                //= spec/dynamodb-encryption-client/encrypt-item.md#behavior
+                //# - For every attribute on the input Item,
+                //# there MUST exist a Crypto Action in the Crypto Schema
+                //# such that the Crypto Action indexed by that attribute name in the Crypto Schema
+                //# equals the Crypto Action indexed by that attribute name in the configured Attribute Actions.
                 out.insert(k.clone(), *a);
             } else if !self.in_signature_scope(k) {
                 out.insert(k.clone(), CryptoAction::DoNothing);
             } else {
+                //= spec/dynamodb-encryption-client/encrypt-item.md#behavior
+                //# The [Attributes Actions](./ddb-table-encryption-config.md#attribute-actions)
+                //# configured on this Item Encryptor MUST specify a Crypto Action
+                //# for every attribute in the [input DynamoDB Item](#dynamodb-item)
+                //# (Attribute Actions MAY specify a Crypto Action for an attribute not
+                //# in the input DynamoDB Item).
                 errors.push(format!("No Crypto Action configured for attribute {k}"));
             }
         }
@@ -174,11 +229,26 @@ impl Config {
         &self,
         item: &HashMap<String, Terminal>,
     ) -> HashMap<String, AuthAction> {
+        //= spec/dynamodb-encryption-client/decrypt-item.md#behavior
+        //# - The number of Authenticate Actions in the Authenticate Schema
+        //# MUST EQUAL the number of Attributes on the [input DynamoDB Item](#input-dynamodb-item).
         item.keys()
             .map(|k| {
                 let action = if self.in_signature_scope(k) {
+                    //= spec/dynamodb-encryption-client/decrypt-item.md#behavior
+                    //# - For every Attribute in the [input DynamoDB Item](#input-dynamodb-item)
+                    //# that is in the [signature scope](#signature-scope),
+                    //# there MUST exist a [SIGN Authenticate Action](../structured-encryption/structures.md#sign)
+                    //# in the Authenticate Schema,
+                    //# string indexed at the top level by that attribute name.
                     AuthAction::Sign
                 } else {
+                    //= spec/dynamodb-encryption-client/decrypt-item.md#behavior
+                    //# - For every Attribute in the [input DynamoDB Item](#input-dynamodb-item)
+                    //# that is not in the [signature scope](#signature-scope),
+                    //# there MUST exist a [DO_NOT_SIGN Authenticate Action](../structured-encryption/structures.md#do_not_sign)
+                    //# in the Authenticate Schema,
+                    //# string indexed at the top level by that attribute name.
                     AuthAction::DoNotSign
                 };
                 (k.clone(), action)
@@ -264,20 +334,50 @@ impl Config {
             ))
         })?;
         let mut ec = EncryptionContext::new();
+
+        //= spec/dynamodb-encryption-client/encrypt-item.md#dynamodb-item-base-context-version-1
+        //# The DynamoDB Item Base Context MUST contain:
+        //
+        //= spec/dynamodb-encryption-client/encrypt-item.md#dynamodb-item-base-context-version-2
+        //= reason=The table name entry is the logical table name, as in the Dafny DB-ESDK
+        //# The DynamoDB Item Base Context MUST contain:
         ec.insert(TABLE_NAME, self.logical_table_name.as_str());
         ec.insert(PARTITION_NAME, self.partition_key_name.as_str());
         if version == 1 {
             ec.insert(
+                //= spec/dynamodb-encryption-client/encrypt-item.md#base-context-value-version-1
+                //# The key MUST be as per [Encryption Context Naming]
+                //# (../structured-encryption/encrypt-path-structure.md#encryption-context-naming).
+                //
+                //= spec/structured-encryption/encrypt-path-structure.md#encryption-context-naming
+                //# When a key-value pair is added to the encryption context,
+                //# the key MUST be the concatenation of the literal
+                //# "aws-crypto-attr." and the member strings of the
+                //# path joined by the '.' character.
                 format!("{ATTR_PREFIX}{}", self.partition_key_name),
                 pk.encode(),
             );
         }
+
+        //= spec/dynamodb-encryption-client/encrypt-item.md#dynamodb-item-base-context-version-1
+        //# If this item does not have a sort key attribute,
+        //# the DynamoDB Item Context MUST NOT contain the key `aws-crypto-sort-name`.
+        //
+        //= spec/dynamodb-encryption-client/encrypt-item.md#dynamodb-item-base-context-version-2
+        //# If this item does not have a sort key attribute,
+        //# the DynamoDB Item Context MUST NOT contain the key `aws-crypto-sort-name`.
         if let Some(sort) = &self.sort_key_name {
             let sk = item.get(sort).ok_or_else(|| {
                 val_err(format!(
                     "Sort key {sort} not found in Item to be encrypted or decrypted"
                 ))
             })?;
+
+            //= spec/dynamodb-encryption-client/encrypt-item.md#dynamodb-item-base-context-version-1
+            //# If this item has a Sort Key attribute, the DynamoDB Item Base Context MUST contain:
+            //
+            //= spec/dynamodb-encryption-client/encrypt-item.md#dynamodb-item-base-context-version-2
+            //# If this item has a Sort Key attribute, the DynamoDB Item Base Context MUST contain:
             ec.insert(SORT_NAME, sort.as_str());
             if version == 1 {
                 ec.insert(format!("{ATTR_PREFIX}{sort}"), sk.encode());
@@ -313,7 +413,7 @@ pub(crate) mod tests {
             .keyring(keyring)
             .build()
             .unwrap();
-        Config::new("t".to_owned(), table).unwrap()
+        Config::new("table".to_owned(), table).unwrap()
     }
 
     fn terminals(names: &[&str]) -> HashMap<String, Terminal> {

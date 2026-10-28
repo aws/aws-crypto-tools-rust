@@ -186,6 +186,10 @@ fn v2_encryption_context<'a>(
     let mut by_key: std::collections::BTreeMap<String, &Terminal> =
         std::collections::BTreeMap::new();
     for (path, data) in fields {
+        //= spec/dynamodb-encryption-client/encrypt-item.md#base-context-value-version-2
+        //# The key MUST be as per [Encryption Context Naming]
+        //# (../structured-encryption/encrypt-path-structure.md#encryption-context-naming).
+        //
         //= spec/structured-encryption/encrypt-path-structure.md#encryption-context-naming
         //# When a key-value pair is added to the encryption context,
         //# the key MUST be the concatenation of the literal
@@ -208,6 +212,8 @@ fn v2_encryption_context<'a>(
     let mut ec = EncryptionContext::new();
     let mut legend = String::with_capacity(by_key.len());
     for (key, attr) in by_key {
+        //= spec/dynamodb-encryption-client/encrypt-item.md#base-context-value-version-2
+        //# The value MUST be :
         let (legend_char, value) = if attr.type_id == NULL {
             ('L', "null".to_owned())
         } else if attr.type_id == STRING {

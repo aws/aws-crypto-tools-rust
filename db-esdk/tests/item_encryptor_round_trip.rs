@@ -14,11 +14,6 @@ use aws_db_esdk::types::{AlgorithmSuiteId, CryptoAction};
 use aws_db_esdk::{ItemEncryptor, ParsedHeader};
 use item_encryptor_support::*;
 
-const HEADER: &str = "aws_dbe_head";
-const FOOTER: &str = "aws_dbe_foot";
-const DEFAULT_SUITE: AlgorithmSuiteId =
-    AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384SymsigHmacSha384;
-
 /// Encrypt `input`, check which attributes changed, decrypt, and return the decrypt header.
 async fn round_trip(
     encryptor: &ItemEncryptor,
@@ -140,6 +135,11 @@ async fn round_trip_v2() {
         header.attribute_actions_on_encrypt(),
         &without(v2_actions(), &["nothing"])
     );
+
+    //= spec/dynamodb-encryption-client/encrypt-item.md#dynamodb-item-base-context-version-2
+    //= type=test
+    //= reason=The legend and attr entries come from Encrypt Structure; the rest is the base context
+    //# The DynamoDB Item Base Context MUST contain:
     assert_eq!(
         context_without_public_key(header.encryption_context()),
         strings([
@@ -149,6 +149,16 @@ async fn round_trip_v2() {
             ("aws-crypto-partition-name", "bar"),
             ("aws-crypto-table-name", "foo"),
         ])
+    );
+
+    //= spec/dynamodb-encryption-client/encrypt-item.md#dynamodb-item-base-context-version-2
+    //= type=test
+    //# If this item does not have a sort key attribute,
+    //# the DynamoDB Item Context MUST NOT contain the key `aws-crypto-sort-name`.
+    assert!(
+        !header
+            .encryption_context()
+            .contains_key("aws-crypto-sort-name")
     );
 }
 
@@ -200,9 +210,21 @@ async fn round_trip_v2_complex() {
         header.attribute_actions_on_encrypt(),
         &without(complex_actions(), &["nothing", "sign2"])
     );
+
+    //= spec/dynamodb-encryption-client/encrypt-item.md#base-context-value-version-2
+    //= type=test
+    //# The value MUST be :
     assert_eq!(
         context_without_public_key(header.encryption_context()),
         complex_context()
+    );
+
+    //= spec/dynamodb-encryption-client/encrypt-item.md#dynamodb-item-base-context-version-2
+    //= type=test
+    //# If this item has a Sort Key attribute, the DynamoDB Item Base Context MUST contain:
+    assert_eq!(
+        header.encryption_context().get("aws-crypto-sort-name"),
+        Some("sortKey")
     );
 }
 
@@ -282,6 +304,18 @@ async fn round_trip_v2_special_attribute_names() {
         ("aws-crypto-partition-name", "bar"),
         ("aws-crypto-table-name", "foo"),
     ]));
+
+    //= spec/dynamodb-encryption-client/encrypt-item.md#base-context-value-version-2
+    //= type=test
+    //# The key MUST be as per [Encryption Context Naming]
+    //# (../structured-encryption/encrypt-path-structure.md#encryption-context-naming).
+    //
+    //= spec/structured-encryption/encrypt-path-structure.md#encryption-context-naming
+    //= type=test
+    //# When a key-value pair is added to the encryption context,
+    //# the key MUST be the concatenation of the literal
+    //# "aws-crypto-attr." and the member strings of the
+    //# path joined by the '.' character.
     assert_eq!(
         context_without_public_key(header.encryption_context()),
         expected
@@ -331,10 +365,27 @@ async fn round_trip_with_cmm_and_sort_key() {
     input.insert("sort".to_owned(), AttributeValue::N("7".to_owned()));
     let (_, header) = round_trip(&encryptor, &encryptor, &input, &["encrypt"]).await;
     assert_default_header(&header);
+    let ec = context_without_public_key(header.encryption_context());
+
+    //= spec/dynamodb-encryption-client/encrypt-item.md#dynamodb-item-base-context-version-1
+    //= type=test
+    //# If this item has a Sort Key attribute, the DynamoDB Item Base Context MUST contain:
+    assert_eq!(ec["aws-crypto-sort-name"], "sort");
+
+    //= spec/dynamodb-encryption-client/encrypt-item.md#base-context-value-version-1
+    //= type=test
+    //# The value MUST be the UTF8 Encoding of the
+    //# [Base 64 encoded](https://www.rfc-editor.org/rfc/rfc4648),
+    //# of the concatenation of the bytes `typeID + serializedValue`
+    //# where `typeId` is the attribute's [type ID](./ddb-attribute-serialization.md#type-id)
+    //# and `serializedValue` is the attribute's value serialized according to
+    //# [Attribute Value Serialization](./ddb-attribute-serialization.md#attribute-value-serialization).
     assert_eq!(
-        context_without_public_key(header.encryption_context()),
+        ec,
         strings([
+            // 0x0001 (string) followed by "key"
             ("aws-crypto-attr.bar", "AAFrZXk="),
+            // 0x0002 (number) followed by "7"
             ("aws-crypto-attr.sort", "AAI3"),
             ("aws-crypto-partition-name", "bar"),
             ("aws-crypto-sort-name", "sort"),
@@ -387,7 +438,35 @@ async fn unsigned_prefix_attributes_pass_through_unsigned() {
     expected.insert(":free".to_owned(), s("changed"));
     expected.insert("nothing".to_owned(), s("changed"));
     expected.insert(":new".to_owned(), s("added"));
+
+    //= spec/dynamodb-encryption-client/decrypt-item.md#signature-scope
+    //= type=test
+    //= reason=Changed and added unauthenticated attributes still verify, so they are outside the scope
+    //# An Attribute on a DynamoDB Item MUST NOT be considered as within the signature scope
+    //# if it's Attribute Name is included in [Unauthenticated Attributes](./ddb-table-encryption-config.md#unauthenticated-attributes)
+    //# or if it's Attribute Name begins with the prefix specified in
+    //# [Unauthenticated Attribute Prefix](./ddb-table-encryption-config.md#unauthenticated-attribute-prefix).
     assert_eq!(decrypted.plaintext_item(), &expected);
+}
+
+#[tokio::test]
+async fn round_trip_with_only_required_inputs() {
+    let table = aws_db_esdk::TableConfig::builder()
+        .partition_key_name("bar")
+        .attribute_actions_on_encrypt("bar", CryptoAction::SignOnly)
+        .attribute_actions_on_encrypt("encrypt", CryptoAction::EncryptAndSign)
+        .keyring(keyring())
+        .build()
+        .unwrap();
+    let built = ItemEncryptor::builder().table(TABLE, table).build();
+
+    //= spec/dynamodb-encryption-client/ddb-item-encryptor.md#initialization
+    //= type=test
+    //= reason=No sort key, unsigned attributes, prefix, suite, or plaintext policy is set
+    //# The following are OPTIONAL for the DynamoDB Item Encryptor:
+    let encryptor = built.unwrap();
+    let input = item([("bar", s("key")), ("encrypt", s("text"))]);
+    round_trip(&encryptor, &encryptor, &input, &["encrypt"]).await;
 }
 
 #[tokio::test]

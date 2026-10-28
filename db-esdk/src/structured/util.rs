@@ -62,6 +62,14 @@ impl Terminal {
         let mut bytes = Vec::with_capacity(2 + self.value.len());
         bytes.extend_from_slice(&self.type_id);
         bytes.extend_from_slice(&self.value);
+
+        //= spec/dynamodb-encryption-client/encrypt-item.md#base-context-value-version-1
+        //# The value MUST be the UTF8 Encoding of the
+        //# [Base 64 encoded](https://www.rfc-editor.org/rfc/rfc4648),
+        //# of the concatenation of the bytes `typeID + serializedValue`
+        //# where `typeId` is the attribute's [type ID](./ddb-attribute-serialization.md#type-id)
+        //# and `serializedValue` is the attribute's value serialized according to
+        //# [Attribute Value Serialization](./ddb-attribute-serialization.md#attribute-value-serialization).
         base64::engine::general_purpose::STANDARD.encode(bytes)
     }
 }
