@@ -65,6 +65,8 @@ mod ecdsa;
 pub use ecdsa::*;
 mod hkdf;
 pub use hkdf::*;
+mod rsa;
+pub use rsa::*;
 
 use aws_lc_rs::aead::{Aad, LessSafeKey, Nonce, UnboundKey};
 use aws_lc_rs::rand;
