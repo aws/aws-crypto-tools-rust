@@ -80,7 +80,7 @@ pub struct AttributeValue {
 }
 
 /// The DBE item encryptor configuration. Members this server does not serve
-/// (a CMM, a legacy override, a search config) are kept opaque so a request
+/// (a legacy override, a search config) are kept opaque so a request
 /// naming them is refused rather than silently ignored.
 #[derive(Debug, Deserialize)]
 pub struct DbeClientConfig {
@@ -105,7 +105,7 @@ pub struct DbeClientConfig {
     #[serde(default)]
     pub keyring: Option<Keyring>,
     #[serde(default)]
-    pub cmm: Option<ciborium::Value>,
+    pub cmm: Option<CryptographicMaterialsManager>,
     #[serde(default)]
     pub search: Option<ciborium::Value>,
 }
@@ -168,6 +168,32 @@ pub struct Keyring {
     pub multi: Option<MultiKeyringConfig>,
     #[serde(flatten)]
     pub other: HashMap<String, ciborium::Value>,
+}
+
+/// A CMM: a tagged union via optional members; exactly one must be set.
+#[derive(Debug, Default, Deserialize)]
+pub struct CryptographicMaterialsManager {
+    #[serde(rename = "Default", default)]
+    pub default: Option<DefaultCmmConfig>,
+    #[serde(rename = "RequiredEncryptionContext", default)]
+    pub required_encryption_context: Option<Box<RequiredEncryptionContextCmmConfig>>,
+    #[serde(flatten)]
+    pub other: HashMap<String, ciborium::Value>,
+}
+
+/// A Default CMM over a keyring.
+#[derive(Debug, Deserialize)]
+pub struct DefaultCmmConfig {
+    pub keyring: Keyring,
+}
+
+/// A CMM that requires some encryption context keys, over another CMM.
+#[derive(Debug, Deserialize)]
+pub struct RequiredEncryptionContextCmmConfig {
+    #[serde(rename = "underlyingCMM")]
+    pub underlying_cmm: CryptographicMaterialsManager,
+    #[serde(rename = "requiredEncryptionContextKeys")]
+    pub required_encryption_context_keys: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]

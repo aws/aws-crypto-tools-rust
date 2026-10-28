@@ -6,10 +6,10 @@
     "plaintext-override",
     "aws-kms-hierarchical",
     "aws-kms-mrk",
-    "aws-kms-rsa"
+    "aws-kms-rsa",
+    "required-encryption-context-cmm"
   ],
   "unsupportedFeatures": [
-    "required-encryption-context-cmm",
     "ddb-transforms",
     "searchable-encryption",
     "beacon-partitions",

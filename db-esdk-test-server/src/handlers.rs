@@ -19,7 +19,7 @@ use aws_db_esdk::{ItemEncryptor, TableConfig};
 use serde_bytes::ByteBuf;
 
 use crate::error::ServerError;
-use crate::keyring::keyring_for_config;
+use crate::keyring::{cmm_for_config, keyring_for_config};
 use crate::model::{
     AttributeValue, CreateClientRequest, CreateClientResponse, CryptoAction, DbeAlgorithmSuiteId,
     DbeClientConfig, DdbItem, DecryptItemRequest, DecryptItemResponse, EncryptItemRequest,
@@ -168,11 +168,6 @@ fn from_ddb_item(item: HashMap<String, DdbAttributeValue>) -> Result<DdbItem, Se
 }
 
 async fn item_encryptor(config: DbeClientConfig) -> Result<ItemEncryptor, ServerError> {
-    if config.cmm.is_some() {
-        return Err(ServerError::generic(
-            "a CMM is not supported by the native Rust language server",
-        ));
-    }
     if config.legacy_override.is_some() {
         // The native library has no legacy DDBEC encryptor, so a legacy override
         // fails as a library validation error, as the Dafny Rust library does.
@@ -183,11 +178,15 @@ async fn item_encryptor(config: DbeClientConfig) -> Result<ItemEncryptor, Server
             "a search config is not supported by the native Rust language server",
         ));
     }
-    let keyring = config
-        .keyring
-        .as_ref()
-        .ok_or_else(|| ServerError::generic("DBEClientConfig must set a keyring or a CMM"))?;
-    let keyring = keyring_for_config(keyring).await?;
+    let (keyring, cmm) = match (&config.keyring, &config.cmm) {
+        (Some(keyring), None) => (Some(keyring_for_config(keyring).await?), None),
+        (None, Some(cmm)) => (None, Some(cmm_for_config(cmm).await?)),
+        _ => {
+            return Err(ServerError::generic(
+                "DBEClientConfig must set exactly one of a keyring or a CMM",
+            ))
+        }
+    };
     let table = TableConfig::builder()
         .partition_key_name(config.partition_key_name)
         .set_sort_key_name(config.sort_key_name)
@@ -202,7 +201,8 @@ async fn item_encryptor(config: DbeClientConfig) -> Result<ItemEncryptor, Server
         .set_allowed_unsigned_attributes(config.allowed_unsigned_attributes)
         .set_algorithm_suite_id(config.algorithm_suite_id.map(algorithm_suite))
         .set_plaintext_override(config.plaintext_override.map(plaintext_override))
-        .keyring(keyring)
+        .set_keyring(keyring)
+        .set_cmm(cmm)
         .build()?;
     Ok(ItemEncryptor::builder()
         .table(config.logical_table_name, table)

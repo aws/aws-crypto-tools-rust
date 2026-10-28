@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use crate::error::ServerError;
 use crate::model::{
-    AesWrappingAlg, AwsKmsDiscoveryKeyringConfig, AwsKmsHierarchicalKeyringConfig,
+    AesWrappingAlg, CryptographicMaterialsManager, AwsKmsDiscoveryKeyringConfig, AwsKmsHierarchicalKeyringConfig,
     AwsKmsKeyringConfig, AwsKmsMrkDiscoveryKeyringConfig, AwsKmsMultiKeyringConfig,
     AwsKmsRsaKeyringConfig, DdbKeyBranchKeyIdSupplier, DiscoveryFilter as ModelDiscoveryFilter,
     Keyring, KmsRsaEncryptionAlgorithm, MultiKeyringConfig, PaddingScheme, RawAesKeyringConfig,
@@ -23,6 +23,7 @@ use aws_db_esdk::keyring::{
     HierarchicalKeyring, ItemKeyBranchKeySupplier, ItemKeySupplier, MultiKeyring, RawAesKeyring,
     RawRsaKeyring, SharedKeyring,
 };
+use aws_db_esdk::cmm::{DefaultCmm, RequiredEncryptionContextCmm, SharedCmm};
 use aws_db_esdk::types::{AesWrappingAlg as MplAesWrappingAlg, PaddingScheme as MplPaddingScheme};
 use aws_db_esdk::{async_trait, aws_config, aws_sdk_dynamodb, aws_sdk_kms, key_store, mpl};
 use base64::engine::general_purpose::STANDARD;
@@ -83,6 +84,37 @@ pub async fn keyring_for_config(keyring: &Keyring) -> Result<SharedKeyring, Serv
     let name = keyring.other.keys().next().map_or("", String::as_str);
     Err(ServerError::generic(format!(
         "keyring variant {name} is not supported by the native Rust language server"
+    )))
+}
+
+/// Build the CMM a modeled `CryptographicMaterialsManager` names; exactly one variant must be set.
+pub async fn cmm_for_config(cmm: &CryptographicMaterialsManager) -> Result<SharedCmm, ServerError> {
+    let set = usize::from(cmm.default.is_some())
+        + usize::from(cmm.required_encryption_context.is_some())
+        + cmm.other.len();
+    if set != 1 {
+        return Err(ServerError::generic(format!(
+            "CryptographicMaterialsManager must set exactly one variant, found {set}"
+        )));
+    }
+    if let Some(default) = &cmm.default {
+        let keyring = keyring_for_config(&default.keyring).await?;
+        return Ok(SharedCmm::new(DefaultCmm::new(keyring)));
+    }
+    if let Some(required) = &cmm.required_encryption_context {
+        let underlying = Box::pin(cmm_for_config(&required.underlying_cmm)).await?;
+        let cmm = RequiredEncryptionContextCmm::builder()
+            .underlying_cmm(underlying)
+            .set_required_encryption_context_keys(Some(
+                required.required_encryption_context_keys.clone(),
+            ))
+            .build()
+            .map_err(|e| ServerError::client(e.to_string()))?;
+        return Ok(SharedCmm::new(cmm));
+    }
+    let name = cmm.other.keys().next().map_or("", String::as_str);
+    Err(ServerError::generic(format!(
+        "CMM variant {name} is not supported by the native Rust language server"
     )))
 }
 
