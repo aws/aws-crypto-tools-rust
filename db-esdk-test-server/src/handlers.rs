@@ -39,6 +39,7 @@ use crate::model::{
     ResolveAuthActionsRequest, ResolveAuthActionsResponse, StructuredDataMap,
     StructuredDataTerminal,
 };
+use crate::search::search_config;
 
 /// Shared server state: the thread-safe `clientId -> ItemEncryptor` and
 /// `clientId -> StructuredClient` registries.
@@ -309,17 +310,16 @@ async fn materials(
 }
 
 /// The library's table configuration for the wire's `config`.
-pub(crate) async fn table_config(config: DbeClientConfig) -> Result<TableConfig, ServerError> {
+pub(crate) async fn table_config(mut config: DbeClientConfig) -> Result<TableConfig, ServerError> {
     if config.legacy_override.is_some() {
         // The native library has no legacy DDBEC encryptor, so a legacy override
         // fails as a library validation error, as the Dafny Rust library does.
         return Err(ServerError::client("Legacy configuration unsupported."));
     }
-    if config.search.is_some() {
-        return Err(ServerError::generic(
-            "a search config is not supported by the native Rust language server",
-        ));
-    }
+    let search = match config.search.take() {
+        Some(search) => Some(search_config(search).await?),
+        None => None,
+    };
     let (keyring, cmm) = materials(&config).await?;
     let table = TableConfig::builder()
         .partition_key_name(config.partition_key_name)
@@ -338,11 +338,14 @@ pub(crate) async fn table_config(config: DbeClientConfig) -> Result<TableConfig,
         .set_keyring(keyring)
         .set_cmm(cmm)
         .set_logical_table_name(Some(config.logical_table_name))
+        .set_search(search)
         .build()?;
     Ok(table)
 }
 
-async fn item_encryptor(config: DbeClientConfig) -> Result<ItemEncryptor, ServerError> {
+async fn item_encryptor(mut config: DbeClientConfig) -> Result<ItemEncryptor, ServerError> {
+    // Only a transforms client honors a search config; the item encryptor ignores it.
+    config.search = None;
     let name = config.logical_table_name.clone();
     Ok(ItemEncryptor::builder()
         .table(name, table_config(config).await?)

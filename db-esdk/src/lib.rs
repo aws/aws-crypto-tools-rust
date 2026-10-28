@@ -33,6 +33,7 @@ mod ddb;
 mod edk_description;
 pub mod error;
 mod item_encryptor;
+pub mod search;
 #[doc(hidden)]
 pub mod structured;
 mod table_config;

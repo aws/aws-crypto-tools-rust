@@ -110,9 +110,9 @@ pub struct AttributeValue {
     pub m: Option<HashMap<String, AttributeValue>>,
 }
 
-/// The DBE item encryptor configuration. Members this server does not serve
-/// (a legacy override, a search config) are kept opaque so a request
-/// naming them is refused rather than silently ignored.
+/// The DBE item encryptor configuration. A legacy override, which this server
+/// does not serve, is kept opaque so a request naming it is refused rather
+/// than silently ignored.
 #[derive(Debug, Deserialize)]
 pub struct DbeClientConfig {
     #[serde(rename = "logicalTableName")]
@@ -138,7 +138,7 @@ pub struct DbeClientConfig {
     #[serde(default)]
     pub cmm: Option<CryptographicMaterialsManager>,
     #[serde(default)]
-    pub search: Option<ciborium::Value>,
+    pub search: Option<crate::search::SearchConfig>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]

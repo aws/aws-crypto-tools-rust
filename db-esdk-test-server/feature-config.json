@@ -9,10 +9,10 @@
     "aws-kms-rsa",
     "required-encryption-context-cmm",
     "structured-encryption",
-    "ddb-transforms"
+    "ddb-transforms",
+    "searchable-encryption"
   ],
   "unsupportedFeatures": [
-    "searchable-encryption",
     "beacon-partitions",
     "legacy-ddbec"
   ]

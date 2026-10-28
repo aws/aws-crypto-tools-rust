@@ -10,6 +10,7 @@ use aws_crypto_mpl::keyring::SharedKeyring;
 use aws_crypto_mpl::shared::IntoShared;
 
 use crate::error::{Error, val_err};
+use crate::search::SearchConfig;
 use crate::types::{AlgorithmSuiteId, CryptoAction, PlaintextOverride};
 
 /// The encryption configuration of one table.
@@ -50,6 +51,7 @@ pub struct TableConfig {
     pub(crate) algorithm_suite_id: Option<AlgorithmSuiteId>,
     pub(crate) materials: Materials,
     pub(crate) plaintext_override: Option<PlaintextOverride>,
+    pub(crate) search: Option<SearchConfig>,
 }
 
 /// Where a table's cryptographic materials come from.
@@ -115,6 +117,12 @@ impl TableConfig {
     pub fn plaintext_override(&self) -> PlaintextOverride {
         self.plaintext_override.unwrap_or_default()
     }
+
+    /// The searchable-encryption configuration, if set.
+    #[must_use]
+    pub const fn search(&self) -> Option<&SearchConfig> {
+        self.search.as_ref()
+    }
 }
 
 /// The most characters a DynamoDB attribute name may have.
@@ -158,6 +166,7 @@ pub struct TableConfigBuilder {
     keyring: Option<SharedKeyring>,
     cmm: Option<SharedCmm>,
     plaintext_override: Option<PlaintextOverride>,
+    search: Option<SearchConfig>,
 }
 
 impl TableConfigBuilder {
@@ -328,6 +337,23 @@ impl TableConfigBuilder {
         self
     }
 
+    /// The beacons that make encrypted attributes searchable.
+    ///
+    /// Only a [`Client`](crate::Client) writes and queries beacons;
+    /// an [`ItemEncryptor`](crate::ItemEncryptor) ignores them.
+    #[must_use]
+    pub fn search(mut self, search: SearchConfig) -> Self {
+        self.search = Some(search);
+        self
+    }
+
+    /// The beacons. See [`Self::search`].
+    #[must_use]
+    pub fn set_search(mut self, search: Option<SearchConfig>) -> Self {
+        self.search = search;
+        self
+    }
+
     /// Build the configuration.
     ///
     /// # Errors
@@ -371,6 +397,7 @@ impl TableConfigBuilder {
             algorithm_suite_id: self.algorithm_suite_id,
             materials,
             plaintext_override: self.plaintext_override,
+            search: self.search,
         })
     }
 }

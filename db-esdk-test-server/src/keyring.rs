@@ -8,14 +8,15 @@ use std::time::Duration;
 
 use crate::error::ServerError;
 use crate::model::{
-    AesWrappingAlg, CryptographicMaterialsManager, AwsKmsDiscoveryKeyringConfig, AwsKmsHierarchicalKeyringConfig,
+    AesWrappingAlg, AwsKmsDiscoveryKeyringConfig, AwsKmsHierarchicalKeyringConfig,
     AwsKmsKeyringConfig, AwsKmsMrkDiscoveryKeyringConfig, AwsKmsMultiKeyringConfig,
-    AwsKmsRsaKeyringConfig, DdbKeyBranchKeyIdSupplier, DiscoveryFilter as ModelDiscoveryFilter,
-    Keyring, KmsRsaEncryptionAlgorithm, MultiKeyringConfig, PaddingScheme, RawAesKeyringConfig,
-    RawRsaKeyringConfig,
+    AwsKmsRsaKeyringConfig, CryptographicMaterialsManager, DdbKeyBranchKeyIdSupplier,
+    DiscoveryFilter as ModelDiscoveryFilter, Keyring, KmsRsaEncryptionAlgorithm,
+    MultiKeyringConfig, PaddingScheme, RawAesKeyringConfig, RawRsaKeyringConfig,
 };
 use aws_db_esdk::aws_sdk_dynamodb::types::AttributeValue;
 use aws_db_esdk::aws_sdk_kms::types::EncryptionAlgorithmSpec;
+use aws_db_esdk::cmm::{DefaultCmm, RequiredEncryptionContextCmm, SharedCmm};
 use aws_db_esdk::key_store::types::KmsConfiguration;
 use aws_db_esdk::keyring::{
     AwsKmsDiscoveryKeyring, AwsKmsKeyring, AwsKmsMrkDiscoveryKeyring, AwsKmsMrkKeyring,
@@ -23,7 +24,6 @@ use aws_db_esdk::keyring::{
     HierarchicalKeyring, ItemKeyBranchKeySupplier, ItemKeySupplier, MultiKeyring, RawAesKeyring,
     RawRsaKeyring, SharedKeyring,
 };
-use aws_db_esdk::cmm::{DefaultCmm, RequiredEncryptionContextCmm, SharedCmm};
 use aws_db_esdk::types::{AesWrappingAlg as MplAesWrappingAlg, PaddingScheme as MplPaddingScheme};
 use aws_db_esdk::{async_trait, aws_config, aws_sdk_dynamodb, aws_sdk_kms, key_store, mpl};
 use base64::engine::general_purpose::STANDARD;
@@ -170,6 +170,24 @@ async fn sdk_config_for(key_id: &str) -> aws_config::SdkConfig {
         loader = loader.region(aws_config::Region::new(region));
     }
     loader.load().await
+}
+
+/// A DynamoDB branch-key store whose KMS and DynamoDB clients use the region of `kms_key_arn`.
+pub async fn key_store_for(
+    table_name: &str,
+    logical_key_store_name: &str,
+    kms_key_arn: &str,
+) -> Result<key_store::Client, ServerError> {
+    let sdk_config = sdk_config_for(kms_key_arn).await;
+    key_store::Client::builder()
+        .ddb_table_name(table_name)
+        .logical_key_store_name(logical_key_store_name)
+        .kms_configuration(KmsConfiguration::KmsKeyArn(kms_key_arn.to_owned()))
+        .kms_client(aws_sdk_kms::Client::new(&sdk_config))
+        .ddb_client(aws_sdk_dynamodb::Client::new(&sdk_config))
+        .build()
+        .await
+        .map_err(|e| ServerError::client(e.to_string()))
 }
 
 async fn build_aws_kms(config: &AwsKmsKeyringConfig) -> Result<SharedKeyring, ServerError> {
@@ -358,16 +376,12 @@ async fn build_multi(config: &MultiKeyringConfig) -> Result<SharedKeyring, Serve
 async fn build_hierarchical(
     config: &AwsKmsHierarchicalKeyringConfig,
 ) -> Result<SharedKeyring, ServerError> {
-    let sdk_config = sdk_config_for(&config.kms_key_arn).await;
-    let key_store = key_store::Client::builder()
-        .ddb_table_name(config.key_store_table_name.as_str())
-        .logical_key_store_name(config.logical_key_store_name.as_str())
-        .kms_configuration(KmsConfiguration::KmsKeyArn(config.kms_key_arn.clone()))
-        .kms_client(aws_sdk_kms::Client::new(&sdk_config))
-        .ddb_client(aws_sdk_dynamodb::Client::new(&sdk_config))
-        .build()
-        .await
-        .map_err(|e| ServerError::client(e.to_string()))?;
+    let key_store = key_store_for(
+        &config.key_store_table_name,
+        &config.logical_key_store_name,
+        &config.kms_key_arn,
+    )
+    .await?;
     let ttl_seconds = u64::try_from(config.ttl_seconds).map_err(|_| {
         ServerError::client(format!(
             "ttlSeconds must be non-negative, got {}",

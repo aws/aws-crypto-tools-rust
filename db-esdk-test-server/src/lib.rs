@@ -11,6 +11,7 @@ pub mod error;
 pub mod handlers;
 pub mod keyring;
 pub mod model;
+pub mod search;
 pub mod transforms;
 pub mod transforms_model;
 pub mod wire;

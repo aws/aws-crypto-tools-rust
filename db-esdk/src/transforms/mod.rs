@@ -22,6 +22,8 @@ use aws_crypto_mpl::aws_sdk_dynamodb::types::AttributeValue;
 use crate::ddb::{Item, filter_expr, update_expr};
 use crate::error::{Error, val_err};
 use crate::item_encryptor::ItemEncryptor;
+use crate::search::convert;
+use crate::search::info::SearchInfo;
 use crate::structured::util::RESERVED_PREFIX;
 use crate::table_config::TableConfig;
 use crate::types::{CryptoAction, PlaintextOverride};
@@ -31,7 +33,16 @@ use crate::types::{CryptoAction, PlaintextOverride};
 /// Cloning is cheap: clones share the configuration.
 #[derive(Clone, Debug)]
 pub struct Transforms {
-    tables: Arc<HashMap<String, ItemEncryptor>>,
+    tables: Arc<HashMap<String, Table>>,
+}
+
+/// One configured table.
+#[derive(Debug)]
+struct Table {
+    encryptor: ItemEncryptor,
+    /// The table's beacons, if it has a search configuration.
+    #[expect(dead_code, reason = "beacons are written and queried in a later layer")]
+    search: Option<SearchInfo>,
 }
 
 impl Transforms {
@@ -43,7 +54,7 @@ impl Transforms {
 
     /// The item encryptor of table `name`, if the table is configured.
     fn table(&self, name: Option<&str>) -> Option<&ItemEncryptor> {
-        name.and_then(|n| self.tables.get(n))
+        name.and_then(|n| self.tables.get(n)).map(|t| &t.encryptor)
     }
 
     /// The item encryptor of table `name`, unless its writes are plaintext.
@@ -97,9 +108,18 @@ impl TransformsBuilder {
         let mut tables = HashMap::with_capacity(names.len());
         let mut logical_names = Vec::with_capacity(names.len());
         for name in names {
-            let Some(config) = configs.remove(&name) else {
+            let Some(mut config) = configs.remove(&name) else {
                 continue;
             };
+            let search = convert::convert(&config)?;
+            if let Some(search) = &search {
+                // A fully signed compound beacon is written in plaintext, as a SIGN_ONLY attribute.
+                for beacon in search.version.signed_beacon_names() {
+                    config
+                        .attribute_actions_on_encrypt
+                        .insert(beacon, CryptoAction::SignOnly);
+                }
+            }
             let encryptor = ItemEncryptor::builder()
                 .table(name.clone(), config)
                 .build()?;
@@ -110,7 +130,7 @@ impl TransformsBuilder {
                 )));
             }
             logical_names.push(logical);
-            tables.insert(name, encryptor);
+            tables.insert(name, Table { encryptor, search });
         }
         Ok(Transforms {
             tables: Arc::new(tables),
