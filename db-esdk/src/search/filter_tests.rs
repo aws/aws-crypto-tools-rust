@@ -472,10 +472,19 @@ fn basic_parse() {
             0,
         )
         .unwrap();
+
+    //= spec/dynamodb-encryption-client/ddb-support.md#queryinputforbeacons
+    //= type=test
+    //# If the name is used directly in the expression, the name MUST be changed in the expression.
     assert_eq!(
         parsed_expr_to_string(&ctx.expr),
         "aws_dbe_b_std2 = :A AND #Field_4 = :B"
     );
+
+    //= spec/dynamodb-encryption-client/ddb-support.md#queryinputforbeacons
+    //= type=test
+    //# If the name is used indirectly through the ExpressionAttributeNames mapping,
+    //# the name MUST be changed in the ExpressionAttributeNames.
     assert_eq!(ctx.names, Some(names(&[("#Field_4", "aws_dbe_b_std4")])));
     // Without keys, a value is compared as its plaintext.
     assert_eq!(ctx.values, vals);
@@ -518,6 +527,45 @@ fn no_beacon_fail() {
     assert_eq!(uses_encrypted_field(None, &actions, None), None);
 }
 
+#[test]
+fn has_encrypted_values_checks_each_operand() {
+    let bv = info(lotsa());
+    let nms = names(&[("#enc", "std4"), ("#signed", "Year")]);
+    let with_names = |filter: &str| filter_ctx(filter, None, Some(nms.clone()));
+    // An ENCRYPT_AND_SIGN field, directly or through a name, and a beacon over encrypted parts.
+    let encrypted = [
+        filter_ctx("Year = :A AND std2 = :B", None, None),
+        with_names("#enc = :B"),
+        filter_ctx("NameTitle = :A", None, None),
+        ExprContext {
+            key_expr: Some("Name = :A".to_owned()),
+            ..ExprContext::default()
+        },
+    ];
+    for context in &encrypted {
+        //= spec/dynamodb-encryption-client/ddb-support.md#queryobject-has-encrypted-values
+        //= type=test
+        //# If there are any ExpressionAttributeValues that are referred to by
+        //# a beacon name that contain encrypted values (ENCRYPT_AND_SIGN field)
+        //# then QueryObject has encrypted values MUST return true.
+        assert!(bv.has_encrypted_values(context), "{context:?}");
+    }
+
+    // Signed fields, a beacon over signed parts only, and no expression at all.
+    let plain = [
+        filter_ctx("Year = :A AND Other = :B", None, None),
+        with_names("#signed = :A"),
+        filter_ctx("JustSigned = :A", None, None),
+        ExprContext::default(),
+    ];
+    for context in &plain {
+        //= spec/dynamodb-encryption-client/ddb-support.md#queryobject-has-encrypted-values
+        //= type=test
+        //# Otherwise it MUST return false.
+        assert!(!bv.has_encrypted_values(context), "{context:?}");
+    }
+}
+
 #[tokio::test]
 async fn basic_beacons() {
     let bv = info(lotsa());
@@ -530,12 +578,22 @@ async fn basic_beacons() {
         .beaconize(&context, &MaybeKeyId::DontUse, 0)
         .await
         .unwrap();
+
+    //= spec/dynamodb-encryption-client/ddb-support.md#queryinputforbeacons
+    //= type=test
+    //# For any operand in the KeyConditionExpression or FilterExpression which is a beacon name,
+    //# the name MUST be replaced by the internal beacon name (i.e.
     assert_eq!(
         out.filter_expr.as_deref(),
         Some("aws_dbe_b_std2 = :A AND #Field4 = :B")
     );
     assert_eq!(out.names, Some(names(&[("#Field4", "aws_dbe_b_std4")])));
     let expected = values(&[(":A", s(STD2_BEACON)), (":B", s(STD4_BEACON))]);
+
+    //= spec/dynamodb-encryption-client/ddb-support.md#queryinputforbeacons
+    //= type=test
+    //# Similarly, any values in ExpressionAttributeValues that are referred to by a beacon name
+    //# MUST be changed to the beacon value, as calculated defined in [beacons](../searchable-encryption/beacons.md#beacon-value).
     assert_eq!(out.values, Some(expected));
 
     // The query values are the beacons written for an item with those values.
@@ -567,6 +625,12 @@ async fn multi_context_failures() {
             .beaconize(&context, &MaybeKeyId::DontUse, 0)
             .await
             .unwrap_err();
+
+        //= spec/dynamodb-encryption-client/ddb-support.md#queryinputforbeacons
+        //= type=test
+        //# If a single value in ExpressionAttributeValues is used in more than one context,
+        //# for example an expression of `this = :foo OR that = :foo` where `this` and `that`
+        //# are both beacons, this operation MUST fail.
         assert_validation(
             &err,
             ":A used in two different contexts, which is not allowed.",
@@ -613,6 +677,11 @@ fn filter_fail_numeric() {
     let one = item(&[("one", n("800"))]);
     let vals = values(&[(":two", n("foo"))]);
     let err = run_filter(&bv, &[one], "one < :two", None, Some(&vals)).unwrap_err();
+
+    //= spec/dynamodb-encryption-client/ddb-support.md#queryoutputforbeacons
+    //= type=test
+    //# For this reason,
+    //# any error encountered during filtering MUST result in a failure of the query operation.
     assert_validation(
         &err,
         "Number needs digits either before or after the decimal point. when parsing 'foo'.",
@@ -1481,6 +1550,13 @@ async fn do_beaconize_ors_each_partition() {
         .do_beaconize(&context, &MaybeKeyId::DontUse, 0, 1)
         .await
         .unwrap();
+
+    //= spec/dynamodb-encryption-client/ddb-support.md#filter-expressions-for-query
+    //= type=test
+    //# if [GetNumberOfQueries](./ddb-get-number-of-queries.md) returns a number less than the configured
+    //# [maximum number of partitions](../searchable-encryption/search-config.md#max-partitions)
+    //# then the FilterExpression MUST be augmented to match against partitions greater than
+    //# the limit returned from GetNumberOfQueries.
     assert_eq!(
         out.filter_expr.as_deref(),
         Some("(aws_dbe_b_std2 = :v) OR (aws_dbe_b_std2 = :vAA) OR (aws_dbe_b_std2 = :vAB)")
@@ -1776,6 +1852,11 @@ fn filter_results_applies_key_and_filter() {
             Some(&vals),
         )
         .unwrap();
+
+    //= spec/dynamodb-encryption-client/ddb-support.md#queryoutputforbeacons
+    //= type=test
+    //# For each item, we MUST evaluate the query expressions supplied in the QueryInput
+    //# against the decrypted field values returned by the query.
     assert_eq!(out, vec![simple_item()]);
     let out = bv
         .filter_results(items, Some("Name = :name"), None, None, Some(&vals))

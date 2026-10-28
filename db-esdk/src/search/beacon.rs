@@ -56,8 +56,12 @@ pub(crate) const fn attr_type_to_str(v: &AttributeValue) -> &'static str {
 /// The bytes a partition number appends to a beacon's input: none for partition 0.
 fn partition_bytes(partition: u8) -> Vec<u8> {
     if partition == 0 {
+        //= spec/searchable-encryption/beacons.md#beacon-partition-encoding
+        //# If this number is zero, then the input sequence of bytes MUST be returned unchanged.
         Vec::new()
     } else {
+        //= spec/searchable-encryption/beacons.md#beacon-partition-encoding
+        //# Otherwise, a single byte with a value equal to this calculated partition number, MUST be appended to the input sequence of bytes.
         vec![partition]
     }
 }
@@ -70,6 +74,9 @@ fn hex_char(x: u8) -> char {
 /// The rightmost `bits` bits of the 8-byte `bytes`, as lowercase hex.
 fn bytes_to_hex(bytes: [u8; 8], bits: u8) -> String {
     let num_bytes = usize::from(bits.div_ceil(8));
+
+    //= spec/searchable-encryption/beacons.md#basichash
+    //# - the length of the returned string MUST be (`beacon length`/4) rounded up.
     let num_chars = usize::from(bits.div_ceil(4));
     let top_bits = match bits % 4 {
         0 => 4,
@@ -78,6 +85,9 @@ fn bytes_to_hex(bytes: [u8; 8], bits: u8) -> String {
     let truncate = |nibble: u8| nibble % (1 << top_bits);
     let bytes = &bytes[8 - num_bytes..];
     let mut out = String::with_capacity(num_chars);
+
+    //= spec/searchable-encryption/beacons.md#basichash
+    //# - basicHash MUST produce a non-empty string as output.
     if num_chars == 2 * num_bytes {
         out.push(hex_char(truncate(bytes[0] / 16)));
         out.push(hex_char(bytes[0] % 16));
@@ -93,17 +103,29 @@ fn bytes_to_hex(bytes: [u8; 8], bits: u8) -> String {
 
 /// The basic hash: the first 8 bytes of the HMAC-SHA-384 of `val` under `key`,
 /// truncated to the rightmost `length` bits, as hex.
+//= spec/searchable-encryption/beacons.md#basichash
+//= type=implication
+//# - basicHash MUST take an [hmac key](./search-config.md#hmac-key-generation), a [beacon length](#beacon-length) and a sequence of bytes as input.
 fn basic_hash(val: &[u8], key: &[u8], length: u8) -> Result<String, Error> {
     let mut out = [0u8; 48];
+
+    //= spec/searchable-encryption/beacons.md#basichash
+    //# - basicHash MUST calculate the [HmacSha384](https://www.ietf.org/rfc/rfc2104.txt)
+    //# of the input bytes and the [hmac key](./search-config.md#hmac-key-generation), and keep the first 8 bytes.
     hmac(DigestAlg::Sha384, key, val, &mut out)?;
     let mut first = [0u8; 8];
     first.copy_from_slice(&out[..8]);
+
+    //= spec/searchable-encryption/beacons.md#basichash
+    //# - basicHash MUST return the rightmost [beacon length](#beacon-length) bits of these 8 bytes as a hexadecimal string.
     Ok(bytes_to_hex(first, length))
 }
 
 impl StandardInfo {
     /// The beacon whose HMAC key this beacon uses: the shared beacon, or itself.
     pub(crate) fn key_name(&self) -> &str {
+        //= spec/searchable-encryption/beacons.md#shared-initialization
+        //# This beacon MUST calculate its [value](#beacon-value) as if it were the `other` beacon.
         self.share.as_deref().unwrap_or(&self.name)
     }
 
@@ -112,24 +134,47 @@ impl StandardInfo {
         if self.number_of_partitions == 0 || partition == 0 {
             partition_bytes(partition)
         } else {
+            //= spec/searchable-encryption/beacons.md#beacon-constraint
+            //# If an item is being written or queried as partition `X`, but the [standard beacon](#standard-beacon-initialization) is constrained to only `N` partitions,
+            //# then the partition used to [encode](#beacon-partition-encoding) the beacon MUST be `X % N`, where `%` is the modulo or remainder operation.
             partition_bytes(partition % self.number_of_partitions)
         }
     }
 
     /// The beacon value of `val` under `key` in `partition`.
+    //= spec/searchable-encryption/beacons.md#getpart-for-a-standard-beacon
+    //= type=implication
+    //# - getPart MUST take an [hmac key](./search-config.md#hmac-key-generation), a sequence of bytes as input, and produce a string.
     fn hash(&self, val: &[u8], key: &[u8], partition: u8) -> Result<String, Error> {
         let mut data = val.to_vec();
+
+        //= spec/searchable-encryption/beacons.md#value-for-a-non-set-standard-beacon
+        //# - The serialized form MUST be augmented as per [beacon partition encoding](#beacon-partition-encoding).
         data.extend_from_slice(&self.constrained_partition(partition));
+
+        //= spec/searchable-encryption/beacons.md#value-for-a-non-set-standard-beacon
+        //# - This operation MUST return the [basicHash](#basichash) of the resulting bytes and the configured [beacon length](#beacon-length).
+        //
+        //= spec/searchable-encryption/beacons.md#getpart-for-a-standard-beacon
+        //# - getPart MUST return the [basicHash](#basichash) of the input and the configured [beacon length](#beacon-length).
         basic_hash(&data, key, self.length)
     }
 
     /// The beacon value of the UTF-8 bytes of `val`.
+    //= spec/searchable-encryption/beacons.md#string-hash
+    //= type=implication
+    //# - string hash MUST take a string and some [key materials](./search-config.md#get-beacon-key-materials)
+    //# as input, and produce a string as output.
     pub(crate) fn hash_str(
         &self,
         val: &str,
         keys: &HmacKeyMap,
         partition: u8,
     ) -> Result<String, Error> {
+        //= spec/searchable-encryption/beacons.md#string-hash
+        //# - string hash MUST return the [basic hash](#basichash) of the UTF8 representation
+        //# of the input string, the HMAC key from the [key materials](./search-config.md#get-beacon-key-materials)
+        //# associated with this beacon, and the beacon length associated with this beacon.
         let key = keys
             .get(self.key_name())
             .ok_or_else(|| val_err(format!("no HMAC key for beacon {}", self.key_name())))?;
@@ -148,6 +193,9 @@ impl StandardInfo {
             AttributeValue::Ns(n) => n.iter().cloned().map(AttributeValue::N).collect(),
             AttributeValue::Bs(b) => b.iter().cloned().map(AttributeValue::B).collect(),
             other => {
+                //= spec/searchable-encryption/beacons.md#asset-initialization
+                //# - Writing an item MUST fail if the item contains this beacon's attribute,
+                //# and that attribute is not of type Set.
                 return Err(val_err(format!(
                     "Beacon {} has style AsSet, but attribute has type {}.",
                     self.name,
@@ -157,16 +205,33 @@ impl StandardInfo {
         };
         let mut converted: Vec<String> = Vec::with_capacity(elements.len());
         for e in &elements {
+            //= spec/searchable-encryption/beacons.md#value-for-a-set-standard-beacon
+            //# - This operation MUST convert the value of each item in the set to
+            //# a sequence of bytes, as per [attribute serialization](../dynamodb-encryption-client/ddb-attribute-serialization.md).
             let bytes = top_level_attr_to_bytes(e).map_err(val_err)?;
+
+            //= spec/searchable-encryption/beacons.md#value-for-a-set-standard-beacon
+            //# - This operation MUST return a set containing the [basicHash](#basichash) of the resulting bytes and the configured [beacon length](#beacon-length).
             let h = self.hash(&bytes, key, partition)?;
+
+            //= spec/searchable-encryption/beacons.md#value-for-a-set-standard-beacon
+            //# - The resulting set MUST NOT contain duplicates.
             if !converted.contains(&h) {
                 converted.push(h);
             }
         }
+
+        //= spec/searchable-encryption/beacons.md#value-for-a-set-standard-beacon
+        //# - The returned
+        //# [AttributeValue](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_AttributeValue.html)
+        //# MUST be type "SS" StringSet.
         Ok(AttributeValue::Ss(converted))
     }
 
     /// The beacon value of `item`; `None` when the item lacks the beacon's field.
+    //= spec/searchable-encryption/beacons.md#value-for-a-standard-beacon
+    //= type=implication
+    //# - This operation MUST take an [hmac key](./search-config.md#hmac-key-generation), a record as input, and produce an optional [AttributeValue](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_AttributeValue.html).
     fn get_hash(
         &self,
         item: &HashMap<String, AttributeValue>,
@@ -174,14 +239,30 @@ impl StandardInfo {
         key: &[u8],
         partition: u8,
     ) -> Result<Option<AttributeValue>, Error> {
+        //= spec/searchable-encryption/beacons.md#value-for-a-standard-beacon
+        //# - If this beacon is marked AsSet then this operation MUST return the
+        //# [set value](#value-for-a-set-standard-beacon),
+        //# otherwise it MUST return the [non-set value](#value-for-a-non-set-standard-beacon)
         if self.as_set {
             match self.loc.term_to_attr(item, None) {
                 None => Ok(None),
+                //= spec/searchable-encryption/beacons.md#asset-initialization
+                //# - The Standard Beacon MUST be stored in the item as a Set,
+                //# comprised of the [beacon values](#beacon-value) of all the elements in the original Set.
                 Some(v) => Ok(Some(self.value_to_set(&v, key, partition)?)),
             }
         } else {
+            //= spec/searchable-encryption/beacons.md#value-for-a-non-set-standard-beacon
+            //# - This operation MUST convert the attribute value of the associated field to
+            //# a sequence of bytes, as per [attribute serialization](../dynamodb-encryption-client/ddb-attribute-serialization.md).
             match virt_to_bytes(&self.loc, item, vf)? {
+                //= spec/searchable-encryption/beacons.md#value-for-a-standard-beacon
+                //# - This operation MUST return no value if the associated field does not exist in the record
                 None => Ok(None),
+                //= spec/searchable-encryption/beacons.md#value-for-a-non-set-standard-beacon
+                //# - The returned
+                //# [AttributeValue](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_AttributeValue.html)
+                //# MUST be type "S" String.
                 Some(bytes) => Ok(Some(AttributeValue::S(self.hash(&bytes, key, partition)?))),
             }
         }
@@ -276,7 +357,13 @@ impl CompoundInfo {
     fn part_from_prefix(&self, value: &str) -> Result<usize, Error> {
         self.parts
             .iter()
+            //= spec/searchable-encryption/beacons.md#getpart-for-a-compound-beacon
+            //# - For each piece, a [part](#part) MUST be identified
+            //# by matching the prefix of a [part](#part)
+            //# to the beginning of the piece.
             .position(|p| value.starts_with(p.prefix()))
+            //= spec/searchable-encryption/beacons.md#getpart-for-a-compound-beacon
+            //# - If no such part exists, this operation MUST fail.
             .ok_or_else(|| {
                 val_err(format!(
                     "Value {value} for beacon {} does not match the prefix of any configured part.",
@@ -312,6 +399,11 @@ impl CompoundInfo {
     }
 
     /// The beacon value of part `part` with value `data`.
+    //= spec/searchable-encryption/beacons.md#part-value-calculation
+    //= type=implication
+    //# Part Value Calculation MUST take some [key materials](./search-config.md#get-beacon-key-materials),
+    //# a string (the value for which the beacon is being calculated)
+    //# and a [Part](#part) as input, and return a string as output.
     fn part_value_calc(
         &self,
         data: &str,
@@ -336,11 +428,20 @@ impl CompoundInfo {
                         beacon.name
                     )));
                 };
+
+                //= spec/searchable-encryption/beacons.md#part-value-calculation
+                //# If the part is a [encrypted part](#encrypted-part-initialization),
+                //# the part value MUST be the concatenation of the part's prefix
+                //# and the [string hash](#string-hash) of the input string.
                 Ok(format!(
                     "{prefix}{}",
                     beacon.hash_str(data, keys, partition)?
                 ))
             }
+
+            //= spec/searchable-encryption/beacons.md#part-value-calculation
+            //# If the part is a [signed part](#signed-part-initialization),
+            //# the part value MUST be the concatenation of the part's prefix and the input string.
             BeaconPart::Signed { prefix, .. } => Ok(format!("{prefix}{data}")),
         }
     }
@@ -352,6 +453,10 @@ impl CompoundInfo {
         partition: u8,
     ) -> Result<String, Error> {
         let part = &self.parts[self.part_from_prefix(value)?];
+
+        //= spec/searchable-encryption/beacons.md#getpart-for-a-compound-beacon
+        //# - The [Part Value](#part-value-calculation) MUST be calculated for each piece,
+        //# using the prefix and length from the discovered part.
         self.part_value_calc(&value[part.prefix().len()..], keys, part, partition)
     }
 
@@ -415,12 +520,17 @@ impl CompoundInfo {
     /// The parts `value` is made of, checked against the constructors.
     fn parts_of_value(&self, value: &AttributeValue) -> Result<(Vec<String>, Vec<usize>), Error> {
         let AttributeValue::S(s) = value else {
+            //= spec/searchable-encryption/beacons.md#getpart-for-a-compound-beacon
+            //# - getPart MUST take a string as input and produce a string.
             return Err(val_err(format!(
                 "CompoundBeacon {} can only be queried as a string, not as {}",
                 self.name,
                 attr_type_to_str(value)
             )));
         };
+
+        //= spec/searchable-encryption/beacons.md#getpart-for-a-compound-beacon
+        //# - The string MUST be split on the `split character` into pieces.
         let pieces: Vec<String> = s.split(self.split).map(str::to_owned).collect();
         let used = pieces
             .iter()
@@ -431,6 +541,10 @@ impl CompoundInfo {
     }
 
     /// The beacon value a query compares in place of `value`.
+    //= spec/searchable-encryption/beacons.md#getpart-for-a-compound-beacon
+    //= type=implication
+    //= reason=every piece must start with a part's prefix, and part builders reject empty prefixes
+    //# - The returned string MUST NOT be empty.
     fn get_beacon_value(
         &self,
         value: &AttributeValue,
@@ -450,6 +564,8 @@ impl CompoundInfo {
             joined.push(last.to_owned());
             Ok(AttributeValue::S(joined.join(&split)))
         } else {
+            //= spec/searchable-encryption/beacons.md#getpart-for-a-compound-beacon
+            //# - The value returned MUST be these part values, joined with the `split character`.
             Ok(AttributeValue::S(beacon_parts.join(&split)))
         }
     }
@@ -483,6 +599,8 @@ impl CompoundInfo {
             match part.get_string(item, vf)? {
                 Some(value) => {
                     if value.contains(self.split) {
+                        //= spec/searchable-encryption/beacons.md#value-for-a-compound-beacon
+                        //# - This operation MUST fail if any plaintext value used in the construction contains the split character.
                         return Err(val_err(format!(
                             "Part {} for beacon {} has value '{value}' which contains the split character {}'.",
                             part.name(),
@@ -495,6 +613,11 @@ impl CompoundInfo {
                     } else {
                         self.part_value_calc(&value, keys, part, partition)?
                     };
+
+                    //= spec/searchable-encryption/beacons.md#value-for-a-compound-beacon
+                    //# - For that constructor, hash MUST join the [part value](#part-value) for each part
+                    //# on the `split character`,
+                    //# excluding parts that are not required and with a source field that is not available.
                     if !acc.is_empty() {
                         acc.push(self.split);
                     }
@@ -505,12 +628,17 @@ impl CompoundInfo {
             }
         }
         if acc.is_empty() {
+            //= spec/searchable-encryption/beacons.md#value-for-a-compound-beacon
+            //# - If a string is returned, it MUST NOT be empty.
             return Err(val_err("the compound beacon has no parts in this item"));
         }
         Ok(Some(acc))
     }
 
     /// The value of the first constructor that can build one from `item`.
+    //= spec/searchable-encryption/beacons.md#value-for-a-compound-beacon
+    //= type=implication
+    //# - This operation MUST take a record as input, and produce an optional string.
     fn try_constructors(
         &self,
         item: &HashMap<String, AttributeValue>,
@@ -518,11 +646,16 @@ impl CompoundInfo {
         keys: &MaybeKeyMap,
         partition: u8,
     ) -> Result<Option<String>, Error> {
+        //= spec/searchable-encryption/beacons.md#value-for-a-compound-beacon
+        //# - This operation MUST iterate through all constructors, in order, using the first that succeeds.
         for con in &self.constructors {
             if let Some(v) = self.try_constructor(con, item, vf, keys, partition)? {
                 return Ok(Some(v));
             }
         }
+
+        //= spec/searchable-encryption/beacons.md#value-for-a-compound-beacon
+        //# - If no constructor succeeds, this operation MUST return no value.
         Ok(None)
     }
 }

@@ -889,12 +889,21 @@ impl StandardBeaconBuilder {
     /// when the bits are not from 1 to 63, when the location is empty,
     /// or when the number of partitions is 0.
     pub fn build(self) -> Result<StandardBeacon, Error> {
+        //= spec/searchable-encryption/beacons.md#standard-beacon-initialization
+        //# On initialization of a Standard Beacon, the caller MUST provide:
         let bits = required(self.bits, "bits")?;
+
         if !(1..=63).contains(&bits) {
+            //= spec/searchable-encryption/beacons.md#beacon-length
+            //# A beacon length MUST be an integer between 1 and 63 inclusive,
+            //# indicating the number of bits in the resulting beacon.
             return Err(val_err("bits must be between 1 and 63"));
         }
         non_empty_str(self.location.as_deref(), "location")?;
         check_partitions(self.number_of_partitions, "number_of_partitions")?;
+
+        //= spec/searchable-encryption/beacons.md#standard-beacon-initialization
+        //# On initialization of a Standard Beacon, the caller MAY provide:
         Ok(StandardBeacon {
             name: required(self.name, "name")?,
             bits,
@@ -908,6 +917,10 @@ impl StandardBeaconBuilder {
 /// How a standard beacon is used.
 #[derive(Clone, Debug)]
 #[non_exhaustive]
+//= spec/searchable-encryption/beacons.md#beacon-style-initialization
+//= type=implication
+//= reason=an enum value is exactly one variant
+//# On initialization of a Beacon Style, the caller MUST provide exactly one of
 pub enum BeaconStyle {
     /// Used only as a part of compound beacons, never written on its own.
     PartOnly(PartOnly),
@@ -952,6 +965,11 @@ impl BeaconStyle {
 /// The [`BeaconStyle::PartOnly`] style.
 #[derive(Clone, Debug, Default)]
 #[non_exhaustive]
+//= spec/searchable-encryption/beacons.md#partonly-initialization
+//= type=implication
+//= reason=the struct has no fields, and its constructors take no arguments
+//# On initialization of a PartOnly, the caller MUST NOT provide any
+//# additional parameters to the PartOnly.
 pub struct PartOnly {}
 
 impl PartOnly {
@@ -965,6 +983,11 @@ impl PartOnly {
 /// The [`BeaconStyle::AsSet`] style.
 #[derive(Clone, Debug, Default)]
 #[non_exhaustive]
+//= spec/searchable-encryption/beacons.md#asset-initialization
+//= type=implication
+//= reason=the struct has no fields, and its constructors take no arguments
+//# On initialization of as AsSet, the caller MUST NOT provide any
+//# additional parameters to the AsSet.
 pub struct AsSet {}
 
 impl AsSet {
@@ -1025,6 +1048,8 @@ impl SharedBuilder {
     /// A `Validation` error when the other beacon is missing.
     pub fn build(self) -> Result<Shared, Error> {
         Ok(Shared {
+            //= spec/searchable-encryption/beacons.md#shared-initialization
+            //# On initialization of a Shared, the caller MUST provide:
             other: required(self.other, "other")?,
         })
     }
@@ -1080,6 +1105,8 @@ impl SharedSetBuilder {
     /// A `Validation` error when the other beacon is missing.
     pub fn build(self) -> Result<SharedSet, Error> {
         Ok(SharedSet {
+            //= spec/searchable-encryption/beacons.md#sharedset-initialization
+            //# On initialization of a SharedSet, the caller MUST provide:
             other: required(self.other, "other")?,
         })
     }
@@ -1231,10 +1258,15 @@ impl CompoundBeaconBuilder {
     /// A `Validation` error when the name or the split character is missing,
     /// when the split is not exactly one character, or when a list is empty.
     pub fn build(self) -> Result<CompoundBeacon, Error> {
+        //= spec/searchable-encryption/beacons.md#compound-beacon-initialization
+        //# On initialization of a Compound Beacon, the caller MUST provide:
         let split = one_char(&required(self.split, "split")?, "split")?;
         non_empty(self.encrypted.as_ref(), "encrypted")?;
         non_empty(self.signed.as_ref(), "signed")?;
         non_empty(self.constructors.as_ref(), "constructors")?;
+
+        //= spec/searchable-encryption/beacons.md#compound-beacon-initialization
+        //# On initialization of a Compound Beacon, the caller MAY provide:
         Ok(CompoundBeacon {
             name: required(self.name, "name")?,
             split,
@@ -1317,6 +1349,8 @@ impl EncryptedPartBuilder {
     ///
     /// A `Validation` error when the name or the prefix is missing, or the prefix is empty.
     pub fn build(self) -> Result<EncryptedPart, Error> {
+        //= spec/searchable-encryption/beacons.md#encrypted-part-initialization
+        //# On initialization of a [encrypted part](#encrypted-part-initialization), the caller MUST provide:
         let prefix = required(self.prefix, "prefix")?;
         non_empty_str(Some(&prefix), "prefix")?;
         Ok(EncryptedPart {
@@ -1422,9 +1456,14 @@ impl SignedPartBuilder {
     /// A `Validation` error when the name or the prefix is missing,
     /// or the prefix or the location is empty.
     pub fn build(self) -> Result<SignedPart, Error> {
+        //= spec/searchable-encryption/beacons.md#signed-part-initialization
+        //# On initialization of a [signed part](#signed-part-initialization), the caller MUST provide:
         let prefix = required(self.prefix, "prefix")?;
         non_empty_str(Some(&prefix), "prefix")?;
         non_empty_str(self.location.as_deref(), "location")?;
+
+        //= spec/searchable-encryption/beacons.md#signed-part-initialization
+        //# On initialization of a [signed parts](#signed-part-initialization), the caller MAY provide:
         Ok(SignedPart {
             name: required(self.name, "name")?,
             prefix,
@@ -1482,6 +1521,8 @@ impl ConstructorBuilder {
     ///
     /// A `Validation` error when there are no parts.
     pub fn build(self) -> Result<Constructor, Error> {
+        //= spec/searchable-encryption/beacons.md#constructor-initialization
+        //# On initialization of a constructor, the caller MUST provide:
         let parts = required(self.parts, "parts")?;
         non_empty(Some(&parts), "parts")?;
         Ok(Constructor { parts })
@@ -1568,6 +1609,8 @@ impl ConstructorPartBuilder {
     ///
     /// A `Validation` error when the name or the required flag is missing.
     pub fn build(self) -> Result<ConstructorPart, Error> {
+        //= spec/searchable-encryption/beacons.md#constructor-part-initialization
+        //# On initialization of a constructor part, the caller MUST provide:
         Ok(ConstructorPart {
             name: required(self.name, "name")?,
             required: required(self.required, "required")?,

@@ -443,6 +443,9 @@ fn partition_count(
     match count {
         None | Some(0) => Ok(default_partitions),
         Some(c) if c < max_partitions => Ok(c),
+        //= spec/searchable-encryption/beacons.md#standard-beacon-initialization
+        //# Initialization MUST fail if [number of partitions](#beacon-constraint) is specified, and is greater than or equal to
+        //# the maximum number of partitions specified in the [beacon version](search-config.md#beacon-version-initialization).
         Some(c) => Err(val_err(format!(
             "Constrained numberOfPartitions for  {name} is {c} but it must be less than the maximumNumberOfPartitions {max_partitions}"
         ))),
@@ -469,12 +472,19 @@ fn add_standard_beacons(
             )));
         }
         outer.beacon_name_allowed(&b.name, "StandardBeacon", false)?;
+
+        //= spec/searchable-encryption/beacons.md#standard-beacon-initialization
+        //# If no [terminal location](virtual.md#terminal-location) is provided,
+        //# the `name` MUST be used as the [terminal location](virtual.md#terminal-location).
         let loc_string = b.location.as_deref().unwrap_or(&b.name);
         let (part_only, as_set, share) = match &b.style {
             None => (false, false, None),
             Some(BeaconStyle::PartOnly(_)) => (true, false, None),
             Some(BeaconStyle::Shared(s)) => (false, false, Some(s.other.clone())),
             Some(BeaconStyle::AsSet(_)) => (false, true, None),
+            //= spec/searchable-encryption/beacons.md#sharedset-initialization
+            //= reason=the tuple is (part_only, as_set, share): as_set as for AsSet, share as for Shared
+            //# A SharedSet Beacon MUST behave both as [Shared](#shared-initialization) and [AsSet](#asset-initialization).
             Some(BeaconStyle::SharedSet(s)) => (false, true, Some(s.other.clone())),
         };
         let number_of_partitions = partition_count(
@@ -500,6 +510,8 @@ fn add_standard_beacons(
             )));
         }
         if let Some(bad) = find_beacon_with_loc(&converted, &loc) {
+            //= spec/searchable-encryption/beacons.md#standard-beacon-initialization
+            //# Initialization MUST fail if two standard beacons are configured with the same location.
             return Err(val_err(format!(
                 "Beacon {} is defined on location {loc}, but beacon {bad} is already defined on that location.",
                 b.name
@@ -600,6 +612,9 @@ fn get_signed_parts(
 ) -> Result<PartSet, Error> {
     let mut set = PartSet::default();
     for p in parts {
+        //= spec/searchable-encryption/beacons.md#signed-part-initialization
+        //# If no [terminal location](virtual.md#terminal-location) is provided,
+        //# the `name` MUST be used as the [terminal location](virtual.md#terminal-location).
         let loc_string = p.location.as_deref().unwrap_or(&p.name);
         let loc = TermLoc::parse(loc_string)?;
         if !outer.is_sign_only(&loc) {
@@ -607,6 +622,10 @@ fn get_signed_parts(
             //# Initialization MUST fail if the [terminal location](virtual.md#terminal-location)
             //# reference by a [signed part](beacons.md#signed-part) is `encrypted`,
             //# or is not `signed`.
+            //
+            //= spec/searchable-encryption/beacons.md#initialization-failure
+            //# Initialization MUST fail if any [signed-part](#signed-part-initialization) contains
+            //# anything but SIGN_ONLY fields.
             return Err(val_err(format!(
                 "Signed Part {} is built from {loc_string} which is not SIGN_ONLY.",
                 p.name
@@ -634,6 +653,8 @@ fn get_encrypted_parts(
     for p in parts {
         match beacons.get(&p.name) {
             Some(Beacon::Standard(s)) if s.as_set => {
+                //= spec/searchable-encryption/beacons.md#asset-initialization
+                //# - initialization MUST fail if any compound beacon has an AsSet beacon as a part.
                 return Err(val_err(format!(
                     "{context} uses {} which is an AsSet beacon, and therefore cannot be used in a Compound Beacon.",
                     p.name
@@ -647,6 +668,8 @@ fn get_encrypted_parts(
                 context,
             )?,
             _ => {
+                //= spec/searchable-encryption/beacons.md#compound-beacon
+                //# The name MUST be the name of a configured standard beacon.
                 return Err(val_err(format!(
                     "{context} refers to standard beacon {} which is not configured.",
                     p.name
@@ -704,8 +727,14 @@ fn add_constructors(
     name: &str,
     parts: &[BeaconPart],
 ) -> Result<Vec<Vec<ConstructorPartInfo>>, Error> {
+    //= spec/searchable-encryption/beacons.md#default-construction
+    //# - If no constructors are configured, a default constructor MUST be generated.
     let Some(constructors) = constructors else {
         return Ok(vec![
+            //= spec/searchable-encryption/beacons.md#default-construction
+            //= reason=create_compound_beacon passes parts as signed.parts, then parts.extend(encrypted.parts)
+            //# - This default constructor MUST be all of the signed parts,
+            //# followed by all the encrypted parts, all parts being required.
             (0..parts.len())
                 .map(|part| ConstructorPartInfo {
                     part,
@@ -720,6 +749,9 @@ fn add_constructors(
             return Err(val_err("Every constructor must have at least one part."));
         }
         if !c.parts.iter().any(|p| p.required) {
+            //= spec/searchable-encryption/beacons.md#initialization-failure
+            //# Initialization MUST fail if any [constructor](#constructor-initialization) is configured without at least one
+            //# required part.
             return Err(val_err(format!(
                 "A Constructor for beacon {name} lacks any required parts"
             )));
@@ -728,6 +760,12 @@ fn add_constructors(
             c.parts
                 .iter()
                 .map(|cp| {
+                    //= spec/searchable-encryption/beacons.md#constructor-part-initialization
+                    //# This name MUST match the name of one of the [encrypted](#encrypted-part-initialization) or [signed](#signed-part-initialization) parts.
+                    //
+                    //= spec/searchable-encryption/beacons.md#initialization-failure
+                    //# Initialization MUST fail if any [constructor](#constructor-initialization) is configured with a field name
+                    //# that is not a defined [part](#part).
                     let part = parts.iter().position(|p| p.name() == cp.name).ok_or_else(|| {
                     val_err(format!(
                         "Constructor refers to part name {} but there is no part by that name.",
@@ -742,6 +780,9 @@ fn add_constructors(
                 .collect::<Result<Vec<_>, Error>>()?;
         let required = required_parts(&made);
         if converted.iter().any(|c| required_parts(c) == required) {
+            //= spec/searchable-encryption/beacons.md#initialization-failure
+            //# Initialization MUST fail if two [constructors](#constructor-initialization) are configured
+            //# with the same set of required parts.
             let names: Vec<&str> = made
                 .iter()
                 .filter(|p| p.required)
@@ -776,6 +817,9 @@ fn check_prefixes(name: &str, parts: &[BeaconPart]) -> Result<(), Error> {
     for (i, a) in parts.iter().enumerate() {
         for (j, b) in parts.iter().enumerate() {
             if i != j && prefixes_overlap(a.prefix(), b.prefix()) {
+                //= spec/searchable-encryption/beacons.md#initialization-failure
+                //# Initialization MUST fail if any `prefix` in any [part](#part) is a prefix of
+                //# the `prefix` of any other [part](#part).
                 return Err(val_err(format!(
                     "Compound beacon {name} defines part {} with prefix {} which is incompatible with part {} which has a prefix of {}.",
                     a.name(),
@@ -858,6 +902,8 @@ fn create_compound_beacon(
         )));
     }
     if beacon.constructors.is_none() && signed_parts.is_empty() && encrypted_parts.is_empty() {
+        //= spec/searchable-encryption/beacons.md#default-construction
+        //# - Initialization MUST fail if no constructors are configured, and no local parts are configured.
         return Err(val_err(format!(
             "Compound beacon {name} defines no constructors, and also no local parts. Cannot make a default constructor from global parts."
         )));
@@ -867,6 +913,12 @@ fn create_compound_beacon(
     let is_signed_beacon = encrypted.parts.is_empty();
     let mut parts = signed.parts;
     parts.extend(encrypted.parts);
+
+    //= spec/searchable-encryption/beacons.md#signed-beacons
+    //# Initialization MUST fail if `NAME` is explicitly configured with an
+    //# [attribute actions](../dynamodb-encryption-client/ddb-item-encryptor.md#attribute-actions) or
+    //# [unauthenticated attributes](../dynamodb-encryption-client/ddb-item-encryptor.md#unauthenticated-attributes),
+    //# or begins with the [unauthenticated attribute prefix](../dynamodb-encryption-client/ddb-item-encryptor.md#unauthenticated-attribute-prefix).
     outer.beacon_name_allowed(name, "CompoundBeacon", is_signed_beacon)?;
     if parts.is_empty() {
         return Err(val_err(format!(
@@ -876,6 +928,8 @@ fn create_compound_beacon(
     let constructors = add_constructors(beacon.constructors.as_deref(), name, &parts)?;
 
     let beacon_name = if is_signed_beacon {
+        //= spec/searchable-encryption/beacons.md#signed-beacons
+        //# The beacon value MUST be stored as `NAME`, rather than the usual `aws_dbe_b_NAME`.
         name.to_owned()
     } else {
         format!("{BEACON_PREFIX}{name}")
@@ -925,11 +979,15 @@ fn check_share(
                 "Beacon {name} is shared to {share} which is in turn shared to {next}. Share chains are not allowed."
             ))),
             None if target.length == length => Ok(()),
+            //= spec/searchable-encryption/beacons.md#shared-initialization
+            //# This beacon's [length](#beacon-length) MUST be equal to the `other` beacon's [length](#beacon-length).
             None => Err(val_err(format!(
                 "Beacon {name} is shared to {share} but {name} has length {length} and {share} has length {}.",
                 target.length
             ))),
         },
+        //= spec/searchable-encryption/beacons.md#shared-initialization
+        //# This name MUST be the name of a previously defined Standard Beacon.
         Some(Beacon::Compound(_)) => Err(val_err(format!(
             "Beacon {name} is shared to {share} but {share} is a compound beacon."
         ))),
@@ -947,6 +1005,8 @@ fn check_beacons(beacons: &BTreeMap<String, Beacon>) -> Result<(), Error> {
                 .values()
                 .any(|c| matches!(c, Beacon::Compound(c) if c.has_beacon(name)))
         {
+            //= spec/searchable-encryption/beacons.md#partonly-initialization
+            //# Initialization MUST fail if the configuration does not use a PartOnly in a [compound beacon](#compound-beacon).
             return Err(val_err(format!(
                 "PartOnly beacon {name} MUST be used in a compound beacon."
             )));

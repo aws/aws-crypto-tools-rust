@@ -703,11 +703,19 @@ async fn key_store_builders() {
 #[test]
 fn standard_beacon_builder_checks_length_location_and_partitions() {
     let base = || StandardBeacon::builder().name("b").bits(8);
+
+    //= spec/searchable-encryption/beacons.md#standard-beacon-initialization
+    //= type=test
+    //# On initialization of a Standard Beacon, the caller MUST provide:
     assert_eq!(
         validation_message(StandardBeacon::builder().name("b").build()),
         "bits is required"
     );
     for bits in [0, 64, 255] {
+        //= spec/searchable-encryption/beacons.md#beacon-length
+        //= type=test
+        //# A beacon length MUST be an integer between 1 and 63 inclusive,
+        //# indicating the number of bits in the resulting beacon.
         assert_eq!(
             validation_message(base().bits(bits).build()),
             "bits must be between 1 and 63"
@@ -728,6 +736,9 @@ fn standard_beacon_builder_checks_length_location_and_partitions() {
         "name is required"
     );
 
+    //= spec/searchable-encryption/beacons.md#standard-beacon-initialization
+    //= type=test
+    //# On initialization of a Standard Beacon, the caller MAY provide:
     let beacon = base()
         .location("a.b[2]")
         .number_of_partitions(3)
@@ -762,6 +773,9 @@ fn beacon_styles() {
         BeaconStyle::SharedSet(s) if s.other() == "o"
     ));
 
+    //= spec/searchable-encryption/beacons.md#shared-initialization
+    //= type=test
+    //# On initialization of a Shared, the caller MUST provide:
     assert_eq!(
         validation_message(Shared::builder().build()),
         "other is required"
@@ -775,6 +789,10 @@ fn beacon_styles() {
         "x"
     );
     assert_eq!(Shared::builder().other("y").build().unwrap().other(), "y");
+
+    //= spec/searchable-encryption/beacons.md#sharedset-initialization
+    //= type=test
+    //# On initialization of a SharedSet, the caller MUST provide:
     assert_eq!(
         validation_message(SharedSet::builder().build()),
         "other is required"
@@ -796,6 +814,10 @@ fn beacon_styles() {
 #[test]
 fn compound_beacon_builder_checks_split_and_lists() {
     let split_dot = || CompoundBeacon::builder().name("c").split(".");
+
+    //= spec/searchable-encryption/beacons.md#compound-beacon-initialization
+    //= type=test
+    //# On initialization of a Compound Beacon, the caller MUST provide:
     assert_eq!(
         validation_message(CompoundBeacon::builder().name("c").build()),
         "split is required"
@@ -828,6 +850,9 @@ fn compound_beacon_builder_checks_split_and_lists() {
         "name is required"
     );
 
+    //= spec/searchable-encryption/beacons.md#compound-beacon-initialization
+    //= type=test
+    //# On initialization of a Compound Beacon, the caller MAY provide:
     let beacon = CompoundBeacon::builder()
         .set_name(Some("c".to_owned()))
         .set_split(Some("|".to_owned()))
@@ -850,6 +875,9 @@ fn compound_beacon_builder_checks_split_and_lists() {
 
 #[test]
 fn part_builders_check_prefix_and_location() {
+    //= spec/searchable-encryption/beacons.md#encrypted-part-initialization
+    //= type=test
+    //# On initialization of a [encrypted part](#encrypted-part-initialization), the caller MUST provide:
     assert_eq!(
         validation_message(EncryptedPart::builder().name("n").build()),
         "prefix is required"
@@ -869,6 +897,9 @@ fn part_builders_check_prefix_and_location() {
         .unwrap();
     assert_eq!((part.name(), part.prefix()), ("n", "p"));
 
+    //= spec/searchable-encryption/beacons.md#signed-part-initialization
+    //= type=test
+    //# On initialization of a [signed part](#signed-part-initialization), the caller MUST provide:
     assert_eq!(
         validation_message(SignedPart::builder().name("n").build()),
         "prefix is required"
@@ -894,6 +925,9 @@ fn part_builders_check_prefix_and_location() {
     let part = SignedPart::builder()
         .set_name(Some("n".to_owned()))
         .set_prefix(Some("p".to_owned()))
+        //= spec/searchable-encryption/beacons.md#signed-part-initialization
+        //= type=test
+        //# On initialization of a [signed parts](#signed-part-initialization), the caller MAY provide:
         .location("a.b")
         .build()
         .unwrap();
@@ -905,6 +939,9 @@ fn part_builders_check_prefix_and_location() {
 
 #[test]
 fn constructor_builders() {
+    //= spec/searchable-encryption/beacons.md#constructor-initialization
+    //= type=test
+    //# On initialization of a constructor, the caller MUST provide:
     assert_eq!(
         validation_message(Constructor::builder().build()),
         "parts is required"
@@ -913,6 +950,10 @@ fn constructor_builders() {
         validation_message(Constructor::builder().set_parts(Some(vec![])).build()),
         "parts must not be empty"
     );
+
+    //= spec/searchable-encryption/beacons.md#constructor-part-initialization
+    //= type=test
+    //# On initialization of a constructor part, the caller MUST provide:
     assert_eq!(
         validation_message(ConstructorPart::builder().required(true).build()),
         "name is required"
@@ -1186,6 +1227,10 @@ async fn two_beacons_one_loc() {
         title_b(),
         fred,
     ]));
+
+    //= spec/searchable-encryption/beacons.md#standard-beacon-initialization
+    //= type=test
+    //# Initialization MUST fail if two standard beacons are configured with the same location.
     assert_eq!(
         validation_message(convert_with(&[], version)),
         "Beacon fred is defined on location std6[0], but beacon std6 is already defined on that location."
@@ -1346,6 +1391,11 @@ async fn bad_prefix_is_rejected() {
         .set_standard_beacons(Some(vec![name_b(), title_b(), too_bad_b()]))
         .set_compound_beacons(Some(vec![bad_prefix()]))
         .set_virtual_fields(None);
+
+    //= spec/searchable-encryption/beacons.md#initialization-failure
+    //= type=test
+    //# Initialization MUST fail if any `prefix` in any [part](#part) is a prefix of
+    //# the `prefix` of any other [part](#part).
     assert_eq!(
         validation_message(convert_with(&[], version)),
         "Compound beacon BadPrefix defines part Title with prefix T_ which is incompatible with part TooBad which has a prefix of T."
@@ -1358,7 +1408,9 @@ async fn bad_prefix_between_signed_and_encrypted_parts() {
         .set_standard_beacons(Some(vec![name_b()]))
         .set_compound_beacons(Some(vec![bad_prefix2()]))
         .set_virtual_fields(None);
+
     // `Nothing` must be signed for the prefix check to be reached.
+    // Rejected by beacons.md#initialization-failure: a signed part holds only SIGN_ONLY fields.
     assert_eq!(
         validation_message(convert_with(&[], version)),
         "Signed Part Nothing is built from Nothing which is not SIGN_ONLY."
@@ -1367,6 +1419,8 @@ async fn bad_prefix_between_signed_and_encrypted_parts() {
         .set_standard_beacons(Some(vec![name_b()]))
         .set_compound_beacons(Some(vec![bad_prefix2()]))
         .set_virtual_fields(None);
+
+    // Rejected by beacons.md#initialization-failure: no prefix begins another part's prefix.
     assert_eq!(
         validation_message(convert_with(
             &[("Nothing", CryptoAction::SignOnly)],
@@ -1382,6 +1436,10 @@ async fn unused_part_only() {
     let mut standards = lotsa_beacons(store()).build().unwrap().standard_beacons;
     standards.push(bad);
     let version = lotsa_beacons(store()).set_standard_beacons(Some(standards));
+
+    //= spec/searchable-encryption/beacons.md#partonly-initialization
+    //= type=test
+    //# Initialization MUST fail if the configuration does not use a PartOnly in a [compound beacon](#compound-beacon).
     assert_eq!(
         validation_message(convert_with(
             &[("badBeacon", CryptoAction::EncryptAndSign)],
@@ -1400,6 +1458,10 @@ async fn compound_with_unknown() {
         None,
     );
     let version = lotsa_beacons(store()).compound_beacons(name_unknown);
+
+    //= spec/searchable-encryption/beacons.md#compound-beacon
+    //= type=test
+    //# The name MUST be the name of a configured standard beacon.
     assert_eq!(
         validation_message(convert_with(&[], version)),
         "Compound beacon NameUnknown refers to standard beacon Unknown which is not configured."
@@ -1418,6 +1480,10 @@ async fn set_in_compound() {
     let version = lotsa_beacons(store())
         .standard_beacons(set_beacon)
         .compound_beacons(compound_set);
+
+    //= spec/searchable-encryption/beacons.md#asset-initialization
+    //= type=test
+    //# - initialization MUST fail if any compound beacon has an AsSet beacon as a part.
     assert_eq!(
         validation_message(convert_with(
             &[("setBeacon", CryptoAction::EncryptAndSign)],
@@ -1452,6 +1518,8 @@ fn share_case(
 #[tokio::test]
 async fn shared_bad_reference_to_compound() {
     let share = styled("shareBeacon", 24, BeaconStyle::shared("NameTitle"));
+
+    // Rejected by beacons.md#shared-initialization: other names a standard beacon.
     assert_eq!(
         share_case(None, vec![share], true),
         "Beacon shareBeacon is shared to NameTitle but NameTitle is a compound beacon."
@@ -1485,6 +1553,10 @@ async fn self_share() {
 #[tokio::test]
 async fn shared_bad_reference_non_existent() {
     let share = styled("shareBeacon", 24, BeaconStyle::shared("DoesNotExist"));
+
+    //= spec/searchable-encryption/beacons.md#shared-initialization
+    //= type=test
+    //# This name MUST be the name of a previously defined Standard Beacon.
     assert_eq!(
         share_case(None, vec![share], true),
         "Beacon shareBeacon is shared to DoesNotExist which is not defined."
@@ -1494,6 +1566,10 @@ async fn shared_bad_reference_non_existent() {
 #[tokio::test]
 async fn shared_bad_length() {
     let share = styled("shareBeacon", 23, BeaconStyle::shared("std2"));
+
+    //= spec/searchable-encryption/beacons.md#shared-initialization
+    //= type=test
+    //# This beacon's [length](#beacon-length) MUST be equal to the `other` beacon's [length](#beacon-length).
     assert_eq!(
         share_case(None, vec![share], true),
         "Beacon shareBeacon is shared to std2 but shareBeacon has length 23 and std2 has length 24."
@@ -1593,6 +1669,8 @@ async fn duplicate_global_vs_local_signed() {
 async fn global_and_local_prefix_clash() {
     // A local part with a new name but a global part's prefix.
     let version = lotsa_beacons(store()).signed_parts(signed_part("Other", "M_", Some("Year")));
+
+    // Rejected by beacons.md#initialization-failure: no prefix begins another part's prefix.
     assert_eq!(
         validation_message(convert_with(&[], version)),
         "Compound beacon Mixed defines signed part Month with prefix M_ which is already defined as the prefix of a global part."
@@ -1629,6 +1707,10 @@ async fn compound_no_constructor() {
         .set_compound_beacons(Some(vec![compound_default]))
         .signed_parts(month())
         .set_encrypted_parts(Some(vec![name_p(), title_p()]));
+
+    //= spec/searchable-encryption/beacons.md#default-construction
+    //= type=test
+    //# - Initialization MUST fail if no constructors are configured, and no local parts are configured.
     assert_eq!(
         validation_message(convert_with(&[], version)),
         "Compound beacon compoundDefault defines no constructors, and also no local parts. Cannot make a default constructor from global parts."
@@ -1845,6 +1927,11 @@ async fn signed_and_encrypted_locations() {
     //# Initialization MUST fail if the [terminal location](virtual.md#terminal-location)
     //# reference by a [signed part](beacons.md#signed-part) is `encrypted`,
     //# or is not `signed`.
+    //
+    //= spec/searchable-encryption/beacons.md#initialization-failure
+    //= type=test
+    //# Initialization MUST fail if any [signed-part](#signed-part-initialization) contains
+    //# anything but SIGN_ONLY fields.
     assert_eq!(
         validation_message(convert_with(&[], version)),
         "Signed Part sp is built from Name which is not SIGN_ONLY."
@@ -1889,14 +1976,33 @@ async fn constructor_checks() {
         )]));
         convert_with(&[], version)
     };
+
+    //= spec/searchable-encryption/beacons.md#initialization-failure
+    //= type=test
+    //# Initialization MUST fail if any [constructor](#constructor-initialization) is configured without at least one
+    //# required part.
     assert_eq!(
         validation_message(case(vec![constructor(&[("Name", false), ("Year", false)])])),
         "A Constructor for beacon Mixed lacks any required parts"
     );
+
+    //= spec/searchable-encryption/beacons.md#constructor-part-initialization
+    //= type=test
+    //# This name MUST match the name of one of the [encrypted](#encrypted-part-initialization) or [signed](#signed-part-initialization) parts.
+    //
+    //= spec/searchable-encryption/beacons.md#initialization-failure
+    //= type=test
+    //# Initialization MUST fail if any [constructor](#constructor-initialization) is configured with a field name
+    //# that is not a defined [part](#part).
     assert_eq!(
         validation_message(case(vec![constructor(&[("Nope", true)])])),
         "Constructor refers to part name Nope but there is no part by that name."
     );
+
+    //= spec/searchable-encryption/beacons.md#initialization-failure
+    //= type=test
+    //# Initialization MUST fail if two [constructors](#constructor-initialization) are configured
+    //# with the same set of required parts.
     assert_eq!(
         validation_message(case(vec![
             constructor(&[("Name", true), ("Year", true)]),
@@ -1990,6 +2096,11 @@ async fn partition_counts() {
         .set_standard_beacons(Some(vec![std2(), std4_partitioned.clone(), std6()]))
         .set_compound_beacons(None)
         .set_virtual_fields(None);
+
+    //= spec/searchable-encryption/beacons.md#standard-beacon-initialization
+    //= type=test
+    //# Initialization MUST fail if [number of partitions](#beacon-constraint) is specified, and is greater than or equal to
+    //# the maximum number of partitions specified in the [beacon version](search-config.md#beacon-version-initialization).
     assert_eq!(
         validation_message(convert_with(&[], version)),
         "Constrained numberOfPartitions for  std4 is 5 but it must be less than the maximumNumberOfPartitions 1"
