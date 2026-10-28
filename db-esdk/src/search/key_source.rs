@@ -17,6 +17,7 @@ use aws_crypto_mpl::types::{BeaconKeyMaterials, CacheEntry, CachedMaterials};
 use aws_mpl_primitives::{DigestAlg, digest, generate_random_bytes, hkdf_no_salt};
 
 use crate::error::{Error, crypt_err, materials_err, val_err};
+use crate::search::beacon::{MaybeKeyId, MaybeKeyMap};
 
 /// The cache identifier's resource id: the hierarchical keyring's.
 const RESOURCE_ID_HIERARCHICAL_KEYRING: u8 = 0x02;
@@ -30,10 +31,6 @@ const HMAC_KEY_LEN: usize = 64;
 
 /// Where an item's beacon key id comes from.
 #[derive(Clone, Debug)]
-#[expect(
-    dead_code,
-    reason = "beacon keys are looked up per item in a later layer"
-)]
 pub(crate) enum KeyLocation {
     /// The same key for every item.
     Single { key_id: String },
@@ -146,12 +143,41 @@ impl KeySource {
         Ok(out)
     }
 
+    /// The HMAC keys of `std_names`, for the beacon key `key_id` selects.
+    ///
+    /// # Errors
+    ///
+    /// A `Validation` error when `key_id` does not fit the key source:
+    /// a single key store takes no key id, and a multi key store needs one.
+    pub(crate) async fn get_key_map(
+        &self,
+        std_names: &[String],
+        key_id: &MaybeKeyId,
+    ) -> Result<MaybeKeyMap, Error> {
+        match (&self.location, key_id) {
+            (KeyLocation::Single { key_id: id }, MaybeKeyId::DontUse) => {
+                Ok(MaybeKeyMap::Keys(self.hmac_keys(std_names, id).await?))
+            }
+            (KeyLocation::Single { .. }, _) => Err(val_err(
+                "KeyID should not be supplied with a SingleKeyStore",
+            )),
+            (KeyLocation::Multi { .. }, MaybeKeyId::DontUse) => Err(val_err(
+                "Fixed KeyID must not be supplied with a MultiKeyStore",
+            )),
+            (KeyLocation::Multi { .. }, MaybeKeyId::ShouldHave) => {
+                Ok(MaybeKeyMap::ShouldHaveKeys)
+            }
+            (KeyLocation::Multi { .. }, MaybeKeyId::Id(id)) => {
+                Ok(MaybeKeyMap::Keys(self.hmac_keys(std_names, id).await?))
+            }
+        }
+    }
+
     /// The HMAC key of each of `beacon_names` under beacon key `key_id`.
     ///
     /// The keys come from the cache when its entry is younger than the TTL,
     /// otherwise from the key store, and are then cached.
-    #[expect(dead_code, reason = "beacon values are computed in a later layer")]
-    pub(crate) async fn hmac_keys(
+    async fn hmac_keys(
         &self,
         beacon_names: &[String],
         key_id: &str,

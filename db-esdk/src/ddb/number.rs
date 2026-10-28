@@ -50,7 +50,8 @@ fn str_to_int_inner(s: &str) -> Result<i128, String> {
     Ok(acc)
 }
 
-fn str_to_int(s: &str) -> Result<i128, String> {
+/// The integer `s` spells: decimal digits after an optional sign.
+pub(crate) fn str_to_int(s: &str) -> Result<i128, String> {
     if s.is_empty() {
         return Err("An empty string is not a valid number.".to_owned());
     }

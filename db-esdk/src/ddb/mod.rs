@@ -4,7 +4,8 @@
 //! DynamoDB attribute values as structured-encryption terminals, and back.
 
 pub(crate) mod filter_expr;
-mod number;
+pub(crate) mod float_compare;
+pub(crate) mod number;
 pub(crate) mod update_expr;
 
 use std::collections::{BTreeSet, HashMap};
@@ -161,6 +162,11 @@ fn attr_to_bytes(a: &AttributeValue, prefix: bool, depth: u64) -> Result<Vec<u8>
     } else {
         Ok(base)
     }
+}
+
+/// The serialized value of a top-level attribute, without its type id.
+pub(crate) fn top_level_attr_to_bytes(a: &AttributeValue) -> Result<Vec<u8>, String> {
+    attr_to_bytes(a, false, 1)
 }
 
 /// `a` as a terminal.

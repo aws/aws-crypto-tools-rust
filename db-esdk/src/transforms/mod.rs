@@ -21,7 +21,8 @@ use aws_crypto_mpl::aws_sdk_dynamodb::types::AttributeValue;
 
 use crate::ddb::{Item, filter_expr, update_expr};
 use crate::error::{Error, val_err};
-use crate::item_encryptor::ItemEncryptor;
+use crate::item_encryptor::{ItemEncryptor, ParsedHeader};
+use crate::search::beacon::MaybeKeyId;
 use crate::search::convert;
 use crate::search::info::SearchInfo;
 use crate::structured::util::RESERVED_PREFIX;
@@ -41,7 +42,6 @@ pub struct Transforms {
 struct Table {
     encryptor: ItemEncryptor,
     /// The table's beacons, if it has a search configuration.
-    #[expect(dead_code, reason = "beacons are written and queried in a later layer")]
     search: Option<SearchInfo>,
 }
 
@@ -54,13 +54,18 @@ impl Transforms {
 
     /// The item encryptor of table `name`, if the table is configured.
     fn table(&self, name: Option<&str>) -> Option<&ItemEncryptor> {
-        name.and_then(|n| self.tables.get(n)).map(|t| &t.encryptor)
+        self.table_info(name).map(|t| &t.encryptor)
     }
 
-    /// The item encryptor of table `name`, unless its writes are plaintext.
-    fn encrypted_write(&self, name: Option<&str>) -> Option<&ItemEncryptor> {
-        self.table(name).filter(|t| {
-            t.config().plaintext_override
+    /// Table `name`, if it is configured.
+    fn table_info(&self, name: Option<&str>) -> Option<&Table> {
+        name.and_then(|n| self.tables.get(n))
+    }
+
+    /// Table `name`, unless its writes are plaintext.
+    fn encrypted_write(&self, name: Option<&str>) -> Option<&Table> {
+        self.table_info(name).filter(|t| {
+            t.encryptor.config().plaintext_override
                 != PlaintextOverride::ForcePlaintextWriteAllowPlaintextRead
         })
     }
@@ -260,14 +265,60 @@ async fn decrypt_all(table: &ItemEncryptor, items: Vec<Item>) -> Result<Vec<Item
     Ok(out)
 }
 
-/// Encrypt and sign an item about to be written to `table`.
-async fn encrypt(table: &ItemEncryptor, item: Item) -> Result<Item, Error> {
-    Ok(table
+/// The key provider id of the hierarchical keyring.
+const HIERARCHICAL_KEYRING_ID: &str = "aws-kms-hierarchy";
+
+/// With a multi key store, the beacon key id of an item: the branch key id that encrypted it.
+fn key_id_from_header(
+    search: &SearchInfo,
+    header: Option<&ParsedHeader>,
+) -> Result<MaybeKeyId, Error> {
+    if !search.is_multi_key() {
+        return Ok(MaybeKeyId::DontUse);
+    }
+    let header =
+        header.ok_or_else(|| val_err("In multi-tenant mode, the parsed header is required."))?;
+    let [key] = header.encrypted_data_keys() else {
+        return Err(val_err(
+            "Encrypt header has more than one Encrypted Data Key",
+        ));
+    };
+    if key.key_provider_id() != HIERARCHICAL_KEYRING_ID {
+        return Err(val_err(
+            "In multi-tenant mode, keyProviderId must be aws-kms-hierarchy",
+        ));
+    }
+    let id = String::from_utf8(key.key_provider_info().to_vec())
+        .map_err(|e| val_err(format!("the branch key id is not UTF-8: {e}")))?;
+    Ok(MaybeKeyId::Id(id))
+}
+
+/// Encrypt and sign an item about to be written to `table`, adding its beacons.
+async fn encrypt(table: &Table, item: Item) -> Result<Item, Error> {
+    let Some(search) = &table.search else {
+        return Ok(table
+            .encryptor
+            .encrypt_item()
+            .plaintext_item(item)
+            .send()
+            .await?
+            .into_encrypted_item());
+    };
+    let partition = search.random_partition()?;
+    let with_signed = search.add_signed_beacons(item.clone(), partition)?;
+    let encrypted = table
+        .encryptor
         .encrypt_item()
-        .plaintext_item(item)
+        .plaintext_item(with_signed)
         .send()
-        .await?
-        .into_encrypted_item())
+        .await?;
+    let key_id = key_id_from_header(search, encrypted.parsed_header())?;
+    let beacons = search
+        .get_encrypted_beacons(&item, &key_id, partition)
+        .await?;
+    let mut out = encrypted.into_encrypted_item();
+    out.extend(beacons);
+    Ok(out)
 }
 
 /// Verify and decrypt an item read from `table`, without its `aws_dbe_` attributes.
@@ -279,6 +330,59 @@ async fn decrypt(table: &ItemEncryptor, item: Item) -> Result<Item, Error> {
         .await?
         .into_plaintext_item();
     Ok(remove_beacons(plaintext))
+}
+
+/// Verify and decrypt the items of a query or scan of `table`,
+/// then filter them again with the original expressions and remove their beacons.
+///
+/// With a multi key store, an item encrypted under a different beacon key than the query names
+/// is dropped.
+async fn decrypt_search_results(
+    table: &Table,
+    items: Vec<Item>,
+    key_expr: Option<&str>,
+    filter_expr: Option<&str>,
+    names: Option<&HashMap<String, String>>,
+    values: Option<&HashMap<String, AttributeValue>>,
+    what: &str,
+) -> Result<Vec<Item>, Error> {
+    let key_id = match &table.search {
+        None => MaybeKeyId::DontUse,
+        Some(search) => search
+            .version
+            .get_beacon_key_id(key_expr, filter_expr, values, names)?,
+    };
+    let mut decrypted = Vec::with_capacity(items.len());
+    for item in items {
+        let out = table
+            .encryptor
+            .decrypt_item()
+            .encrypted_item(item)
+            .send()
+            .await?;
+        if let (MaybeKeyId::Id(id), Some(header)) = (&key_id, out.parsed_header()) {
+            let [key] = header.encrypted_data_keys() else {
+                return Err(val_err(format!(
+                    "{what} result has more than one Encrypted Data Key"
+                )));
+            };
+            if key.key_provider_info() != id.as_bytes() {
+                continue;
+            }
+        }
+        decrypted.push(out.into_plaintext_item());
+    }
+    validate_expression_length(key_expr, "KeyConditionExpression")?;
+    validate_expression_length(filter_expr, "FilterExpression")?;
+    let filtered = match &table.search {
+        None => decrypted,
+        Some(search) => {
+            search
+                .version
+                .filter_results(decrypted, key_expr, filter_expr, names, values)?
+        }
+    };
+    Ok(filtered.into_iter().map(remove_beacons).collect())
 }
 
 /// `item` without the attributes whose names begin with `aws_dbe_`.

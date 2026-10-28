@@ -5,6 +5,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::ddb::Item;
+use crate::error::Error;
+use crate::search::beacon::{MaybeKeyId, MaybeKeyMap};
 use crate::search::config::VirtualTransform;
 use crate::search::key_source::KeySource;
 use crate::search::term_loc::TermLoc;
@@ -21,7 +24,6 @@ pub(crate) struct SearchInfo {
 
 /// A checked beacon version.
 #[derive(Debug)]
-#[expect(dead_code, reason = "beacon values are computed in a later layer")]
 pub(crate) struct BeaconVersionInfo {
     pub(crate) key_source: KeySource,
     /// Every beacon, standard and compound, by name.
@@ -44,6 +46,78 @@ impl BeaconVersionInfo {
             .map(|(n, _)| n.clone())
             .collect()
     }
+
+    /// The beacon HMAC keys for `key_id`.
+    pub(crate) async fn get_key_map(&self, key_id: &MaybeKeyId) -> Result<MaybeKeyMap, Error> {
+        self.key_source
+            .get_key_map(&self.standard_names, key_id)
+            .await
+    }
+
+    /// The value of every beacon of type `kind` that `item` has, by beacon attribute name.
+    ///
+    /// A part-only beacon is never written.
+    fn generate_beacons(
+        &self,
+        item: &Item,
+        keys: &MaybeKeyMap,
+        kind: BeaconKind,
+        partition: u8,
+    ) -> Result<Item, Error> {
+        let mut out = Item::new();
+        for beacon in self.beacons.values() {
+            let of_kind = match kind {
+                BeaconKind::Any => true,
+                BeaconKind::Signed => !beacon.is_encrypted(),
+                BeaconKind::Encrypted => beacon.is_encrypted(),
+            };
+            if !of_kind || beacon.is_part_only() {
+                continue;
+            }
+            if let Some(value) = beacon.attr_hash(item, &self.virtual_fields, keys, partition)? {
+                out.insert(beacon.beacon_name().to_owned(), value);
+            }
+        }
+        Ok(out)
+    }
+
+    /// Every beacon's plaintext value: what a re-filter compares on a decrypted item.
+    pub(crate) fn generate_plain_beacons(&self, item: &Item, partition: u8) -> Result<Item, Error> {
+        self.generate_beacons(item, &MaybeKeyMap::DontUseKeys, BeaconKind::Any, partition)
+    }
+
+    /// The values of the beacons whose parts are all signed, written in plaintext.
+    pub(crate) fn generate_signed_beacons(
+        &self,
+        item: &Item,
+        partition: u8,
+    ) -> Result<Item, Error> {
+        self.generate_beacons(
+            item,
+            &MaybeKeyMap::DontUseKeys,
+            BeaconKind::Signed,
+            partition,
+        )
+    }
+
+    /// The values of the beacons on encrypted fields, under the beacon key `key_id` selects.
+    pub(crate) async fn generate_encrypted_beacons(
+        &self,
+        item: &Item,
+        key_id: &MaybeKeyId,
+        partition: u8,
+    ) -> Result<Item, Error> {
+        let keys = self.get_key_map(key_id).await?;
+        self.generate_beacons(item, &keys, BeaconKind::Encrypted, partition)
+    }
+}
+
+/// Which beacons to generate.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum BeaconKind {
+    Any,
+    Signed,
+    Encrypted,
 }
 
 /// A checked beacon.
@@ -122,7 +196,6 @@ pub(crate) struct ConstructorPartInfo {
 
 /// A checked compound beacon.
 #[derive(Clone, Debug)]
-#[expect(dead_code, reason = "beacon values are computed in a later layer")]
 pub(crate) struct CompoundInfo {
     pub(crate) name: String,
     /// The attribute the value is written to: `aws_dbe_b_<name>`, or `<name>` when fully signed.
@@ -161,10 +234,6 @@ impl VirtField {
 
 /// A checked virtual part.
 #[derive(Clone, Debug)]
-#[expect(
-    dead_code,
-    reason = "virtual field values are computed in a later layer"
-)]
 pub(crate) struct VirtPart {
     pub(crate) loc: TermLoc,
     pub(crate) transforms: Vec<VirtualTransform>,

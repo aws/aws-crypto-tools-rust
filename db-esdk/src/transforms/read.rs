@@ -16,7 +16,10 @@ use aws_crypto_mpl::aws_sdk_dynamodb::operation::transact_get_items::{
 };
 use aws_crypto_mpl::aws_sdk_dynamodb::types::ItemResponse;
 
-use super::{Transforms, decrypt, decrypt_all, no_map, test_beaconize, validate_expression_length};
+use super::{
+    Transforms, decrypt, decrypt_all, decrypt_search_results, no_map, test_beaconize,
+    validate_expression_length,
+};
 use crate::error::{Error, val_err};
 
 /// Whether `l` is absent or empty.
@@ -64,9 +67,10 @@ impl Transforms {
     /// A `Validation` error when the request sets a legacy parameter
     /// (`AttributesToGet`, `KeyConditions`, `QueryFilter`, or `ConditionalOperator`),
     /// when its key condition or filter expression is longer than 4096 characters,
-    /// or when either reads an encrypted attribute.
-    pub async fn query_input(&self, input: QueryInput) -> Result<QueryInput, Error> {
-        let Some(table) = self.table(input.table_name.as_deref()) else {
+    /// or when either reads an encrypted attribute that has no beacon.
+    /// On a table with beacons, the expressions are rewritten to compare beacons.
+    pub async fn query_input(&self, mut input: QueryInput) -> Result<QueryInput, Error> {
+        let Some(table) = self.table_info(input.table_name.as_deref()) else {
             return Ok(input);
         };
         if !no_list(input.attributes_to_get.as_ref()) {
@@ -94,44 +98,67 @@ impl Transforms {
             "KeyConditionExpression",
         )?;
         validate_expression_length(input.filter_expression.as_deref(), "FilterExpression")?;
-        test_beaconize(
-            table,
-            input.key_condition_expression.as_deref(),
-            input.filter_expression.as_deref(),
-            input.expression_attribute_names.as_ref(),
-        )?;
+        let Some(search) = &table.search else {
+            test_beaconize(
+                &table.encryptor,
+                input.key_condition_expression.as_deref(),
+                input.filter_expression.as_deref(),
+                input.expression_attribute_names.as_ref(),
+            )?;
+            return Ok(input);
+        };
+        let ctx = search
+            .query_input_for_beacons(
+                &table.encryptor.config().attribute_actions_on_encrypt,
+                input.key_condition_expression.take(),
+                input.filter_expression.take(),
+                input.expression_attribute_names.take(),
+                input.expression_attribute_values.take(),
+            )
+            .await?;
+        input.key_condition_expression = ctx.key_expr;
+        input.filter_expression = ctx.filter_expr;
+        input.expression_attribute_names = ctx.names;
+        input.expression_attribute_values = ctx.values;
         Ok(input)
     }
 
     /// Verify and decrypt each item a Query response returns.
     ///
+    /// On a table with beacons, the items are filtered again with the original
+    /// key condition and filter, dropping those that matched only by their beacons.
+    ///
     /// # Errors
     ///
     /// A `Validation` error when the original key condition or filter expression
-    /// is longer than 4096 characters.
+    /// is longer than 4096 characters, or cannot be evaluated.
     /// Decryption errors keep their variant.
     pub async fn query_output(
         &self,
         mut output: QueryOutput,
         original_input: &QueryInput,
     ) -> Result<QueryOutput, Error> {
-        let Some(table) = self.table(original_input.table_name.as_deref()) else {
+        let Some(table) = self.table_info(original_input.table_name.as_deref()) else {
             return Ok(output);
         };
         if no_list(output.items.as_ref()) {
             return Ok(output);
         }
         let items = output.items.take().unwrap_or_default();
-        let decrypted = decrypt_all(table, items).await?;
-        validate_expression_length(
+        let items = decrypt_search_results(
+            table,
+            items,
             original_input.key_condition_expression.as_deref(),
-            "KeyConditionExpression",
-        )?;
-        validate_expression_length(
             original_input.filter_expression.as_deref(),
-            "FilterExpression",
-        )?;
-        output.items = Some(decrypted);
+            original_input.expression_attribute_names.as_ref(),
+            original_input.expression_attribute_values.as_ref(),
+            "Query",
+        )
+        .await?;
+        if table.search.is_some() && output.count != 0 {
+            output.count = i32::try_from(items.len()).unwrap_or(i32::MAX);
+        }
+        output.items = Some(items);
         Ok(output)
     }
 
@@ -142,9 +169,10 @@ impl Transforms {
     /// A `Validation` error when the request sets a legacy parameter
     /// (`AttributesToGet`, `ScanFilter`, or `ConditionalOperator`),
     /// when its filter expression is longer than 4096 characters,
-    /// or when it reads an encrypted attribute.
-    pub async fn scan_input(&self, input: ScanInput) -> Result<ScanInput, Error> {
-        let Some(table) = self.table(input.table_name.as_deref()) else {
+    /// or when it reads an encrypted attribute that has no beacon.
+    /// On a table with beacons, the filter is rewritten to compare beacons.
+    pub async fn scan_input(&self, mut input: ScanInput) -> Result<ScanInput, Error> {
+        let Some(table) = self.table_info(input.table_name.as_deref()) else {
             return Ok(input);
         };
         if !no_list(input.attributes_to_get.as_ref()) {
@@ -163,39 +191,64 @@ impl Transforms {
             ));
         }
         validate_expression_length(input.filter_expression.as_deref(), "FilterExpression")?;
-        test_beaconize(
-            table,
-            None,
-            input.filter_expression.as_deref(),
-            input.expression_attribute_names.as_ref(),
-        )?;
+        let Some(search) = &table.search else {
+            test_beaconize(
+                &table.encryptor,
+                None,
+                input.filter_expression.as_deref(),
+                input.expression_attribute_names.as_ref(),
+            )?;
+            return Ok(input);
+        };
+        let ctx = search
+            .scan_input_for_beacons(
+                input.filter_expression.take(),
+                input.expression_attribute_names.take(),
+                input.expression_attribute_values.take(),
+            )
+            .await?;
+        input.filter_expression = ctx.filter_expr;
+        input.expression_attribute_names = ctx.names;
+        input.expression_attribute_values = ctx.values;
         Ok(input)
     }
 
     /// Verify and decrypt each item a Scan response returns.
     ///
+    /// On a table with beacons, the items are filtered again with the original filter,
+    /// dropping those that matched only by their beacons.
+    ///
     /// # Errors
     ///
-    /// A `Validation` error when the original filter expression is longer than 4096 characters.
+    /// A `Validation` error when the original filter expression is longer than 4096 characters,
+    /// or cannot be evaluated.
     /// Decryption errors keep their variant.
     pub async fn scan_output(
         &self,
         mut output: ScanOutput,
         original_input: &ScanInput,
     ) -> Result<ScanOutput, Error> {
-        let Some(table) = self.table(original_input.table_name.as_deref()) else {
+        let Some(table) = self.table_info(original_input.table_name.as_deref()) else {
             return Ok(output);
         };
         if no_list(output.items.as_ref()) {
             return Ok(output);
         }
         let items = output.items.take().unwrap_or_default();
-        let decrypted = decrypt_all(table, items).await?;
-        validate_expression_length(
+        let items = decrypt_search_results(
+            table,
+            items,
+            None,
             original_input.filter_expression.as_deref(),
-            "FilterExpression",
-        )?;
-        output.items = Some(decrypted);
+            original_input.expression_attribute_names.as_ref(),
+            original_input.expression_attribute_values.as_ref(),
+            "Scan",
+        )
+        .await?;
+        if table.search.is_some() && output.count != 0 {
+            output.count = i32::try_from(items.len()).unwrap_or(i32::MAX);
+        }
+        output.items = Some(items);
         Ok(output)
     }
 

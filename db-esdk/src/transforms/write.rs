@@ -17,8 +17,8 @@ use aws_crypto_mpl::aws_sdk_dynamodb::operation::update_item::{UpdateItemInput, 
 use aws_crypto_mpl::aws_sdk_dynamodb::types::{ReturnValue, WriteRequest};
 
 use super::{
-    Transforms, decrypt, encrypt, is_signed, is_writeable, no_map, test_condition_expression,
-    test_update_expression,
+    Table, Transforms, decrypt, encrypt, is_signed, is_writeable, no_map,
+    test_condition_expression, test_update_expression,
 };
 use crate::error::{Error, val_err};
 use crate::item_encryptor::ItemEncryptor;
@@ -49,7 +49,7 @@ impl Transforms {
         let item = input.item.take().unwrap_or_default();
         is_writeable(&item)?;
         test_condition_expression(
-            table,
+            &table.encryptor,
             input.condition_expression.as_deref(),
             input.expression_attribute_names.as_ref(),
         )?;
@@ -252,6 +252,7 @@ impl Transforms {
             let requests = match self.encrypted_write(Some(&table_name)) {
                 None => requests,
                 Some(table) => {
+                    let table = &table.encryptor;
                     let src = src_items.get(&table_name).ok_or_else(|| {
                         val_err(format!(
                             "{table_name} in UnprocessedItems for BatchWriteItem response, but not in original request."
@@ -335,7 +336,7 @@ impl Transforms {
             {
                 is_writeable(&put.item)?;
                 test_condition_expression(
-                    table,
+                    &table.encryptor,
                     put.condition_expression.as_deref(),
                     put.expression_attribute_names.as_ref(),
                 )?;
@@ -364,7 +365,7 @@ impl Transforms {
 
 /// Encrypt the item of each put request in `requests`; delete requests pass through.
 async fn encrypt_write_requests(
-    table: &ItemEncryptor,
+    table: &Table,
     requests: Vec<WriteRequest>,
 ) -> Result<Vec<WriteRequest>, Error> {
     let mut out = Vec::with_capacity(requests.len());

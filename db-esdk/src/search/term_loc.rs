@@ -3,8 +3,12 @@
 
 //! Terminal locations: the parsed form of a DynamoDB document path such as `a.b[2]`.
 
+use std::collections::HashMap;
 use std::fmt;
 
+use aws_crypto_mpl::aws_sdk_dynamodb::types::AttributeValue;
+
+use crate::ddb::top_level_attr_to_bytes;
 use crate::error::{Error, val_err};
 
 /// One step into a nested value.
@@ -49,6 +53,109 @@ impl TermLoc {
     /// The top-level attribute the path starts in.
     pub(crate) fn attribute_name(&self) -> &str {
         &self.attribute
+    }
+
+    /// Whether the path is a whole top-level attribute, with no selectors.
+    pub(crate) fn is_whole_attribute(&self) -> bool {
+        self.selectors.is_empty()
+    }
+
+    /// The value at this path in `item`, if there is one.
+    ///
+    /// A map key that is not in the map is looked up again through `names`.
+    pub(crate) fn term_to_attr(
+        &self,
+        item: &HashMap<String, AttributeValue>,
+        names: Option<&HashMap<String, String>>,
+    ) -> Option<AttributeValue> {
+        let top = item.get(&self.attribute)?;
+        get_terminal(top, &self.selectors, names).ok().cloned()
+    }
+
+    /// The string form of the value at this path in `item`, if there is one.
+    pub(crate) fn term_to_string(
+        &self,
+        item: &HashMap<String, AttributeValue>,
+    ) -> Result<Option<String>, Error> {
+        self.term_to_attr(item, None)
+            .map(|v| attr_value_to_string(&v))
+            .transpose()
+    }
+
+    /// The serialized value at this path in `item`, if there is one.
+    pub(crate) fn term_to_bytes(
+        &self,
+        item: &HashMap<String, AttributeValue>,
+    ) -> Result<Option<Vec<u8>>, Error> {
+        self.term_to_attr(item, None)
+            .map(|v| top_level_attr_to_bytes(&v).map_err(val_err))
+            .transpose()
+    }
+}
+
+/// The value `parts` select inside `v`.
+fn get_terminal<'a>(
+    v: &'a AttributeValue,
+    parts: &[Selector],
+    names: Option<&HashMap<String, String>>,
+) -> Result<&'a AttributeValue, Error> {
+    let Some((first, rest)) = parts.split_first() else {
+        return Ok(v);
+    };
+    match v {
+        AttributeValue::L(l) => {
+            let Selector::List(pos) = first else {
+                return Err(val_err("Tried to access list with key"));
+            };
+            let next = usize::try_from(*pos)
+                .ok()
+                .and_then(|p| l.get(p))
+                .ok_or_else(|| val_err("Tried to access beyond the end of the list"))?;
+            get_terminal(next, rest, names)
+        }
+        AttributeValue::M(m) => {
+            let Selector::Map(key) = first else {
+                return Err(val_err("Tried to access map with index"));
+            };
+            let next = match m.get(key) {
+                Some(n) => n,
+                None => names
+                    .and_then(|n| n.get(key))
+                    .and_then(|real| m.get(real))
+                    .ok_or_else(|| {
+                        val_err(format!("Tried to access {key} which is not in the map."))
+                    })?,
+            };
+            get_terminal(next, rest, names)
+        }
+        other => Err(val_err(format!(
+            "Found {} with parts left over.",
+            match other {
+                AttributeValue::S(_) => "string",
+                AttributeValue::N(_) => "number",
+                AttributeValue::B(_) => "binary",
+                AttributeValue::Ss(_) => "string set",
+                AttributeValue::Ns(_) => "number set",
+                AttributeValue::Bs(_) => "binary set",
+                AttributeValue::Bool(_) => "boolean",
+                _ => "null",
+            }
+        ))),
+    }
+}
+
+/// The string form of a terminal value.
+fn attr_value_to_string(v: &AttributeValue) -> Result<String, Error> {
+    match v {
+        AttributeValue::S(s) | AttributeValue::N(s) => Ok(s.clone()),
+        AttributeValue::Bool(b) => Ok(if *b { "true" } else { "false" }.to_owned()),
+        AttributeValue::Null(_) => Ok("null".to_owned()),
+        AttributeValue::B(_) => Err(val_err("Can't convert Binary to string")),
+        AttributeValue::Ss(_) => Err(val_err("Can't convert String Set to string.")),
+        AttributeValue::Ns(_) => Err(val_err("Can't convert Number Set to string.")),
+        AttributeValue::Bs(_) => Err(val_err("Can't convert Binary Set to string.")),
+        AttributeValue::L(_) => Err(val_err("Can't convert List to string.")),
+        _ => Err(val_err("Can't convert Map to string.")),
     }
 }
 

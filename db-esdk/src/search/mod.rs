@@ -11,11 +11,15 @@
 //! The configuration is checked against the table's attribute actions
 //! when the [`Client`](crate::Client) is built.
 
+pub(crate) mod beacon;
 mod config;
 pub(crate) mod convert;
+pub(crate) mod filter;
 pub(crate) mod info;
 mod key_source;
-mod term_loc;
+pub(crate) mod support;
+pub(crate) mod term_loc;
+pub(crate) mod virt;
 
 pub use config::{
     AsSet, BeaconKeySource, BeaconStyle, BeaconVersion, BeaconVersionBuilder, CompoundBeacon,
