@@ -12,6 +12,8 @@ readme = "README.md"
 
 [lib]
 name = "aws_db_esdk"
+# Benchmarks are criterion-only; libtest would reject criterion's flags.
+bench = false
 
 [dependencies]
 aws-crypto-mpl = { path = "../mpl", default-features = false, features = ["ddb"] }
@@ -28,6 +30,11 @@ uuid = { version = "1.27.0", features = ["v4"] }
 aws-smithy-http-client = { version = "1.5.0", features = ["rustls-aws-lc"] }
 # The HttpClient trait, for the in-process fake DynamoDB of the Client tests.
 aws-smithy-runtime-api = "1.19.2"
+criterion = { version = "=0.5.1", default-features = false, features = ["cargo_bench_support"] }
+
+[[bench]]
+name = "item_encryptor"
+harness = false
 
 [package.metadata.docs.rs]
 all-features = true
