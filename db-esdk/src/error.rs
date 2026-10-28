@@ -187,3 +187,131 @@ impl From<aws_mpl_primitives::Error> for Error {
         Self::from_prim("a cryptographic operation failed", item)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use aws_crypto_mpl::aws_sdk_dynamodb::config::http::HttpResponse;
+    use aws_crypto_mpl::aws_sdk_dynamodb::error::SdkError;
+    use aws_crypto_mpl::aws_sdk_dynamodb::operation::put_item::PutItemError;
+    use aws_crypto_mpl::aws_sdk_dynamodb::types::error::ConditionalCheckFailedException;
+    use aws_smithy_types::body::SdkBody;
+
+    fn response(status: u16) -> HttpResponse {
+        HttpResponse::new(status.try_into().unwrap(), SdkBody::empty())
+    }
+
+    fn generic(code: &str, status: u16) -> SdkError<PutItemError, HttpResponse> {
+        SdkError::service_error(
+            PutItemError::generic(ErrorMetadata::builder().code(code).build()),
+            response(status),
+        )
+    }
+
+    fn table(err: &Error) -> Option<&str> {
+        match err.resource() {
+            Some(Resource::DynamoDbTable(t)) => Some(t.name()),
+            _ => None,
+        }
+    }
+
+    #[test]
+    fn conditional_check_failure_is_a_conflict_with_the_service_error() {
+        let exception = ConditionalCheckFailedException::builder()
+            .message("The conditional request failed")
+            .meta(
+                ErrorMetadata::builder()
+                    .code("ConditionalCheckFailedException")
+                    .build(),
+            )
+            .build();
+        let sdk = SdkError::service_error(
+            PutItemError::ConditionalCheckFailedException(exception),
+            response(400),
+        );
+        let err = Error::from_ddb("PutItem", Some("table1"), sdk);
+        let Error::Conflict(conflict) = &err else {
+            panic!("{err:?}");
+        };
+        assert_eq!(conflict.reason(), None);
+        assert_eq!(err.message(), "DynamoDB PutItem failed");
+        assert_eq!(err.code(), Some("ConditionalCheckFailedException"));
+        assert_eq!(err.service(), Some(&Service::DynamoDb));
+        assert_eq!(table(&err), Some("table1"));
+        assert!(!err.is_retryable());
+        assert!(matches!(
+            err.as_service_error(),
+            Some(PutItemError::ConditionalCheckFailedException(_))
+        ));
+    }
+
+    #[test]
+    fn transaction_conflict_is_a_concurrent_modification() {
+        let err = Error::from_ddb(
+            "PutItem",
+            None,
+            generic("TransactionConflictException", 400),
+        );
+        let Error::Conflict(conflict) = &err else {
+            panic!("{err:?}");
+        };
+        assert_eq!(
+            conflict.reason(),
+            Some(&ConflictReason::ConcurrentModification)
+        );
+        assert_eq!(table(&err), None);
+    }
+
+    #[test]
+    fn other_failures_are_classified_like_the_mpl() {
+        let err = Error::from_ddb(
+            "GetItem",
+            Some("t"),
+            generic("ProvisionedThroughputExceededException", 400),
+        );
+        assert!(matches!(err, Error::Throttling(_)), "{err:?}");
+        assert!(err.is_retryable());
+        assert_eq!(err.code(), Some("ProvisionedThroughputExceededException"));
+        assert_eq!(table(&err), Some("t"));
+
+        let err = Error::from_ddb("GetItem", None, generic("ResourceNotFoundException", 400));
+        assert!(matches!(err, Error::ResourceNotFound(_)), "{err:?}");
+
+        let err = Error::from_ddb(
+            "GetItem",
+            None,
+            SdkError::<PutItemError, HttpResponse>::timeout_error("slow"),
+        );
+        assert!(matches!(err, Error::Dispatch(_)), "{err:?}");
+        assert!(err.is_retryable());
+        // DynamoDB did not answer, so there is no service error to match.
+        assert!(err.as_service_error::<PutItemError>().is_none());
+    }
+
+    #[test]
+    fn as_service_error_needs_the_matching_operation() {
+        let err = Error::from_ddb("PutItem", None, generic("ValidationException", 400));
+        assert!(err.as_service_error::<PutItemError>().is_some());
+        use aws_crypto_mpl::aws_sdk_dynamodb::operation::get_item::GetItemError;
+        assert!(err.as_service_error::<GetItemError>().is_none());
+        assert!(val_err("x").as_service_error::<PutItemError>().is_none());
+    }
+
+    #[test]
+    fn constructors_set_the_variant_and_message() {
+        assert!(matches!(val_err("v"), Error::Validation(e) if e.message() == "v"));
+        assert!(matches!(ser_err("s"), Error::Serialization(e) if e.message() == "s"));
+        assert!(matches!(crypt_err("c"), Error::Cryptographic(e) if e.message() == "c"));
+        assert!(matches!(materials_err("m"), Error::InvalidMaterials(e) if e.message() == "m"));
+        assert!(matches!(internal_err("i"), Error::Internal(e) if e.message() == "i"));
+    }
+
+    #[test]
+    fn mpl_errors_keep_their_variant() {
+        let err = Error::from(aws_crypto_mpl::Error::no_matching_data_key("none"));
+        assert!(matches!(err, Error::NoMatchingDataKey(_)), "{err:?}");
+        assert_eq!(err.message(), "a keyring, CMM, key store, or cache failed");
+        let err = Error::from(aws_crypto_mpl::Error::validation("bad"));
+        assert!(matches!(err, Error::Validation(_)), "{err:?}");
+    }
+}

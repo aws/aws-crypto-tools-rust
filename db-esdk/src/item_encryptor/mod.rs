@@ -400,3 +400,27 @@ async fn decrypt_item(config: &Config, item: Item) -> Result<DecryptItemOutput, 
         parsed_header: Some(header),
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parsed_header_rejects_unsigned_attribute_in_schema() {
+        let config = config::tests::config();
+        let header = structured::ParsedHeader {
+            algorithm_suite_id: DEFAULT_SUITE,
+            encrypted_data_keys: Vec::new(),
+            stored_encryption_context: EncryptionContext::new(),
+            encryption_context: EncryptionContext::new(),
+        };
+        let schema = HashMap::from([(":free".to_owned(), CryptoAction::SignOnly)]);
+        match parsed_header(&config, header, schema) {
+            Err(Error::Validation(e)) => assert_eq!(
+                e.message(),
+                "Received unexpected Crypto Schema: mismatch with signature scope"
+            ),
+            other => panic!("{other:?}"),
+        }
+    }
+}
