@@ -67,6 +67,11 @@ impl Transforms {
         mut output: PutItemOutput,
         original_input: &PutItemInput,
     ) -> Result<PutItemOutput, Error> {
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-putitem
+        //# After a [PutItem](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_PutItem.html)
+        //# call is made to DynamoDB,
+        //# the resulting response MUST be modified before
+        //# being returned to the caller if:
         let Some(table) = self.table(original_input.table_name.as_deref()) else {
             return Ok(output);
         };
@@ -74,7 +79,18 @@ impl Transforms {
             return Ok(output);
         }
         let attributes = output.attributes.take().unwrap_or_default();
-        output.attributes = Some(decrypt(table, attributes).await?);
+
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-putitem
+        //# In this case, the [Item Encryptor](./ddb-item-encryptor.md) MUST perform
+        //# [Decrypt Item](./decrypt-item.md) where the input
+        //# [DynamoDB Item](./decrypt-item.md#dynamodb-item)
+        //# is the `Attributes` field in the original response
+        let decrypted = decrypt(table, attributes).await?;
+
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-putitem
+        //# The PutItem response's `Attributes` field MUST be
+        //# replaced by the encrypted DynamoDb Item outputted above.
+        output.attributes = Some(decrypted);
         Ok(output)
     }
 
@@ -126,6 +142,11 @@ impl Transforms {
         mut output: UpdateItemOutput,
         original_input: &UpdateItemInput,
     ) -> Result<UpdateItemOutput, Error> {
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-updateitem
+        //# After a [UpdateItem](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_UpdateItem.html)
+        //# call is made to DynamoDB,
+        //# the resulting response MUST be modified before
+        //# being returned to the caller if:
         let Some(table) = self.table(original_input.table_name.as_deref()) else {
             return Ok(output);
         };
@@ -144,14 +165,34 @@ impl Transforms {
                 .flat_map(HashMap::keys)
                 .any(|k| is_signed(actions, k))
             {
+                //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-updateitem
+                //# Additionally, if a value of `UPDATED_OLD` or `UPDATED_NEW` was used,
+                //# and any Attributes in the response are authenticated
+                //# per the [DynamoDB Encryption Client Config](#dynamodb-encryption-client-configuration),
+                //# an error MUST be raised.
                 return Err(val_err(
                     "UpdateItems response contains signed attributes, but does not include the entire item which is required for verification.",
                 ));
             }
+
+            //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-updateitem
+            //= reason=the unconfigured-table and no-Attributes returns above also leave output untouched
+            //# In all other cases, the UpdateItem response MUST NOT be modified.
             return Ok(output);
         }
         let attributes = output.attributes.take().unwrap_or_default();
-        output.attributes = Some(decrypt(table, attributes).await?);
+
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-updateitem
+        //# In this case, the [Item Encryptor](./ddb-item-encryptor.md) MUST perform
+        //# [Decrypt Item](./decrypt-item.md) where the input
+        //# [DynamoDB Item](./decrypt-item.md#dynamodb-item)
+        //# is the `Attributes` field in the original response
+        let decrypted = decrypt(table, attributes).await?;
+
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-updateitem
+        //# The UpdateItem response's `Attributes` field MUST be
+        //# replaced by the encrypted DynamoDb Item outputted above.
+        output.attributes = Some(decrypted);
         Ok(output)
     }
 
@@ -196,6 +237,11 @@ impl Transforms {
         mut output: DeleteItemOutput,
         original_input: &DeleteItemInput,
     ) -> Result<DeleteItemOutput, Error> {
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-deleteitem
+        //# After a [DeleteItem](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_DeleteItem.html)
+        //# call is made to DynamoDB,
+        //# the resulting response MUST be modified before
+        //# being returned to the caller if:
         let Some(table) = self.table(original_input.table_name.as_deref()) else {
             return Ok(output);
         };
@@ -203,7 +249,18 @@ impl Transforms {
             return Ok(output);
         }
         let attributes = output.attributes.take().unwrap_or_default();
-        output.attributes = Some(decrypt(table, attributes).await?);
+
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-deleteitem
+        //# In this case, the [Item Encryptor](./ddb-item-encryptor.md) MUST perform
+        //# [Decrypt Item](./decrypt-item.md) where the input
+        //# [DynamoDB Item](./decrypt-item.md#dynamodb-item)
+        //# is the `Attributes` field in the original response
+        let decrypted = decrypt(table, attributes).await?;
+
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-deleteitem
+        //# The DeleteItem response's `Attributes` field MUST be
+        //# replaced by the encrypted DynamoDb Item outputted above.
+        output.attributes = Some(decrypted);
         Ok(output)
     }
 
@@ -242,6 +299,8 @@ impl Transforms {
         mut output: BatchWriteItemOutput,
         original_input: &BatchWriteItemInput,
     ) -> Result<BatchWriteItemOutput, Error> {
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-batchwriteitem
+        //# If there are no UnprocessedItems, then the BatchWriteItemOutput MUST be returned unchanged.
         let Some(unprocessed) = output.unprocessed_items.take() else {
             return Ok(output);
         };
@@ -260,6 +319,8 @@ impl Transforms {
                     })?;
                     requests
                         .into_iter()
+                        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-batchwriteitem
+                        //# Each item in UnprocessedItems MUST be replaced by its original plaintext value.
                         .map(|req| original_request(table, src, req))
                         .collect::<Result<_, _>>()?
                 }

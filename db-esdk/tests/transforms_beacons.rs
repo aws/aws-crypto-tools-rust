@@ -8,12 +8,24 @@
 
 mod transforms_support;
 
+use std::collections::HashMap;
 use std::time::Duration;
 
-use aws_db_esdk::aws_sdk_dynamodb::operation::put_item::PutItemInput;
+use aws_db_esdk::aws_sdk_dynamodb::operation::batch_get_item::{
+    BatchGetItemInput, BatchGetItemOutput,
+};
+use aws_db_esdk::aws_sdk_dynamodb::operation::delete_item::{DeleteItemInput, DeleteItemOutput};
+use aws_db_esdk::aws_sdk_dynamodb::operation::get_item::{GetItemInput, GetItemOutput};
+use aws_db_esdk::aws_sdk_dynamodb::operation::put_item::{PutItemInput, PutItemOutput};
 use aws_db_esdk::aws_sdk_dynamodb::operation::query::{QueryInput, QueryOutput};
 use aws_db_esdk::aws_sdk_dynamodb::operation::scan::{ScanInput, ScanOutput};
-use aws_db_esdk::aws_sdk_dynamodb::types::AttributeValue;
+use aws_db_esdk::aws_sdk_dynamodb::operation::transact_get_items::{
+    TransactGetItemsInput, TransactGetItemsOutput,
+};
+use aws_db_esdk::aws_sdk_dynamodb::operation::update_item::{UpdateItemInput, UpdateItemOutput};
+use aws_db_esdk::aws_sdk_dynamodb::types::{
+    AttributeValue, Get, ItemResponse, KeysAndAttributes, ReturnValue, TransactGetItem,
+};
 use aws_db_esdk::keyring::{
     GetBranchKeyIdFromItemKeyInput, GetBranchKeyIdOutput, HierarchicalKeyring,
     ItemKeyBranchKeySupplier, ItemKeySupplier,
@@ -157,6 +169,10 @@ async fn query_output_filters_beacon_false_positives() {
         .count(2)
         .build();
     let out = t.query_output(output, &query_name("MyName")).await.unwrap();
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-query
+    //= type=test
+    //# The resulting decrypted response MUST be [filtered](ddb-support.md#queryoutputforbeacons) from the result.
     assert_eq!(out.items, Some(vec![simple_item_read()]));
     assert_eq!(out.count, 1);
 }
@@ -280,8 +296,141 @@ async fn scan_beaconizes_and_filters() {
         .count(2)
         .build();
     let out = t.scan_output(output, &input).await.unwrap();
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-scan
+    //= type=test
+    //# The resulting decrypted response MUST be [filtered](ddb-support.md#scanoutputforbeacons) from the result.
     assert_eq!(out.items, Some(vec![simple_item_read()]));
     assert_eq!(out.count, 1);
+}
+
+// --- Read outputs remove beacons ---
+
+/// `simple_item` encrypted for table `foo`, with its `aws_dbe_b_` beacons.
+async fn beaconed(t: &Transforms) -> Item {
+    let enc = put(t, simple_item()).await;
+    assert!(enc.keys().any(|k| k.starts_with("aws_dbe_b_")));
+    enc
+}
+
+#[tokio::test]
+async fn get_item_output_removes_beacons() {
+    let t = beacon_transforms();
+    let input = GetItemInput::builder()
+        .table_name("foo")
+        .set_key(Some(HashMap::new()))
+        .build()
+        .unwrap();
+    let output = GetItemOutput::builder()
+        .set_item(Some(beaconed(&t).await))
+        .build();
+    let out = t.get_item_output(output, &input).await.unwrap();
+
+    assert_eq!(out.item, Some(simple_item_read()));
+}
+
+#[tokio::test]
+async fn put_item_output_removes_beacons() {
+    let t = beacon_transforms();
+    let output = PutItemOutput::builder()
+        .set_attributes(Some(beaconed(&t).await))
+        .build();
+    let out = t
+        .put_item_output(output, &put_input(simple_item()))
+        .await
+        .unwrap();
+
+    assert_eq!(out.attributes, Some(simple_item_read()));
+}
+
+#[tokio::test]
+async fn delete_item_output_removes_beacons() {
+    let t = beacon_transforms();
+    let input = DeleteItemInput::builder()
+        .table_name("foo")
+        .set_key(Some(HashMap::new()))
+        .build()
+        .unwrap();
+    let output = DeleteItemOutput::builder()
+        .set_attributes(Some(beaconed(&t).await))
+        .build();
+    let out = t.delete_item_output(output, &input).await.unwrap();
+
+    assert_eq!(out.attributes, Some(simple_item_read()));
+}
+
+#[tokio::test]
+async fn update_item_output_removes_beacons() {
+    let t = beacon_transforms();
+    let input = UpdateItemInput::builder()
+        .table_name("foo")
+        .set_key(Some(HashMap::new()))
+        .return_values(ReturnValue::AllNew)
+        .build()
+        .unwrap();
+    let output = UpdateItemOutput::builder()
+        .set_attributes(Some(beaconed(&t).await))
+        .build();
+    let out = t.update_item_output(output, &input).await.unwrap();
+
+    assert_eq!(out.attributes, Some(simple_item_read()));
+}
+
+#[tokio::test]
+async fn batch_get_item_output_removes_beacons() {
+    let t = beacon_transforms();
+    let input = BatchGetItemInput::builder()
+        .request_items(
+            "foo",
+            KeysAndAttributes::builder()
+                .keys(HashMap::new())
+                .build()
+                .unwrap(),
+        )
+        .build()
+        .unwrap();
+    let output = BatchGetItemOutput::builder()
+        .responses("foo", vec![beaconed(&t).await])
+        .build();
+    let out = t.batch_get_item_output(output, &input).await.unwrap();
+
+    assert_eq!(out.responses.unwrap()["foo"], vec![simple_item_read()]);
+}
+
+#[tokio::test]
+async fn transact_get_items_output_removes_beacons() {
+    let t = beacon_transforms();
+    let input = TransactGetItemsInput::builder()
+        .transact_items(
+            TransactGetItem::builder()
+                .get(
+                    Get::builder()
+                        .table_name("foo")
+                        .set_key(Some(HashMap::new()))
+                        .build()
+                        .unwrap(),
+                )
+                .build(),
+        )
+        .build()
+        .unwrap();
+    let output = TransactGetItemsOutput::builder()
+        .responses(
+            ItemResponse::builder()
+                .set_item(Some(beaconed(&t).await))
+                .build(),
+        )
+        .build();
+    let out = t.transact_get_items_output(output, &input).await.unwrap();
+
+    assert_eq!(
+        out.responses,
+        Some(vec![
+            ItemResponse::builder()
+                .set_item(Some(simple_item_read()))
+                .build()
+        ])
+    );
 }
 
 // --- ResolveAttributes ---

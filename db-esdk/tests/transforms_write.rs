@@ -250,6 +250,20 @@ async fn put_item_output_decrypts_old_item() {
         )
         .await
         .unwrap();
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-putitem
+    //= type=test
+    //= reason=encrypted Attributes on a configured table come back as plaintext, so the response was modified
+    //# After a [PutItem](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_PutItem.html)
+    //# call is made to DynamoDB,
+    //# the resulting response MUST be modified before
+    //# being returned to the caller if:
+    //
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-putitem
+    //= type=test
+    //= reason=the old item comes back as its plaintext only if Attributes was replaced
+    //# The PutItem response's `Attributes` field MUST be
+    //# replaced by the encrypted DynamoDb Item outputted above.
     assert_eq!(out.attributes, Some(item_n(2)));
 }
 
@@ -277,6 +291,14 @@ async fn put_item_output_tampered_old_item() {
         )
         .await
         .unwrap_err();
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-putitem
+    //= type=test
+    //= reason=a tampered signed attribute in Attributes fails verification, so Decrypt Item ran on it
+    //# In this case, the [Item Encryptor](./ddb-item-encryptor.md) MUST perform
+    //# [Decrypt Item](./decrypt-item.md) where the input
+    //# [DynamoDB Item](./decrypt-item.md#dynamodb-item)
+    //# is the `Attributes` field in the original response
     assert!(matches!(err, Error::Cryptographic(_)), "{err:?}");
 }
 
@@ -395,19 +417,28 @@ async fn update_item_output_passthrough() {
 
 #[tokio::test]
 async fn update_item_output_partial_signed_attributes() {
-    let output = UpdateItemOutput::builder()
-        .attributes("sign", s("x"))
-        .build();
-    let input = UpdateItemInput::builder()
-        .table_name("foo")
-        .set_key(Some(HashMap::new()))
-        .return_values(ReturnValue::UpdatedNew)
-        .build()
-        .unwrap();
-    expect_validation(
-        transforms().update_item_output(output, &input).await,
-        "UpdateItems response contains signed attributes, but does not include the entire item which is required for verification.",
-    );
+    for rv in [ReturnValue::UpdatedNew, ReturnValue::UpdatedOld] {
+        let output = UpdateItemOutput::builder()
+            .attributes("sign", s("x"))
+            .build();
+        let input = UpdateItemInput::builder()
+            .table_name("foo")
+            .set_key(Some(HashMap::new()))
+            .return_values(rv)
+            .build()
+            .unwrap();
+
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-updateitem
+        //= type=test
+        //# Additionally, if a value of `UPDATED_OLD` or `UPDATED_NEW` was used,
+        //# and any Attributes in the response are authenticated
+        //# per the [DynamoDB Encryption Client Config](#dynamodb-encryption-client-configuration),
+        //# an error MUST be raised.
+        expect_validation(
+            transforms().update_item_output(output, &input).await,
+            "UpdateItems response contains signed attributes, but does not include the entire item which is required for verification.",
+        );
+    }
 }
 
 #[tokio::test]
@@ -427,6 +458,10 @@ async fn update_item_output_partial_unsigned_attributes() {
         .update_item_output(output.clone(), &input)
         .await
         .unwrap();
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-updateitem
+    //= type=test
+    //# In all other cases, the UpdateItem response MUST NOT be modified.
     assert_eq!(out, output);
 }
 
@@ -450,8 +485,53 @@ async fn update_item_output_whole_item_decrypts() {
             )
             .await
             .unwrap();
+
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-updateitem
+        //= type=test
+        //= reason=with ALL_NEW or ALL_OLD on a configured table, encrypted Attributes come back as plaintext
+        //# After a [UpdateItem](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_UpdateItem.html)
+        //# call is made to DynamoDB,
+        //# the resulting response MUST be modified before
+        //# being returned to the caller if:
+        //
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-updateitem
+        //= type=test
+        //= reason=the whole item comes back as its plaintext only if Attributes was replaced
+        //# The UpdateItem response's `Attributes` field MUST be
+        //# replaced by the encrypted DynamoDb Item outputted above.
         assert_eq!(out.attributes, Some(item_n(3)));
     }
+}
+
+#[tokio::test]
+async fn update_item_output_tampered_whole_item() {
+    let t = transforms();
+    let mut encrypted = encrypt(&t, item_n(3)).await;
+    encrypted.insert("sign".into(), s("tampered"));
+    let input = UpdateItemInput::builder()
+        .table_name("foo")
+        .set_key(Some(HashMap::new()))
+        .return_values(ReturnValue::AllNew)
+        .build()
+        .unwrap();
+    let err = t
+        .update_item_output(
+            UpdateItemOutput::builder()
+                .set_attributes(Some(encrypted))
+                .build(),
+            &input,
+        )
+        .await
+        .unwrap_err();
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-updateitem
+    //= type=test
+    //= reason=a tampered signed attribute in Attributes fails verification, so Decrypt Item ran on it
+    //# In this case, the [Item Encryptor](./ddb-item-encryptor.md) MUST perform
+    //# [Decrypt Item](./decrypt-item.md) where the input
+    //# [DynamoDB Item](./decrypt-item.md#dynamodb-item)
+    //# is the `Attributes` field in the original response
+    assert!(matches!(err, Error::Cryptographic(_)), "{err:?}");
 }
 
 // --- DeleteItem ---
@@ -544,7 +624,46 @@ async fn delete_item_output_decrypts_old_item() {
         )
         .await
         .unwrap();
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-deleteitem
+    //= type=test
+    //= reason=encrypted Attributes on a configured table come back as plaintext, so the response was modified
+    //# After a [DeleteItem](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_DeleteItem.html)
+    //# call is made to DynamoDB,
+    //# the resulting response MUST be modified before
+    //# being returned to the caller if:
+    //
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-deleteitem
+    //= type=test
+    //= reason=the old item comes back as its plaintext only if Attributes was replaced
+    //# The DeleteItem response's `Attributes` field MUST be
+    //# replaced by the encrypted DynamoDb Item outputted above.
     assert_eq!(out.attributes, Some(item_n(4)));
+}
+
+#[tokio::test]
+async fn delete_item_output_tampered_old_item() {
+    let t = transforms();
+    let mut old = encrypt(&t, item_n(4)).await;
+    old.insert("sign".into(), s("tampered"));
+    let err = t
+        .delete_item_output(
+            DeleteItemOutput::builder()
+                .set_attributes(Some(old))
+                .build(),
+            &delete_input("foo"),
+        )
+        .await
+        .unwrap_err();
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-deleteitem
+    //= type=test
+    //= reason=a tampered signed attribute in Attributes fails verification, so Decrypt Item ran on it
+    //# In this case, the [Item Encryptor](./ddb-item-encryptor.md) MUST perform
+    //# [Decrypt Item](./decrypt-item.md) where the input
+    //# [DynamoDB Item](./decrypt-item.md#dynamodb-item)
+    //# is the `Attributes` field in the original response
+    assert!(matches!(err, Error::Cryptographic(_)), "{err:?}");
 }
 
 // --- BatchWriteItem ---
@@ -631,6 +750,10 @@ async fn batch_write_item_output_transform() {
         .batch_write_item_output(output.clone(), &input)
         .await
         .unwrap();
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-batchwriteitem
+    //= type=test
+    //# If there are no UnprocessedItems, then the BatchWriteItemOutput MUST be returned unchanged.
     assert_eq!(out, output);
 }
 
@@ -647,10 +770,13 @@ async fn round_trip_unprocessed(t: &Transforms, input: BatchWriteItemInput) {
         .set_unprocessed_items(Some(encrypted))
         .build();
     let out = t.batch_write_item_output(output, &input).await.unwrap();
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-batchwriteitem
+    //= type=test
+    //# Each item in UnprocessedItems MUST be replaced by its original plaintext value.
     assert_eq!(out.unprocessed_items, input.request_items);
 }
 
-// Each item in UnprocessedItems must be replaced by its original plaintext value.
 #[tokio::test]
 async fn batch_write_item_output_transform_unprocessed() {
     let input = batch_input(&[(

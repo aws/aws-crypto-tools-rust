@@ -338,6 +338,24 @@ async fn decrypt(table: &ItemEncryptor, item: Item) -> Result<Item, Error> {
         .send()
         .await?
         .into_plaintext_item();
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-getitem
+    //# Beacons MUST be [removed](ddb-support.md#removebeacons) from the result.
+    //
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-putitem
+    //# Beacons MUST be [removed](ddb-support.md#removebeacons) from the result.
+    //
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-deleteitem
+    //# Beacons MUST be [removed](ddb-support.md#removebeacons) from the result.
+    //
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-updateitem
+    //# Beacons MUST be [removed](ddb-support.md#removebeacons) from the result.
+    //
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-batchgetitem
+    //# Beacons MUST be [removed](ddb-support.md#removebeacons) from the result.
+    //
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-transactgetitems
+    //# Beacons MUST be [removed](ddb-support.md#removebeacons) from the result.
     Ok(remove_beacons(plaintext))
 }
 
@@ -363,6 +381,33 @@ async fn decrypt_search_results(
     };
     let mut decrypted = Vec::with_capacity(items.len());
     for item in items {
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-query
+        //# For each list entry in `Items` in the response,
+        //# if there exists an Item Encryptor specified within the
+        //# [DynamoDB Encryption Client Config](#dynamodb-encryption-client-configuration)
+        //# with a [DynamoDB Table Name](./ddb-item-encryptor.md#dynamodb-table-name)
+        //# equal to the `TableName` on the request,
+        //# the corresponding Item Encryptor MUST perform [Decrypt Item](./decrypt-item.md)
+        //# where the input [DynamoDB Item](./decrypt-item.md#dynamodb-item)
+        //# is this list entry.
+        //
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-scan
+        //# For each list entry in `Items` in the response,
+        //# if there exists an Item Encryptor specified within the
+        //# [DynamoDB Encryption Client Config](#dynamodb-encryption-client-configuration)
+        //# with a [DynamoDB Table Name](./ddb-item-encryptor.md#dynamodb-table-name)
+        //# equal to the `TableName` on the request,
+        //# the corresponding Item Encryptor MUST perform [Decrypt Item](./decrypt-item.md)
+        //# where the input [DynamoDB Item](./decrypt-item.md#dynamodb-item)
+        //# is this list entry.
+        //
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-query
+        //# If any [Decrypt Item](./decrypt-item.md) fails,
+        //# Query MUST yield an error.
+        //
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-scan
+        //# If any [Decrypt Item](./decrypt-item.md) operation fails,
+        //# Scan MUST yield an error.
         let out = table
             .encryptor
             .decrypt_item()
@@ -385,6 +430,11 @@ async fn decrypt_search_results(
     validate_expression_length(filter_expr, "FilterExpression")?;
     let filtered = match &table.search {
         None => decrypted,
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-query
+        //# The resulting decrypted response MUST be [filtered](ddb-support.md#queryoutputforbeacons) from the result.
+        //
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-scan
+        //# The resulting decrypted response MUST be [filtered](ddb-support.md#scanoutputforbeacons) from the result.
         Some(search) => {
             search
                 .version
@@ -399,4 +449,56 @@ fn remove_beacons(item: HashMap<String, AttributeValue>) -> Item {
     item.into_iter()
         .filter(|(k, _)| !k.starts_with(RESERVED_PREFIX))
         .collect()
+}
+
+// The item encryptor already drops `aws_dbe_` attributes, so only a direct call
+// shows whether `remove_beacons` removes them itself.
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn remove_beacons_drops_reserved_attributes() {
+        let s = |v: &str| AttributeValue::S(v.to_owned());
+        let item = HashMap::from([
+            ("a".to_owned(), s("1")),
+            ("aws_dbe_b_a".to_owned(), s("beacon")),
+            ("aws_dbe_head".to_owned(), s("header")),
+            ("aws_dbe_foot".to_owned(), s("footer")),
+        ]);
+
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-getitem
+        //= type=test
+        //= reason=decrypt() passes every getitem result through remove_beacons
+        //# Beacons MUST be [removed](ddb-support.md#removebeacons) from the result.
+        //
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-putitem
+        //= type=test
+        //= reason=decrypt() passes every putitem result through remove_beacons
+        //# Beacons MUST be [removed](ddb-support.md#removebeacons) from the result.
+        //
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-deleteitem
+        //= type=test
+        //= reason=decrypt() passes every deleteitem result through remove_beacons
+        //# Beacons MUST be [removed](ddb-support.md#removebeacons) from the result.
+        //
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-updateitem
+        //= type=test
+        //= reason=decrypt() passes every updateitem result through remove_beacons
+        //# Beacons MUST be [removed](ddb-support.md#removebeacons) from the result.
+        //
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-batchgetitem
+        //= type=test
+        //= reason=decrypt() passes every batchgetitem result through remove_beacons
+        //# Beacons MUST be [removed](ddb-support.md#removebeacons) from the result.
+        //
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-transactgetitems
+        //= type=test
+        //= reason=decrypt() passes every transactgetitems result through remove_beacons
+        //# Beacons MUST be [removed](ddb-support.md#removebeacons) from the result.
+        assert_eq!(
+            remove_beacons(item),
+            HashMap::from([("a".to_owned(), s("1"))])
+        );
+    }
 }

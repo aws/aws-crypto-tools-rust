@@ -49,6 +49,14 @@ impl Transforms {
         mut output: GetItemOutput,
         original_input: &GetItemInput,
     ) -> Result<GetItemOutput, Error> {
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-getitem
+        //# After a [GetItem](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_GetItem.html)
+        //# call is made to DynamoDB,
+        //# the resulting response MUST be modified before
+        //# being returned to the caller if there exists
+        //# an Item Encryptor specified within the [DynamoDB Encryption Client Config](#dynamodb-encryption-client-configuration)
+        //# with a [DynamoDB Table Name](./ddb-item-encryptor.md#dynamodb-table-name)
+        //# equal to the `TableName` on the GetItem request.
         let Some(table) = self.table(original_input.table_name.as_deref()) else {
             return Ok(output);
         };
@@ -56,7 +64,18 @@ impl Transforms {
             return Ok(output);
         }
         let item = output.item.take().unwrap_or_default();
-        output.item = Some(decrypt(table, item).await?);
+
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-getitem
+        //# The [Item Encryptor](./ddb-item-encryptor.md) MUST perform
+        //# [Decrypt Item](./decrypt-item.md) where the input
+        //# [DynamoDB Item](./decrypt-item.md#dynamodb-item)
+        //# is the `Item` field in the original response
+        let decrypted = decrypt(table, item).await?;
+
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-getitem
+        //# The GetItem response's `Item` field MUST be
+        //# replaced by the encrypted DynamoDb Item outputted above.
+        output.item = Some(decrypted);
         Ok(output)
     }
 
@@ -187,6 +206,10 @@ impl Transforms {
         if table.search.is_some() && output.count != 0 {
             output.count = i32::try_from(items.len()).unwrap_or(i32::MAX);
         }
+
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-query
+        //# Each of these entries on the original response MUST be replaced
+        //# with the resulting decrypted [DynamoDB Item](./decrypt-item.md#dynamodb-item-1).
         output.items = Some(items);
         Ok(output)
     }
@@ -277,6 +300,11 @@ impl Transforms {
         if table.search.is_some() && output.count != 0 {
             output.count = i32::try_from(items.len()).unwrap_or(i32::MAX);
         }
+
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-scan
+        //# Each of these entries on the original response MUST be replaced
+        //# with the resulting decrypted
+        //# [DynamoDB Item](./decrypt-item.md#dynamodb-item-1).
         output.items = Some(items);
         Ok(output)
     }
@@ -317,10 +345,25 @@ impl Transforms {
             };
             let items = match self.table(Some(&name)) {
                 None => items,
+                //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-batchgetitem
+                //# For each list item under each key in `Responses`,
+                //# if there is a configured Item Encryptor with [DynamoDB Table Name](./ddb-item-encryptor.md#dynamodb-table-name) equal to the key,
+                //# that Item Encryptor MUST perform [Decrypt Item](./decrypt-item.md) where the input
+                //# [DynamoDB Item](./decrypt-item.md#dynamodb-item)
+                //# is the `Item` field in the original response.
+                //
+                //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-batchgetitem
+                //# If any [Decrypt Item](./decrypt-item.md) operation fails,
+                //# BatchGetItem MUST yield an error.
                 Some(table) => decrypt_all(table, items).await?,
             };
             result.insert(name, items);
         }
+
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-batchgetitem
+        //# Each of these items on the original response MUST be replaced
+        //# with a value that is equivalent to
+        //# this result.
         output.responses = Some(result);
         Ok(output)
     }
@@ -369,9 +412,26 @@ impl Transforms {
                 continue;
             };
             let item = match response.item {
+                //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-transactgetitems
+                //# For each list item under each key in `Responses`,
+                //# if there exists an Item Encryptor specified within
+                //# the [DynamoDB Encryption Client Config](#dynamodb-encryption-client-configuration)
+                //# with a [DynamoDB Table Name](./ddb-item-encryptor.md#dynamodb-table-name)
+                //# equal to the key,
+                //# the Item Encryptor that corresponds to the key in the request
+                //# MUST perform [Decrypt Item](./decrypt-item.md) where the input
+                //# [DynamoDB Item](./decrypt-item.md#dynamodb-item) is the `Item` in the original response.
+                //
+                //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-transactgetitems
+                //# If any [Decrypt Item](./decrypt-item.md) fails,
+                //# TransactGetItems MUST yield an error.
                 Some(item) if !item.is_empty() => Some(decrypt(table, item).await?),
                 _ => None,
             };
+
+            //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-transactgetitems
+            //# Each of these items on the original response MUST be replaced
+            //# with a value that is equivalent to the resulting item.
             result.push(ItemResponse::builder().set_item(item).build());
         }
         output.responses = Some(result);
