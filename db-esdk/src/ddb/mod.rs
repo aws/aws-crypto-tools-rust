@@ -15,7 +15,7 @@ use aws_crypto_mpl::aws_sdk_dynamodb::types::AttributeValue;
 
 use crate::structured::util::{
     BINARY, BINARY_SET, BOOLEAN, LIST, MAP, NULL, NUMBER, NUMBER_SET, RESERVED_PREFIX, STRING,
-    STRING_SET, Terminal, TypeId, utf16_cmp,
+    STRING_SET, Terminal, TypeId, utf16_cmp, utf16_len,
 };
 use crate::types::CryptoAction;
 pub(crate) use number::normalize_number;
@@ -320,7 +320,16 @@ pub(crate) fn top_level_attr_to_bytes(a: &AttributeValue) -> Result<Vec<u8>, Str
 
 /// `a` as a terminal.
 pub(crate) fn attr_to_terminal(a: &AttributeValue) -> Result<Terminal, String> {
-    Ok(Terminal::new(type_id(a)?, attr_to_bytes(a, false, 1)?))
+    //= spec/dynamodb-encryption-client/ddb-item-conversion.md#convert-ddb-item-to-structured-data
+    //# - The [Terminal Type ID](../structured-encryption/structures.md#terminal-type-id) for each attribute MUST
+    //# be the [Type ID](./ddb-attribute-serialization.md#type-id) of the [serialization](./ddb-attribute-serialization.md) of this Attribute Value.
+    let type_id = type_id(a)?;
+
+    //= spec/dynamodb-encryption-client/ddb-item-conversion.md#convert-ddb-item-to-structured-data
+    //# - The [Terminal Value](../structured-encryption/structures.md#terminal-value) for each attribute MUST
+    //# be the [Value](./ddb-attribute-serialization.md#type-id) of the [serialization](./ddb-attribute-serialization.md) of this Attribute Value.
+    let value = attr_to_bytes(a, false, 1)?;
+    Ok(Terminal::new(type_id, value))
 }
 
 /// A value read from serialized bytes, and how many bytes it took.
@@ -483,6 +492,9 @@ fn bytes_to_attr(
                     if has_duplicates(&ss) {
                         //= spec/dynamodb-encryption-client/ddb-attribute-serialization.md#set-entries
                         //# String Sets MUST NOT contain duplicate entries.
+                        //
+                        //= spec/dynamodb-encryption-client/ddb-item-conversion.md#duplicates
+                        //# - Conversion from a Structured Data String Set MUST fail if it has duplicate values
                         return Err("String set values must not have duplicates".to_owned());
                     }
                     Ok(read(AttributeValue::Ss(ss), LENGTH_LEN + n))
@@ -492,6 +504,9 @@ fn bytes_to_attr(
                     if has_duplicates(&ns) {
                         //= spec/dynamodb-encryption-client/ddb-attribute-serialization.md#set-entries
                         //# Number Sets MUST NOT contain duplicate entries.
+                        //
+                        //= spec/dynamodb-encryption-client/ddb-item-conversion.md#duplicates
+                        //# - Conversion from a Structured Data Number Set MUST fail if it has duplicate values
                         return Err("Number set values must not have duplicates".to_owned());
                     }
                     Ok(read(AttributeValue::Ns(ns), LENGTH_LEN + n))
@@ -501,6 +516,9 @@ fn bytes_to_attr(
                     if has_duplicates(&entries) {
                         //= spec/dynamodb-encryption-client/ddb-attribute-serialization.md#set-entries
                         //# Binary Sets MUST NOT contain duplicate entries.
+                        //
+                        //= spec/dynamodb-encryption-client/ddb-item-conversion.md#duplicates
+                        //# - Conversion from a Structured Data Binary Set MUST fail if it has duplicate values
                         return Err("Binary set values must not have duplicates".to_owned());
                     }
                     let bs = entries.into_iter().map(Blob::new).collect();
@@ -594,6 +612,9 @@ fn read_map(value: &[u8], pos: usize, depth: u64) -> Result<Read, String> {
         if m.contains_key(&key) {
             //= spec/dynamodb-encryption-client/ddb-attribute-serialization.md#key-value-pair-entries
             //# This sequence MUST NOT contain duplicate [Map Keys](#map-key).
+            //
+            //= spec/dynamodb-encryption-client/ddb-item-conversion.md#duplicates
+            //# - Conversion from a Structured Data Map MUST fail if it has duplicate keys
             return Err("Duplicate key in map.".to_owned());
         }
         m.insert(key, nval.val);
@@ -668,6 +689,9 @@ fn read_list(value: &[u8], pos: usize, depth: u64) -> Result<Read, String> {
 
 /// The attribute value a terminal holds.
 pub(crate) fn terminal_to_attr(t: &Terminal) -> Result<AttributeValue, String> {
+    //= spec/dynamodb-encryption-client/ddb-item-conversion.md#convert-structured-data-to-ddb-item
+    //# - Each Attribute MUST be deserializable
+    //# according to [the serialization scheme](./ddb-attribute-serialization.md#value).
     let read = bytes_to_attr(&t.value, t.type_id, t.value.len(), 1, 0)?;
     if read.len != t.value.len() {
         return Err("Mismatch between length of encoded data and length of data".to_owned());
@@ -691,6 +715,14 @@ pub(crate) fn item_to_structured(
         }
         match attr_to_terminal(v) {
             Ok(t) => {
+                //= spec/dynamodb-encryption-client/ddb-item-conversion.md#convert-ddb-item-to-structured-data
+                //= reason=one terminal per attribute; non-reserved DO_NOTHING attributes are left out, as they are never signed
+                //# - MUST contain a [Structured Data Terminal](../structured-encryption/structures.md#structured-data-terminal)
+                //# for each attribute on the DynamoDB Item, and no others.
+                //
+                //= spec/dynamodb-encryption-client/ddb-item-conversion.md#convert-ddb-item-to-structured-data
+                //# - The Structured Data Terminal MUST be located at the top level of the Structured Data,
+                //# string indexed by the Attribute Name.
                 out.insert(k.clone(), t);
             }
             Err(e) => {
@@ -705,12 +737,30 @@ pub(crate) fn item_to_structured(
     }
 }
 
+/// Reject any Structured Data key that is not a valid DynamoDB attribute name.
+fn check_attribute_names(s: &HashMap<String, Terminal>) -> Result<(), String> {
+    let mut bad: Vec<&str> = s
+        .keys()
+        .filter(|k| utf16_len(k) > MAX_ATTR_NAME_LEN)
+        .map(String::as_str)
+        .collect();
+    if bad.is_empty() {
+        return Ok(());
+    }
+    bad.sort_by(|a, b| utf16_cmp(a, b));
+
+    //= spec/dynamodb-encryption-client/ddb-item-conversion.md#convert-structured-data-to-ddb-item
+    //# - MUST NOT have any `Key` strings that are invalid DynamoDB AttributeNames, that is, with more than 65535 characters.
+    Err(format!("Not valid attribute names : {}", bad.join(",")))
+}
+
 /// The encrypted item: each encrypted attribute replaced, plus the header and footer.
 pub(crate) fn structured_to_item_encrypt(
     s: &HashMap<String, Terminal>,
     orig: &Item,
     actions: &HashMap<String, CryptoAction>,
 ) -> Result<Item, String> {
+    check_attribute_names(s)?;
     let mut out = HashMap::with_capacity(s.len());
     for (k, v) in orig {
         if k.starts_with(RESERVED_PREFIX) {
@@ -722,6 +772,11 @@ pub(crate) fn structured_to_item_encrypt(
             out.insert(k.clone(), v.clone());
         }
     }
+
+    //= spec/dynamodb-encryption-client/ddb-item-conversion.md#convert-structured-data-to-ddb-item
+    //= reason=every terminal becomes an attribute; the only others are the DO_NOTHING ones item_to_structured left out
+    //# - MUST contain an Attribute for every [Structured Data Terminal](../structured-encryption/structures.md#structured-data-terminal)
+    //# on the Structured Data, and no other Attributes.
     for (k, t) in s {
         if !orig.contains_key(k) {
             out.insert(k.clone(), terminal_to_attr(t)?);
@@ -736,6 +791,7 @@ pub(crate) fn structured_to_item_decrypt(
     orig: &Item,
     actions: &HashMap<String, CryptoAction>,
 ) -> Result<Item, String> {
+    check_attribute_names(s)?;
     let mut out = HashMap::with_capacity(orig.len());
     for (k, v) in orig {
         if k.starts_with(RESERVED_PREFIX) {
@@ -932,6 +988,10 @@ mod tests {
         //= spec/dynamodb-encryption-client/ddb-attribute-serialization.md#key-value-pair-entries
         //= type=test
         //# This sequence MUST NOT contain duplicate [Map Keys](#map-key).
+        //
+        //= spec/dynamodb-encryption-client/ddb-item-conversion.md#duplicates
+        //= type=test
+        //# - Conversion from a Structured Data Map MUST fail if it has duplicate keys
         assert_eq!(
             decode(MAP, &two(A, A)).unwrap_err(),
             "Duplicate key in map."
@@ -954,6 +1014,10 @@ mod tests {
         //= spec/dynamodb-encryption-client/ddb-attribute-serialization.md#set-entries
         //= type=test
         //# Binary Sets MUST NOT contain duplicate entries.
+        //
+        //= spec/dynamodb-encryption-client/ddb-item-conversion.md#duplicates
+        //= type=test
+        //# - Conversion from a Structured Data Binary Set MUST fail if it has duplicate values
         assert_eq!(
             decode(BINARY_SET, &dup).unwrap_err(),
             "Binary set values must not have duplicates"
@@ -963,6 +1027,10 @@ mod tests {
         //= spec/dynamodb-encryption-client/ddb-attribute-serialization.md#set-entries
         //= type=test
         //# Number Sets MUST NOT contain duplicate entries.
+        //
+        //= spec/dynamodb-encryption-client/ddb-item-conversion.md#duplicates
+        //= type=test
+        //# - Conversion from a Structured Data Number Set MUST fail if it has duplicate values
         assert_eq!(
             decode(NUMBER_SET, &dup).unwrap_err(),
             "Number set values must not have duplicates"
@@ -972,6 +1040,10 @@ mod tests {
         //= spec/dynamodb-encryption-client/ddb-attribute-serialization.md#set-entries
         //= type=test
         //# String Sets MUST NOT contain duplicate entries.
+        //
+        //= spec/dynamodb-encryption-client/ddb-item-conversion.md#duplicates
+        //= type=test
+        //# - Conversion from a Structured Data String Set MUST fail if it has duplicate values
         assert_eq!(
             decode(STRING_SET, &dup).unwrap_err(),
             "String set values must not have duplicates"
@@ -1757,6 +1829,12 @@ mod tests {
             ("aws_dbe_foot".to_owned(), Terminal::new(BINARY, vec![2])),
         ]
         .into();
+
+        //= spec/dynamodb-encryption-client/ddb-item-conversion.md#convert-structured-data-to-ddb-item
+        //= type=test
+        //= reason=head and foot terminals appear, a is converted, and only DO_NOTHING c is extra
+        //# - MUST contain an Attribute for every [Structured Data Terminal](../structured-encryption/structures.md#structured-data-terminal)
+        //# on the Structured Data, and no other Attributes.
         assert_eq!(
             structured_to_item_encrypt(&st, &orig, &acts).unwrap(),
             item(&[
@@ -1775,6 +1853,11 @@ mod tests {
         );
         st.insert("aws_dbe_foot".to_owned(), Terminal::new(BINARY, vec![2]));
         st.insert("a".to_owned(), Terminal::new(BOOLEAN, vec![7]));
+
+        //= spec/dynamodb-encryption-client/ddb-item-conversion.md#convert-structured-data-to-ddb-item
+        //= type=test
+        //# - Each Attribute MUST be deserializable
+        //# according to [the serialization scheme](./ddb-attribute-serialization.md#value).
         assert_eq!(
             structured_to_item_encrypt(&st, &orig, &acts).unwrap_err(),
             "Boolean Structured Data had inappropriate value"
@@ -1804,5 +1887,154 @@ mod tests {
             structured_to_item_decrypt(&st, &orig, &acts).unwrap_err(),
             "Invalid UTF-8"
         );
+    }
+
+    #[test]
+    fn item_to_structured_has_one_top_level_terminal_per_attribute() {
+        let it = item(&[
+            ("str", s("abc")),
+            ("num", n("02")),
+            ("strs", ss(&["b", "a"])),
+            ("map", m(&[("k", n("1"))])),
+            ("bool", AttributeValue::Bool(true)),
+        ]);
+        let out = item_to_structured(&it, &HashMap::new()).unwrap();
+
+        //= spec/dynamodb-encryption-client/ddb-item-conversion.md#convert-ddb-item-to-structured-data
+        //= type=test
+        //# - MUST contain a [Structured Data Terminal](../structured-encryption/structures.md#structured-data-terminal)
+        //# for each attribute on the DynamoDB Item, and no others.
+        assert_eq!(
+            out.keys().collect::<BTreeSet<_>>(),
+            it.keys().collect::<BTreeSet<_>>()
+        );
+
+        //= spec/dynamodb-encryption-client/ddb-item-conversion.md#convert-ddb-item-to-structured-data
+        //= type=test
+        //# - The [Terminal Type ID](../structured-encryption/structures.md#terminal-type-id) for each attribute MUST
+        //# be the [Type ID](./ddb-attribute-serialization.md#type-id) of the [serialization](./ddb-attribute-serialization.md) of this Attribute Value.
+        for (k, expected) in [
+            ("str", STRING),
+            ("num", NUMBER),
+            ("strs", STRING_SET),
+            ("map", MAP),
+            ("bool", BOOLEAN),
+        ] {
+            assert_eq!(out[k].type_id, expected, "{k}");
+        }
+
+        //= spec/dynamodb-encryption-client/ddb-item-conversion.md#convert-ddb-item-to-structured-data
+        //= type=test
+        //# - The [Terminal Value](../structured-encryption/structures.md#terminal-value) for each attribute MUST
+        //# be the [Value](./ddb-attribute-serialization.md#type-id) of the [serialization](./ddb-attribute-serialization.md) of this Attribute Value.
+        for (k, v) in &it {
+            assert_eq!(out[k].value, top_level_attr_to_bytes(v).unwrap(), "{k}");
+        }
+        // The serialization normalizes "02" to "2", so the value is not the input string.
+        assert_eq!(out["num"].value, b"2");
+
+        //= spec/dynamodb-encryption-client/ddb-item-conversion.md#convert-ddb-item-to-structured-data
+        //= type=test
+        //# - The Structured Data Terminal MUST be located at the top level of the Structured Data,
+        //# string indexed by the Attribute Name.
+        assert_eq!(
+            out.get("str"),
+            Some(&Terminal::new(STRING, b"abc".to_vec()))
+        );
+    }
+
+    #[test]
+    fn structured_to_item_rejects_attribute_names_over_65535_chars() {
+        let long = "a".repeat(MAX_ATTR_NAME_LEN + 1);
+        let too_long: HashMap<String, Terminal> =
+            [(long.clone(), Terminal::new(STRING, b"x".to_vec()))].into();
+        let expected = format!("Not valid attribute names : {long}");
+
+        //= spec/dynamodb-encryption-client/ddb-item-conversion.md#convert-structured-data-to-ddb-item
+        //= type=test
+        //# - MUST NOT have any `Key` strings that are invalid DynamoDB AttributeNames, that is, with more than 65535 characters.
+        assert_eq!(
+            structured_to_item_encrypt(&too_long, &HashMap::new(), &HashMap::new()).unwrap_err(),
+            expected
+        );
+        let orig = item(&[(long.as_str(), s("x"))]);
+        assert_eq!(
+            structured_to_item_decrypt(&too_long, &orig, &HashMap::new()).unwrap_err(),
+            expected
+        );
+
+        // At the limit, and counted in UTF-16 code units: 40000 U+00E9 is 80000 UTF-8 bytes.
+        for name in ["a".repeat(MAX_ATTR_NAME_LEN), "\u{e9}".repeat(40_000)] {
+            let st: HashMap<String, Terminal> =
+                [(name.clone(), Terminal::new(STRING, b"x".to_vec()))].into();
+            let it = item(&[(name.as_str(), s("x"))]);
+            assert_eq!(
+                structured_to_item_encrypt(&st, &HashMap::new(), &HashMap::new()).unwrap(),
+                it
+            );
+            assert_eq!(
+                structured_to_item_decrypt(&st, &it, &HashMap::new()).unwrap(),
+                it
+            );
+        }
+    }
+
+    #[test]
+    fn utf16_binary_order() {
+        use std::cmp::Ordering::{Greater, Less};
+
+        let mut v = [
+            "\u{1F0A1}",
+            "&",
+            "\u{FF61}",
+            "\u{10437}",
+            "\u{0409}",
+            "\u{10002}",
+            "\u{1740}",
+        ];
+        v.sort_by(|a, b| utf16_cmp(a, b));
+
+        //= spec/dynamodb-encryption-client/string-ordering.md#utf-16-binary-order
+        //= type=test
+        //# When ordering strings,
+        //# these strings MUST be compared according to their UTF-16 encoding,
+        //# lexicographically per [UTF-16 code unit](#utf-16-code-unit).
+        assert_eq!(
+            v,
+            [
+                "&",
+                "\u{0409}",
+                "\u{1740}",
+                "\u{10002}",
+                "\u{10437}",
+                "\u{1F0A1}",
+                "\u{FF61}",
+            ]
+        );
+        assert_eq!(utf16_cmp("ab", "abc"), Less);
+
+        // Code point order puts U+FF61 first; its UTF-16 0xFF61 is above the high surrogate 0xD800.
+        assert_eq!("\u{FF61}".cmp("\u{10002}"), Less);
+
+        //= spec/dynamodb-encryption-client/string-ordering.md#utf-16-binary-order
+        //= type=test
+        //# UTF-16 code units for [high or low surrogates](#surrogates) MUST be compared individually,
+        //# and the [Unicode scalar value](#unicode-scalar-value) represented by a surrogate pair
+        //# MUST NOT be compared.
+        assert_eq!(utf16_cmp("\u{FF61}", "\u{10002}"), Greater);
+
+        //= spec/dynamodb-encryption-client/string-ordering.md#utf-16-binary-order
+        //= type=test
+        //# Specifically, the range of characters with Unicode code point U+E000 to U+0xFFFF
+        //# (code points representable by 16 bits, but after the surrogate range)
+        //# MUST be considered "greater than" any character with a Unicode code point of U+10000 to U+10FFFF.
+        for (bmp, supplementary) in [
+            ("\u{E000}", "\u{10000}"),
+            ("\u{E000}", "\u{10FFFF}"),
+            ("\u{FFFF}", "\u{10000}"),
+            ("\u{FFFF}", "\u{10FFFF}"),
+        ] {
+            assert_eq!(utf16_cmp(bmp, supplementary), Greater);
+        }
     }
 }

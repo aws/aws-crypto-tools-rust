@@ -100,6 +100,20 @@ pub(crate) fn utf16_len(s: &str) -> usize {
 
 /// Compare strings by UTF-16 code units, the order the reference implementation sorts strings in.
 pub(crate) fn utf16_cmp(a: &str, b: &str) -> std::cmp::Ordering {
+    //= spec/dynamodb-encryption-client/string-ordering.md#utf-16-binary-order
+    //# When ordering strings,
+    //# these strings MUST be compared according to their UTF-16 encoding,
+    //# lexicographically per [UTF-16 code unit](#utf-16-code-unit).
+    //
+    //= spec/dynamodb-encryption-client/string-ordering.md#utf-16-binary-order
+    //# UTF-16 code units for [high or low surrogates](#surrogates) MUST be compared individually,
+    //# and the [Unicode scalar value](#unicode-scalar-value) represented by a surrogate pair
+    //# MUST NOT be compared.
+    //
+    //= spec/dynamodb-encryption-client/string-ordering.md#utf-16-binary-order
+    //# Specifically, the range of characters with Unicode code point U+E000 to U+0xFFFF
+    //# (code points representable by 16 bits, but after the surrogate range)
+    //# MUST be considered "greater than" any character with a Unicode code point of U+10000 to U+10FFFF.
     a.encode_utf16().cmp(b.encode_utf16())
 }
 
