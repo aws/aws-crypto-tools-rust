@@ -23,8 +23,8 @@ use crate::error::{Error, materials_err, ser_err, val_err};
 use crate::types::{AlgorithmSuiteId, CryptoAction};
 use crypt::Mode;
 use footer::Footer;
-pub(crate) use header::valid_encryption_context;
-use header::{MSGID_LEN, PartialHeader};
+use header::MSGID_LEN;
+pub(crate) use header::{DBE_ALGORITHM_FAMILY, PartialHeader, valid_encryption_context};
 use suite::DbeSuite;
 use util::{
     ATTR_PREFIX, AuthAction, AuthItem, BOOLEAN, BYTES_TYPE_ID, CanonItem, CryptoItem, FOOTER_FIELD,

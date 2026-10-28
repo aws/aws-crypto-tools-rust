@@ -6,6 +6,7 @@
 //! `CreateClient` builds a DB-ESDK item encryptor from the modeled config,
 //! registers it under a fresh UUID, and returns the id. `EncryptItem` and
 //! `DecryptItem` look the encryptor up by `clientId` and run the operation.
+//! `GetEncryptedDataKeyDescription` needs no client: it only parses a header.
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -23,7 +24,8 @@ use crate::keyring::{cmm_for_config, keyring_for_config};
 use crate::model::{
     AttributeValue, CreateClientRequest, CreateClientResponse, CryptoAction, DbeAlgorithmSuiteId,
     DbeClientConfig, DdbItem, DecryptItemRequest, DecryptItemResponse, EncryptItemRequest,
-    EncryptItemResponse, PlaintextOverride,
+    EncryptItemResponse, EncryptedDataKeyDescription, GetEncryptedDataKeyDescriptionRequest,
+    GetEncryptedDataKeyDescriptionResponse, PlaintextOverride,
 };
 
 /// Shared server state: the thread-safe `clientId -> ItemEncryptor` registry.
@@ -255,6 +257,35 @@ impl AppState {
             .await?;
         Ok(DecryptItemResponse {
             plaintext_item: from_ddb_item(output.into_plaintext_item())?,
+        })
+    }
+
+    /// Describe the EDKs of a header, or of an encrypted item's header. Needs no client.
+    pub fn get_encrypted_data_key_description(
+        &self,
+        req: GetEncryptedDataKeyDescriptionRequest,
+    ) -> Result<GetEncryptedDataKeyDescriptionResponse, ServerError> {
+        let keys = match (req.input.header, req.input.item) {
+            (Some(header), None) => {
+                aws_db_esdk::describe_header_encrypted_data_keys(header.as_slice())?
+            }
+            (None, Some(item)) => aws_db_esdk::describe_encrypted_data_keys(&to_ddb_item(item)?)?,
+            _ => {
+                return Err(ServerError::generic(
+                    "EncryptedDataKeyDescriptionSource must set exactly one of header or item",
+                ))
+            }
+        };
+        Ok(GetEncryptedDataKeyDescriptionResponse {
+            descriptions: keys
+                .iter()
+                .map(|k| EncryptedDataKeyDescription {
+                    key_provider_id: k.key_provider_id().to_owned(),
+                    key_provider_info: k.key_provider_info().map(str::to_owned),
+                    branch_key_id: k.branch_key_id().map(str::to_owned),
+                    branch_key_version: k.branch_key_version().map(str::to_owned),
+                })
+                .collect(),
         })
     }
 

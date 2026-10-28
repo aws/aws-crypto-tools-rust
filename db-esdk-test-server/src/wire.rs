@@ -10,7 +10,10 @@
 
 use crate::error::ServerError;
 use crate::handlers::AppState;
-use crate::model::{CreateClientRequest, DecryptItemRequest, EncryptItemRequest};
+use crate::model::{
+    CreateClientRequest, DecryptItemRequest, EncryptItemRequest,
+    GetEncryptedDataKeyDescriptionRequest,
+};
 use axum::body::{Body, Bytes};
 use axum::extract::{Path, State};
 use axum::http::{header, HeaderMap, StatusCode};
@@ -74,6 +77,14 @@ async fn dispatch(
             Ok(req) => state.decrypt_item(req).await.and_then(|resp| encode(&resp)),
             Err(e) => Err(e),
         },
+        "GetEncryptedDataKeyDescription" => {
+            match decode::<GetEncryptedDataKeyDescriptionRequest>(&body) {
+                Ok(req) => state
+                    .get_encrypted_data_key_description(req)
+                    .and_then(|resp| encode(&resp)),
+                Err(e) => Err(e),
+            }
+        }
         other => Err(ServerError::generic(format!(
             "operation {other} is not supported by the native Rust language server"
         ))),

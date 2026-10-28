@@ -55,6 +55,37 @@ pub struct DecryptItemResponse {
     pub plaintext_item: DdbItem,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct GetEncryptedDataKeyDescriptionRequest {
+    pub input: EncryptedDataKeyDescriptionSource,
+}
+
+/// The `header` / `item` union; exactly one member is set.
+#[derive(Debug, Deserialize)]
+pub struct EncryptedDataKeyDescriptionSource {
+    #[serde(default)]
+    pub header: Option<ByteBuf>,
+    #[serde(default)]
+    pub item: Option<DdbItem>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct GetEncryptedDataKeyDescriptionResponse {
+    pub descriptions: Vec<EncryptedDataKeyDescription>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct EncryptedDataKeyDescription {
+    #[serde(rename = "keyProviderId")]
+    pub key_provider_id: String,
+    #[serde(rename = "keyProviderInfo", skip_serializing_if = "Option::is_none")]
+    pub key_provider_info: Option<String>,
+    #[serde(rename = "branchKeyId", skip_serializing_if = "Option::is_none")]
+    pub branch_key_id: Option<String>,
+    #[serde(rename = "branchKeyVersion", skip_serializing_if = "Option::is_none")]
+    pub branch_key_version: Option<String>,
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct AttributeValue {
     #[serde(rename = "S", skip_serializing_if = "Option::is_none", default)]

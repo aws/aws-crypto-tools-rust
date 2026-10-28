@@ -27,12 +27,16 @@
 
 mod branch_key_supplier;
 mod ddb;
+mod edk_description;
 pub mod error;
 mod item_encryptor;
 mod structured;
 mod table_config;
 pub mod types;
 
+pub use edk_description::{
+    EncryptedDataKeyDescription, describe_encrypted_data_keys, describe_header_encrypted_data_keys,
+};
 pub use error::generated::Error;
 pub use item_encryptor::{
     DecryptItemFluentBuilder, DecryptItemOutput, EncryptItemFluentBuilder, EncryptItemOutput,
