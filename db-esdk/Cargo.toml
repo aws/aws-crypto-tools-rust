@@ -36,6 +36,75 @@ criterion = { version = "=0.5.1", default-features = false, features = ["cargo_b
 name = "item_encryptor"
 harness = false
 
+# These examples call AWS, so they need the AWS SDK clients.
+[[example]]
+name = "basic_put_get"
+required-features = ["kms", "default-aws-sdk-clients"]
+
+[[example]]
+name = "basic_searchable_encryption"
+required-features = ["kms", "default-aws-sdk-clients"]
+
+[[example]]
+name = "beacon_styles_searchable_encryption"
+required-features = ["kms", "default-aws-sdk-clients"]
+
+[[example]]
+name = "branch_key_supplier"
+required-features = ["kms", "default-aws-sdk-clients"]
+
+[[example]]
+name = "complex_searchable_encryption"
+required-features = ["kms", "default-aws-sdk-clients"]
+
+[[example]]
+name = "compound_beacon_searchable_encryption"
+required-features = ["kms", "default-aws-sdk-clients"]
+
+[[example]]
+name = "create_keystore_key"
+required-features = ["kms", "default-aws-sdk-clients"]
+
+[[example]]
+name = "custom_cmm"
+required-features = ["kms", "default-aws-sdk-clients"]
+
+[[example]]
+name = "get_encrypted_data_key_description"
+required-features = ["kms", "default-aws-sdk-clients"]
+
+[[example]]
+name = "handling_errors"
+required-features = ["kms", "default-aws-sdk-clients"]
+
+[[example]]
+name = "hierarchical_keyring"
+required-features = ["kms", "default-aws-sdk-clients"]
+
+[[example]]
+name = "migration_plaintext_to_awsdbe"
+required-features = ["kms", "default-aws-sdk-clients"]
+
+[[example]]
+name = "multi_put_get"
+required-features = ["kms", "default-aws-sdk-clients"]
+
+[[example]]
+name = "per_request_credentials"
+required-features = ["kms", "default-aws-sdk-clients"]
+
+[[example]]
+name = "rotate_branch_key"
+required-features = ["kms", "default-aws-sdk-clients"]
+
+[[example]]
+name = "shared_storm_tracking_cache"
+required-features = ["kms", "default-aws-sdk-clients"]
+
+[[example]]
+name = "virtual_beacon_searchable_encryption"
+required-features = ["kms", "default-aws-sdk-clients"]
+
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]

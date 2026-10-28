@@ -32,7 +32,8 @@ pub use operations::{
 ///
 /// Cloning is cheap: clones share the configuration.
 ///
-/// ```no_run
+#[cfg_attr(feature = "default-aws-sdk-clients", doc = "```no_run")]
+#[cfg_attr(not(feature = "default-aws-sdk-clients"), doc = "```ignore")]
 /// use aws_db_esdk::keyring::RawAesKeyring;
 /// use aws_db_esdk::types::{AesWrappingAlg, CryptoAction};
 /// use aws_db_esdk::{TableConfig, aws_config, aws_sdk_dynamodb};

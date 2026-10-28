@@ -86,7 +86,9 @@
 #![allow(clippy::too_many_lines)] // disagree: arbitrary line-count threshold
 #![allow(unused_crate_dependencies)] // false positives across workspace dev-deps
 
-//! The AWS Database Encryption SDK for DynamoDB: client-side encryption and signing of DynamoDB items.
+//! # AWS Database Encryption SDK for DynamoDB in Rust
+//!
+//! Client-side encryption and signing of DynamoDB items.
 //!
 //! Configure each table with a [`TableConfig`]: which attributes to encrypt, which to sign,
 //! and the keyring or CMM that protects each item's data key.
@@ -98,8 +100,84 @@
 //! `aws_dbe_head`, the header with the encrypted data keys,
 //! and `aws_dbe_foot`, the footer with the signatures.
 //!
-//! The keyrings, CMMs, caches, and key store come from the AWS Cryptographic Material Providers
-//! Library, re-exported here as [`keyring`], [`cmm`], [`cmc`], [`key_store`], and [`mpl`].
+//! ## Getting started
+//!
+//! Add the SDK and an async runtime to your `Cargo.toml`:
+//!
+//! ```toml
+//! [dependencies]
+//! aws-db-esdk = "0.1"
+//! tokio = { version = "1", features = ["full"] }
+//! ```
+//!
+//! Then configure a table, and encrypt and decrypt an item:
+//!
+//! ```
+//! use std::collections::HashMap;
+//!
+//! use aws_db_esdk::aws_sdk_dynamodb::types::AttributeValue;
+//! use aws_db_esdk::keyring::RawAesKeyring;
+//! use aws_db_esdk::types::{AesWrappingAlg, CryptoAction};
+//! use aws_db_esdk::{ItemEncryptor, TableConfig};
+//!
+//! # #[tokio::main(flavor = "current_thread")]
+//! # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! // For demonstration only: load your wrapping key from a secure store.
+//! let keyring = RawAesKeyring::builder()
+//!     .key_namespace("my-key-namespace")
+//!     .key_name("my-key-name")
+//!     .wrapping_key(vec![0x2A; 32])
+//!     .wrapping_alg(AesWrappingAlg::AlgAes256GcmIv12Tag16)
+//!     .build()?;
+//!
+//! let table = TableConfig::builder()
+//!     .partition_key_name("id")
+//!     .attribute_actions_on_encrypt("id", CryptoAction::SignOnly)
+//!     .attribute_actions_on_encrypt("secret", CryptoAction::EncryptAndSign)
+//!     .keyring(keyring)
+//!     .build()?;
+//! let encryptor = ItemEncryptor::builder().table("my-table", table).build()?;
+//!
+//! let item = HashMap::from([
+//!     ("id".to_string(), AttributeValue::S("1".into())),
+//!     ("secret".to_string(), AttributeValue::S("Hello World".into())),
+//! ]);
+//! let encrypted = encryptor.encrypt_item().plaintext_item(item.clone()).send().await?;
+//! assert!(encrypted.encrypted_item()["secret"].is_b());
+//!
+//! let decrypted = encryptor
+//!     .decrypt_item()
+//!     .encrypted_item(encrypted.into_encrypted_item())
+//!     .send()
+//!     .await?;
+//! assert_eq!(decrypted.plaintext_item(), &item);
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! To read and write a table, give the same `TableConfig` to a [`Client`],
+//! with the `aws_sdk_dynamodb::Client` it sends requests through;
+//! the [`Client`] docs show how. Then use it as you would an `aws_sdk_dynamodb::Client`.
+//!
+//! Every operation fails with an [`Error`]; see the [`error`] module for how to handle each kind.
+//!
+//! ## Crate organization
+//!
+//! - The crate root holds [`Client`], [`TableConfig`], [`ItemEncryptor`], and [`Error`],
+//!   plus [`describe_encrypted_data_keys`], which lists the keys that protect an item.
+//! - [`client`] holds the fluent builder of each [`Client`] operation.
+//! - [`types`] holds the types the configuration takes:
+//!   [`CryptoAction`](types::CryptoAction), [`AlgorithmSuiteId`](types::AlgorithmSuiteId),
+//!   and [`EncryptionContext`](types::EncryptionContext).
+//! - [`search`] holds the searchable encryption configuration: beacons, and the key store that protects them.
+//! - [`error`] holds [`Error`] and the details each error carries.
+//! - [`keyring`], [`cmm`], [`cmc`], and [`key_store`] are the Material Providers Library's resources:
+//!   keyrings, cryptographic materials managers, caches, and the branch key store.
+//!   [`keyring`] also holds [`ItemKeySupplier`](keyring::ItemKeySupplier),
+//!   which picks a hierarchical keyring's branch key from each item's primary key.
+//! - [`aws_config`], [`aws_sdk_kms`], and [`aws_sdk_dynamodb`] are the AWS SDK crates those resources take clients from.
+//! - [`mpl`] is the whole Material Providers Library.
+//!   Code that implements a keyring or CMM uses its [`Error`](mpl::Error) and [`types`](mpl::types).
 
 mod branch_key_supplier;
 pub mod client;
