@@ -44,13 +44,16 @@ pub enum EsdkCommitmentPolicy {
 }
 
 impl CommitmentPolicy {
-    /// Returns the algorithm suite that MUST be used for encryption when the
-    /// caller does not specify one. Defined per-variant by `commitment-policy.md`.
+    /// Returns the algorithm suite used for encryption when the caller does
+    /// not specify one.
     pub const fn default_algorithm_suite_id(self) -> AlgorithmSuiteId {
         match self {
-            Self::Esdk(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt) => {
-                AlgorithmSuiteId::Esdk(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf)
-            }
+            // commitment-policy.md says ALG_AES_256_GCM_IV12_TAG16_NO_KDF here;
+            // that text is out of date. The Dafny MPL (Defaults.dfy) defaults
+            // to ALG_AES_256_GCM_IV12_TAG16_HKDF_SHA384_ECDSA_P384.
+            Self::Esdk(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt) => AlgorithmSuiteId::Esdk(
+                EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384,
+            ),
             Self::Esdk(
                 EsdkCommitmentPolicy::RequireEncryptAllowDecrypt
                 | EsdkCommitmentPolicy::RequireEncryptRequireDecrypt,

@@ -132,7 +132,7 @@ impl Cmm for DroppingCmm {
         ec.remove("aws-crypto-attr.bar");
         let mut builder = DecryptionMaterials::builder()
             .algorithm_suite_id(mat.algorithm_suite_id())
-            .encryption_context(ec)
+            .set_encryption_context(Some(ec))
             .set_verification_key(mat.verification_key().cloned())
             .set_symmetric_signing_key(mat.symmetric_signing_key().cloned());
         if let Some(key) = mat.plaintext_data_key() {

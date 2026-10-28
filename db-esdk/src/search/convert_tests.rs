@@ -267,7 +267,9 @@ fn multi_source(key_field_name: &str) -> BeaconKeySource {
 fn lotsa() -> BeaconVersion {
     BeaconVersion::builder()
         .version(1)
-        .key_store(aws_crypto_mpl::key_store::Client::new(UnusedKeyStore))
+        .key_store(aws_crypto_mpl::key_store::SharedKeyStore::new(
+            UnusedKeyStore,
+        ))
         .key_source(single_source("foo", 42))
         .set_standard_beacons(Some(vec![
             std2(),

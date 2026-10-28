@@ -763,7 +763,7 @@ async fn get_encryption_materials_is_called_once_with_the_spec_inputs() {
             input.encryption_context(),
             input.required_encryption_context_keys()
         ),
-        (&context(&[("some", "value")]), None)
+        (&context(&[("some", "value")]), &BTreeSet::new())
     );
 
     //= spec/structured-encryption/encrypt-path-structure.md#retrieve-encryption-materials
@@ -837,10 +837,10 @@ async fn sign_and_include_wraps_the_cmm_in_a_required_context_cmm() {
     //# with the following inputs:
     assert_eq!(
         input.required_encryption_context_keys(),
-        Some(&BTreeSet::from([
+        &BTreeSet::from([
             "aws-crypto-attr.pk.x".to_owned(),
             "aws-crypto-legend".to_owned(),
-        ]))
+        ])
     );
 }
 

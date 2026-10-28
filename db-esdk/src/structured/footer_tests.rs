@@ -73,19 +73,19 @@ fn enc_materials(
 ) -> EncryptionMaterials {
     EncryptionMaterials::builder()
         .algorithm_suite_id(MplAlgorithmSuiteId::Dbe(id))
-        .encryption_context(ec())
+        .set_encryption_context(Some(ec()))
         .plaintext_data_key(vec![7u8; 32])
-        .encrypted_data_keys(
+        .set_encrypted_data_keys(Some(
             (0..sym_keys.len())
                 .map(|i| edk(u8::try_from(i).unwrap()))
                 .collect::<Vec<_>>(),
-        )
-        .symmetric_signing_keys(
+        ))
+        .set_symmetric_signing_keys(Some(
             sym_keys
                 .iter()
                 .map(|k| SymmetricSigningKey::from(k.to_vec()))
                 .collect::<Vec<_>>(),
-        )
+        ))
         .set_signing_key(signing_key.map(Into::into))
         .build()
         .unwrap()
@@ -98,7 +98,7 @@ fn dec_materials(
 ) -> DecryptionMaterials {
     DecryptionMaterials::builder()
         .algorithm_suite_id(MplAlgorithmSuiteId::Dbe(id))
-        .encryption_context(ec())
+        .set_encryption_context(Some(ec()))
         .plaintext_data_key(vec![7u8; 32])
         .symmetric_signing_key(sym_key.to_vec())
         .set_verification_key(verification_key.map(Into::into))
@@ -345,7 +345,7 @@ fn validate_needs_symmetric_signing_key() {
     // Materials without a data key yet carry no symmetric signing key either.
     let dec = DecryptionMaterials::builder()
         .algorithm_suite_id(MplAlgorithmSuiteId::Dbe(SYMSIG))
-        .encryption_context(ec())
+        .set_encryption_context(Some(ec()))
         .build()
         .unwrap();
     let err = footer.validate(&dec, 1, &fields(), HEADER).unwrap_err();
@@ -479,7 +479,7 @@ fn create_needs_symmetric_signing_keys() {
             EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf,
         ))
         .plaintext_data_key(vec![7u8; 32])
-        .encrypted_data_keys(vec![edk(0)])
+        .encrypted_data_keys(edk(0))
         .build()
         .unwrap();
     let err = Footer::create(suite(SYMSIG), &mat, &fields(), HEADER).unwrap_err();

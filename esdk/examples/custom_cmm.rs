@@ -45,10 +45,12 @@ impl Cmm for SigningSuiteOnlyCmm {
         let output = self
             .inner
             .get_encryption_materials()
-            .encryption_context(input.encryption_context().clone())
+            .set_encryption_context(Some(input.encryption_context().clone()))
             .commitment_policy(input.commitment_policy())
             .set_algorithm_suite_id(input.algorithm_suite_id())
-            .set_required_encryption_context_keys(input.required_encryption_context_keys().cloned())
+            .set_required_encryption_context_keys(Some(
+                input.required_encryption_context_keys().clone(),
+            ))
             .set_max_plaintext_length(input.max_plaintext_length())
             .send()
             .await?;
@@ -70,8 +72,8 @@ impl Cmm for SigningSuiteOnlyCmm {
             .decrypt_materials()
             .algorithm_suite_id(input.algorithm_suite_id())
             .commitment_policy(input.commitment_policy())
-            .encrypted_data_keys(input.encrypted_data_keys().to_vec())
-            .encryption_context(input.encryption_context().clone())
+            .set_encrypted_data_keys(Some(input.encrypted_data_keys().to_vec()))
+            .set_encryption_context(Some(input.encryption_context().clone()))
             .set_reproduced_encryption_context(input.reproduced_encryption_context().cloned())
             .send()
             .await
@@ -100,7 +102,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let encrypted = esdk
         .encrypt()
         .plaintext(plaintext)
-        .encryption_context(encryption_context.clone())
+        .set_encryption_context(Some(encryption_context.clone()))
         .cmm(cmm.clone())
         .send()
         .await?;
@@ -108,7 +110,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let decrypted = esdk
         .decrypt()
         .ciphertext(encrypted.ciphertext())
-        .encryption_context(encryption_context.clone())
+        .set_encryption_context(Some(encryption_context.clone()))
         .cmm(cmm.clone())
         .send()
         .await?;
@@ -122,7 +124,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let result = esdk
         .encrypt()
         .plaintext(plaintext)
-        .encryption_context(encryption_context)
+        .set_encryption_context(Some(encryption_context))
         .cmm(cmm)
         .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
         .send()

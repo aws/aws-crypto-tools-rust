@@ -107,8 +107,8 @@ impl FakeKeyStore {
         self.beacon_calls.load(Ordering::SeqCst)
     }
 
-    pub(crate) fn client(&self) -> key_store::Client {
-        key_store::Client::new(self.clone())
+    pub(crate) fn client(&self) -> key_store::SharedKeyStore {
+        key_store::SharedKeyStore::new(self.clone())
     }
 }
 
@@ -182,7 +182,7 @@ impl KeyStore for FakeKeyStore {
                     .as_deref()
                     .unwrap_or_else(|| input.branch_key_id()),
             )
-            .encryption_context(EncryptionContext::new());
+            .set_encryption_context(Some(EncryptionContext::new()));
         if !self.no_beacon_key {
             materials = materials.beacon_key(BEACON_KEY.to_vec());
         }

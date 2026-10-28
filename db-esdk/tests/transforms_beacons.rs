@@ -229,7 +229,7 @@ async fn put_item_multi_hierarchical_beacons_use_the_item_key() {
     let beacon_store = FakeKeyStore::default();
     let t = multi_transforms_with(
         hierarchical_keyring("id1").await,
-        key_store::Client::new(beacon_store.clone()),
+        key_store::SharedKeyStore::new(beacon_store.clone()),
     );
     // The item has no key field, so the beacon key id can only come from the data key.
     // (A key field naming another key is rejected; see put_item_multi_key_id_must_match_the_header.)

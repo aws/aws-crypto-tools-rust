@@ -1,10 +1,10 @@
 {
   "supportedFeatures": [
     "hierarchical",
-    "raw-aes"
+    "raw-aes",
+    "streaming"
   ],
   "unsupportedFeatures": [
-    "streaming",
     "MPL",
     "raw-rsa",
     "raw-ecdh",

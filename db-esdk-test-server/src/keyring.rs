@@ -177,9 +177,9 @@ pub async fn key_store_for(
     table_name: &str,
     logical_key_store_name: &str,
     kms_key_arn: &str,
-) -> Result<key_store::Client, ServerError> {
+) -> Result<key_store::DynamoDbKeyStore, ServerError> {
     let sdk_config = sdk_config_for(kms_key_arn).await;
-    key_store::Client::builder()
+    key_store::DynamoDbKeyStore::builder()
         .ddb_table_name(table_name)
         .logical_key_store_name(logical_key_store_name)
         .kms_configuration(KmsConfiguration::KmsKeyArn(kms_key_arn.to_owned()))

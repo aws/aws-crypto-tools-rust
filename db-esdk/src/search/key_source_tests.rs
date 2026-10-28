@@ -317,8 +317,8 @@ async fn shared_cache_is_scoped_by_logical_key_store_name() {
 fn entry(key_id: &str, created: SystemTime) -> CacheEntry {
     let materials = BeaconKeyMaterials::builder()
         .beacon_key_id(key_id)
-        .encryption_context(aws_crypto_mpl::types::EncryptionContext::new())
-        .hmac_keys(hmac_keys(&["Name"], &BEACON_KEY))
+        .set_encryption_context(Some(aws_crypto_mpl::types::EncryptionContext::new()))
+        .set_hmac_keys(Some(hmac_keys(&["Name"], &BEACON_KEY)))
         .build()
         .unwrap();
     CacheEntry::builder()

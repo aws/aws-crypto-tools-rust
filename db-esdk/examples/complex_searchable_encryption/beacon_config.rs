@@ -53,7 +53,9 @@ const SIGN_ONLY: &[&str] = &[
     "Duration",
 ];
 
-pub async fn table_config(key_store: &key_store::Client) -> Result<TableConfig, crate::BoxError> {
+pub async fn table_config(
+    key_store: &key_store::DynamoDbKeyStore,
+) -> Result<TableConfig, crate::BoxError> {
     let keyring = HierarchicalKeyring::builder()
         .key_store(key_store.clone())
         // How long the keyring reuses cached branch key material.

@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 fn main() {
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let shim = manifest
-        .join("../esdk/shims/aws-esdk-cpp")
+        .join("..")
         .canonicalize()
         .expect("locate the aws-esdk-cpp shim crate");
     let target = shim.join("target");

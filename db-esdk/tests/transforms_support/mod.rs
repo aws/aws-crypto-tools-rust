@@ -34,7 +34,7 @@ use aws_db_esdk::key_store::types::{Discovery, KmsConfiguration};
 use aws_db_esdk::key_store::{self, KeyStore};
 use aws_db_esdk::keyring::{HierarchicalKeyring, RawAesKeyring, SharedKeyring};
 use aws_db_esdk::mpl::shared::IntoShared;
-use aws_db_esdk::mpl::types::{BeaconKeyMaterials, BranchKeyMaterials};
+use aws_db_esdk::mpl::types::{BeaconKeyMaterials, BranchKeyMaterials, EncryptionContext};
 use aws_db_esdk::search::{
     BeaconKeySource, BeaconVersion, CompoundBeacon, Constructor, ConstructorPart, EncryptedPart,
     MultiKeyStore, SearchConfig, SignedPart, SingleKeyStore, StandardBeacon, VirtualField,
@@ -152,7 +152,7 @@ fn branch_materials(id: &str) -> BranchKeyMaterials {
         .branch_key(BRANCH_KEY)
         .branch_key_id(id.to_owned())
         .branch_key_version(BRANCH_KEY_VERSION.to_owned())
-        .encryption_context(HashMap::new())
+        .set_encryption_context(Some(EncryptionContext::new()))
         .build()
         .unwrap()
 }
@@ -167,7 +167,7 @@ impl KeyStore for FakeKeyStore {
             .key_store_id("test-id")
             .key_store_name("test-table")
             .logical_key_store_name("test-logical-name")
-            .grant_tokens(Vec::<String>::new())
+            .set_grant_tokens(Some(Vec::<String>::new()))
             .kms_configuration(KmsConfiguration::Discovery(
                 Discovery::builder().build().unwrap(),
             ))
@@ -223,7 +223,7 @@ impl KeyStore for FakeKeyStore {
             .push(input.branch_key_id().to_owned());
         let materials = BeaconKeyMaterials::builder()
             .beacon_key_id(input.branch_key_id())
-            .encryption_context(HashMap::new())
+            .set_encryption_context(Some(EncryptionContext::new()))
             .beacon_key(BEACON_KEY.to_vec())
             .build()?;
         GetBeaconKeyOutput::builder()
@@ -232,8 +232,8 @@ impl KeyStore for FakeKeyStore {
     }
 }
 
-pub fn fake_key_store() -> key_store::Client {
-    key_store::Client::new(FakeKeyStore::default())
+pub fn fake_key_store() -> key_store::SharedKeyStore {
+    key_store::SharedKeyStore::new(FakeKeyStore::default())
 }
 
 // The beacons of `BeaconTestFixtures.GetLotsaBeacons`.
@@ -308,7 +308,7 @@ pub fn lotsa_beacons(multi: bool) -> BeaconVersion {
 }
 
 /// [`lotsa_beacons`] with its beacon keys from `store`.
-pub fn lotsa_beacons_with(multi: bool, store: key_store::Client) -> BeaconVersion {
+pub fn lotsa_beacons_with(multi: bool, store: key_store::SharedKeyStore) -> BeaconVersion {
     let name = encrypted_part("Name", "N_");
     let title = encrypted_part("Title", "T_");
     let year = signed_part("Year", "Y_", None);
@@ -535,7 +535,7 @@ pub async fn hierarchical_keyring(branch_key_id: &str) -> HierarchicalKeyring {
 /// and beacon keys from `store`.
 pub fn multi_transforms_with(
     keyring: impl IntoShared<SharedKeyring>,
-    store: key_store::Client,
+    store: key_store::SharedKeyStore,
 ) -> Transforms {
     multi_transforms_configured(keyring, store, multi_actions)
 }
@@ -543,7 +543,7 @@ pub fn multi_transforms_with(
 /// [`multi_transforms_with`] with the attribute actions `actions` sets.
 fn multi_transforms_configured(
     keyring: impl IntoShared<SharedKeyring>,
-    store: key_store::Client,
+    store: key_store::SharedKeyStore,
     actions: fn(aws_db_esdk::TableConfigBuilder) -> aws_db_esdk::TableConfigBuilder,
 ) -> Transforms {
     let search = SearchConfig::builder()

@@ -186,10 +186,12 @@ impl Cmm for SpyCmm {
         *self.last_encrypt.lock().unwrap() = Some(input.clone());
         self.inner
             .get_encryption_materials()
-            .encryption_context(input.encryption_context().clone())
+            .set_encryption_context(Some(input.encryption_context().clone()))
             .commitment_policy(input.commitment_policy())
             .set_algorithm_suite_id(input.algorithm_suite_id())
-            .set_required_encryption_context_keys(input.required_encryption_context_keys().cloned())
+            .set_required_encryption_context_keys(Some(
+                input.required_encryption_context_keys().clone(),
+            ))
             .set_max_plaintext_length(input.max_plaintext_length())
             .send()
             .await
@@ -204,8 +206,8 @@ impl Cmm for SpyCmm {
             .decrypt_materials()
             .algorithm_suite_id(input.algorithm_suite_id())
             .commitment_policy(input.commitment_policy())
-            .encrypted_data_keys(input.encrypted_data_keys().to_vec())
-            .encryption_context(input.encryption_context().clone())
+            .set_encrypted_data_keys(Some(input.encrypted_data_keys().to_vec()))
+            .set_encryption_context(Some(input.encryption_context().clone()))
             .set_reproduced_encryption_context(input.reproduced_encryption_context().cloned())
             .send()
             .await

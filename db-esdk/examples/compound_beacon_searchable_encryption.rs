@@ -64,7 +64,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .build()?,
     ];
 
-    let key_store = key_store::Client::builder()
+    let key_store = key_store::DynamoDbKeyStore::builder()
         .ddb_table_name(KEY_STORE_TABLE_NAME)
         .logical_key_store_name(KEY_STORE_TABLE_NAME)
         .kms_configuration(KmsConfiguration::KmsKeyArn(KMS_KEY_ARN.into()))

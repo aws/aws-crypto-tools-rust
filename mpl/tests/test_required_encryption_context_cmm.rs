@@ -70,7 +70,7 @@ async fn required_keys_are_marked_on_encrypt_and_must_be_reproduced_on_decrypt()
     let cmm = cmm();
     let missing = cmm
         .get_encryption_materials()
-        .encryption_context(ec(&[("other", "x")]))
+        .set_encryption_context(Some(ec(&[("other", "x")])))
         .commitment_policy(POLICY)
         .send()
         .await
@@ -79,7 +79,7 @@ async fn required_keys_are_marked_on_encrypt_and_must_be_reproduced_on_decrypt()
 
     let enc = cmm
         .get_encryption_materials()
-        .encryption_context(ec(&[("tenant", "a"), ("other", "x")]))
+        .set_encryption_context(Some(ec(&[("tenant", "a"), ("other", "x")])))
         .commitment_policy(POLICY)
         .algorithm_suite_id(SUITE)
         .send()
@@ -92,8 +92,8 @@ async fn required_keys_are_marked_on_encrypt_and_must_be_reproduced_on_decrypt()
         cmm.decrypt_materials()
             .algorithm_suite_id(SUITE)
             .commitment_policy(POLICY)
-            .encrypted_data_keys(enc.encrypted_data_keys().to_vec())
-            .encryption_context(ec(&[("other", "x")]))
+            .set_encrypted_data_keys(Some(enc.encrypted_data_keys().to_vec()))
+            .set_encryption_context(Some(ec(&[("other", "x")])))
             .set_reproduced_encryption_context(reproduced)
             .send()
     };

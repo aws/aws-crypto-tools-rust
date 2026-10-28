@@ -34,7 +34,7 @@ pub async fn encrypted_client(
     // The hierarchical keyring protects the data keys that protect each item,
     // reusing branch key material cached from the key store for `ttl`.
     let kms = aws_sdk_kms::Client::new(sdk_config);
-    let key_store = key_store::Client::builder()
+    let key_store = key_store::DynamoDbKeyStore::builder()
         .ddb_table_name(KEY_STORE_TABLE_NAME)
         .logical_key_store_name(KEY_STORE_LOGICAL_NAME)
         .kms_configuration(KmsConfiguration::KmsKeyArn(KMS_KEY_ARN.into()))

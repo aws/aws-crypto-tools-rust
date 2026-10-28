@@ -97,7 +97,7 @@ async fn decrypt_needs_a_key_arn_and_skips_other_providers() {
     let err = alias
         .on_decrypt()
         .materials(materials())
-        .encrypted_data_keys(Vec::<EncryptedDataKey>::new())
+        .set_encrypted_data_keys(Some(Vec::<EncryptedDataKey>::new()))
         .send()
         .await
         .unwrap_err();
@@ -117,7 +117,7 @@ async fn decrypt_needs_a_key_arn_and_skips_other_providers() {
     let err = keyring
         .on_decrypt()
         .materials(materials())
-        .encrypted_data_keys(vec![other])
+        .encrypted_data_keys(other)
         .send()
         .await
         .unwrap_err();
@@ -132,7 +132,7 @@ async fn round_trip(suite: AlgorithmSuiteId) {
         .unwrap();
     let materials = EncryptionMaterials::builder()
         .algorithm_suite_id(suite)
-        .encryption_context(ec())
+        .set_encryption_context(Some(ec()))
         .build()
         .unwrap();
     // GenerateDataKey, then Encrypt for a second EDK of the same data key.
@@ -159,11 +159,11 @@ async fn round_trip(suite: AlgorithmSuiteId) {
             .materials(
                 DecryptionMaterials::builder()
                     .algorithm_suite_id(suite)
-                    .encryption_context(ec())
+                    .set_encryption_context(Some(ec()))
                     .build()
                     .unwrap(),
             )
-            .encrypted_data_keys(vec![edk.clone()])
+            .encrypted_data_keys(edk.clone())
             .send()
             .await
             .unwrap()

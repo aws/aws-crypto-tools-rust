@@ -64,7 +64,7 @@ impl KeyStore for FakeKeyStore {
             .key_store_id("test-id")
             .key_store_name("KeyStoreDdbTable")
             .logical_key_store_name("KeyStoreDdbTable")
-            .grant_tokens(Vec::<String>::new())
+            .set_grant_tokens(Some(Vec::<String>::new()))
             .kms_configuration(KmsConfiguration::Discovery(Discovery::builder().build()?))
             .build()
     }
@@ -110,7 +110,7 @@ impl KeyStore for FakeKeyStore {
             .beacon_key_materials(
                 BeaconKeyMaterials::builder()
                     .beacon_key_id(input.branch_key_id())
-                    .encryption_context(EncryptionContext::new())
+                    .set_encryption_context(Some(EncryptionContext::new()))
                     .beacon_key(BEACON_KEY.to_vec())
                     .build()?,
             )
@@ -119,10 +119,10 @@ impl KeyStore for FakeKeyStore {
 }
 
 /// A [`FakeKeyStore`] client, and the branch key ids it is asked for.
-pub(crate) fn fake_key_store() -> (key_store::Client, Arc<Mutex<Vec<String>>>) {
+pub(crate) fn fake_key_store() -> (key_store::SharedKeyStore, Arc<Mutex<Vec<String>>>) {
     let store = FakeKeyStore::default();
     let requested = Arc::clone(&store.requested);
-    (key_store::Client::from(store), requested)
+    (key_store::SharedKeyStore::new(store), requested)
 }
 
 pub(crate) fn standard(name: &str, bits: u8, loc: Option<&str>) -> StandardBeacon {
@@ -320,7 +320,7 @@ pub(crate) fn multi_source(key_field_name: &str) -> BeaconKeySource {
 }
 
 /// `GetLotsaBeacons`, as an unbuilt builder so tests can replace parts of it.
-pub(crate) fn lotsa_beacons(store: key_store::Client) -> BeaconVersionBuilder {
+pub(crate) fn lotsa_beacons(store: key_store::SharedKeyStore) -> BeaconVersionBuilder {
     BeaconVersion::builder()
         .version(1)
         .key_store(store)
@@ -449,7 +449,7 @@ pub(crate) fn simple_item() -> Item {
     .collect()
 }
 
-fn store() -> key_store::Client {
+fn store() -> key_store::SharedKeyStore {
     fake_key_store().0
 }
 

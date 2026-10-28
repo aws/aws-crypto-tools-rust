@@ -192,7 +192,7 @@ fn rebuilt_materials(
     };
     let materials = DecryptionMaterials::builder()
         .algorithm_suite_id(suite)
-        .encryption_context(encryption_context)
+        .set_encryption_context(Some(encryption_context))
         .set_plaintext_data_key(materials.plaintext_data_key().cloned())
         .set_symmetric_signing_key(materials.symmetric_signing_key().cloned())
         .set_verification_key(verification_key)
@@ -217,19 +217,19 @@ fn direct_materials(
     let has_key = plaintext_data_key.is_some();
     let mut materials = EncryptionMaterials::builder()
         .algorithm_suite_id(suite)
-        .encryption_context(encryption_context)
+        .set_encryption_context(Some(encryption_context))
         .set_plaintext_data_key(plaintext_data_key);
     if has_key {
-        materials = materials.encrypted_data_keys(vec![
+        materials = materials.encrypted_data_keys(
             EncryptedDataKey::builder()
                 .key_provider_id("p")
                 .key_provider_info(Vec::new())
                 .ciphertext(vec![1])
                 .build()?,
-        ]);
+        );
         if suite.has_symmetric_signing() {
             // 48 bytes: an HMAC-SHA-384 key.
-            materials = materials.symmetric_signing_keys(vec![vec![9u8; 48].into()]);
+            materials = materials.symmetric_signing_keys(vec![9u8; 48].into());
         }
     }
     GetEncryptionMaterialsOutput::builder()
@@ -274,10 +274,12 @@ impl Cmm for RecordingCmm {
         };
         self.inner
             .get_encryption_materials()
-            .encryption_context(input.encryption_context().clone())
+            .set_encryption_context(Some(input.encryption_context().clone()))
             .commitment_policy(input.commitment_policy())
             .set_algorithm_suite_id(suite)
-            .set_required_encryption_context_keys(input.required_encryption_context_keys().cloned())
+            .set_required_encryption_context_keys(Some(
+                input.required_encryption_context_keys().clone(),
+            ))
             .set_max_plaintext_length(input.max_plaintext_length())
             .send()
             .await
@@ -295,7 +297,7 @@ impl Cmm for RecordingCmm {
                     .algorithm_suite_id(MplAlgorithmSuiteId::Esdk(
                         EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf,
                     ))
-                    .encryption_context(input.encryption_context().clone())
+                    .set_encryption_context(Some(input.encryption_context().clone()))
                     .plaintext_data_key(vec![7u8; 32])
                     .build()?;
                 return DecryptMaterialsOutput::builder()
@@ -314,8 +316,8 @@ impl Cmm for RecordingCmm {
             .decrypt_materials()
             .algorithm_suite_id(input.algorithm_suite_id())
             .commitment_policy(input.commitment_policy())
-            .encrypted_data_keys(input.encrypted_data_keys().to_vec())
-            .encryption_context(stored.clone())
+            .set_encrypted_data_keys(Some(input.encrypted_data_keys().to_vec()))
+            .set_encryption_context(Some(stored.clone()))
             .set_reproduced_encryption_context(input.reproduced_encryption_context().cloned())
             .send()
             .await?;
@@ -332,7 +334,7 @@ impl Cmm for RecordingCmm {
             OnDecrypt::NoPlaintextKey => {
                 let materials = DecryptionMaterials::builder()
                     .algorithm_suite_id(materials.algorithm_suite_id())
-                    .encryption_context(materials.encryption_context().clone())
+                    .set_encryption_context(Some(materials.encryption_context().clone()))
                     .set_verification_key(materials.verification_key().cloned())
                     .build()?;
                 DecryptMaterialsOutput::builder()

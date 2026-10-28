@@ -571,11 +571,13 @@ fn dbe_materials(
         .collect();
     EncryptionMaterials::builder()
         .algorithm_suite_id(MplAlgorithmSuiteId::Dbe(ECDSA_SUITE))
-        .encryption_context(ec)
-        .required_encryption_context_keys(required.iter().copied())
+        .set_encryption_context(Some(ec))
+        .set_required_encryption_context_keys(Some(
+            required.iter().map(|k| (*k).to_owned()).collect(),
+        ))
         .plaintext_data_key(vec![7u8; 32])
-        .encrypted_data_keys(edks)
-        .symmetric_signing_keys(sym)
+        .set_encrypted_data_keys(Some(edks))
+        .set_symmetric_signing_keys(Some(sym))
         .build()
         .unwrap()
 }
@@ -661,7 +663,7 @@ fn create_rejects_bad_materials() {
             EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf,
         ))
         .plaintext_data_key(vec![7u8; 32])
-        .encrypted_data_keys(one())
+        .set_encrypted_data_keys(Some(one()))
         .build()
         .unwrap();
     let err = PartialHeader::create(&schema, MSG_ID, &mat).unwrap_err();

@@ -237,7 +237,7 @@ impl Keyring for crate::shared::Builtin<MultiKeyring> {
             let attempt = keyring
                 .on_decrypt()
                 .materials(materials.clone())
-                .encrypted_data_keys(encrypted_data_keys.clone())
+                .set_encrypted_data_keys(Some(encrypted_data_keys.clone()))
                 .send()
                 .await;
             match attempt {

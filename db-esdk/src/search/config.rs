@@ -153,7 +153,7 @@ impl SearchConfigBuilder {
 #[non_exhaustive]
 pub struct BeaconVersion {
     pub(crate) version: u32,
-    pub(crate) key_store: key_store::Client,
+    pub(crate) key_store: key_store::SharedKeyStore,
     pub(crate) key_source: BeaconKeySource,
     pub(crate) standard_beacons: Vec<StandardBeacon>,
     pub(crate) compound_beacons: Option<Vec<CompoundBeacon>>,
@@ -180,7 +180,7 @@ impl BeaconVersion {
 
     /// The key store that holds the beacon keys.
     #[must_use]
-    pub const fn key_store(&self) -> &key_store::Client {
+    pub const fn key_store(&self) -> &key_store::SharedKeyStore {
         &self.key_store
     }
 
@@ -244,7 +244,7 @@ impl BeaconVersion {
 #[non_exhaustive]
 pub struct BeaconVersionBuilder {
     version: Option<u32>,
-    key_store: Option<key_store::Client>,
+    key_store: Option<key_store::SharedKeyStore>,
     key_source: Option<BeaconKeySource>,
     standard_beacons: Option<Vec<StandardBeacon>>,
     compound_beacons: Option<Vec<CompoundBeacon>>,
@@ -280,14 +280,14 @@ impl BeaconVersionBuilder {
     //= reason=configuration guidance for the caller; the SDK cannot see which key store a keyring uses
     //# If being used with a Hierarchical Keyring to encrypt/decrypt items,
     //# this SHOULD be the same Keystore as configured to that Keyring.
-    pub fn key_store(mut self, key_store: impl Into<key_store::Client>) -> Self {
-        self.key_store = Some(key_store.into());
+    pub fn key_store(mut self, key_store: impl IntoShared<key_store::SharedKeyStore>) -> Self {
+        self.key_store = Some(key_store.into_shared());
         self
     }
 
     /// The key store. See [`Self::key_store`].
     #[must_use]
-    pub fn set_key_store(mut self, key_store: Option<key_store::Client>) -> Self {
+    pub fn set_key_store(mut self, key_store: Option<key_store::SharedKeyStore>) -> Self {
         self.key_store = key_store;
         self
     }

@@ -50,7 +50,7 @@ pub(crate) enum KeyLocation {
 /// The beacon keys of a beacon version.
 #[derive(Debug)]
 pub(crate) struct KeySource {
-    store: key_store::Client,
+    store: key_store::SharedKeyStore,
     pub(crate) location: KeyLocation,
     cache: SharedCmc,
     ttl: Duration,
@@ -98,7 +98,7 @@ impl KeySource {
     ///
     /// `capacity` is the default cache's size: 1 for a single key, 1000 for many.
     pub(crate) fn new(
-        store: key_store::Client,
+        store: key_store::SharedKeyStore,
         location: KeyLocation,
         cache: Option<SharedCmc>,
         capacity: usize,
@@ -302,8 +302,8 @@ impl KeySource {
         //# of every [standard beacons](beacons.md#standard-beacon-initialization) name to its generated HMAC key.
         let to_cache = BeaconKeyMaterials::builder()
             .beacon_key_id(key_id)
-            .encryption_context(materials.encryption_context().clone())
-            .hmac_keys(keys.clone())
+            .set_encryption_context(Some(materials.encryption_context().clone()))
+            .set_hmac_keys(Some(keys.clone()))
             .build()?;
         let now = SystemTime::now();
 

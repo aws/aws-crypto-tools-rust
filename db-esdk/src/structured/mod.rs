@@ -426,7 +426,7 @@ pub(crate) async fn encrypt_path_structure(
         .get_encryption_materials()
         //= spec/structured-encryption/encrypt-path-structure.md#retrieve-encryption-materials
         //# - Encryption Context: This MUST be the encryption context calculated above.
-        .encryption_context(ec)
+        .set_encryption_context(Some(ec))
         //= spec/structured-encryption/encrypt-path-structure.md#retrieve-encryption-materials
         //# - Commitment Policy: This MUST be
         //# [REQUIRE_ENCRYPT_REQUIRE_DECRYPT](../../submodules/MaterialProviders/aws-encryption-sdk-specification/framework/commitment-policy.md#esdkrequire_encrypt_require_decrypt).
@@ -655,8 +655,8 @@ pub(crate) async fn decrypt_path_structure(
         .decrypt_materials()
         .algorithm_suite_id(MplAlgorithmSuiteId::Dbe(header_suite.id))
         .commitment_policy(dbe_commitment_policy())
-        .encrypted_data_keys(head.data_keys.clone())
-        .encryption_context(head.enc_context.clone())
+        .set_encrypted_data_keys(Some(head.data_keys.clone()))
+        .set_encryption_context(Some(head.enc_context.clone()))
         //= spec/structured-encryption/decrypt-path-structure.md#encryption-context
         //= reason=the CMM checks the caller's context, as the reproduced context, against the keys' context
         //# - This MUST include any key-values pairs that were used during the original [encryption](./encrypt-path-structure.md)
@@ -672,7 +672,7 @@ pub(crate) async fn decrypt_path_structure(
         //= reason=the CMM rejects a reproduced entry that differs from the stored one
         //# - This MUST NOT include any key-values pairs that were not
         //# used during the original [encryption](./encrypt-structure.md) of the [input data](#auth-list).
-        .reproduced_encryption_context(ec)
+        .set_reproduced_encryption_context(Some(ec))
         .send()
         //= spec/structured-encryption/decrypt-path-structure.md#behavior
         //# If any of these steps fails, this operation MUST halt and indicate a failure to the caller.

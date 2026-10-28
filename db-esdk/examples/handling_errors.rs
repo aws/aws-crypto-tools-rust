@@ -49,7 +49,7 @@ fn item() -> HashMap<String, AttributeValue> {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let sdk_config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
     let ddb_sdk = aws_sdk_dynamodb::Client::new(&sdk_config);
-    let key_store = key_store::Client::builder()
+    let key_store = key_store::DynamoDbKeyStore::builder()
         .ddb_table_name("KeyStoreDdbTable")
         .logical_key_store_name("KeyStoreDdbTable")
         .kms_configuration(KmsConfiguration::KmsKeyArn(

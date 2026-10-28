@@ -18,8 +18,8 @@ use crate::message::header_types::{
 use crate::message::serializable_types::{get_encrypt_key_length, get_iv_length};
 use crate::message::{DigestWriter, body, footer, header, serialize_functions};
 use crate::shapes::{
-    AlgorithmSuiteId, CommitmentPolicy, EncryptInput, EncryptOutput, EncryptStreamInput,
-    EncryptStreamOutput, EncryptionContext, MaterialSource, Sink, Source,
+    AlgorithmSuiteId, Ciphertext, CommitmentPolicy, EncryptInput, EncryptOutput,
+    EncryptStreamInput, EncryptStreamOutput, EncryptionContext, MaterialSource, Sink, Source,
 };
 use crate::suites::{algorithm_suite_id_from_bytes, get_ecdsa_alg, get_esdk_algorithm_suite_id};
 use aws_crypto_mpl::types::AlgorithmSuite;
@@ -83,7 +83,7 @@ pub(crate) async fn encrypt(input: &EncryptInput<'_>) -> Result<EncryptOutput, E
         //= spec/client-apis/encrypt.md#encrypted-message
         //# This MUST be a sequence of bytes
         //# and conform to the [message format specification](../data-format/message.md).
-        ciphertext,
+        ciphertext: Ciphertext::new(ciphertext),
         //= spec/client-apis/encrypt.md#output
         //# - Encrypt operation output MUST include an [encryption context](#encryption-context) value.
         encryption_context: out.encryption_context,

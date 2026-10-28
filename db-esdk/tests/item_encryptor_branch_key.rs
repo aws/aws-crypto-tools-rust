@@ -54,7 +54,7 @@ async fn select(ec: EncryptionContext) -> (Result<String, MplError>, Option<Item
     let inner = TestSupplier::default();
     let supplier = ItemKeyBranchKeySupplier::new(inner.clone());
     let input = GetBranchKeyIdInput::builder()
-        .encryption_context(ec)
+        .set_encryption_context(Some(ec))
         .build()
         .unwrap();
     let result = supplier

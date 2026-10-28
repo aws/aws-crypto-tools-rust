@@ -56,15 +56,9 @@ char* dup_message(const std::string& msg) {
     return out;
 }
 
-uint8_t* dup_bytes(const Aws::Esdk::Bytes& bytes) {
-    uint8_t* out = static_cast<uint8_t*>(std::malloc(bytes.empty() ? 1 : bytes.size()));
-    if (out && !bytes.empty()) {
-        std::memcpy(out, bytes.data(), bytes.size());
-    }
-    return out;
-}
-
-uint8_t* dup_bytes(const std::vector<uint8_t>& bytes) {
+// Accepts Aws::Esdk::Plaintext, Aws::Esdk::Ciphertext, or std::vector<uint8_t>.
+template <typename Buffer>
+uint8_t* dup_bytes(const Buffer& bytes) {
     uint8_t* out = static_cast<uint8_t*>(std::malloc(bytes.empty() ? 1 : bytes.size()));
     if (out && !bytes.empty()) {
         std::memcpy(out, bytes.data(), bytes.size());
@@ -231,6 +225,8 @@ int esdk_cpp_encrypt_stream(void* client,
                             uint16_t algorithm_suite_id,
                             uint32_t frame_length,
                             uint32_t max_encrypted_data_keys,
+                            uint8_t has_plaintext_length_bound,
+                            uint64_t plaintext_length_bound,
                             const char* const* ec_keys,
                             const char* const* ec_vals,
                             size_t ec_len,
@@ -246,6 +242,9 @@ int esdk_cpp_encrypt_stream(void* client,
         if (frame_length != 0) {
             options.with_frame_length(frame_length);
         }
+        if (has_plaintext_length_bound != 0) {
+            options.with_plaintext_length_bound(plaintext_length_bound);
+        }
         options.with_encryption_context(to_map(ec_keys, ec_vals, ec_len));
 
         Client sdk = client_for(commitment_policy, max_encrypted_data_keys);
@@ -253,10 +252,10 @@ int esdk_cpp_encrypt_stream(void* client,
         std::vector<uint8_t> ciphertext;
         for (size_t offset = 0; offset < plaintext_len; offset += kStreamChunk) {
             size_t n = std::min(kStreamChunk, plaintext_len - offset);
-            Aws::Esdk::Bytes produced = stream.write(plaintext + offset, n);
+            Aws::Esdk::Ciphertext produced = stream.write(plaintext + offset, n);
             ciphertext.insert(ciphertext.end(), produced.data(), produced.data() + produced.size());
         }
-        Aws::Esdk::StreamResult result = stream.finish();
+        Aws::Esdk::EncryptStreamResult result = stream.finish();
         ciphertext.insert(ciphertext.end(), result.trailing_output.data(),
                           result.trailing_output.data() + result.trailing_output.size());
         *out_buf = dup_bytes(ciphertext);
@@ -292,10 +291,10 @@ int esdk_cpp_decrypt_stream(void* client,
         std::vector<uint8_t> plaintext;
         for (size_t offset = 0; offset < ciphertext_len; offset += kStreamChunk) {
             size_t n = std::min(kStreamChunk, ciphertext_len - offset);
-            Aws::Esdk::Bytes released = stream.write(ciphertext + offset, n);
+            Aws::Esdk::Plaintext released = stream.write(ciphertext + offset, n);
             plaintext.insert(plaintext.end(), released.data(), released.data() + released.size());
         }
-        Aws::Esdk::StreamResult result = stream.finish();
+        Aws::Esdk::DecryptStreamResult result = stream.finish();
         plaintext.insert(plaintext.end(), result.trailing_output.data(),
                          result.trailing_output.data() + result.trailing_output.size());
         *out_buf = dup_bytes(plaintext);

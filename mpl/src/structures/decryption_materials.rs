@@ -172,8 +172,8 @@ impl DecryptionMaterials {
 #[derive(Debug, Default)]
 pub struct DecryptionMaterialsBuilder {
     algorithm_suite_id: Option<AlgorithmSuiteId>,
-    encryption_context: EncryptionContext,
-    required_encryption_context_keys: BTreeSet<String>,
+    encryption_context: Option<EncryptionContext>,
+    required_encryption_context_keys: Option<BTreeSet<String>>,
     plaintext_data_key: Option<PlaintextDataKey>,
     verification_key: Option<VerificationKey>,
     symmetric_signing_key: Option<SymmetricSigningKey>,
@@ -205,57 +205,60 @@ impl DecryptionMaterialsBuilder {
         &self.algorithm_suite_id
     }
 
-    /// Set the encryption context.
+    /// Adds a key-value pair to the encryption context.
+    ///
+    /// To override the contents of this collection use [`set_encryption_context`](Self::set_encryption_context).
     /// Defaults to empty.
     #[must_use]
-    pub fn encryption_context(mut self, encryption_context: impl Into<EncryptionContext>) -> Self {
-        self.encryption_context = encryption_context.into();
+    pub fn encryption_context(mut self, k: impl Into<String>, v: impl Into<String>) -> Self {
+        self.encryption_context
+            .get_or_insert_with(EncryptionContext::new)
+            .insert(k, v);
         self
     }
 
     /// Set or clear the encryption context from an `Option`.
-    /// To set a value, use [`Self::encryption_context`].
+    /// To add one entry, use [`Self::encryption_context`].
     #[must_use]
     pub fn set_encryption_context(mut self, encryption_context: Option<EncryptionContext>) -> Self {
-        self.encryption_context = encryption_context.unwrap_or_default();
+        self.encryption_context = encryption_context;
         self
     }
 
     /// The encryption context set so far.
     #[must_use]
-    pub const fn get_encryption_context(&self) -> &EncryptionContext {
+    #[allow(clippy::ref_option)] // AWS SDK for Rust getter shape
+    pub const fn get_encryption_context(&self) -> &Option<EncryptionContext> {
         &self.encryption_context
     }
 
-    /// Set the required encryption context keys.
+    /// Appends an item to the required encryption context keys.
+    ///
+    /// To override the contents of this collection use [`set_required_encryption_context_keys`](Self::set_required_encryption_context_keys).
     /// Defaults to none.
     #[must_use]
-    pub fn required_encryption_context_keys(
-        mut self,
-        required_encryption_context_keys: impl IntoIterator<Item = impl Into<String>>,
-    ) -> Self {
-        self.required_encryption_context_keys = required_encryption_context_keys
-            .into_iter()
-            .map(Into::into)
-            .collect();
+    pub fn required_encryption_context_keys(mut self, input: impl Into<String>) -> Self {
+        self.required_encryption_context_keys
+            .get_or_insert_with(BTreeSet::new)
+            .insert(input.into());
         self
     }
 
     /// Set or clear the required encryption context keys from an `Option`.
-    /// To set a value, use [`Self::required_encryption_context_keys`].
+    /// To add one entry, use [`Self::required_encryption_context_keys`].
     #[must_use]
     pub fn set_required_encryption_context_keys(
         mut self,
         required_encryption_context_keys: Option<BTreeSet<String>>,
     ) -> Self {
-        self.required_encryption_context_keys =
-            required_encryption_context_keys.unwrap_or_default();
+        self.required_encryption_context_keys = required_encryption_context_keys;
         self
     }
 
     /// The required encryption context keys set so far.
     #[must_use]
-    pub const fn get_required_encryption_context_keys(&self) -> &BTreeSet<String> {
+    #[allow(clippy::ref_option)] // AWS SDK for Rust getter shape
+    pub const fn get_required_encryption_context_keys(&self) -> &Option<BTreeSet<String>> {
         &self.required_encryption_context_keys
     }
 
@@ -338,6 +341,9 @@ impl DecryptionMaterialsBuilder {
     ///   or the verification key or symmetric signing key does not suit the algorithm suite.
     pub fn build(self) -> Result<DecryptionMaterials, Error> {
         let algorithm_suite_id = required(self.algorithm_suite_id, "algorithm_suite_id")?;
+        let encryption_context = self.encryption_context.unwrap_or_default();
+        let required_encryption_context_keys =
+            self.required_encryption_context_keys.unwrap_or_default();
         let suite = algorithm_suite_id.specification();
 
         if let Some(key) = &self.plaintext_data_key {
@@ -345,8 +351,8 @@ impl DecryptionMaterialsBuilder {
         }
 
         // Required encryption context keys must be a subset of encryption context keys
-        for key in &self.required_encryption_context_keys {
-            if !self.encryption_context.contains_key(key) {
+        for key in &required_encryption_context_keys {
+            if !encryption_context.contains_key(key) {
                 return Err(Error::new(
                     Kind::EncryptionContextMismatch,
                     format!(
@@ -400,8 +406,8 @@ impl DecryptionMaterialsBuilder {
 
         Ok(DecryptionMaterials {
             algorithm_suite_id,
-            encryption_context: self.encryption_context,
-            required_encryption_context_keys: self.required_encryption_context_keys,
+            encryption_context,
+            required_encryption_context_keys,
             plaintext_data_key: self.plaintext_data_key,
             verification_key: self.verification_key,
             symmetric_signing_key: self.symmetric_signing_key,

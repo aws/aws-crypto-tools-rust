@@ -71,7 +71,7 @@ impl KeyStore for LiteralKeyStore {
             .key_store_id("test-id")
             .key_store_name("KeyStoreDdbTable")
             .logical_key_store_name("KeyStoreDdbTable")
-            .grant_tokens(Vec::<String>::new())
+            .set_grant_tokens(Some(Vec::<String>::new()))
             .kms_configuration(KmsConfiguration::Discovery(
                 Discovery::builder().build().unwrap(),
             ))
@@ -115,7 +115,7 @@ impl KeyStore for LiteralKeyStore {
             .beacon_key_materials(
                 BeaconKeyMaterials::builder()
                     .beacon_key_id(input.branch_key_id())
-                    .encryption_context(EncryptionContext::new())
+                    .set_encryption_context(Some(EncryptionContext::new()))
                     .beacon_key(vec![1u8, 2, 3, 4, 5])
                     .build()?,
             )

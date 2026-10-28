@@ -520,18 +520,19 @@ impl aws_crypto_mpl::cmm::Cmm for FixedKeyCmm {
             .algorithm_suite_id(MplAlgorithmSuiteId::Dbe(
                 AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeySymsigHmacSha384,
             ))
-            .encryption_context(aws_crypto_mpl::types::EncryptionContext::default())
+            .set_encryption_context(Some(aws_crypto_mpl::types::EncryptionContext::default()))
             .plaintext_data_key(DATA_KEY.to_vec())
-            .encrypted_data_keys(vec![
+            .encrypted_data_keys(
                 aws_crypto_mpl::types::EncryptedDataKey::builder()
                     .key_provider_id("p")
                     .key_provider_info(vec![1])
                     .ciphertext(vec![2])
                     .build()?,
-            ])
-            .symmetric_signing_keys(vec![aws_crypto_mpl::types::SymmetricSigningKey::from(
-                vec![5u8; 48],
-            )])
+            )
+            .symmetric_signing_keys(aws_crypto_mpl::types::SymmetricSigningKey::from(vec![
+                5u8;
+                48
+            ]))
             .build()?;
         Ok(mat.into())
     }
