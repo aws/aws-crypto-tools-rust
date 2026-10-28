@@ -88,17 +88,27 @@ use async_trait::async_trait;
 
 pub(crate) mod edk_wrapping;
 mod fluent_builders;
+mod multi_keyring;
 mod raw_aes_keyring;
 mod types;
 
 #[cfg(feature = "kms")]
 pub use crate::aws_kms::aws_kms_keyring::{AwsKmsKeyring, AwsKmsKeyringBuilder};
+#[cfg(feature = "kms")]
+pub use crate::aws_kms::discovery_keyring::{
+    AwsKmsDiscoveryKeyring, AwsKmsDiscoveryKeyringBuilder, DiscoveryFilter, DiscoveryFilterBuilder,
+};
 pub use crate::aws_kms::hierarchical_keyring::{
     BranchKeySupplier, GetBranchKeyIdFluentBuilder, GetBranchKeyIdInput,
     GetBranchKeyIdInputBuilder, GetBranchKeyIdOutput, GetBranchKeyIdOutputBuilder,
     HierarchicalKeyring, HierarchicalKeyringBuilder, SharedBranchKeySupplier,
 };
+#[cfg(feature = "kms")]
+pub use crate::aws_kms::multi_keyrings::{
+    AwsKmsDiscoveryMultiKeyringBuilder, AwsKmsMultiKeyringBuilder,
+};
 pub use fluent_builders::{OnDecryptFluentBuilder, OnEncryptFluentBuilder};
+pub use multi_keyring::{MultiKeyring, MultiKeyringBuilder};
 pub use raw_aes_keyring::{RawAesKeyring, RawAesKeyringBuilder};
 pub use types::{
     OnDecryptInput, OnDecryptInputBuilder, OnDecryptOutput, OnDecryptOutputBuilder, OnEncryptInput,

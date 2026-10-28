@@ -15,6 +15,12 @@ pub mod hierarchical_keyring;
 pub mod aws_kms_keyring;
 
 #[cfg(feature = "kms")]
+pub mod discovery_keyring;
+
+#[cfg(feature = "kms")]
+pub mod multi_keyrings;
+
+#[cfg(feature = "kms")]
 pub(crate) mod user_agent;
 
 /// Internals that integration tests reach.

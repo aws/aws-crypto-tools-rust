@@ -24,7 +24,7 @@ use crate::structures::{
 };
 
 /// The key provider ID of every encrypted data key this keyring writes.
-const PROVIDER_ID: &str = "aws-kms";
+pub(crate) const PROVIDER_ID: &str = "aws-kms";
 /// The longest AWS KMS key identifier.
 const MAX_AWS_KMS_IDENTIFIER_LENGTH: usize = 2048;
 /// AWS KMS ciphertexts are 1 to 6144 bytes.
@@ -35,9 +35,9 @@ const MAX_GRANT_TOKEN_LENGTH: usize = 8192;
 const UINT16_LIMIT: usize = 65_536;
 
 /// A parsed AWS KMS key identifier: an ARN or a raw key ID or alias.
-struct KmsIdentifier {
+pub(crate) struct KmsIdentifier {
     is_arn: bool,
-    resource_type: String,
+    pub(crate) resource_type: String,
 }
 
 /// Parse `resource` as `key/<id>` or `alias/<name>`.
@@ -52,7 +52,7 @@ fn parse_kms_resource(resource: &str) -> Result<String, String> {
 }
 
 /// Parse an AWS KMS key ARN: `arn:<partition>:kms:<region>:<account>:<key|alias>/<id>`.
-fn parse_kms_arn(identifier: &str) -> Result<KmsIdentifier, String> {
+pub(crate) fn parse_kms_arn(identifier: &str) -> Result<KmsIdentifier, String> {
     let components: Vec<&str> = identifier.split(':').collect();
     let [literal, partition, service, region, account, resource] = components.as_slice() else {
         return Err(format!("Malformed arn: {identifier}"));
@@ -73,7 +73,7 @@ fn parse_kms_arn(identifier: &str) -> Result<KmsIdentifier, String> {
 }
 
 /// Parse a KMS key identifier: an ARN, an alias (`alias/<name>`), or a key ID.
-fn parse_kms_identifier(identifier: &str) -> Result<KmsIdentifier, String> {
+pub(crate) fn parse_kms_identifier(identifier: &str) -> Result<KmsIdentifier, String> {
     if identifier.starts_with("arn:") {
         return parse_kms_arn(identifier);
     }
@@ -160,7 +160,7 @@ impl AwsKmsKeyring {
     }
 
     fn service_err(&self, message: impl Into<String>) -> Error {
-        Error::new(Kind::Service, message).about(Some(Service::Kms), self.resource())
+        service_err(&self.inner.kms_key_id, message)
     }
 
     /// `GenerateDataKey` of `len` bytes: the plaintext, the ciphertext, and the key ARN.
@@ -256,39 +256,6 @@ impl AwsKmsKeyring {
         Ok((ciphertext, key_id))
     }
 
-    /// `Decrypt` of `ciphertext` with this keyring's key: the plaintext, of `len` bytes.
-    async fn decrypt(
-        &self,
-        ec: &HashMap<String, String>,
-        ciphertext: &[u8],
-        len: usize,
-    ) -> Result<Vec<u8>, Error> {
-        if !valid_ciphertext(ciphertext) {
-            return Err(Error::new(Kind::Cryptographic, "Ciphertext length invalid"));
-        }
-        let response = self
-            .inner
-            .client
-            .decrypt()
-            .key_id(&self.inner.kms_key_id)
-            .ciphertext_blob(Blob::new(ciphertext))
-            .set_encryption_context(Some(ec.clone()))
-            .set_grant_tokens(Some(self.inner.grant_tokens.clone()))
-            .customize()
-            .config_override(user_agent_override())
-            .send()
-            .await
-            .map_err(|e| Error::from_sdk(Service::Kms, "AWS KMS Decrypt", self.resource(), e))?;
-        if response.key_id.as_deref() != Some(self.inner.kms_key_id.as_str()) {
-            return Err(self.service_err("Invalid response from KMS Decrypt"));
-        }
-        response
-            .plaintext
-            .map(Blob::into_inner)
-            .filter(|p| p.len() == len)
-            .ok_or_else(|| self.service_err("Invalid response from KMS Decrypt"))
-    }
-
     /// Whether `edk` was written by this keyring's KMS key.
     fn wrote(&self, edk: &EncryptedDataKey) -> Result<bool, Error> {
         if edk.key_provider_id() != PROVIDER_ID {
@@ -303,40 +270,108 @@ impl AwsKmsKeyring {
         parse_kms_arn(key_id).map_err(|e| Error::new(Kind::Cryptographic, e))?;
         Ok(self.inner.kms_key_id == key_id)
     }
+}
 
-    /// Unwrap one encrypted data key into the decryption materials.
-    async fn decrypt_one(
-        &self,
-        materials: &DecryptionMaterials,
-        ec: &HashMap<String, String>,
-        aad: &[u8],
-        edk: &EncryptedDataKey,
-    ) -> Result<DecryptionMaterials, Error> {
-        let suite = materials.algorithm_suite();
-        let len = suite.encryption_key_length();
-        match suite.edk_wrapping() {
-            EdkWrapping::IntermediateKeyWrapping(_) => {
-                let (encrypted_pdk, wrapped) = edk_wrapping::split(&suite, edk.ciphertext())?;
-                let ikm = zeroize::Zeroizing::new(self.decrypt(ec, wrapped, len).await?);
-                let (pdk, signing_key) =
-                    edk_wrapping::decrypt_pdk(&suite, &ikm, aad, encrypted_pdk)?;
-                materials
-                    .clone()
-                    .add_data_key_with_symmetric_signing_key(pdk, signing_key)
-            }
-            _ => {
-                let pdk = self.decrypt(ec, edk.ciphertext(), len).await?;
-                materials.clone().add_data_key(PlaintextDataKey::new(pdk))
-            }
+/// A `Service` error about the AWS KMS key `key_id`.
+fn service_err(key_id: &str, message: impl Into<String>) -> Error {
+    Error::new(Kind::Service, message).about(
+        Some(Service::Kms),
+        Some(Resource::KmsKey(KmsKey::new(key_id.to_owned()))),
+    )
+}
+
+/// `Decrypt` of `ciphertext` with the AWS KMS key `key_id`: the plaintext, of `len` bytes.
+///
+/// The response must name `key_id`.
+async fn kms_decrypt(
+    client: &KmsClient,
+    key_id: &str,
+    grant_tokens: &[String],
+    ec: &HashMap<String, String>,
+    ciphertext: &[u8],
+    len: usize,
+) -> Result<Vec<u8>, Error> {
+    if !valid_ciphertext(ciphertext) {
+        return Err(Error::new(Kind::Cryptographic, "Ciphertext length invalid"));
+    }
+    let resource = Some(Resource::KmsKey(KmsKey::new(key_id.to_owned())));
+    let response = client
+        .decrypt()
+        .key_id(key_id)
+        .ciphertext_blob(Blob::new(ciphertext))
+        .set_encryption_context(Some(ec.clone()))
+        .set_grant_tokens(Some(grant_tokens.to_vec()))
+        .customize()
+        .config_override(user_agent_override())
+        .send()
+        .await
+        .map_err(|e| Error::from_sdk(Service::Kms, "AWS KMS Decrypt", resource, e))?;
+    if response.key_id.as_deref() != Some(key_id) {
+        return Err(service_err(key_id, "Invalid response from KMS Decrypt"));
+    }
+    response
+        .plaintext
+        .map(Blob::into_inner)
+        .filter(|p| p.len() == len)
+        .ok_or_else(|| service_err(key_id, "Invalid response from KMS Decrypt"))
+}
+
+/// Unwrap `edk` with the AWS KMS key `key_id` into the decryption materials.
+pub(crate) async fn decrypt_edk(
+    client: &KmsClient,
+    key_id: &str,
+    grant_tokens: &[String],
+    materials: &DecryptionMaterials,
+    ec: &HashMap<String, String>,
+    aad: &[u8],
+    edk: &EncryptedDataKey,
+) -> Result<DecryptionMaterials, Error> {
+    let suite = materials.algorithm_suite();
+    let len = suite.encryption_key_length();
+    match suite.edk_wrapping() {
+        EdkWrapping::IntermediateKeyWrapping(_) => {
+            let (encrypted_pdk, wrapped) = edk_wrapping::split(&suite, edk.ciphertext())?;
+            let ikm = zeroize::Zeroizing::new(
+                kms_decrypt(client, key_id, grant_tokens, ec, wrapped, len).await?,
+            );
+            let (pdk, signing_key) = edk_wrapping::decrypt_pdk(&suite, &ikm, aad, encrypted_pdk)?;
+            materials
+                .clone()
+                .add_data_key_with_symmetric_signing_key(pdk, signing_key)
+        }
+        _ => {
+            let pdk = kms_decrypt(client, key_id, grant_tokens, ec, edk.ciphertext(), len).await?;
+            materials.clone().add_data_key(PlaintextDataKey::new(pdk))
         }
     }
+}
+
+/// The grant tokens, checked: at most 10, each 1 to 8192 characters.
+pub(crate) fn valid_grant_tokens(grant_tokens: Option<Vec<String>>) -> Result<Vec<String>, Error> {
+    let grant_tokens = grant_tokens.unwrap_or_default();
+    if grant_tokens.len() > MAX_GRANT_TOKENS {
+        return Err(Error::new(
+            Kind::Validation,
+            "Grant token list can have no more than 10 tokens",
+        ));
+    }
+    if grant_tokens
+        .iter()
+        .any(|t| t.is_empty() || t.len() > MAX_GRANT_TOKEN_LENGTH)
+    {
+        return Err(Error::new(
+            Kind::Validation,
+            "Grant token list contains a grant token with invalid length",
+        ));
+    }
+    Ok(grant_tokens)
 }
 
 fn valid_ciphertext(c: &[u8]) -> bool {
     (1..=MAX_CIPHERTEXT_LENGTH).contains(&c.len())
 }
 
-fn kms_encryption_context(ec: &EncryptionContext) -> HashMap<String, String> {
+pub(crate) fn kms_encryption_context(ec: &EncryptionContext) -> HashMap<String, String> {
     ec.iter()
         .map(|(k, v)| (k.to_owned(), v.to_owned()))
         .collect()
@@ -441,22 +476,7 @@ impl AwsKmsKeyringBuilder {
         if kms_key_id.is_empty() || kms_key_id.len() > MAX_AWS_KMS_IDENTIFIER_LENGTH {
             return Err(Error::new(Kind::Validation, "Key identifier is too long"));
         }
-        let grant_tokens = self.grant_tokens.unwrap_or_default();
-        if grant_tokens.len() > MAX_GRANT_TOKENS {
-            return Err(Error::new(
-                Kind::Validation,
-                "Grant token list can have no more than 10 tokens",
-            ));
-        }
-        if grant_tokens
-            .iter()
-            .any(|t| t.is_empty() || t.len() > MAX_GRANT_TOKEN_LENGTH)
-        {
-            return Err(Error::new(
-                Kind::Validation,
-                "Grant token list contains a grant token with invalid length",
-            ));
-        }
+        let grant_tokens = valid_grant_tokens(self.grant_tokens)?;
         Ok(AwsKmsKeyring {
             inner: Arc::new(AwsKmsKeyringInner {
                 kms_key_id,
@@ -564,7 +584,17 @@ impl Keyring for crate::shared::Builtin<AwsKmsKeyring> {
             .map_err(|e| Error::wrap("failed to serialize the encryption context", e))?;
         let mut errors = Vec::new();
         for edk in to_attempt {
-            match self.decrypt_one(&materials, &ec, &aad, edk).await {
+            match decrypt_edk(
+                &self.inner.client,
+                &self.inner.kms_key_id,
+                &self.inner.grant_tokens,
+                &materials,
+                &ec,
+                &aad,
+                edk,
+            )
+            .await
+            {
                 Ok(materials) => return OnDecryptOutput::builder().materials(materials).build(),
                 Err(e) => errors.push(e),
             }
