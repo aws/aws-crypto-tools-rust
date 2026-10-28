@@ -93,6 +93,10 @@ impl TransformsBuilder {
         name: impl Into<String>,
         config: TableConfig,
     ) -> Self {
+        //= spec/dynamodb-encryption-client/ddb-table-encryption-config.md#dynamodb-table-name
+        //# If this config is being organized with other table configs in a map,
+        //# this value MAY exist as a key value to identify other data in this config,
+        //# instead of existing alongside this data in the same object.
         self.table_encryption_configs.insert(name.into(), config);
         self
     }
@@ -136,6 +140,9 @@ impl TransformsBuilder {
                 .table(name.clone(), config)
                 .build()?;
             let logical = encryptor.config().logical_table_name.clone();
+            //= spec/dynamodb-encryption-client/ddb-table-encryption-config.md#logical-table-name
+            //# When mapping [DynamoDB Table Names](#dynamodb-table-name) to [logical table name](#logical-table-name)
+            //# there MUST a one to one mapping between the two.
             if logical_names.contains(&logical) {
                 return Err(val_err(format!(
                     "Duplicate logical table mapped to multiple physical tables: {logical}"

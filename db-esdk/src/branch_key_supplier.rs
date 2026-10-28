@@ -116,6 +116,9 @@ pub trait ItemKeySupplier: Send + Sync {
     /// # Errors
     ///
     /// Any error returned fails the encrypt or decrypt as-is.
+    //= spec/dynamodb-encryption-client/ddb-encryption-branch-key-id-supplier.md#dynamodbkeybranchkeyidsupplier
+    //= type=implication
+    //# This operation MUST return a branch key id (string) as output.
     async fn get_branch_key_id(
         &self,
         input: GetBranchKeyIdFromItemKeyInput,
@@ -136,6 +139,14 @@ impl std::fmt::Debug for ItemKeyBranchKeySupplier {
 
 impl ItemKeyBranchKeySupplier {
     /// Wrap `supplier` so a hierarchical keyring can use it.
+    //= spec/dynamodb-encryption-client/ddb-encryption-branch-key-id-supplier.md#input
+    //= type=implication
+    //# This operation MUST take in a [DynamoDbKeyBranchKeyIdSupplier](#dynamodbkeybranchkeyidsupplier) as input.
+    //
+    //= spec/dynamodb-encryption-client/ddb-encryption-branch-key-id-supplier.md#output
+    //= type=implication
+    //= reason=Self implements the MPL BranchKeySupplier the hierarchical keyring takes
+    //# This operation MUST output a BranchKeyIdSupplierReference.
     pub fn new(supplier: impl ItemKeySupplier + 'static) -> Self {
         Self {
             inner: Box::new(supplier),
@@ -153,32 +164,63 @@ impl BranchKeySupplier for ItemKeyBranchKeySupplier {
             item_key_from_context(input.encryption_context()).map_err(MplError::validation)?;
         let branch_key_id = self
             .inner
+            //= spec/dynamodb-encryption-client/ddb-encryption-branch-key-id-supplier.md#dynamodbkeybranchkeyidsupplier
+            //# This operation MUST take in a DDB `Key` structure
+            //# (an attribute map containing the partition and sort attributes,
+            //# along with the values of any attributes configured as SIGN_AND_INCLUDE_IN_ENCRYPTION_CONTEXT)
+            //# as input.
             .get_branch_key_id(GetBranchKeyIdFromItemKeyInput { item_key })
+            //= spec/dynamodb-encryption-client/ddb-encryption-branch-key-id-supplier.md#behavior
+            //# - Otherwise, this operation MUST fail.
             .await?;
+
+        //= spec/dynamodb-encryption-client/ddb-encryption-branch-key-id-supplier.md#behavior
+        //# - If successful, the resulting string MUST be outputted by this operation.
         Ok(branch_key_id.into_branch_key_id().into())
     }
 }
 
 /// The item key an encryption context written by this library describes.
-fn item_key_from_context(
+pub(crate) fn item_key_from_context(
     context: &EncryptionContext,
 ) -> Result<HashMap<String, AttributeValue>, String> {
+    //= spec/dynamodb-encryption-client/ddb-encryption-branch-key-id-supplier.md#behavior
+    //# - It MUST deserialize the "aws-crypto-partition-name" value in the input encryption context to determine the partition name.
     let partition_name = context
         .get(PARTITION_NAME)
+        //= spec/dynamodb-encryption-client/ddb-encryption-branch-key-id-supplier.md#behavior
+        //# - If the partition name does not exist in the encryption context, this operation MUST fail.
         .ok_or("Invalid encryption context: Missing partition name")?;
+
+    //= spec/dynamodb-encryption-client/ddb-encryption-branch-key-id-supplier.md#behavior
+    //# - It MUST get the serialized partition value by grabbing the `aws-crypto-attr.<partition_name>` from the encryption context.
     let partition_value_key = format!("{ATTR_PREFIX}{partition_name}");
     let partition_value = context
         .get(&partition_value_key)
+        //= spec/dynamodb-encryption-client/ddb-encryption-branch-key-id-supplier.md#behavior
+        //# - If the partition value does not exist in the encryption context, this operation MUST fail.
         .ok_or("Invalid encryption context: Missing partition value")?;
+
+    //= spec/dynamodb-encryption-client/ddb-encryption-branch-key-id-supplier.md#behavior
+    //# - It MUST check for the existence of "aws-crypto-sort-name" in the input encryption context.
     let sort_value_key = context
         .get(SORT_NAME)
+        //= spec/dynamodb-encryption-client/ddb-encryption-branch-key-id-supplier.md#behavior
+        //= reason=builds the sort value key; contains_key below confirms it is present
+        //# - If this key exists, it MUST get the serialized sort value by grabbing the `aws-crypto.attr:<sort_name>` from the encryption context.
         .map(|sort_name| format!("{ATTR_PREFIX}{sort_name}"));
     if let Some(key) = &sort_value_key
         && !context.contains_key(key)
     {
+        //= spec/dynamodb-encryption-client/ddb-encryption-branch-key-id-supplier.md#behavior
+        //# - If the sort value does not exist in the context, this operation MUST fail.
         return Err("Invalid encryption context: Missing sort value".to_owned());
     }
 
+    //= spec/dynamodb-encryption-client/ddb-encryption-branch-key-id-supplier.md#behavior
+    //# - If the field "aws-crypto-legend" exists in the encryption context,
+    //# it MUST [deserialize](./ddb-attribute-serialization.md), all values with keys beginning "aws-crypto-attr.",
+    //# and create a Key with these values, using names with the "aws-crypto-attr." removed.
     if let Some(legend) = context.get(LEGEND) {
         let mut item_key = v2_attributes(context, legend)?;
         let table_name = context
@@ -201,6 +243,8 @@ fn item_key_from_context(
         return Ok(item_key);
     }
 
+    //= spec/dynamodb-encryption-client/ddb-encryption-branch-key-id-supplier.md#behavior
+    //# - If the field "aws-crypto-legend" does not exist in the encryption context, it MUST [deserialize the partition (and optionally sort) value](./ddb-attribute-serialization.md), and create a Key with these values.
     let mut item_key = HashMap::new();
     let (name, value) = encoded_attribute(&partition_value_key, partition_value)?;
     item_key.insert(name, value);

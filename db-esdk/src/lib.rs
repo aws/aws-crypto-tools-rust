@@ -212,6 +212,10 @@ pub use aws_crypto_mpl::{cmc, cmm, key_store};
 /// which picks a [`HierarchicalKeyring`](keyring::HierarchicalKeyring)'s branch key from each
 /// item's primary key.
 pub mod keyring {
+    //= spec/dynamodb-encryption-client/ddb-encryption-branch-key-id-supplier.md#operation
+    //= type=implication
+    //= reason=ItemKeyBranchKeySupplier::new is the operation, exported next to ItemEncryptor
+    //# The `CreateDynamoDbEncryptionBranchKeyIdSupplier` is an operation that MUST be vended alongside the DynamoDb Item Encryptor.
     pub use crate::branch_key_supplier::{
         GetBranchKeyIdFromItemKeyInput, GetBranchKeyIdFromItemKeyInputBuilder,
         ItemKeyBranchKeySupplier, ItemKeySupplier,

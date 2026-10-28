@@ -72,7 +72,11 @@ impl EncryptedDataKeyDescription {
 pub fn describe_encrypted_data_keys<S: BuildHasher>(
     item: &HashMap<String, AttributeValue, S>,
 ) -> Result<Vec<EncryptedDataKeyDescription>, Error> {
+    //= spec/dynamodb-encryption-client/ddb-get-encrypted-data-key-description.md#behavior
+    //# - If the input is an encrypted DynamoDB item, it MUST attempt to extract "aws_dbe_head" attribute from the DynamoDB item to get the binary header.
     match item.get(HEADER_FIELD) {
+        //= spec/dynamodb-encryption-client/ddb-get-encrypted-data-key-description.md#input
+        //# This operation MUST take in either of the following:
         Some(AttributeValue::B(header)) => describe_header_encrypted_data_keys(header.as_ref()),
         _ => Err(val_err("the item has no binary aws_dbe_head attribute")),
     }
@@ -84,12 +88,29 @@ pub fn describe_encrypted_data_keys<S: BuildHasher>(
 /// # Errors
 ///
 /// A [`Serialization`](Error::Serialization) error when the header is malformed.
+//= spec/dynamodb-encryption-client/ddb-get-encrypted-data-key-description.md#behavior
+//= type=implication
+//= reason=takes no keyring, CMM, or materials, so it cannot decrypt a data key
+//# - The operation MUST NEVER DECRYPT the Data Keys.
+//
+//= spec/dynamodb-encryption-client/ddb-get-encrypted-data-key-description.md#behavior
+//= type=implication
+//= reason=a sync fn taking only bytes; no client, keyring, or I/O handle
+//# - The operation MUST NOT access the network in any way.
 pub fn describe_header_encrypted_data_keys(
     header: &[u8],
 ) -> Result<Vec<EncryptedDataKeyDescription>, Error> {
+    //= spec/dynamodb-encryption-client/ddb-get-encrypted-data-key-description.md#behavior
+    //# - This operation MUST deserialize the header bytes according to the header format.
     let header = PartialHeader::deserialize(header)?;
-    header
-        .data_keys
+
+    //= spec/dynamodb-encryption-client/ddb-get-encrypted-data-key-description.md#behavior
+    //# - This operation MUST extract the dataKeys from the deserialize header.
+    let data_keys = &header.data_keys;
+
+    //= spec/dynamodb-encryption-client/ddb-get-encrypted-data-key-description.md#behavior
+    //# - For every Data Key in Data Keys, the operation MUST attempt to extract a description of the Data Key.
+    data_keys
         .iter()
         .map(|edk| {
             let key_provider_id = edk.key_provider_id().to_owned();
@@ -105,10 +126,15 @@ pub fn describe_header_encrypted_data_keys(
                 .map_err(|_| ser_err("an encrypted data key's key provider info is not UTF-8"))?
                 .to_owned();
             let branch_key_version = if key_provider_id == HIERARCHY_PROVIDER_ID {
+                //= spec/dynamodb-encryption-client/ddb-get-encrypted-data-key-description.md#behavior
+                //# - This operation MUST extract the Format Flavor from the deserialize header.
                 Some(branch_key_version(edk.ciphertext(), header.flavor)?)
             } else {
                 None
             };
+
+            //= spec/dynamodb-encryption-client/ddb-get-encrypted-data-key-description.md#output
+            //# This operation MUST return the following:
             Ok(EncryptedDataKeyDescription {
                 key_provider_id,
                 key_provider_info: Some(info.clone()),
@@ -136,6 +162,9 @@ fn branch_key_version(ciphertext: &[u8], flavor: u8) -> Result<String, Error> {
         _ => ciphertext,
     };
     let start = SALT_LENGTH + IV_LENGTH;
+
+    //= spec/dynamodb-encryption-client/ddb-get-encrypted-data-key-description.md#behavior
+    //# - This description SHOULD be as detailed as possible, parsing but NOT decrypting the cipher-text field of the Data Key for embedded fields such as the Hierarchical Keyring’s branchKeyVersion.
     let version: &[u8; VERSION_LENGTH] = provider_wrapped
         .get(start..start + VERSION_LENGTH)
         .and_then(|v| v.try_into().ok())

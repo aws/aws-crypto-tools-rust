@@ -85,7 +85,15 @@ async fn picks_branch_key_from_v1_context() {
         ("aws-crypto-attr.branchKey", "AAFDQVNFX0E="),
     ]))
     .await;
+    //= spec/dynamodb-encryption-client/ddb-encryption-branch-key-id-supplier.md#behavior
+    //= type=test
+    //= reason=CASE_A is only in aws-crypto-attr.branchKey; a different value picks another key
+    //# - It MUST get the serialized partition value by grabbing the `aws-crypto-attr.<partition_name>` from the encryption context.
     assert_eq!(id.unwrap(), BRANCH_KEY_ID_A);
+
+    //= spec/dynamodb-encryption-client/ddb-encryption-branch-key-id-supplier.md#behavior
+    //= type=test
+    //# - It MUST deserialize the "aws-crypto-partition-name" value in the input encryption context to determine the partition name.
     assert_eq!(seen.unwrap(), item([("branchKey", s("CASE_A"))]));
 
     let (id, _) = select(ec([
@@ -93,11 +101,16 @@ async fn picks_branch_key_from_v1_context() {
         ("aws-crypto-attr.branchKey", "AAFDQVNFX0I="),
     ]))
     .await;
+
+    //= spec/dynamodb-encryption-client/ddb-encryption-branch-key-id-supplier.md#behavior
+    //= type=test
+    //# - If successful, the resulting string MUST be outputted by this operation.
     assert_eq!(id.unwrap(), BRANCH_KEY_ID_B);
 }
 
 #[tokio::test]
 async fn supplier_errors_pass_through_unchanged() {
+    // "CASE_C": a value TestSupplier has no key for.
     let (result, seen) = select(ec([
         ("aws-crypto-partition-name", "branchKey"),
         ("aws-crypto-attr.branchKey", "AAFDQVNFX0M="),
@@ -105,6 +118,9 @@ async fn supplier_errors_pass_through_unchanged() {
     .await;
     match result {
         Err(MplError::Validation(e)) => {
+            //= spec/dynamodb-encryption-client/ddb-encryption-branch-key-id-supplier.md#behavior
+            //= type=test
+            //# - Otherwise, this operation MUST fail.
             assert_eq!(e.message(), "Can't determine branchKeyId from item");
         }
         other => panic!("{other:?}"),
@@ -139,6 +155,17 @@ async fn item_key_of_v1_item_with_sort_key() {
     let mut input = v1_item();
     input.insert("sort".to_owned(), AttributeValue::N("7".to_owned()));
     let key = item_key_for(&encryptor, input).await;
+    //= spec/dynamodb-encryption-client/ddb-encryption-branch-key-id-supplier.md#behavior
+    //= type=test
+    //# - It MUST check for the existence of "aws-crypto-sort-name" in the input encryption context.
+    //
+    //= spec/dynamodb-encryption-client/ddb-encryption-branch-key-id-supplier.md#behavior
+    //= type=test
+    //# - If this key exists, it MUST get the serialized sort value by grabbing the `aws-crypto.attr:<sort_name>` from the encryption context.
+    //
+    //= spec/dynamodb-encryption-client/ddb-encryption-branch-key-id-supplier.md#behavior
+    //= type=test
+    //# - If the field "aws-crypto-legend" does not exist in the encryption context, it MUST [deserialize the partition (and optionally sort) value](./ddb-attribute-serialization.md), and create a Key with these values.
     assert_eq!(
         key,
         item([
@@ -191,6 +218,18 @@ async fn item_key_of_complex_v2_item() {
         ("sign4", AttributeValue::Null(true)),
         ("nothing", s("baz")),
     ]);
+    //= spec/dynamodb-encryption-client/ddb-encryption-branch-key-id-supplier.md#dynamodbkeybranchkeyidsupplier
+    //= type=test
+    //# This operation MUST take in a DDB `Key` structure
+    //# (an attribute map containing the partition and sort attributes,
+    //# along with the values of any attributes configured as SIGN_AND_INCLUDE_IN_ENCRYPTION_CONTEXT)
+    //# as input.
+    //
+    //= spec/dynamodb-encryption-client/ddb-encryption-branch-key-id-supplier.md#behavior
+    //= type=test
+    //# - If the field "aws-crypto-legend" exists in the encryption context,
+    //# it MUST [deserialize](./ddb-attribute-serialization.md), all values with keys beginning "aws-crypto-attr.",
+    //# and create a Key with these values, using names with the "aws-crypto-attr." removed.
     assert_eq!(
         item_key_for(&encryptor, input).await,
         item([
@@ -207,33 +246,64 @@ async fn item_key_of_complex_v2_item() {
 }
 
 #[tokio::test]
-async fn rejects_malformed_contexts() {
-    let base = [
+async fn rejects_context_without_partition_name() {
+    //= spec/dynamodb-encryption-client/ddb-encryption-branch-key-id-supplier.md#behavior
+    //= type=test
+    //# - If the partition name does not exist in the encryption context, this operation MUST fail.
+    assert_eq!(
+        rejection(ec([])).await,
+        "Invalid encryption context: Missing partition name"
+    );
+}
+
+#[tokio::test]
+async fn rejects_context_without_partition_value() {
+    let context = ec([("aws-crypto-partition-name", "bar")]);
+    //= spec/dynamodb-encryption-client/ddb-encryption-branch-key-id-supplier.md#behavior
+    //= type=test
+    //# - If the partition value does not exist in the encryption context, this operation MUST fail.
+    assert_eq!(
+        rejection(context).await,
+        "Invalid encryption context: Missing partition value"
+    );
+}
+
+#[tokio::test]
+async fn rejects_context_without_sort_value() {
+    let context = ec([
         ("aws-crypto-partition-name", "bar"),
+        // "key" as a DynamoDB string: type 0x0001 + UTF-8, base64.
         ("aws-crypto-attr.bar", "AAFrZXk="),
-    ];
+        ("aws-crypto-sort-name", "sort"),
+    ]);
+    //= spec/dynamodb-encryption-client/ddb-encryption-branch-key-id-supplier.md#behavior
+    //= type=test
+    //# - If the sort value does not exist in the context, this operation MUST fail.
+    assert_eq!(
+        rejection(context).await,
+        "Invalid encryption context: Missing sort value"
+    );
+}
+
+#[tokio::test]
+async fn rejects_malformed_contexts() {
+    // Adjacent guard for #behavior "If the field \"aws-crypto-legend\" exists ... it MUST deserialize"
+    // and "... does not exist ... it MUST deserialize": a context that cannot be deserialized fails.
+    // No spec rule names these errors, so no requirement is cited here.
+    let base = ("aws-crypto-partition-name", "bar");
     let v2 = [
         ("aws-crypto-table-name", "foo"),
         ("aws-crypto-partition-name", "bar"),
         ("aws-crypto-attr.bar", "key"),
     ];
     let cases: Vec<(EncryptionContext, &str)> = vec![
-        (ec([]), "Invalid encryption context: Missing partition name"),
         (
-            ec([("aws-crypto-partition-name", "bar")]),
-            "Invalid encryption context: Missing partition value",
-        ),
-        (
-            ec([base[0], base[1], ("aws-crypto-sort-name", "sort")]),
-            "Invalid encryption context: Missing sort value",
-        ),
-        (
-            ec([base[0], ("aws-crypto-attr.bar", "!!!")]),
+            ec([base, ("aws-crypto-attr.bar", "!!!")]),
             "Invalid base64 in encryption context: Invalid symbol 33, offset 0.",
         ),
         (
             // One byte: too short for a type id.
-            ec([base[0], ("aws-crypto-attr.bar", "AA==")]),
+            ec([base, ("aws-crypto-attr.bar", "AA==")]),
             "Invalid serialization of DDB Attribute in encryption context.",
         ),
         (
@@ -269,14 +339,24 @@ async fn rejects_malformed_contexts() {
 
 #[tokio::test]
 async fn rejects_attribute_name_over_65535_characters() {
-    let name = "a".repeat(65_536);
-    let key = format!("aws-crypto-attr.{name}");
-    let context = ec([
-        ("aws-crypto-partition-name", name.as_str()),
-        (key.as_str(), "AAFrZXk="),
-    ]);
+    // Adjacent guard: the rebuilt Key must hold valid DynamoDB attribute names
+    // (cf. ddb-item-conversion "MUST NOT have any Key strings ... more than 65535 characters");
+    // no rule of this spec covers it.
+    // "key" as a DynamoDB string: type 0x0001 + UTF-8, base64.
+    let context_named = |name: &str| {
+        let key = format!("aws-crypto-attr.{name}");
+        ec([
+            ("aws-crypto-partition-name", name),
+            (key.as_str(), "AAFrZXk="),
+        ])
+    };
+
+    let at_limit = "a".repeat(65_535);
+    let (_, seen) = select(context_named(&at_limit)).await;
+    assert_eq!(seen.unwrap(), item([(at_limit.as_str(), s("key"))]));
+
     assert_eq!(
-        rejection(context).await,
+        rejection(context_named(&"a".repeat(65_536))).await,
         "Invalid serialization of DDB Attribute in encryption context."
     );
 }
