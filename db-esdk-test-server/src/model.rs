@@ -154,6 +154,12 @@ pub struct Keyring {
     pub aws_kms_discovery: Option<AwsKmsDiscoveryKeyringConfig>,
     #[serde(rename = "AwsKmsMultiKeyring", default)]
     pub aws_kms_multi_keyring: Option<AwsKmsMultiKeyringConfig>,
+    #[serde(rename = "AwsKmsMrk", default)]
+    pub aws_kms_mrk: Option<AwsKmsKeyringConfig>,
+    #[serde(rename = "AwsKmsMrkDiscovery", default)]
+    pub aws_kms_mrk_discovery: Option<AwsKmsMrkDiscoveryKeyringConfig>,
+    #[serde(rename = "AwsKmsMrkMultiKeyring", default)]
+    pub aws_kms_mrk_multi_keyring: Option<AwsKmsMultiKeyringConfig>,
     #[serde(rename = "Multi", default)]
     pub multi: Option<MultiKeyringConfig>,
     #[serde(flatten)]
@@ -171,6 +177,16 @@ pub struct AwsKmsKeyringConfig {
 /// A discovery keyring: decrypts with the AWS KMS key each data key names.
 #[derive(Debug, Deserialize)]
 pub struct AwsKmsDiscoveryKeyringConfig {
+    #[serde(rename = "discoveryFilter", default)]
+    pub discovery_filter: Option<DiscoveryFilter>,
+    #[serde(rename = "grantTokens", default)]
+    pub grant_tokens: Option<Vec<String>>,
+}
+
+/// An MRK discovery keyring: decrypts in `region`, with the local replica of a multi-Region key.
+#[derive(Debug, Deserialize)]
+pub struct AwsKmsMrkDiscoveryKeyringConfig {
+    pub region: String,
     #[serde(rename = "discoveryFilter", default)]
     pub discovery_filter: Option<DiscoveryFilter>,
     #[serde(rename = "grantTokens", default)]

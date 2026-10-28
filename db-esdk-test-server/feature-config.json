@@ -3,11 +3,11 @@
     "raw-aes",
     "aws-kms",
     "plaintext-override",
-    "aws-kms-hierarchical"
+    "aws-kms-hierarchical",
+    "aws-kms-mrk"
   ],
   "unsupportedFeatures": [
     "raw-rsa",
-    "aws-kms-mrk",
     "aws-kms-rsa",
     "required-encryption-context-cmm",
     "ddb-transforms",

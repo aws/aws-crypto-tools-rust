@@ -9,13 +9,15 @@ use std::time::Duration;
 use crate::error::ServerError;
 use crate::model::{
     AesWrappingAlg, AwsKmsDiscoveryKeyringConfig, AwsKmsHierarchicalKeyringConfig,
-    AwsKmsKeyringConfig, AwsKmsMultiKeyringConfig, DdbKeyBranchKeyIdSupplier, Keyring,
+    AwsKmsKeyringConfig, AwsKmsMrkDiscoveryKeyringConfig, AwsKmsMultiKeyringConfig,
+    DdbKeyBranchKeyIdSupplier, DiscoveryFilter as ModelDiscoveryFilter, Keyring,
     MultiKeyringConfig, RawAesKeyringConfig,
 };
 use aws_db_esdk::aws_sdk_dynamodb::types::AttributeValue;
 use aws_db_esdk::key_store::types::KmsConfiguration;
 use aws_db_esdk::keyring::{
-    AwsKmsDiscoveryKeyring, AwsKmsKeyring, DiscoveryFilter, GetBranchKeyIdFromItemKeyInput,
+    AwsKmsDiscoveryKeyring, AwsKmsKeyring, AwsKmsMrkDiscoveryKeyring, AwsKmsMrkKeyring,
+    DiscoveryFilter, GetBranchKeyIdFromItemKeyInput,
     GetBranchKeyIdOutput, HierarchicalKeyring, ItemKeyBranchKeySupplier, ItemKeySupplier,
     MultiKeyring, RawAesKeyring, SharedKeyring,
 };
@@ -29,6 +31,9 @@ pub async fn keyring_for_config(keyring: &Keyring) -> Result<SharedKeyring, Serv
         + usize::from(keyring.aws_kms_hierarchical.is_some())
         + usize::from(keyring.aws_kms_discovery.is_some())
         + usize::from(keyring.aws_kms_multi_keyring.is_some())
+        + usize::from(keyring.aws_kms_mrk.is_some())
+        + usize::from(keyring.aws_kms_mrk_discovery.is_some())
+        + usize::from(keyring.aws_kms_mrk_multi_keyring.is_some())
         + usize::from(keyring.multi.is_some())
         + keyring.other.len();
     if set != 1 {
@@ -50,6 +55,15 @@ pub async fn keyring_for_config(keyring: &Keyring) -> Result<SharedKeyring, Serv
     }
     if let Some(aws_kms_multi) = &keyring.aws_kms_multi_keyring {
         return build_aws_kms_multi(aws_kms_multi).await;
+    }
+    if let Some(aws_kms_mrk) = &keyring.aws_kms_mrk {
+        return build_aws_kms_mrk(aws_kms_mrk).await;
+    }
+    if let Some(mrk_discovery) = &keyring.aws_kms_mrk_discovery {
+        return build_aws_kms_mrk_discovery(mrk_discovery).await;
+    }
+    if let Some(mrk_multi) = &keyring.aws_kms_mrk_multi_keyring {
+        return build_aws_kms_mrk_multi(mrk_multi).await;
     }
     if let Some(multi) = &keyring.multi {
         return build_multi(multi).await;
@@ -110,9 +124,22 @@ async fn build_aws_kms(config: &AwsKmsKeyringConfig) -> Result<SharedKeyring, Se
 async fn build_aws_kms_discovery(
     config: &AwsKmsDiscoveryKeyringConfig,
 ) -> Result<SharedKeyring, ServerError> {
-    let discovery_filter = config
-        .discovery_filter
-        .as_ref()
+    let discovery_filter = discovery_filter(config.discovery_filter.as_ref())?;
+    let sdk_config = sdk_config_for("").await;
+    let keyring = AwsKmsDiscoveryKeyring::builder()
+        .kms_client(aws_sdk_kms::Client::new(&sdk_config))
+        .set_discovery_filter(discovery_filter)
+        .set_grant_tokens(config.grant_tokens.clone())
+        .build()
+        .map_err(|e| ServerError::client(e.to_string()))?;
+    Ok(SharedKeyring::new(keyring))
+}
+
+/// The MPL discovery filter a modeled one names.
+fn discovery_filter(
+    filter: Option<&ModelDiscoveryFilter>,
+) -> Result<Option<DiscoveryFilter>, ServerError> {
+    filter
         .map(|filter| {
             DiscoveryFilter::builder()
                 .partition(filter.partition.as_str())
@@ -120,13 +147,51 @@ async fn build_aws_kms_discovery(
                 .build()
         })
         .transpose()
-        .map_err(|e| ServerError::client(e.to_string()))?;
-    let sdk_config = sdk_config_for("").await;
-    let keyring = AwsKmsDiscoveryKeyring::builder()
+        .map_err(|e| ServerError::client(e.to_string()))
+}
+
+/// An MRK keyring with a KMS client in its key's region.
+async fn build_aws_kms_mrk(config: &AwsKmsKeyringConfig) -> Result<SharedKeyring, ServerError> {
+    let sdk_config = sdk_config_for(&config.kms_key_id).await;
+    let keyring = AwsKmsMrkKeyring::builder()
+        .kms_key_id(config.kms_key_id.as_str())
         .kms_client(aws_sdk_kms::Client::new(&sdk_config))
+        .set_grant_tokens(config.grant_tokens.clone())
+        .build()
+        .map_err(|e| ServerError::client(e.to_string()))?;
+    Ok(SharedKeyring::new(keyring))
+}
+
+/// An MRK discovery keyring with a KMS client in the configured region.
+async fn build_aws_kms_mrk_discovery(
+    config: &AwsKmsMrkDiscoveryKeyringConfig,
+) -> Result<SharedKeyring, ServerError> {
+    let discovery_filter = discovery_filter(config.discovery_filter.as_ref())?;
+    let sdk_config = aws_config::defaults(aws_config::BehaviorVersion::latest())
+        .region(aws_config::Region::new(config.region.clone()))
+        .load()
+        .await;
+    let keyring = AwsKmsMrkDiscoveryKeyring::builder()
+        .kms_client(aws_sdk_kms::Client::new(&sdk_config))
+        .region(config.region.as_str())
         .set_discovery_filter(discovery_filter)
         .set_grant_tokens(config.grant_tokens.clone())
         .build()
+        .map_err(|e| ServerError::client(e.to_string()))?;
+    Ok(SharedKeyring::new(keyring))
+}
+
+/// A multi-keyring of MRK keyrings, each with a KMS client in its key's region.
+async fn build_aws_kms_mrk_multi(
+    config: &AwsKmsMultiKeyringConfig,
+) -> Result<SharedKeyring, ServerError> {
+    let keyring = MultiKeyring::aws_kms_mrk()
+        .set_generator(config.generator.clone())
+        .set_kms_key_ids(config.kms_key_ids.clone())
+        .set_grant_tokens(config.grant_tokens.clone())
+        .sdk_config(sdk_config_for("").await)
+        .build()
+        .await
         .map_err(|e| ServerError::client(e.to_string()))?;
     Ok(SharedKeyring::new(keyring))
 }
