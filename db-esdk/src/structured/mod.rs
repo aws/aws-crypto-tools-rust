@@ -569,3 +569,44 @@ pub(crate) async fn decrypt_structure(
         parsed_header,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn field(key: &[&str], action: CryptoAction) -> CryptoField {
+        CryptoField {
+            key: key.iter().map(|s| (*s).to_owned()).collect(),
+            data: Terminal::new(BYTES_TYPE_ID, vec![]),
+            action,
+        }
+    }
+
+    // Port of PathsTests.TestSpecExamples.
+    #[test]
+    fn canonical_path_spec_example() {
+        let [item] = <[CanonItem; 1]>::try_from(for_encrypt(
+            "example_table",
+            vec![field(&["name"], CryptoAction::SignOnly)],
+        ))
+        .unwrap();
+        let mut expected = b"example_table".to_vec();
+        expected.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0, 1]);
+        expected.push(b'$');
+        expected.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0, 4]);
+        expected.extend_from_slice(b"name");
+        assert_eq!(item.canon, expected);
+    }
+
+    #[test]
+    fn unbuild_rejects_nested_paths() {
+        let err = unbuild(vec![field(&["a", "b"], CryptoAction::SignOnly)]).unwrap_err();
+        assert!(matches!(err, Error::Internal(_)), "{err:?}");
+        let err = unbuild(vec![
+            field(&["a"], CryptoAction::SignOnly),
+            field(&["a"], CryptoAction::DoNothing),
+        ])
+        .unwrap_err();
+        assert!(matches!(err, Error::Validation(_)), "{err:?}");
+    }
+}
