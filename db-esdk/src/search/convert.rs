@@ -86,6 +86,16 @@ impl Outer<'_> {
         is_signed_beacon: bool,
     ) -> Result<(), Error> {
         let action = self.actions.get(name);
+
+        //= spec/searchable-encryption/search-config.md#beacon-version-initialization
+        //= reason=an unencrypted action, an allowed unauthenticated attribute, or the unauthenticated prefix: the first, third, and fourth branches
+        //# Initialization MUST fail if the name of any [standard beacon](beacons.md#standard-beacon)
+        //# matches that of any unencrypted [configured field](#configured-field).
+        //
+        //= spec/searchable-encryption/search-config.md#beacon-version-initialization
+        //= reason=an unencrypted action, an allowed unauthenticated attribute, or the unauthenticated prefix: the first, third, and fourth branches
+        //# Initialization MUST fail if the name of any [compound beacon](beacons.md#compound-beacon)
+        //# matches that of any unencrypted [configured field](#configured-field).
         if action.is_some_and(|a| *a != CryptoAction::EncryptAndSign) {
             Err(val_err(format!(
                 "{name} not allowed as a {context} because it is already an unencrypted attribute."
@@ -113,6 +123,10 @@ impl Outer<'_> {
 
     /// Reject `name` as a virtual field when an attribute or the reserved prefix already claims it.
     fn virtual_field_name_allowed(&self, name: &str) -> Result<(), Error> {
+        //= spec/searchable-encryption/search-config.md#beacon-version-initialization
+        //= reason=a configured field is an action, an allowed unauthenticated attribute, or the unauthenticated prefix: the first three branches
+        //# Initialization MUST fail if the name of any [virtual fields](virtual.md#virtual-field) matches that
+        //# of any [configured field](#configured-field).
         if self.actions.contains_key(name) {
             Err(val_err(format!(
                 "{name} not allowed as a Virtual Field because it is already a configured attribute."
@@ -153,9 +167,13 @@ pub(crate) fn convert(table: &TableConfig) -> Result<Option<SearchInfo>, Error> 
         return Ok(None);
     };
     if search.write_version != 1 {
+        //= spec/searchable-encryption/search-config.md#initialization
+        //# Initialization MUST fail if the [version number](#version-number) is not `1`.
         return Err(val_err("write_version must be 1"));
     }
     let [version] = search.versions.as_slice() else {
+        //= spec/searchable-encryption/search-config.md#initialization
+        //# Initialization MUST fail if the length of the list of [beacon versions](#beacon-version-initialization) is not 1.
         return Err(val_err(
             "the search config must have exactly one beacon version",
         ));
@@ -191,13 +209,23 @@ pub(crate) fn convert(table: &TableConfig) -> Result<Option<SearchInfo>, Error> 
 /// Check and convert one beacon version.
 fn convert_version(outer: &Outer<'_>, config: &BeaconVersion) -> Result<BeaconVersionInfo, Error> {
     if config.version != 1 {
+        //= spec/searchable-encryption/search-config.md#beacon-version-initialization
+        //# Initialization MUST fail if the [version number](#version-number) is not `1`.
+        //
+        //= spec/searchable-encryption/search-config.md#version-number
+        //# A version number MUST be `1`.
         return Err(val_err("the beacon version's version must be 1"));
     }
     if config.standard_beacons.is_empty() {
+        //= spec/searchable-encryption/search-config.md#beacon-version-initialization
+        //# Initialization MUST fail if at least one [standard beacon](beacons.md#standard-beacon)
+        //# is not provided.
         return Err(val_err("At least one standard beacon must be configured."));
     }
     let key_source = make_key_source(outer, config)?;
 
+    //= spec/searchable-encryption/search-config.md#max-partitions
+    //# If not set, Max Partitions MUST default to `1`, which is synonymous with "no partitions are being used".
     let max_partitions = config.maximum_number_of_partitions.unwrap_or(1);
     if max_partitions == MAX_PARTITION_COUNT {
         return Err(val_err(format!(
@@ -205,7 +233,15 @@ fn convert_version(outer: &Outer<'_>, config: &BeaconVersion) -> Result<BeaconVe
         )));
     }
     let default_partitions = match config.default_number_of_partitions {
+        //= spec/searchable-encryption/search-config.md#default-partitions
+        //# If not set, Default Partitions MUST default to [Max Partitions](#max-partitions).
         None => max_partitions,
+        //= spec/searchable-encryption/search-config.md#beacon-version-initialization
+        //= reason=an unset maximum is 1, and a supplied default is at least 1, so it fails here
+        //# Initialization MUST fail if [default number of partitions](#default-partitions) is supplied but [maximum number of partitions](#max-partitions) is not.
+        //
+        //= spec/searchable-encryption/search-config.md#beacon-version-initialization
+        //# Initialization MUST fail if [default number of partitions](#default-partitions) is greater than or equal to [maximum number of partitions](#max-partitions).
         Some(d) if max_partitions <= d => {
             return Err(val_err(format!(
                 "Invalid defaultNumberOfPartitions specified, {d}, must be 0 < defaultNumberOfPartitions < maximumNumberOfPartitions."
@@ -242,6 +278,9 @@ fn convert_version(outer: &Outer<'_>, config: &BeaconVersion) -> Result<BeaconVe
     };
     check_beacons(&beacons)?;
 
+    //= spec/searchable-encryption/search-config.md#beacon-version-initialization
+    //# Initialization MUST fail if the [beacon key source](#beacon-key-source) is a [multi key store](#multi-key-store-initialization)
+    //# and the name of any of the following match the [beacon key field name](#beacon-key-field-name)
     if let KeyLocation::Multi { key_field_name, .. } = &key_source.location {
         if beacons.contains_key(key_field_name) {
             return Err(val_err(format!(
@@ -314,6 +353,11 @@ fn make_key_source(outer: &Outer<'_>, config: &BeaconVersion) -> Result<KeySourc
 fn should_delete_key_field(outer: &Outer<'_>, name: &str) -> Result<bool, Error> {
     match outer.actions.get(name) {
         None | Some(CryptoAction::DoNothing) => Ok(true),
+        //= spec/searchable-encryption/search-config.md#beacon-version-initialization
+        //# Initialization MUST fail if the [beacon key source](#beacon-key-source) is a [multi key store](#multi-key-store-initialization)
+        //# and the [beacon key field name](#beacon-key-field-name)
+        //# is a [configured field](#configured-field)
+        //# with [ENCRYPT_AND_SIGN](../structured-encryption/structures.md#encrypt_and_sign).
         Some(CryptoAction::EncryptAndSign) => Err(val_err(format!(
             "Beacon key field name {name} is configured as ENCRYPT_AND_SIGN which is not allowed."
         ))),
@@ -358,12 +402,16 @@ fn add_virtual_fields(
             .collect::<Result<Vec<_>, Error>>()?;
         let field = VirtField { parts };
         if field.examine(|t| !outer.is_signed(t)) {
+            //= spec/searchable-encryption/search-config.md#beacon-version-initialization
+            //# Initialization MUST fail if any [virtual field](virtual.md#virtual-field) is not signed.
             return Err(val_err(format!(
                 "VirtualField {} must be defined on signed fields.",
                 vf.name
             )));
         }
         if let Some(bad) = find_virtual_field_with_locs(&converted, &field.locs()) {
+            //= spec/searchable-encryption/virtual.md#virtual-field-initialization
+            //# Initialization MUST fail if two virtual fields are defined with the same set of locations.
             return Err(val_err(format!(
                 "Virtual field {} is defined on the same locations as {bad}.",
                 vf.name
@@ -412,6 +460,9 @@ fn add_standard_beacons(
     let mut converted = BTreeMap::new();
     for b in beacons {
         if converted.contains_key(&b.name) {
+            //= spec/searchable-encryption/search-config.md#beacon-version-initialization
+            //# Initialization MUST fail if there is any duplicates among the names of the
+            //# [standard beacons](beacons.md#standard-beacon)
             return Err(val_err(format!(
                 "Duplicate StandardBeacon name : {}",
                 b.name
@@ -440,6 +491,9 @@ fn add_standard_beacons(
             )));
         }
         if !outer.is_encrypted_v(virtual_fields, &loc) {
+            //= spec/searchable-encryption/search-config.md#beacon-version-initialization
+            //# Initialization MUST fail if the [terminal location](virtual.md#terminal-location)
+            //# reference by a [standard beacon](beacons.md#standard-beacon) is not `encrypted`.
             return Err(val_err(format!(
                 "StandardBeacon {} not defined on an encrypted field.",
                 b.name
@@ -452,6 +506,9 @@ fn add_standard_beacons(
             )));
         }
         if let Some(bad) = find_virtual_field_with_locs(virtual_fields, &BTreeSet::from([&loc])) {
+            //= spec/searchable-encryption/virtual.md#virtual-field-initialization
+            //# Initialization MUST fail if a virtual field is defined with only one location,
+            //# and also a [standard beacon](beacons.md#standard-beacon) is defined with that same location.
             return Err(val_err(format!(
                 "Beacon {} is defined on location {loc}, but virtual field {bad} is already defined on that single location.",
                 b.name
@@ -546,6 +603,10 @@ fn get_signed_parts(
         let loc_string = p.location.as_deref().unwrap_or(&p.name);
         let loc = TermLoc::parse(loc_string)?;
         if !outer.is_sign_only(&loc) {
+            //= spec/searchable-encryption/search-config.md#beacon-version-initialization
+            //# Initialization MUST fail if the [terminal location](virtual.md#terminal-location)
+            //# reference by a [signed part](beacons.md#signed-part) is `encrypted`,
+            //# or is not `signed`.
             return Err(val_err(format!(
                 "Signed Part {} is built from {loc_string} which is not SIGN_ONLY.",
                 p.name
@@ -779,6 +840,16 @@ fn create_compound_beacon(
     )?;
 
     if converted.contains_key(name) {
+        //= spec/searchable-encryption/search-config.md#beacon-version-initialization
+        //= reason=converted holds the standard beacons and the compound beacons before this one
+        //# Initialization MUST fail if there is any duplicates among the names of the
+        //# [compound beacons](beacons.md#compound-beacon)
+        //
+        //= spec/searchable-encryption/search-config.md#beacon-version-initialization
+        //# Initialization MUST fail if the name of a
+        //# [compound beacons](beacons.md#compound-beacon)
+        //# matches the name of a
+        //# [standard beacons](beacons.md#standard-beacon)
         return Err(val_err(format!("two compound beacons are named {name}")));
     }
     if beacon.constructors.as_ref().is_some_and(Vec::is_empty) {

@@ -11,6 +11,7 @@
 #![allow(dead_code)]
 
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use aws_db_esdk::aws_sdk_dynamodb::types::AttributeValue;
@@ -31,7 +32,8 @@ use aws_db_esdk::key_store::operation::get_key_store_info::{
 use aws_db_esdk::key_store::operation::version_key::{VersionKeyInput, VersionKeyOutput};
 use aws_db_esdk::key_store::types::{Discovery, KmsConfiguration};
 use aws_db_esdk::key_store::{self, KeyStore};
-use aws_db_esdk::keyring::{HierarchicalKeyring, RawAesKeyring};
+use aws_db_esdk::keyring::{HierarchicalKeyring, RawAesKeyring, SharedKeyring};
+use aws_db_esdk::mpl::shared::IntoShared;
 use aws_db_esdk::mpl::types::{BeaconKeyMaterials, BranchKeyMaterials};
 use aws_db_esdk::search::{
     BeaconKeySource, BeaconVersion, CompoundBeacon, Constructor, ConstructorPart, EncryptedPart,
@@ -140,7 +142,10 @@ pub const BRANCH_KEY_VERSION: &str = "11111111-2222-4333-8444-555555555555";
 /// A key store that never leaves the process: every beacon key is [`BEACON_KEY`],
 /// and every branch key is [`BRANCH_KEY`] under the requested id.
 #[derive(Clone, Debug, Default)]
-pub struct FakeKeyStore;
+pub struct FakeKeyStore {
+    /// The branch key id of each beacon key request, in order.
+    pub beacon_key_ids: Arc<Mutex<Vec<String>>>,
+}
 
 fn branch_materials(id: &str) -> BranchKeyMaterials {
     BranchKeyMaterials::builder()
@@ -212,6 +217,10 @@ impl KeyStore for FakeKeyStore {
         &self,
         input: GetBeaconKeyInput,
     ) -> Result<GetBeaconKeyOutput, aws_db_esdk::mpl::Error> {
+        self.beacon_key_ids
+            .lock()
+            .unwrap()
+            .push(input.branch_key_id().to_owned());
         let materials = BeaconKeyMaterials::builder()
             .beacon_key_id(input.branch_key_id())
             .encryption_context(HashMap::new())
@@ -224,7 +233,7 @@ impl KeyStore for FakeKeyStore {
 }
 
 pub fn fake_key_store() -> key_store::Client {
-    key_store::Client::new(FakeKeyStore)
+    key_store::Client::new(FakeKeyStore::default())
 }
 
 // The beacons of `BeaconTestFixtures.GetLotsaBeacons`.
@@ -295,6 +304,11 @@ fn constructor(parts: &[(&str, bool)]) -> Constructor {
 /// `GetLotsaBeacons` (single key store, key id `foo`) or `GetLotsaBeaconsMulti`
 /// (multi key store, key field `TheKeyField`).
 pub fn lotsa_beacons(multi: bool) -> BeaconVersion {
+    lotsa_beacons_with(multi, fake_key_store())
+}
+
+/// [`lotsa_beacons`] with its beacon keys from `store`.
+pub fn lotsa_beacons_with(multi: bool, store: key_store::Client) -> BeaconVersion {
     let name = encrypted_part("Name", "N_");
     let title = encrypted_part("Title", "T_");
     let year = signed_part("Year", "Y_", None);
@@ -336,7 +350,7 @@ pub fn lotsa_beacons(multi: bool) -> BeaconVersion {
     };
     BeaconVersion::builder()
         .version(1)
-        .key_store(fake_key_store())
+        .key_store(store)
         .key_source(key_source)
         .standard_beacons(standard("std2", 24, None))
         .standard_beacons(standard("std4", 24, Some("std4")))
@@ -433,20 +447,27 @@ pub fn multi_transforms_static(o: Option<PlaintextOverride>) -> Transforms {
         .unwrap()
 }
 
-/// `TestFixtures.GetDynamoDbEncryptionTransformsMulti` with a hierarchical keyring
-/// over [`FakeKeyStore`] whose branch key id is `branch_key_id`.
-pub async fn multi_transforms_hierarchical(branch_key_id: &str) -> Transforms {
-    let search = SearchConfig::builder()
-        .write_version(1)
-        .versions(lotsa_beacons(true))
-        .build()
-        .unwrap();
-    let keyring = HierarchicalKeyring::builder()
+/// A hierarchical keyring over [`FakeKeyStore`] whose branch key id is `branch_key_id`.
+pub async fn hierarchical_keyring(branch_key_id: &str) -> HierarchicalKeyring {
+    HierarchicalKeyring::builder()
         .key_store(fake_key_store())
         .branch_key_id(branch_key_id)
         .ttl(Duration::from_secs(3600))
         .build()
         .await
+        .unwrap()
+}
+
+/// `TestFixtures.GetDynamoDbEncryptionTransformsMulti` with `keyring`,
+/// and beacon keys from `store`.
+pub fn multi_transforms_with(
+    keyring: impl IntoShared<SharedKeyring>,
+    store: key_store::Client,
+) -> Transforms {
+    let search = SearchConfig::builder()
+        .write_version(1)
+        .versions(lotsa_beacons_with(true, store))
+        .build()
         .unwrap();
     let config = multi_actions(TableConfig::builder())
         .logical_table_name("foo")

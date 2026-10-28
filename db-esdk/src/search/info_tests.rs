@@ -72,8 +72,26 @@ async fn beacon_values() {
         .generate_encrypted_beacons(&simple_item(), &MaybeKeyId::DontUse, 0)
         .await
         .unwrap();
+
+    //= spec/searchable-encryption/search-config.md#hmac-key-generation
+    //= type=test
+    //= reason=the expected beacons come from the reference implementation's fixtures
+    //# For each beacon HKDF-SHA512 MUST be used
+    //# to calculate the key for individual beacon,
+    //# using the beacon key retrieved above as the initial key material with no salt.
+    //
+    //= spec/searchable-encryption/search-config.md#hmac-key-generation
+    //= type=test
+    //= reason=the expected beacons come from the reference implementation's fixtures
+    //# The `info` MUST be the concatenation of "AWS_DBE_SCAN_BEACON" encoded as UTF8
+    //# and the beacon name.
     assert_eq!(encrypted, expected_encrypted_beacons());
+
     // The single key store's key id.
+    //= spec/searchable-encryption/search-config.md#get-beacon-key-after-encrypt
+    //= type=test
+    //# If the [Beacon Key Source](#beacon-key-source) is a [Single Key Store](#single-key-store-initialization)
+    //# then `beacon key id` MUST be the configured [beacon key id](#beacon-key-id)
     assert_eq!(*requested.lock().unwrap(), ["foo"]);
 
     // A changed value changes only the beacons computed from it.
@@ -204,14 +222,31 @@ async fn multi_key_store_uses_the_item_key_id() {
         .generate_encrypted_beacons(&simple_item(), &MaybeKeyId::Id("bk-1".to_owned()), 0)
         .await
         .unwrap();
+
     // The fake key store returns the same beacon key for every id.
+    //= spec/searchable-encryption/search-config.md#get-beacon-key-after-encrypt
+    //= type=test
+    //= reason=the beacons are computed with the keys fetched for bk-1, the only id requested below
+    //# The `beacon key id`, [Key Store Cache](#key-store-cache), and a `KeyStore`
+    //# MUST be passed to [Get Beacon Key Materials](#get-beacon-key-materials)
+    //# and the result returned for Get beacon key after encrypt.
     assert_eq!(encrypted, expected_encrypted_beacons());
+
+    //= spec/searchable-encryption/search-config.md#beacon-keys
+    //= type=test
+    //# Beacon keys MUST be obtained from the configured [Beacon Key Source](#beacon-key-source).
+    //
+    //= spec/searchable-encryption/search-config.md#get-beacon-key-materials
+    //= type=test
+    //# The `beacon key id` MUST be passed to the configured `KeyStore`'s `GetBeaconKey` operation.
     assert_eq!(*requested.lock().unwrap(), ["bk-1"]);
 
     assert!(matches!(
         bv.get_key_map(&MaybeKeyId::ShouldHave).await.unwrap(),
         MaybeKeyMap::ShouldHaveKeys
     ));
+    // A multi key store needs the item's beacon key id, never the configured fixed one
+    // (get-beacon-key-after-encrypt).
     assert_eq!(
         validation_message(
             bv.generate_encrypted_beacons(&simple_item(), &MaybeKeyId::DontUse, 0)
@@ -225,6 +260,7 @@ async fn multi_key_store_uses_the_item_key_id() {
 async fn single_key_store_takes_no_key_id() {
     let (store, requested) = fake_key_store();
     let bv = convert_version(lotsa_beacons(store));
+    // A single key store uses only its configured beacon key id (get-beacon-key-after-encrypt).
     assert_eq!(
         validation_message(
             bv.generate_encrypted_beacons(&simple_item(), &MaybeKeyId::Id("x".to_owned()), 0)
@@ -239,6 +275,11 @@ async fn single_key_store_takes_no_key_id() {
     };
     // One 64-byte HMAC key per standard beacon.
     let names: Vec<&str> = keys.keys().map(String::as_str).collect();
+
+    //= spec/searchable-encryption/search-config.md#get-beacon-key-materials
+    //= type=test
+    //# For every [standard beacons](beacons.md#standard-beacon-initialization), an HMAC key
+    //# MUST be generated in accordance with [HMAC Key Generation](#hmac-key-generation).
     assert_eq!(names, bv.standard_names);
     assert!(keys.values().all(|k| k.len() == 64));
 }

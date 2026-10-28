@@ -62,6 +62,8 @@ pub(crate) struct FakeKeyStore {
     logical_name: String,
     fail: bool,
     no_beacon_key: bool,
+    /// The beacon key id the store answers with, instead of the requested one.
+    answer_id: Option<String>,
     /// How many times `get_beacon_key` was called.
     pub(crate) beacon_calls: Arc<AtomicUsize>,
 }
@@ -72,7 +74,16 @@ impl FakeKeyStore {
             logical_name: logical_name.to_owned(),
             fail: false,
             no_beacon_key: false,
+            answer_id: None,
             beacon_calls: Arc::new(AtomicUsize::new(0)),
+        }
+    }
+
+    /// A store whose beacon key materials name `id`, whatever beacon key id was requested.
+    pub(crate) fn answering_with(logical_name: &str, id: &str) -> Self {
+        Self {
+            answer_id: Some(id.to_owned()),
+            ..Self::new(logical_name)
         }
     }
 
@@ -166,7 +177,11 @@ impl KeyStore for FakeKeyStore {
             return Err(aws_crypto_mpl::Error::validation("bad key store"));
         }
         let mut materials = BeaconKeyMaterials::builder()
-            .beacon_key_id(input.branch_key_id())
+            .beacon_key_id(
+                self.answer_id
+                    .as_deref()
+                    .unwrap_or_else(|| input.branch_key_id()),
+            )
             .encryption_context(EncryptionContext::new());
         if !self.no_beacon_key {
             materials = materials.beacon_key(BEACON_KEY.to_vec());

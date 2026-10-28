@@ -452,8 +452,16 @@ impl BeaconVersionInfo {
         self.get_beacon_key_ids(key_expr, values, names, &mut ids)?;
         self.get_beacon_key_ids(filter_expr, values, names, &mut ids)?;
         match ids.len() {
+            //= spec/searchable-encryption/search-config.md#get-beacon-key-for-query
+            //# If this list of beacon key ids is empty get beacon key for query MUST
+            //# return a flag indicating this.
             0 => Ok(MaybeKeyId::ShouldHave),
+            //= spec/searchable-encryption/search-config.md#get-beacon-key-for-query
+            //# `beacon key id` MUST be this unique value.
             1 => Ok(MaybeKeyId::Id(ids.remove(0))),
+            //= spec/searchable-encryption/search-config.md#get-beacon-key-for-query
+            //# If this list of beacon key ids has more than one unique beacon key id
+            //# then get beacon key for query MUST fail.
             _ => Err(val_err(format!(
                 "Multiple values found for {key_field_name} in query : {}",
                 ids.join(", ")
@@ -509,6 +517,11 @@ impl BeaconVersionInfo {
         if context.key_expr.is_none() && context.filter_expr.is_none() {
             return Ok(context.clone());
         }
+
+        //= spec/searchable-encryption/search-config.md#get-beacon-key-for-query
+        //# The `beacon key id`, [Key Store Cache](#key-store-cache), and a `KeyStore`
+        //# MUST be passed to [Get Beacon Key Materials](#get-beacon-key-materials)
+        //# and the result returned for Get beacon key for query.
         let keys = self.get_key_map(key_id).await?;
         let empty = Values::new();
         let values = context.values.as_ref().unwrap_or(&empty);

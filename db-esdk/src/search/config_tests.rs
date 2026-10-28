@@ -460,6 +460,10 @@ fn store() -> key_store::Client {
 #[test]
 fn search_config_builder_checks_versions() {
     let version = lotsa_beacons(store()).build().unwrap();
+
+    //= spec/searchable-encryption/search-config.md#initialization
+    //= type=test
+    //# On initialization of the Search Config, the caller MUST provide:
     assert_eq!(
         validation_message(SearchConfig::builder().write_version(1).build()),
         "versions is required"
@@ -501,12 +505,7 @@ fn search_config_builder_checks_versions() {
 fn beacon_version_builder_rejects_each_invalid_field() {
     let base = || lotsa_beacons(store());
     let cases: Vec<(BeaconVersionBuilder, &str)> = vec![
-        (base().set_version(None), "version is required"),
         (base().version(0), "version must be at least 1"),
-        (
-            base().set_standard_beacons(None),
-            "standard_beacons is required",
-        ),
         (
             base().set_standard_beacons(Some(vec![])),
             "standard_beacons must not be empty",
@@ -535,10 +534,23 @@ fn beacon_version_builder_rejects_each_invalid_field() {
             base().default_number_of_partitions(0),
             "default_number_of_partitions must be between 1 and 255",
         ),
-        (base().set_key_store(None), "key_store is required"),
-        (base().set_key_source(None), "key_source is required"),
     ];
     for (builder, expected) in cases {
+        assert_eq!(validation_message(builder.build()), expected);
+    }
+    // Each field the caller must provide.
+    for (builder, expected) in [
+        (base().set_version(None), "version is required"),
+        (
+            base().set_standard_beacons(None),
+            "standard_beacons is required",
+        ),
+        (base().set_key_store(None), "key_store is required"),
+        (base().set_key_source(None), "key_source is required"),
+    ] {
+        //= spec/searchable-encryption/search-config.md#beacon-version-initialization
+        //= type=test
+        //# On initialization of a Beacon Version, the caller MUST provide:
         assert_eq!(validation_message(builder.build()), expected);
     }
 }
@@ -570,6 +582,10 @@ fn beacon_version_builder_keeps_every_field() {
         .map(StandardBeacon::name)
         .collect();
     assert_eq!(names, ["std2", "Name"]);
+
+    //= spec/searchable-encryption/search-config.md#beacon-version-initialization
+    //= type=test
+    //# On initialization of the Beacon Version, the caller MAY provide:
     assert_eq!(version.compound_beacons()[0].name(), "YearName");
     assert_eq!(version.virtual_fields()[0].name(), "NameVirtField");
     assert_eq!(version.encrypted_parts()[0].name(), "Title");
@@ -600,6 +616,9 @@ fn beacon_version_builder_keeps_every_field() {
 
 #[tokio::test]
 async fn key_store_builders() {
+    //= spec/searchable-encryption/search-config.md#single-key-store-initialization
+    //= type=test
+    //# On initialization of a Single Key Store, the caller MUST provide:
     assert_eq!(
         validation_message(
             SingleKeyStore::builder()
@@ -612,6 +631,10 @@ async fn key_store_builders() {
         validation_message(SingleKeyStore::builder().key_id("k").build()),
         "cache_ttl is required"
     );
+
+    //= spec/searchable-encryption/search-config.md#multi-key-store-initialization
+    //= type=test
+    //# On initialization of a Multi Key Store, the caller MUST provide:
     assert_eq!(
         validation_message(
             MultiKeyStore::builder()
@@ -919,6 +942,9 @@ fn constructor_builders() {
 
 #[test]
 fn virtual_field_builders() {
+    //= spec/searchable-encryption/virtual.md#virtual-field-initialization
+    //= type=test
+    //# On initialization of a Virtual Field, the caller MUST provide:
     assert_eq!(
         validation_message(VirtualField::builder().name("v").build()),
         "parts is required"
@@ -946,6 +972,9 @@ fn virtual_field_builders() {
     let locs: Vec<&str> = field.parts().iter().map(VirtualPart::location).collect();
     assert_eq!(locs, ["Name", "Title"]);
 
+    //= spec/searchable-encryption/virtual.md#virtual-part-initialization
+    //= type=test
+    //# On initialization of a Virtual Part, the caller MUST provide:
     assert_eq!(
         validation_message(VirtualPart::builder().build()),
         "location is required"
@@ -969,6 +998,10 @@ fn virtual_field_builders() {
         .unwrap();
     assert_eq!(part.location(), "a");
     assert!(part.transforms().is_empty());
+
+    //= spec/searchable-encryption/virtual.md#virtual-part-initialization
+    //= type=test
+    //# On initialization of a Virtual Part, the caller MAY provide:
     assert!(matches!(
         vpart1().transforms(),
         [VirtualTransform::Insert(i)] if i.literal() == "__"
@@ -977,6 +1010,9 @@ fn virtual_field_builders() {
 
 #[test]
 fn transform_builders() {
+    //= spec/searchable-encryption/virtual.md#insert-transform-initialization
+    //= type=test
+    //# On initialization of an Insert Transform, the caller MUST provide:
     assert_eq!(
         validation_message(Insert::builder().build()),
         "literal is required"
@@ -994,6 +1030,9 @@ fn transform_builders() {
         "y"
     );
 
+    //= spec/searchable-encryption/virtual.md#getprefix-transform-initialization
+    //= type=test
+    //# On initialization of a GetPrefix Transform, the caller MUST provide:
     assert_eq!(
         validation_message(GetPrefix::builder().build()),
         "length is required"
@@ -1010,6 +1049,10 @@ fn transform_builders() {
             .length(),
         3
     );
+
+    //= spec/searchable-encryption/virtual.md#getsuffix-transform-initialization
+    //= type=test
+    //# On initialization of a GetSuffix Transform, the caller MUST provide:
     assert_eq!(
         validation_message(GetSuffix::builder().build()),
         "length is required"
@@ -1027,6 +1070,9 @@ fn transform_builders() {
         4
     );
 
+    //= spec/searchable-encryption/virtual.md#getsubstring-transform-initialization
+    //= type=test
+    //# On initialization of a GetSubstring Transform, the caller MUST provide:
     assert_eq!(
         validation_message(GetSubstring::builder().high(1).build()),
         "low is required"
@@ -1044,6 +1090,9 @@ fn transform_builders() {
     let s = GetSubstring::builder().low(2).high(5).build().unwrap();
     assert_eq!((s.low(), s.high()), (2, 5));
 
+    //= spec/searchable-encryption/virtual.md#getsegment-transform-initialization
+    //= type=test
+    //# On initialization of a GetSegment Transform, the caller MUST provide:
     assert_eq!(
         validation_message(GetSegment::builder().index(1).build()),
         "split is required"
@@ -1065,6 +1114,9 @@ fn transform_builders() {
     let s = GetSegment::builder().split(".").index(2).build().unwrap();
     assert_eq!((s.split(), s.index()), ('.', 2));
 
+    //= spec/searchable-encryption/virtual.md#getsegments-transform-initialization
+    //= type=test
+    //# On initialization of a GetSegments Transform, the caller MUST provide:
     assert_eq!(
         validation_message(GetSegments::builder().low(0).high(1).build()),
         "split is required"
@@ -1145,6 +1197,10 @@ async fn two_virt_one_loc() {
     let title_name_field = virtual_field("TitleNameField", vec![vpart2(), vpart1()]);
     let version =
         lotsa_beacons(store()).set_virtual_fields(Some(vec![name_title_field(), title_name_field]));
+
+    //= spec/searchable-encryption/virtual.md#virtual-field-initialization
+    //= type=test
+    //# Initialization MUST fail if two virtual fields are defined with the same set of locations.
     assert_eq!(
         validation_message(convert_with(&[], version)),
         "Virtual field TitleNameField is defined on the same locations as NameTitleField."
@@ -1155,6 +1211,11 @@ async fn two_virt_one_loc() {
 async fn virt_and_beacon_same_loc() {
     let version = lotsa_beacons(store())
         .set_virtual_fields(Some(vec![name_virt_field(), name_title_field()]));
+
+    //= spec/searchable-encryption/virtual.md#virtual-field-initialization
+    //= type=test
+    //# Initialization MUST fail if a virtual field is defined with only one location,
+    //# and also a [standard beacon](beacons.md#standard-beacon) is defined with that same location.
     assert_eq!(
         validation_message(convert_with(&[], version)),
         "Beacon Name is defined on location Name, but virtual field NameVirtField is already defined on that single location."
@@ -1778,6 +1839,12 @@ async fn signed_and_encrypted_locations() {
     );
     // A signed part must be signed and not encrypted.
     let version = lotsa_beacons(store()).signed_parts(signed_part("sp", "S_", Some("Name")));
+
+    //= spec/searchable-encryption/search-config.md#beacon-version-initialization
+    //= type=test
+    //# Initialization MUST fail if the [terminal location](virtual.md#terminal-location)
+    //# reference by a [signed part](beacons.md#signed-part) is `encrypted`,
+    //# or is not `signed`.
     assert_eq!(
         validation_message(convert_with(&[], version)),
         "Signed Part sp is built from Name which is not SIGN_ONLY."
@@ -1800,6 +1867,11 @@ async fn signed_and_encrypted_locations() {
 #[tokio::test]
 async fn bad_locations_are_rejected() {
     let version = lotsa_beacons(store()).standard_beacons(standard("bad", 16, Some("std4[x]")));
+
+    //= spec/searchable-encryption/virtual.md#segments
+    //= type=test
+    //= reason=[x] is neither ".key" nor "[N]", so the segment is rejected
+    //# A Segment MUST be one of
     assert_eq!(
         validation_message(convert_with(&[], version)),
         "a list index in a path has a character that is not a digit: x"

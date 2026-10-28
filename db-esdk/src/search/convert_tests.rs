@@ -436,6 +436,10 @@ fn lotsa_beacons_convert() {
         info.encrypted_fields.iter().collect::<Vec<_>>(),
         ["Name", "Title", "TooBad", "std2", "std4", "std6"]
     );
+
+    //= spec/searchable-encryption/search-config.md#max-partitions
+    //= type=test
+    //# If not set, Max Partitions MUST default to `1`, which is synonymous with "no partitions are being used".
     assert_eq!(info.max_partitions, 1);
     assert_eq!(info.signed_beacon_names(), ["JustSigned"]);
     assert_eq!(
@@ -618,6 +622,10 @@ fn default_partitions_default_to_the_maximum() {
     let mut v = lotsa();
     v.maximum_number_of_partitions = Some(5);
     let info = info(full_actions(), v);
+
+    //= spec/searchable-encryption/search-config.md#default-partitions
+    //= type=test
+    //# If not set, Default Partitions MUST default to [Max Partitions](#max-partitions).
     assert_eq!(standard(&info, "std2").number_of_partitions, 5);
 }
 
@@ -674,6 +682,10 @@ fn two_virtual_fields_one_location() {
         name_title_field(),
         virtual_field("TitleNameField", vec![vpart2(), vpart1()]),
     ]);
+
+    //= spec/searchable-encryption/virtual.md#virtual-field-initialization
+    //= type=test
+    //# Initialization MUST fail if two virtual fields are defined with the same set of locations.
     assert_eq!(
         fail(v),
         "Virtual field TitleNameField is defined on the same locations as NameTitleField."
@@ -684,6 +696,11 @@ fn two_virtual_fields_one_location() {
 fn virtual_field_and_beacon_same_location() {
     let mut v = lotsa();
     v.virtual_fields = Some(vec![name_virt_field(), name_title_field()]);
+
+    //= spec/searchable-encryption/virtual.md#virtual-field-initialization
+    //= type=test
+    //# Initialization MUST fail if a virtual field is defined with only one location,
+    //# and also a [standard beacon](beacons.md#standard-beacon) is defined with that same location.
     assert_eq!(
         fail(v),
         "Beacon Name is defined on location Name, but virtual field NameVirtField is already defined on that single location."
@@ -958,6 +975,10 @@ fn write_version_must_be_one() {
         .search(search)
         .build()
         .unwrap();
+
+    //= spec/searchable-encryption/search-config.md#initialization
+    //= type=test
+    //# Initialization MUST fail if the [version number](#version-number) is not `1`.
     assert_eq!(val_msg(convert(&table)), "write_version must be 1");
 }
 
@@ -968,6 +989,10 @@ fn exactly_one_version() {
         .build()
         .unwrap();
     table.search.as_mut().unwrap().versions.clear();
+
+    //= spec/searchable-encryption/search-config.md#initialization
+    //= type=test
+    //# Initialization MUST fail if the length of the list of [beacon versions](#beacon-version-initialization) is not 1.
     assert_eq!(
         val_msg(convert(&table)),
         "the search config must have exactly one beacon version"
@@ -978,6 +1003,14 @@ fn exactly_one_version() {
 fn version_must_be_one() {
     let mut v = lotsa();
     v.version = 2;
+
+    //= spec/searchable-encryption/search-config.md#beacon-version-initialization
+    //= type=test
+    //# Initialization MUST fail if the [version number](#version-number) is not `1`.
+    //
+    //= spec/searchable-encryption/search-config.md#version-number
+    //= type=test
+    //# A version number MUST be `1`.
     assert_eq!(fail(v), "the beacon version's version must be 1");
 }
 
@@ -985,6 +1018,11 @@ fn version_must_be_one() {
 fn needs_a_standard_beacon() {
     let mut v = lotsa();
     v.standard_beacons.clear();
+
+    //= spec/searchable-encryption/search-config.md#beacon-version-initialization
+    //= type=test
+    //# Initialization MUST fail if at least one [standard beacon](beacons.md#standard-beacon)
+    //# is not provided.
     assert_eq!(fail(v), "At least one standard beacon must be configured.");
 }
 
@@ -1010,17 +1048,38 @@ fn maximum_partitions_below_255() {
 
 #[test]
 fn default_partitions_below_maximum() {
-    for (max, default) in [(Some(5), 5), (None, 1)] {
-        let mut v = lotsa();
-        v.maximum_number_of_partitions = max;
-        v.default_number_of_partitions = Some(default);
-        assert_eq!(
-            fail(v),
-            format!(
-                "Invalid defaultNumberOfPartitions specified, {default}, must be 0 < defaultNumberOfPartitions < maximumNumberOfPartitions."
-            )
-        );
-    }
+    let mut v = lotsa();
+    v.maximum_number_of_partitions = Some(5);
+    v.default_number_of_partitions = Some(5);
+
+    //= spec/searchable-encryption/search-config.md#beacon-version-initialization
+    //= type=test
+    //# Initialization MUST fail if [default number of partitions](#default-partitions) is greater than or equal to [maximum number of partitions](#max-partitions).
+    assert_eq!(
+        fail(v),
+        "Invalid defaultNumberOfPartitions specified, 5, must be 0 < defaultNumberOfPartitions < maximumNumberOfPartitions."
+    );
+
+    let mut v = lotsa();
+    v.maximum_number_of_partitions = None;
+    v.default_number_of_partitions = Some(1);
+
+    //= spec/searchable-encryption/search-config.md#beacon-version-initialization
+    //= type=test
+    //# Initialization MUST fail if [default number of partitions](#default-partitions) is supplied but [maximum number of partitions](#max-partitions) is not.
+    assert_eq!(
+        fail(v),
+        "Invalid defaultNumberOfPartitions specified, 1, must be 0 < defaultNumberOfPartitions < maximumNumberOfPartitions."
+    );
+
+    // One below the maximum is allowed.
+    let mut v = lotsa();
+    v.maximum_number_of_partitions = Some(5);
+    v.default_number_of_partitions = Some(4);
+    assert_eq!(
+        standard(&info(full_actions(), v), "std2").number_of_partitions,
+        4
+    );
 }
 
 #[test]
@@ -1038,6 +1097,13 @@ fn beacon_partitions_below_maximum() {
 fn multi_key_field_must_not_be_encrypted() {
     let mut v = lotsa();
     v.key_source = multi_source("Name");
+
+    //= spec/searchable-encryption/search-config.md#beacon-version-initialization
+    //= type=test
+    //# Initialization MUST fail if the [beacon key source](#beacon-key-source) is a [multi key store](#multi-key-store-initialization)
+    //# and the [beacon key field name](#beacon-key-field-name)
+    //# is a [configured field](#configured-field)
+    //# with [ENCRYPT_AND_SIGN](../structured-encryption/structures.md#encrypt_and_sign).
     assert_eq!(
         fail(v),
         "Beacon key field name Name is configured as ENCRYPT_AND_SIGN which is not allowed."
@@ -1048,9 +1114,21 @@ fn multi_key_field_must_not_be_encrypted() {
 fn multi_key_field_must_not_be_a_beacon() {
     let mut v = lotsa();
     v.key_source = multi_source("JustSigned");
+
+    //= spec/searchable-encryption/search-config.md#beacon-version-initialization
+    //= type=test
+    //# Initialization MUST fail if the [beacon key source](#beacon-key-source) is a [multi key store](#multi-key-store-initialization)
+    //# and the name of any of the following match the [beacon key field name](#beacon-key-field-name)
     assert_eq!(
         fail(v),
         "A beacon key field name of JustSigned was configured, but there's also a beacon of that name."
+    );
+    // A standard beacon of the key field's name.
+    let mut v = bare(vec![std2(), std_beacon("KeyB", 24, Some("std4"))]);
+    v.key_source = multi_source("KeyB");
+    assert_eq!(
+        fail(v),
+        "A beacon key field name of KeyB was configured, but there's also a beacon of that name."
     );
 }
 
@@ -1077,8 +1155,17 @@ fn unsigned_table() -> TableConfigBuilder {
 
 #[test]
 fn standard_beacon_name_conflicts() {
+    let v = bare(vec![std_beacon("Year", 24, Some("std2"))]);
+
+    //= spec/searchable-encryption/search-config.md#beacon-version-initialization
+    //= type=test
+    //# Initialization MUST fail if the name of any [standard beacon](beacons.md#standard-beacon)
+    //# matches that of any unencrypted [configured field](#configured-field).
+    assert_eq!(
+        val_msg(run_table(unsigned_table(), v)),
+        "Year not allowed as a StandardBeacon because it is already an unencrypted attribute."
+    );
     for (name, reason) in [
-        ("Year", "it is already an unencrypted attribute"),
         (
             "Unsigned",
             "it is already an allowed unauthenticated attribute",
@@ -1096,8 +1183,18 @@ fn standard_beacon_name_conflicts() {
 
 #[test]
 fn compound_beacon_name_conflicts() {
+    let mut v = bare(vec![name_b()]);
+    v.compound_beacons = Some(vec![compound("Year", vec![name_p()], vec![], None)]);
+
+    //= spec/searchable-encryption/search-config.md#beacon-version-initialization
+    //= type=test
+    //# Initialization MUST fail if the name of any [compound beacon](beacons.md#compound-beacon)
+    //# matches that of any unencrypted [configured field](#configured-field).
+    assert_eq!(
+        val_msg(run_table(unsigned_table(), v)),
+        "Year not allowed as a CompoundBeacon because it is already an unencrypted attribute."
+    );
     for (name, reason) in [
-        ("Year", "it is already an unencrypted attribute"),
         (
             "Unsigned",
             "it is already an allowed unauthenticated attribute",
@@ -1116,8 +1213,18 @@ fn compound_beacon_name_conflicts() {
 
 #[test]
 fn virtual_field_name_conflicts() {
+    let mut v = lotsa();
+    v.virtual_fields = Some(vec![virtual_field("Year", vec![vpart1()])]);
+
+    //= spec/searchable-encryption/search-config.md#beacon-version-initialization
+    //= type=test
+    //# Initialization MUST fail if the name of any [virtual fields](virtual.md#virtual-field) matches that
+    //# of any [configured field](#configured-field).
+    assert_eq!(
+        val_msg(run_table(unsigned_table(), v)),
+        "Year not allowed as a Virtual Field because it is already a configured attribute."
+    );
     for (name, reason) in [
-        ("Year", "it is already a configured attribute"),
         (
             "Unsigned",
             "it is already an allowed unauthenticated attribute",
@@ -1136,6 +1243,10 @@ fn virtual_field_name_conflicts() {
 
 #[test]
 fn duplicate_standard_beacon() {
+    //= spec/searchable-encryption/search-config.md#beacon-version-initialization
+    //= type=test
+    //# Initialization MUST fail if there is any duplicates among the names of the
+    //# [standard beacons](beacons.md#standard-beacon)
     assert_eq!(
         fail(bare(vec![std2(), std2()])),
         "Duplicate StandardBeacon name : std2"
@@ -1144,6 +1255,10 @@ fn duplicate_standard_beacon() {
 
 #[test]
 fn standard_beacon_on_unencrypted_field() {
+    //= spec/searchable-encryption/search-config.md#beacon-version-initialization
+    //= type=test
+    //# Initialization MUST fail if the [terminal location](virtual.md#terminal-location)
+    //# reference by a [standard beacon](beacons.md#standard-beacon) is not `encrypted`.
     assert_eq!(
         fail(bare(vec![std_beacon("Plain", 24, None)])),
         "StandardBeacon Plain not defined on an encrypted field."
@@ -1162,6 +1277,7 @@ fn standard_beacon_on_unencrypted_field() {
 
 #[test]
 fn standard_beacon_bad_location() {
+    // Adjacent guard for virtual.md#segments: "std2[" is not a valid segment; SG1 is cited in virtual_field_bad_location.
     assert_eq!(
         fail(bare(vec![std_beacon("bad", 24, Some("std2["))])),
         "a list index in a path must be written as [N]"
@@ -1214,6 +1330,10 @@ fn virtual_field_on_unsigned_field() {
         "Bad",
         vec![vpart1(), vpart("Plain", VirtualTransform::lower())],
     )]);
+
+    //= spec/searchable-encryption/search-config.md#beacon-version-initialization
+    //= type=test
+    //# Initialization MUST fail if any [virtual field](virtual.md#virtual-field) is not signed.
     assert_eq!(
         fail(v),
         "VirtualField Bad must be defined on signed fields."
@@ -1227,6 +1347,11 @@ fn virtual_field_bad_location() {
         "Bad",
         vec![vpart("Name[x]", VirtualTransform::lower())],
     )]);
+
+    //= spec/searchable-encryption/virtual.md#segments
+    //= type=test
+    //= reason=[x] is neither ".key" nor "[N]", so the segment is rejected
+    //# A Segment MUST be one of
     assert_eq!(
         fail(v),
         "a list index in a path has a character that is not a digit: x"
@@ -1237,10 +1362,22 @@ fn virtual_field_bad_location() {
 fn duplicate_compound_beacon() {
     let mut v = bare(vec![name_b(), title_b()]);
     v.compound_beacons = Some(vec![name_title(), name_title()]);
+
+    //= spec/searchable-encryption/search-config.md#beacon-version-initialization
+    //= type=test
+    //# Initialization MUST fail if there is any duplicates among the names of the
+    //# [compound beacons](beacons.md#compound-beacon)
     assert_eq!(fail(v), "two compound beacons are named NameTitle");
     // A compound beacon may not take a standard beacon's name either.
     let mut v = bare(vec![name_b(), title_b()]);
     v.compound_beacons = Some(vec![compound("Name", vec![title_p()], vec![], None)]);
+
+    //= spec/searchable-encryption/search-config.md#beacon-version-initialization
+    //= type=test
+    //# Initialization MUST fail if the name of a
+    //# [compound beacons](beacons.md#compound-beacon)
+    //# matches the name of a
+    //# [standard beacons](beacons.md#standard-beacon)
     assert_eq!(fail(v), "two compound beacons are named Name");
 }
 

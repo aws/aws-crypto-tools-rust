@@ -78,6 +78,7 @@ fn val_msg(err: &Error) -> String {
 
 #[test]
 fn zero_ttl_is_rejected() {
+    // Guards the cacheTTL (search-config.md#cachettl, no requirement there): a TTL under 1 s is rejected.
     let err = KeySource::new(
         FakeKeyStore::new("ks").client(),
         KeyLocation::Single {
@@ -99,6 +100,10 @@ fn zero_ttl_is_rejected() {
 fn derive_hmac_keys_matches_the_spec_derivation() {
     let derived = derive_hmac_keys(&names(), &BEACON_KEY).unwrap();
     assert_eq!(derived, hmac_keys(&["Name", "std2"], &BEACON_KEY));
+
+    //= spec/searchable-encryption/search-config.md#hmac-key-generation
+    //= type=test
+    //# The `expectedLength` MUST be 64 bytes.
     assert!(derived.values().all(|k| k.len() == 64));
     assert_ne!(derived["Name"], derived["std2"]);
 }
@@ -107,8 +112,14 @@ fn derive_hmac_keys_matches_the_spec_derivation() {
 fn random_partition_id_is_a_v4_uuid() {
     let a = random_partition_id().unwrap();
     let b = random_partition_id().unwrap();
+
+    //= spec/searchable-encryption/search-config.md#partition-id
+    //= type=test
+    //# If the PartitionId is NOT provided by the user, it MUST be set to the 16 byte representation of a v4 UUID.
     assert_eq!(a.len(), 16);
+    // UUID version nibble = 4
     assert_eq!(a[6] >> 4, 4);
+    // RFC 4122 variant bits = 10
     assert_eq!(a[8] & 0xc0, 0x80);
     assert_ne!(a, b);
 }
@@ -130,11 +141,19 @@ async fn single_key_store_derives_keys_and_caches_them() {
             .unwrap(),
     );
     assert_eq!(again, keys);
+
+    //= spec/searchable-encryption/search-config.md#key-store-cache
+    //= type=test
+    //= reason=no cache was configured, so the second lookup hit the default cache created for the source
+    //# For a Beacon Key Source a [CMC](../../submodules/MaterialProviders/aws-encryption-sdk-specification/framework/cryptographic-materials-cache.md)
+    //# MUST be created.
     assert_eq!(store.calls(), 1);
 }
 
 #[tokio::test]
 async fn key_id_must_fit_the_key_source() {
+    // Guards get-beacon-key-after-encrypt / get-beacon-key-for-query: a single key store
+    // uses only its configured beacon key id, and a multi key store needs one from the item.
     let store = FakeKeyStore::new("KeyStoreDdbTable");
     let single = single(&store, None, None);
     for id in [MaybeKeyId::ShouldHave, MaybeKeyId::Id("x".to_owned())] {
@@ -185,6 +204,10 @@ async fn multi_key_store_caches_per_key_id() {
 #[tokio::test]
 async fn key_store_errors_propagate() {
     let store = FakeKeyStore::failing("KeyStoreDdbTable");
+
+    //= spec/searchable-encryption/search-config.md#get-beacon-key-materials
+    //= type=test
+    //# If `GetBeaconKey` fails get beacon key MUST fail.
     assert_store_failed(
         single(&store, None, None)
             .get_key_map(&names(), &MaybeKeyId::DontUse)
@@ -194,6 +217,8 @@ async fn key_store_errors_propagate() {
 
 #[tokio::test]
 async fn missing_beacon_key_is_invalid_materials() {
+    // Guards get-beacon-key-materials, next to "If `GetBeaconKey` fails get beacon key MUST fail":
+    // materials with no beacon key fail too.
     let store = FakeKeyStore::without_beacon_key();
     let err = single(&store, None, None)
         .get_key_map(&names(), &MaybeKeyId::DontUse)
@@ -232,6 +257,12 @@ async fn shared_cache_single_key_store() {
     let same = shared_cache_case(single, id.clone(), Some("partitionId"), Some("partitionId"))
         .await
         .unwrap();
+
+    //= spec/searchable-encryption/search-config.md#partition-id-2
+    //= type=test
+    //= reason=the failing store's source got the keys the other source cached under the same partition id
+    //# - If the Partition ID is set by the user and is the same for two [Beacon Key Sources](#beacon-key-source) (or another Material Provider),
+    //# they MAY share the same cache entries in the cache.
     assert_eq!(keys_of(same), hmac_keys(&["Name", "std2"], &BEACON_KEY));
     let different = shared_cache_case(
         single,
@@ -241,7 +272,12 @@ async fn shared_cache_single_key_store() {
     )
     .await;
     assert_store_failed(different);
+
     // Without a partition id, each key source gets a random one.
+    //= spec/searchable-encryption/search-config.md#key-store-cache
+    //= type=test
+    //= reason=two sources sharing one cache do not see each other's entries
+    //# In either case, Cache Identifiers MUST be unique across all key sources.
     assert_store_failed(shared_cache_case(single, id, None, None).await);
 }
 
@@ -298,6 +334,14 @@ fn within_ttl() {
     let src = single(&FakeKeyStore::new("ks"), None, None);
     let now = SystemTime::now();
     assert!(src.within_ttl(&entry("k", now)));
+    // Just inside the 42 s TTL.
+    assert!(src.within_ttl(&entry("k", now - Duration::from_secs(41))));
+
+    //= spec/searchable-encryption/search-config.md#get-beacon-key-materials
+    //= type=test
+    //# There MUST be a check (cacheEntryWithinLimits) to make sure that for the cache entry found, who's TTL has NOT expired,
+    //# `time.now() - cacheEntryCreationTime <= ttlSeconds` is true and
+    //# valid for TTL of the [Beacon Key Source](#beacon-key-source) getting the cache entry.
     assert!(!src.within_ttl(&entry("k", now - Duration::from_secs(100))));
     // An entry from the future, under clock skew, is fresh.
     assert!(src.within_ttl(&entry("k", now + Duration::from_secs(100))));
@@ -323,11 +367,18 @@ async fn stale_shared_entry_is_refetched() {
             .unwrap(),
     );
     assert_eq!(keys, hmac_keys(&["Name", "std2"], &BEACON_KEY));
+
+    //= spec/searchable-encryption/search-config.md#get-beacon-key-materials
+    //= type=test
+    //= reason=the stale cached entry was ignored and the key store was asked
+    //# If this is NOT true, then we MUST treat the cache entry as expired.
     assert_eq!(store.calls(), 1);
 }
 
 #[test]
 fn cached_entry_for_another_key_is_invalid() {
+    // Guards get-beacon-key-materials, next to "If a cache entry exists, get beacon key MUST
+    // return the entry materials": the entry must hold this beacon key id's materials.
     let e = entry("k1", SystemTime::now());
     assert_eq!(
         cached_hmac_keys(&e, "k1").unwrap(),
@@ -352,4 +403,204 @@ async fn cache_identifier_depends_on_each_input() {
     assert_ne!(id, a.cache_identifier("k2").await.unwrap());
     assert_ne!(id, b.cache_identifier("k").await.unwrap());
     assert_ne!(id, c.cache_identifier("k").await.unwrap());
+}
+
+/// The SHA-384 cache identifier, computed from its pre-image laid out field by field.
+fn spec_cache_identifier(partition_id: &[u8], logical_name: &str, key_id: &str) -> Vec<u8> {
+    let mut pre_image = vec![
+        0x02, // resource id: hierarchical keyring
+        0x00, // null byte
+        0x03, // scope id: searchable encryption
+        0x00, // null byte
+    ];
+    pre_image.extend_from_slice(partition_id);
+    pre_image.push(0x00);
+    pre_image.extend_from_slice(logical_name.as_bytes());
+    pre_image.push(0x00);
+    pre_image.extend_from_slice(key_id.as_bytes());
+    let mut out = vec![0u8; DigestAlg::Sha384.output_len()];
+    digest(DigestAlg::Sha384, &pre_image, &mut out).unwrap();
+    out
+}
+
+#[tokio::test]
+async fn cache_identifier_matches_the_spec_formula() {
+    let src = single(&FakeKeyStore::new("ks"), None, Some("p1"));
+    let expected = spec_cache_identifier(b"p1", "ks", "k");
+    let id = src.cache_identifier("k").await.unwrap();
+
+    //= spec/searchable-encryption/search-config.md#resource-suffix
+    //= type=test
+    //# When the [Beacon Key Source](#beacon-key-source) receives a `getKeyMap` request,
+    //# the cache entry identifier MUST be calculated as the
+    //# SHA-384 hash of the following byte strings, in the order listed:
+    //
+    //= spec/searchable-encryption/search-config.md#resource-suffix
+    //= type=test
+    //# The aforementioned 4 definitions ([Resource Identifier](#resource-identifier),
+    //# [Scope Identifier](#scope-identifier), [Partition ID](#partition-id-1), and
+    //# [Resource Suffix](#resource-suffix)) MUST be appended together with the null byte, 0x00,
+    //# and the SHA384 of the result should be taken as the final cache identifier.
+    //
+    //= spec/searchable-encryption/search-config.md#resource-suffix
+    //= type=test
+    //# - MUST be the Resource ID for the Hierarchical Keyring (0x02)
+    //
+    //= spec/searchable-encryption/search-config.md#resource-suffix
+    //= type=test
+    //# - MUST be the Scope ID for Searchable Encryption (0x03)
+    //
+    //= spec/searchable-encryption/search-config.md#resource-suffix
+    //= type=test
+    //# - MUST be the Partition ID for the [Beacon Key Source](#beacon-key-source)
+    //
+    //= spec/searchable-encryption/search-config.md#searchable-encryption-cache-identifier
+    //= type=test
+    //# When accessing the underlying cryptographic materials cache,
+    //# Searchable Encryption MUST use the formulas specified in this section
+    //# in order to compute the [cache entry identifier](../../submodules/MaterialProviders/aws-encryption-sdk-specification/framework/cryptographic-materials-cache.md#cache-identifier).
+    assert_eq!(id, expected);
+
+    // Non-ASCII names show the UTF-8 encoding of each string field.
+    let src = single(&FakeKeyStore::new("ks-\u{e9}"), None, Some("p-\u{e9}"));
+    let expected = spec_cache_identifier(&[b'p', b'-', 0xc3, 0xa9], "ks-\u{e9}", "k-\u{e9}");
+    let id = src.cache_identifier("k-\u{e9}").await.unwrap();
+
+    //= spec/searchable-encryption/search-config.md#resource-suffix
+    //= type=test
+    //# - MUST be the UTF8 encoded Logical Key Store Name of the keystore for the [beacon versions](#beacon-version-initialization)
+    //
+    //= spec/searchable-encryption/search-config.md#resource-suffix
+    //= type=test
+    //# - MUST be the UTF8 encoded branch-key-id
+    //
+    //= spec/searchable-encryption/search-config.md#logical-key-store-name
+    //= type=test
+    //# Logical Key Store Name MUST be converted to UTF8 Bytes to be used in
+    //# the cache identifiers.
+    //
+    //= spec/searchable-encryption/search-config.md#partition-id
+    //= type=test
+    //# If provided, it MUST be interpreted as UTF8 bytes.
+    //
+    //= spec/searchable-encryption/search-config.md#partition-id-1
+    //= type=test
+    //# It can either be a String provided by the user, which MUST be interpreted as the bytes of
+    //# UTF-8 Encoding of the String, or a v4 UUID, which SHOULD be interpreted as the 16 byte representation of the UUID.
+    assert_eq!(id, expected);
+}
+
+#[tokio::test]
+async fn random_partition_id_is_fixed_at_construction() {
+    let src = single(&FakeKeyStore::new("ks"), None, None);
+    let first = src.cache_identifier("k").await.unwrap();
+
+    //= spec/searchable-encryption/search-config.md#partition-id-1
+    //= type=test
+    //= reason=a random partition id drawn per call would change the identifier between calls
+    //# The constructor of the [Beacon Key Source](#beacon-key-source) MUST record these bytes at construction time.
+    assert_eq!(src.cache_identifier("k").await.unwrap(), first);
+    // A second source draws its own random partition id.
+    let other = single(&FakeKeyStore::new("ks"), None, None);
+    assert_ne!(other.cache_identifier("k").await.unwrap(), first);
+}
+
+#[tokio::test]
+async fn fresh_cache_entry_is_served() {
+    let cache = shared_cache();
+    let store = FakeKeyStore::failing("ks");
+    let src = single(&store, Some(cache.clone()), Some("pid"));
+    // An entry under the spec's identifier, with keys the source would not derive itself
+    // (only "Name", not "Name" and "std2").
+    cache
+        .put_cache_entry()
+        .identifier(spec_cache_identifier(b"pid", "ks", KEY_ID))
+        .entry(entry(KEY_ID, SystemTime::now()))
+        .send()
+        .await
+        .unwrap();
+    let keys = keys_of(
+        src.get_key_map(&names(), &MaybeKeyId::DontUse)
+            .await
+            .unwrap(),
+    );
+
+    //= spec/searchable-encryption/search-config.md#get-beacon-key-materials
+    //= type=test
+    //# If a [cache entry](../../submodules/MaterialProviders/aws-encryption-sdk-specification/framework/cryptographic-materials-cache.md#cache-entry)
+    //# exists, get beacon key MUST return the [entry materials](../../submodules/MaterialProviders/aws-encryption-sdk-specification/framework/cryptographic-materials-cache.md#materials).
+    assert_eq!(keys, hmac_keys(&["Name"], &BEACON_KEY));
+
+    //= spec/searchable-encryption/search-config.md#get-beacon-key-materials
+    //= type=test
+    //= reason=the entry was put under the spec formula's identifier, and the key store was never asked
+    //# Get beacon key MUST Call the associated [Key Store Cache](#key-store-cache)
+    //# [Get Cache Entry](../../submodules/MaterialProviders/aws-encryption-sdk-specification/framework/local-cryptographic-materials-cache.md#get-cache-entry)
+    //# with the cache identifier defined in the [Searchable Encryption Cache Identifier](#searchable-encryption-cache-identifier) section.
+    //
+    //= spec/searchable-encryption/search-config.md#key-store-cache
+    //= type=test
+    //= reason=the lookup found the entry put under the spec formula's identifier
+    //# Cache Identifiers for Searchable Encryption MUST be set as per the section [Searchable Encryption Cache Identifier](#searchable-encryption-cache-identifier).
+    assert_eq!(store.calls(), 0);
+}
+
+#[tokio::test]
+async fn cached_materials_match_what_is_returned() {
+    let cache = shared_cache();
+    // The store names another beacon key id; the cached materials must still name the requested one.
+    let store = FakeKeyStore::answering_with("ks", "another-id");
+    let src = single(&store, Some(cache.clone()), Some("pid"));
+    let before = SystemTime::now();
+    let keys = keys_of(
+        src.get_key_map(&names(), &MaybeKeyId::DontUse)
+            .await
+            .unwrap(),
+    );
+    let entry = cache
+        .get_cache_entry()
+        .identifier(spec_cache_identifier(b"pid", "ks", KEY_ID))
+        .send()
+        .await
+        .unwrap()
+        .into_entry();
+
+    //= spec/searchable-encryption/search-config.md#get-beacon-key-materials
+    //= type=test
+    //= reason=the entry is found under the identifier the lookup computed before the key store call
+    //# The Searchable Encryption cache identifier
+    //# used to [Put Cache Entry](../../submodules/MaterialProviders/aws-encryption-sdk-specification/framework/local-cryptographic-materials-cache.md#put-cache-entry)
+    //# MUST be the same
+    //# as the identifier that was used to attempt [Get Cache Entry](../../submodules/MaterialProviders/aws-encryption-sdk-specification/framework/local-cryptographic-materials-cache.md#get-cache-entry).
+    let entry = entry.expect("the fetched keys are cached under the spec identifier");
+    let CachedMaterials::BeaconKey(materials) = entry.materials() else {
+        panic!("expected beacon key materials, got {:?}", entry.materials());
+    };
+
+    //= spec/searchable-encryption/search-config.md#get-beacon-key-materials
+    //= type=test
+    //# [Beacon Key Materials](../../submodules/MaterialProviders/aws-encryption-sdk-specification/framework/structures.md#beacon-key-materials) MUST be generated
+    //# with the [beacon key id](#beacon-key-id) equal to the `beacon key id`
+    //# and the [HMAC Keys](../../submodules/MaterialProviders/aws-encryption-sdk-specification/framework/structures.md#hmac-keys) equal to a map
+    //# of every [standard beacons](beacons.md#standard-beacon-initialization) name to its generated HMAC key.
+    assert_eq!(
+        (materials.beacon_key_id(), materials.hmac_keys()),
+        (KEY_ID, Some(&hmac_keys(&["Name", "std2"], &BEACON_KEY)))
+    );
+    assert!(entry.creation_time() >= before);
+
+    //= spec/searchable-encryption/search-config.md#get-beacon-key-materials
+    //= type=test
+    //# These materials MUST be put into the associated [Key Store Cache](#key-store-cache)
+    //# with an [Expiry Time](../../submodules/MaterialProviders/aws-encryption-sdk-specification/framework/cryptographic-materials-cache.md#expiry-time)
+    //# equal to now + configured [cacheTTL](#cachettl).
+    assert_eq!(
+        entry.expiry_time(),
+        entry.creation_time() + Duration::from_secs(42)
+    );
+
+    //= spec/searchable-encryption/search-config.md#get-beacon-key-materials
+    //= type=test
+    //# These cached materials MUST be returned.
+    assert_eq!(materials.hmac_keys(), Some(&keys));
 }

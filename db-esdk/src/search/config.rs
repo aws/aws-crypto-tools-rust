@@ -133,6 +133,8 @@ impl SearchConfigBuilder {
     /// A `Validation` error when the versions or the write version are missing,
     /// when there is not exactly one version, or when the write version is 0.
     pub fn build(self) -> Result<SearchConfig, Error> {
+        //= spec/searchable-encryption/search-config.md#initialization
+        //# On initialization of the Search Config, the caller MUST provide:
         let versions = required(self.versions, "versions")?;
         if versions.len() != 1 {
             return Err(val_err("versions must have exactly one beacon version"));
@@ -270,7 +272,14 @@ impl BeaconVersionBuilder {
     }
 
     /// The key store that holds the beacon keys. Required.
+    ///
+    /// When items are encrypted with a hierarchical keyring, this should be that keyring's key store.
     #[must_use]
+    //= spec/searchable-encryption/search-config.md#keystore
+    //= type=exception
+    //= reason=configuration guidance for the caller; the SDK cannot see which key store a keyring uses
+    //# If being used with a Hierarchical Keyring to encrypt/decrypt items,
+    //# this SHOULD be the same Keystore as configured to that Keyring.
     pub fn key_store(mut self, key_store: impl Into<key_store::Client>) -> Self {
         self.key_store = Some(key_store.into());
         self
@@ -428,6 +437,8 @@ impl BeaconVersionBuilder {
     /// A `Validation` error when the version, key store, key source, or standard beacons are missing,
     /// when the version is 0, when a list is empty, or when a partition count is 0.
     pub fn build(self) -> Result<BeaconVersion, Error> {
+        //= spec/searchable-encryption/search-config.md#beacon-version-initialization
+        //# On initialization of a Beacon Version, the caller MUST provide:
         let version = required(self.version, "version")?;
         check_version(version, "version")?;
         let standard_beacons = required(self.standard_beacons, "standard_beacons")?;
@@ -449,6 +460,9 @@ impl BeaconVersionBuilder {
             key_store: required(self.key_store, "key_store")?,
             key_source: required(self.key_source, "key_source")?,
             standard_beacons,
+            //= spec/searchable-encryption/search-config.md#beacon-version-initialization
+            //= reason=each optional field is copied through as given, or None
+            //# On initialization of the Beacon Version, the caller MAY provide:
             compound_beacons: self.compound_beacons,
             virtual_fields: self.virtual_fields,
             encrypted_parts: self.encrypted_parts,
@@ -463,6 +477,10 @@ impl BeaconVersionBuilder {
 /// Which beacon keys a beacon version uses.
 #[derive(Clone, Debug)]
 #[non_exhaustive]
+//= spec/searchable-encryption/search-config.md#beacon-key-source
+//= type=implication
+//= reason=a value of this enum is exactly one of its variants
+//# On initialization of a Beacon Key Source, the caller MUST provide exactly one of
 pub enum BeaconKeySource {
     /// One beacon key for every item.
     Single(SingleKeyStore),
@@ -586,6 +604,9 @@ impl SingleKeyStoreBuilder {
     ///
     /// A `Validation` error when the key id or the cache TTL is missing.
     pub fn build(self) -> Result<SingleKeyStore, Error> {
+        //= spec/searchable-encryption/search-config.md#single-key-store-initialization
+        //= reason=the cache and partition id are optional per the Key Store Cache and Partition ID sections
+        //# On initialization of a Single Key Store, the caller MUST provide:
         Ok(SingleKeyStore {
             key_id: required(self.key_id, "key_id")?,
             cache_ttl: required(self.cache_ttl, "cache_ttl")?,
@@ -711,6 +732,9 @@ impl MultiKeyStoreBuilder {
     ///
     /// A `Validation` error when the key field name or the cache TTL is missing.
     pub fn build(self) -> Result<MultiKeyStore, Error> {
+        //= spec/searchable-encryption/search-config.md#multi-key-store-initialization
+        //= reason=the cache and partition id are optional per the Key Store Cache and Partition ID sections
+        //# On initialization of a Multi Key Store, the caller MUST provide:
         Ok(MultiKeyStore {
             key_field_name: required(self.key_field_name, "key_field_name")?,
             cache_ttl: required(self.cache_ttl, "cache_ttl")?,
@@ -1623,6 +1647,9 @@ impl VirtualFieldBuilder {
     ///
     /// A `Validation` error when the name or the parts are missing, or there are no parts.
     pub fn build(self) -> Result<VirtualField, Error> {
+        //= spec/searchable-encryption/virtual.md#virtual-field-initialization
+        //= reason=name is also required, in the struct literal below
+        //# On initialization of a Virtual Field, the caller MUST provide:
         let parts = required(self.parts, "parts")?;
         non_empty(Some(&parts), "parts")?;
         Ok(VirtualField {
@@ -1703,11 +1730,16 @@ impl VirtualPartBuilder {
     ///
     /// A `Validation` error when the location is missing or empty, or the transforms are empty.
     pub fn build(self) -> Result<VirtualPart, Error> {
+        //= spec/searchable-encryption/virtual.md#virtual-part-initialization
+        //# On initialization of a Virtual Part, the caller MUST provide:
         let location = required(self.location, "location")?;
         non_empty_str(Some(&location), "location")?;
         non_empty(self.transforms.as_ref(), "transforms")?;
         Ok(VirtualPart {
             location,
+
+            //= spec/searchable-encryption/virtual.md#virtual-part-initialization
+            //# On initialization of a Virtual Part, the caller MAY provide:
             transforms: self.transforms,
         })
     }
@@ -1718,6 +1750,10 @@ impl VirtualPartBuilder {
 /// A position counts from 0; a negative position counts back from the end.
 #[derive(Clone, Debug)]
 #[non_exhaustive]
+//= spec/searchable-encryption/virtual.md#virtual-transform-initialization
+//= type=implication
+//= reason=VirtualTransform is an enum; a value is exactly one of the eight variants
+//# On initialization of a Virtual Transform, the caller MUST provide exactly one of
 pub enum VirtualTransform {
     /// Change ASCII letters to upper case.
     Upper(Upper),
@@ -1793,6 +1829,11 @@ impl VirtualTransform {
 /// The [`VirtualTransform::Upper`] transform.
 #[derive(Clone, Debug, Default)]
 #[non_exhaustive]
+//= spec/searchable-encryption/virtual.md#upper-transform-initialization
+//= type=implication
+//= reason=Upper has no fields, and its only constructor takes no arguments
+//# On initialization of an Upper Transform, the caller MUST NOT provide any
+//# additional parameters to the Upper Transform.
 pub struct Upper {}
 
 impl Upper {
@@ -1806,6 +1847,11 @@ impl Upper {
 /// The [`VirtualTransform::Lower`] transform.
 #[derive(Clone, Debug, Default)]
 #[non_exhaustive]
+//= spec/searchable-encryption/virtual.md#lower-transform-initialization
+//= type=implication
+//= reason=Lower has no fields, and its only constructor takes no arguments
+//# On initialization of a Lower Transform, the caller MUST NOT provide any
+//# additional parameters to the Lower Transform.
 pub struct Lower {}
 
 impl Lower {
@@ -1866,6 +1912,8 @@ impl InsertBuilder {
     /// A `Validation` error when the literal is missing.
     pub fn build(self) -> Result<Insert, Error> {
         Ok(Insert {
+            //= spec/searchable-encryption/virtual.md#insert-transform-initialization
+            //# On initialization of an Insert Transform, the caller MUST provide:
             literal: required(self.literal, "literal")?,
         })
     }
@@ -1922,6 +1970,8 @@ impl GetPrefixBuilder {
     /// A `Validation` error when the length is missing.
     pub fn build(self) -> Result<GetPrefix, Error> {
         Ok(GetPrefix {
+            //= spec/searchable-encryption/virtual.md#getprefix-transform-initialization
+            //# On initialization of a GetPrefix Transform, the caller MUST provide:
             length: required(self.length, "length")?,
         })
     }
@@ -1978,6 +2028,8 @@ impl GetSuffixBuilder {
     /// A `Validation` error when the length is missing.
     pub fn build(self) -> Result<GetSuffix, Error> {
         Ok(GetSuffix {
+            //= spec/searchable-encryption/virtual.md#getsuffix-transform-initialization
+            //# On initialization of a GetSuffix Transform, the caller MUST provide:
             length: required(self.length, "length")?,
         })
     }
@@ -2055,6 +2107,8 @@ impl GetSubstringBuilder {
     /// A `Validation` error when a position is missing.
     pub fn build(self) -> Result<GetSubstring, Error> {
         Ok(GetSubstring {
+            //= spec/searchable-encryption/virtual.md#getsubstring-transform-initialization
+            //# On initialization of a GetSubstring Transform, the caller MUST provide:
             low: required(self.low, "low")?,
             high: required(self.high, "high")?,
         })
@@ -2134,6 +2188,8 @@ impl GetSegmentBuilder {
     /// or the split is not exactly one character.
     pub fn build(self) -> Result<GetSegment, Error> {
         Ok(GetSegment {
+            //= spec/searchable-encryption/virtual.md#getsegment-transform-initialization
+            //# On initialization of a GetSegment Transform, the caller MUST provide:
             split: one_char(&required(self.split, "split")?, "split")?,
             index: required(self.index, "index")?,
         })
@@ -2235,6 +2291,8 @@ impl GetSegmentsBuilder {
     /// or the split is not exactly one character.
     pub fn build(self) -> Result<GetSegments, Error> {
         Ok(GetSegments {
+            //= spec/searchable-encryption/virtual.md#getsegments-transform-initialization
+            //# On initialization of a GetSegments Transform, the caller MUST provide:
             split: one_char(&required(self.split, "split")?, "split")?,
             low: required(self.low, "low")?,
             high: required(self.high, "high")?,

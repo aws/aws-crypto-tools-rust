@@ -33,6 +33,11 @@ fn add_signed_beacons() {
     let mut expected = simple_item();
     expected.insert("aws_dbe_v_1".to_owned(), s(" "));
     expected.insert("JustSigned".to_owned(), s("Y_1984.M_May"));
+
+    //= spec/searchable-encryption/search-config.md#versioning
+    //= type=test
+    //= reason=expected holds the version tag aws_dbe_v_1 besides the configured beacon
+    //# In addition to the configured beacons, a [version tag](#version-tag) MUST also be written.
     assert_eq!(out, expected);
 }
 
@@ -133,6 +138,10 @@ async fn get_partition_asks_the_selector() {
     let it = item(&[("std2", s("x"))]);
     assert_eq!(info.get_partition(&it, "Foo").await.unwrap(), 3);
     let input = seen.lock().unwrap().take().unwrap();
+
+    //= spec/searchable-encryption/search-config.md#partition-selector
+    //= type=test
+    //# GetPartitionNumber MUST take as input
     assert_eq!(input.item(), &it);
     assert_eq!(input.number_of_partitions(), 5);
     assert_eq!(input.logical_table_name(), "Foo");

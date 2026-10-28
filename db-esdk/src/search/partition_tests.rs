@@ -87,7 +87,11 @@ async fn random_selector_stays_in_range() {
         let p = sel.get_partition_number(input(3)).await.unwrap();
         seen[usize::from(p.partition_number())] = true;
     }
+
     // 200 draws from 3 partitions miss one with probability below 1e-35.
+    //= spec/searchable-encryption/search-config.md#partition-selector
+    //= type=test
+    //# The default implementation of the Partition Selector MUST return a random number within the acceptable range, i.e.
     assert_eq!(seen, [true; 3]);
 }
 

@@ -48,6 +48,10 @@ fn parse_errors() {
         parse_err(""),
         "a beacon or virtual field path must not be empty"
     );
+
+    //= spec/searchable-encryption/virtual.md#segments
+    //= type=test
+    //# A Segment MUST be one of
     assert_eq!(
         parse_err("a[1"),
         "a list index in a path must be written as [N]"
