@@ -45,15 +45,19 @@ jobs:
         id: filter
         uses: dorny/paths-filter@v4
         with:
+          # The default quantifier ignores '!' patterns; this makes them act as excludes.
+          predicate-quantifier: some-with-excludes
           filters: |
             prim: &prim
               - 'prim/**'
             mpl: &mpl
               - *prim
               - 'mpl/**'
-            esdk: &esdk
+            esdk:
               - *mpl
               - 'esdk/**'
+              - '!esdk/test-server/**'
+              - '!esdk/shims/aws-esdk-cpp/test-server/**'
             prim-test-server:
               - *prim
               - 'prim-test-server/**'
@@ -61,12 +65,12 @@ jobs:
               - *mpl
               - 'mpl-test-server/**'
             esdk-test-server:
-              - *esdk
-              - 'esdk-test-server/**'
+              - *mpl
+              - 'esdk/**'
+              - '!esdk/shims/aws-esdk-cpp/test-server/**'
             esdk-cpp-test-server:
-              - *esdk
-              - 'esdk-test-server/**'
-              - 'esdk-cpp-test-server/**'
+              - *mpl
+              - 'esdk/**'
             shared:
               - '.github/**'
               - 'scripts/spec-source.json'
@@ -104,9 +108,9 @@ jobs:
                 {"when": "esdk", "name": "aws-esdk-cpp", "project": "esdk/shims/aws-esdk-cpp", "artifact": "aws-esdk-cpp-duvet-report"}
               ],
               "test-server-builds": [
-                {"when": "esdk-test-server", "name": "esdk-test-server", "server": "esdk-test-server"},
-                {"when": "esdk-cpp-test-server", "name": "esdk-cpp-test-server (ubuntu)", "server": "esdk-cpp-test-server", "prebuild": "esdk/shims/aws-esdk-cpp", "os": "ubuntu-latest"},
-                {"when": "esdk-cpp-test-server", "name": "esdk-cpp-test-server (macos)", "server": "esdk-cpp-test-server", "prebuild": "esdk/shims/aws-esdk-cpp", "os": "macos-latest"},
+                {"when": "esdk-test-server", "name": "esdk-test-server", "server": "esdk/test-server"},
+                {"when": "esdk-cpp-test-server", "name": "esdk-cpp-test-server (ubuntu)", "server": "esdk/shims/aws-esdk-cpp/test-server", "prebuild": "esdk/shims/aws-esdk-cpp", "os": "ubuntu-latest"},
+                {"when": "esdk-cpp-test-server", "name": "esdk-cpp-test-server (macos)", "server": "esdk/shims/aws-esdk-cpp/test-server", "prebuild": "esdk/shims/aws-esdk-cpp", "os": "macos-latest"},
                 {"when": "mpl-test-server", "name": "mpl-test-server", "server": "mpl-test-server"},
                 {"when": "prim-test-server", "name": "prim-test-server", "server": "prim-test-server"}
               ],
@@ -191,8 +195,9 @@ jobs:
       contents: read
       actions: read
       id-token: write
-    uses: aws/aws-crypto-tools-commons/.github/workflows/esdk-test-server-reusable.yml@main
+    uses: aws/aws-crypto-tools-commons/.github/workflows/esdk-test-server-reusable.yml@lucmcdon/esdk-registry-move-rust-server-paths
     with:
+      commons-ref: lucmcdon/esdk-registry-move-rust-server-paths
       # Only run tests that involve the focus language (ex. skip Python <--> Java tests for this Rust repo)
       focus: ${{ matrix.focus }}
       checkout-languages: ${{ matrix.focus }}

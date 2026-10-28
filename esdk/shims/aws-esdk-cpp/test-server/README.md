@@ -2,8 +2,8 @@
 
 The ESDK TestServer **C++-shim Language_Server**: a hand-rolled rpcv2Cbor HTTP
 server that speaks the same commons contract as the Rust Language_Server
-(`../esdk-test-server`) but runs every crypto operation through the
-[`aws-esdk-cpp`](../esdk/shims/aws-esdk-cpp) C++ facade
+(`../../../test-server`) but runs every crypto operation through the
+[`aws-esdk-cpp`](..) C++ facade
 (`aws/esdk/EncryptionSDK.h`). It is what proves the C++ shim interoperates with
 the other languages' ESDKs.
 
