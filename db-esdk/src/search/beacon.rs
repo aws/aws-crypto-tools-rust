@@ -635,3 +635,7 @@ impl Beacon {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "beacon_tests.rs"]
+mod tests;

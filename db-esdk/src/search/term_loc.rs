@@ -218,3 +218,7 @@ fn number(s: &str) -> Result<u64, Error> {
     }
     Ok(acc)
 }
+
+#[cfg(test)]
+#[path = "term_loc_tests.rs"]
+mod tests;

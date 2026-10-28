@@ -190,3 +190,7 @@ fn do_transform(t: &VirtualTransform, s: &str) -> String {
         VirtualTransform::Segments(p) => get_segments(s, p.split, p.low, p.high),
     }
 }
+
+#[cfg(test)]
+#[path = "virt_tests.rs"]
+mod tests;

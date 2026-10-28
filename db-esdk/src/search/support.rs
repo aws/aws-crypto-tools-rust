@@ -243,3 +243,7 @@ fn get_number(val: &AttributeValue, name: &str) -> Result<u32, Error> {
         Err(val_err(format!("Value of {name} out of range.")))
     }
 }
+
+#[cfg(test)]
+#[path = "support_tests.rs"]
+mod tests;
