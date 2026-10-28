@@ -105,6 +105,8 @@ pub use crate::aws_kms::hierarchical_keyring::{
     HierarchicalKeyring, HierarchicalKeyringBuilder, SharedBranchKeySupplier,
 };
 #[cfg(feature = "kms")]
+pub use crate::aws_kms::kms_rsa_keyring::{AwsKmsRsaKeyring, AwsKmsRsaKeyringBuilder};
+#[cfg(feature = "kms")]
 pub use crate::aws_kms::mrk_discovery_keyring::{
     AwsKmsMrkDiscoveryKeyring, AwsKmsMrkDiscoveryKeyringBuilder,
 };

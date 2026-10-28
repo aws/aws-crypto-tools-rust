@@ -26,7 +26,7 @@ use crate::structures::{
 /// The key provider ID of every encrypted data key this keyring writes.
 pub(crate) const PROVIDER_ID: &str = "aws-kms";
 /// The longest AWS KMS key identifier.
-const MAX_AWS_KMS_IDENTIFIER_LENGTH: usize = 2048;
+pub(crate) const MAX_AWS_KMS_IDENTIFIER_LENGTH: usize = 2048;
 /// AWS KMS ciphertexts are 1 to 6144 bytes.
 const MAX_CIPHERTEXT_LENGTH: usize = 6144;
 /// AWS KMS accepts at most this many grant tokens.
@@ -400,7 +400,7 @@ impl AwsKmsKeyring {
 }
 
 /// A `Service` error about the AWS KMS key `key_id`.
-fn service_err(key_id: &str, message: impl Into<String>) -> Error {
+pub(crate) fn service_err(key_id: &str, message: impl Into<String>) -> Error {
     Error::new(Kind::Service, message).about(
         Some(Service::Kms),
         Some(Resource::KmsKey(KmsKey::new(key_id.to_owned()))),
@@ -494,7 +494,7 @@ pub(crate) fn valid_grant_tokens(grant_tokens: Option<Vec<String>>) -> Result<Ve
     Ok(grant_tokens)
 }
 
-fn valid_ciphertext(c: &[u8]) -> bool {
+pub(crate) fn valid_ciphertext(c: &[u8]) -> bool {
     (1..=MAX_CIPHERTEXT_LENGTH).contains(&c.len())
 }
 
