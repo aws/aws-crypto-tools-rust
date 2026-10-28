@@ -35,10 +35,21 @@ impl Transforms {
     ) -> Result<ExecuteStatementInput, Error> {
         let table = table_from_statement(input.statement.as_deref().unwrap_or_default())?;
         if self.tables.contains_key(table) {
+            //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#validate-before-executestatement
+            //# The request MUST fail, and the client make no network call to DynamoDB,
+            //# if there exists an Item Encryptor
+            //# specified within the [DynamoDB Encryption Client Config](#dynamodb-encryption-client-configuration)
+            //# with a [DynamoDB Table Name](./ddb-item-encryptor.md#dynamodb-table-name)
+            //# equal to table named in the request.
             return Err(val_err(
                 "ExecuteStatement not Supported on encrypted tables.",
             ));
         }
+
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#validate-before-executestatement
+        //# If no such Item Encryptor exists,
+        //# there MUST NOT be any modification
+        //# to the ExecuteStatement request.
         Ok(input)
     }
 
@@ -69,11 +80,22 @@ impl Transforms {
         for request in input.statements.as_deref().unwrap_or_default() {
             let table = table_from_statement(&request.statement)?;
             if self.tables.contains_key(table) {
+                //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#validate-before-batchexecutestatement
+                //# The request MUST fail, and the client make no network call to DynamoDB,
+                //# if there exists an Item Encryptor
+                //# specified within the [DynamoDB Encryption Client Config](#dynamodb-encryption-client-configuration)
+                //# with a [DynamoDB Table Name](./ddb-item-encryptor.md#dynamodb-table-name)
+                //# equal to table named in any of the `Statements` of the request.
                 return Err(val_err(
                     "BatchExecuteStatement not Supported on encrypted tables.",
                 ));
             }
         }
+
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#validate-before-batchexecutestatement
+        //# If no such Item Encryptor exists,
+        //# there MUST NOT be any modification
+        //# to the BatchExecuteStatement request.
         Ok(input)
     }
 
@@ -104,11 +126,22 @@ impl Transforms {
         for statement in input.transact_statements.as_deref().unwrap_or_default() {
             let table = table_from_statement(&statement.statement)?;
             if self.tables.contains_key(table) {
+                //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#validate-before-executetransaction
+                //# The request MUST fail, and the client make no network call to DynamoDB,
+                //# if there exists an Item Encryptor
+                //# specified within the [DynamoDB Encryption Client Config](#dynamodb-encryption-client-configuration)
+                //# with a [DynamoDB Table Name](./ddb-item-encryptor.md#dynamodb-table-name)
+                //# equal to table named in any of the `TransactStatements` of the request.
                 return Err(val_err(
                     "ExecuteTransaction not Supported on encrypted tables.",
                 ));
             }
         }
+
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#validate-before-executetransaction
+        //# If no such Item Encryptor exists,
+        //# there MUST NOT be any modification
+        //# to the ExecuteTransaction request.
         Ok(input)
     }
 

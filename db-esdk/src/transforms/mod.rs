@@ -142,6 +142,11 @@ impl TransformsBuilder {
                         .insert(beacon, CryptoAction::SignOnly);
                 }
             }
+
+            //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#dynamodb-table-encryption-configs
+            //# During initialization, this client MUST construct a
+            //# [DynamoDb Item Encryptor](./ddb-table-encryption-config.md)
+            //# per configured table, using these table encryption configs.
             let encryptor = ItemEncryptor::builder()
                 .table(name.clone(), config)
                 .build()?;

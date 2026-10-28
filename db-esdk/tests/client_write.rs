@@ -101,7 +101,22 @@ async fn put_item_stores_the_item_encrypted_and_get_item_decrypts_it() {
     put(&client, TABLE, plaintext.clone()).await;
 
     let stored = fake.item(TABLE, &key("a", "1")).unwrap();
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#overview
+    //= type=test
+    //= reason=the item the wrapped PutItem sent is ciphertext, and the wrapped GetItem decrypts it
+    //# For AWS SDKs that do not support an idiomatic way to hook new
+    //# behavior before and after API calls,
+    //# this MAY be implemented by providing an
+    //# implementation of AWS SDK APIs that wrap
+    //# the relevant APIs with the necessary encryption and decryption logic.
     assert_encrypted(&stored, &plaintext);
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#api-modification
+    //= type=test
+    //= reason=GetItem's response is modified (decrypted); each listed behavior is tested in its own section
+    //# DynamoDB API calls
+    //# MUST have the following modified behavior:
     assert_eq!(
         get(&client, TABLE, key("a", "1")).await.unwrap(),
         Some(plaintext)
@@ -411,6 +426,9 @@ async fn update_item_rejects_an_update_of_a_signed_attribute() {
             .await
             .unwrap_err();
 
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#validate-before-updateitem
+        //= type=test
+        //# The UpdateExpression MUST be [valid](ddb-support.md#testupdateexpression).
         assert!(matches!(err, Error::Validation(_)), "{err:?}");
         assert_eq!(
             err.message(),
@@ -436,6 +454,10 @@ async fn update_item_rejects_the_legacy_attribute_updates_parameter() {
         .await
         .unwrap_err();
 
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#validate-before-updateitem
+    //= type=test
+    //# The UpdateItem request MUST NOT refer to any legacy parameters,
+    //# specifically Expected, AttributeUpdates and ConditionalOperator MUST NOT be set.
     assert!(matches!(err, Error::Validation(_)), "{err:?}");
     assert!(fake.calls().is_empty());
 }
@@ -498,6 +520,9 @@ async fn delete_item_rejects_a_condition_on_an_encrypted_attribute() {
         .await
         .unwrap_err();
 
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#validate-before-deleteitem
+    //= type=test
+    //# The ConditionExpression MUST be [valid](ddb-support.md#testconditionexpression).
     assert!(matches!(err, Error::Validation(_)), "{err:?}");
     assert_eq!(fake.calls(), ["PutItem"]);
     assert_eq!(fake.items(TABLE).len(), 1);

@@ -107,7 +107,18 @@ macro_rules! fluent_builder {
         #[derive(Clone, Debug)]
         #[non_exhaustive]
         pub struct $name {
+            //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#overview
+            //# For AWS SDKs that do not support an idiomatic way to hook new
+            //# behavior before and after API calls,
+            //# this MAY be implemented by providing an
+            //# implementation of AWS SDK APIs that wrap
+            //# the relevant APIs with the necessary encryption and decryption logic.
             inner: $sdk,
+
+            //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#api-modification
+            //= reason=every send runs the operation's input transform, then its output transform
+            //# DynamoDB API calls
+            //# MUST have the following modified behavior:
             transforms: Transforms,
         }
 
@@ -116,6 +127,10 @@ macro_rules! fluent_builder {
                 Self { inner, transforms }
             }
 
+            //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#overview
+            //= reason=each builder forwards the AWS SDK builder's setters; send returns the SDK output type
+            //# This new implementation SHOULD be a drop-in replacement of the
+            //# regular AWS SDK.
             $(setter!($kind $field, $set, $get: $ty);)*
 
             /// The AWS SDK builder with every member set from `input`.

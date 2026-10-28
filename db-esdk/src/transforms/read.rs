@@ -90,8 +90,15 @@ impl Transforms {
     /// On a table with beacons, the expressions are rewritten to compare beacons.
     pub async fn query_input(&self, mut input: QueryInput) -> Result<QueryInput, Error> {
         let Some(table) = self.table_info(input.table_name.as_deref()) else {
+            //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#modify-before-query
+            //# If the `TableName` in the request does not refer to an [encrypted-table](#encrypted-table),
+            //# the Query request MUST be unchanged.
             return Ok(input);
         };
+
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#modify-before-query
+        //# The Query request MUST NOT refer to any legacy parameters,
+        //# specifically AttributesToGet, KeyConditions, QueryFilter and ConditionalOperator MUST NOT be set.
         if !no_list(input.attributes_to_get.as_ref()) {
             return Err(val_err(
                 "Legacy parameter 'AttributesToGet' not supported in Query with Encryption",
@@ -126,6 +133,10 @@ impl Transforms {
             )?;
             return Ok(input);
         };
+
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#modify-before-query
+        //# The request MUST be [altered](./ddb-support.md#queryinputforbeacons)
+        //# to transform any references to encrypted attributes into references to beacons.
         let ctx = search
             .query_input_for_beacons(
                 &table.encryptor.config().attribute_actions_on_encrypt,
@@ -154,6 +165,10 @@ impl Transforms {
     ///
     /// A `Validation` error when the key condition expression is longer than 4096 characters,
     /// or names an expression attribute value that the input does not have.
+    //= spec/dynamodb-encryption-client/ddb-get-number-of-queries.md#input
+    //= type=implication
+    //= reason=the only parameter is &QueryInput; any other input type does not compile
+    //# This operation MUST take as input the QueryInput structure under consideration.
     pub async fn get_number_of_queries(&self, input: &QueryInput) -> Result<u8, Error> {
         let Some(search) = self
             .table_info(input.table_name.as_deref())
@@ -165,6 +180,9 @@ impl Transforms {
             input.key_condition_expression.as_deref(),
             "KeyConditionExpression",
         )?;
+
+        //= spec/dynamodb-encryption-client/ddb-get-number-of-queries.md#input
+        //# This operation MUST return the number of queries necessary.
         search.version.get_num_queries(
             input.key_condition_expression.as_deref(),
             input.expression_attribute_values.as_ref(),
@@ -225,8 +243,15 @@ impl Transforms {
     /// On a table with beacons, the filter is rewritten to compare beacons.
     pub async fn scan_input(&self, mut input: ScanInput) -> Result<ScanInput, Error> {
         let Some(table) = self.table_info(input.table_name.as_deref()) else {
+            //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#modify-before-scan
+            //# If the `TableName` in the request does not refer to an [encrypted-table](#encrypted-table),
+            //# the Scan request MUST be unchanged.
             return Ok(input);
         };
+
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#modify-before-scan
+        //# The Scan request MUST NOT refer to any legacy parameters,
+        //# specifically AttributesToGet, ScanFilter and ConditionalOperator MUST NOT be set.
         if !no_list(input.attributes_to_get.as_ref()) {
             return Err(val_err(
                 "Legacy parameter 'AttributesToGet' not supported in UpdateItem with Encryption",
@@ -252,6 +277,10 @@ impl Transforms {
             )?;
             return Ok(input);
         };
+
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#modify-before-scan
+        //# The request MUST be [altered](./ddb-support.md#scaninputforbeacons)
+        //# to transform any references to encrypted attributes into references to beacons.
         let ctx = search
             .scan_input_for_beacons(
                 input.filter_expression.take(),

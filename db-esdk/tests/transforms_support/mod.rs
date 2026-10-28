@@ -424,6 +424,48 @@ pub fn beacon_transforms() -> Transforms {
         .unwrap()
 }
 
+/// A table `foo` whose only beacon, `std2`, has `partitions` partitions,
+/// with at most `max` partitions per beacon version.
+pub fn partitioned_transforms(partitions: u8, max: u8) -> Transforms {
+    let std2 = StandardBeacon::builder()
+        .name("std2")
+        .bits(24)
+        .number_of_partitions(partitions)
+        .build()
+        .unwrap();
+    let version = BeaconVersion::builder()
+        .version(1)
+        .key_store(fake_key_store())
+        .key_source(BeaconKeySource::Single(
+            SingleKeyStore::builder()
+                .key_id("foo")
+                .cache_ttl(Duration::from_secs(42))
+                .build()
+                .unwrap(),
+        ))
+        .standard_beacons(std2)
+        .maximum_number_of_partitions(max)
+        .build()
+        .unwrap();
+    let search = SearchConfig::builder()
+        .write_version(1)
+        .versions(version)
+        .build()
+        .unwrap();
+    let config = multi_actions(TableConfig::builder())
+        .logical_table_name("foo")
+        .partition_key_name("bar")
+        .allowed_unsigned_attributes("plain")
+        .keyring(static_keyring())
+        .search(search)
+        .build()
+        .unwrap();
+    Transforms::builder()
+        .table_encryption_configs("foo", config)
+        .build()
+        .unwrap()
+}
+
 /// `TestFixtures.GetDynamoDbEncryptionTransformsMulti` with the static keyring.
 pub fn multi_transforms_static(o: Option<PlaintextOverride>) -> Transforms {
     let search = SearchConfig::builder()

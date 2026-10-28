@@ -41,7 +41,8 @@ use transforms_support::{
     Item, NAME_BEACON, STD2_BEACON, STD4_BEACON, STD6_BEACON, TITLE_BEACON, beacon_transforms,
     expect_validation, fake_key_store, item, lotsa_beacons, multi_actions,
     multi_actions_without_key_field, multi_transforms_hierarchical,
-    multi_transforms_hierarchical_with, multi_transforms_static, s, simple_item, transforms,
+    multi_transforms_hierarchical_with, multi_transforms_static, partitioned_transforms, s,
+    simple_item, transforms,
 };
 
 fn put_input(it: Item) -> PutItemInput {
@@ -484,6 +485,11 @@ async fn query_input_beaconizes_encrypted_field() {
         .query_input(query_name("MyName"))
         .await
         .unwrap();
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#modify-before-query
+    //= type=test
+    //# The request MUST be [altered](./ddb-support.md#queryinputforbeacons)
+    //# to transform any references to encrypted attributes into references to beacons.
     assert_eq!(
         out.key_condition_expression.as_deref(),
         Some("aws_dbe_b_Name = :n")
@@ -537,6 +543,29 @@ async fn get_number_of_queries_with_beacons() {
         .await,
         "KeyConditionExpression exceeds maximum length of 4096 characters.",
     );
+}
+
+/// `TestNumberOfQueriesPartition5` and its 25-partition sibling, from `BeaconPartition.dfy`.
+#[tokio::test]
+async fn get_number_of_queries_with_a_partitioned_beacon() {
+    let input = QueryInput::builder()
+        .table_name("foo")
+        .key_condition_expression("std2 = :std2")
+        .expression_attribute_values(":std2", AttributeValue::N("1.23".into()))
+        .build()
+        .unwrap();
+    for (partitions, max) in [(5, 6), (25, 26)] {
+        let t = partitioned_transforms(partitions, max);
+
+        //= spec/dynamodb-encryption-client/ddb-get-number-of-queries.md#input
+        //= type=test
+        //# This operation MUST return the number of queries necessary.
+        assert_eq!(
+            t.get_number_of_queries(&input).await.unwrap(),
+            partitions,
+            "max {max}"
+        );
+    }
 }
 
 /// Picks the branch key from the partition key: `key` is tenant `id1`, any other is `id2`.
@@ -634,6 +663,11 @@ async fn scan_beaconizes_and_filters() {
         .build()
         .unwrap();
     let rewritten = t.scan_input(input.clone()).await.unwrap();
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#modify-before-scan
+    //= type=test
+    //# The request MUST be [altered](./ddb-support.md#scaninputforbeacons)
+    //# to transform any references to encrypted attributes into references to beacons.
     assert_eq!(
         rewritten.filter_expression.as_deref(),
         Some("aws_dbe_b_Title = :t")

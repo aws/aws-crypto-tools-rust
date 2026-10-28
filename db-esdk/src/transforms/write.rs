@@ -127,8 +127,15 @@ impl Transforms {
         input: UpdateItemInput,
     ) -> Result<UpdateItemInput, Error> {
         let Some(table) = self.table(input.table_name.as_deref()) else {
+            //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#validate-before-updateitem
+            //# If the `TableName` in the request does not refer to an [encrypted-table](#encrypted-table),
+            //# the UpdateItem request MUST be unchanged.
             return Ok(input);
         };
+
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#validate-before-updateitem
+        //# The UpdateItem request MUST NOT refer to any legacy parameters,
+        //# specifically Expected, AttributeUpdates and ConditionalOperator MUST NOT be set.
         if !no_map(input.expected.as_ref()) {
             return Err(val_err(
                 "Legacy parameter 'Expected' not supported in UpdateItem with Encryption",
@@ -144,11 +151,17 @@ impl Transforms {
                 "Legacy parameter 'ConditionalOperator' not supported in UpdateItem with Encryption",
             ));
         }
+
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#validate-before-updateitem
+        //# The UpdateExpression MUST be [valid](ddb-support.md#testupdateexpression).
         test_update_expression(
             table,
             input.update_expression.as_deref(),
             input.expression_attribute_names.as_ref(),
         )?;
+
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#validate-before-updateitem
+        //# If all of the above validation succeeds, the UpdateItem request MUST be unchanged.
         Ok(input)
     }
 
@@ -229,8 +242,15 @@ impl Transforms {
         input: DeleteItemInput,
     ) -> Result<DeleteItemInput, Error> {
         let Some(table) = self.table(input.table_name.as_deref()) else {
+            //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#validate-before-deleteitem
+            //# If the `TableName` in the request does not refer to an [encrypted-table](#encrypted-table),
+            //# the DeleteItem request MUST be unchanged.
             return Ok(input);
         };
+
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#validate-before-deleteitem
+        //# The DeleteItem request MUST NOT refer to any legacy parameters,
+        //# specifically Expected and ConditionalOperator MUST NOT be set.
         if !no_map(input.expected.as_ref()) {
             return Err(val_err(
                 "Legacy parameter 'Expected' not supported in UpdateItem with Encryption",
@@ -241,11 +261,17 @@ impl Transforms {
                 "Legacy parameter 'ConditionalOperator' not supported in UpdateItem with Encryption",
             ));
         }
+
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#validate-before-deleteitem
+        //# The ConditionExpression MUST be [valid](ddb-support.md#testconditionexpression).
         test_condition_expression(
             table,
             input.condition_expression.as_deref(),
             input.expression_attribute_names.as_ref(),
         )?;
+
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#validate-before-deleteitem
+        //# If all of the above validation succeeds, the DeleteItem request MUST be unchanged.
         Ok(input)
     }
 

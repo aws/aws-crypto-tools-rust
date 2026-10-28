@@ -174,8 +174,20 @@ fn query_input(table: &str) -> QueryInput {
 
 #[tokio::test]
 async fn query_input_passthrough() {
-    let input = query_input("no_such_table");
+    // On table foo, both the legacy parameter and the filter on `encrypt` are rejected.
+    let input = QueryInput::builder()
+        .table_name("no_such_table")
+        .attributes_to_get("sign")
+        .filter_expression("encrypt = :e")
+        .expression_attribute_values(":e", s("x"))
+        .build()
+        .unwrap();
     let out = transforms().query_input(input.clone()).await.unwrap();
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#modify-before-query
+    //= type=test
+    //# If the `TableName` in the request does not refer to an [encrypted-table](#encrypted-table),
+    //# the Query request MUST be unchanged.
     assert_eq!(out, input);
 }
 
@@ -242,6 +254,10 @@ async fn query_input_legacy_parameters() {
         ),
     ];
     for (input, message) in cases {
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#modify-before-query
+        //= type=test
+        //# The Query request MUST NOT refer to any legacy parameters,
+        //# specifically AttributesToGet, KeyConditions, QueryFilter and ConditionalOperator MUST NOT be set.
         expect_validation(transforms().query_input(input).await, message);
     }
 }
@@ -379,8 +395,20 @@ fn scan_input(table: &str) -> ScanInput {
 
 #[tokio::test]
 async fn scan_input_passthrough() {
-    let input = scan_input("no_such_table");
+    // On table foo, both the legacy parameter and the filter on `encrypt` are rejected.
+    let input = ScanInput::builder()
+        .table_name("no_such_table")
+        .attributes_to_get("sign")
+        .filter_expression("encrypt = :e")
+        .expression_attribute_values(":e", s("x"))
+        .build()
+        .unwrap();
     let out = transforms().scan_input(input.clone()).await.unwrap();
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#modify-before-scan
+    //= type=test
+    //# If the `TableName` in the request does not refer to an [encrypted-table](#encrypted-table),
+    //# the Scan request MUST be unchanged.
     assert_eq!(out, input);
 }
 
@@ -432,14 +460,29 @@ async fn scan_input_legacy_parameters() {
                 .unwrap(),
             "Legacy parameter 'ConditionalOperator' not supported in UpdateItem with Encryption",
         ),
-        (
-            base().filter_expression("a".repeat(4097)).build().unwrap(),
-            "FilterExpression exceeds maximum length of 4096 characters.",
-        ),
     ];
     for (input, message) in cases {
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#modify-before-scan
+        //= type=test
+        //# The Scan request MUST NOT refer to any legacy parameters,
+        //# specifically AttributesToGet, ScanFilter and ConditionalOperator MUST NOT be set.
         expect_validation(transforms().scan_input(input).await, message);
     }
+}
+
+#[tokio::test]
+async fn scan_input_filter_expression_too_long() {
+    // No spec requirement: DynamoDB's 4096-character expression limit, ported from Dafny,
+    // checked before modify-before-scan's beacon rewrite. 4096 is the limit: one more fails.
+    let input = ScanInput::builder()
+        .table_name("foo")
+        .filter_expression("a".repeat(4097))
+        .build()
+        .unwrap();
+    expect_validation(
+        transforms().scan_input(input).await,
+        "FilterExpression exceeds maximum length of 4096 characters.",
+    );
 }
 
 #[tokio::test]
