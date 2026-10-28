@@ -138,3 +138,7 @@ pub(crate) const SIGN_ONLY_LEGEND: u8 = 0x73;
 pub(crate) const fn is_auth_attr(action: CryptoAction) -> bool {
     !matches!(action, CryptoAction::DoNothing)
 }
+
+#[cfg(test)]
+#[path = "util_tests.rs"]
+mod tests;
