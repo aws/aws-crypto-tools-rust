@@ -38,7 +38,27 @@ pub(crate) fn commit_key(
     key: &[u8],
     msg_id: &[u8; MSGID_LEN],
 ) -> Result<Zeroizing<Vec<u8>>, Error> {
+    //= spec/structured-encryption/header.md#commit-key
+    //= reason=DbeSuite::new rejects suites whose encryption key length is not KEY_SIZE (32)
+    //# The calculated Commitment Key MUST have length equal to the
+    //# [algorithm suite's encryption key length](../../submodules/MaterialProviders/aws-encryption-sdk-specification/framework/algorithm-suites.md#algorithm-suites-encryption-settings).
     let mut out = Zeroizing::new(vec![0u8; KEY_SIZE]);
+
+    //= spec/structured-encryption/header.md#commit-key
+    //= reason=suite.commit is the suite's commit_kdf() hash (DbeSuite::new)
+    //# The HKDF used to calculate the Commitment Key MUST be the
+    //# [Commit Key KDF](../../submodules/MaterialProviders/aws-encryption-sdk-specification/framework/algorithm-suites.md#algorithm-suites-commit-key-derivation-settings)
+    //# indicated by the algorithm suite.
+    //
+    //= spec/structured-encryption/header.md#commit-key
+    //# The `info` used for the HKDF function MUST be
+    //# | Field | Length |
+    //# | -------------------- | -------- |
+    //# | "AWS_DBE_COMMIT_KEY" | 18 |
+    //# | Message ID | 32 |
+    //
+    //= spec/structured-encryption/header.md#commit-key
+    //# The HKDF calculation MUST use a supplied key, no salt, and an `info` as described above.
     hkdf_no_salt(suite.commit, key, &[LABEL_COMMITMENT_KEY, msg_id], &mut out)?;
     Ok(out)
 }
@@ -134,6 +154,8 @@ pub(crate) fn crypt(
     let mut keys = Zeroizing::new(Vec::new());
     for item in &mut data {
         if item.action != CryptoAction::EncryptAndSign {
+            //= spec/structured-encryption/header.md#encrypt-legend-bytes
+            //# This indicates that this field MUST NOT be attempted to be decrypted during decryption.
             continue;
         }
         let slot = ((pos % FIELD_BATCH) * FIELD_STRIDE) as usize;
@@ -143,6 +165,9 @@ pub(crate) fn crypt(
         let fk = &keys[slot..slot + KEY_SIZE + NONCE_SIZE];
         item.data = match mode {
             Mode::Encrypt => encrypt_terminal(fk, &item.canon, &item.data)?,
+            //= spec/structured-encryption/header.md#encrypt-legend-bytes
+            //= reason=for_decrypt maps legend byte 0x65 to EncryptAndSign, the only action reaching here
+            //# This indicates that this field MUST be attempted to be decrypted during decryption.
             Mode::Decrypt => decrypt_terminal(fk, &item.canon, &item.data)?,
         };
         pos += 1;

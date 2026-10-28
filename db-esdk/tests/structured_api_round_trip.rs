@@ -305,6 +305,10 @@ async fn path_structure_is_output_in_canonical_order() {
     );
     // Legend: one byte per signed field in canonical order: 'e', 's', 'e'.
     let header = out[4].data().value();
+
+    //= spec/structured-encryption/header.md#encrypt-legend
+    //= type=test
+    //# The Encrypt Legend MUST be serialized as
     assert_eq!(&header[2 + 32..2 + 32 + 5], &[0, 3, b'e', b's', b'e']);
     assert_eq!(
         enc.parsed_header().stored_encryption_context().get("k"),
@@ -339,6 +343,34 @@ async fn path_structure_is_output_in_canonical_order() {
     );
     assert_eq!(dec.parsed_header().algorithm_suite_id(), SIGNING_SUITE);
     assert_eq!(dec.into_plaintext_structure().len(), 4);
+}
+
+// Identical encrypts must still get distinct message ids (header bytes 2..34).
+#[tokio::test]
+async fn each_encrypt_draws_a_fresh_message_id() {
+    const RUNS: usize = 20;
+    let cmm = cmm();
+    let mut ids = std::collections::BTreeSet::new();
+    for _ in 0..RUNS {
+        let enc = client()
+            .encrypt_structure()
+            .table_name(TABLE)
+            .set_plaintext_structure(Some(test_structured_data()))
+            .set_crypto_schema(Some(test_crypto_schema()))
+            .cmm(cmm.clone())
+            .send()
+            .await
+            .unwrap();
+        let id = enc.encrypted_structure()[HEADER].value()[2..34].to_vec();
+        assert_ne!(id, [0u8; 32]);
+        ids.insert(id);
+    }
+
+    //= spec/structured-encryption/header.md#message-id
+    //= type=test
+    //= reason=distinct ids across identical encrypts; a fixed or reused id would collide
+    //# Implementations MUST generate a fresh 256-bit random MessageID, from a cryptographically secure source, for each record encrypted.
+    assert_eq!(ids.len(), RUNS);
 }
 
 #[tokio::test]

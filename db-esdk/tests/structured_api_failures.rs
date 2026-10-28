@@ -89,8 +89,6 @@ fn assert_validation(err: &Error, msg: &str) {
     assert!(err.message().contains(msg), "{err:?}");
 }
 
-// ----- tampering -----
-
 #[tokio::test]
 async fn untampered_structure_decrypts() {
     // The control for every tamper test below.
@@ -100,7 +98,7 @@ async fn untampered_structure_decrypts() {
 
 #[tokio::test]
 async fn tampered_header_message_id_fails_key_commitment() {
-    // Byte 2 is the first byte of the message id, from which the commitment key is derived.
+    // Byte 2 is the first byte of the message id. The commitment covers it.
     let data = with_value(encrypted_default().await, HEADER, |v| v[2] ^= 1);
     let err = decrypt(data).await.unwrap_err();
     assert_cryptographic(
@@ -319,13 +317,16 @@ async fn schema_change_is_detected_from_the_legend() {
     let err = decrypt_with(encrypted_default().await, schema, None)
         .await
         .unwrap_err();
+
+    //= spec/structured-encryption/header.md#encrypt-legend-bytes
+    //= type=test
+    //# The length of this serialized value (in bytes) MUST equal the number of authenticated fields indicated
+    //# by the caller's [Authenticate Schema](./structures.md#authenticate-schema).
     assert_serialization(
         &err,
         "an attribute written as signed is now configured as unsigned",
     );
 }
-
-// ----- decrypt validation -----
 
 #[tokio::test]
 async fn decrypt_requires_a_signed_field() {
@@ -398,8 +399,6 @@ async fn decrypt_path_rejects_duplicate_paths() {
         .unwrap_err();
     assert_validation(&err, "an attribute appears more than once");
 }
-
-// ----- encrypt validation -----
 
 async fn encrypt_path(items: Vec<CryptoItem>, ec: Option<EncryptionContext>) -> Error {
     client()
@@ -549,8 +548,6 @@ async fn encrypt_schema_must_match_structure() {
     }
 }
 
-// ----- resolve_auth_actions -----
-
 #[tokio::test]
 async fn resolve_auth_actions_failures() {
     let data = encrypted_default().await;
@@ -606,8 +603,6 @@ async fn resolve_auth_actions_failures() {
         "an attribute written as unsigned is now configured as signed",
     );
 }
-
-// ----- required inputs -----
 
 #[tokio::test]
 async fn every_required_input_is_checked() {

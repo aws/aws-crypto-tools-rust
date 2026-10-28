@@ -136,6 +136,10 @@ fn for_decrypt(table: &str, data: Vec<AuthField>, legend: &[u8]) -> Result<Vec<C
         .into_iter()
         .map(|x| (canon_path(table, &x.key), x))
         .collect();
+
+    //= spec/structured-encryption/header.md#encrypt-legend-bytes
+    //= reason=legend bytes are consumed in canonical-path order, as they were written
+    //# The Encrypt Legend Bytes MUST be serialized as follows:
     sorted.sort_by(|a, b| a.0.cmp(&b.0));
     let mut legend_pos = 0usize;
     let mut out = Vec::with_capacity(sorted.len());
@@ -159,6 +163,9 @@ fn for_decrypt(table: &str, data: Vec<AuthField>, legend: &[u8]) -> Result<Vec<C
         });
     }
     if legend_pos != legend.len() {
+        //= spec/structured-encryption/header.md#encrypt-legend-bytes
+        //# The length of this serialized value (in bytes) MUST equal the number of authenticated fields indicated
+        //# by the caller's [Authenticate Schema](./structures.md#authenticate-schema).
         return Err(ser_err(
             "the attribute actions do not match the item: an attribute written as signed is now configured as unsigned",
         ));
@@ -327,8 +334,15 @@ pub(crate) async fn encrypt_path_structure(
     }
 
     let mut msg_id = [0u8; MSGID_LEN];
+
+    //= spec/structured-encryption/header.md#message-id
+    //# Implementations MUST generate a fresh 256-bit random MessageID, from a cryptographically secure source, for each record encrypted.
     generate_random_bytes(&mut msg_id)?;
     let head = PartialHeader::create(&canon, msg_id, &mat)?;
+
+    //= spec/structured-encryption/header.md#commit-key
+    //# The commit key calculation described above MUST be performed with the record's plaintext data key
+    //# and the header's message id.
     let commit = crypt::commit_key(suite, key.as_bytes(), &head.msg_id)?;
     let header_bytes = head.serialize_with_commitment(suite.commit, &commit)?;
     if u32::try_from(canon.len()).map_or(true, |n| n >= crypt::ONE_THIRD_MAX_INT) {
@@ -432,6 +446,10 @@ pub(crate) async fn decrypt_path_structure(
         .plaintext_data_key()
         .ok_or_else(|| materials_err("the materials have no plaintext data key"))?;
     let suite = DbeSuite::new(mat.algorithm_suite_id())?;
+
+    //= spec/structured-encryption/header.md#commit-key
+    //# The commit key calculation described above MUST be performed with the record's plaintext data key
+    //# and the header's message id.
     let commit = crypt::commit_key(suite, key.as_bytes(), &head.msg_id)?;
     PartialHeader::verify_commitment(suite.commit, &commit, &header_bytes)?;
     let footer = Footer::deserialize(&footer_bytes, suite.signature != suite::Signature::None)?;

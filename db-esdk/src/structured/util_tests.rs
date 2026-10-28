@@ -17,6 +17,15 @@ fn canon_path_spec_example() {
     expected.push(b'$');
     expected.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0, 4]);
     expected.extend_from_slice(b"name");
+
+    //= spec/structured-encryption/header.md#canonical-path
+    //= type=test
+    //# The canonical path MUST start with the UTF8 encoded table name.
+    //
+    //= spec/structured-encryption/header.md#canonical-path
+    //= type=test
+    //# For Structured Data in Structured Data Maps, this MUST be a 0x24 byte ($ in UTF-8),
+    //# followed by the length of the key, followed by the key as a UTF8 string.
     assert_eq!(canon_path("example_table", &path(&["name"])), expected);
 }
 
@@ -30,6 +39,14 @@ fn canon_path_nested_segments_in_order() {
     expected.push(b'$');
     expected.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0, 2]);
     expected.extend_from_slice(b"bc");
+
+    //= spec/structured-encryption/header.md#canonical-path
+    //= type=test
+    //# This MUST be followed by the depth of the Terminal within Structured Data.
+    //
+    //= spec/structured-encryption/header.md#canonical-path
+    //= type=test
+    //# This MUST be followed by the encoding for each Structured Data in the path, including the Terminal itself.
     assert_eq!(canon_path("t", &path(&["a", "bc"])), expected);
 }
 

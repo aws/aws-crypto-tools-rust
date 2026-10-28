@@ -106,12 +106,30 @@ pub(crate) fn utf16_cmp(a: &str, b: &str) -> std::cmp::Ordering {
 /// The canonical path of `path` in `table`:
 /// the table name, the path depth, then each member's tag, length, and name.
 pub(crate) fn canon_path(table: &str, path: &[String]) -> Vec<u8> {
+    //= spec/structured-encryption/header.md#canonical-path
+    //= type=exception
+    //= reason=paths are member-only (a list segment cannot be expressed), matching the reference
+    //# For Structured Data in Structured Data Lists, this MUST be a 0x23 byte (# in UTF-8),
+    //# followed by the numerical index.
     const MAP_TAG: u8 = b'$';
     let mut out =
         Vec::with_capacity(table.len() + 8 + path.iter().map(|s| s.len() + 9).sum::<usize>());
+
+    //= spec/structured-encryption/header.md#canonical-path
+    //# The canonical path MUST start with the UTF8 encoded table name.
     out.extend_from_slice(table.as_bytes());
+
+    //= spec/structured-encryption/header.md#canonical-path
+    //# This MUST be followed by the depth of the Terminal within Structured Data.
     out.extend_from_slice(&u64_len(path.len()).to_be_bytes());
+
+    //= spec/structured-encryption/header.md#canonical-path
+    //# This MUST be followed by the encoding for each Structured Data in the path, including the Terminal itself.
     for segment in path {
+        //= spec/structured-encryption/header.md#canonical-path
+        //= reason=key length counts UTF-16 code units, as the reference does
+        //# For Structured Data in Structured Data Maps, this MUST be a 0x24 byte ($ in UTF-8),
+        //# followed by the length of the key, followed by the key as a UTF8 string.
         out.push(MAP_TAG);
         out.extend_from_slice(&u64_len(utf16_len(segment)).to_be_bytes());
         out.extend_from_slice(segment.as_bytes());
