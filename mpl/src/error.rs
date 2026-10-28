@@ -75,7 +75,7 @@
 //! and [`reason`](ConflictError::reason) says why:
 //!
 //! ```no_run
-//! # async fn example(key_store: aws_crypto_mpl::key_store::Client) -> Result<(), aws_crypto_mpl::Error> {
+//! # async fn example(key_store: aws_crypto_mpl::key_store::DynamoDbKeyStore) -> Result<(), aws_crypto_mpl::Error> {
 //! use aws_crypto_mpl::error::ConflictReason;
 //! use aws_crypto_mpl::Error;
 //!
@@ -89,7 +89,7 @@
 //! let create = key_store
 //!     .create_key()
 //!     .branch_key_id("my-branch-key")
-//!     .encryption_context(aws_crypto_mpl::types::EncryptionContext::new());
+//!     .set_encryption_context(Some(aws_crypto_mpl::types::EncryptionContext::new()));
 //! match create.send().await {
 //!     Ok(_) => {}
 //!     // The branch key ID is in use; use the existing key or pick another ID.

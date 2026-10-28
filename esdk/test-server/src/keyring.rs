@@ -6,7 +6,7 @@
 //!
 //! Both keyrings are built from the MPL ([`aws_crypto_mpl`]):
 //! - Raw AES via [`RawAesKeyring`].
-//! - AWS KMS Hierarchical via [`HierarchicalKeyring`] over the key store [`KeyStoreClient::builder`](aws_crypto_mpl::key_store::Client::builder) builds.
+//! - AWS KMS Hierarchical via [`HierarchicalKeyring`] over the key store [`DynamoDbKeyStore::builder`](aws_crypto_mpl::key_store::DynamoDbKeyStore::builder) builds.
 //!
 //! Enforces the "exactly one variant member set" invariant that the Smithy
 //! tagged-union-via-optional-members shapes cannot express in the type system.
@@ -18,14 +18,12 @@ use crate::model::{
     AwsKmsHierarchicalKeyringConfig, CryptographicMaterialsManager, Keyring, RawAesKeyringConfig,
 };
 use aws_crypto_mpl::key_store::types::KmsConfiguration;
-use aws_crypto_mpl::key_store::Client as KeyStoreClient;
+use aws_crypto_mpl::key_store::DynamoDbKeyStore;
 use aws_crypto_mpl::keyring::{HierarchicalKeyring, RawAesKeyring};
 use aws_esdk::keyring::SharedKeyring;
 
 /// Resolve a CMM configuration to the keyring the ESDK client will use.
-///
-/// A `Default` CMM resolves to its inner keyring (the ESDK wraps a keyring in a
-/// default CMM).
+/// Errors here are `GenericServerError`: the commons suite treats them as CreateClient rejections.
 pub async fn keyring_for_cmm(
     cmm: &CryptographicMaterialsManager,
 ) -> Result<SharedKeyring, ServerError> {
@@ -102,7 +100,7 @@ async fn build_raw_aes(config: &RawAesKeyringConfig) -> Result<SharedKeyring, Se
         .wrapping_key(config.wrapping_key.clone())
         .wrapping_alg(wrapping_alg)
         .build()
-        .map_err(|e| ServerError::esdk(e.to_string()))?;
+        .map_err(|e| ServerError::generic(e.to_string()))?;
     Ok(SharedKeyring::new(keyring))
 }
 
@@ -115,13 +113,13 @@ async fn build_raw_aes(config: &RawAesKeyringConfig) -> Result<SharedKeyring, Se
 async fn build_hierarchical(
     config: &AwsKmsHierarchicalKeyringConfig,
 ) -> Result<SharedKeyring, ServerError> {
-    let key_store = KeyStoreClient::builder()
+    let key_store = DynamoDbKeyStore::builder()
         .ddb_table_name(config.key_store_table_name.clone())
         .logical_key_store_name(config.logical_key_store_name.clone())
         .kms_configuration(KmsConfiguration::KmsKeyArn(config.kms_key_arn.clone()))
         .build()
         .await
-        .map_err(|e| ServerError::esdk(e.to_string()))?;
+        .map_err(|e| ServerError::generic(e.to_string()))?;
     let ttl_seconds = u64::try_from(config.ttl_seconds).map_err(|_| {
         ServerError::generic(format!(
             "ttlSeconds must be non-negative, got {}",
@@ -134,6 +132,6 @@ async fn build_hierarchical(
         .branch_key_id(config.branch_key_id.clone())
         .build()
         .await
-        .map_err(|e| ServerError::esdk(e.to_string()))?;
+        .map_err(|e| ServerError::generic(e.to_string()))?;
     Ok(SharedKeyring::new(keyring))
 }

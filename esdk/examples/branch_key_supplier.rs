@@ -55,7 +55,7 @@ fn tenant_context(tenant: &str) -> EncryptionContext {
 }
 
 async fn fixed_keyring(
-    key_store: &key_store::Client,
+    key_store: &key_store::DynamoDbKeyStore,
     branch_key_id: &str,
 ) -> Result<HierarchicalKeyring, MplError> {
     HierarchicalKeyring::builder()
@@ -72,7 +72,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // The AWS Crypto Tools CI test key store.
     // Replace these with your own key store's table, name, and KMS key ARN.
-    let key_store = key_store::Client::builder()
+    let key_store = key_store::DynamoDbKeyStore::builder()
         .ddb_table_name("KeyStoreDdbTable")
         .logical_key_store_name("KeyStoreDdbTable")
         .kms_configuration(KmsConfiguration::KmsKeyArn(
@@ -87,7 +87,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let create_branch_key = async || {
         key_store
             .create_key()
-            .encryption_context(branch_key_context.clone())
+            .set_encryption_context(Some(branch_key_context.clone()))
             .send()
             .await
             .map(|output| output.into_branch_key_id())
@@ -112,14 +112,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let encrypted_a = esdk
         .encrypt()
         .plaintext(plaintext)
-        .encryption_context(tenant_context("TenantA"))
+        .set_encryption_context(Some(tenant_context("TenantA")))
         .keyring(keyring.clone())
         .send()
         .await?;
     let encrypted_b = esdk
         .encrypt()
         .plaintext(plaintext)
-        .encryption_context(tenant_context("TenantB"))
+        .set_encryption_context(Some(tenant_context("TenantB")))
         .keyring(keyring)
         .send()
         .await?;
@@ -131,7 +131,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let result = esdk
         .decrypt()
         .ciphertext(encrypted_a.ciphertext())
-        .encryption_context(tenant_context("TenantA"))
+        .set_encryption_context(Some(tenant_context("TenantA")))
         .keyring(keyring_b.clone())
         .send()
         .await;
@@ -148,7 +148,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let decrypted = esdk
             .decrypt()
             .ciphertext(encrypted.ciphertext())
-            .encryption_context(tenant_context(tenant))
+            .set_encryption_context(Some(tenant_context(tenant)))
             .keyring(keyring)
             .send()
             .await?;

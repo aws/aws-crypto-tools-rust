@@ -157,9 +157,9 @@ impl EncryptionMaterials {
 #[derive(Debug, Default)]
 pub struct EncryptionMaterialsBuilder {
     algorithm_suite_id: Option<AlgorithmSuiteId>,
-    encrypted_data_keys: Vec<EncryptedDataKey>,
-    encryption_context: EncryptionContext,
-    required_encryption_context_keys: BTreeSet<String>,
+    encrypted_data_keys: Option<Vec<EncryptedDataKey>>,
+    encryption_context: Option<EncryptionContext>,
+    required_encryption_context_keys: Option<BTreeSet<String>>,
     plaintext_data_key: Option<PlaintextDataKey>,
     signing_key: Option<SigningKey>,
     symmetric_signing_keys: Option<Vec<SymmetricSigningKey>>,
@@ -191,85 +191,89 @@ impl EncryptionMaterialsBuilder {
         &self.algorithm_suite_id
     }
 
-    /// Set the encrypted data keys.
+    /// Appends an item to the encrypted data keys.
+    ///
+    /// To override the contents of this collection use [`set_encrypted_data_keys`](Self::set_encrypted_data_keys).
     /// Defaults to none.
     #[must_use]
-    pub fn encrypted_data_keys(
-        mut self,
-        encrypted_data_keys: impl Into<Vec<EncryptedDataKey>>,
-    ) -> Self {
-        self.encrypted_data_keys = encrypted_data_keys.into();
+    pub fn encrypted_data_keys(mut self, input: EncryptedDataKey) -> Self {
+        self.encrypted_data_keys
+            .get_or_insert_with(Vec::new)
+            .push(input);
         self
     }
 
     /// Set or clear the encrypted data keys from an `Option`.
-    /// To set a value, use [`Self::encrypted_data_keys`].
+    /// To add one entry, use [`Self::encrypted_data_keys`].
     #[must_use]
     pub fn set_encrypted_data_keys(
         mut self,
         encrypted_data_keys: Option<Vec<EncryptedDataKey>>,
     ) -> Self {
-        self.encrypted_data_keys = encrypted_data_keys.unwrap_or_default();
+        self.encrypted_data_keys = encrypted_data_keys;
         self
     }
 
     /// The encrypted data keys set so far.
     #[must_use]
-    pub const fn get_encrypted_data_keys(&self) -> &Vec<EncryptedDataKey> {
+    pub const fn get_encrypted_data_keys(&self) -> &Option<Vec<EncryptedDataKey>> {
         &self.encrypted_data_keys
     }
 
-    /// Set the encryption context.
+    /// Adds a key-value pair to the encryption context.
+    ///
+    /// To override the contents of this collection use [`set_encryption_context`](Self::set_encryption_context).
     /// Defaults to empty.
     #[must_use]
-    pub fn encryption_context(mut self, encryption_context: impl Into<EncryptionContext>) -> Self {
-        self.encryption_context = encryption_context.into();
+    pub fn encryption_context(mut self, k: impl Into<String>, v: impl Into<String>) -> Self {
+        self.encryption_context
+            .get_or_insert_with(EncryptionContext::new)
+            .insert(k, v);
         self
     }
 
     /// Set or clear the encryption context from an `Option`.
-    /// To set a value, use [`Self::encryption_context`].
+    /// To add one entry, use [`Self::encryption_context`].
     #[must_use]
     pub fn set_encryption_context(mut self, encryption_context: Option<EncryptionContext>) -> Self {
-        self.encryption_context = encryption_context.unwrap_or_default();
+        self.encryption_context = encryption_context;
         self
     }
 
     /// The encryption context set so far.
     #[must_use]
-    pub const fn get_encryption_context(&self) -> &EncryptionContext {
+    #[allow(clippy::ref_option)] // AWS SDK for Rust getter shape
+    pub const fn get_encryption_context(&self) -> &Option<EncryptionContext> {
         &self.encryption_context
     }
 
-    /// Set the required encryption context keys.
+    /// Appends an item to the required encryption context keys.
+    ///
+    /// To override the contents of this collection use [`set_required_encryption_context_keys`](Self::set_required_encryption_context_keys).
     /// Defaults to none.
     #[must_use]
-    pub fn required_encryption_context_keys(
-        mut self,
-        required_encryption_context_keys: impl IntoIterator<Item = impl Into<String>>,
-    ) -> Self {
-        self.required_encryption_context_keys = required_encryption_context_keys
-            .into_iter()
-            .map(Into::into)
-            .collect();
+    pub fn required_encryption_context_keys(mut self, input: impl Into<String>) -> Self {
+        self.required_encryption_context_keys
+            .get_or_insert_with(BTreeSet::new)
+            .insert(input.into());
         self
     }
 
     /// Set or clear the required encryption context keys from an `Option`.
-    /// To set a value, use [`Self::required_encryption_context_keys`].
+    /// To add one entry, use [`Self::required_encryption_context_keys`].
     #[must_use]
     pub fn set_required_encryption_context_keys(
         mut self,
         required_encryption_context_keys: Option<BTreeSet<String>>,
     ) -> Self {
-        self.required_encryption_context_keys =
-            required_encryption_context_keys.unwrap_or_default();
+        self.required_encryption_context_keys = required_encryption_context_keys;
         self
     }
 
     /// The required encryption context keys set so far.
     #[must_use]
-    pub const fn get_required_encryption_context_keys(&self) -> &BTreeSet<String> {
+    #[allow(clippy::ref_option)] // AWS SDK for Rust getter shape
+    pub const fn get_required_encryption_context_keys(&self) -> &Option<BTreeSet<String>> {
         &self.required_encryption_context_keys
     }
 
@@ -315,18 +319,19 @@ impl EncryptionMaterialsBuilder {
         &self.signing_key
     }
 
-    /// Set the symmetric signing keys.
+    /// Appends an item to the symmetric signing keys.
+    ///
+    /// To override the contents of this collection use [`set_symmetric_signing_keys`](Self::set_symmetric_signing_keys).
     #[must_use]
-    pub fn symmetric_signing_keys(
-        mut self,
-        symmetric_signing_keys: impl Into<Vec<SymmetricSigningKey>>,
-    ) -> Self {
-        self.symmetric_signing_keys = Some(symmetric_signing_keys.into());
+    pub fn symmetric_signing_keys(mut self, input: SymmetricSigningKey) -> Self {
+        self.symmetric_signing_keys
+            .get_or_insert_with(Default::default)
+            .push(input);
         self
     }
 
     /// Set or clear the symmetric signing keys from an `Option`.
-    /// To set a value, use [`Self::symmetric_signing_keys`].
+    /// To add one entry, use [`Self::symmetric_signing_keys`].
     #[must_use]
     pub fn set_symmetric_signing_keys(
         mut self,
@@ -353,14 +358,17 @@ impl EncryptionMaterialsBuilder {
     ///   or the signing key or symmetric signing keys do not suit the algorithm suite.
     pub fn build(self) -> Result<EncryptionMaterials, Error> {
         let algorithm_suite_id = required(self.algorithm_suite_id, "algorithm_suite_id")?;
+        let encryption_context = self.encryption_context.unwrap_or_default();
+        let required_encryption_context_keys =
+            self.required_encryption_context_keys.unwrap_or_default();
 
         if let Some(key) = &self.plaintext_data_key {
             check_data_key_length(&algorithm_suite_id.specification(), key)?;
         }
 
         // Required encryption context keys must be a subset of encryption context keys
-        for key in &self.required_encryption_context_keys {
-            if !self.encryption_context.contains_key(key) {
+        for key in &required_encryption_context_keys {
+            if !encryption_context.contains_key(key) {
                 return Err(Error::new(
                     Kind::EncryptionContextMismatch,
                     format!(
@@ -371,7 +379,12 @@ impl EncryptionMaterialsBuilder {
         }
 
         // If no plaintext data key, encrypted data keys must be empty
-        if self.plaintext_data_key.is_none() && !self.encrypted_data_keys.is_empty() {
+        if self.plaintext_data_key.is_none()
+            && self
+                .encrypted_data_keys
+                .as_ref()
+                .is_some_and(|k| !k.is_empty())
+        {
             return Err(Error::new(
                 Kind::InvalidMaterials,
                 "encrypted data keys must be empty when plaintext data key is not present",
@@ -408,9 +421,9 @@ impl EncryptionMaterialsBuilder {
 
         Ok(EncryptionMaterials {
             algorithm_suite_id,
-            encrypted_data_keys: self.encrypted_data_keys,
-            encryption_context: self.encryption_context,
-            required_encryption_context_keys: self.required_encryption_context_keys,
+            encrypted_data_keys: self.encrypted_data_keys.unwrap_or_default(),
+            encryption_context,
+            required_encryption_context_keys,
             plaintext_data_key: self.plaintext_data_key,
             signing_key: self.signing_key,
             symmetric_signing_keys: self.symmetric_signing_keys,

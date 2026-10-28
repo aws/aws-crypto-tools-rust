@@ -25,7 +25,7 @@ use aws_sdk_kms::Client as KmsClient;
 use aws_sdk_kms::error::SdkError;
 use aws_sdk_kms::operation::decrypt::DecryptError;
 
-use aws_crypto_mpl::key_store::Client as KeyStoreClient;
+use aws_crypto_mpl::key_store::DynamoDbKeyStore;
 use aws_crypto_mpl::key_store::types::KmsConfiguration;
 
 // ─── Fixtures (mirror Fixtures.dfy) ─────────────────────────────────────────
@@ -86,8 +86,8 @@ async fn build_store(
     logical_key_store_name: &str,
     kms_client: KmsClient,
     ddb_client: DynamoDbClient,
-) -> KeyStoreClient {
-    KeyStoreClient::builder()
+) -> DynamoDbKeyStore {
+    DynamoDbKeyStore::builder()
         .ddb_table_name(BRANCH_KEY_STORE_NAME)
         .kms_configuration(kms_configuration)
         .logical_key_store_name(logical_key_store_name)
@@ -453,7 +453,7 @@ async fn integ_get_active_key_against_a_missing_table_nests_the_ddb_sdk_error() 
     // as `Unhandled` carrying `AccessDeniedException`. A caller permitted on
     // the whole table namespace instead sees `ResourceNotFoundException`. Both
     // are the same nesting, which is what is under test here.
-    let store = KeyStoreClient::builder()
+    let store = DynamoDbKeyStore::builder()
         .ddb_table_name("aws-crypto-tools-rust-table-that-does-not-exist")
         .kms_configuration(KmsConfiguration::KmsKeyArn(KEY_ARN.into()))
         .logical_key_store_name(LOGICAL_KEY_STORE_NAME)

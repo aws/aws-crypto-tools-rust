@@ -24,8 +24,7 @@ The commons Configuration_Set carries a `rust` entry pointing back at this repo'
 - `POST /service/ESDKTestServer/operation/{Operation}`
 - Header `smithy-protocol: rpc-v2-cbor`, `Content-Type: application/cbor`
 - CBOR map request/response bodies; errors as a CBOR map `{__type, message}`
-- Operations: `CreateClient`, `Encrypt`, `Decrypt`. `EncryptStream` / `DecryptStream`
-  return `GenericServerError` (this server is non-streaming).
+- Operations: `CreateClient`, `Encrypt`, `Decrypt`, `EncryptStream`, `DecryptStream`
 
 ## Running
 
@@ -38,17 +37,11 @@ make stop-server PORT=8092
 make check                       # fmt + clippy + build + test (the CI gate)
 ```
 
-## Current status: offline Raw-AES, at the keyring wall
+## Keyrings
 
-The offline Raw-AES / Default-CMM path is wired end to end. Constructing the
-keyring delegates to the vendored Material Providers Library, whose
-`create_raw_aes_keyring` (and every other keyring constructor) is not yet
-implemented. `CreateClient` therefore surfaces an `ESDKClientError` naming the
-missing constructor — asserted by `tests/keyring_wall.rs`.
-
-Because keyring construction is not yet available, the commons Configuration_Set
-entry for `rust` is marked `skip: true`; the cross-repo Java Tests round trip is
-enabled (flip `skip` to `false`) once the Rust ESDK implements keyrings.
+The server supports the Raw AES and AWS KMS Hierarchical keyrings, both built through the MPL.
+`CreateClient` returns `GenericServerError` when it rejects a keyring configuration.
+`Encrypt`, `Decrypt`, and their streaming forms return `ESDKClientError` when the ESDK fails.
 
 ## Layout
 

@@ -237,6 +237,9 @@ auto guard(F&& f) -> decltype(f()) {
 ::ffi::OptU32 to_opt(const std::optional<std::uint32_t>& o) {
     return o ? ::ffi::OptU32{true, *o} : ::ffi::OptU32{false, 0};
 }
+::ffi::OptU64 to_opt(const std::optional<std::uint64_t>& o) {
+    return o ? ::ffi::OptU64{true, *o} : ::ffi::OptU64{false, 0};
+}
 ::ffi::OptString to_opt(const std::optional<std::string>& o, const std::string& name) {
     return o ? ::ffi::OptString{true, to_rust_string(*o, name)} : ::ffi::OptString{false, {}};
 }
@@ -272,20 +275,31 @@ std::map<std::string, std::string> from_ec(const ::rust::Vec<::ffi::EncryptionCo
     return out;
 }
 
-// Aws::Esdk::Bytes
+// Aws::Esdk::Plaintext and Aws::Esdk::Ciphertext
+
+void RustBufferDeleter::operator()(void* buffer) const {
+    delete static_cast<::rust::Vec<std::uint8_t>*>(buffer);
+}
 
 struct BytesFactory {
     // Zero-copy wrapper for Rust buffer in C++-accessible type
-    static Bytes make(::rust::Vec<std::uint8_t> buf) {
-        auto owner = std::make_shared<::rust::Vec<std::uint8_t>>(std::move(buf));
-        const std::uint8_t* data = owner->data();
-        const std::size_t size = owner->size();
-        return Bytes(data, size, std::move(owner));
+    template <typename T>
+    static T make(::rust::Vec<std::uint8_t> buf) {
+        auto owned = std::make_unique<::rust::Vec<std::uint8_t>>(std::move(buf));
+        T out;
+        out.data_ = owned->data();
+        out.size_ = owned->size();
+        out.owner_.reset(owned.release());
+        return out;
     }
 };
 
-Bytes make_bytes(::rust::Vec<std::uint8_t> buf) {
-    return BytesFactory::make(std::move(buf));
+Plaintext make_plaintext(::rust::Vec<std::uint8_t> buf) {
+    return BytesFactory::make<Plaintext>(std::move(buf));
+}
+
+Ciphertext make_ciphertext(::rust::Vec<std::uint8_t> buf) {
+    return BytesFactory::make<Ciphertext>(std::move(buf));
 }
 
 // MPL Client Config
@@ -592,7 +606,7 @@ EncryptResult Client::encrypt(const std::uint8_t* plaintext,
     in.max_encrypted_data_keys = detail::to_opt(max_encrypted_data_keys_);
     ::ffi::EncryptOutput out = detail::guard([&] { return ::ffi::encrypt(in); });
     EncryptResult result;
-    result.ciphertext = detail::make_bytes(std::move(out.ciphertext));
+    result.ciphertext = detail::make_ciphertext(std::move(out.ciphertext));
     result.encryption_context = detail::from_ec(out.encryption_context);
     result.algorithm_suite_id = detail::alg_from_ffi(out.algorithm_suite_id);
     return result;
@@ -604,7 +618,7 @@ DecryptResult Client::decrypt(const std::vector<std::uint8_t>& ciphertext,
     return decrypt(ciphertext.data(), ciphertext.size(), keyring, options);
 }
 
-DecryptResult Client::decrypt(const Bytes& ciphertext,
+DecryptResult Client::decrypt(const Ciphertext& ciphertext,
                                      const Keyring& keyring,
                                      const DecryptOptions& options) const {
     return decrypt(ciphertext.data(), ciphertext.size(), keyring, options);
@@ -631,7 +645,7 @@ DecryptResult Client::decrypt(const std::uint8_t* ciphertext,
     in.max_encrypted_data_keys = detail::to_opt(max_encrypted_data_keys_);
     ::ffi::DecryptOutput out = detail::guard([&] { return ::ffi::decrypt(in); });
     DecryptResult result;
-    result.plaintext = detail::make_bytes(std::move(out.plaintext));
+    result.plaintext = detail::make_plaintext(std::move(out.plaintext));
     result.encryption_context = detail::from_ec(out.encryption_context);
     result.algorithm_suite_id = detail::alg_from_ffi(out.algorithm_suite_id);
     return result;
@@ -657,6 +671,7 @@ EncryptStream Client::create_encrypt_stream(const Keyring& keyring,
     //# operation MUST defer to the core ESDK's default.
     in.commitment_policy = detail::to_opt(commitment_policy_);
     in.max_encrypted_data_keys = detail::to_opt(max_encrypted_data_keys_);
+    in.plaintext_length_bound = detail::to_opt(options.plaintext_length_bound_);
     // Keyring MUST be retained.
     // The stream outlives this call and must not outlive the keyring it was created from.
     return EncryptStream(std::make_shared<detail::EncryptStreamImpl>(
@@ -687,43 +702,43 @@ DecryptStream Client::create_decrypt_stream(const Keyring& keyring,
         detail::guard([&] { return ::ffi::create_decrypt_stream(in); })));
 }
 
-Bytes EncryptStream::write(const std::uint8_t* data, std::size_t size) {
+Ciphertext EncryptStream::write(const std::uint8_t* data, std::size_t size) {
     static const std::uint8_t empty = 0;
     // An empty write is a poll.
     // Keep the slice pointer valid even when the caller passes null with size 0.
     if (size == 0) data = &empty;
-    return detail::make_bytes(detail::guard([&] {
+    return detail::make_ciphertext(detail::guard([&] {
         return ::ffi::encrypt_stream_write(*impl_->handle,
                                            ::rust::Slice<const std::uint8_t>(data, size));
     }));
 }
 
-StreamResult EncryptStream::finish() {
+EncryptStreamResult EncryptStream::finish() {
     ::ffi::StreamFinishOutput out =
         detail::guard([&] { return ::ffi::encrypt_stream_finish(*impl_->handle); });
-    StreamResult result;
-    result.trailing_output = detail::make_bytes(std::move(out.trailing_output));
+    EncryptStreamResult result;
+    result.trailing_output = detail::make_ciphertext(std::move(out.trailing_output));
     result.encryption_context = detail::from_ec(out.encryption_context);
     result.algorithm_suite_id = detail::alg_from_ffi(out.algorithm_suite_id);
     return result;
 }
 
-Bytes DecryptStream::write(const std::uint8_t* data, std::size_t size) {
+Plaintext DecryptStream::write(const std::uint8_t* data, std::size_t size) {
     static const std::uint8_t empty = 0;
     // An empty write is a poll.
     // Keep the slice pointer valid even when the caller passes null with size 0.
     if (size == 0) data = &empty;
-    return detail::make_bytes(detail::guard([&] {
+    return detail::make_plaintext(detail::guard([&] {
         return ::ffi::decrypt_stream_write(*impl_->handle,
                                            ::rust::Slice<const std::uint8_t>(data, size));
     }));
 }
 
-StreamResult DecryptStream::finish() {
+DecryptStreamResult DecryptStream::finish() {
     ::ffi::StreamFinishOutput out =
         detail::guard([&] { return ::ffi::decrypt_stream_finish(*impl_->handle); });
-    StreamResult result;
-    result.trailing_output = detail::make_bytes(std::move(out.trailing_output));
+    DecryptStreamResult result;
+    result.trailing_output = detail::make_plaintext(std::move(out.trailing_output));
     result.encryption_context = detail::from_ec(out.encryption_context);
     result.algorithm_suite_id = detail::alg_from_ffi(out.algorithm_suite_id);
     return result;
@@ -735,10 +750,10 @@ namespace detail {
 // produced bytes to `sink`; then finalizes and appends the trailing output.
 // Throws if `source` fails before end-of-stream or `sink` rejects a write.
 template <typename Stream>
-StreamResult pump_stream(Stream& stream, std::istream& source, std::ostream& sink) {
+auto pump_stream(Stream& stream, std::istream& source, std::ostream& sink) {
     char buf[4096];
     while (source.read(buf, sizeof(buf)) || source.gcount() > 0) {
-        Bytes produced = stream.write(reinterpret_cast<const std::uint8_t*>(buf),
+        auto produced = stream.write(reinterpret_cast<const std::uint8_t*>(buf),
                                       static_cast<std::size_t>(source.gcount()));
         sink.write(reinterpret_cast<const char*>(produced.data()),
                    static_cast<std::streamsize>(produced.size()));
@@ -746,7 +761,7 @@ StreamResult pump_stream(Stream& stream, std::istream& source, std::ostream& sin
     // If `source` failed to read, throw so an incomplete output is not surfaced
     if (source.bad() || !source.eof())
         throw AwsEncryptionSdkException("reading from the source stream failed before the end of input");
-    StreamResult result = stream.finish();
+    auto result = stream.finish();
     sink.write(reinterpret_cast<const char*>(result.trailing_output.data()),
                static_cast<std::streamsize>(result.trailing_output.size()));
     // If `sink` failed to write, throw so an incomplete output is not surfaced
@@ -757,14 +772,14 @@ StreamResult pump_stream(Stream& stream, std::istream& source, std::ostream& sin
 
 }  // namespace detail
 
-StreamResult Client::encrypt_stream(std::istream& source, std::ostream& sink,
+EncryptStreamResult Client::encrypt_stream(std::istream& source, std::ostream& sink,
                                            const Keyring& keyring,
                                            const EncryptOptions& options) const {
     EncryptStream stream = create_encrypt_stream(keyring, options);
     return detail::pump_stream(stream, source, sink);
 }
 
-StreamResult Client::decrypt_stream(std::istream& source, std::ostream& sink,
+DecryptStreamResult Client::decrypt_stream(std::istream& source, std::ostream& sink,
                                            const Keyring& keyring,
                                            const DecryptOptions& options) const {
     DecryptStream stream = create_decrypt_stream(keyring, options);

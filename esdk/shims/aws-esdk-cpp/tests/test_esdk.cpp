@@ -13,6 +13,7 @@
 #include <streambuf>
 #include <string>
 #include <thread>
+#include <type_traits>
 #include <typeinfo>
 #include <vector>
 
@@ -532,7 +533,7 @@ void test_client_credentials() {
                               .with_expiration(std::chrono::system_clock::time_point(-1s))));
 }
 
-// String-view and Bytes ergonomics for non-std::vector input/output types
+// String-view and Plaintext/Ciphertext ergonomics for non-std::vector input/output types
 void test_bytes_and_string_ergonomics() {
     std::vector<std::uint8_t> key(32, 0x2A);
     Aws::Esdk::RawAesKeyring keyring("test-ns", "test-key", key,
@@ -555,26 +556,26 @@ void test_bytes_and_string_ergonomics() {
 
     //= spec/shim/shim.md#bulk-data
     //= type=test
-    //= reason=Bytes-provided to_vector copies the data
+    //= reason=Ciphertext-provided to_vector copies the data
     //# - The shim MUST also let the caller copy a result into memory the caller
     //# owns.
     ESDK_CHECK(encrypted.ciphertext.to_vector() == encrypted.ciphertext);
 
-    // Copies share the buffer and compare equal; different content does not.
-    Aws::Esdk::Bytes copy = encrypted.ciphertext;
-    ESDK_CHECK(copy == encrypted.ciphertext);
-    ESDK_CHECK(copy.data() == encrypted.ciphertext.data());
     auto other = sdk.encrypt(std::string_view("different payload"), keyring);
-    ESDK_CHECK(copy != other.ciphertext);
+    ESDK_CHECK(encrypted.ciphertext != other.ciphertext);
 
-    // A copy keeps the buffer alive after the original is destroyed.
+    static_assert(!std::is_copy_constructible_v<Aws::Esdk::Plaintext>);
+    static_assert(!std::is_copy_constructible_v<Aws::Esdk::Ciphertext>);
+
+    // Moving a result out keeps the buffer alive after its source is destroyed.
     //= spec/shim/shim.md#bulk-data
     //= type=test
     //# - A result exposed this way MUST remain valid until the caller releases it.
-    Aws::Esdk::Bytes survivor;
+    Aws::Esdk::Ciphertext survivor;
     {
         auto scoped = sdk.encrypt(std::string_view("outlives original"), keyring);
-        survivor = scoped.ciphertext;
+        survivor = std::move(scoped.ciphertext);
+        ESDK_CHECK(scoped.ciphertext.empty());
     }
     auto plain = sdk.decrypt(survivor, keyring);
     ESDK_CHECK(plain.plaintext.as_string_view() == "outlives original");
@@ -920,6 +921,38 @@ void test_streaming_signed_message_refused() {
     }
 }
 
+void test_streaming_plaintext_length_bound() {
+    std::vector<std::uint8_t> key(32, 0x2A);
+    Aws::Esdk::RawAesKeyring keyring("test-ns", "test-key", key,
+                                     Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16);
+    Aws::Esdk::Client sdk;
+    std::vector<std::uint8_t> plaintext(300, 0x5A);
+
+    // A bound equal to the plaintext length succeeds.
+    auto within = sdk.create_encrypt_stream(
+        keyring, Aws::Esdk::EncryptOptions().with_plaintext_length_bound(plaintext.size()));
+    std::vector<std::uint8_t> ciphertext;
+    auto out = within.write(plaintext);
+    ciphertext.insert(ciphertext.end(), out.begin(), out.end());
+    auto fin = within.finish();
+    ciphertext.insert(ciphertext.end(), fin.trailing_output.begin(), fin.trailing_output.end());
+    ESDK_CHECK(sdk.decrypt(ciphertext, keyring).plaintext == plaintext);
+
+    // A plaintext longer than the bound fails the stream.
+    ++::esdk_test::g_checks;
+    try {
+        auto over = sdk.create_encrypt_stream(
+            keyring,
+            Aws::Esdk::EncryptOptions().with_plaintext_length_bound(plaintext.size() - 1));
+        over.write(plaintext);
+        over.finish();
+        ++::esdk_test::g_failures;
+        std::cerr << "FAIL: over-bound streamed encrypt did not throw\n";
+    } catch (const Aws::Esdk::ValidationException&) {
+        // expected
+    }
+}
+
 // Round trip through the whole-stream pump (encrypt_stream/decrypt_stream).
 void test_streaming_pump() {
     std::vector<std::uint8_t> key(32, 0x2A);
@@ -1007,6 +1040,7 @@ int main(int argc, char** argv) {
         test_decrypt_stream_write_string_view();
         test_streaming();
         test_streaming_signed_message_refused();
+        test_streaming_plaintext_length_bound();
         test_streaming_pump();
         test_streaming_pump_io_failure();
     } catch (const std::exception& e) {

@@ -34,7 +34,8 @@ async fn test_decrypt_fails_with_wrong_keyring() {
         .send()
         .await
         .unwrap()
-        .into_ciphertext();
+        .into_ciphertext()
+        .into_inner();
 
     // A different keyring (different namespace, different wrapping key) — its
     // default CMM cannot unwrap the EDK encrypted by `keyring`.
@@ -299,7 +300,8 @@ async fn test_unsupported_esdk_algorithm_suite_yields_error() {
         .send()
         .await
         .unwrap()
-        .into_ciphertext();
+        .into_ciphertext()
+        .into_inner();
 
     // Tamper the algorithm suite ID bytes in the header to an invalid value.
     // V2 header: byte 0 = version (0x02), bytes 1-2 = algorithm suite ID.
@@ -359,12 +361,12 @@ impl cmm::Cmm for DecryptSpyCmm {
     ) -> Result<GetEncryptionMaterialsOutput, MplError> {
         self.inner
             .get_encryption_materials()
-            .encryption_context(request.encryption_context().clone())
+            .set_encryption_context(Some(request.encryption_context().clone()))
             .commitment_policy(request.commitment_policy())
             .set_algorithm_suite_id(request.algorithm_suite_id())
-            .set_required_encryption_context_keys(
-                request.required_encryption_context_keys().cloned(),
-            )
+            .set_required_encryption_context_keys(Some(
+                request.required_encryption_context_keys().clone(),
+            ))
             .set_max_plaintext_length(request.max_plaintext_length())
             .send()
             .await
@@ -387,8 +389,8 @@ impl cmm::Cmm for DecryptSpyCmm {
             .decrypt_materials()
             .algorithm_suite_id(request.algorithm_suite_id())
             .commitment_policy(request.commitment_policy())
-            .encrypted_data_keys(request.encrypted_data_keys().to_vec())
-            .encryption_context(request.encryption_context().clone())
+            .set_encrypted_data_keys(Some(request.encrypted_data_keys().to_vec()))
+            .set_encryption_context(Some(request.encryption_context().clone()))
             .set_reproduced_encryption_context(request.reproduced_encryption_context().cloned())
             .send()
             .await
@@ -404,12 +406,13 @@ async fn test_cmm_decrypt_call_receives_header_edks_and_ec() {
     let ct = Client::default()
         .encrypt()
         .plaintext(pt)
-        .encryption_context(ec)
+        .set_encryption_context(Some(ec))
         .keyring(keyring.clone())
         .send()
         .await
         .unwrap()
-        .into_ciphertext();
+        .into_ciphertext()
+        .into_inner();
 
     let inner_cmm = DefaultCmm::new(keyring);
     let observed_edk_count = Arc::new(Mutex::new(None));
