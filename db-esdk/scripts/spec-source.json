@@ -1,0 +1,7 @@
+{
+  "spec": {
+    "url": "https://github.com/aws/aws-database-encryption-sdk-dynamodb.git",
+    "ref": "3e4d38cd4c9a180bdfca1042b8785e9729cddbfb",
+    "path": "specification"
+  }
+}

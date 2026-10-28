@@ -1,4 +1,10 @@
-.PHONY: clippy test examples
+.PHONY: clippy test examples duvet
+
+# Fetches the pinned spec into ./spec, extracts its requirements, writes the report.
+duvet:
+	scripts/resolve-spec.sh
+	rm -rf .duvet/reports .duvet/requirements
+	duvet report
 
 # The tests use the tokio-based caches, so every test run has `rt-tokio`.
 
