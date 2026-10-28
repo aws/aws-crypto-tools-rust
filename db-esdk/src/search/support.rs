@@ -41,6 +41,9 @@ impl SearchInfo {
         if num <= 1 {
             return Ok(0);
         }
+
+        //= spec/searchable-encryption/search-config.md#partition-selector
+        //# GetPartitionNumber MUST take as input
         let input = GetPartitionNumberInput::builder()
             .set_item(Some(item.clone()))
             .number_of_partitions(num)
@@ -85,6 +88,9 @@ impl SearchInfo {
             item.remove(key_field_name);
         }
         item.extend(new_attrs);
+
+        //= spec/searchable-encryption/search-config.md#versioning
+        //# In addition to the configured beacons, a [version tag](#version-tag) MUST also be written.
         item.insert(VERSION_TAG.to_owned(), AttributeValue::S(" ".to_owned()));
         Ok(item)
     }

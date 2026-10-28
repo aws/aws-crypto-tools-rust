@@ -329,6 +329,8 @@ impl CompoundInfo {
         match part {
             BeaconPart::Encrypted { prefix, beacon } => {
                 let MaybeKeyMap::Keys(keys) = keys else {
+                    // An encrypted part needs a key, as `Beacon::get_beacon_value` checks for
+                    // standard beacons (search-config.md#get-beacon-key-for-query).
                     return Err(val_err(format!(
                         "Need KeyId for beacon {} but no KeyId found in query.",
                         beacon.name
@@ -621,6 +623,9 @@ impl Beacon {
     ) -> Result<AttributeValue, Error> {
         match (self, keys) {
             (_, MaybeKeyMap::DontUseKeys) => Ok(value.clone()),
+            //= spec/searchable-encryption/search-config.md#get-beacon-key-for-query
+            //# A query MUST fail if this flag is present, and any part of the query
+            //# requires a key; that is, needs to compute a standard beacon.
             (Self::Standard(s), MaybeKeyMap::ShouldHaveKeys) => Err(val_err(format!(
                 "Need KeyId because of beacon {} but no KeyId found in query",
                 s.key_name()

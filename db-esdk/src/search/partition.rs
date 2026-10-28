@@ -194,6 +194,10 @@ pub trait PartitionSelector: Send + Sync {
     /// # Errors
     ///
     /// Any error returned fails the write as-is.
+    //= spec/searchable-encryption/search-config.md#partition-selector
+    //= type=implication
+    //= reason=the output type holds the item's partition number
+    //# GetPartitionNumber MUST return
     async fn get_partition_number(
         &self,
         input: GetPartitionNumberInput,
@@ -265,6 +269,9 @@ impl PartitionSelector for RandomPartitionSelector {
         }
         let mut rand = [0u8; 1];
         generate_random_bytes(&mut rand)?;
+
+        //= spec/searchable-encryption/search-config.md#partition-selector
+        //# The default implementation of the Partition Selector MUST return a random number within the acceptable range, i.e.
         Ok(GetPartitionNumberOutput {
             partition_number: rand[0] % num,
         })

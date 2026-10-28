@@ -22,6 +22,11 @@ pub(crate) enum Selector {
 
 /// A path to a value: an attribute name, then zero or more selectors.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+//= spec/searchable-encryption/virtual.md#terminal-location
+//= type=implication
+//= reason=the attribute name is always present as the first, string-keyed segment
+//# A Terminal Location specification MUST be a list of one more [Segments](#segments),
+//# the first one of which must be a string index.
 pub(crate) struct TermLoc {
     attribute: String,
     selectors: Vec<Selector>,
@@ -194,6 +199,9 @@ fn selectors(mut s: &str) -> Result<Vec<Selector>, Error> {
 
 /// Parse one segment: `.key` or `[index]`.
 fn selector(s: &str) -> Result<Selector, Error> {
+    //= spec/searchable-encryption/virtual.md#segments
+    //= reason=only `.key` and `[N]` parse; any other segment is rejected below
+    //# A Segment MUST be one of
     if let Some(key) = s.strip_prefix('.') {
         return Ok(Selector::Map(key.to_owned()));
     }

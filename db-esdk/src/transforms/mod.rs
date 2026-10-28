@@ -315,17 +315,30 @@ fn key_id_from_header(
     let header =
         header.ok_or_else(|| val_err("In multi-tenant mode, the parsed header is required."))?;
     let [key] = header.encrypted_data_keys() else {
+        //= spec/searchable-encryption/search-config.md#get-beacon-key-id-from-parsed-header
+        //# If the [Parsed Header](../dynamodb-encryption-client/encrypt-item.md#parsed-header)'s encrypted data keys
+        //# do not contain only one encrypted data key
+        //# this function MUST fail.
         return Err(val_err(
             "Encrypt header has more than one Encrypted Data Key",
         ));
     };
     if key.key_provider_id() != HIERARCHICAL_KEYRING_ID {
+        //= spec/searchable-encryption/search-config.md#get-beacon-key-id-from-parsed-header
+        //# If this single encrypted data key's
+        //# [Key Provider ID](../../submodules/MaterialProviders/aws-encryption-sdk-specification/framework/../structured-encryption/structures.md#key-provider-id)
+        //# does not equal the provider ID
+        //# for the [AWS KMS Hierarchical Keyring](../../submodules/MaterialProviders/aws-encryption-sdk-specification/framework/aws-kms/aws-kms-hierarchical-keyring.md#ondecrypt)
+        //# this function MUST fail.
         return Err(val_err(
             "In multi-tenant mode, keyProviderId must be aws-kms-hierarchy",
         ));
     }
     let id = String::from_utf8(key.key_provider_info().to_vec())
         .map_err(|e| val_err(format!("the branch key id is not UTF-8: {e}")))?;
+
+    //= spec/searchable-encryption/search-config.md#get-beacon-key-id-from-parsed-header
+    //# This function MUST return the [Key Provider Information](../../submodules/MaterialProviders/aws-encryption-sdk-specification/framework/../structured-encryption/structures.md#key-provider-id).
     Ok(MaybeKeyId::Id(id))
 }
 
@@ -428,6 +441,11 @@ async fn encrypt(table: &Table, item: Item) -> Result<Item, Error> {
         .plaintext_item(with_signed)
         .send()
         .await?;
+
+    //= spec/searchable-encryption/search-config.md#get-beacon-key-after-encrypt
+    //= reason=key_id_from_header returns DontUse for a single key store
+    //# If the [Beacon Key Source](#beacon-key-source) is a [Multi Key Store](#multi-key-store-initialization)
+    //# then `beacon key id` MUST be obtained from [Get beacon key id from parsed header](#get-beacon-key-id-from-parsed-header).
     let key_id = key_id_from_header(search, encrypted.parsed_header())?;
     // `item` is the item before `add_signed_beacons`, so it still has the key field.
     if let (Some(key_field_name), MaybeKeyId::Id(header_id)) = (&table.key_field_name, &key_id)

@@ -67,6 +67,10 @@ pub struct TableConfig {
     pub(crate) algorithm_suite_id: Option<AlgorithmSuiteId>,
     pub(crate) materials: Materials,
     pub(crate) plaintext_override: Option<PlaintextOverride>,
+    //= spec/searchable-encryption/search-config.md#overview
+    //= type=implication
+    //= reason=the table config holds its search config as an Option
+    //# The search config MUST be an optional part of the [item encryptor config](../dynamodb-encryption-client/ddb-item-encryptor.md).
     pub(crate) search: Option<SearchConfig>,
 }
 

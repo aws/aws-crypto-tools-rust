@@ -29,20 +29,21 @@ use aws_db_esdk::aws_sdk_dynamodb::types::{
     AttributeValue, Get, ItemResponse, KeysAndAttributes, Put, PutRequest, ReturnValue,
     TransactGetItem, TransactWriteItem, WriteRequest,
 };
+use aws_db_esdk::key_store;
 use aws_db_esdk::keyring::{
     GetBranchKeyIdFromItemKeyInput, GetBranchKeyIdOutput, HierarchicalKeyring,
-    ItemKeyBranchKeySupplier, ItemKeySupplier,
+    ItemKeyBranchKeySupplier, ItemKeySupplier, MultiKeyring,
 };
 use aws_db_esdk::search::SearchConfig;
 use aws_db_esdk::transforms::{ResolveAttributesInput, Transforms};
 use aws_db_esdk::types::PlaintextOverride;
 use aws_db_esdk::{Error, ItemEncryptor, TableConfig, async_trait};
 use transforms_support::{
-    Item, NAME_BEACON, STD2_BEACON, STD4_BEACON, STD6_BEACON, TITLE_BEACON, beacon_transforms,
-    expect_validation, fake_key_store, item, lotsa_beacons, multi_actions,
-    multi_actions_without_key_field, multi_transforms_hierarchical,
-    multi_transforms_hierarchical_with, multi_transforms_static, partitioned_transforms, s,
-    simple_item, transforms,
+    FakeKeyStore, Item, NAME_BEACON, STD2_BEACON, STD4_BEACON, STD6_BEACON, TITLE_BEACON,
+    beacon_transforms, expect_validation, fake_key_store, hierarchical_keyring, item,
+    lotsa_beacons, multi_actions, multi_actions_without_key_field, multi_transforms_hierarchical,
+    multi_transforms_hierarchical_with, multi_transforms_static, multi_transforms_with,
+    partitioned_transforms, s, simple_item, static_keyring, transforms,
 };
 
 fn put_input(it: Item) -> PutItemInput {
@@ -197,6 +198,13 @@ async fn put_item_input_multi_fail() {
         Some(PlaintextOverride::ForbidPlaintextWriteForbidPlaintextRead),
         Some(PlaintextOverride::ForbidPlaintextWriteAllowPlaintextRead),
     ] {
+        //= spec/searchable-encryption/search-config.md#get-beacon-key-id-from-parsed-header
+        //= type=test
+        //# If this single encrypted data key's
+        //# [Key Provider ID](../../submodules/MaterialProviders/aws-encryption-sdk-specification/framework/../structured-encryption/structures.md#key-provider-id)
+        //# does not equal the provider ID
+        //# for the [AWS KMS Hierarchical Keyring](../../submodules/MaterialProviders/aws-encryption-sdk-specification/framework/aws-kms/aws-kms-hierarchical-keyring.md#ondecrypt)
+        //# this function MUST fail.
         expect_validation(
             multi_transforms_static(o)
                 .put_item_input(put_input(multi_item("id")))
@@ -218,11 +226,48 @@ async fn put_item_input_multi_force_allow() {
 
 #[tokio::test]
 async fn put_item_multi_hierarchical_beacons_use_the_item_key() {
-    let t = multi_transforms_hierarchical("id1").await;
-    let out = put(&t, multi_item("id1")).await;
+    let beacon_store = FakeKeyStore::default();
+    let t = multi_transforms_with(
+        hierarchical_keyring("id1").await,
+        key_store::Client::new(beacon_store.clone()),
+    );
+    // The item has no key field, so the beacon key id can only come from the data key.
+    // (A key field naming another key is rejected; see put_item_multi_key_id_must_match_the_header.)
+    let out = put(&t, simple_item()).await;
     // The fake key store gives every branch key id the same beacon key.
     assert_eq!(beacon(&out, "Name"), NAME_BEACON);
     assert!(matches!(out["aws_dbe_head"], AttributeValue::B(_)));
+
+    //= spec/searchable-encryption/search-config.md#get-beacon-key-after-encrypt
+    //= type=test
+    //# If the [Beacon Key Source](#beacon-key-source) is a [Multi Key Store](#multi-key-store-initialization)
+    //# then `beacon key id` MUST be obtained from [Get beacon key id from parsed header](#get-beacon-key-id-from-parsed-header).
+    //
+    //= spec/searchable-encryption/search-config.md#get-beacon-key-id-from-parsed-header
+    //= type=test
+    //= reason=id1 is the provider info of the hierarchical keyring's encrypted data key
+    //# This function MUST return the [Key Provider Information](../../submodules/MaterialProviders/aws-encryption-sdk-specification/framework/../structured-encryption/structures.md#key-provider-id).
+    assert_eq!(*beacon_store.beacon_key_ids.lock().unwrap(), ["id1"]);
+}
+
+#[tokio::test]
+async fn put_item_multi_two_edks_fail() {
+    let keyring = MultiKeyring::builder()
+        .generator(hierarchical_keyring("id1").await)
+        .child_keyrings(static_keyring())
+        .build()
+        .unwrap();
+    let t = multi_transforms_with(keyring, fake_key_store());
+
+    //= spec/searchable-encryption/search-config.md#get-beacon-key-id-from-parsed-header
+    //= type=test
+    //# If the [Parsed Header](../dynamodb-encryption-client/encrypt-item.md#parsed-header)'s encrypted data keys
+    //# do not contain only one encrypted data key
+    //# this function MUST fail.
+    expect_validation(
+        t.put_item_input(put_input(multi_item("id1"))).await,
+        "Encrypt header has more than one Encrypted Data Key",
+    );
 }
 
 #[tokio::test]

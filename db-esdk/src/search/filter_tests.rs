@@ -35,7 +35,9 @@ use aws_crypto_mpl::types::{BeaconKeyMaterials, EncryptionContext};
 
 use super::*;
 use crate::TableConfig;
+use crate::search::config::tests::{convert_with, fake_key_store, lotsa_beacons};
 use crate::search::convert::convert;
+use crate::search::test_fixtures::spec_beacon;
 use crate::search::{
     BeaconKeySource, BeaconStyle, BeaconVersion, BeaconVersionBuilder, CompoundBeacon, Constructor,
     ConstructorPart, EncryptedPart, MultiKeyStore, SearchConfig, SignedPart, SingleKeyStore,
@@ -1208,6 +1210,10 @@ async fn multi_key_store_key_id() {
         bv.get_beacon_key_id(Some(key), None, Some(&vals), nms)
             .unwrap()
     };
+
+    //= spec/searchable-encryption/search-config.md#get-beacon-key-for-query
+    //= type=test
+    //# `beacon key id` MUST be this unique value.
     assert_eq!(
         key_id("TheKeyField = :value", None),
         MaybeKeyId::Id(KEY_ID.to_owned())
@@ -1237,6 +1243,17 @@ async fn multi_key_store_key_id() {
     // The key field is not a beacon, so its value is unchanged.
     assert_eq!(out.values.as_ref().unwrap()[":value"], s(KEY_ID));
 
+    //= spec/searchable-encryption/search-config.md#get-beacon-key-for-query
+    //= type=test
+    //= reason=the std2 beacon is computed with the keys fetched for the query's key id
+    //# The `beacon key id`, [Key Store Cache](#key-store-cache), and a `KeyStore`
+    //# MUST be passed to [Get Beacon Key Materials](#get-beacon-key-materials)
+    //# and the result returned for Get beacon key for query.
+    assert_eq!(
+        out.values.as_ref().unwrap()[":other"],
+        s(&spec_beacon("std2", b"junk", 24))
+    );
+
     // A beacon with no key id in the query has no key.
     let id = key_id("std2 = :other", None);
     assert_eq!(id, MaybeKeyId::ShouldHave);
@@ -1247,10 +1264,39 @@ async fn multi_key_store_key_id() {
         names: None,
     };
     let err = bv.beaconize(&context, &id, 0).await.unwrap_err();
+
+    //= spec/searchable-encryption/search-config.md#get-beacon-key-for-query
+    //= type=test
+    //# A query MUST fail if this flag is present, and any part of the query
+    //# requires a key; that is, needs to compute a standard beacon.
     assert_validation(
         &err,
         "Need KeyId because of beacon std2 but no KeyId found in query",
     );
+}
+
+#[tokio::test]
+async fn single_key_store_query_uses_the_configured_key_id() {
+    let (store, requested) = fake_key_store();
+    let version = lotsa_beacons(store);
+    let bv = convert_with(&[], version).unwrap().version;
+    let vals = values(&[(":v", n("1.23"))]);
+    let id = bv
+        .get_beacon_key_id(Some("std2 = :v"), None, Some(&vals), None)
+        .unwrap();
+    let context = ExprContext {
+        key_expr: Some("std2 = :v".to_owned()),
+        filter_expr: None,
+        values: Some(vals),
+        names: None,
+    };
+    bv.beaconize(&context, &id, 0).await.unwrap();
+
+    //= spec/searchable-encryption/search-config.md#get-beacon-key-for-query
+    //= type=test
+    //# If the [Beacon Key Source](#beacon-key-source) is a [Single Key Store](#single-key-store-initialization)
+    //# then `beacon key id` MUST be the configured [beacon key id](#beacon-key-id)
+    assert_eq!(*requested.lock().unwrap(), ["foo"]);
 }
 
 #[test]
@@ -1294,12 +1340,22 @@ fn beacon_key_id_sources() {
         key_id(Some("TheKeyField = :a"), Some("KeyName = :kn")).unwrap(),
         MaybeKeyId::Id("k1".to_owned())
     );
+
     // A compound value with no key field part, or a number, names no key id.
+    //= spec/searchable-encryption/search-config.md#get-beacon-key-for-query
+    //= type=test
+    //# If this list of beacon key ids is empty get beacon key for query MUST
+    //# return a flag indicating this.
     assert_eq!(
         key_id(Some("NameTitle = :kn AND TheKeyField = :n"), None).unwrap(),
         MaybeKeyId::ShouldHave
     );
     let err = key_id(Some("TheKeyField = :a"), Some("TheKeyField = :b")).unwrap_err();
+
+    //= spec/searchable-encryption/search-config.md#get-beacon-key-for-query
+    //= type=test
+    //# If this list of beacon key ids has more than one unique beacon key id
+    //# then get beacon key for query MUST fail.
     assert_validation(
         &err,
         "Multiple values found for TheKeyField in query : k1, k2",

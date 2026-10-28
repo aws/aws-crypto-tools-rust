@@ -54,6 +54,8 @@ impl BeaconVersionInfo {
 
     /// The beacon HMAC keys for `key_id`.
     pub(crate) async fn get_key_map(&self, key_id: &MaybeKeyId) -> Result<MaybeKeyMap, Error> {
+        //= spec/searchable-encryption/search-config.md#beacon-keys
+        //# Beacon keys MUST be obtained from the configured [Beacon Key Source](#beacon-key-source).
         self.key_source
             .get_key_map(&self.standard_names, key_id)
             .await
@@ -149,6 +151,10 @@ impl BeaconVersionInfo {
         key_id: &MaybeKeyId,
         partition: u8,
     ) -> Result<Item, Error> {
+        //= spec/searchable-encryption/search-config.md#get-beacon-key-after-encrypt
+        //# The `beacon key id`, [Key Store Cache](#key-store-cache), and a `KeyStore`
+        //# MUST be passed to [Get Beacon Key Materials](#get-beacon-key-materials)
+        //# and the result returned for Get beacon key after encrypt.
         let keys = self.get_key_map(key_id).await?;
         self.generate_beacons(item, &keys, BeaconKind::Encrypted, partition)
     }
