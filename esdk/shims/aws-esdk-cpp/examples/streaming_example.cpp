@@ -10,7 +10,7 @@
 // This example encrypts a plaintext file to a ciphertext file, then decrypts that back to a third file.
 //
 // A non-signing suite is used so streamed decrypt works regardless of message size;
-// the ESDK refuses streamed decrypt of a multi-frame signed message.
+// by default, the ESDK refuses streamed decrypt of a multi-frame signed message.
 
 #include <cstdio>
 #include <cstdint>

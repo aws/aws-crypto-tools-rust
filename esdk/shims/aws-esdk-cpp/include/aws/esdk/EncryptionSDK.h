@@ -453,6 +453,20 @@ enum class CommitmentPolicy : std::uint8_t {
     RequireEncryptRequireDecrypt = 3,
 };
 
+/// Specifies what a streamed decrypt does with a message that has a signing algorithm suite.
+/// Plaintext that the stream releases is unverified until finish() returns.
+enum class SignedStreaming : std::uint8_t {
+    /// The default.
+    /// Fail on a multi-frame signed message.
+    /// A single-frame signed message decrypts, and its plaintext is released after the signature verifies.
+    RejectMultiFrame = 1,
+    /// Release each regular frame as soon as its tag verifies, before the signature verifies.
+    /// Hold the final frame until the signature verifies.
+    ReleaseRegularFrames = 2,
+    /// Fail right after parsing the header, before decrypting anything.
+    RejectSigned = 3,
+};
+
 /// The AES-GCM algorithm a raw AES keyring uses to wrap and unwrap data keys.
 enum class AesWrappingAlgorithm : std::uint8_t {
     AlgAes128GcmIv12Tag16 = 1,
@@ -836,12 +850,17 @@ public:
 /// A field left unset keeps the ESDK Rust's default.
 class DecryptOptions {
     std::map<std::string, std::string> encryption_context_;
+    std::optional<SignedStreaming> signed_streaming_;
     friend class Client;
 
 public:
     /// Encryption context to verify against the encrypted message; every entry must be present in the message's context.
     /// Keys and values must be valid UTF-8; decrypt throws ValidationException otherwise.
     DecryptOptions& with_encryption_context(const std::map<std::string, std::string>& ec) { encryption_context_ = ec; return *this; }
+    /// Specifies what create_decrypt_stream does with a signed message.
+    /// Defaults to SignedStreaming::RejectMultiFrame.
+    /// The one-shot `decrypt` ignores it; this is only used in streamed decrypt.
+    DecryptOptions& with_signed_streaming(SignedStreaming s) { signed_streaming_ = s; return *this; }
 };
 
 namespace detail {
