@@ -813,6 +813,7 @@ class EncryptOptions {
     std::optional<AlgorithmSuiteId> algorithm_suite_;
     std::map<std::string, std::string> encryption_context_;
     std::optional<std::uint32_t> frame_length_;
+    std::optional<std::uint64_t> plaintext_length_bound_;
     friend class Client;
 
 public:
@@ -825,6 +826,10 @@ public:
     EncryptOptions& with_encryption_context(const std::map<std::string, std::string>& ec) { encryption_context_ = ec; return *this; }
     /// Length of each frame of framed data in bytes. Default 4096.
     EncryptOptions& with_frame_length(std::uint32_t n) { frame_length_ = n; return *this; }
+    /// Maximum plaintext bytes a streaming encrypt accepts.
+    /// The stream fails once it consumes more than `n` bytes.
+    /// Only create_encrypt_stream reads this; encrypt ignores it.
+    EncryptOptions& with_plaintext_length_bound(std::uint64_t n) { plaintext_length_bound_ = n; return *this; }
 };
 
 /// Optional decrypt parameters.
@@ -839,39 +844,53 @@ public:
     DecryptOptions& with_encryption_context(const std::map<std::string, std::string>& ec) { encryption_context_ = ec; return *this; }
 };
 
-/// Read-only byte buffer returned by encrypt and decrypt.
+namespace detail {
+
+/// Frees the ESDK Rust buffer an OutputBytes owns.
+struct RustBufferDeleter {
+    void operator()(void* buffer) const;
+};
+
+/// Read-only, move-only byte buffer that owns an ESDK Rust output buffer.
+/// Base of Plaintext and Ciphertext.
 ///
 /// This points into the Rust library's output buffer.
 /// This enables an output sink to read the Rust buffer directly
 /// without needing a potentially-expensive copy to an std::vector.
 /// If you need a std::vector, use `.to_vector()`.
 //= spec/shim/shim.md#bulk-data
-//= reason=data()/size() read the ESDK Rust's buffer where it was written; no copy is made to construct a Bytes.
+//= reason=data()/size() read the ESDK Rust's buffer where it was written; no copy is made to construct an OutputBytes.
 //# - The shim SHOULD let the caller read a payload result in place, where the
 //# core library wrote it, instead of copying it into a new container first.
 //
 //= spec/shim/shim.md#bulk-data
 //= type=implication
-//= reason=Every Bytes shares the underlying buffer. The buffer is freed only when the last Bytes referring to it is destroyed.
+//= reason=OutputBytes is move-only and owns the underlying buffer. The buffer is freed only when its owner is destroyed.
 //# - A result exposed this way MUST remain valid until the caller releases it.
-class Bytes {
+class OutputBytes {
     const std::uint8_t* data_ = nullptr;
     std::size_t size_ = 0;
-    std::shared_ptr<void> owner_;  // keeps the ESDK Rust's buffer alive
-    friend struct detail::BytesFactory;
-    Bytes(const std::uint8_t* data, std::size_t size, std::shared_ptr<void> owner)
-        : data_(data), size_(size), owner_(std::move(owner)) {}
+    std::unique_ptr<void, RustBufferDeleter> owner_;  // keeps the ESDK Rust's buffer alive
+    friend struct BytesFactory;
+
+protected:
+    OutputBytes() = default;
+    // A moved-from object is empty.
+    OutputBytes(OutputBytes&& other) noexcept
+        : data_(std::exchange(other.data_, nullptr)),
+          size_(std::exchange(other.size_, 0)),
+          owner_(std::move(other.owner_)) {}
+    OutputBytes& operator=(OutputBytes&& other) noexcept {
+        data_ = std::exchange(other.data_, nullptr);
+        size_ = std::exchange(other.size_, 0);
+        owner_ = std::move(other.owner_);
+        return *this;
+    }
+    OutputBytes(const OutputBytes&) = delete;
+    OutputBytes& operator=(const OutputBytes&) = delete;
+    ~OutputBytes() = default;
 
 public:
-    /// An empty buffer.
-    Bytes() = default;
-    Bytes(Bytes&&) = default;
-    Bytes& operator=(Bytes&&) = default;
-    /// Copies share the underlying buffer.
-    /// The buffer is reference-counted and freed when the last copy is destroyed.
-    Bytes(const Bytes&) = default;
-    Bytes& operator=(const Bytes&) = default;
-
     /// Pointer to the first byte.
     const std::uint8_t* data() const { return data_; }
     /// Number of bytes.
@@ -894,35 +913,65 @@ public:
     }
 
     /// Views the bytes as characters.
-    /// The view is only valid while any Bytes sharing the buffer lives. No copy is made.
+    /// The view is only valid while this object lives. No copy is made.
     std::string_view as_string_view() const {
         return std::string_view(reinterpret_cast<const char*>(data_), size_);
     }
 
 #if defined(__cpp_lib_span)
     /// Views the bytes as a std::span;
-    /// Only valid while any Bytes sharing the buffer live.
+    /// Only valid while this object lives.
     std::span<const std::uint8_t> as_span() const { return {data_, size_}; }
 #endif
 };
 
-/// Equality check impls
-inline bool operator==(const Bytes& lhs, const Bytes& rhs) {
-    return lhs.size() == rhs.size() && std::equal(lhs.begin(), lhs.end(), rhs.begin());
+inline bool equal_bytes(const OutputBytes& lhs, const std::uint8_t* data, std::size_t size) {
+    return lhs.size() == size && std::equal(lhs.begin(), lhs.end(), data);
 }
-inline bool operator!=(const Bytes& lhs, const Bytes& rhs) { return !(lhs == rhs); }
 
-inline bool operator==(const Bytes& lhs, const std::vector<std::uint8_t>& rhs) {
-    return lhs.size() == rhs.size() && std::equal(lhs.begin(), lhs.end(), rhs.begin());
+}  // namespace detail
+
+/// Decrypted bytes returned by decrypt. Move-only.
+class Plaintext final : public detail::OutputBytes {
+public:
+    /// An empty buffer.
+    Plaintext() = default;
+};
+
+/// An encrypted message returned by encrypt. Move-only.
+class Ciphertext final : public detail::OutputBytes {
+public:
+    /// An empty buffer.
+    Ciphertext() = default;
+};
+
+/// Equality check impls
+inline bool operator==(const Plaintext& lhs, const Plaintext& rhs) {
+    return detail::equal_bytes(lhs, rhs.data(), rhs.size());
 }
-inline bool operator==(const std::vector<std::uint8_t>& lhs, const Bytes& rhs) { return rhs == lhs; }
-inline bool operator!=(const Bytes& lhs, const std::vector<std::uint8_t>& rhs) { return !(lhs == rhs); }
-inline bool operator!=(const std::vector<std::uint8_t>& lhs, const Bytes& rhs) { return !(rhs == lhs); }
+inline bool operator!=(const Plaintext& lhs, const Plaintext& rhs) { return !(lhs == rhs); }
+inline bool operator==(const Plaintext& lhs, const std::vector<std::uint8_t>& rhs) {
+    return detail::equal_bytes(lhs, rhs.data(), rhs.size());
+}
+inline bool operator==(const std::vector<std::uint8_t>& lhs, const Plaintext& rhs) { return rhs == lhs; }
+inline bool operator!=(const Plaintext& lhs, const std::vector<std::uint8_t>& rhs) { return !(lhs == rhs); }
+inline bool operator!=(const std::vector<std::uint8_t>& lhs, const Plaintext& rhs) { return !(rhs == lhs); }
+
+inline bool operator==(const Ciphertext& lhs, const Ciphertext& rhs) {
+    return detail::equal_bytes(lhs, rhs.data(), rhs.size());
+}
+inline bool operator!=(const Ciphertext& lhs, const Ciphertext& rhs) { return !(lhs == rhs); }
+inline bool operator==(const Ciphertext& lhs, const std::vector<std::uint8_t>& rhs) {
+    return detail::equal_bytes(lhs, rhs.data(), rhs.size());
+}
+inline bool operator==(const std::vector<std::uint8_t>& lhs, const Ciphertext& rhs) { return rhs == lhs; }
+inline bool operator!=(const Ciphertext& lhs, const std::vector<std::uint8_t>& rhs) { return !(lhs == rhs); }
+inline bool operator!=(const std::vector<std::uint8_t>& lhs, const Ciphertext& rhs) { return !(rhs == lhs); }
 
 /// Result of encrypt.
 struct EncryptResult {
     /// The encrypted message.
-    Bytes ciphertext;
+    Ciphertext ciphertext;
     /// Encryption context associated with the encrypted message.
     /// This can differ from the value set in EncryptOptions.
     std::map<std::string, std::string> encryption_context;
@@ -934,7 +983,7 @@ struct EncryptResult {
 /// Result of decrypt.
 struct DecryptResult {
     /// Decrypted plaintext data.
-    Bytes plaintext;
+    Plaintext plaintext;
     /// Encryption context recovered from the encrypted message.
     std::map<std::string, std::string> encryption_context;
     /// Algorithm suite used for decryption.
@@ -965,12 +1014,21 @@ public:
     Config& with_max_encrypted_data_keys(std::uint32_t n) { max_encrypted_data_keys_ = n; return *this; }
 };
 
-/// Result of finishing a stream
-struct StreamResult {
-    /// Output bytes produced by finishing a stream.
-    // For encrypt: the final frame (and for signing suites, the signature footer).
-    Bytes trailing_output;
+/// Result of finishing an encrypt stream.
+struct EncryptStreamResult {
+    /// The final frame (and for signing suites, the signature footer).
+    Ciphertext trailing_output;
     /// Encryption context associated with the message.
+    std::map<std::string, std::string> encryption_context;
+    /// Algorithm suite used.
+    AlgorithmSuiteId algorithm_suite_id;
+};
+
+/// Result of finishing a decrypt stream.
+struct DecryptStreamResult {
+    /// Plaintext released by finishing the stream.
+    Plaintext trailing_output;
+    /// Encryption context recovered from the message.
     std::map<std::string, std::string> encryption_context;
     /// Algorithm suite used.
     AlgorithmSuiteId algorithm_suite_id;
@@ -989,17 +1047,17 @@ public:
     /// Feeds a plaintext chunk and returns whatever ciphertext the Rust ESDK has produced so far.
     /// The output ciphertext for a given write may be empty. Frames are emitted as they fill and the pump is asynchronous.
     /// An empty write adds no input and polls for produced output.
-    Bytes write(const std::uint8_t* data, std::size_t size);
+    Ciphertext write(const std::uint8_t* data, std::size_t size);
     /// \copydoc write(const std::uint8_t*, std::size_t)
-    Bytes write(const std::vector<std::uint8_t>& chunk) { return write(chunk.data(), chunk.size()); }
+    Ciphertext write(const std::vector<std::uint8_t>& chunk) { return write(chunk.data(), chunk.size()); }
     /// \copydoc write(const std::uint8_t*, std::size_t)
-    Bytes write(std::string_view chunk) {
+    Ciphertext write(std::string_view chunk) {
         return write(reinterpret_cast<const std::uint8_t*>(chunk.data()), chunk.size());
     }
     /// Ends the plaintext input, flushes the final frame (and the signature footer
     /// for signing suites), and returns it with the message metadata.
     /// The stream cannot be written after finish.
-    StreamResult finish();
+    EncryptStreamResult finish();
 };
 
 /// Streaming decrypt. Feed ciphertext in chunks, receive plaintext as it is produced.
@@ -1027,20 +1085,20 @@ public:
     //= type=implication
     //# - The shim MUST document to users that output returned before the finish step
     //# succeeds is not yet complete or verified.
-    Bytes write(const std::uint8_t* data, std::size_t size);
+    Plaintext write(const std::uint8_t* data, std::size_t size);
     /// \copydoc write(const std::uint8_t*, std::size_t)
-    Bytes write(const std::vector<std::uint8_t>& chunk) { return write(chunk.data(), chunk.size()); }
+    Plaintext write(const std::vector<std::uint8_t>& chunk) { return write(chunk.data(), chunk.size()); }
     /// \copydoc write(const std::uint8_t*, std::size_t)
-    Bytes write(std::string_view chunk) {
+    Plaintext write(std::string_view chunk) {
         return write(reinterpret_cast<const std::uint8_t*>(chunk.data()), chunk.size());
     }
     /// \copydoc write(const std::uint8_t*, std::size_t)
-    Bytes write(const Bytes& chunk) { return write(chunk.data(), chunk.size()); }
+    Plaintext write(const Ciphertext& chunk) { return write(chunk.data(), chunk.size()); }
     /// Ends the ciphertext input and completes decryption, including signature
     /// verification for signing suites.
     /// Success means every byte this stream released is authenticated and is safe to be acted upon.
     /// Failure means the user must discard all released plaintext.
-    StreamResult finish();
+    DecryptStreamResult finish();
 };
 
 /// ESDK client interface.
@@ -1080,9 +1138,9 @@ public:
         const Keyring& keyring,
         const DecryptOptions& options = {}) const;
 
-    /// Decrypts a ciphertext held in a Aws::Esdk::Bytes without copying it.
+    /// Decrypts a ciphertext held in an Aws::Esdk::Ciphertext without copying it.
     DecryptResult decrypt(
-        const Bytes& ciphertext,
+        const Ciphertext& ciphertext,
         const Keyring& keyring,
         const DecryptOptions& options = {}) const;
 
@@ -1132,7 +1190,7 @@ public:
     /// plaintext nor the ciphertext is ever fully held in memory, so this works
     /// on inputs too large to fit. For per-chunk control, use create_encrypt_stream.
     /// Throws if `source` fails before reaching end-of-stream or `sink` rejects a write.
-    StreamResult encrypt_stream(
+    EncryptStreamResult encrypt_stream(
         std::istream& source,
         std::ostream& sink,
         const Keyring& keyring,
@@ -1145,7 +1203,7 @@ public:
     /// normal return every byte written to `sink` is authenticated; if this
     /// throws, discard everything written to `sink`. Streamed decrypt cannot
     /// decrypt a multi-frame message under a signing suite; use decrypt() for those.
-    StreamResult decrypt_stream(
+    DecryptStreamResult decrypt_stream(
         std::istream& source,
         std::ostream& sink,
         const Keyring& keyring,

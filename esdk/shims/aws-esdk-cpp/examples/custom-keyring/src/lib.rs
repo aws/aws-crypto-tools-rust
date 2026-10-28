@@ -52,7 +52,7 @@ impl Keyring for AuditKeyring {
             self.inner
                 .on_decrypt()
                 .materials(materials)
-                .encrypted_data_keys(encrypted_data_keys)
+                .set_encrypted_data_keys(Some(encrypted_data_keys))
                 .send()
         }
         .await

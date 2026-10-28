@@ -39,7 +39,7 @@ async fn test_streaming_encrypt_decrypt_round_trip() {
     //= reason=the round-trip with a Cursor input source succeeds, proving plaintext can be streamed to encrypt
     //# This input MAY be [streamed](streaming.md) to this operation.
     esdk.encrypt_stream()
-        .encryption_context(ec.clone())
+        .set_encryption_context(Some(ec.clone()))
         .keyring(keyring.clone())
         .plaintext(&mut pt_cursor)
         .ciphertext(&mut ciphertext)
@@ -66,7 +66,7 @@ async fn test_streaming_encrypt_decrypt_round_trip() {
     //= reason=decrypt_stream writes output to a Vec<u8> via AsyncWrite; the non-empty result proves streaming output
     //# In order to support streaming, the operation MUST produce some output within a streaming framework.
     esdk.decrypt_stream()
-        .encryption_context(ec)
+        .set_encryption_context(Some(ec))
         .keyring(keyring)
         .ciphertext(&mut ct_cursor)
         .plaintext(&mut decrypted)
@@ -335,7 +335,8 @@ async fn test_large_message_yields_to_other_tasks() {
             .send()
             .await
             .unwrap()
-            .into_ciphertext();
+            .into_ciphertext()
+            .into_inner();
         let after_encrypt = ticks.load(Ordering::Relaxed);
         assert!(
             after_encrypt > before_encrypt,

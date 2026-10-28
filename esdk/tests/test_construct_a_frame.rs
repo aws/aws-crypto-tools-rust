@@ -31,7 +31,8 @@ async fn test_construct_frame_aead_inputs_authenticated() {
         .send()
         .await
         .unwrap()
-        .into_ciphertext();
+        .into_ciphertext()
+        .into_inner();
 
     let frames = parse_all_frames(&ct, 50);
     let first = &frames[0];
@@ -242,7 +243,8 @@ async fn test_construct_frame_plaintext_subsequence_consumed_in_order() {
         .send()
         .await
         .unwrap()
-        .into_ciphertext();
+        .into_ciphertext()
+        .into_inner();
 
     //= spec/client-apis/encrypt.md#construct-a-frame
     //= type=test
@@ -254,7 +256,8 @@ async fn test_construct_frame_plaintext_subsequence_consumed_in_order() {
         .send()
         .await
         .unwrap()
-        .into_plaintext();
+        .into_plaintext()
+        .into_inner();
     assert_eq!(result, pt);
 }
 
@@ -391,5 +394,5 @@ async fn test_construct_frame_streaming_frame_released() {
         .send()
         .await
         .unwrap();
-    assert_eq!(decrypted.plaintext(), plaintext);
+    assert_eq!(decrypted.plaintext(), &plaintext);
 }

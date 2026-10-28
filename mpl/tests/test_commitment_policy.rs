@@ -86,15 +86,15 @@ fn test_union_commitment_policy_enum_exposes_all_variants() {
 }
 
 #[test]
-fn test_forbid_encrypt_allow_decrypt_default_is_alg_aes_256_gcm_iv12_tag16_no_kdf() {
+fn test_forbid_encrypt_allow_decrypt_default_is_hkdf_sha384_ecdsa_p384() {
     let default = CommitmentPolicy::Esdk(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt)
         .default_algorithm_suite_id();
     assert_eq!(
         default,
-        AlgorithmSuiteId::Esdk(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf)
+        AlgorithmSuiteId::Esdk(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384)
     );
-    // The spec also identifies this suite by raw bytes (`00 78`); cross-check.
-    assert_eq!(default.specification().id(), [0x00, 0x78]);
+    // Cross-check the suite by its raw bytes (`03 78`).
+    assert_eq!(default.specification().id(), [0x03, 0x78]);
 }
 
 #[test]

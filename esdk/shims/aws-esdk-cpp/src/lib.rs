@@ -132,7 +132,7 @@ use aws_crypto_mpl::aws_config;
 use aws_crypto_mpl::cmc::{
     DefaultCmc, LocalCmc, SharedCmc, StormTrackingCmc, StormTrackingCmcBuilder,
 };
-use aws_crypto_mpl::key_store::Client as KeyStoreClient;
+use aws_crypto_mpl::key_store::DynamoDbKeyStore;
 use aws_crypto_mpl::key_store::types::{Discovery, KmsConfiguration, MrDiscovery};
 use aws_crypto_mpl::keyring::HierarchicalKeyring;
 use aws_crypto_mpl::keyring::{RawAesKeyring, SharedKeyring};
@@ -166,6 +166,10 @@ mod ffi {
     struct OptU32 {
         set: bool,
         value: u32,
+    }
+    struct OptU64 {
+        set: bool,
+        value: u64,
     }
     struct OptString {
         set: bool,
@@ -258,6 +262,8 @@ mod ffi {
         /// Whether to require committing algorithms on encrypt/decrypt.
         /// Core default is `EsdkCommitmentPolicy::RequireEncryptRequireDecrypt`
         pub commitment_policy: OptCommitmentPolicy,
+        /// Upper bound on the plaintext length; only `create_encrypt_stream` reads it.
+        pub plaintext_length_bound: OptU64,
     }
     struct EncryptOutput {
         /// Algorithm Suite used to encrypt the message
@@ -466,6 +472,7 @@ macro_rules! opt_to_option {
 
 opt_to_option!(
     OptU32 => u32,
+    OptU64 => u64,
     OptString => String,
     OptAlgId => ffi::EsdkAlgorithmSuiteId,
     OptCommitmentPolicy => ffi::EsdkCommitmentPolicy,
@@ -494,7 +501,7 @@ struct MplDdbClient {
 }
 
 struct KeyStore {
-    inner: KeyStoreClient,
+    inner: DynamoDbKeyStore,
 }
 
 struct Keyring {
@@ -1251,7 +1258,9 @@ fn encrypt(input: &ffi::EncryptInput) -> Result<ffi::EncryptOutput, String> {
         //= spec/shim/esdk-shim.md#encrypt-inputs
         //# - MUST provide the target-supplied encryption context to the core ESDK,
         //# converted as defined in [Encryption context](#encryption-context).
-        .encryption_context(encryption_context_target_to_core(&input.encryption_context))
+        .set_encryption_context(Some(encryption_context_target_to_core(
+            &input.encryption_context,
+        )))
         //= spec/shim/esdk-shim.md#materials-source
         //= type=implication
         //= reason=The shim sets exactly one materials-source field (keyring) and never sets the cmm field.
@@ -1273,7 +1282,7 @@ fn encrypt(input: &ffi::EncryptInput) -> Result<ffi::EncryptOutput, String> {
         encryption_context: encryption_context_core_to_target(output.encryption_context()),
         //= spec/shim/esdk-shim.md#encrypt-outputs
         //# - MUST return the core ESDK's ciphertext unmodified.
-        ciphertext: output.into_ciphertext(),
+        ciphertext: output.into_ciphertext().into_inner(),
     })
 }
 
@@ -1291,7 +1300,9 @@ fn decrypt(input: &ffi::DecryptInput) -> Result<ffi::DecryptOutput, String> {
         //= spec/shim/esdk-shim.md#decrypt-inputs
         //# - MUST provide the target-supplied encryption context to the core ESDK,
         //# converted as defined in [Encryption context](#encryption-context).
-        .encryption_context(encryption_context_target_to_core(&input.encryption_context))
+        .set_encryption_context(Some(encryption_context_target_to_core(
+            &input.encryption_context,
+        )))
         .keyring(keyring.inner.clone())
         .send();
     let output = TOKIO_RUNTIME.block_on(output).map_err(core_err)?;
@@ -1306,7 +1317,7 @@ fn decrypt(input: &ffi::DecryptInput) -> Result<ffi::DecryptOutput, String> {
         encryption_context: encryption_context_core_to_target(output.encryption_context()),
         //= spec/shim/esdk-shim.md#decrypt-outputs
         //# - MUST return the core ESDK's plaintext unmodified.
-        plaintext: output.into_plaintext(),
+        plaintext: output.into_plaintext().into_inner(),
     })
 }
 
@@ -1485,7 +1496,7 @@ fn ddb_client_with_credentials(
 //= spec/shim/esdk-shim.md#create-key-store
 //# - The shim MUST provide an operation that creates a key store backed by the core ESDK.
 fn create_keystore(input: &ffi::KeyStoreConfig) -> Result<Box<KeyStore>, String> {
-    let builder = KeyStoreClient::builder()
+    let builder = DynamoDbKeyStore::builder()
         //= spec/shim/esdk-shim.md#create-key-store
         //# - Creating a key store MUST provide the target-supplied table name and logical key
         //# store name to the core ESDK.
@@ -1887,9 +1898,26 @@ fn create_encrypt_stream(input: &ffi::EncryptInput) -> Result<Box<EncryptStream>
         .esdk
         .encrypt_stream()
         .keyring(keyring.inner.clone())
-        .encryption_context(encryption_context_target_to_core(&input.encryption_context))
+        .set_encryption_context(Some(encryption_context_target_to_core(
+            &input.encryption_context,
+        )))
         .set_algorithm_suite_id(settings.algorithm_suite_id)
-        .set_frame_length(settings.frame_length);
+        .set_frame_length(settings.frame_length)
+        .set_data_size(
+            input
+                .plaintext_length_bound
+                .to_option()
+                .map(|bound| {
+                    usize::try_from(bound).map_err(|e| {
+                        shim_err(
+                            ffi::ShimErrorKind::Validation,
+                            "plaintext length bound translation",
+                            e,
+                        )
+                    })
+                })
+                .transpose()?,
+        );
     Ok(Box::new(EncryptStream {
         state: StreamState::spawn("encrypt_stream", move |mut reader, mut writer| {
             let output = TOKIO_RUNTIME
@@ -1925,7 +1953,9 @@ fn create_decrypt_stream(input: &ffi::DecryptInput) -> Result<Box<DecryptStream>
     let builder = decrypt_client(input)?
         .decrypt_stream()
         .keyring(keyring.inner.clone())
-        .encryption_context(encryption_context_target_to_core(&input.encryption_context));
+        .set_encryption_context(Some(encryption_context_target_to_core(
+            &input.encryption_context,
+        )));
     Ok(Box::new(DecryptStream {
         state: StreamState::spawn("decrypt_stream", move |mut reader, mut writer| {
             let output = TOKIO_RUNTIME

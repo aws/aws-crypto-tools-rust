@@ -28,6 +28,33 @@ type Writer<'a> = Box<dyn AsyncWrite + Unpin + Send + 'a>;
 macro_rules! member {
     (
         $(#[doc = $doc:expr])+
+        map $name:ident, $set:ident, $get:ident -> $ty:ty
+    ) => {
+        $(#[doc = $doc])+
+        ///
+        /// Adds one pair. To replace the whole map, use the `set_` setter.
+        pub fn $name(mut self, k: impl Into<String>, v: impl Into<String>) -> Self {
+            let mut map = self.inner.$get().clone().unwrap_or_default();
+            map.insert(k, v);
+            self.inner = self.inner.$set(Some(map));
+            self
+        }
+
+        $(#[doc = $doc])+
+        pub fn $set(mut self, input: Option<$ty>) -> Self {
+            self.inner = self.inner.$set(input);
+            self
+        }
+
+        $(#[doc = $doc])+
+        #[must_use]
+        #[allow(clippy::ref_option, clippy::ref_option_ref)] // AWS SDK for Rust getter shape
+        pub const fn $get(&self) -> &Option<$ty> {
+            self.inner.$get()
+        }
+    };
+    (
+        $(#[doc = $doc:expr])+
         $name:ident($arg:ty), $set:ident, $get:ident -> $ty:ty
     ) => {
         $(#[doc = $doc])+
@@ -102,7 +129,7 @@ macro_rules! encrypt_members {
             /// Key-value pairs bound to the message.
             /// They are authenticated, not encrypted, so never put secrets in them.
             /// Default is empty.
-            encryption_context(impl Into<EncryptionContext>),
+            map encryption_context,
             set_encryption_context,
             get_encryption_context -> EncryptionContext
         );
@@ -127,7 +154,7 @@ macro_rules! decrypt_members {
             /// Key-value pairs the message's encryption context must contain.
             /// Decrypt fails if a pair is missing from the message or has a different value.
             /// Default is empty.
-            encryption_context(impl Into<EncryptionContext>),
+            map encryption_context,
             set_encryption_context,
             get_encryption_context -> EncryptionContext
         );
