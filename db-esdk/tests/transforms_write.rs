@@ -70,6 +70,11 @@ fn get_input() -> GetItemInput {
 async fn put_item_input_passthrough() {
     let input = put_input("no_such_table", HashMap::new());
     let out = transforms().put_item_input(input.clone()).await.unwrap();
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-putitem
+    //= type=test
+    //# If the `TableName` in the request does not refer to an [encrypted-table](#encrypted-table),
+    //# the PutItem request MUST be unchanged.
     assert_eq!(out, input);
 }
 
@@ -85,6 +90,13 @@ async fn put_item_input_encrypts_and_signs() {
     assert!(matches!(&encrypted["encrypt"], AttributeValue::B(_)));
     let mut names: Vec<&str> = encrypted.keys().map(String::as_str).collect();
     names.sort_unstable();
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#dynamodb-table-encryption-configs
+    //= type=test
+    //= reason=the configured table's put is encrypted by the encryptor built at initialization
+    //# During initialization, this client MUST construct a
+    //# [DynamoDb Item Encryptor](./ddb-table-encryption-config.md)
+    //# per configured table, using these table encryption configs.
     assert_eq!(
         names,
         [
@@ -130,8 +142,8 @@ async fn put_item_attribute_name_too_long_bytes() {
 }
 
 #[tokio::test]
-async fn put_item_input_legacy_expected() {
-    let input = PutItemInput::builder()
+async fn put_item_input_legacy_parameters() {
+    let expected = PutItemInput::builder()
         .table_name("foo")
         .set_item(Some(item_n(1)))
         .expected(
@@ -140,22 +152,23 @@ async fn put_item_input_legacy_expected() {
         )
         .build()
         .unwrap();
-    expect_validation(
-        transforms().put_item_input(input).await,
-        "Legacy parameter 'Expected' not supported in PutItem with Encryption.",
-    );
-}
-
-#[tokio::test]
-async fn put_item_input_legacy_conditional_operator() {
-    let input = PutItemInput::builder()
+    let conditional_operator = PutItemInput::builder()
         .table_name("foo")
         .set_item(Some(item_n(1)))
         .conditional_operator(ConditionalOperator::And)
         .build()
         .unwrap();
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-putitem
+    //= type=test
+    //# The PutItem request MUST NOT refer to any legacy parameters,
+    //# specifically Expected and ConditionalOperator MUST NOT be set.
     expect_validation(
-        transforms().put_item_input(input).await,
+        transforms().put_item_input(expected).await,
+        "Legacy parameter 'Expected' not supported in PutItem with Encryption.",
+    );
+    expect_validation(
+        transforms().put_item_input(conditional_operator).await,
         "Legacy parameter 'ConditionalOperator' not supported in PutItem with Encryption.",
     );
 }
@@ -165,6 +178,10 @@ async fn put_item_input_reserved_attributes() {
     let mut it = item_n(1);
     it.insert("aws_dbe_zzz".into(), s("x"));
     it.insert("aws_dbe_head".into(), s("x"));
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-putitem
+    //= type=test
+    //# The Item MUST be [writable](ddb-support.md#writable).
     expect_validation(
         transforms().put_item_input(put_input("foo", it)).await,
         "Writing reserved attributes not allowed : aws_dbe_head\naws_dbe_zzz",
@@ -180,6 +197,10 @@ async fn put_item_input_condition_on_encrypted() {
         .expression_attribute_names("#e", "encrypt")
         .build()
         .unwrap();
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-putitem
+    //= type=test
+    //# The ConditionExpression MUST be [valid](ddb-support.md#testconditionexpression).
     expect_validation(
         transforms().put_item_input(input).await,
         "Condition Expressions forbidden on encrypted attributes : encrypt",
@@ -250,6 +271,20 @@ async fn put_item_output_decrypts_old_item() {
         )
         .await
         .unwrap();
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-putitem
+    //= type=test
+    //= reason=encrypted Attributes on a configured table come back as plaintext, so the response was modified
+    //# After a [PutItem](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_PutItem.html)
+    //# call is made to DynamoDB,
+    //# the resulting response MUST be modified before
+    //# being returned to the caller if:
+    //
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-putitem
+    //= type=test
+    //= reason=the old item comes back as its plaintext only if Attributes was replaced
+    //# The PutItem response's `Attributes` field MUST be
+    //# replaced by the encrypted DynamoDb Item outputted above.
     assert_eq!(out.attributes, Some(item_n(2)));
 }
 
@@ -277,6 +312,14 @@ async fn put_item_output_tampered_old_item() {
         )
         .await
         .unwrap_err();
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-putitem
+    //= type=test
+    //= reason=a tampered signed attribute in Attributes fails verification, so Decrypt Item ran on it
+    //# In this case, the [Item Encryptor](./ddb-item-encryptor.md) MUST perform
+    //# [Decrypt Item](./decrypt-item.md) where the input
+    //# [DynamoDB Item](./decrypt-item.md#dynamodb-item)
+    //# is the `Attributes` field in the original response
     assert!(matches!(err, Error::Cryptographic(_)), "{err:?}");
 }
 
@@ -293,54 +336,68 @@ fn update_input(table: &str, expr: Option<&str>) -> UpdateItemInput {
 
 #[tokio::test]
 async fn update_item_input_passthrough() {
-    let input = update_input("no_such_table", None);
+    // On table foo, both the legacy parameter and the update of signed `sign` are rejected.
+    let input = UpdateItemInput::builder()
+        .table_name("no_such_table")
+        .set_key(Some(HashMap::new()))
+        .update_expression("SET sign = :p")
+        .conditional_operator(ConditionalOperator::Or)
+        .build()
+        .unwrap();
     let out = transforms().update_item_input(input.clone()).await.unwrap();
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#validate-before-updateitem
+    //= type=test
+    //# If the `TableName` in the request does not refer to an [encrypted-table](#encrypted-table),
+    //# the UpdateItem request MUST be unchanged.
     assert_eq!(out, input);
 }
 
 #[tokio::test]
-async fn update_item_input_update_expression_signed() {
-    expect_validation(
-        transforms()
-            .update_item_input(update_input("foo", Some("SET sign = :p")))
-            .await,
-        "Update Expressions forbidden on signed attributes : sign",
-    );
-}
-
-#[tokio::test]
-async fn update_item_input_update_expression_encrypted() {
-    expect_validation(
-        transforms()
-            .update_item_input(update_input("foo", Some("SET encrypt = :p")))
-            .await,
-        "Update Expressions forbidden on signed attributes : encrypt",
-    );
-}
-
-#[tokio::test]
-async fn update_item_input_update_expression_plain() {
-    // Dafny uses `no_such_table` here; `foo` also lets an unsigned attribute be updated.
-    for table in ["no_such_table", "foo"] {
-        let input = update_input(table, Some("SET plain = :p"));
-        let out = transforms().update_item_input(input.clone()).await.unwrap();
-        assert_eq!(out, input);
-    }
-}
-
-#[tokio::test]
-async fn update_item_input_update_expression_names() {
-    let input = UpdateItemInput::builder()
+async fn update_item_input_update_expression_invalid() {
+    // `#s` names `sign`, so the check must resolve ExpressionAttributeNames.
+    let names = UpdateItemInput::builder()
         .table_name("foo")
         .set_key(Some(HashMap::new()))
         .update_expression("SET #s = :p")
         .expression_attribute_names("#s", "sign")
         .build()
         .unwrap();
+    let t = transforms();
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#validate-before-updateitem
+    //= type=test
+    //# The UpdateExpression MUST be [valid](ddb-support.md#testupdateexpression).
     expect_validation(
-        transforms().update_item_input(input).await,
+        t.update_item_input(update_input("foo", Some("SET sign = :p")))
+            .await,
         "Update Expressions forbidden on signed attributes : sign",
     );
+    expect_validation(
+        t.update_item_input(update_input("foo", Some("SET encrypt = :p")))
+            .await,
+        "Update Expressions forbidden on signed attributes : encrypt",
+    );
+    expect_validation(
+        t.update_item_input(names).await,
+        "Update Expressions forbidden on signed attributes : sign",
+    );
+}
+
+#[tokio::test]
+async fn update_item_input_update_expression_plain() {
+    // Dafny uses `no_such_table` here; `foo` also lets an unsigned attribute be updated.
+    let input = update_input("no_such_table", Some("SET plain = :p"));
+    let out = transforms().update_item_input(input.clone()).await.unwrap();
+    assert_eq!(out, input);
+
+    let input = update_input("foo", Some("SET plain = :p"));
+    let out = transforms().update_item_input(input.clone()).await.unwrap();
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#validate-before-updateitem
+    //= type=test
+    //# If all of the above validation succeeds, the UpdateItem request MUST be unchanged.
+    assert_eq!(out, input);
 }
 
 #[tokio::test]
@@ -379,6 +436,10 @@ async fn update_item_input_legacy_parameters() {
         ),
     ];
     for (input, message) in cases {
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#validate-before-updateitem
+        //= type=test
+        //# The UpdateItem request MUST NOT refer to any legacy parameters,
+        //# specifically Expected, AttributeUpdates and ConditionalOperator MUST NOT be set.
         expect_validation(transforms().update_item_input(input).await, message);
     }
 }
@@ -395,19 +456,28 @@ async fn update_item_output_passthrough() {
 
 #[tokio::test]
 async fn update_item_output_partial_signed_attributes() {
-    let output = UpdateItemOutput::builder()
-        .attributes("sign", s("x"))
-        .build();
-    let input = UpdateItemInput::builder()
-        .table_name("foo")
-        .set_key(Some(HashMap::new()))
-        .return_values(ReturnValue::UpdatedNew)
-        .build()
-        .unwrap();
-    expect_validation(
-        transforms().update_item_output(output, &input).await,
-        "UpdateItems response contains signed attributes, but does not include the entire item which is required for verification.",
-    );
+    for rv in [ReturnValue::UpdatedNew, ReturnValue::UpdatedOld] {
+        let output = UpdateItemOutput::builder()
+            .attributes("sign", s("x"))
+            .build();
+        let input = UpdateItemInput::builder()
+            .table_name("foo")
+            .set_key(Some(HashMap::new()))
+            .return_values(rv)
+            .build()
+            .unwrap();
+
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-updateitem
+        //= type=test
+        //# Additionally, if a value of `UPDATED_OLD` or `UPDATED_NEW` was used,
+        //# and any Attributes in the response are authenticated
+        //# per the [DynamoDB Encryption Client Config](#dynamodb-encryption-client-configuration),
+        //# an error MUST be raised.
+        expect_validation(
+            transforms().update_item_output(output, &input).await,
+            "UpdateItems response contains signed attributes, but does not include the entire item which is required for verification.",
+        );
+    }
 }
 
 #[tokio::test]
@@ -427,6 +497,10 @@ async fn update_item_output_partial_unsigned_attributes() {
         .update_item_output(output.clone(), &input)
         .await
         .unwrap();
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-updateitem
+    //= type=test
+    //# In all other cases, the UpdateItem response MUST NOT be modified.
     assert_eq!(out, output);
 }
 
@@ -450,8 +524,53 @@ async fn update_item_output_whole_item_decrypts() {
             )
             .await
             .unwrap();
+
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-updateitem
+        //= type=test
+        //= reason=with ALL_NEW or ALL_OLD on a configured table, encrypted Attributes come back as plaintext
+        //# After a [UpdateItem](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_UpdateItem.html)
+        //# call is made to DynamoDB,
+        //# the resulting response MUST be modified before
+        //# being returned to the caller if:
+        //
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-updateitem
+        //= type=test
+        //= reason=the whole item comes back as its plaintext only if Attributes was replaced
+        //# The UpdateItem response's `Attributes` field MUST be
+        //# replaced by the encrypted DynamoDb Item outputted above.
         assert_eq!(out.attributes, Some(item_n(3)));
     }
+}
+
+#[tokio::test]
+async fn update_item_output_tampered_whole_item() {
+    let t = transforms();
+    let mut encrypted = encrypt(&t, item_n(3)).await;
+    encrypted.insert("sign".into(), s("tampered"));
+    let input = UpdateItemInput::builder()
+        .table_name("foo")
+        .set_key(Some(HashMap::new()))
+        .return_values(ReturnValue::AllNew)
+        .build()
+        .unwrap();
+    let err = t
+        .update_item_output(
+            UpdateItemOutput::builder()
+                .set_attributes(Some(encrypted))
+                .build(),
+            &input,
+        )
+        .await
+        .unwrap_err();
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-updateitem
+    //= type=test
+    //= reason=a tampered signed attribute in Attributes fails verification, so Decrypt Item ran on it
+    //# In this case, the [Item Encryptor](./ddb-item-encryptor.md) MUST perform
+    //# [Decrypt Item](./decrypt-item.md) where the input
+    //# [DynamoDB Item](./decrypt-item.md#dynamodb-item)
+    //# is the `Attributes` field in the original response
+    assert!(matches!(err, Error::Cryptographic(_)), "{err:?}");
 }
 
 // --- DeleteItem ---
@@ -466,8 +585,20 @@ fn delete_input(table: &str) -> DeleteItemInput {
 
 #[tokio::test]
 async fn delete_item_input_passthrough() {
-    let input = delete_input("no_such_table");
+    // On table foo, both the legacy parameter and the condition on `encrypt` are rejected.
+    let input = DeleteItemInput::builder()
+        .table_name("no_such_table")
+        .set_key(Some(HashMap::new()))
+        .condition_expression("encrypt = :v")
+        .conditional_operator(ConditionalOperator::And)
+        .build()
+        .unwrap();
     let out = transforms().delete_item_input(input.clone()).await.unwrap();
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#validate-before-deleteitem
+    //= type=test
+    //# If the `TableName` in the request does not refer to an [encrypted-table](#encrypted-table),
+    //# the DeleteItem request MUST be unchanged.
     assert_eq!(out, input);
 }
 
@@ -480,6 +611,10 @@ async fn delete_item_input_configured_table_passthrough() {
         .build()
         .unwrap();
     let out = transforms().delete_item_input(input.clone()).await.unwrap();
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#validate-before-deleteitem
+    //= type=test
+    //# If all of the above validation succeeds, the DeleteItem request MUST be unchanged.
     assert_eq!(out, input);
 }
 
@@ -491,6 +626,10 @@ async fn delete_item_input_condition_on_encrypted() {
         .condition_expression("encrypt = :v")
         .build()
         .unwrap();
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#validate-before-deleteitem
+    //= type=test
+    //# The ConditionExpression MUST be [valid](ddb-support.md#testconditionexpression).
     expect_validation(
         transforms().delete_item_input(input).await,
         "Condition Expressions forbidden on encrypted attributes : encrypt",
@@ -505,6 +644,11 @@ async fn delete_item_input_legacy_parameters() {
         .expected("sign", ExpectedAttributeValue::builder().build())
         .build()
         .unwrap();
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#validate-before-deleteitem
+    //= type=test
+    //# The DeleteItem request MUST NOT refer to any legacy parameters,
+    //# specifically Expected and ConditionalOperator MUST NOT be set.
     expect_validation(
         transforms().delete_item_input(expected).await,
         "Legacy parameter 'Expected' not supported in UpdateItem with Encryption",
@@ -544,7 +688,46 @@ async fn delete_item_output_decrypts_old_item() {
         )
         .await
         .unwrap();
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-deleteitem
+    //= type=test
+    //= reason=encrypted Attributes on a configured table come back as plaintext, so the response was modified
+    //# After a [DeleteItem](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_DeleteItem.html)
+    //# call is made to DynamoDB,
+    //# the resulting response MUST be modified before
+    //# being returned to the caller if:
+    //
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-deleteitem
+    //= type=test
+    //= reason=the old item comes back as its plaintext only if Attributes was replaced
+    //# The DeleteItem response's `Attributes` field MUST be
+    //# replaced by the encrypted DynamoDb Item outputted above.
     assert_eq!(out.attributes, Some(item_n(4)));
+}
+
+#[tokio::test]
+async fn delete_item_output_tampered_old_item() {
+    let t = transforms();
+    let mut old = encrypt(&t, item_n(4)).await;
+    old.insert("sign".into(), s("tampered"));
+    let err = t
+        .delete_item_output(
+            DeleteItemOutput::builder()
+                .set_attributes(Some(old))
+                .build(),
+            &delete_input("foo"),
+        )
+        .await
+        .unwrap_err();
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-deleteitem
+    //= type=test
+    //= reason=a tampered signed attribute in Attributes fails verification, so Decrypt Item ran on it
+    //# In this case, the [Item Encryptor](./ddb-item-encryptor.md) MUST perform
+    //# [Decrypt Item](./decrypt-item.md) where the input
+    //# [DynamoDB Item](./decrypt-item.md#dynamodb-item)
+    //# is the `Attributes` field in the original response
+    assert!(matches!(err, Error::Cryptographic(_)), "{err:?}");
 }
 
 // --- BatchWriteItem ---
@@ -608,6 +791,11 @@ async fn batch_write_item_input_encrypts_puts_only() {
     assert!(put.contains_key("aws_dbe_head"));
     assert!(matches!(&put["encrypt"], AttributeValue::B(_)));
     assert_eq!(foo[1], delete);
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-batchwriteitem
+    //= type=test
+    //# If the table name does not refer to an [encrypted-table](#encrypted-table),
+    //# the list of operations MUST be unchanged.
     assert_eq!(items["baz"], vec![make_put(item_n(2))]);
 }
 
@@ -615,6 +803,10 @@ async fn batch_write_item_input_encrypts_puts_only() {
 async fn batch_write_item_input_reserved_attribute() {
     let mut it = item_n(1);
     it.insert("aws_dbe_b_x".into(), s("x"));
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-batchwriteitem
+    //= type=test
+    //# The Item MUST be [writable](ddb-support.md#writable).
     expect_validation(
         transforms()
             .batch_write_item_input(batch_input(&[("foo", vec![make_put(it)])]))
@@ -631,6 +823,10 @@ async fn batch_write_item_output_transform() {
         .batch_write_item_output(output.clone(), &input)
         .await
         .unwrap();
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-batchwriteitem
+    //= type=test
+    //# If there are no UnprocessedItems, then the BatchWriteItemOutput MUST be returned unchanged.
     assert_eq!(out, output);
 }
 
@@ -647,10 +843,13 @@ async fn round_trip_unprocessed(t: &Transforms, input: BatchWriteItemInput) {
         .set_unprocessed_items(Some(encrypted))
         .build();
     let out = t.batch_write_item_output(output, &input).await.unwrap();
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-batchwriteitem
+    //= type=test
+    //# Each item in UnprocessedItems MUST be replaced by its original plaintext value.
     assert_eq!(out.unprocessed_items, input.request_items);
 }
 
-// Each item in UnprocessedItems must be replaced by its original plaintext value.
 #[tokio::test]
 async fn batch_write_item_output_transform_unprocessed() {
     let input = batch_input(&[(
@@ -878,6 +1077,10 @@ async fn transact_write_items_input_passthrough() {
 
 #[tokio::test]
 async fn transact_write_items_input_empty() {
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-transactwriteitems
+    //= type=test
+    //# To protect against a possible fifth field being added to the TransactWriteItem structure in the future,
+    //# the client MUST fail if none of the `Update`, `ConditionCheck`, `Delete` and `Put` fields are set.
     expect_validation(
         transforms()
             .transact_write_items_input(transact_input(vec![TransactWriteItem::builder().build()]))
@@ -931,6 +1134,11 @@ async fn transact_write_items_input_encrypts_puts() {
     let items = out.transact_items.unwrap();
     let encrypted = items[0].put.as_ref().unwrap().item.clone();
     assert!(matches!(&encrypted["encrypt"], AttributeValue::B(_)));
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-transactwriteitems
+    //= type=test
+    //# Any `Put` actions with a `TableName` that does not refer to an [encrypted-table](#encrypted-table),
+    //# MUST be unchanged.
     assert_eq!(items[1], transact_put("baz", item_n(2), None));
     let decrypted = t
         .get_item_output(
@@ -939,7 +1147,22 @@ async fn transact_write_items_input_encrypts_puts() {
         )
         .await
         .unwrap();
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-transactwriteitems
+    //= type=test
+    //= reason=the replaced item is ciphertext (asserted above) that decrypts to the original
+    //# - The PutItem request's `Item` field MUST be replaced
+    //# with a value that is equivalent to
+    //# the result [Encrypted DynamoDB Item](./encrypt-item.md#encrypted-dynamodb-item)
+    //# calculated above.
     assert_eq!(decrypted.item, Some(item_n(1)));
+}
+
+/// TransactWriteItems with the single action `action` on the transforms of table `foo`.
+async fn transact_one(action: TransactWriteItem) -> Result<TransactWriteItemsInput, Error> {
+    transforms()
+        .transact_write_items_input(transact_input(vec![action]))
+        .await
 }
 
 #[tokio::test]
@@ -983,40 +1206,54 @@ async fn transact_write_items_input_rejections() {
     };
     let mut reserved = item_n(1);
     reserved.insert("aws_dbe_foot".into(), s("x"));
-    let cases = [
-        (
-            condition_check("encrypt = :v"),
-            "Condition Expressions forbidden on encrypted attributes : encrypt",
-        ),
-        (
-            delete("encrypt = :v"),
-            "Condition Expressions forbidden on encrypted attributes : encrypt",
-        ),
-        (
-            update("SET sign = :v", None),
-            "Update Expressions forbidden on signed attributes : sign",
-        ),
-        (
-            update("SET plain = :v", Some("encrypt = :w")),
-            "Condition Expressions forbidden on encrypted attributes : encrypt",
-        ),
-        (
-            transact_put("foo", reserved, None),
-            "Writing reserved attributes not allowed : aws_dbe_foot",
-        ),
-        (
-            transact_put("foo", item_n(1), Some("encrypt = :v")),
-            "Condition Expressions forbidden on encrypted attributes : encrypt",
-        ),
-    ];
-    for (action, message) in cases {
-        expect_validation(
-            transforms()
-                .transact_write_items_input(transact_input(vec![action]))
-                .await,
-            message,
-        );
-    }
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-transactwriteitems
+    //= type=test
+    //# - The ConditionExpression of the `ConditionCheck` MUST be [valid](ddb-support.md#testconditionexpression).
+    expect_validation(
+        transact_one(condition_check("encrypt = :v")).await,
+        "Condition Expressions forbidden on encrypted attributes : encrypt",
+    );
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-transactwriteitems
+    //= type=test
+    //# - The ConditionExpression of the `Delete` MUST be [valid](ddb-support.md#testconditionexpression).
+    expect_validation(
+        transact_one(delete("encrypt = :v")).await,
+        "Condition Expressions forbidden on encrypted attributes : encrypt",
+    );
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-transactwriteitems
+    //= type=test
+    //# - The UpdateExpression of the `Update` MUST be [valid](ddb-support.md#testupdateexpression).
+    expect_validation(
+        transact_one(update("SET sign = :v", None)).await,
+        "Update Expressions forbidden on signed attributes : sign",
+    );
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-transactwriteitems
+    //= type=test
+    //# - The ConditionExpression of the `Update` MUST be [valid](ddb-support.md#testconditionexpression).
+    expect_validation(
+        transact_one(update("SET plain = :v", Some("encrypt = :w"))).await,
+        "Condition Expressions forbidden on encrypted attributes : encrypt",
+    );
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-transactwriteitems
+    //= type=test
+    //# - The Item MUST be [writable](ddb-support.md#writable).
+    expect_validation(
+        transact_one(transact_put("foo", reserved, None)).await,
+        "Writing reserved attributes not allowed : aws_dbe_foot",
+    );
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-transactwriteitems
+    //= type=test
+    //# - The ConditionExpression `Put` MUST be [valid](ddb-support.md#testconditionexpression).
+    expect_validation(
+        transact_one(transact_put("foo", item_n(1), Some("encrypt = :v"))).await,
+        "Condition Expressions forbidden on encrypted attributes : encrypt",
+    );
 }
 
 #[tokio::test]
@@ -1056,5 +1293,9 @@ async fn transact_write_items_input_allowed_actions_pass_through() {
         .transact_write_items_input(input.clone())
         .await
         .unwrap();
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-transactwriteitems
+    //= type=test
+    //# Any actions other than `Put`, MUST be unchanged.
     assert_eq!(out, input);
 }

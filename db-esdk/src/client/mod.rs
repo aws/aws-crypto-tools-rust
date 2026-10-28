@@ -65,10 +65,28 @@ pub struct Client {
     transforms: Transforms,
 }
 
+//= spec/dynamodb-encryption-client/ddb-sdk-integration.md#api-modification
+//= type=implication
+//= reason=Client has no passthrough-API methods; they run unmodified on the caller's aws_sdk_dynamodb::Client
+//# The [Allowed Passthrough DynamoDB APIs](#allowed-passthrough-dynamodb-apis)
+//# MUST NOT be modified.
+//
+//= spec/dynamodb-encryption-client/ddb-sdk-integration.md#api-modification
+//= type=implication
+//= reason=Client has methods only for the specified operations; calling any other does not compile
+//# Any DynamoDB API not specified is this document either
+//# MUST NOT be callable or MUST yield an error,
+//# and that error SHOULD indicate that the operation
+//# is not supported with DynamoDB client-side encryption.
 impl Client {
     /// A builder for a client.
     #[must_use]
     pub fn builder() -> ClientBuilder {
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#overview
+        //# There MUST be some process by which
+        //# the customer can create this AWS SDK with
+        //# additional encryption behavior, which
+        //# this document will refer to as a [DynamoDB Encryption Client](#dynamodb-encryption-client).
         ClientBuilder::default()
     }
 
@@ -177,6 +195,17 @@ impl Client {
 #[non_exhaustive]
 pub struct ClientBuilder {
     ddb_client: Option<aws_sdk_dynamodb::Client>,
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#dynamodb-encryption-client-configuration
+    //= type=implication
+    //= reason=the field always exists; unset is an empty map, as Dafny's required map may be empty
+    //# The client configuration consists of the following REQUIRED field:
+    //
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#dynamodb-table-encryption-configs
+    //= type=implication
+    //= reason=the map's value type is TableConfig, so nothing else can be stored
+    //# A map of DynamoDb table names to a structure that MUST contain
+    //# data as described by [DynamoDb Table Encryption Config](./ddb-table-encryption-config.md).
     table_encryption_configs: HashMap<String, TableConfig>,
 }
 
@@ -214,6 +243,10 @@ impl ClientBuilder {
         mut self,
         configs: Option<HashMap<String, TableConfig>>,
     ) -> Self {
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#overview
+        //# There is no restriction on what this process is,
+        //# other than the fact that at some point the customer
+        //# MUST specify a [DynamoDB Encryption Client Configuration](#dynamodb-encryption-client-configuration).
         self.table_encryption_configs = configs.unwrap_or_default();
         self
     }
@@ -228,6 +261,14 @@ impl ClientBuilder {
         let ddb = self
             .ddb_client
             .ok_or_else(|| val_err("ddb_client is required"))?;
+
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#overview
+        //# This configuration MUST be the configuration ultimately used by
+        //# the behaviors within the DynamoDB Encryption Client.
+        //
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#dynamodb-encryption-client-configuration
+        //# The DynamoDB Encryption Client Configuration is a structure that
+        //# the customer MUST provide in the process of creating a [DynamoDB Encryption Client](#dynamodb-encryption-client).
         let transforms = Transforms::builder()
             .set_table_encryption_configs(Some(self.table_encryption_configs))
             .build()?;

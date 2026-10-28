@@ -9,7 +9,7 @@ use std::collections::HashMap;
 
 use aws_db_esdk::aws_sdk_dynamodb::types::{AttributeValue, ReturnValue};
 use aws_db_esdk::{Client, Error};
-use client_support::{TABLE, fake, full_item, key, s, table_config};
+use client_support::{PLAIN_TABLE, TABLE, fake, full_item, key, s, table_config};
 
 #[test]
 fn build_requires_a_dynamodb_client() {
@@ -49,16 +49,21 @@ fn build_rejects_two_tables_with_one_logical_name() {
     );
 }
 
-async fn put_and_read_back(client: &Client, fake: &client_support::FakeDdb) -> Vec<String> {
+/// Put item `a/1` in `table`, and the names of the attributes the fake stores for it.
+async fn put_and_read_back(
+    client: &Client,
+    fake: &client_support::FakeDdb,
+    table: &str,
+) -> Vec<String> {
     client
         .put_item()
-        .table_name(TABLE)
+        .table_name(table)
         .set_item(Some(full_item("a", "1")))
         .send()
         .await
         .unwrap();
     let mut names: Vec<String> = fake
-        .item(TABLE, &key("a", "1"))
+        .item(table, &key("a", "1"))
         .unwrap()
         .into_keys()
         .collect();
@@ -69,15 +74,35 @@ async fn put_and_read_back(client: &Client, fake: &client_support::FakeDdb) -> V
 #[tokio::test]
 async fn set_table_encryption_configs_replaces_every_configuration() {
     let fake = fake();
-    let encrypted = Client::builder()
+    let builder = Client::builder()
         .set_ddb_client(Some(fake.client()))
-        .table_encryption_configs("other", table_config())
-        .set_table_encryption_configs(Some(HashMap::from([(TABLE.to_owned(), table_config())])))
-        .build()
-        .unwrap();
+        .table_encryption_configs(PLAIN_TABLE, table_config());
 
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#overview
+    //= type=test
+    //# There is no restriction on what this process is,
+    //# other than the fact that at some point the customer
+    //# MUST specify a [DynamoDB Encryption Client Configuration](#dynamodb-encryption-client-configuration).
+    let builder = builder
+        .set_table_encryption_configs(Some(HashMap::from([(TABLE.to_owned(), table_config())])));
+
+    let encrypted = builder.build().unwrap();
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#overview
+    //= type=test
+    //= reason=the built client writes TABLE's item with the encryption attributes
+    //# There MUST be some process by which
+    //# the customer can create this AWS SDK with
+    //# additional encryption behavior, which
+    //# this document will refer to as a [DynamoDB Encryption Client](#dynamodb-encryption-client).
+    //
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#dynamodb-encryption-client-configuration
+    //= type=test
+    //= reason=TABLE is encrypted only because the configuration provided above names it
+    //# The DynamoDB Encryption Client Configuration is a structure that
+    //# the customer MUST provide in the process of creating a [DynamoDB Encryption Client](#dynamodb-encryption-client).
     assert_eq!(
-        put_and_read_back(&encrypted, &fake).await,
+        put_and_read_back(&encrypted, &fake, TABLE).await,
         [
             "aws_dbe_foot",
             "aws_dbe_head",
@@ -86,6 +111,16 @@ async fn set_table_encryption_configs_replaces_every_configuration() {
             "plain",
             "sign"
         ]
+    );
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#overview
+    //= type=test
+    //= reason=PLAIN_TABLE's earlier configuration was replaced, so its item is stored plaintext
+    //# This configuration MUST be the configuration ultimately used by
+    //# the behaviors within the DynamoDB Encryption Client.
+    assert_eq!(
+        put_and_read_back(&encrypted, &fake, PLAIN_TABLE).await,
+        ["bar", "encrypt", "plain", "sign"]
     );
 }
 
@@ -100,7 +135,7 @@ async fn set_table_encryption_configs_none_leaves_every_table_plaintext() {
         .unwrap();
 
     assert_eq!(
-        put_and_read_back(&plain, &fake).await,
+        put_and_read_back(&plain, &fake, TABLE).await,
         ["bar", "encrypt", "plain", "sign"]
     );
 }
@@ -114,6 +149,12 @@ fn fluent_builders_keep_what_is_set() {
         .table_name(TABLE)
         .item("bar", s("a"))
         .return_values(ReturnValue::AllOld);
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#overview
+    //= type=test
+    //= reason=the builder's setters and getters are the AWS SDK builder's, with the same values
+    //# This new implementation SHOULD be a drop-in replacement of the
+    //# regular AWS SDK.
     assert_eq!(put.get_table_name().as_deref(), Some(TABLE));
     assert_eq!(
         put.get_item(),

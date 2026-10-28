@@ -51,6 +51,14 @@ async fn execute_statement_rejects_a_configured_table() {
         .await
         .unwrap_err();
 
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#validate-before-executestatement
+    //= type=test
+    //= reason=asserts the Validation error, then that the fake DynamoDB received no call
+    //# The request MUST fail, and the client make no network call to DynamoDB,
+    //# if there exists an Item Encryptor
+    //# specified within the [DynamoDB Encryption Client Config](#dynamodb-encryption-client-configuration)
+    //# with a [DynamoDB Table Name](./ddb-item-encryptor.md#dynamodb-table-name)
+    //# equal to table named in the request.
     assert!(matches!(err, Error::Validation(_)), "{err:?}");
     assert_eq!(
         err.message(),
@@ -104,6 +112,14 @@ async fn batch_execute_statement_rejects_any_configured_table() {
         .await
         .unwrap_err();
 
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#validate-before-batchexecutestatement
+    //= type=test
+    //= reason=the second statement names foo; asserts the Validation error, then no DynamoDB call
+    //# The request MUST fail, and the client make no network call to DynamoDB,
+    //# if there exists an Item Encryptor
+    //# specified within the [DynamoDB Encryption Client Config](#dynamodb-encryption-client-configuration)
+    //# with a [DynamoDB Table Name](./ddb-item-encryptor.md#dynamodb-table-name)
+    //# equal to table named in any of the `Statements` of the request.
     assert!(matches!(err, Error::Validation(_)), "{err:?}");
     assert_eq!(
         err.message(),
@@ -136,11 +152,20 @@ async fn execute_transaction_rejects_any_configured_table() {
 
     let err = client
         .execute_transaction()
+        .transact_statements(parameterized("update \"no_such_table\""))
         .transact_statements(parameterized("update foo"))
         .send()
         .await
         .unwrap_err();
 
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#validate-before-executetransaction
+    //= type=test
+    //= reason=the second statement names foo; asserts the Validation error, then no DynamoDB call
+    //# The request MUST fail, and the client make no network call to DynamoDB,
+    //# if there exists an Item Encryptor
+    //# specified within the [DynamoDB Encryption Client Config](#dynamodb-encryption-client-configuration)
+    //# with a [DynamoDB Table Name](./ddb-item-encryptor.md#dynamodb-table-name)
+    //# equal to table named in any of the `TransactStatements` of the request.
     assert!(matches!(err, Error::Validation(_)), "{err:?}");
     assert_eq!(
         err.message(),

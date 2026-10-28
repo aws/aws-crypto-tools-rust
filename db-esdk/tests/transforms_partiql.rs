@@ -66,6 +66,12 @@ async fn execute_statement_input_passthrough() {
         .execute_statement_input(input.clone())
         .await
         .unwrap();
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#validate-before-executestatement
+    //= type=test
+    //# If no such Item Encryptor exists,
+    //# there MUST NOT be any modification
+    //# to the ExecuteStatement request.
     assert_eq!(out, input);
 }
 
@@ -74,6 +80,14 @@ async fn execute_statement_input_encrypted() {
     let result = transforms()
         .execute_statement_input(execute_statement("update \"foo\""))
         .await;
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#validate-before-executestatement
+    //= type=test
+    //# The request MUST fail, and the client make no network call to DynamoDB,
+    //# if there exists an Item Encryptor
+    //# specified within the [DynamoDB Encryption Client Config](#dynamodb-encryption-client-configuration)
+    //# with a [DynamoDB Table Name](./ddb-item-encryptor.md#dynamodb-table-name)
+    //# equal to table named in the request.
     expect_validation(
         result,
         "ExecuteStatement not Supported on encrypted tables.",
@@ -105,11 +119,17 @@ async fn execute_statement_output() {
 
 #[tokio::test]
 async fn batch_execute_statement_input_passthrough() {
-    let input = batch_execute_statement(&["update \"no_such_table\""]);
+    let input = batch_execute_statement(&["update \"no_such_table\"", "update \"other\""]);
     let out = transforms()
         .batch_execute_statement_input(input.clone())
         .await
         .unwrap();
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#validate-before-batchexecutestatement
+    //= type=test
+    //# If no such Item Encryptor exists,
+    //# there MUST NOT be any modification
+    //# to the BatchExecuteStatement request.
     assert_eq!(out, input);
 }
 
@@ -122,6 +142,14 @@ async fn batch_execute_statement_input_encrypted() {
             "update \"foo\"",
         ]))
         .await;
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#validate-before-batchexecutestatement
+    //= type=test
+    //# The request MUST fail, and the client make no network call to DynamoDB,
+    //# if there exists an Item Encryptor
+    //# specified within the [DynamoDB Encryption Client Config](#dynamodb-encryption-client-configuration)
+    //# with a [DynamoDB Table Name](./ddb-item-encryptor.md#dynamodb-table-name)
+    //# equal to table named in any of the `Statements` of the request.
     expect_validation(
         result,
         "BatchExecuteStatement not Supported on encrypted tables.",
@@ -151,11 +179,17 @@ async fn batch_execute_statement_output() {
 
 #[tokio::test]
 async fn execute_transaction_input_passthrough() {
-    let input = execute_transaction(&["update \"no_such_table\""]);
+    let input = execute_transaction(&["update \"no_such_table\"", "update \"other\""]);
     let out = transforms()
         .execute_transaction_input(input.clone())
         .await
         .unwrap();
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#validate-before-executetransaction
+    //= type=test
+    //# If no such Item Encryptor exists,
+    //# there MUST NOT be any modification
+    //# to the ExecuteTransaction request.
     assert_eq!(out, input);
 }
 
@@ -164,6 +198,14 @@ async fn execute_transaction_input() {
     let result = transforms()
         .execute_transaction_input(execute_transaction(&["update foo"]))
         .await;
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#validate-before-executetransaction
+    //= type=test
+    //# The request MUST fail, and the client make no network call to DynamoDB,
+    //# if there exists an Item Encryptor
+    //# specified within the [DynamoDB Encryption Client Config](#dynamodb-encryption-client-configuration)
+    //# with a [DynamoDB Table Name](./ddb-item-encryptor.md#dynamodb-table-name)
+    //# equal to table named in any of the `TransactStatements` of the request.
     expect_validation(
         result,
         "ExecuteTransaction not Supported on encrypted tables.",

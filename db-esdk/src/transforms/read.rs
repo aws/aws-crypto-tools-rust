@@ -49,6 +49,14 @@ impl Transforms {
         mut output: GetItemOutput,
         original_input: &GetItemInput,
     ) -> Result<GetItemOutput, Error> {
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-getitem
+        //# After a [GetItem](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_GetItem.html)
+        //# call is made to DynamoDB,
+        //# the resulting response MUST be modified before
+        //# being returned to the caller if there exists
+        //# an Item Encryptor specified within the [DynamoDB Encryption Client Config](#dynamodb-encryption-client-configuration)
+        //# with a [DynamoDB Table Name](./ddb-item-encryptor.md#dynamodb-table-name)
+        //# equal to the `TableName` on the GetItem request.
         let Some(table) = self.table(original_input.table_name.as_deref()) else {
             return Ok(output);
         };
@@ -56,7 +64,18 @@ impl Transforms {
             return Ok(output);
         }
         let item = output.item.take().unwrap_or_default();
-        output.item = Some(decrypt(table, item).await?);
+
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-getitem
+        //# The [Item Encryptor](./ddb-item-encryptor.md) MUST perform
+        //# [Decrypt Item](./decrypt-item.md) where the input
+        //# [DynamoDB Item](./decrypt-item.md#dynamodb-item)
+        //# is the `Item` field in the original response
+        let decrypted = decrypt(table, item).await?;
+
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-getitem
+        //# The GetItem response's `Item` field MUST be
+        //# replaced by the encrypted DynamoDb Item outputted above.
+        output.item = Some(decrypted);
         Ok(output)
     }
 
@@ -71,8 +90,15 @@ impl Transforms {
     /// On a table with beacons, the expressions are rewritten to compare beacons.
     pub async fn query_input(&self, mut input: QueryInput) -> Result<QueryInput, Error> {
         let Some(table) = self.table_info(input.table_name.as_deref()) else {
+            //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#modify-before-query
+            //# If the `TableName` in the request does not refer to an [encrypted-table](#encrypted-table),
+            //# the Query request MUST be unchanged.
             return Ok(input);
         };
+
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#modify-before-query
+        //# The Query request MUST NOT refer to any legacy parameters,
+        //# specifically AttributesToGet, KeyConditions, QueryFilter and ConditionalOperator MUST NOT be set.
         if !no_list(input.attributes_to_get.as_ref()) {
             return Err(val_err(
                 "Legacy parameter 'AttributesToGet' not supported in Query with Encryption",
@@ -107,6 +133,10 @@ impl Transforms {
             )?;
             return Ok(input);
         };
+
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#modify-before-query
+        //# The request MUST be [altered](./ddb-support.md#queryinputforbeacons)
+        //# to transform any references to encrypted attributes into references to beacons.
         let ctx = search
             .query_input_for_beacons(
                 &table.encryptor.config().attribute_actions_on_encrypt,
@@ -135,6 +165,10 @@ impl Transforms {
     ///
     /// A `Validation` error when the key condition expression is longer than 4096 characters,
     /// or names an expression attribute value that the input does not have.
+    //= spec/dynamodb-encryption-client/ddb-get-number-of-queries.md#input
+    //= type=implication
+    //= reason=the only parameter is &QueryInput; any other input type does not compile
+    //# This operation MUST take as input the QueryInput structure under consideration.
     pub async fn get_number_of_queries(&self, input: &QueryInput) -> Result<u8, Error> {
         let Some(search) = self
             .table_info(input.table_name.as_deref())
@@ -146,6 +180,9 @@ impl Transforms {
             input.key_condition_expression.as_deref(),
             "KeyConditionExpression",
         )?;
+
+        //= spec/dynamodb-encryption-client/ddb-get-number-of-queries.md#input
+        //# This operation MUST return the number of queries necessary.
         search.version.get_num_queries(
             input.key_condition_expression.as_deref(),
             input.expression_attribute_values.as_ref(),
@@ -187,6 +224,10 @@ impl Transforms {
         if table.search.is_some() && output.count != 0 {
             output.count = i32::try_from(items.len()).unwrap_or(i32::MAX);
         }
+
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-query
+        //# Each of these entries on the original response MUST be replaced
+        //# with the resulting decrypted [DynamoDB Item](./decrypt-item.md#dynamodb-item-1).
         output.items = Some(items);
         Ok(output)
     }
@@ -202,8 +243,15 @@ impl Transforms {
     /// On a table with beacons, the filter is rewritten to compare beacons.
     pub async fn scan_input(&self, mut input: ScanInput) -> Result<ScanInput, Error> {
         let Some(table) = self.table_info(input.table_name.as_deref()) else {
+            //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#modify-before-scan
+            //# If the `TableName` in the request does not refer to an [encrypted-table](#encrypted-table),
+            //# the Scan request MUST be unchanged.
             return Ok(input);
         };
+
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#modify-before-scan
+        //# The Scan request MUST NOT refer to any legacy parameters,
+        //# specifically AttributesToGet, ScanFilter and ConditionalOperator MUST NOT be set.
         if !no_list(input.attributes_to_get.as_ref()) {
             return Err(val_err(
                 "Legacy parameter 'AttributesToGet' not supported in UpdateItem with Encryption",
@@ -229,6 +277,10 @@ impl Transforms {
             )?;
             return Ok(input);
         };
+
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#modify-before-scan
+        //# The request MUST be [altered](./ddb-support.md#scaninputforbeacons)
+        //# to transform any references to encrypted attributes into references to beacons.
         let ctx = search
             .scan_input_for_beacons(
                 input.filter_expression.take(),
@@ -277,6 +329,11 @@ impl Transforms {
         if table.search.is_some() && output.count != 0 {
             output.count = i32::try_from(items.len()).unwrap_or(i32::MAX);
         }
+
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-scan
+        //# Each of these entries on the original response MUST be replaced
+        //# with the resulting decrypted
+        //# [DynamoDB Item](./decrypt-item.md#dynamodb-item-1).
         output.items = Some(items);
         Ok(output)
     }
@@ -317,10 +374,25 @@ impl Transforms {
             };
             let items = match self.table(Some(&name)) {
                 None => items,
+                //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-batchgetitem
+                //# For each list item under each key in `Responses`,
+                //# if there is a configured Item Encryptor with [DynamoDB Table Name](./ddb-item-encryptor.md#dynamodb-table-name) equal to the key,
+                //# that Item Encryptor MUST perform [Decrypt Item](./decrypt-item.md) where the input
+                //# [DynamoDB Item](./decrypt-item.md#dynamodb-item)
+                //# is the `Item` field in the original response.
+                //
+                //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-batchgetitem
+                //# If any [Decrypt Item](./decrypt-item.md) operation fails,
+                //# BatchGetItem MUST yield an error.
                 Some(table) => decrypt_all(table, items).await?,
             };
             result.insert(name, items);
         }
+
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-batchgetitem
+        //# Each of these items on the original response MUST be replaced
+        //# with a value that is equivalent to
+        //# this result.
         output.responses = Some(result);
         Ok(output)
     }
@@ -369,9 +441,26 @@ impl Transforms {
                 continue;
             };
             let item = match response.item {
+                //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-transactgetitems
+                //# For each list item under each key in `Responses`,
+                //# if there exists an Item Encryptor specified within
+                //# the [DynamoDB Encryption Client Config](#dynamodb-encryption-client-configuration)
+                //# with a [DynamoDB Table Name](./ddb-item-encryptor.md#dynamodb-table-name)
+                //# equal to the key,
+                //# the Item Encryptor that corresponds to the key in the request
+                //# MUST perform [Decrypt Item](./decrypt-item.md) where the input
+                //# [DynamoDB Item](./decrypt-item.md#dynamodb-item) is the `Item` in the original response.
+                //
+                //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-transactgetitems
+                //# If any [Decrypt Item](./decrypt-item.md) fails,
+                //# TransactGetItems MUST yield an error.
                 Some(item) if !item.is_empty() => Some(decrypt(table, item).await?),
                 _ => None,
             };
+
+            //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-transactgetitems
+            //# Each of these items on the original response MUST be replaced
+            //# with a value that is equivalent to the resulting item.
             result.push(ItemResponse::builder().set_item(item).build());
         }
         output.responses = Some(result);

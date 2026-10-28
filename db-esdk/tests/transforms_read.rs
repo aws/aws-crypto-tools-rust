@@ -81,6 +81,37 @@ async fn get_item_output_passthrough() {
 }
 
 #[tokio::test]
+async fn get_item_output_decrypts_item() {
+    let t = transforms();
+    let encrypted = encrypt(&t, item_n(1)).await;
+    let out = t
+        .get_item_output(
+            GetItemOutput::builder().set_item(Some(encrypted)).build(),
+            &get_input("foo"),
+        )
+        .await
+        .unwrap();
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-getitem
+    //= type=test
+    //= reason=the encrypted Item on configured table foo comes back as plaintext, so the response was modified
+    //# After a [GetItem](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_GetItem.html)
+    //# call is made to DynamoDB,
+    //# the resulting response MUST be modified before
+    //# being returned to the caller if there exists
+    //# an Item Encryptor specified within the [DynamoDB Encryption Client Config](#dynamodb-encryption-client-configuration)
+    //# with a [DynamoDB Table Name](./ddb-item-encryptor.md#dynamodb-table-name)
+    //# equal to the `TableName` on the GetItem request.
+    //
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-getitem
+    //= type=test
+    //= reason=the encrypted Item comes back as its plaintext only because table foo is configured
+    //# The GetItem response's `Item` field MUST be
+    //# replaced by the encrypted DynamoDb Item outputted above.
+    assert_eq!(out.item, Some(item_n(1)));
+}
+
+#[tokio::test]
 async fn get_item_output_no_item() {
     let output = GetItemOutput::builder().build();
     let out = transforms()
@@ -108,6 +139,14 @@ async fn get_item_output_tampered() {
         )
         .await
         .unwrap_err();
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-getitem
+    //= type=test
+    //= reason=a tampered ciphertext in Item fails verification, so Decrypt Item ran on Item
+    //# The [Item Encryptor](./ddb-item-encryptor.md) MUST perform
+    //# [Decrypt Item](./decrypt-item.md) where the input
+    //# [DynamoDB Item](./decrypt-item.md#dynamodb-item)
+    //# is the `Item` field in the original response
     assert!(matches!(err, Error::Cryptographic(_)), "{err:?}");
 }
 
@@ -135,8 +174,20 @@ fn query_input(table: &str) -> QueryInput {
 
 #[tokio::test]
 async fn query_input_passthrough() {
-    let input = query_input("no_such_table");
+    // On table foo, both the legacy parameter and the filter on `encrypt` are rejected.
+    let input = QueryInput::builder()
+        .table_name("no_such_table")
+        .attributes_to_get("sign")
+        .filter_expression("encrypt = :e")
+        .expression_attribute_values(":e", s("x"))
+        .build()
+        .unwrap();
     let out = transforms().query_input(input.clone()).await.unwrap();
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#modify-before-query
+    //= type=test
+    //# If the `TableName` in the request does not refer to an [encrypted-table](#encrypted-table),
+    //# the Query request MUST be unchanged.
     assert_eq!(out, input);
 }
 
@@ -203,6 +254,10 @@ async fn query_input_legacy_parameters() {
         ),
     ];
     for (input, message) in cases {
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#modify-before-query
+        //= type=test
+        //# The Query request MUST NOT refer to any legacy parameters,
+        //# specifically AttributesToGet, KeyConditions, QueryFilter and ConditionalOperator MUST NOT be set.
         expect_validation(transforms().query_input(input).await, message);
     }
 }
@@ -261,8 +316,47 @@ async fn query_output_decrypts_items() {
         .count(2)
         .build();
     let out = t.query_output(output, &query_input("foo")).await.unwrap();
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-query
+    //= type=test
+    //= reason=each encrypted entry comes back as its own plaintext, so each was decrypted
+    //# For each list entry in `Items` in the response,
+    //# if there exists an Item Encryptor specified within the
+    //# [DynamoDB Encryption Client Config](#dynamodb-encryption-client-configuration)
+    //# with a [DynamoDB Table Name](./ddb-item-encryptor.md#dynamodb-table-name)
+    //# equal to the `TableName` on the request,
+    //# the corresponding Item Encryptor MUST perform [Decrypt Item](./decrypt-item.md)
+    //# where the input [DynamoDB Item](./decrypt-item.md#dynamodb-item)
+    //# is this list entry.
+    //
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-query
+    //= type=test
+    //# Each of these entries on the original response MUST be replaced
+    //# with the resulting decrypted [DynamoDB Item](./decrypt-item.md#dynamodb-item-1).
     assert_eq!(out.items, Some(vec![item_n(1), item_n(2)]));
     assert_eq!(out.count, 2);
+}
+
+#[tokio::test]
+async fn query_output_tampered() {
+    let t = transforms();
+    let mut tampered = encrypt(&t, item_n(2)).await;
+    tampered.insert("sign".into(), s("sign3"));
+    let output = QueryOutput::builder()
+        .items(encrypt(&t, item_n(1)).await)
+        .items(tampered)
+        .count(2)
+        .build();
+    let err = t
+        .query_output(output, &query_input("foo"))
+        .await
+        .unwrap_err();
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-query
+    //= type=test
+    //# If any [Decrypt Item](./decrypt-item.md) fails,
+    //# Query MUST yield an error.
+    assert!(matches!(err, Error::Cryptographic(_)), "{err:?}");
 }
 
 #[tokio::test]
@@ -301,8 +395,20 @@ fn scan_input(table: &str) -> ScanInput {
 
 #[tokio::test]
 async fn scan_input_passthrough() {
-    let input = scan_input("no_such_table");
+    // On table foo, both the legacy parameter and the filter on `encrypt` are rejected.
+    let input = ScanInput::builder()
+        .table_name("no_such_table")
+        .attributes_to_get("sign")
+        .filter_expression("encrypt = :e")
+        .expression_attribute_values(":e", s("x"))
+        .build()
+        .unwrap();
     let out = transforms().scan_input(input.clone()).await.unwrap();
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#modify-before-scan
+    //= type=test
+    //# If the `TableName` in the request does not refer to an [encrypted-table](#encrypted-table),
+    //# the Scan request MUST be unchanged.
     assert_eq!(out, input);
 }
 
@@ -354,14 +460,29 @@ async fn scan_input_legacy_parameters() {
                 .unwrap(),
             "Legacy parameter 'ConditionalOperator' not supported in UpdateItem with Encryption",
         ),
-        (
-            base().filter_expression("a".repeat(4097)).build().unwrap(),
-            "FilterExpression exceeds maximum length of 4096 characters.",
-        ),
     ];
     for (input, message) in cases {
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#modify-before-scan
+        //= type=test
+        //# The Scan request MUST NOT refer to any legacy parameters,
+        //# specifically AttributesToGet, ScanFilter and ConditionalOperator MUST NOT be set.
         expect_validation(transforms().scan_input(input).await, message);
     }
+}
+
+#[tokio::test]
+async fn scan_input_filter_expression_too_long() {
+    // No spec requirement: DynamoDB's 4096-character expression limit, ported from Dafny,
+    // checked before modify-before-scan's beacon rewrite. 4096 is the limit: one more fails.
+    let input = ScanInput::builder()
+        .table_name("foo")
+        .filter_expression("a".repeat(4097))
+        .build()
+        .unwrap();
+    expect_validation(
+        transforms().scan_input(input).await,
+        "FilterExpression exceeds maximum length of 4096 characters.",
+    );
 }
 
 #[tokio::test]
@@ -382,8 +503,45 @@ async fn scan_output_decrypts_items() {
         .count(1)
         .build();
     let out = t.scan_output(output, &scan_input("foo")).await.unwrap();
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-scan
+    //= type=test
+    //= reason=the encrypted entry comes back as its plaintext, so it was decrypted
+    //# For each list entry in `Items` in the response,
+    //# if there exists an Item Encryptor specified within the
+    //# [DynamoDB Encryption Client Config](#dynamodb-encryption-client-configuration)
+    //# with a [DynamoDB Table Name](./ddb-item-encryptor.md#dynamodb-table-name)
+    //# equal to the `TableName` on the request,
+    //# the corresponding Item Encryptor MUST perform [Decrypt Item](./decrypt-item.md)
+    //# where the input [DynamoDB Item](./decrypt-item.md#dynamodb-item)
+    //# is this list entry.
+    //
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-scan
+    //= type=test
+    //# Each of these entries on the original response MUST be replaced
+    //# with the resulting decrypted
+    //# [DynamoDB Item](./decrypt-item.md#dynamodb-item-1).
     assert_eq!(out.items, Some(vec![item_n(3)]));
     assert_eq!(out.count, 1);
+}
+
+#[tokio::test]
+async fn scan_output_tampered() {
+    let t = transforms();
+    let mut tampered = encrypt(&t, item_n(2)).await;
+    tampered.insert("sign".into(), s("sign3"));
+    let output = ScanOutput::builder()
+        .items(encrypt(&t, item_n(1)).await)
+        .items(tampered)
+        .count(2)
+        .build();
+    let err = t.scan_output(output, &scan_input("foo")).await.unwrap_err();
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-scan
+    //= type=test
+    //# If any [Decrypt Item](./decrypt-item.md) operation fails,
+    //# Scan MUST yield an error.
+    assert!(matches!(err, Error::Cryptographic(_)), "{err:?}");
 }
 
 // --- BatchGetItem ---
@@ -437,6 +595,21 @@ async fn batch_get_item_output_decrypts_configured_tables() {
         .unwrap();
     let responses = out.responses.unwrap();
     assert_eq!(responses.len(), 2);
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-batchgetitem
+    //= type=test
+    //= reason=foo's encrypted items come back as plaintext while unconfigured baz is untouched
+    //# For each list item under each key in `Responses`,
+    //# if there is a configured Item Encryptor with [DynamoDB Table Name](./ddb-item-encryptor.md#dynamodb-table-name) equal to the key,
+    //# that Item Encryptor MUST perform [Decrypt Item](./decrypt-item.md) where the input
+    //# [DynamoDB Item](./decrypt-item.md#dynamodb-item)
+    //# is the `Item` field in the original response.
+    //
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-batchgetitem
+    //= type=test
+    //# Each of these items on the original response MUST be replaced
+    //# with a value that is equivalent to
+    //# this result.
     assert_eq!(responses["foo"], vec![item_n(1), item_n(2)]);
     assert_eq!(responses["baz"], vec![item_n(3)]);
 }
@@ -453,6 +626,11 @@ async fn batch_get_item_output_tampered() {
         .batch_get_item_output(output, &batch_get_input())
         .await
         .unwrap_err();
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-batchgetitem
+    //= type=test
+    //# If any [Decrypt Item](./decrypt-item.md) operation fails,
+    //# BatchGetItem MUST yield an error.
     assert!(matches!(err, Error::Cryptographic(_)), "{err:?}");
 }
 
@@ -515,6 +693,23 @@ async fn transact_get_items_output_decrypts_by_position() {
         .build();
     let input = transact_get_input(&["foo", "baz", "foo", "foo"]);
     let out = t.transact_get_items_output(output, &input).await.unwrap();
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-transactgetitems
+    //= type=test
+    //= reason=only the item whose request position names configured table foo is decrypted
+    //# For each list item under each key in `Responses`,
+    //# if there exists an Item Encryptor specified within
+    //# the [DynamoDB Encryption Client Config](#dynamodb-encryption-client-configuration)
+    //# with a [DynamoDB Table Name](./ddb-item-encryptor.md#dynamodb-table-name)
+    //# equal to the key,
+    //# the Item Encryptor that corresponds to the key in the request
+    //# MUST perform [Decrypt Item](./decrypt-item.md) where the input
+    //# [DynamoDB Item](./decrypt-item.md#dynamodb-item) is the `Item` in the original response.
+    //
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-transactgetitems
+    //= type=test
+    //# Each of these items on the original response MUST be replaced
+    //# with a value that is equivalent to the resulting item.
     assert_eq!(
         out.responses,
         Some(vec![
@@ -524,6 +719,26 @@ async fn transact_get_items_output_decrypts_by_position() {
             response(None),
         ])
     );
+}
+
+#[tokio::test]
+async fn transact_get_items_output_tampered() {
+    let t = transforms();
+    let mut tampered = encrypt(&t, item_n(1)).await;
+    tampered.insert("sign".into(), s("sign2"));
+    let output = TransactGetItemsOutput::builder()
+        .responses(response(Some(tampered)))
+        .build();
+    let err = t
+        .transact_get_items_output(output, &transact_get_input(&["foo"]))
+        .await
+        .unwrap_err();
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-transactgetitems
+    //= type=test
+    //# If any [Decrypt Item](./decrypt-item.md) fails,
+    //# TransactGetItems MUST yield an error.
+    assert!(matches!(err, Error::Cryptographic(_)), "{err:?}");
 }
 
 #[tokio::test]

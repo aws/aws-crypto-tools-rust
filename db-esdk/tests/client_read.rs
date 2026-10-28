@@ -156,6 +156,10 @@ async fn query_rejects_the_legacy_key_conditions_parameter() {
         .await
         .unwrap_err();
 
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#modify-before-query
+    //= type=test
+    //# The Query request MUST NOT refer to any legacy parameters,
+    //# specifically AttributesToGet, KeyConditions, QueryFilter and ConditionalOperator MUST NOT be set.
     assert!(matches!(err, Error::Validation(_)), "{err:?}");
     assert!(fake.calls().is_empty());
 }
@@ -237,6 +241,10 @@ async fn scan_rejects_the_legacy_attributes_to_get_parameter() {
         .await
         .unwrap_err();
 
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#modify-before-scan
+    //= type=test
+    //# The Scan request MUST NOT refer to any legacy parameters,
+    //# specifically AttributesToGet, ScanFilter and ConditionalOperator MUST NOT be set.
     assert!(matches!(err, Error::Validation(_)), "{err:?}");
     assert!(fake.calls().is_empty());
 }

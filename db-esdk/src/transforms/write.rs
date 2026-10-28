@@ -30,12 +30,22 @@ impl Transforms {
     ///
     /// A `Validation` error when the request sets `Expected` or `ConditionalOperator`,
     /// writes an attribute whose name begins with `aws_dbe_`,
-    /// or has a condition expression that reads an encrypted attribute.
+    /// has a condition expression that reads an encrypted attribute,
+    /// or, with a multi key store, has a beacon key field that names a different branch key
+    /// than the one that encrypted the item.
     /// Encryption errors keep their variant.
     pub async fn put_item_input(&self, mut input: PutItemInput) -> Result<PutItemInput, Error> {
         let Some(table) = self.encrypted_write(input.table_name.as_deref()) else {
+            //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-putitem
+            //# If the `TableName` in the request does not refer to an [encrypted-table](#encrypted-table),
+            //# the PutItem request MUST be unchanged.
             return Ok(input);
         };
+
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-putitem
+        //= reason=this check and the next reject Expected and ConditionalOperator
+        //# The PutItem request MUST NOT refer to any legacy parameters,
+        //# specifically Expected and ConditionalOperator MUST NOT be set.
         if !no_map(input.expected.as_ref()) {
             return Err(val_err(
                 "Legacy parameter 'Expected' not supported in PutItem with Encryption.",
@@ -47,12 +57,24 @@ impl Transforms {
             ));
         }
         let item = input.item.take().unwrap_or_default();
+
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-putitem
+        //# The Item MUST be [writable](ddb-support.md#writable).
         is_writeable(&item)?;
+
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-putitem
+        //# The ConditionExpression MUST be [valid](ddb-support.md#testconditionexpression).
         test_condition_expression(
             &table.encryptor,
             input.condition_expression.as_deref(),
             input.expression_attribute_names.as_ref(),
         )?;
+
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-putitem
+        //# The PutItem request's `Item` field MUST be replaced
+        //# with a value that is equivalent to
+        //# the output of the [add encrypted beacons](ddb-support.md#addencryptedbeacons) operation
+        //# calculated above.
         input.item = Some(encrypt(table, item).await?);
         Ok(input)
     }
@@ -67,6 +89,11 @@ impl Transforms {
         mut output: PutItemOutput,
         original_input: &PutItemInput,
     ) -> Result<PutItemOutput, Error> {
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-putitem
+        //# After a [PutItem](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_PutItem.html)
+        //# call is made to DynamoDB,
+        //# the resulting response MUST be modified before
+        //# being returned to the caller if:
         let Some(table) = self.table(original_input.table_name.as_deref()) else {
             return Ok(output);
         };
@@ -74,7 +101,18 @@ impl Transforms {
             return Ok(output);
         }
         let attributes = output.attributes.take().unwrap_or_default();
-        output.attributes = Some(decrypt(table, attributes).await?);
+
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-putitem
+        //# In this case, the [Item Encryptor](./ddb-item-encryptor.md) MUST perform
+        //# [Decrypt Item](./decrypt-item.md) where the input
+        //# [DynamoDB Item](./decrypt-item.md#dynamodb-item)
+        //# is the `Attributes` field in the original response
+        let decrypted = decrypt(table, attributes).await?;
+
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-putitem
+        //# The PutItem response's `Attributes` field MUST be
+        //# replaced by the encrypted DynamoDb Item outputted above.
+        output.attributes = Some(decrypted);
         Ok(output)
     }
 
@@ -89,8 +127,15 @@ impl Transforms {
         input: UpdateItemInput,
     ) -> Result<UpdateItemInput, Error> {
         let Some(table) = self.table(input.table_name.as_deref()) else {
+            //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#validate-before-updateitem
+            //# If the `TableName` in the request does not refer to an [encrypted-table](#encrypted-table),
+            //# the UpdateItem request MUST be unchanged.
             return Ok(input);
         };
+
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#validate-before-updateitem
+        //# The UpdateItem request MUST NOT refer to any legacy parameters,
+        //# specifically Expected, AttributeUpdates and ConditionalOperator MUST NOT be set.
         if !no_map(input.expected.as_ref()) {
             return Err(val_err(
                 "Legacy parameter 'Expected' not supported in UpdateItem with Encryption",
@@ -106,11 +151,17 @@ impl Transforms {
                 "Legacy parameter 'ConditionalOperator' not supported in UpdateItem with Encryption",
             ));
         }
+
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#validate-before-updateitem
+        //# The UpdateExpression MUST be [valid](ddb-support.md#testupdateexpression).
         test_update_expression(
             table,
             input.update_expression.as_deref(),
             input.expression_attribute_names.as_ref(),
         )?;
+
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#validate-before-updateitem
+        //# If all of the above validation succeeds, the UpdateItem request MUST be unchanged.
         Ok(input)
     }
 
@@ -126,6 +177,11 @@ impl Transforms {
         mut output: UpdateItemOutput,
         original_input: &UpdateItemInput,
     ) -> Result<UpdateItemOutput, Error> {
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-updateitem
+        //# After a [UpdateItem](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_UpdateItem.html)
+        //# call is made to DynamoDB,
+        //# the resulting response MUST be modified before
+        //# being returned to the caller if:
         let Some(table) = self.table(original_input.table_name.as_deref()) else {
             return Ok(output);
         };
@@ -144,14 +200,34 @@ impl Transforms {
                 .flat_map(HashMap::keys)
                 .any(|k| is_signed(actions, k))
             {
+                //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-updateitem
+                //# Additionally, if a value of `UPDATED_OLD` or `UPDATED_NEW` was used,
+                //# and any Attributes in the response are authenticated
+                //# per the [DynamoDB Encryption Client Config](#dynamodb-encryption-client-configuration),
+                //# an error MUST be raised.
                 return Err(val_err(
                     "UpdateItems response contains signed attributes, but does not include the entire item which is required for verification.",
                 ));
             }
+
+            //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-updateitem
+            //= reason=the unconfigured-table and no-Attributes returns above also leave output untouched
+            //# In all other cases, the UpdateItem response MUST NOT be modified.
             return Ok(output);
         }
         let attributes = output.attributes.take().unwrap_or_default();
-        output.attributes = Some(decrypt(table, attributes).await?);
+
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-updateitem
+        //# In this case, the [Item Encryptor](./ddb-item-encryptor.md) MUST perform
+        //# [Decrypt Item](./decrypt-item.md) where the input
+        //# [DynamoDB Item](./decrypt-item.md#dynamodb-item)
+        //# is the `Attributes` field in the original response
+        let decrypted = decrypt(table, attributes).await?;
+
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-updateitem
+        //# The UpdateItem response's `Attributes` field MUST be
+        //# replaced by the encrypted DynamoDb Item outputted above.
+        output.attributes = Some(decrypted);
         Ok(output)
     }
 
@@ -166,8 +242,15 @@ impl Transforms {
         input: DeleteItemInput,
     ) -> Result<DeleteItemInput, Error> {
         let Some(table) = self.table(input.table_name.as_deref()) else {
+            //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#validate-before-deleteitem
+            //# If the `TableName` in the request does not refer to an [encrypted-table](#encrypted-table),
+            //# the DeleteItem request MUST be unchanged.
             return Ok(input);
         };
+
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#validate-before-deleteitem
+        //# The DeleteItem request MUST NOT refer to any legacy parameters,
+        //# specifically Expected and ConditionalOperator MUST NOT be set.
         if !no_map(input.expected.as_ref()) {
             return Err(val_err(
                 "Legacy parameter 'Expected' not supported in UpdateItem with Encryption",
@@ -178,11 +261,17 @@ impl Transforms {
                 "Legacy parameter 'ConditionalOperator' not supported in UpdateItem with Encryption",
             ));
         }
+
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#validate-before-deleteitem
+        //# The ConditionExpression MUST be [valid](ddb-support.md#testconditionexpression).
         test_condition_expression(
             table,
             input.condition_expression.as_deref(),
             input.expression_attribute_names.as_ref(),
         )?;
+
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#validate-before-deleteitem
+        //# If all of the above validation succeeds, the DeleteItem request MUST be unchanged.
         Ok(input)
     }
 
@@ -196,6 +285,11 @@ impl Transforms {
         mut output: DeleteItemOutput,
         original_input: &DeleteItemInput,
     ) -> Result<DeleteItemOutput, Error> {
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-deleteitem
+        //# After a [DeleteItem](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_DeleteItem.html)
+        //# call is made to DynamoDB,
+        //# the resulting response MUST be modified before
+        //# being returned to the caller if:
         let Some(table) = self.table(original_input.table_name.as_deref()) else {
             return Ok(output);
         };
@@ -203,7 +297,18 @@ impl Transforms {
             return Ok(output);
         }
         let attributes = output.attributes.take().unwrap_or_default();
-        output.attributes = Some(decrypt(table, attributes).await?);
+
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-deleteitem
+        //# In this case, the [Item Encryptor](./ddb-item-encryptor.md) MUST perform
+        //# [Decrypt Item](./decrypt-item.md) where the input
+        //# [DynamoDB Item](./decrypt-item.md#dynamodb-item)
+        //# is the `Attributes` field in the original response
+        let decrypted = decrypt(table, attributes).await?;
+
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-deleteitem
+        //# The DeleteItem response's `Attributes` field MUST be
+        //# replaced by the encrypted DynamoDb Item outputted above.
+        output.attributes = Some(decrypted);
         Ok(output)
     }
 
@@ -211,7 +316,9 @@ impl Transforms {
     ///
     /// # Errors
     ///
-    /// A `Validation` error when a put request writes an attribute whose name begins with `aws_dbe_`.
+    /// A `Validation` error when a put request writes an attribute whose name begins with `aws_dbe_`,
+    /// or, with a multi key store, its item's beacon key field names a different branch key
+    /// than the one that encrypted it.
     /// Encryption errors keep their variant.
     pub async fn batch_write_item_input(
         &self,
@@ -223,6 +330,9 @@ impl Transforms {
         let mut result = HashMap::with_capacity(request_items.len());
         for (table_name, requests) in request_items {
             let requests = match self.encrypted_write(Some(&table_name)) {
+                //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-batchwriteitem
+                //# If the table name does not refer to an [encrypted-table](#encrypted-table),
+                //# the list of operations MUST be unchanged.
                 None => requests,
                 Some(table) => encrypt_write_requests(table, requests).await?,
             };
@@ -242,6 +352,8 @@ impl Transforms {
         mut output: BatchWriteItemOutput,
         original_input: &BatchWriteItemInput,
     ) -> Result<BatchWriteItemOutput, Error> {
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-batchwriteitem
+        //# If there are no UnprocessedItems, then the BatchWriteItemOutput MUST be returned unchanged.
         let Some(unprocessed) = output.unprocessed_items.take() else {
             return Ok(output);
         };
@@ -260,6 +372,8 @@ impl Transforms {
                     })?;
                     requests
                         .into_iter()
+                        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#decrypt-after-batchwriteitem
+                        //# Each item in UnprocessedItems MUST be replaced by its original plaintext value.
                         .map(|req| original_request(table, src, req))
                         .collect::<Result<_, _>>()?
                 }
@@ -278,7 +392,9 @@ impl Transforms {
     /// A `Validation` error when an action sets no operation,
     /// a put writes an attribute whose name begins with `aws_dbe_`,
     /// a condition expression reads an encrypted attribute,
-    /// or an update expression names a signed attribute.
+    /// an update expression names a signed attribute,
+    /// or, with a multi key store, a put item's beacon key field names a different
+    /// branch key than the one that encrypted it.
     /// Encryption errors keep their variant.
     pub async fn transact_write_items_input(
         &self,
@@ -287,12 +403,16 @@ impl Transforms {
         let Some(items) = input.transact_items.take() else {
             return Ok(input);
         };
+
         if !items.iter().all(|i| {
             i.put.is_some()
                 || i.update.is_some()
                 || i.delete.is_some()
                 || i.condition_check.is_some()
         }) {
+            //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-transactwriteitems
+            //# To protect against a possible fifth field being added to the TransactWriteItem structure in the future,
+            //# the client MUST fail if none of the `Update`, `ConditionCheck`, `Delete` and `Put` fields are set.
             return Err(val_err(
                 "Each item in TransactWriteItems must specify at least one supported operation",
             ));
@@ -302,6 +422,8 @@ impl Transforms {
             if let Some(check) = &item.condition_check
                 && let Some(table) = self.table(Some(&check.table_name))
             {
+                //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-transactwriteitems
+                //# - The ConditionExpression of the `ConditionCheck` MUST be [valid](ddb-support.md#testconditionexpression).
                 test_condition_expression(
                     table,
                     Some(&check.condition_expression),
@@ -311,6 +433,8 @@ impl Transforms {
             if let Some(delete) = &item.delete
                 && let Some(table) = self.table(Some(&delete.table_name))
             {
+                //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-transactwriteitems
+                //# - The ConditionExpression of the `Delete` MUST be [valid](ddb-support.md#testconditionexpression).
                 test_condition_expression(
                     table,
                     delete.condition_expression.as_deref(),
@@ -320,29 +444,53 @@ impl Transforms {
             if let Some(update) = &item.update
                 && let Some(table) = self.table(Some(&update.table_name))
             {
+                //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-transactwriteitems
+                //# - The UpdateExpression of the `Update` MUST be [valid](ddb-support.md#testupdateexpression).
                 test_update_expression(
                     table,
                     Some(&update.update_expression),
                     update.expression_attribute_names.as_ref(),
                 )?;
+
+                //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-transactwriteitems
+                //# - The ConditionExpression of the `Update` MUST be [valid](ddb-support.md#testconditionexpression).
                 test_condition_expression(
                     table,
                     update.condition_expression.as_deref(),
                     update.expression_attribute_names.as_ref(),
                 )?;
             }
+
+            //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-transactwriteitems
+            //# Any `Put` actions with a `TableName` that does not refer to an [encrypted-table](#encrypted-table),
+            //# MUST be unchanged.
             if let Some(put) = &mut item.put
                 && let Some(table) = self.encrypted_write(Some(&put.table_name))
             {
+                //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-transactwriteitems
+                //# - The Item MUST be [writable](ddb-support.md#writable).
                 is_writeable(&put.item)?;
+
+                //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-transactwriteitems
+                //# - The ConditionExpression `Put` MUST be [valid](ddb-support.md#testconditionexpression).
                 test_condition_expression(
                     &table.encryptor,
                     put.condition_expression.as_deref(),
                     put.expression_attribute_names.as_ref(),
                 )?;
                 let plaintext = std::mem::take(&mut put.item);
+
+                //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-transactwriteitems
+                //# - The PutItem request's `Item` field MUST be replaced
+                //# with a value that is equivalent to
+                //# the result [Encrypted DynamoDB Item](./encrypt-item.md#encrypted-dynamodb-item)
+                //# calculated above.
                 put.item = encrypt(table, plaintext).await?;
             }
+
+            //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-transactwriteitems
+            //= reason=only a put item is reassigned; the other actions are only borrowed for checks
+            //# Any actions other than `Put`, MUST be unchanged.
             result.push(item);
         }
         input.transact_items = Some(result);
@@ -371,8 +519,16 @@ async fn encrypt_write_requests(
     let mut out = Vec::with_capacity(requests.len());
     for mut req in requests {
         if let Some(put) = &mut req.put_request {
+            //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-batchwriteitem
+            //# The Item MUST be [writable](ddb-support.md#writable).
             is_writeable(&put.item)?;
             let plaintext = std::mem::take(&mut put.item);
+
+            //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-batchwriteitem
+            //# The PutRequest request's `Item` field MUST be replaced
+            //# with a value that is equivalent to
+            //# the result [Encrypted DynamoDB Item](./encrypt-item.md#encrypted-dynamodb-item)
+            //# calculated above.
             put.item = encrypt(table, plaintext).await?;
         }
         out.push(req);

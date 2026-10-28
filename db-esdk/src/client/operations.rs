@@ -107,7 +107,18 @@ macro_rules! fluent_builder {
         #[derive(Clone, Debug)]
         #[non_exhaustive]
         pub struct $name {
+            //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#overview
+            //# For AWS SDKs that do not support an idiomatic way to hook new
+            //# behavior before and after API calls,
+            //# this MAY be implemented by providing an
+            //# implementation of AWS SDK APIs that wrap
+            //# the relevant APIs with the necessary encryption and decryption logic.
             inner: $sdk,
+
+            //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#api-modification
+            //= reason=every send runs the operation's input transform, then its output transform
+            //# DynamoDB API calls
+            //# MUST have the following modified behavior:
             transforms: Transforms,
         }
 
@@ -116,6 +127,10 @@ macro_rules! fluent_builder {
                 Self { inner, transforms }
             }
 
+            //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#overview
+            //= reason=each builder forwards the AWS SDK builder's setters; send returns the SDK output type
+            //# This new implementation SHOULD be a drop-in replacement of the
+            //# regular AWS SDK.
             $(setter!($kind $field, $set, $get: $ty);)*
 
             /// The AWS SDK builder with every member set from `input`.
@@ -149,11 +164,18 @@ impl PutItemFluentBuilder {
     /// # Errors
     ///
     /// A `Validation` error when the request is invalid for an encrypted table,
-    /// for example a condition expression that reads an encrypted attribute.
+    /// for example a condition expression that reads an encrypted attribute,
+    /// or, with a multi key store, a beacon key field that names a different branch key
+    /// than the one that encrypted the item.
     /// Encryption errors keep their variant.
     /// A failed DynamoDB call keeps DynamoDB's error: see [`Error::as_service_error`].
     pub async fn send(self) -> Result<put_item::PutItemOutput, Error> {
         let input = self.inner.as_input().clone().build().map_err(build_error)?;
+
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-putitem
+        //# If any of the above fails,
+        //# the client MUST NOT make a network call to DynamoDB,
+        //# and PutItem MUST yield an error.
         let transformed = self.transforms.put_item_input(input.clone()).await?;
         let output = Self::with_input(self.inner, transformed)
             .send()
@@ -290,11 +312,18 @@ impl BatchWriteItemFluentBuilder {
     ///
     /// # Errors
     ///
-    /// A `Validation` error when a put request writes an attribute whose name begins with `aws_dbe_`.
+    /// A `Validation` error when a put request writes an attribute whose name begins with `aws_dbe_`,
+    /// or, with a multi key store, an item's beacon key field names a different branch key
+    /// than the one that encrypted it.
     /// Encryption errors keep their variant.
     /// A failed DynamoDB call keeps DynamoDB's error: see [`Error::as_service_error`].
     pub async fn send(self) -> Result<batch_write_item::BatchWriteItemOutput, Error> {
         let input = self.inner.as_input().clone().build().map_err(build_error)?;
+
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-batchwriteitem
+        //# If any of the above fails,
+        //# the client MUST NOT make a network call to DynamoDB,
+        //# and BatchWriteItem MUST yield an error.
         let transformed = self
             .transforms
             .batch_write_item_input(input.clone())
@@ -327,11 +356,18 @@ impl TransactWriteItemsFluentBuilder {
     ///
     /// A `Validation` error when an action sets no operation,
     /// a condition expression reads an encrypted attribute,
-    /// or an update expression names a signed attribute.
+    /// an update expression names a signed attribute,
+    /// or, with a multi key store, a put item's beacon key field names a different branch key
+    /// than the one that encrypted it.
     /// Encryption errors keep their variant.
     /// A failed DynamoDB call keeps DynamoDB's error: see [`Error::as_service_error`].
     pub async fn send(self) -> Result<transact_write_items::TransactWriteItemsOutput, Error> {
         let input = self.inner.as_input().clone().build().map_err(build_error)?;
+
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-transactwriteitems
+        //# - If any of the above fails,
+        //# the client MUST NOT make a network call to DynamoDB,
+        //# and PutItem MUST yield an error.
         let transformed = self
             .transforms
             .transact_write_items_input(input.clone())
