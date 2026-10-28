@@ -21,6 +21,12 @@ pub mod discovery_keyring;
 pub mod multi_keyrings;
 
 #[cfg(feature = "kms")]
+pub mod mrk_keyring;
+
+#[cfg(feature = "kms")]
+pub mod mrk_discovery_keyring;
+
+#[cfg(feature = "kms")]
 pub(crate) mod user_agent;
 
 /// Internals that integration tests reach.

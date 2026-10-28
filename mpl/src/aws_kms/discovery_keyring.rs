@@ -46,7 +46,7 @@ impl DiscoveryFilter {
     }
 
     /// Whether the AWS KMS key ARN with this partition and account passes the filter.
-    fn allows(&self, partition: &str, account: &str) -> bool {
+    pub(crate) fn allows(&self, partition: &str, account: &str) -> bool {
         self.partition == partition && self.account_ids.iter().any(|a| a == account)
     }
 }

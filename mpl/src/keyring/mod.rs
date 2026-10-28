@@ -104,8 +104,15 @@ pub use crate::aws_kms::hierarchical_keyring::{
     HierarchicalKeyring, HierarchicalKeyringBuilder, SharedBranchKeySupplier,
 };
 #[cfg(feature = "kms")]
+pub use crate::aws_kms::mrk_discovery_keyring::{
+    AwsKmsMrkDiscoveryKeyring, AwsKmsMrkDiscoveryKeyringBuilder,
+};
+#[cfg(feature = "kms")]
+pub use crate::aws_kms::mrk_keyring::{AwsKmsMrkKeyring, AwsKmsMrkKeyringBuilder};
+#[cfg(feature = "kms")]
 pub use crate::aws_kms::multi_keyrings::{
-    AwsKmsDiscoveryMultiKeyringBuilder, AwsKmsMultiKeyringBuilder,
+    AwsKmsDiscoveryMultiKeyringBuilder, AwsKmsMrkDiscoveryMultiKeyringBuilder,
+    AwsKmsMrkMultiKeyringBuilder, AwsKmsMultiKeyringBuilder,
 };
 pub use fluent_builders::{OnDecryptFluentBuilder, OnEncryptFluentBuilder};
 pub use multi_keyring::{MultiKeyring, MultiKeyringBuilder};

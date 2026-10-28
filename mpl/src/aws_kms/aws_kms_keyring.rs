@@ -20,7 +20,7 @@ use crate::keyring::edk_wrapping;
 use crate::keyring::{Keyring, OnDecryptInput, OnDecryptOutput, OnEncryptInput, OnEncryptOutput};
 use crate::structures::{
     AlgorithmSuite, DecryptionMaterials, EdkWrapping, EncryptedDataKey, EncryptionContext,
-    PlaintextDataKey,
+    EncryptionMaterials, PlaintextDataKey,
 };
 
 /// The key provider ID of every encrypted data key this keyring writes.
@@ -256,8 +256,135 @@ impl AwsKmsKeyring {
         Ok((ciphertext, key_id))
     }
 
-    /// Whether `edk` was written by this keyring's KMS key.
-    fn wrote(&self, edk: &EncryptedDataKey) -> Result<bool, Error> {
+    /// Add a data key wrapped by this keyring's AWS KMS key to `materials`,
+    /// generating the data key when they have none.
+    pub(crate) async fn wrap_materials(
+        &self,
+        materials: EncryptionMaterials,
+    ) -> Result<EncryptionMaterials, Error> {
+        let suite = materials.algorithm_suite();
+        let ec = kms_encryption_context(materials.encryption_context());
+        Ok(
+            match (suite.edk_wrapping(), materials.plaintext_data_key()) {
+                (EdkWrapping::IntermediateKeyWrapping(_), existing) => {
+                    let aad = materials.encryption_context().serialize().map_err(|e| {
+                        Error::wrap("failed to serialize the encryption context", e)
+                    })?;
+                    let (pdk, generated) = match existing {
+                        Some(key) => (key.clone(), false),
+                        None => (random_key(&suite)?, true),
+                    };
+                    let (ikm, wrapped, key_id) = self
+                        .generate_data_key(&ec, suite.encryption_key_length())
+                        .await?;
+                    let (mut ciphertext, signing_key) =
+                        edk_wrapping::encrypt_pdk(&suite, ikm.as_bytes(), &aad, &pdk)?;
+                    ciphertext.extend_from_slice(&wrapped);
+                    let edk = kms_edk(key_id, ciphertext)?;
+                    if generated {
+                        materials.add_data_key_with_symmetric_signing_key(pdk, edk, signing_key)?
+                    } else {
+                        materials
+                            .add_encrypted_data_key_with_symmetric_signing_key(edk, signing_key)?
+                    }
+                }
+                (_, Some(pdk)) => {
+                    let (ciphertext, key_id) = self.encrypt(&ec, pdk.as_bytes()).await?;
+                    let edk = kms_edk(key_id, ciphertext)?;
+                    materials.add_encrypted_data_key(edk)?
+                }
+                (_, None) => {
+                    let (pdk, ciphertext, key_id) = self
+                        .generate_data_key(&ec, suite.encryption_key_length())
+                        .await?;
+                    let edk = kms_edk(key_id, ciphertext)?;
+                    materials.add_data_key(pdk, edk)?
+                }
+            },
+        )
+    }
+
+    /// Decrypt the first encrypted data key whose AWS KMS key `matches` this keyring's key,
+    /// calling AWS KMS `Decrypt` with this keyring's key.
+    ///
+    /// `matches` gets this keyring's key ARN and the key ARN the data key names.
+    pub(crate) async fn unwrap_materials(
+        &self,
+        input: OnDecryptInput,
+        matches: fn(&str, &str) -> bool,
+    ) -> Result<OnDecryptOutput, Error> {
+        let (materials, encrypted_data_keys) = input.into_parts();
+        if materials.plaintext_data_key().is_some() {
+            return Err(Error::new(
+                Kind::InvalidMaterials,
+                "Keyring received decryption materials that already contain a plaintext data key.",
+            ));
+        }
+        if !self.inner.is_arn {
+            return Err(Error::new(
+                Kind::Validation,
+                format!(
+                    "KeyID cannot be used for Decrypt : {}",
+                    self.inner.kms_key_id
+                ),
+            ));
+        }
+        if self.inner.resource_type != "key" {
+            return Err(Error::new(
+                Kind::Validation,
+                format!(
+                    "Alias cannot be used for Decrypt : {}",
+                    self.inner.kms_key_id
+                ),
+            ));
+        }
+        let mut to_attempt = Vec::new();
+        for edk in &encrypted_data_keys {
+            if self.wrote(edk, matches)? {
+                to_attempt.push(edk);
+            }
+        }
+        if to_attempt.is_empty() {
+            return Err(Error::no_matching_data_key(format!(
+                "no encrypted data key was written by AWS KMS key {}",
+                self.inner.kms_key_id
+            ))
+            .with_encrypted_data_keys(encrypted_data_keys.iter().map(DataKeyInfo::from)));
+        }
+        let ec = kms_encryption_context(materials.encryption_context());
+        let aad = materials
+            .encryption_context()
+            .serialize()
+            .map_err(|e| Error::wrap("failed to serialize the encryption context", e))?;
+        let mut errors = Vec::new();
+        for edk in to_attempt {
+            match decrypt_edk(
+                &self.inner.client,
+                &self.inner.kms_key_id,
+                &self.inner.grant_tokens,
+                &materials,
+                &ec,
+                &aad,
+                edk,
+            )
+            .await
+            {
+                Ok(materials) => return OnDecryptOutput::builder().materials(materials).build(),
+                Err(e) => errors.push(e),
+            }
+        }
+        Err(Error::all_failed(
+            "No Configured KMS Key was able to decrypt the Data Key.",
+            errors,
+        ))
+    }
+
+    /// Whether `edk` names an AWS KMS key that `matches` this keyring's key.
+    fn wrote(
+        &self,
+        edk: &EncryptedDataKey,
+        matches: fn(&str, &str) -> bool,
+    ) -> Result<bool, Error> {
         if edk.key_provider_id() != PROVIDER_ID {
             return Ok(false);
         }
@@ -268,7 +395,7 @@ impl AwsKmsKeyring {
             )
         })?;
         parse_kms_arn(key_id).map_err(|e| Error::new(Kind::Cryptographic, e))?;
-        Ok(self.inner.kms_key_id == key_id)
+        Ok(matches(&self.inner.kms_key_id, key_id))
     }
 }
 
@@ -496,112 +623,13 @@ impl Keyring for crate::shared::Builtin<AwsKmsKeyring> {
     }
 
     async fn on_encrypt(&self, input: OnEncryptInput) -> Result<OnEncryptOutput, Error> {
-        let materials = input.into_materials();
-        let suite = materials.algorithm_suite();
-        let ec = kms_encryption_context(materials.encryption_context());
-        let materials = match (suite.edk_wrapping(), materials.plaintext_data_key()) {
-            (EdkWrapping::IntermediateKeyWrapping(_), existing) => {
-                let aad = materials
-                    .encryption_context()
-                    .serialize()
-                    .map_err(|e| Error::wrap("failed to serialize the encryption context", e))?;
-                let (pdk, generated) = match existing {
-                    Some(key) => (key.clone(), false),
-                    None => (random_key(&suite)?, true),
-                };
-                let (ikm, wrapped, key_id) = self
-                    .generate_data_key(&ec, suite.encryption_key_length())
-                    .await?;
-                let (mut ciphertext, signing_key) =
-                    edk_wrapping::encrypt_pdk(&suite, ikm.as_bytes(), &aad, &pdk)?;
-                ciphertext.extend_from_slice(&wrapped);
-                let edk = kms_edk(key_id, ciphertext)?;
-                if generated {
-                    materials.add_data_key_with_symmetric_signing_key(pdk, edk, signing_key)?
-                } else {
-                    materials.add_encrypted_data_key_with_symmetric_signing_key(edk, signing_key)?
-                }
-            }
-            (_, Some(pdk)) => {
-                let (ciphertext, key_id) = self.encrypt(&ec, pdk.as_bytes()).await?;
-                let edk = kms_edk(key_id, ciphertext)?;
-                materials.add_encrypted_data_key(edk)?
-            }
-            (_, None) => {
-                let (pdk, ciphertext, key_id) = self
-                    .generate_data_key(&ec, suite.encryption_key_length())
-                    .await?;
-                let edk = kms_edk(key_id, ciphertext)?;
-                materials.add_data_key(pdk, edk)?
-            }
-        };
+        let materials = self.0.wrap_materials(input.into_materials()).await?;
         OnEncryptOutput::builder().materials(materials).build()
     }
 
     async fn on_decrypt(&self, input: OnDecryptInput) -> Result<OnDecryptOutput, Error> {
-        let (materials, encrypted_data_keys) = input.into_parts();
-        if materials.plaintext_data_key().is_some() {
-            return Err(Error::new(
-                Kind::InvalidMaterials,
-                "Keyring received decryption materials that already contain a plaintext data key.",
-            ));
-        }
-        if !self.inner.is_arn {
-            return Err(Error::new(
-                Kind::Validation,
-                format!(
-                    "KeyID cannot be used for Decrypt : {}",
-                    self.inner.kms_key_id
-                ),
-            ));
-        }
-        if self.inner.resource_type != "key" {
-            return Err(Error::new(
-                Kind::Validation,
-                format!(
-                    "Alias cannot be used for Decrypt : {}",
-                    self.inner.kms_key_id
-                ),
-            ));
-        }
-        let mut to_attempt = Vec::new();
-        for edk in &encrypted_data_keys {
-            if self.wrote(edk)? {
-                to_attempt.push(edk);
-            }
-        }
-        if to_attempt.is_empty() {
-            return Err(Error::no_matching_data_key(format!(
-                "no encrypted data key was written by AWS KMS key {}",
-                self.inner.kms_key_id
-            ))
-            .with_encrypted_data_keys(encrypted_data_keys.iter().map(DataKeyInfo::from)));
-        }
-        let ec = kms_encryption_context(materials.encryption_context());
-        let aad = materials
-            .encryption_context()
-            .serialize()
-            .map_err(|e| Error::wrap("failed to serialize the encryption context", e))?;
-        let mut errors = Vec::new();
-        for edk in to_attempt {
-            match decrypt_edk(
-                &self.inner.client,
-                &self.inner.kms_key_id,
-                &self.inner.grant_tokens,
-                &materials,
-                &ec,
-                &aad,
-                edk,
-            )
+        self.0
+            .unwrap_materials(input, |configured, edk_key| configured == edk_key)
             .await
-            {
-                Ok(materials) => return OnDecryptOutput::builder().materials(materials).build(),
-                Err(e) => errors.push(e),
-            }
-        }
-        Err(Error::all_failed(
-            "No Configured KMS Key was able to decrypt the Data Key.",
-            errors,
-        ))
     }
 }
