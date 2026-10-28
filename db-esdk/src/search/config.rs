@@ -2241,3 +2241,7 @@ impl GetSegmentsBuilder {
         })
     }
 }
+
+#[cfg(test)]
+#[path = "config_tests.rs"]
+pub(crate) mod tests;
