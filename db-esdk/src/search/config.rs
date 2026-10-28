@@ -10,6 +10,7 @@ use aws_crypto_mpl::key_store;
 use aws_crypto_mpl::shared::IntoShared;
 
 use crate::error::{Error, val_err};
+use crate::search::partition::SharedPartitionSelector;
 
 /// `value`, or a `Validation` error naming the missing `field`.
 fn required<T>(value: Option<T>, field: &str) -> Result<T, Error> {
@@ -159,6 +160,7 @@ pub struct BeaconVersion {
     pub(crate) signed_parts: Option<Vec<SignedPart>>,
     pub(crate) maximum_number_of_partitions: Option<u8>,
     pub(crate) default_number_of_partitions: Option<u8>,
+    pub(crate) partition_selector: Option<SharedPartitionSelector>,
 }
 
 impl BeaconVersion {
@@ -227,6 +229,12 @@ impl BeaconVersion {
     pub const fn default_number_of_partitions(&self) -> Option<u8> {
         self.default_number_of_partitions
     }
+
+    /// What picks the partition an item is written in, if set.
+    #[must_use]
+    pub const fn partition_selector(&self) -> Option<&SharedPartitionSelector> {
+        self.partition_selector.as_ref()
+    }
 }
 
 /// A builder for [`BeaconVersion`].
@@ -243,6 +251,7 @@ pub struct BeaconVersionBuilder {
     signed_parts: Option<Vec<SignedPart>>,
     maximum_number_of_partitions: Option<u8>,
     default_number_of_partitions: Option<u8>,
+    partition_selector: Option<SharedPartitionSelector>,
 }
 
 impl BeaconVersionBuilder {
@@ -391,6 +400,21 @@ impl BeaconVersionBuilder {
         self
     }
 
+    /// What picks the partition an item is written in.
+    /// Optional: the default picks a random partition.
+    #[must_use]
+    pub fn partition_selector(mut self, selector: impl IntoShared<SharedPartitionSelector>) -> Self {
+        self.partition_selector = Some(selector.into_shared());
+        self
+    }
+
+    /// The partition selector. See [`Self::partition_selector`].
+    #[must_use]
+    pub fn set_partition_selector(mut self, selector: Option<SharedPartitionSelector>) -> Self {
+        self.partition_selector = selector;
+        self
+    }
+
     /// Build the beacon version.
     ///
     /// The beacons are checked against the table's attribute actions when the
@@ -428,6 +452,7 @@ impl BeaconVersionBuilder {
             signed_parts: self.signed_parts,
             maximum_number_of_partitions: self.maximum_number_of_partitions,
             default_number_of_partitions: self.default_number_of_partitions,
+            partition_selector: self.partition_selector,
         })
     }
 }

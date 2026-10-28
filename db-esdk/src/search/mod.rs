@@ -17,6 +17,7 @@ pub(crate) mod convert;
 pub(crate) mod filter;
 pub(crate) mod info;
 mod key_source;
+pub(crate) mod partition;
 pub(crate) mod support;
 pub(crate) mod term_loc;
 pub(crate) mod virt;
@@ -31,4 +32,8 @@ pub use config::{
     SharedSet, SharedSetBuilder, SignedPart, SignedPartBuilder, SingleKeyStore,
     SingleKeyStoreBuilder, StandardBeacon, StandardBeaconBuilder, Upper, VirtualField,
     VirtualFieldBuilder, VirtualPart, VirtualPartBuilder, VirtualTransform,
+};
+pub use partition::{
+    GetPartitionNumberInput, GetPartitionNumberInputBuilder, GetPartitionNumberOutput,
+    GetPartitionNumberOutputBuilder, PartitionSelector, SharedPartitionSelector,
 };

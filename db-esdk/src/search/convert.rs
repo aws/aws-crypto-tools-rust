@@ -17,6 +17,7 @@ use crate::search::info::{
     SearchInfo, StandardInfo, VirtField, VirtPart,
 };
 use crate::search::key_source::{KeyLocation, KeySource};
+use crate::search::partition::{RandomPartitionSelector, SharedPartitionSelector};
 use crate::search::term_loc::TermLoc;
 use crate::structured::util::RESERVED_PREFIX;
 use crate::table_config::{MAX_ATTRIBUTE_NAME_LEN, TableConfig};
@@ -268,6 +269,10 @@ fn convert_version(outer: &Outer<'_>, config: &BeaconVersion) -> Result<BeaconVe
         standard_names,
         encrypted_fields,
         max_partitions,
+        partition_selector: config
+            .partition_selector
+            .clone()
+            .unwrap_or_else(|| SharedPartitionSelector::new(RandomPartitionSelector)),
     })
 }
 

@@ -143,13 +143,15 @@ impl Transforms {
         &self,
         input: ResolveAttributesInput,
     ) -> Result<ResolveAttributesOutput, Error> {
-        let Some(search) = self
-            .table_info(Some(&input.table_name))
-            .and_then(|t| t.search.as_ref())
-        else {
+        let Some(table) = self.table_info(Some(&input.table_name)) else {
             return Ok(ResolveAttributesOutput::default());
         };
-        let partition = search.random_partition()?;
+        let Some(search) = table.search.as_ref() else {
+            return Ok(ResolveAttributesOutput::default());
+        };
+        let partition = search
+            .get_partition(&input.item, &table.encryptor.config().logical_table_name)
+            .await?;
         Ok(ResolveAttributesOutput {
             virtual_fields: search.version.virtual_field_values(&input.item)?,
             compound_beacons: search

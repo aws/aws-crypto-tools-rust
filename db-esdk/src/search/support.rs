@@ -7,7 +7,6 @@
 use std::collections::HashMap;
 
 use aws_crypto_mpl::aws_sdk_dynamodb::types::AttributeValue;
-use aws_mpl_primitives::generate_random_bytes;
 
 use crate::ddb::Item;
 use crate::ddb::number::str_to_int;
@@ -16,6 +15,7 @@ use crate::search::beacon::MaybeKeyId;
 use crate::search::filter::{ExprContext, uses_encrypted_field};
 use crate::search::info::SearchInfo;
 use crate::search::key_source::KeyLocation;
+use crate::search::partition::GetPartitionNumberInput;
 use crate::types::CryptoAction;
 
 /// The expression value naming the beacon partition a query reads.
@@ -26,15 +26,38 @@ const VERSION_TAG: &str = "aws_dbe_v_1";
 type Values = HashMap<String, AttributeValue>;
 
 impl SearchInfo {
-    /// The partition an item is written in: random when there are several.
-    pub(crate) fn random_partition(&self) -> Result<u8, Error> {
+    /// The partition `item` is written in, as the partition selector picks it.
+    ///
+    /// # Errors
+    ///
+    /// The selector's error, or a `Validation` error when the selector
+    /// returns a partition that is not less than the number of partitions.
+    pub(crate) async fn get_partition(
+        &self,
+        item: &Item,
+        logical_table_name: &str,
+    ) -> Result<u8, Error> {
         let num = self.version.max_partitions;
         if num <= 1 {
             return Ok(0);
         }
-        let mut rand = [0u8; 1];
-        generate_random_bytes(&mut rand)?;
-        Ok(rand[0] % num)
+        let input = GetPartitionNumberInput::builder()
+            .set_item(Some(item.clone()))
+            .number_of_partitions(num)
+            .logical_table_name(logical_table_name)
+            .build()?;
+        let partition = self
+            .version
+            .partition_selector
+            .get_partition_number(input)
+            .await?
+            .partition_number();
+        if partition >= num {
+            return Err(val_err(format!(
+                "Partition Selector returned {partition} which should have been no more than {num}"
+            )));
+        }
+        Ok(partition)
     }
 
     /// `item` with its signed beacons and the version tag added,

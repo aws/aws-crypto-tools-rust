@@ -27,6 +27,7 @@ use crate::transforms_model::{
     BatchWriteItemOutput, ConditionCheck, CreateTransformsClientRequest,
     CreateTransformsClientResponse, Delete, DeleteItemInput, DeleteRequest, ExecuteStatementInput,
     ExecuteStatementOutput, ExecuteTransactionInput, ExecuteTransactionOutput, Get, GetItemInput,
+    GetNumberOfQueriesResponse,
     GetItemOutput, InputTransformRequest, InputTransformResponse, ItemResponse, ItemsOutput,
     KeysAndAttributes, OutputTransformRequest, OutputTransformResponse, ParameterizedStatement,
     Put, PutItemInput, PutRequest, QueryInput, ScanInput, TransactGetItem, TransactGetItemsInput,
@@ -820,6 +821,19 @@ impl AppState {
         let out = t.query_input(to_query(req.sdk_input)?).await?;
         Ok(InputTransformResponse {
             transformed_input: from_query(out)?,
+        })
+    }
+
+    pub async fn get_number_of_queries(
+        &self,
+        req: InputTransformRequest<QueryInput>,
+    ) -> Result<GetNumberOfQueriesResponse, ServerError> {
+        let t = self.transforms(&req.client_id)?;
+        let count = t
+            .get_number_of_queries(&to_query(req.sdk_input)?)
+            .await?;
+        Ok(GetNumberOfQueriesResponse {
+            number_of_queries: i32::from(count),
         })
     }
 

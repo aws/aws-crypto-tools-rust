@@ -307,7 +307,9 @@ async fn encrypt(table: &Table, item: Item) -> Result<Item, Error> {
             .await?
             .into_encrypted_item());
     };
-    let partition = search.random_partition()?;
+    let partition = search
+        .get_partition(&item, &table.encryptor.config().logical_table_name)
+        .await?;
     let with_signed = search.add_signed_beacons(item.clone(), partition)?;
     let encrypted = table
         .encryptor

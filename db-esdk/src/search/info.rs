@@ -12,6 +12,7 @@ use crate::error::Error;
 use crate::search::beacon::{MaybeKeyId, MaybeKeyMap};
 use crate::search::config::VirtualTransform;
 use crate::search::key_source::KeySource;
+use crate::search::partition::SharedPartitionSelector;
 use crate::search::term_loc::TermLoc;
 
 /// The prefix of the attribute holding a beacon's value.
@@ -37,6 +38,8 @@ pub(crate) struct BeaconVersionInfo {
     pub(crate) encrypted_fields: BTreeSet<String>,
     /// The most partitions any beacon is divided across.
     pub(crate) max_partitions: u8,
+    /// What picks the partition an item is written in.
+    pub(crate) partition_selector: SharedPartitionSelector,
 }
 
 impl BeaconVersionInfo {

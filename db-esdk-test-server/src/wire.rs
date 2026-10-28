@@ -241,6 +241,13 @@ async fn dispatch(
                 .and_then(|resp| encode(&resp)),
             Err(e) => Err(e),
         },
+        "GetNumberOfQueries" => match decode(&body) {
+            Ok(req) => state
+                .get_number_of_queries(req)
+                .await
+                .and_then(|resp| encode(&resp)),
+            Err(e) => Err(e),
+        },
         "QueryOutputTransform" => match decode(&body) {
             Ok(req) => state
                 .query_output_transform(req)

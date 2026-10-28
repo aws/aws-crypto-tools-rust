@@ -10,10 +10,10 @@
     "required-encryption-context-cmm",
     "structured-encryption",
     "ddb-transforms",
-    "searchable-encryption"
+    "searchable-encryption",
+    "beacon-partitions"
   ],
   "unsupportedFeatures": [
-    "beacon-partitions",
     "legacy-ddbec"
   ]
 }

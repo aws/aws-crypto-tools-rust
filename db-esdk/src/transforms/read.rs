@@ -123,6 +123,35 @@ impl Transforms {
         Ok(input)
     }
 
+    /// How many queries, one per beacon partition, together read every item `input` matches.
+    ///
+    /// Run the query once for each partition, with `:aws_dbe_partition` set to
+    /// `0`, `1`, ... in its expression attribute values.
+    /// The count is the least common multiple of the partition counts of the beacons
+    /// the key condition compares, at most the beacon version's maximum number of partitions.
+    /// It is 1 for a table without beacons.
+    ///
+    /// # Errors
+    ///
+    /// A `Validation` error when the key condition expression is longer than 4096 characters,
+    /// or names an expression attribute value that the input does not have.
+    pub async fn get_number_of_queries(&self, input: &QueryInput) -> Result<u8, Error> {
+        let Some(search) = self
+            .table_info(input.table_name.as_deref())
+            .and_then(|t| t.search.as_ref())
+        else {
+            return Ok(1);
+        };
+        validate_expression_length(
+            input.key_condition_expression.as_deref(),
+            "KeyConditionExpression",
+        )?;
+        search.version.get_num_queries(
+            input.key_condition_expression.as_deref(),
+            input.expression_attribute_values.as_ref(),
+        )
+    }
+
     /// Verify and decrypt each item a Query response returns.
     ///
     /// On a table with beacons, the items are filtered again with the original

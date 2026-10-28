@@ -396,6 +396,13 @@ pub struct InputTransformResponse<I> {
     pub transformed_input: I,
 }
 
+/// A GetNumberOfQueries response: how many beacon sub-queries the query needs.
+#[derive(Debug, Serialize)]
+pub struct GetNumberOfQueriesResponse {
+    #[serde(rename = "numberOfQueries")]
+    pub number_of_queries: i32,
+}
+
 /// An output transform's request: the client, the SDK output, and the input that produced it.
 #[derive(Debug, Deserialize)]
 pub struct OutputTransformRequest<O, I> {
