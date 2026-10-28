@@ -29,6 +29,7 @@ use aws_crypto_mpl::aws_sdk_dynamodb::types::AttributeValue;
 use crate::ddb::{Item, filter_expr, update_expr};
 use crate::error::{Error, val_err};
 use crate::item_encryptor::{ItemEncryptor, ParsedHeader};
+use crate::search::BeaconKeySource;
 use crate::search::beacon::MaybeKeyId;
 use crate::search::convert;
 use crate::search::info::SearchInfo;
@@ -50,6 +51,8 @@ struct Table {
     encryptor: ItemEncryptor,
     /// The table's beacons, if it has a search configuration.
     search: Option<SearchInfo>,
+    /// With a multi key store, the attribute that holds an item's beacon key id.
+    key_field_name: Option<String>,
 }
 
 impl Transforms {
@@ -124,6 +127,13 @@ impl TransformsBuilder {
                 continue;
             };
             let search = convert::convert(&config)?;
+            let key_field_name = config
+                .search()
+                .and_then(|s| s.versions().first())
+                .and_then(|v| match v.key_source() {
+                    BeaconKeySource::Multi(m) => Some(m.key_field_name().to_owned()),
+                    BeaconKeySource::Single(_) => None,
+                });
             if let Some(search) = &search {
                 // A fully signed compound beacon is written in plaintext, as a SIGN_ONLY attribute.
                 for beacon in search.version.signed_beacon_names() {
@@ -142,7 +152,14 @@ impl TransformsBuilder {
                 )));
             }
             logical_names.push(logical);
-            tables.insert(name, Table { encryptor, search });
+            tables.insert(
+                name,
+                Table {
+                    encryptor,
+                    search,
+                    key_field_name,
+                },
+            );
         }
         Ok(Transforms {
             tables: Arc::new(tables),
@@ -314,7 +331,85 @@ async fn encrypt(table: &Table, item: Item) -> Result<Item, Error> {
     let partition = search
         .get_partition(&item, &table.encryptor.config().logical_table_name)
         .await?;
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-putitem
+    //# Signed Beacons MUST be [added](ddb-support.md#addsignedbeacons).
+    //
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-batchwriteitem
+    //# Signed Beacons MUST be [added](ddb-support.md#addsignedbeacons).
+    //
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-transactwriteitems
+    //# - Signed Beacons MUST be [added](ddb-support.md#addsignedbeacons).
+    //
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-putitem
+    //= reason=add_signed_beacons removes the key field unless it is configured SIGN_ONLY
+    //# If the [Beacon Key Source](../searchable-encryption/search-config.md#beacon-key-source)
+    //# is a [Multi Key Store](../searchable-encryption/search-config.md#multi-key-store-initialization)
+    //# the [Beacon Key Field Name](../searchable-encryption/search-config.md#beacon-key-field-name)
+    //# MUST be [handled](./ddb-support.md#handlebeaconkeyfieldname).
+    //
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-batchwriteitem
+    //= reason=add_signed_beacons removes the key field unless it is configured SIGN_ONLY
+    //# If the [Beacon Key Source](../searchable-encryption/search-config.md#beacon-key-source)
+    //# is a [Multi Key Store](../searchable-encryption/search-config.md#multi-key-store-initialization)
+    //# the [Beacon Key Field Name](../searchable-encryption/search-config.md#beacon-key-field-name)
+    //# MUST be [handled](./ddb-support.md#handlebeaconkeyfieldname).
+    //
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-transactwriteitems
+    //= reason=add_signed_beacons removes the key field unless it is configured SIGN_ONLY
+    //# - If the [Beacon Key Source](../searchable-encryption/search-config.md#beacon-key-source)
+    //# is a [Multi Key Store](../searchable-encryption/search-config.md#multi-key-store-initialization)
+    //# the [Beacon Key Field Name](../searchable-encryption/search-config.md#beacon-key-field-name)
+    //# MUST be [handled](./ddb-support.md#handlebeaconkeyfieldname).
     let with_signed = search.add_signed_beacons(item.clone(), partition)?;
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-putitem
+    //# If the [Beacon Key Source](../searchable-encryption/search-config.md#beacon-key-source)
+    //# is a [Multi Key Store](../searchable-encryption/search-config.md#multi-key-store-initialization)
+    //# the [Item Encryptor](./ddb-item-encryptor.md) MUST perform
+    //# [Encrypt Item](./encrypt-item.md),
+    //# where the input [DynamoDB Item](./encrypt-item.md#dynamodb-item)
+    //# is output of [handling the beacon key field name](ddb-support.md#handlebeaconkeyfieldname) operation.
+    //
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-putitem
+    //# If the [Beacon Key Source](../searchable-encryption/search-config.md#beacon-key-source)
+    //# is a [Single Key Store](../searchable-encryption/search-config.md#single-key-store-initialization)
+    //# the [Item Encryptor](./ddb-item-encryptor.md) MUST perform
+    //# [Encrypt Item](./encrypt-item.md),
+    //# where the input [DynamoDB Item](./encrypt-item.md#dynamodb-item)
+    //# is output of [adding the signed beacons](ddb-support.md#addsignedbeacons) operation.
+    //
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-batchwriteitem
+    //# If the [Beacon Key Source](../searchable-encryption/search-config.md#beacon-key-source)
+    //# is a [Multi Key Store](../searchable-encryption/search-config.md#multi-key-store-initialization)
+    //# the [Item Encryptor](./ddb-item-encryptor.md) MUST perform
+    //# [Encrypt Item](./encrypt-item.md),
+    //# where the input [DynamoDB Item](./encrypt-item.md#dynamodb-item)
+    //# is output of [handling the beacon key field name](ddb-support.md#handlebeaconkeyfieldname) operation.
+    //
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-batchwriteitem
+    //# If the [Beacon Key Source](../searchable-encryption/search-config.md#beacon-key-source)
+    //# is a [Single Key Store](../searchable-encryption/search-config.md#single-key-store-initialization)
+    //# the [Item Encryptor](./ddb-item-encryptor.md) MUST perform
+    //# [Encrypt Item](./encrypt-item.md),
+    //# where the input [DynamoDB Item](./encrypt-item.md#dynamodb-item)
+    //# is output of [adding the signed beacons](ddb-support.md#addsignedbeacons) operation.
+    //
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-transactwriteitems
+    //# - If the [Beacon Key Source](../searchable-encryption/search-config.md#beacon-key-source)
+    //# is a [Multi Key Store](../searchable-encryption/search-config.md#multi-key-store-initialization)
+    //# the [Item Encryptor](./ddb-item-encryptor.md) MUST perform
+    //# [Encrypt Item](./encrypt-item.md),
+    //# where the input [DynamoDB Item](./encrypt-item.md#dynamodb-item)
+    //# is output of [handling the beacon key field name](ddb-support.md#handlebeaconkeyfieldname) operation.
+    //
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-transactwriteitems
+    //# - If the [Beacon Key Source](../searchable-encryption/search-config.md#beacon-key-source)
+    //# is a [Single Key Store](../searchable-encryption/search-config.md#single-key-store-initialization)
+    //# the [Item Encryptor](./ddb-item-encryptor.md) MUST perform
+    //# [Encrypt Item](./encrypt-item.md),
+    //# where the input [DynamoDB Item](./encrypt-item.md#dynamodb-item)
+    //# is output of [adding the signed beacons](ddb-support.md#addsignedbeacons) operation.
     let encrypted = table
         .encryptor
         .encrypt_item()
@@ -322,10 +417,48 @@ async fn encrypt(table: &Table, item: Item) -> Result<Item, Error> {
         .send()
         .await?;
     let key_id = key_id_from_header(search, encrypted.parsed_header())?;
+    // `item` is the item before `add_signed_beacons`, so it still has the key field.
+    if let (Some(key_field_name), MaybeKeyId::Id(header_id)) = (&table.key_field_name, &key_id)
+        && let Some(item_key_id) = item.get(key_field_name)
+        && *item_key_id != AttributeValue::S(header_id.clone())
+    {
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-putitem
+        //# If the [Beacon Key Source](../searchable-encryption/search-config.md#beacon-key-source)
+        //# is a [Multi Key Store](../searchable-encryption/search-config.md#multi-key-store-initialization)
+        //# and a `branch key id` was returned from [handling the beacon key field name](ddb-support.md#handlebeaconkeyfieldname)
+        //# this `branch key id` MUST match the value
+        //# returned from [Get beacon key id from Parsed Header](../searchable-encryption/search-config.md#get-beacon-key-id-from-parsed-header).
+        //
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-batchwriteitem
+        //# If the [Beacon Key Source](../searchable-encryption/search-config.md#beacon-key-source)
+        //# is a [Multi Key Store](../searchable-encryption/search-config.md#multi-key-store-initialization)
+        //# and a `branch key id` was returned from [handling the beacon key field name](ddb-support.md#handlebeaconkeyfieldname)
+        //# this `branch key id` MUST match the value
+        //# returned from [Get beacon key id from Parsed Header](../searchable-encryption/search-config.md#get-beacon-key-id-from-parsed-header).
+        //
+        //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-transactwriteitems
+        //# - If the [Beacon Key Source](../searchable-encryption/search-config.md#beacon-key-source)
+        //# is a [Multi Key Store](../searchable-encryption/search-config.md#multi-key-store-initialization)
+        //# and a `branch key id` was returned from [handling the beacon key field name](ddb-support.md#handlebeaconkeyfieldname)
+        //# this `branch key id` MUST match the value
+        //# returned from [Get beacon key id from Parsed Header](../searchable-encryption/search-config.md#get-beacon-key-id-from-parsed-header).
+        return Err(val_err(format!(
+            "The beacon key id in {key_field_name} does not match the branch key id {header_id} that encrypted the item."
+        )));
+    }
     let beacons = search
         .get_encrypted_beacons(&item, &key_id, partition)
         .await?;
     let mut out = encrypted.into_encrypted_item();
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-putitem
+    //# Encrypted Beacons MUST be [added](ddb-support.md#addencryptedbeacons).
+    //
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-batchwriteitem
+    //# Encrypted Beacons MUST be [added](ddb-support.md#addencryptedbeacons).
+    //
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-transactwriteitems
+    //# - Encrypted Beacons MUST be [added](ddb-support.md#addencryptedbeacons).
     out.extend(beacons);
     Ok(out)
 }

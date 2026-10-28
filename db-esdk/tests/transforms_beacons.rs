@@ -14,6 +14,7 @@ use std::time::Duration;
 use aws_db_esdk::aws_sdk_dynamodb::operation::batch_get_item::{
     BatchGetItemInput, BatchGetItemOutput,
 };
+use aws_db_esdk::aws_sdk_dynamodb::operation::batch_write_item::BatchWriteItemInput;
 use aws_db_esdk::aws_sdk_dynamodb::operation::delete_item::{DeleteItemInput, DeleteItemOutput};
 use aws_db_esdk::aws_sdk_dynamodb::operation::get_item::{GetItemInput, GetItemOutput};
 use aws_db_esdk::aws_sdk_dynamodb::operation::put_item::{PutItemInput, PutItemOutput};
@@ -22,9 +23,11 @@ use aws_db_esdk::aws_sdk_dynamodb::operation::scan::{ScanInput, ScanOutput};
 use aws_db_esdk::aws_sdk_dynamodb::operation::transact_get_items::{
     TransactGetItemsInput, TransactGetItemsOutput,
 };
+use aws_db_esdk::aws_sdk_dynamodb::operation::transact_write_items::TransactWriteItemsInput;
 use aws_db_esdk::aws_sdk_dynamodb::operation::update_item::{UpdateItemInput, UpdateItemOutput};
 use aws_db_esdk::aws_sdk_dynamodb::types::{
-    AttributeValue, Get, ItemResponse, KeysAndAttributes, ReturnValue, TransactGetItem,
+    AttributeValue, Get, ItemResponse, KeysAndAttributes, Put, PutRequest, ReturnValue,
+    TransactGetItem, TransactWriteItem, WriteRequest,
 };
 use aws_db_esdk::keyring::{
     GetBranchKeyIdFromItemKeyInput, GetBranchKeyIdOutput, HierarchicalKeyring,
@@ -33,11 +36,12 @@ use aws_db_esdk::keyring::{
 use aws_db_esdk::search::SearchConfig;
 use aws_db_esdk::transforms::{ResolveAttributesInput, Transforms};
 use aws_db_esdk::types::PlaintextOverride;
-use aws_db_esdk::{TableConfig, async_trait};
+use aws_db_esdk::{Error, ItemEncryptor, TableConfig, async_trait};
 use transforms_support::{
     Item, NAME_BEACON, STD2_BEACON, STD4_BEACON, STD6_BEACON, TITLE_BEACON, beacon_transforms,
     expect_validation, fake_key_store, item, lotsa_beacons, multi_actions,
-    multi_transforms_hierarchical, multi_transforms_static, s, simple_item, transforms,
+    multi_actions_without_key_field, multi_transforms_hierarchical,
+    multi_transforms_hierarchical_with, multi_transforms_static, s, simple_item, transforms,
 };
 
 fn put_input(it: Item) -> PutItemInput {
@@ -49,7 +53,72 @@ fn put_input(it: Item) -> PutItemInput {
 }
 
 async fn put(t: &Transforms, it: Item) -> Item {
-    t.put_item_input(put_input(it)).await.unwrap().item.unwrap()
+    try_put(t, it).await.unwrap()
+}
+
+/// `it` as the PutItem input transform writes it to table `foo`.
+async fn try_put(t: &Transforms, it: Item) -> Result<Item, Error> {
+    Ok(t.put_item_input(put_input(it)).await?.item.unwrap())
+}
+
+/// `it` as the BatchWriteItem input transform writes it to table `foo`, in a put request.
+async fn batch_put(t: &Transforms, it: Item) -> Result<Item, Error> {
+    let put = WriteRequest::builder()
+        .put_request(PutRequest::builder().set_item(Some(it)).build().unwrap())
+        .build();
+    let input = BatchWriteItemInput::builder()
+        .request_items("foo", vec![put])
+        .build()
+        .unwrap();
+    let mut out = t
+        .batch_write_item_input(input)
+        .await?
+        .request_items
+        .unwrap();
+    let [req] = out.remove("foo").unwrap().try_into().unwrap();
+    Ok(req.put_request.unwrap().item)
+}
+
+/// `it` as the TransactWriteItems input transform writes it to table `foo`, in a put.
+async fn transact_put(t: &Transforms, it: Item) -> Result<Item, Error> {
+    let put = TransactWriteItem::builder()
+        .put(
+            Put::builder()
+                .table_name("foo")
+                .set_item(Some(it))
+                .build()
+                .unwrap(),
+        )
+        .build();
+    let input = TransactWriteItemsInput::builder()
+        .transact_items(put)
+        .build()
+        .unwrap();
+    let out = t.transact_write_items_input(input).await?.transact_items;
+    let [action] = out.unwrap().try_into().unwrap();
+    Ok(action.put.unwrap().item)
+}
+
+/// The GetItem output transform on `it`, an encrypted item of table `foo`.
+async fn read(t: &Transforms, it: Item) -> Result<Option<Item>, Error> {
+    let input = GetItemInput::builder()
+        .table_name("foo")
+        .set_key(Some(HashMap::new()))
+        .build()
+        .unwrap();
+    let output = GetItemOutput::builder().set_item(Some(it)).build();
+    Ok(t.get_item_output(output, &input).await?.item)
+}
+
+/// `encrypted` with its signed compound beacon `JustSigned` changed after it was signed.
+fn tamper_just_signed(mut encrypted: Item) -> Item {
+    encrypted.insert("JustSigned".into(), s("Y_1985.M_May"));
+    encrypted
+}
+
+/// The multi-tenant table with branch key `id1`, whose key field `TheKeyField` has no action.
+async fn multi_transforms_unconfigured_key_field() -> Transforms {
+    multi_transforms_hierarchical_with("id1", multi_actions_without_key_field).await
 }
 
 fn beacon(it: &Item, name: &str) -> String {
@@ -87,17 +156,36 @@ fn multi_item(key: &str) -> Item {
 
 #[tokio::test]
 async fn put_item_adds_the_lotsa_beacons() {
-    let out = put(&beacon_transforms(), simple_item()).await;
+    let t = beacon_transforms();
+    let out = put(&t, simple_item()).await;
     assert_eq!(beacon(&out, "std2"), STD2_BEACON);
     assert_eq!(beacon(&out, "std4"), STD4_BEACON);
     assert_eq!(beacon(&out, "std6"), STD6_BEACON);
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-putitem
+    //= type=test
+    //# Encrypted Beacons MUST be [added](ddb-support.md#addencryptedbeacons).
     assert_eq!(beacon(&out, "Name"), NAME_BEACON);
     assert_eq!(beacon(&out, "Title"), TITLE_BEACON);
+
     // A fully signed compound beacon is written in plaintext.
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-putitem
+    //= type=test
+    //# Signed Beacons MUST be [added](ddb-support.md#addsignedbeacons).
     assert_eq!(out["JustSigned"], s("Y_1984.M_May"));
-    // The encrypted attributes are binary; the signed ones are unchanged.
-    assert!(matches!(out["Name"], AttributeValue::B(_)));
+
+    // The encrypted attributes are ciphertext; the signed ones are unchanged.
+    assert_ne!(out["Name"], simple_item()["Name"]);
     assert_eq!(out["Year"], simple_item()["Year"]);
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-putitem
+    //= type=test
+    //= reason=the request item, beacons asserted above, decrypts back to the original item
+    //# The PutItem request's `Item` field MUST be replaced
+    //# with a value that is equivalent to
+    //# the output of the [add encrypted beacons](ddb-support.md#addencryptedbeacons) operation
+    //# calculated above.
+    assert_eq!(read(&t, out).await.unwrap(), Some(simple_item_read()));
 }
 
 /// `TestPutItemInputMulti`: a multi-tenant table needs a hierarchical keyring.
@@ -134,6 +222,258 @@ async fn put_item_multi_hierarchical_beacons_use_the_item_key() {
     // The fake key store gives every branch key id the same beacon key.
     assert_eq!(beacon(&out, "Name"), NAME_BEACON);
     assert!(matches!(out["aws_dbe_head"], AttributeValue::B(_)));
+}
+
+#[tokio::test]
+async fn put_item_signs_the_signed_beacons() {
+    let t = beacon_transforms();
+    let out = put(&t, simple_item()).await;
+    assert_eq!(
+        read(&t, out.clone()).await.unwrap(),
+        Some(simple_item_read())
+    );
+    let result = read(&t, tamper_just_signed(out)).await;
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-putitem
+    //= type=test
+    //= reason=JustSigned was added before EncryptItem, so the signature covers it
+    //# If the [Beacon Key Source](../searchable-encryption/search-config.md#beacon-key-source)
+    //# is a [Single Key Store](../searchable-encryption/search-config.md#single-key-store-initialization)
+    //# the [Item Encryptor](./ddb-item-encryptor.md) MUST perform
+    //# [Encrypt Item](./encrypt-item.md),
+    //# where the input [DynamoDB Item](./encrypt-item.md#dynamodb-item)
+    //# is output of [adding the signed beacons](ddb-support.md#addsignedbeacons) operation.
+    assert!(matches!(result, Err(Error::Cryptographic(_))), "{result:?}");
+}
+
+#[tokio::test]
+async fn put_item_multi_removes_an_unconfigured_key_field() {
+    let t = multi_transforms_unconfigured_key_field().await;
+    let out = put(&t, multi_item("id1")).await;
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-putitem
+    //= type=test
+    //# If the [Beacon Key Source](../searchable-encryption/search-config.md#beacon-key-source)
+    //# is a [Multi Key Store](../searchable-encryption/search-config.md#multi-key-store-initialization)
+    //# the [Beacon Key Field Name](../searchable-encryption/search-config.md#beacon-key-field-name)
+    //# MUST be [handled](./ddb-support.md#handlebeaconkeyfieldname).
+    assert!(!out.contains_key("TheKeyField"));
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-putitem
+    //= type=test
+    //= reason=TheKeyField is unconfigured, so EncryptItem would reject it had it not been removed first
+    //# If the [Beacon Key Source](../searchable-encryption/search-config.md#beacon-key-source)
+    //# is a [Multi Key Store](../searchable-encryption/search-config.md#multi-key-store-initialization)
+    //# the [Item Encryptor](./ddb-item-encryptor.md) MUST perform
+    //# [Encrypt Item](./encrypt-item.md),
+    //# where the input [DynamoDB Item](./encrypt-item.md#dynamodb-item)
+    //# is output of [handling the beacon key field name](ddb-support.md#handlebeaconkeyfieldname) operation.
+    assert_eq!(read(&t, out).await.unwrap(), Some(simple_item_read()));
+}
+
+#[tokio::test]
+async fn put_item_multi_key_id_must_match_the_header() {
+    let t = multi_transforms_hierarchical("id1").await;
+    // A matching key id passes, and the SIGN_ONLY key field is kept.
+    let out = try_put(&t, multi_item("id1")).await.unwrap();
+    assert_eq!(out["TheKeyField"], s("id1"));
+    // An item without the key field returns no branch key id, so there is nothing to match.
+    let out = try_put(&t, simple_item()).await.unwrap();
+    assert_eq!(read(&t, out).await.unwrap(), Some(simple_item_read()));
+    let mut numeric = simple_item();
+    numeric.insert("TheKeyField".into(), AttributeValue::N("1".into()));
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-putitem
+    //= type=test
+    //# If the [Beacon Key Source](../searchable-encryption/search-config.md#beacon-key-source)
+    //# is a [Multi Key Store](../searchable-encryption/search-config.md#multi-key-store-initialization)
+    //# and a `branch key id` was returned from [handling the beacon key field name](ddb-support.md#handlebeaconkeyfieldname)
+    //# this `branch key id` MUST match the value
+    //# returned from [Get beacon key id from Parsed Header](../searchable-encryption/search-config.md#get-beacon-key-id-from-parsed-header).
+    expect_validation(
+        try_put(&t, multi_item("id2")).await,
+        "The beacon key id in TheKeyField does not match the branch key id id1 that encrypted the item.",
+    );
+    expect_validation(
+        try_put(&t, numeric).await,
+        "The beacon key id in TheKeyField does not match the branch key id id1 that encrypted the item.",
+    );
+}
+
+// --- BatchWriteItem ---
+
+#[tokio::test]
+async fn batch_write_item_adds_the_lotsa_beacons() {
+    let t = beacon_transforms();
+    let out = batch_put(&t, simple_item()).await.unwrap();
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-batchwriteitem
+    //= type=test
+    //# Signed Beacons MUST be [added](ddb-support.md#addsignedbeacons).
+    assert_eq!(out["JustSigned"], s("Y_1984.M_May"));
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-batchwriteitem
+    //= type=test
+    //# Encrypted Beacons MUST be [added](ddb-support.md#addencryptedbeacons).
+    assert_eq!(beacon(&out, "Name"), NAME_BEACON);
+    assert_eq!(
+        read(&t, out.clone()).await.unwrap(),
+        Some(simple_item_read())
+    );
+    let result = read(&t, tamper_just_signed(out)).await;
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-batchwriteitem
+    //= type=test
+    //= reason=JustSigned was added before EncryptItem, so the signature covers it
+    //# If the [Beacon Key Source](../searchable-encryption/search-config.md#beacon-key-source)
+    //# is a [Single Key Store](../searchable-encryption/search-config.md#single-key-store-initialization)
+    //# the [Item Encryptor](./ddb-item-encryptor.md) MUST perform
+    //# [Encrypt Item](./encrypt-item.md),
+    //# where the input [DynamoDB Item](./encrypt-item.md#dynamodb-item)
+    //# is output of [adding the signed beacons](ddb-support.md#addsignedbeacons) operation.
+    assert!(matches!(result, Err(Error::Cryptographic(_))), "{result:?}");
+}
+
+#[tokio::test]
+async fn batch_write_item_multi_removes_an_unconfigured_key_field() {
+    let t = multi_transforms_unconfigured_key_field().await;
+    let out = batch_put(&t, multi_item("id1")).await.unwrap();
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-batchwriteitem
+    //= type=test
+    //# If the [Beacon Key Source](../searchable-encryption/search-config.md#beacon-key-source)
+    //# is a [Multi Key Store](../searchable-encryption/search-config.md#multi-key-store-initialization)
+    //# the [Beacon Key Field Name](../searchable-encryption/search-config.md#beacon-key-field-name)
+    //# MUST be [handled](./ddb-support.md#handlebeaconkeyfieldname).
+    assert!(!out.contains_key("TheKeyField"));
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-batchwriteitem
+    //= type=test
+    //= reason=TheKeyField is unconfigured, so EncryptItem would reject it had it not been removed first
+    //# If the [Beacon Key Source](../searchable-encryption/search-config.md#beacon-key-source)
+    //# is a [Multi Key Store](../searchable-encryption/search-config.md#multi-key-store-initialization)
+    //# the [Item Encryptor](./ddb-item-encryptor.md) MUST perform
+    //# [Encrypt Item](./encrypt-item.md),
+    //# where the input [DynamoDB Item](./encrypt-item.md#dynamodb-item)
+    //# is output of [handling the beacon key field name](ddb-support.md#handlebeaconkeyfieldname) operation.
+    assert_eq!(read(&t, out).await.unwrap(), Some(simple_item_read()));
+}
+
+#[tokio::test]
+async fn batch_write_item_multi_key_id_must_match_the_header() {
+    let t = multi_transforms_hierarchical("id1").await;
+    // A matching key id passes, and the SIGN_ONLY key field is kept.
+    let out = batch_put(&t, multi_item("id1")).await.unwrap();
+    assert_eq!(out["TheKeyField"], s("id1"));
+    // An item without the key field returns no branch key id, so there is nothing to match.
+    let out = batch_put(&t, simple_item()).await.unwrap();
+    assert_eq!(read(&t, out).await.unwrap(), Some(simple_item_read()));
+    let mut numeric = simple_item();
+    numeric.insert("TheKeyField".into(), AttributeValue::N("1".into()));
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-batchwriteitem
+    //= type=test
+    //# If the [Beacon Key Source](../searchable-encryption/search-config.md#beacon-key-source)
+    //# is a [Multi Key Store](../searchable-encryption/search-config.md#multi-key-store-initialization)
+    //# and a `branch key id` was returned from [handling the beacon key field name](ddb-support.md#handlebeaconkeyfieldname)
+    //# this `branch key id` MUST match the value
+    //# returned from [Get beacon key id from Parsed Header](../searchable-encryption/search-config.md#get-beacon-key-id-from-parsed-header).
+    expect_validation(
+        batch_put(&t, multi_item("id2")).await,
+        "The beacon key id in TheKeyField does not match the branch key id id1 that encrypted the item.",
+    );
+    expect_validation(
+        batch_put(&t, numeric).await,
+        "The beacon key id in TheKeyField does not match the branch key id id1 that encrypted the item.",
+    );
+}
+
+// --- TransactWriteItems ---
+
+#[tokio::test]
+async fn transact_write_items_adds_the_lotsa_beacons() {
+    let t = beacon_transforms();
+    let out = transact_put(&t, simple_item()).await.unwrap();
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-transactwriteitems
+    //= type=test
+    //# - Signed Beacons MUST be [added](ddb-support.md#addsignedbeacons).
+    assert_eq!(out["JustSigned"], s("Y_1984.M_May"));
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-transactwriteitems
+    //= type=test
+    //# - Encrypted Beacons MUST be [added](ddb-support.md#addencryptedbeacons).
+    assert_eq!(beacon(&out, "Name"), NAME_BEACON);
+    assert_eq!(
+        read(&t, out.clone()).await.unwrap(),
+        Some(simple_item_read())
+    );
+    let result = read(&t, tamper_just_signed(out)).await;
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-transactwriteitems
+    //= type=test
+    //= reason=JustSigned was added before EncryptItem, so the signature covers it
+    //# - If the [Beacon Key Source](../searchable-encryption/search-config.md#beacon-key-source)
+    //# is a [Single Key Store](../searchable-encryption/search-config.md#single-key-store-initialization)
+    //# the [Item Encryptor](./ddb-item-encryptor.md) MUST perform
+    //# [Encrypt Item](./encrypt-item.md),
+    //# where the input [DynamoDB Item](./encrypt-item.md#dynamodb-item)
+    //# is output of [adding the signed beacons](ddb-support.md#addsignedbeacons) operation.
+    assert!(matches!(result, Err(Error::Cryptographic(_))), "{result:?}");
+}
+
+#[tokio::test]
+async fn transact_write_items_multi_removes_an_unconfigured_key_field() {
+    let t = multi_transforms_unconfigured_key_field().await;
+    let out = transact_put(&t, multi_item("id1")).await.unwrap();
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-transactwriteitems
+    //= type=test
+    //# - If the [Beacon Key Source](../searchable-encryption/search-config.md#beacon-key-source)
+    //# is a [Multi Key Store](../searchable-encryption/search-config.md#multi-key-store-initialization)
+    //# the [Beacon Key Field Name](../searchable-encryption/search-config.md#beacon-key-field-name)
+    //# MUST be [handled](./ddb-support.md#handlebeaconkeyfieldname).
+    assert!(!out.contains_key("TheKeyField"));
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-transactwriteitems
+    //= type=test
+    //= reason=TheKeyField is unconfigured, so EncryptItem would reject it had it not been removed first
+    //# - If the [Beacon Key Source](../searchable-encryption/search-config.md#beacon-key-source)
+    //# is a [Multi Key Store](../searchable-encryption/search-config.md#multi-key-store-initialization)
+    //# the [Item Encryptor](./ddb-item-encryptor.md) MUST perform
+    //# [Encrypt Item](./encrypt-item.md),
+    //# where the input [DynamoDB Item](./encrypt-item.md#dynamodb-item)
+    //# is output of [handling the beacon key field name](ddb-support.md#handlebeaconkeyfieldname) operation.
+    assert_eq!(read(&t, out).await.unwrap(), Some(simple_item_read()));
+}
+
+#[tokio::test]
+async fn transact_write_items_multi_key_id_must_match_the_header() {
+    let t = multi_transforms_hierarchical("id1").await;
+    // A matching key id passes, and the SIGN_ONLY key field is kept.
+    let out = transact_put(&t, multi_item("id1")).await.unwrap();
+    assert_eq!(out["TheKeyField"], s("id1"));
+    // An item without the key field returns no branch key id, so there is nothing to match.
+    let out = transact_put(&t, simple_item()).await.unwrap();
+    assert_eq!(read(&t, out).await.unwrap(), Some(simple_item_read()));
+    let mut numeric = simple_item();
+    numeric.insert("TheKeyField".into(), AttributeValue::N("1".into()));
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-transactwriteitems
+    //= type=test
+    //# - If the [Beacon Key Source](../searchable-encryption/search-config.md#beacon-key-source)
+    //# is a [Multi Key Store](../searchable-encryption/search-config.md#multi-key-store-initialization)
+    //# and a `branch key id` was returned from [handling the beacon key field name](ddb-support.md#handlebeaconkeyfieldname)
+    //# this `branch key id` MUST match the value
+    //# returned from [Get beacon key id from Parsed Header](../searchable-encryption/search-config.md#get-beacon-key-id-from-parsed-header).
+    expect_validation(
+        transact_put(&t, multi_item("id2")).await,
+        "The beacon key id in TheKeyField does not match the branch key id id1 that encrypted the item.",
+    );
+    expect_validation(
+        transact_put(&t, numeric).await,
+        "The beacon key id in TheKeyField does not match the branch key id id1 that encrypted the item.",
+    );
 }
 
 // --- Query ---
@@ -215,8 +555,9 @@ impl ItemKeySupplier for TenantSupplier {
     }
 }
 
-/// A multi-tenant table whose keyring can decrypt the items of both tenants.
-async fn two_tenant_transforms() -> Transforms {
+/// The multi-tenant table `foo` whose keyring can decrypt the items of both tenants,
+/// with the search configuration `search`.
+async fn two_tenant_config(search: Option<SearchConfig>) -> TableConfig {
     let keyring = HierarchicalKeyring::builder()
         .key_store(fake_key_store())
         .branch_key_id_supplier(ItemKeyBranchKeySupplier::new(TenantSupplier))
@@ -224,21 +565,25 @@ async fn two_tenant_transforms() -> Transforms {
         .build()
         .await
         .unwrap();
+    multi_actions(TableConfig::builder())
+        .logical_table_name("foo")
+        .partition_key_name("bar")
+        .allowed_unsigned_attributes("plain")
+        .keyring(keyring)
+        .set_search(search)
+        .build()
+        .unwrap()
+}
+
+/// A multi-tenant table whose keyring can decrypt the items of both tenants.
+async fn two_tenant_transforms() -> Transforms {
     let search = SearchConfig::builder()
         .write_version(1)
         .versions(lotsa_beacons(true))
         .build()
         .unwrap();
-    let config = multi_actions(TableConfig::builder())
-        .logical_table_name("foo")
-        .partition_key_name("bar")
-        .allowed_unsigned_attributes("plain")
-        .keyring(keyring)
-        .search(search)
-        .build()
-        .unwrap();
     Transforms::builder()
-        .table_encryption_configs("foo", config)
+        .table_encryption_configs("foo", two_tenant_config(Some(search)).await)
         .build()
         .unwrap()
 }
@@ -250,9 +595,19 @@ async fn query_output_multi_drops_items_of_other_tenants() {
     let t = two_tenant_transforms().await;
     let mine = put(&t, multi_item("id1")).await;
     // `TheKeyField` claims tenant `id1`, but the supplier encrypts it under `id2`.
+    // The write transforms reject that item, so it is encrypted without them.
     let mut theirs = multi_item("id1");
     theirs.insert("bar".into(), s("key2"));
-    let theirs = put(&t, theirs).await;
+    let theirs = ItemEncryptor::builder()
+        .table("foo", two_tenant_config(None).await)
+        .build()
+        .unwrap()
+        .encrypt_item()
+        .plaintext_item(theirs)
+        .send()
+        .await
+        .unwrap()
+        .into_encrypted_item();
     let mut mine_read = multi_item("id1");
     mine_read.insert("JustSigned".into(), s("Y_1984.M_May"));
     let input = QueryInput::builder()

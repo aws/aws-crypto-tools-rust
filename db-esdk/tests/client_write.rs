@@ -239,9 +239,17 @@ async fn put_item_rejects_reserved_attributes_before_calling_dynamodb() {
         err.message(),
         "Writing reserved attributes not allowed : aws_dbe_head"
     );
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-putitem
+    //= type=test
+    //# If any of the above fails,
+    //# the client MUST NOT make a network call to DynamoDB,
+    //# and PutItem MUST yield an error.
     assert!(fake.calls().is_empty());
 }
 
+// Through the client, the same check as transforms_write.rs::put_item_input_condition_on_encrypted,
+// which carries the encrypt-before-putitem ConditionExpression citation.
 #[tokio::test]
 async fn put_item_rejects_a_condition_on_an_encrypted_attribute() {
     let (fake, client) = setup();
@@ -264,6 +272,8 @@ async fn put_item_rejects_a_condition_on_an_encrypted_attribute() {
     assert!(fake.calls().is_empty());
 }
 
+// Through the client, the same check as transforms_write.rs::put_item_input_legacy_parameters,
+// which carries the encrypt-before-putitem legacy-parameter citation.
 #[tokio::test]
 async fn put_item_rejects_the_legacy_expected_parameter() {
     let (fake, client) = setup();
@@ -516,6 +526,13 @@ async fn batch_write_item_encrypts_puts_of_configured_tables_only() {
     assert_eq!(out.unprocessed_items(), Some(&HashMap::new()));
     let stored = fake.items(TABLE);
     assert_eq!(stored.len(), 2);
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-batchwriteitem
+    //= type=test
+    //# The PutRequest request's `Item` field MUST be replaced
+    //# with a value that is equivalent to
+    //# the result [Encrypted DynamoDB Item](./encrypt-item.md#encrypted-dynamodb-item)
+    //# calculated above.
     assert_encrypted(&stored[0], &dafny_item(1, 1));
     assert_encrypted(&stored[1], &dafny_item(2, 2));
     assert_eq!(fake.items(PLAIN_TABLE), [dafny_item(3, 3)]);
@@ -609,6 +626,12 @@ async fn batch_write_item_rejects_reserved_attributes() {
         .unwrap_err();
 
     assert!(matches!(err, Error::Validation(_)), "{err:?}");
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-batchwriteitem
+    //= type=test
+    //# If any of the above fails,
+    //# the client MUST NOT make a network call to DynamoDB,
+    //# and BatchWriteItem MUST yield an error.
     assert!(fake.calls().is_empty());
 }
 
@@ -688,6 +711,8 @@ async fn transact_write_items_encrypts_puts_and_runs_every_action() {
 }
 
 // TestTransactWriteItemsInputEmpty.
+// Through the client, the same check as transforms_write.rs::transact_write_items_input_empty,
+// which carries the encrypt-before-transactwriteitems fifth-field citation.
 #[tokio::test]
 async fn transact_write_items_rejects_an_action_with_no_operation() {
     let (fake, client) = setup();
@@ -707,6 +732,45 @@ async fn transact_write_items_rejects_an_action_with_no_operation() {
     assert!(fake.calls().is_empty());
 }
 
+#[tokio::test]
+async fn transact_write_items_rejects_a_reserved_attribute_in_a_put() {
+    let (fake, client) = setup();
+    let mut bad = full_item("a", "1");
+    bad.insert("aws_dbe_head".to_owned(), s("mine"));
+
+    let err = client
+        .transact_write_items()
+        .transact_items(
+            TransactWriteItem::builder()
+                .put(
+                    Put::builder()
+                        .table_name(TABLE)
+                        .set_item(Some(bad))
+                        .build()
+                        .unwrap(),
+                )
+                .build(),
+        )
+        .send()
+        .await
+        .unwrap_err();
+
+    assert!(matches!(err, Error::Validation(_)), "{err:?}");
+    assert_eq!(
+        err.message(),
+        "Writing reserved attributes not allowed : aws_dbe_head"
+    );
+
+    //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-transactwriteitems
+    //= type=test
+    //# - If any of the above fails,
+    //# the client MUST NOT make a network call to DynamoDB,
+    //# and PutItem MUST yield an error.
+    assert!(fake.calls().is_empty());
+}
+
+// Through the client, the same check as transforms_write.rs::transact_write_items_input_rejections,
+// which carries the encrypt-before-transactwriteitems UpdateExpression citation.
 #[tokio::test]
 async fn transact_write_items_rejects_an_update_of_a_signed_attribute() {
     let (fake, client) = setup();

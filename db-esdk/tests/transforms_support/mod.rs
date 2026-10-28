@@ -373,22 +373,35 @@ pub fn lotsa_beacons(multi: bool) -> BeaconVersion {
 
 /// `TestFixtures.MultiActions`, plus `foo` and `plain`.
 pub fn multi_actions(b: aws_db_esdk::TableConfigBuilder) -> aws_db_esdk::TableConfigBuilder {
-    [
-        ("bar", CryptoAction::SignOnly),
-        ("std2", CryptoAction::EncryptAndSign),
-        ("std4", CryptoAction::EncryptAndSign),
-        ("std6", CryptoAction::EncryptAndSign),
-        ("Name", CryptoAction::EncryptAndSign),
-        ("Title", CryptoAction::EncryptAndSign),
-        ("TooBad", CryptoAction::EncryptAndSign),
-        ("Year", CryptoAction::SignOnly),
-        ("Date", CryptoAction::SignOnly),
-        ("TheKeyField", CryptoAction::SignOnly),
-        ("plain", CryptoAction::DoNothing),
-    ]
-    .into_iter()
-    .fold(b, |b, (k, a)| b.attribute_actions_on_encrypt(k, a))
+    MULTI_ACTIONS
+        .into_iter()
+        .fold(b, |b, (k, a)| b.attribute_actions_on_encrypt(k, a))
 }
+
+/// [`multi_actions`] with no action for the beacon key field `TheKeyField`,
+/// so a multi key store removes that field before an item is encrypted.
+pub fn multi_actions_without_key_field(
+    b: aws_db_esdk::TableConfigBuilder,
+) -> aws_db_esdk::TableConfigBuilder {
+    MULTI_ACTIONS
+        .into_iter()
+        .filter(|(k, _)| *k != "TheKeyField")
+        .fold(b, |b, (k, a)| b.attribute_actions_on_encrypt(k, a))
+}
+
+const MULTI_ACTIONS: [(&str, CryptoAction); 11] = [
+    ("bar", CryptoAction::SignOnly),
+    ("std2", CryptoAction::EncryptAndSign),
+    ("std4", CryptoAction::EncryptAndSign),
+    ("std6", CryptoAction::EncryptAndSign),
+    ("Name", CryptoAction::EncryptAndSign),
+    ("Title", CryptoAction::EncryptAndSign),
+    ("TooBad", CryptoAction::EncryptAndSign),
+    ("Year", CryptoAction::SignOnly),
+    ("Date", CryptoAction::SignOnly),
+    ("TheKeyField", CryptoAction::SignOnly),
+    ("plain", CryptoAction::DoNothing),
+];
 
 /// A table `foo` with the `GetLotsaBeacons` search configuration and the static keyring.
 pub fn beacon_transforms() -> Transforms {
@@ -436,6 +449,14 @@ pub fn multi_transforms_static(o: Option<PlaintextOverride>) -> Transforms {
 /// `TestFixtures.GetDynamoDbEncryptionTransformsMulti` with a hierarchical keyring
 /// over [`FakeKeyStore`] whose branch key id is `branch_key_id`.
 pub async fn multi_transforms_hierarchical(branch_key_id: &str) -> Transforms {
+    multi_transforms_hierarchical_with(branch_key_id, multi_actions).await
+}
+
+/// [`multi_transforms_hierarchical`] with the attribute actions `actions` sets.
+pub async fn multi_transforms_hierarchical_with(
+    branch_key_id: &str,
+    actions: fn(aws_db_esdk::TableConfigBuilder) -> aws_db_esdk::TableConfigBuilder,
+) -> Transforms {
     let search = SearchConfig::builder()
         .write_version(1)
         .versions(lotsa_beacons(true))
@@ -448,7 +469,7 @@ pub async fn multi_transforms_hierarchical(branch_key_id: &str) -> Transforms {
         .build()
         .await
         .unwrap();
-    let config = multi_actions(TableConfig::builder())
+    let config = actions(TableConfig::builder())
         .logical_table_name("foo")
         .partition_key_name("bar")
         .allowed_unsigned_attributes("plain")
