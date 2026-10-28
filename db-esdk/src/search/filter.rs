@@ -839,3 +839,7 @@ pub(crate) fn uses_encrypted_field(
         _ => None,
     })
 }
+
+#[cfg(test)]
+#[path = "filter_tests.rs"]
+mod tests;
