@@ -880,3 +880,7 @@ fn check_beacons(beacons: &BTreeMap<String, Beacon>) -> Result<(), Error> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "convert_tests.rs"]
+mod tests;
