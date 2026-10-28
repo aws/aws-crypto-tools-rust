@@ -17,8 +17,9 @@ use crate::transforms::Transforms;
 pub use operations::{
     BatchExecuteStatementFluentBuilder, BatchGetItemFluentBuilder, BatchWriteItemFluentBuilder,
     DeleteItemFluentBuilder, ExecuteStatementFluentBuilder, ExecuteTransactionFluentBuilder,
-    GetItemFluentBuilder, PutItemFluentBuilder, QueryFluentBuilder, ScanFluentBuilder,
-    TransactGetItemsFluentBuilder, TransactWriteItemsFluentBuilder, UpdateItemFluentBuilder,
+    GetItemFluentBuilder, PutItemFluentBuilder, QueryFluentBuilder, ResolveAttributesFluentBuilder,
+    ScanFluentBuilder, TransactGetItemsFluentBuilder, TransactWriteItemsFluentBuilder,
+    UpdateItemFluentBuilder,
 };
 
 /// A DynamoDB client that encrypts and signs each item before it is written,
@@ -159,6 +160,14 @@ impl Client {
             self.ddb.execute_transaction(),
             self.transforms.clone(),
         )
+    }
+
+    /// The plaintext virtual field and compound beacon values this client computes for an item.
+    ///
+    /// Use it while developing a search configuration. It sends nothing to DynamoDB.
+    #[must_use]
+    pub fn resolve_attributes(&self) -> ResolveAttributesFluentBuilder {
+        ResolveAttributesFluentBuilder::new(self.transforms.clone())
     }
 }
 

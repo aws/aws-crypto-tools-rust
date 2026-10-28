@@ -3,7 +3,9 @@
 
 //! The checked, internal form of a search configuration.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+
+use aws_crypto_mpl::aws_sdk_dynamodb::types::AttributeValue;
 
 use crate::ddb::Item;
 use crate::error::Error;
@@ -98,6 +100,43 @@ impl BeaconVersionInfo {
             BeaconKind::Signed,
             partition,
         )
+    }
+
+    /// The value of every virtual field `item` has, by field name.
+    pub(crate) fn virtual_field_values(
+        &self,
+        item: &Item,
+    ) -> Result<HashMap<String, String>, Error> {
+        let mut out = HashMap::new();
+        for (name, field) in &self.virtual_fields {
+            if let Some(value) = field.value(item)? {
+                out.insert(name.clone(), value);
+            }
+        }
+        Ok(out)
+    }
+
+    /// The plaintext value of every compound beacon `item` has, by beacon name.
+    pub(crate) fn compound_beacon_values(
+        &self,
+        item: &Item,
+        partition: u8,
+    ) -> Result<HashMap<String, String>, Error> {
+        let mut out = HashMap::new();
+        for (name, beacon) in &self.beacons {
+            if !matches!(beacon, Beacon::Compound(_)) {
+                continue;
+            }
+            if let Some(AttributeValue::S(value)) = beacon.attr_hash(
+                item,
+                &self.virtual_fields,
+                &MaybeKeyMap::DontUseKeys,
+                partition,
+            )? {
+                out.insert(name.clone(), value);
+            }
+        }
+        Ok(out)
     }
 
     /// The values of the beacons on encrypted fields, under the beacon key `key_id` selects.

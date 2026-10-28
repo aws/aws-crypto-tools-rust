@@ -23,7 +23,9 @@ use aws_crypto_mpl::aws_sdk_dynamodb::types::{
 
 use super::build_error;
 use crate::error::Error;
-use crate::transforms::Transforms;
+use crate::transforms::{
+    ResolveAttributesInput, ResolveAttributesInputBuilder, ResolveAttributesOutput, Transforms,
+};
 
 /// One setter, its `set_` form, and its getter, forwarded to the AWS SDK's fluent builder.
 macro_rules! setter {
@@ -586,5 +588,77 @@ impl ExecuteTransactionFluentBuilder {
         self.transforms
             .execute_transaction_output(output, &input)
             .await
+    }
+}
+
+/// The ResolveAttributes operation: the plaintext virtual field and compound beacon
+/// values the client computes for an item. It sends nothing to DynamoDB.
+/// Set the request, then call [`send`](Self::send).
+#[derive(Clone, Debug)]
+#[non_exhaustive]
+pub struct ResolveAttributesFluentBuilder {
+    inner: ResolveAttributesInputBuilder,
+    transforms: Transforms,
+}
+
+impl ResolveAttributesFluentBuilder {
+    pub(super) fn new(transforms: Transforms) -> Self {
+        Self {
+            inner: ResolveAttributesInput::builder(),
+            transforms,
+        }
+    }
+
+    /// The table whose configuration is used. Required.
+    #[must_use]
+    pub fn table_name(mut self, name: impl Into<String>) -> Self {
+        self.inner = self.inner.table_name(name);
+        self
+    }
+
+    /// Set or clear the table name.
+    #[must_use]
+    pub fn set_table_name(mut self, name: Option<String>) -> Self {
+        self.inner = self.inner.set_table_name(name);
+        self
+    }
+
+    /// The table name set so far.
+    #[must_use]
+    pub const fn get_table_name(&self) -> &Option<String> {
+        self.inner.get_table_name()
+    }
+
+    /// The plaintext item to examine. Required.
+    #[must_use]
+    pub fn item(mut self, item: HashMap<String, AttributeValue>) -> Self {
+        self.inner = self.inner.item(item);
+        self
+    }
+
+    /// Set or clear the item.
+    #[must_use]
+    pub fn set_item(mut self, item: Option<HashMap<String, AttributeValue>>) -> Self {
+        self.inner = self.inner.set_item(item);
+        self
+    }
+
+    /// The item set so far.
+    #[must_use]
+    pub const fn get_item(&self) -> &Option<HashMap<String, AttributeValue>> {
+        self.inner.get_item()
+    }
+
+    /// Compute the item's virtual field and compound beacon values.
+    ///
+    /// A table with no search configuration gives empty maps.
+    ///
+    /// # Errors
+    ///
+    /// A `Validation` error when the table name or the item is not set,
+    /// or when a compound beacon part of the item contains the split character.
+    pub async fn send(self) -> Result<ResolveAttributesOutput, Error> {
+        let input = self.inner.build()?;
+        self.transforms.resolve_attributes(input).await
     }
 }

@@ -12,7 +12,10 @@
 
 mod partiql;
 mod read;
+mod resolve;
 mod write;
+
+pub use resolve::{ResolveAttributesInput, ResolveAttributesInputBuilder, ResolveAttributesOutput};
 
 use std::collections::HashMap;
 use std::sync::Arc;

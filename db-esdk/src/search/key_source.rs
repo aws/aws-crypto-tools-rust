@@ -164,9 +164,7 @@ impl KeySource {
             (KeyLocation::Multi { .. }, MaybeKeyId::DontUse) => Err(val_err(
                 "Fixed KeyID must not be supplied with a MultiKeyStore",
             )),
-            (KeyLocation::Multi { .. }, MaybeKeyId::ShouldHave) => {
-                Ok(MaybeKeyMap::ShouldHaveKeys)
-            }
+            (KeyLocation::Multi { .. }, MaybeKeyId::ShouldHave) => Ok(MaybeKeyMap::ShouldHaveKeys),
             (KeyLocation::Multi { .. }, MaybeKeyId::Id(id)) => {
                 Ok(MaybeKeyMap::Keys(self.hmac_keys(std_names, id).await?))
             }
