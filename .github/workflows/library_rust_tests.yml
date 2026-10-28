@@ -29,7 +29,7 @@ jobs:
         run: git config --global core.longpaths true
         working-directory: .
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           submodules: 'true'
 
@@ -37,7 +37,7 @@ jobs:
       # NASM is not on the Windows runner PATH by default but Unix runners already provide an assembler.
       - name: Install NASM (Windows)
         if: runner.os == 'Windows'
-        uses: ilammy/setup-nasm@v1
+        uses: ilammy/setup-nasm@72793074d3c8cdda771dba85f6deafe00623038b # v1.5.2
 
       - uses: ./.github/actions/setup-rust
         with:
@@ -45,10 +45,14 @@ jobs:
           workspaces: ${{ matrix.project }}
 
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@cargo-llvm-cov
+        uses: taiki-e/install-action@86f7a0ffb25f40114606501a311ebcfaf882ea32 # v2.88.0
+        with:
+          tool: cargo-llvm-cov
 
       - name: Install cargo-hack
-        uses: taiki-e/install-action@cargo-hack
+        uses: taiki-e/install-action@86f7a0ffb25f40114606501a311ebcfaf882ea32 # v2.88.0
+        with:
+          tool: cargo-hack
 
       # KMS-backed integration tests (e.g. tests/test_encrypt_decrypt.rs) call
       # kms:GenerateDataKey / kms:Decrypt against the shared AWS Crypto Tools
@@ -59,7 +63,7 @@ jobs:
       # public (no repo secret needed); access is gated by the role's OIDC
       # trust policy, which must permit `repo:aws/aws-crypto-tools-rust:*`.
       - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v6
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           aws-region: us-west-2
           role-to-assume: arn:aws:iam::370957321024:role/GitHub-CI-Public-ESDK-Dafny-Role-us-west-2

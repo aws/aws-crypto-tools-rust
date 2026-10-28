@@ -35,7 +35,7 @@ jobs:
     outputs:
       jobs: ${{ steps.set.outputs.jobs }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
       # Each filter matches its crate, plus the crates it depends on.
       # ex. an mpl change re-tests mpl, esdk, the C++ shim, and their TestServers.
@@ -43,7 +43,7 @@ jobs:
       - name: Filter changed paths
         if: github.event_name == 'pull_request'
         id: filter
-        uses: dorny/paths-filter@v4
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         with:
           filters: |
             prim: &prim
@@ -191,11 +191,14 @@ jobs:
       contents: read
       actions: read
       id-token: write
-    uses: aws/aws-crypto-tools-commons/.github/workflows/esdk-test-server-reusable.yml@main
+    uses: aws/aws-crypto-tools-commons/.github/workflows/esdk-test-server-reusable.yml@4ba428e3defc834e85c8f67e95a3867bbd67e952 # main
     with:
       # Only run tests that involve the focus language (ex. skip Python <--> Java tests for this Rust repo)
       focus: ${{ matrix.focus }}
       checkout-languages: ${{ matrix.focus }}
+      # Pinned with the workflow ref above: the reusable workflow checks commons
+      # out again at this ref, so both must move together in one reviewed PR.
+      commons-ref: 4ba428e3defc834e85c8f67e95a3867bbd67e952
     secrets:
       repo-pat: ${{ secrets.COMMONS_REPO_PAT }}
 
@@ -206,10 +209,13 @@ jobs:
     permissions:
       contents: read
       actions: read
-    uses: aws/aws-crypto-tools-commons/.github/workflows/mpl-test-server-reusable.yml@main
+    uses: aws/aws-crypto-tools-commons/.github/workflows/mpl-test-server-reusable.yml@4ba428e3defc834e85c8f67e95a3867bbd67e952 # main
     with:
       focus: rust
       checkout-languages: rust
+      # Pinned with the workflow ref above: the reusable workflow checks commons
+      # out again at this ref, so both must move together in one reviewed PR.
+      commons-ref: 4ba428e3defc834e85c8f67e95a3867bbd67e952
     secrets:
       repo-pat: ${{ secrets.COMMONS_REPO_PAT }}
 
@@ -220,10 +226,13 @@ jobs:
     permissions:
       contents: read
       actions: read
-    uses: aws/aws-crypto-tools-commons/.github/workflows/primitives-test-server-reusable.yml@main
+    uses: aws/aws-crypto-tools-commons/.github/workflows/primitives-test-server-reusable.yml@4ba428e3defc834e85c8f67e95a3867bbd67e952 # main
     with:
       focus: rust
       checkout-languages: rust
+      # Pinned with the workflow ref above: the reusable workflow checks commons
+      # out again at this ref, so both must move together in one reviewed PR.
+      commons-ref: 4ba428e3defc834e85c8f67e95a3867bbd67e952
     secrets:
       repo-pat: ${{ secrets.COMMONS_REPO_PAT }}
 
@@ -235,7 +244,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
       - uses: ./.github/actions/setup-rust
         with:
@@ -262,11 +271,11 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           persist-credentials: false
 
-      - uses: mattsb42-meta/not-grep@1.0.1
+      - uses: mattsb42-meta/not-grep@584c5c7cf0e1a37346b4cc10bec163f5094f0537 # 1.0.1
 
   pr-ci-all-required:
     if: always()

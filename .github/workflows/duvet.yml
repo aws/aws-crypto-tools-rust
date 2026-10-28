@@ -27,21 +27,21 @@ jobs:
       run:
         working-directory: ${{ matrix.project }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
-      # Install duvet at its latest published release, matching the duvet
-      # workflow in aws-cryptographic-material-providers-library. duvet has no
-      # prebuilt binary, so it builds from source; cargo/rustup are
-      # preinstalled on the runner.
+      # Install a pinned duvet release with its published Cargo.lock (--locked),
+      # so a new crates.io release never runs here unreviewed. Bump the version
+      # in a PR after reading the changelog. duvet has no prebuilt binary, so it
+      # builds from source; cargo/rustup are preinstalled on the runner.
       - name: Install duvet
-        run: cargo +stable install duvet
+        run: cargo +stable install duvet --version 0.4.3 --locked
 
       - name: Run duvet
         run: make duvet
 
       - name: Upload duvet report
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ matrix.artifact }}
           include-hidden-files: true
