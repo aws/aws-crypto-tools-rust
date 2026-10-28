@@ -15,9 +15,9 @@ the other languages' ESDKs.
 - `src/backend.rs` builds a hierarchical keyring through the shim and forwards
   `Encrypt`/`Decrypt` on `spawn_blocking` (the shim drives its own runtime).
 
-The C++ facade currently exposes only the AWS KMS Hierarchical keyring, so the
-server accepts the Default CMM wrapping an `AwsKmsHierarchical` keyring and
-rejects other keyrings.
+The C++ facade exposes the AWS KMS Hierarchical and Raw-AES keyrings, so the
+server accepts the Default CMM wrapping an `AwsKmsHierarchical` or `RawAes`
+keyring and rejects other keyrings.
 
 ## Build and test
 

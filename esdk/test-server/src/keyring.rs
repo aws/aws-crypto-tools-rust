@@ -23,9 +23,7 @@ use aws_crypto_mpl::keyring::{HierarchicalKeyring, RawAesKeyring};
 use aws_esdk::keyring::SharedKeyring;
 
 /// Resolve a CMM configuration to the keyring the ESDK client will use.
-///
-/// A `Default` CMM resolves to its inner keyring (the ESDK wraps a keyring in a
-/// default CMM).
+/// Errors here are `GenericServerError`: the commons suite treats them as CreateClient rejections.
 pub async fn keyring_for_cmm(
     cmm: &CryptographicMaterialsManager,
 ) -> Result<SharedKeyring, ServerError> {
@@ -102,7 +100,7 @@ async fn build_raw_aes(config: &RawAesKeyringConfig) -> Result<SharedKeyring, Se
         .wrapping_key(config.wrapping_key.clone())
         .wrapping_alg(wrapping_alg)
         .build()
-        .map_err(|e| ServerError::esdk(e.to_string()))?;
+        .map_err(|e| ServerError::generic(e.to_string()))?;
     Ok(SharedKeyring::new(keyring))
 }
 
@@ -121,7 +119,7 @@ async fn build_hierarchical(
         .kms_configuration(KmsConfiguration::KmsKeyArn(config.kms_key_arn.clone()))
         .build()
         .await
-        .map_err(|e| ServerError::esdk(e.to_string()))?;
+        .map_err(|e| ServerError::generic(e.to_string()))?;
     let ttl_seconds = u64::try_from(config.ttl_seconds).map_err(|_| {
         ServerError::generic(format!(
             "ttlSeconds must be non-negative, got {}",
@@ -134,6 +132,6 @@ async fn build_hierarchical(
         .branch_key_id(config.branch_key_id.clone())
         .build()
         .await
-        .map_err(|e| ServerError::esdk(e.to_string()))?;
+        .map_err(|e| ServerError::generic(e.to_string()))?;
     Ok(SharedKeyring::new(keyring))
 }

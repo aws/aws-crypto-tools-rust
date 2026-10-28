@@ -167,6 +167,10 @@ mod ffi {
         set: bool,
         value: u32,
     }
+    struct OptU64 {
+        set: bool,
+        value: u64,
+    }
     struct OptString {
         set: bool,
         value: String,
@@ -258,6 +262,8 @@ mod ffi {
         /// Whether to require committing algorithms on encrypt/decrypt.
         /// Core default is `EsdkCommitmentPolicy::RequireEncryptRequireDecrypt`
         pub commitment_policy: OptCommitmentPolicy,
+        /// Upper bound on the plaintext length; only `create_encrypt_stream` reads it.
+        pub plaintext_length_bound: OptU64,
     }
     struct EncryptOutput {
         /// Algorithm Suite used to encrypt the message
@@ -466,6 +472,7 @@ macro_rules! opt_to_option {
 
 opt_to_option!(
     OptU32 => u32,
+    OptU64 => u64,
     OptString => String,
     OptAlgId => ffi::EsdkAlgorithmSuiteId,
     OptCommitmentPolicy => ffi::EsdkCommitmentPolicy,
@@ -1895,7 +1902,22 @@ fn create_encrypt_stream(input: &ffi::EncryptInput) -> Result<Box<EncryptStream>
             &input.encryption_context,
         )))
         .set_algorithm_suite_id(settings.algorithm_suite_id)
-        .set_frame_length(settings.frame_length);
+        .set_frame_length(settings.frame_length)
+        .set_data_size(
+            input
+                .plaintext_length_bound
+                .to_option()
+                .map(|bound| {
+                    usize::try_from(bound).map_err(|e| {
+                        shim_err(
+                            ffi::ShimErrorKind::Validation,
+                            "plaintext length bound translation",
+                            e,
+                        )
+                    })
+                })
+                .transpose()?,
+        );
     Ok(Box::new(EncryptStream {
         state: StreamState::spawn("encrypt_stream", move |mut reader, mut writer| {
             let output = TOKIO_RUNTIME

@@ -225,6 +225,8 @@ int esdk_cpp_encrypt_stream(void* client,
                             uint16_t algorithm_suite_id,
                             uint32_t frame_length,
                             uint32_t max_encrypted_data_keys,
+                            uint8_t has_plaintext_length_bound,
+                            uint64_t plaintext_length_bound,
                             const char* const* ec_keys,
                             const char* const* ec_vals,
                             size_t ec_len,
@@ -239,6 +241,9 @@ int esdk_cpp_encrypt_stream(void* client,
         }
         if (frame_length != 0) {
             options.with_frame_length(frame_length);
+        }
+        if (has_plaintext_length_bound != 0) {
+            options.with_plaintext_length_bound(plaintext_length_bound);
         }
         options.with_encryption_context(to_map(ec_keys, ec_vals, ec_len));
 

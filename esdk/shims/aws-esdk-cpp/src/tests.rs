@@ -84,6 +84,10 @@ fn unset_encrypt_input() -> ffi::EncryptInput<'static> {
         plaintext: &[],
         max_encrypted_data_keys: unset_u32(),
         commitment_policy: unset_policy(),
+        plaintext_length_bound: ffi::OptU64 {
+            set: false,
+            value: 0,
+        },
     }
 }
 
@@ -978,6 +982,10 @@ fn encrypt_settings_forwards_every_optional_input() {
         plaintext: &[],
         max_encrypted_data_keys: set_u32(5),
         commitment_policy: set_policy(P::ForbidEncryptAllowDecrypt),
+        plaintext_length_bound: ffi::OptU64 {
+            set: false,
+            value: 0,
+        },
     };
     let settings = encrypt_settings(&input).expect("settings convert");
     let config = settings.esdk.config();

@@ -813,6 +813,7 @@ class EncryptOptions {
     std::optional<AlgorithmSuiteId> algorithm_suite_;
     std::map<std::string, std::string> encryption_context_;
     std::optional<std::uint32_t> frame_length_;
+    std::optional<std::uint64_t> plaintext_length_bound_;
     friend class Client;
 
 public:
@@ -825,6 +826,10 @@ public:
     EncryptOptions& with_encryption_context(const std::map<std::string, std::string>& ec) { encryption_context_ = ec; return *this; }
     /// Length of each frame of framed data in bytes. Default 4096.
     EncryptOptions& with_frame_length(std::uint32_t n) { frame_length_ = n; return *this; }
+    /// Maximum plaintext bytes a streaming encrypt accepts.
+    /// The stream fails once it consumes more than `n` bytes.
+    /// Only create_encrypt_stream reads this; encrypt ignores it.
+    EncryptOptions& with_plaintext_length_bound(std::uint64_t n) { plaintext_length_bound_ = n; return *this; }
 };
 
 /// Optional decrypt parameters.
