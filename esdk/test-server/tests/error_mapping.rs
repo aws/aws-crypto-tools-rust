@@ -1,3 +1,6 @@
+// Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 //! Which error type each failure returns:
 //! a rejected CreateClient configuration is `GenericServerError`,
 //! invalid Encrypt input is `ESDKClientError`.
