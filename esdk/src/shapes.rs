@@ -134,6 +134,25 @@ pub use aws_crypto_mpl::types::EncryptionContext;
 /// the materials boundary.
 pub use aws_crypto_mpl::types::EsdkCommitmentPolicy as CommitmentPolicy;
 
+/// How [`Client::decrypt_stream`](crate::Client::decrypt_stream) handles a message
+/// whose algorithm suite has a signature algorithm.
+///
+/// Plaintext written before the signature verifies is unverified:
+/// don't act on it until `send` returns `Ok`, and discard it on `Err`.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[non_exhaustive]
+pub enum SignedStreaming {
+    /// Decrypt a single-frame signed message, writing its plaintext only after the
+    /// signature verifies. Fail on a multi-frame signed message.
+    #[default]
+    RejectMultiFrame,
+    /// Write each regular frame's plaintext as soon as its tag verifies, before the
+    /// signature verifies. Write the final frame only after the signature verifies.
+    ReleaseRegularFrames,
+    /// Fail right after parsing the header, before any plaintext is decrypted.
+    RejectSigned,
+}
+
 /// Commitment policy used when the caller provides none.
 //= spec/client-apis/client.md#initialization
 //# If no [commitment policy](#commitment-policy) is provided the default MUST be [REQUIRE_ENCRYPT_REQUIRE_DECRYPT](../framework/algorithm-suites.md#require_encrypt_require_decrypt).
@@ -1031,6 +1050,7 @@ pub(crate) struct DecryptStreamInput {
     pub(crate) cmm: Option<SharedCmm>,
     pub(crate) max_encrypted_data_keys: Option<NonZeroUsize>,
     pub(crate) commitment_policy: CommitmentPolicy,
+    pub(crate) signed_streaming: SignedStreaming,
 }
 
 impl DecryptStreamInput {
@@ -1053,6 +1073,7 @@ pub(crate) struct DecryptStreamInputBuilder {
     cmm: Option<SharedCmm>,
     max_encrypted_data_keys: Option<NonZeroUsize>,
     commitment_policy: Option<CommitmentPolicy>,
+    signed_streaming: Option<SignedStreaming>,
 }
 
 impl DecryptStreamInputBuilder {
@@ -1060,7 +1081,28 @@ impl DecryptStreamInputBuilder {
         get_encryption_context: encryption_context -> EncryptionContext,
         get_keyring: keyring -> SharedKeyring,
         get_cmm: cmm -> SharedCmm,
+        get_signed_streaming: signed_streaming -> SignedStreaming,
     );
+
+    /// Set how a signed message is streamed.
+    /// Default is [`SignedStreaming::RejectMultiFrame`].
+    #[must_use]
+    pub(crate) const fn signed_streaming(mut self, signed_streaming: SignedStreaming) -> Self {
+        self.signed_streaming = Some(signed_streaming);
+        self
+    }
+
+    /// Set how a signed message is streamed from an `Option`.
+    /// `None` leaves it unset.
+    /// To set a value, use [`Self::signed_streaming`].
+    #[must_use]
+    pub(crate) const fn set_signed_streaming(
+        mut self,
+        signed_streaming: Option<SignedStreaming>,
+    ) -> Self {
+        self.signed_streaming = signed_streaming;
+        self
+    }
 
     /// Set the encryption context from an `Option`.
     /// `None` leaves it unset.
@@ -1143,6 +1185,7 @@ impl DecryptStreamInputBuilder {
             cmm: self.cmm,
             max_encrypted_data_keys: self.max_encrypted_data_keys,
             commitment_policy: self.commitment_policy.unwrap_or(DEFAULT_COMMITMENT_POLICY),
+            signed_streaming: self.signed_streaming.unwrap_or_default(),
         })
     }
 }

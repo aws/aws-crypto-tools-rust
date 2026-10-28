@@ -9,7 +9,7 @@ use crate::shapes::{
     AlgorithmSuiteId, DecryptInput, DecryptInputBuilder, DecryptOutput, DecryptStreamInput,
     DecryptStreamInputBuilder, DecryptStreamOutput, EncryptInput, EncryptInputBuilder,
     EncryptOutput, EncryptStreamInput, EncryptStreamInputBuilder, EncryptStreamOutput,
-    EncryptionContext,
+    EncryptionContext, SignedStreaming,
 };
 use aws_crypto_mpl::cmm::SharedCmm;
 use aws_crypto_mpl::keyring::SharedKeyring;
@@ -395,6 +395,11 @@ impl<'a> DecryptStreamFluentBuilder<'a> {
     );
     decrypt_members!();
     material_source_members!();
+    member!(
+        /// How a message with a signing algorithm suite is streamed.
+        /// Default is [`SignedStreaming::RejectMultiFrame`].
+        signed_streaming(SignedStreaming), set_signed_streaming, get_signed_streaming -> SignedStreaming
+    );
 
     /// Decrypt the `ciphertext` reader into the `plaintext` writer.
     ///
@@ -404,7 +409,7 @@ impl<'a> DecryptStreamFluentBuilder<'a> {
     /// # Errors
     ///
     /// Returns an [`Error`](crate::Error), one of:
-    /// - [`Validation`](crate::Error::Validation): the ciphertext reader or plaintext writer is unset, the message's encrypted data key count exceeds the configured maximum, the commitment policy does not allow the message's algorithm suite, or the message is multi-frame and signed (decrypt it with [`Client::decrypt`](crate::Client::decrypt) instead).
+    /// - [`Validation`](crate::Error::Validation): the ciphertext reader or plaintext writer is unset, the message's encrypted data key count exceeds the configured maximum, the commitment policy does not allow the message's algorithm suite, the message is signed and `signed_streaming` is [`SignedStreaming::RejectSigned`], or the message is multi-frame and signed and `signed_streaming` is [`SignedStreaming::RejectMultiFrame`] (decrypt it with [`Client::decrypt`](crate::Client::decrypt), or set [`SignedStreaming::ReleaseRegularFrames`]).
     /// - [`InvalidMaterials`](crate::Error::InvalidMaterials): the keyring or CMM returns materials the ESDK cannot use, or materials that do not match the message's algorithm suite or signature settings.
     /// - [`EncryptionContextMismatch`](crate::Error::EncryptionContextMismatch): the reproduced encryption context conflicts with the message, or a required key is missing.
     /// - [`NoMatchingDataKey`](crate::Error::NoMatchingDataKey): none of the message's encrypted data keys belongs to the keyring or CMM.

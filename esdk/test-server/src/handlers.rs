@@ -18,7 +18,11 @@ use crate::model::{
 };
 use aws_esdk::types::AlgorithmSuiteId as MplAlgorithmSuiteId;
 use aws_esdk::types::CommitmentPolicy as MplCommitmentPolicy;
-use aws_esdk::{keyring::SharedKeyring, types::EncryptionContext, Client};
+use aws_esdk::{
+    keyring::SharedKeyring,
+    types::{EncryptionContext, SignedStreaming},
+    Client,
+};
 use std::collections::HashMap;
 use std::num::{NonZeroU32, NonZeroUsize};
 use std::sync::Mutex;
@@ -206,6 +210,8 @@ impl AppState {
             .plaintext(&mut plaintext)
             .set_encryption_context(Some(encryption_context(req.encryption_context)))
             .keyring(keyring)
+            // The commons suite streams multi-frame signed messages.
+            .signed_streaming(SignedStreaming::ReleaseRegularFrames)
             .send()
             .await
             .map_err(|e| ServerError::esdk(e.to_string()))?;

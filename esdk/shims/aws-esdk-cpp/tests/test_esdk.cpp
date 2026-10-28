@@ -921,6 +921,46 @@ void test_streaming_signed_message_refused() {
     }
 }
 
+void test_streaming_signed_message_settings() {
+    std::vector<std::uint8_t> key(32, 0x2A);
+    Aws::Esdk::RawAesKeyring keyring("test-ns", "test-key", key,
+                                     Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16);
+    Aws::Esdk::Client sdk;
+    std::vector<std::uint8_t> plaintext(10000, 0x5A);
+    auto ciphertext = sdk.encrypt(plaintext, keyring,
+                                  Aws::Esdk::EncryptOptions().with_frame_length(4096))
+                          .ciphertext;
+
+    // ReleaseRegularFrames streams the multi-frame signed message.
+    auto dec = sdk.create_decrypt_stream(
+        keyring, Aws::Esdk::DecryptOptions().with_signed_streaming(
+                     Aws::Esdk::SignedStreaming::ReleaseRegularFrames));
+    std::vector<std::uint8_t> recovered;
+    for (std::size_t off = 0; off < ciphertext.size(); off += 4096) {
+        auto n = std::min<std::size_t>(4096, ciphertext.size() - off);
+        auto out = dec.write(ciphertext.data() + off, n);
+        recovered.insert(recovered.end(), out.data(), out.data() + out.size());
+    }
+    auto result = dec.finish();
+    recovered.insert(recovered.end(), result.trailing_output.data(),
+                     result.trailing_output.data() + result.trailing_output.size());
+    ESDK_CHECK(recovered == plaintext);
+
+    // RejectSigned fails on the header.
+    ++::esdk_test::g_checks;
+    try {
+        auto reject = sdk.create_decrypt_stream(
+            keyring, Aws::Esdk::DecryptOptions().with_signed_streaming(
+                         Aws::Esdk::SignedStreaming::RejectSigned));
+        reject.write(ciphertext.data(), ciphertext.size());
+        reject.finish();
+        ++::esdk_test::g_failures;
+        std::cerr << "FAIL: RejectSigned streamed decrypt of a signed message did not throw\n";
+    } catch (const Aws::Esdk::ValidationException&) {
+        // expected
+    }
+}
+
 void test_streaming_plaintext_length_bound() {
     std::vector<std::uint8_t> key(32, 0x2A);
     Aws::Esdk::RawAesKeyring keyring("test-ns", "test-key", key,
@@ -1040,6 +1080,7 @@ int main(int argc, char** argv) {
         test_decrypt_stream_write_string_view();
         test_streaming();
         test_streaming_signed_message_refused();
+    test_streaming_signed_message_settings();
         test_streaming_plaintext_length_bound();
         test_streaming_pump();
         test_streaming_pump_io_failure();

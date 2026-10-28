@@ -140,6 +140,7 @@ use aws_crypto_mpl::types::{EsdkAlgorithmSuiteId, EsdkCommitmentPolicy};
 use aws_crypto_mpl::{aws_sdk_dynamodb, aws_sdk_kms};
 use aws_esdk::Client;
 use aws_esdk::error::{Resource, RetryKind, Service};
+use aws_esdk::types::SignedStreaming;
 use aws_sdk_kms::config::{IdentityCache, SharedCredentialsProvider, SharedHttpClient};
 use aws_smithy_runtime::client::defaults::default_http_client_plugin_v2;
 use aws_smithy_runtime_api::client::runtime_components::RuntimeComponentsBuilder;
@@ -183,6 +184,10 @@ mod ffi {
         set: bool,
         value: EsdkCommitmentPolicy,
     }
+    struct OptSignedStreaming {
+        set: bool,
+        value: SignedStreaming,
+    }
     struct OptDuration {
         set: bool,
         value: Duration,
@@ -206,6 +211,13 @@ mod ffi {
         ForbidEncryptAllowDecrypt = 1,
         RequireEncryptAllowDecrypt = 2,
         RequireEncryptRequireDecrypt = 3,
+    }
+
+    /// How a streamed decrypt handles a signed message.
+    enum SignedStreaming {
+        RejectMultiFrame = 1,
+        ReleaseRegularFrames = 2,
+        RejectSigned = 3,
     }
 
     /// ESDK Rust's error kinds, under the same names.
@@ -286,6 +298,8 @@ mod ffi {
         /// Whether to require committing algorithms on encrypt/decrypt.
         /// Core default is `EsdkCommitmentPolicy::RequireEncryptRequireDecrypt`
         pub commitment_policy: OptCommitmentPolicy,
+        /// How a signed message is streamed; only `create_decrypt_stream` reads it.
+        pub signed_streaming: OptSignedStreaming,
     }
 
     struct StreamFinishOutput {
@@ -476,6 +490,7 @@ opt_to_option!(
     OptString => String,
     OptAlgId => ffi::EsdkAlgorithmSuiteId,
     OptCommitmentPolicy => ffi::EsdkCommitmentPolicy,
+    OptSignedStreaming => ffi::SignedStreaming,
     OptDuration => ffi::Duration,
 );
 
@@ -780,6 +795,21 @@ fn alg_id_core_to_target(e: EsdkAlgorithmSuiteId) -> Result<ffi::EsdkAlgorithmSu
             ffi::ShimErrorKind::Internal,
             "algorithm suite translation",
             "ESDK Rust returned an algorithm suite ID this version of the C++ library does not recognize",
+        )),
+    }
+}
+
+// C++ to Rust for the signed-message streaming setting
+fn signed_streaming_target_to_core(x: ffi::SignedStreaming) -> Result<SignedStreaming, String> {
+    use ffi::SignedStreaming as Target;
+    match x {
+        Target::RejectMultiFrame => Ok(SignedStreaming::RejectMultiFrame),
+        Target::ReleaseRegularFrames => Ok(SignedStreaming::ReleaseRegularFrames),
+        Target::RejectSigned => Ok(SignedStreaming::RejectSigned),
+        _ => Err(shim_err(
+            ffi::ShimErrorKind::Validation,
+            "signed streaming translation",
+            format!("unrecognized SignedStreaming value: {}", x.repr),
         )),
     }
 }
@@ -1955,7 +1985,14 @@ fn create_decrypt_stream(input: &ffi::DecryptInput) -> Result<Box<DecryptStream>
         .keyring(keyring.inner.clone())
         .set_encryption_context(Some(encryption_context_target_to_core(
             &input.encryption_context,
-        )));
+        )))
+        .set_signed_streaming(
+            input
+                .signed_streaming
+                .to_option()
+                .map(signed_streaming_target_to_core)
+                .transpose()?,
+        );
     Ok(Box::new(DecryptStream {
         state: StreamState::spawn("decrypt_stream", move |mut reader, mut writer| {
             let output = TOKIO_RUNTIME
