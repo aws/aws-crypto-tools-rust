@@ -283,3 +283,93 @@ impl Config {
         Ok(ec)
     }
 }
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use super::*;
+    use aws_crypto_mpl::keyring::RawAesKeyring;
+    use aws_crypto_mpl::types::AesWrappingAlg;
+
+    use crate::structured::util::STRING;
+
+    /// A V1 configuration: partition key `pk`, sort key `sk`, unsigned prefix `:`.
+    pub(crate) fn config() -> Config {
+        let keyring = RawAesKeyring::builder()
+            .key_namespace("ns")
+            .key_name("name")
+            .wrapping_key(vec![0; 32])
+            .wrapping_alg(AesWrappingAlg::AlgAes256GcmIv12Tag16)
+            .build()
+            .unwrap();
+        let table = TableConfig::builder()
+            .partition_key_name("pk")
+            .sort_key_name("sk")
+            .attribute_actions_on_encrypt("pk", CryptoAction::SignOnly)
+            .attribute_actions_on_encrypt("sk", CryptoAction::SignOnly)
+            .allowed_unsigned_attribute_prefix(":")
+            .keyring(keyring)
+            .build()
+            .unwrap();
+        Config::new("t".to_owned(), table).unwrap()
+    }
+
+    fn terminals(names: &[&str]) -> HashMap<String, Terminal> {
+        names
+            .iter()
+            .map(|n| ((*n).to_owned(), Terminal::new(STRING, b"v".to_vec())))
+            .collect()
+    }
+
+    fn message(err: Error) -> String {
+        match err {
+            Error::Validation(e) => e.message().to_owned(),
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn encryption_context_requires_both_keys() {
+        let config = config();
+        assert_eq!(
+            message(
+                config
+                    .encryption_context(1, &terminals(&["sk"]))
+                    .unwrap_err()
+            ),
+            "Partition key pk not found in Item to be encrypted or decrypted"
+        );
+        assert_eq!(
+            message(
+                config
+                    .encryption_context(1, &terminals(&["pk"]))
+                    .unwrap_err()
+            ),
+            "Sort key sk not found in Item to be encrypted or decrypted"
+        );
+    }
+
+    #[test]
+    fn version_2_context_leaves_out_key_values() {
+        let ec = config()
+            .encryption_context(2, &terminals(&["pk", "sk"]))
+            .unwrap();
+        let keys: Vec<&str> = ec.keys().collect();
+        assert_eq!(
+            keys,
+            [PARTITION_NAME, SORT_NAME, TABLE_NAME],
+            "only the names, no aws-crypto-attr. values"
+        );
+    }
+
+    #[test]
+    fn schemas_follow_the_signature_scope() {
+        let config = config();
+        let item = terminals(&["pk", ":free"]);
+        let schema = config.crypto_schema(&item).unwrap();
+        assert_eq!(schema["pk"], CryptoAction::SignOnly);
+        assert_eq!(schema[":free"], CryptoAction::DoNothing);
+        let auth = config.authenticate_schema(&item);
+        assert_eq!(auth["pk"], AuthAction::Sign);
+        assert_eq!(auth[":free"], AuthAction::DoNotSign);
+    }
+}
