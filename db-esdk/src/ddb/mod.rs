@@ -384,12 +384,18 @@ fn bytes_to_attr(
                 len: p - pos + length_bytes,
             })
         }
+
+        //= spec/structured-encryption/structures.md#terminal-type-id
+        //= reason=BINARY is the only 0xFF-prefixed id matched above; the reserved ones land here
+        //# Any other value prefixed by 0xFF is reserved and MUST NOT be used.
         _ => Err("Unsupported TerminalTypeId".to_owned()),
     }
 }
 
 /// The attribute value a terminal holds.
 pub(crate) fn terminal_to_attr(t: &Terminal) -> Result<AttributeValue, String> {
+    //= spec/structured-encryption/structures.md#terminal-value
+    //# If these bytes are to be deserialized, these bytes MUST be interpreted as the type indicated in this Terminal Data's [Terminal Type ID](#terminal-type-id).D
     let read = bytes_to_attr(&t.value, t.type_id, Some(t.value.len()), 1, 0)?;
     if read.len != t.value.len() {
         return Err("Mismatch between length of encoded data and length of data".to_owned());

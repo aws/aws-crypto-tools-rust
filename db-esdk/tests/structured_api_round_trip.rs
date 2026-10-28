@@ -72,6 +72,15 @@ async fn round_trip_test_structured_data() {
         ["aws_dbe_foot", "aws_dbe_head", "bar", "fizzbuzz", "foo"]
     );
     assert_ne!(new_data["foo"], blob());
+
+    //= spec/structured-encryption/structures.md#do-not-encrypt
+    //= type=test
+    //# During [Encrypt Structure](encrypt-structure.md#encrypt-structure)
+    //# and [Decrypt Structure](decrypt-structure.md#decrypt-structure),
+    //# DO_NOT_ENCRYPT signifies that the [Terminal Data](#terminal-data)
+    //# MUST have an equal [Terminal Value](#terminal-value) and
+    //# [Terminal Type Id](#terminal-type-id) as the the Terminal Data
+    //# in the same location in the resulting encrypted [Structured Data](#structured-data).
     assert_eq!(new_data["bar"], blob());
     assert_eq!(new_data["fizzbuzz"], blob());
     assert_eq!(enc.crypto_schema(), &test_crypto_schema_auth_only());
@@ -87,6 +96,12 @@ async fn round_trip_test_structured_data() {
         .await
         .unwrap();
 
+    //= spec/structured-encryption/structures.md#encrypt
+    //= type=test
+    //= reason=foo was ciphertext before decrypt; getting its plaintext back proves it was decrypted
+    //# During [Decrypt Structure](decrypt-structure.md#decrypt-structure),
+    //# ENCRYPT signifies that the [Terminal Value](#terminal-value) in the [Terminal Data](#terminal-data)
+    //# MUST be attempted to be decrypted.
     assert_eq!(dec.plaintext_structure(), &test_structured_data());
     assert_eq!(dec.crypto_schema(), &test_crypto_schema_auth_only());
     let header = dec.parsed_header();
@@ -119,9 +134,20 @@ async fn encrypt_and_sign_value_layout() {
         .await
         .unwrap();
     let ct = &enc.encrypted_structure()["s"];
+
+    //= spec/structured-encryption/structures.md#terminal-type-id
+    //= type=test
+    //# If [Terminal Value](#terminal-value) is to be interpreted as raw bytes,
+    //# the Terminal Type ID MUST be 0xFFFF.
     assert_eq!(ct.type_id(), [0xFF, 0xFF]);
     assert_eq!(ct.value().len(), 2 + value.len() + GCM_TAG_LEN);
     assert_eq!(&ct.value()[..2], &STRING);
+
+    //= spec/structured-encryption/structures.md#encrypt
+    //= type=test
+    //# During [Encrypt Structure](encrypt-structure.md#encrypt-structure),
+    //# ENCRYPT signifies that the [Terminal Value](#terminal-value) in the [Terminal Data](#terminal-data)
+    //# MUST be encrypted in the resulting encrypted [Structured Data](#structured-data).
     assert_ne!(&ct.value()[2..2 + value.len()], value.as_slice());
 }
 
@@ -225,6 +251,10 @@ async fn sign_and_include_in_encryption_context_binds_each_type() {
     assert_eq!(ec.get("aws-crypto-attr.b"), Some("//8BAg=="));
     assert_eq!(ec.get("aws-crypto-attr.f"), Some("false"));
     assert_eq!(ec.get("aws-crypto-attr.n"), Some("12.5"));
+
+    //= spec/structured-encryption/structures.md#sign-and-include-in-encryption-context
+    //= type=test
+    //# and further that the [Terminal Data](#terminal-data) MUST be included in the encryption context.
     assert_eq!(ec.get("aws-crypto-attr.s"), Some("abc"));
     assert_eq!(ec.get("aws-crypto-attr.t"), Some("true"));
     assert_eq!(ec.get("aws-crypto-attr.u"), Some("null"));
@@ -442,7 +472,11 @@ async fn resolve_auth_actions_reads_the_legend() {
         .iter()
         .map(|x| (x.key().to_vec(), x.action()))
         .collect();
-    // Canonical order: by name length, then by name.
+
+    //= spec/structured-encryption/resolve-auth-actions.md#output
+    //= type=test
+    //= reason=canonical order: by name length, then by name
+    //# This operation MUST output the following:
     assert_eq!(
         resolved,
         [

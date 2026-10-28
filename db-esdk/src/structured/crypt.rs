@@ -156,6 +156,15 @@ pub(crate) fn crypt(
         if item.action != CryptoAction::EncryptAndSign {
             //= spec/structured-encryption/header.md#encrypt-legend-bytes
             //# This indicates that this field MUST NOT be attempted to be decrypted during decryption.
+            //
+            //= spec/structured-encryption/structures.md#do-not-encrypt
+            //= reason=the field is skipped, so its value and type id pass through unchanged
+            //# During [Encrypt Structure](encrypt-structure.md#encrypt-structure)
+            //# and [Decrypt Structure](decrypt-structure.md#decrypt-structure),
+            //# DO_NOT_ENCRYPT signifies that the [Terminal Data](#terminal-data)
+            //# MUST have an equal [Terminal Value](#terminal-value) and
+            //# [Terminal Type Id](#terminal-type-id) as the the Terminal Data
+            //# in the same location in the resulting encrypted [Structured Data](#structured-data).
             continue;
         }
         let slot = ((pos % FIELD_BATCH) * FIELD_STRIDE) as usize;
@@ -164,10 +173,20 @@ pub(crate) fn crypt(
         }
         let fk = &keys[slot..slot + KEY_SIZE + NONCE_SIZE];
         item.data = match mode {
+            //= spec/structured-encryption/structures.md#encrypt
+            //# During [Encrypt Structure](encrypt-structure.md#encrypt-structure),
+            //# ENCRYPT signifies that the [Terminal Value](#terminal-value) in the [Terminal Data](#terminal-data)
+            //# MUST be encrypted in the resulting encrypted [Structured Data](#structured-data).
             Mode::Encrypt => encrypt_terminal(fk, &item.canon, &item.data)?,
+
             //= spec/structured-encryption/header.md#encrypt-legend-bytes
             //= reason=for_decrypt maps legend byte 0x65 to EncryptAndSign, the only action reaching here
             //# This indicates that this field MUST be attempted to be decrypted during decryption.
+            //
+            //= spec/structured-encryption/structures.md#encrypt
+            //# During [Decrypt Structure](decrypt-structure.md#decrypt-structure),
+            //# ENCRYPT signifies that the [Terminal Value](#terminal-value) in the [Terminal Data](#terminal-data)
+            //# MUST be attempted to be decrypted.
             Mode::Decrypt => decrypt_terminal(fk, &item.canon, &item.data)?,
         };
         pos += 1;

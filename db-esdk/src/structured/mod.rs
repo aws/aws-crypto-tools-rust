@@ -217,6 +217,9 @@ fn v2_encryption_context<'a>(
         } else {
             ('B', attr.encode())
         };
+
+        //= spec/structured-encryption/structures.md#sign-and-include-in-encryption-context
+        //# and further that the [Terminal Data](#terminal-data) MUST be included in the encryption context.
         ec.insert(key, value);
         legend.push(legend_char);
     }

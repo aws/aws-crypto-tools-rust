@@ -198,6 +198,19 @@ async fn tampered_ciphertext_fails() {
 async fn tampered_sign_only_field_fails() {
     let data = with_value(encrypted_default().await, "bar", |v| v[0] ^= 1);
     let err = decrypt(data).await.unwrap_err();
+
+    //= spec/structured-encryption/structures.md#sign
+    //= type=test
+    //= reason=changing the SIGN_ONLY value breaks the signature, so encrypt signed it
+    //# During [Encrypt Structure](./encrypt-structure.md),
+    //# SIGN signifies that the [Terminal Data](#terminal-data) MUST be included in the signature calculations
+    //# on the footer.
+    //
+    //= spec/structured-encryption/structures.md#sign
+    //= type=test
+    //# During [Decrypt Structure](./decrypt-structure.md),
+    //# SIGN signifies that the [Terminal Data](#terminal-data) MUST be authenticated,
+    //# and thus be included in the verification of the signatures on the footer.
     assert_cryptographic(&err, "Signature of record does not match");
 }
 
@@ -207,6 +220,19 @@ async fn changed_do_nothing_field_is_not_checked() {
     let out = decrypt(data).await.unwrap();
     let mut expected = blob().into_value();
     expected[0] ^= 1;
+
+    //= spec/structured-encryption/structures.md#do-not-sign
+    //= type=test
+    //= reason=a changed DO_NOTHING value still verifies, so encrypt did not sign it
+    //# During [Encrypt Structure](./encrypt-structure.md),
+    //# DO_NOT_SIGN signifies that the [Terminal Data](#terminal-data) MUST NOT be included in the signature calculations
+    //# on the footer.
+    //
+    //= spec/structured-encryption/structures.md#do-not-sign
+    //= type=test
+    //# During [Decrypt Structure](./decrypt-structure.md),
+    //# DO_NOT_SIGN signifies that the [Terminal Data](#terminal-data) MUST NOT be authenticated,
+    //# and thus not be included in the verification of the signatures on the footer.
     assert_eq!(out["fizzbuzz"].value(), expected.as_slice());
     assert_eq!(out["foo"], blob());
 }
@@ -638,12 +664,6 @@ async fn every_required_input_is_checked() {
             .encrypted_structure(auth())
             .cmm(cmm())
     };
-    let resolve = || {
-        c.resolve_auth_actions()
-            .table_name(TABLE)
-            .auth_actions(auth())
-            .header_bytes(vec![0u8; 4])
-    };
 
     let cases: Vec<(&str, Result<(), Error>)> = vec![
         (
@@ -710,21 +730,38 @@ async fn every_required_input_is_checked() {
                 .map(drop),
         ),
         ("cmm", decrypt_path().set_cmm(None).send().await.map(drop)),
-        (
-            "table_name",
-            resolve().set_table_name(None).send().await.map(drop),
-        ),
-        (
-            "auth_actions",
-            resolve().set_auth_actions(None).send().await.map(drop),
-        ),
-        (
-            "header_bytes",
-            resolve().set_header_bytes(None).send().await.map(drop),
-        ),
     ];
     for (name, result) in cases {
         let err = result.unwrap_err();
+        assert_validation(&err, &format!("{name} is required"));
+    }
+}
+
+#[tokio::test]
+async fn resolve_auth_actions_requires_every_input() {
+    let header = encrypted_default().await[HEADER].value().to_vec();
+    let resolve = || {
+        client()
+            .resolve_auth_actions()
+            .table_name(TABLE)
+            .auth_actions(AuthItem::new(
+                path(&["a"]),
+                blob(),
+                AuthenticateAction::Sign,
+            ))
+            .header_bytes(header.clone())
+    };
+    let cases = [
+        ("table_name", resolve().set_table_name(None)),
+        ("auth_actions", resolve().set_auth_actions(None)),
+        ("header_bytes", resolve().set_header_bytes(None)),
+    ];
+    for (name, builder) in cases {
+        let err = builder.send().await.unwrap_err();
+
+        //= spec/structured-encryption/resolve-auth-actions.md#input
+        //= type=test
+        //# The following inputs to this behavior are REQUIRED:
         assert_validation(&err, &format!("{name} is required"));
     }
 }

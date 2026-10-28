@@ -103,7 +103,25 @@ fn canon_hash(
     record.extend_from_slice(&u64_len(aad.len()).to_be_bytes());
     record.extend_from_slice(&aad);
     for item in data {
+        //= spec/structured-encryption/structures.md#do-not-sign
+        //# During [Encrypt Structure](./encrypt-structure.md),
+        //# DO_NOT_SIGN signifies that the [Terminal Data](#terminal-data) MUST NOT be included in the signature calculations
+        //# on the footer.
+        //
+        //= spec/structured-encryption/structures.md#do-not-sign
+        //# During [Decrypt Structure](./decrypt-structure.md),
+        //# DO_NOT_SIGN signifies that the [Terminal Data](#terminal-data) MUST NOT be authenticated,
+        //# and thus not be included in the verification of the signatures on the footer.
         if item.action != CryptoAction::DoNothing {
+            //= spec/structured-encryption/structures.md#sign
+            //# During [Encrypt Structure](./encrypt-structure.md),
+            //# SIGN signifies that the [Terminal Data](#terminal-data) MUST be included in the signature calculations
+            //# on the footer.
+            //
+            //= spec/structured-encryption/structures.md#sign
+            //# During [Decrypt Structure](./decrypt-structure.md),
+            //# SIGN signifies that the [Terminal Data](#terminal-data) MUST be authenticated,
+            //# and thus be included in the verification of the signatures on the footer.
             canonical_field(item, &mut record)?;
         }
     }

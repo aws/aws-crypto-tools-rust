@@ -26,6 +26,10 @@ pub(crate) const NULL: TypeId = [0x00, 0x00];
 pub(crate) const STRING: TypeId = [0x00, 0x01];
 pub(crate) const NUMBER: TypeId = [0x00, 0x02];
 pub(crate) const BOOLEAN: TypeId = [0x00, 0x04];
+
+//= spec/structured-encryption/structures.md#terminal-type-id
+//# If [Terminal Value](#terminal-value) is to be interpreted as raw bytes,
+//# the Terminal Type ID MUST be 0xFFFF.
 pub(crate) const BINARY: TypeId = [0xFF, 0xFF];
 pub(crate) const STRING_SET: TypeId = [0x01, 0x01];
 pub(crate) const NUMBER_SET: TypeId = [0x01, 0x02];
@@ -59,6 +63,11 @@ impl Terminal {
 }
 
 /// A location in a structure: the names of the nested structure members, outermost first.
+//= spec/structured-encryption/structures.md#overview
+//= type=implication
+//= reason=internally a path is bare member names; every path segment property still holds
+//# While these structures will usually be represented as objects, lower level languages MAY represent
+//# these fields in a less strictly defined way as long as all field properties are still upheld.
 pub(crate) type Path = Vec<String>;
 
 /// Whether a field of an item being decrypted is covered by the signature.
