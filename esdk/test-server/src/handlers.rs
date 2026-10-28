@@ -210,7 +210,7 @@ impl AppState {
             .plaintext(&mut plaintext)
             .set_encryption_context(Some(encryption_context(req.encryption_context)))
             .keyring(keyring)
-            // The commons suite stream-decrypts multi-frame signed messages, which the default rejects.
+            // The commons suite runs streamed decrypt on multi-frame signed messages, which the default rejects.
             .signed_streaming(SignedStreaming::ReleaseRegularFrames)
             .send()
             .await

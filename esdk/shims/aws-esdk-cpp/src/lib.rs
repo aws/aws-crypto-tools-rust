@@ -213,7 +213,7 @@ mod ffi {
         RequireEncryptRequireDecrypt = 3,
     }
 
-    /// How a streamed decrypt handles a signed message.
+    /// What a streamed decrypt does with a signed message.
     enum SignedStreaming {
         RejectMultiFrame = 1,
         ReleaseRegularFrames = 2,
@@ -298,7 +298,7 @@ mod ffi {
         /// Whether to require committing algorithms on encrypt/decrypt.
         /// Core default is `EsdkCommitmentPolicy::RequireEncryptRequireDecrypt`
         pub commitment_policy: OptCommitmentPolicy,
-        /// How `create_decrypt_stream` handles a signed message; `decrypt` ignores it.
+        /// What `create_decrypt_stream` does with a signed message; `decrypt` ignores it.
         pub signed_streaming: OptSignedStreaming,
     }
 

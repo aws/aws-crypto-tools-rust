@@ -134,7 +134,7 @@ pub use aws_crypto_mpl::types::EncryptionContext;
 /// the materials boundary.
 pub use aws_crypto_mpl::types::EsdkCommitmentPolicy as CommitmentPolicy;
 
-/// How [`Client::decrypt_stream`](crate::Client::decrypt_stream) handles a message with a signing algorithm suite.
+/// What [`Client::decrypt_stream`](crate::Client::decrypt_stream) does with a message that has a signing algorithm suite.
 ///
 /// Plaintext written before the signature verifies is unverified:
 /// don't act on it until `send` returns `Ok`, and discard it on `Err`.
@@ -1083,7 +1083,7 @@ impl DecryptStreamInputBuilder {
         get_signed_streaming: signed_streaming -> SignedStreaming,
     );
 
-    /// Set how `decrypt_stream` handles a signed message.
+    /// Set what `decrypt_stream` does with a signed message.
     /// Default is [`SignedStreaming::RejectMultiFrame`].
     #[must_use]
     pub(crate) const fn signed_streaming(mut self, signed_streaming: SignedStreaming) -> Self {
@@ -1091,7 +1091,7 @@ impl DecryptStreamInputBuilder {
         self
     }
 
-    /// Set how `decrypt_stream` handles a signed message, from an `Option`.
+    /// Set what `decrypt_stream` does with a signed message, from an `Option`.
     /// `None` leaves it unset.
     /// To set a value, use [`Self::signed_streaming`].
     #[must_use]

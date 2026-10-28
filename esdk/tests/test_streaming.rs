@@ -198,7 +198,7 @@ async fn test_decrypt_stream_release_regular_frames_holds_final_frame() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_decrypt_stream_reject_signed_fails_after_header() {
     // This keyring cannot decrypt the message.
-    // A Validation error, not NoMatchingDataKey, shows decrypt fails before fetching materials.
+    // A Validation error, not NoMatchingDataKey, shows that decrypt fails before fetching materials.
     let ct = encrypt_with_signing_suite(b"single frame").await;
     //= spec/client-apis/decrypt.md#behavior
     //= type=test

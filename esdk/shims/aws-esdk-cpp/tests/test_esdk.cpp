@@ -900,7 +900,7 @@ void test_streaming_signed_message_refused() {
     // One-shot decrypt handles it.
     ESDK_CHECK(sdk.decrypt(ciphertext, keyring).plaintext == plaintext);
 
-    // By default, streamed decrypt refuses: it releases no plaintext it cannot yet verify.
+    // By default, streamed decrypt refuses: it releases no plaintext that it cannot yet verify.
     //= spec/shim/esdk-shim.md#encrypt-stream-and-decrypt-stream
     //= type=test
     //# - Streamed decrypt MUST NOT release plaintext the core ESDK would not release,

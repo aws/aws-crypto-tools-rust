@@ -453,8 +453,8 @@ enum class CommitmentPolicy : std::uint8_t {
     RequireEncryptRequireDecrypt = 3,
 };
 
-/// How a streamed decrypt handles a message with a signing algorithm suite.
-/// Plaintext the stream releases before finish() returns is unverified.
+/// What a streamed decrypt does with a message that has a signing algorithm suite.
+/// Plaintext that the stream releases before finish() returns is unverified.
 enum class SignedStreaming : std::uint8_t {
     /// The default.
     /// Fail on a multi-frame signed message.
@@ -857,7 +857,7 @@ public:
     /// Encryption context to verify against the encrypted message; every entry must be present in the message's context.
     /// Keys and values must be valid UTF-8; decrypt throws ValidationException otherwise.
     DecryptOptions& with_encryption_context(const std::map<std::string, std::string>& ec) { encryption_context_ = ec; return *this; }
-    /// How create_decrypt_stream handles a signed message.
+    /// What create_decrypt_stream does with a signed message.
     /// Default SignedStreaming::RejectMultiFrame.
     /// decrypt ignores it.
     DecryptOptions& with_signed_streaming(SignedStreaming s) { signed_streaming_ = s; return *this; }

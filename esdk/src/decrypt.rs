@@ -24,7 +24,7 @@ use aws_mpl_primitives::{DigestContext, aes_decrypt, ecdsa_verify_context};
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum DecryptMode {
     /// Writes plaintext to the caller as each frame decrypts.
-    /// The setting decides how a signed message is handled.
+    /// The `SignedStreaming` setting says what to do with a signed message.
     Streaming(SignedStreaming),
     /// Plaintext is returned to the caller only after the whole message is
     /// decrypted and verified; multi-frame signed messages decrypt normally.
