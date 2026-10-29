@@ -4,7 +4,9 @@
 //! Puts and gets an item with a hierarchical keyring that calls AWS KMS with credentials issued for one request.
 //!
 //! Requires an existing key store with a provisioned branch key,
-//! and a DynamoDB table with partition key `partition_key`, type S.
+//! and a DynamoDB table with:
+//! - partition key `partition_key`, type S
+//! - sort key `sort_key`, type N
 //! The request credentials are read from AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and AWS_SESSION_TOKEN.
 //! Each KMS call also carries this request's headers.
 
@@ -104,7 +106,9 @@ async fn handle_request(
 
     let table = TableConfig::builder()
         .partition_key_name("partition_key")
+        .sort_key_name("sort_key")
         .attribute_actions_on_encrypt("partition_key", CryptoAction::SignOnly)
+        .attribute_actions_on_encrypt("sort_key", CryptoAction::SignOnly)
         .attribute_actions_on_encrypt("sensitive_data", CryptoAction::EncryptAndSign)
         .keyring(keyring)
         .build()?;
@@ -118,6 +122,7 @@ async fn handle_request(
             "partition_key".to_string(),
             AttributeValue::S("PerRequestCredentialsExample".into()),
         ),
+        ("sort_key".to_string(), AttributeValue::N("0".into())),
         (
             "sensitive_data".to_string(),
             AttributeValue::S("encrypt and sign me!".into()),
@@ -135,6 +140,7 @@ async fn handle_request(
             "partition_key",
             AttributeValue::S("PerRequestCredentialsExample".into()),
         )
+        .key("sort_key", AttributeValue::N("0".into()))
         .consistent_read(true)
         .send()
         .await?;
