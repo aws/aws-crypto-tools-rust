@@ -53,9 +53,9 @@ Do not reimplement these as custom keyrings or CMMs unless the user asks. A hand
 ## Dependencies
 
 - Replace `aws-esdk = "1..."` with `aws-esdk = "2"`. 2.x is not on crates.io yet; if the user has no source for it, say so.
-- Keep `tokio`. 2.x needs Rust 1.85 or later (edition 2024).
-- Remove `aws-smithy-types` if only the ESDK used it (2.x has no `Blob`).
-- Create AWS clients from the re-exports `aws_esdk::aws_config`, `aws_esdk::aws_sdk_kms`, `aws_esdk::aws_sdk_dynamodb`. A client from another version of those crates is a different type. Drop the direct dependencies only if nothing else uses them.
+- Leave other dependencies as they are, including `tokio`. 2.x needs Rust 1.85 or later (edition 2024).
+- Remove `aws-smithy-types` only if nothing but the ESDK used it (2.x has no `Blob`).
+- 2.x re-exports `aws_esdk::aws_config`, `aws_esdk::aws_sdk_kms`, `aws_esdk::aws_sdk_dynamodb`. The user's own `aws-config`, `aws-sdk-kms`, `aws-sdk-dynamodb` dependencies can stay.
 - Features: `non-fips` becomes `aws-lc-sys` (default). `fips` stays `fips`.
 
 ## Mappings

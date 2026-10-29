@@ -45,24 +45,20 @@ You can still write your own keyring or CMM; see [Custom keyrings, CMMs, and sup
 
 ## Dependencies
 
+Change the `aws-esdk` version. Keep your other dependencies.
+
 ```toml
 # 1.x
 aws-esdk = "1"
-aws-config = "1"
-aws-sdk-kms = "1"
-aws-sdk-dynamodb = "1"
-aws-smithy-types = "1"
 
 # 2.x
 aws-esdk = "2"
-tokio = { version = "1", features = ["full"] }
 ```
 
 - 2.x is not on crates.io yet. Build it from this repository until it is.
+- You can drop `aws-smithy-types` if only the ESDK used it: 2.x does not use `Blob`.
 - 2.x re-exports the AWS SDK crates it takes clients from: `aws_esdk::aws_config`, `aws_esdk::aws_sdk_kms`, and `aws_esdk::aws_sdk_dynamodb`.
-  Create clients from these re-exports.
-  A client from a different version of `aws-sdk-kms` is a different type and does not compile.
-- You no longer need `aws-smithy-types`: 2.x does not use `Blob`.
+  You can use these instead of your own `aws-config`, `aws-sdk-kms`, and `aws-sdk-dynamodb` dependencies.
 - 2.x uses Rust edition 2024, so it needs Rust 1.85 or later.
 - The license changed from `ISC AND (Apache-2.0 OR ISC)` to `Apache-2.0`.
 
