@@ -68,9 +68,8 @@ jobs:
         run: |
           LOG_FILE="cloudwatch_logs.json"
           LOG_GROUP="aws-esdk-performance-benchmarks"
-          # Distinct stream per keyring so series don't mix in the shared log group.
-          # "ubuntu-latest" and the workflow name are fixed, so the stream name from
-          # before the move into ci.yml and onto CodeBuild stays the same.
+          # One stream per keyring.
+          # Keep this name as is, even "ubuntu-latest": a new name starts a new series in CloudWatch.
           LOG_STREAM="rust-${{ matrix.keyring }}/ubuntu-latest/quick_benchmarks/Performance Benchmarks"
 
           aws logs create-log-stream \
