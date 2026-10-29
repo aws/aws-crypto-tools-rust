@@ -39,8 +39,10 @@ jobs:
 
       - uses: actions/checkout@v6
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/setup-rust
+        with:
+          workspaces: esdk/performance-tests
+          lockfile: check
 
       # The hierarchical keyring reads the shared test key store (KMS + DynamoDB,
       # account 370957321024, us-west-2) and every leg uploads to CloudWatch
@@ -52,11 +54,6 @@ jobs:
           role-to-assume: arn:aws:iam::370957321024:role/GitHub-CI-Public-ESDK-Dafny-Role-us-west-2
           role-session-name: RustPerformanceBenchmarks
           special-characters-workaround: "true" # Some environments cannot tolerate special characters in a secret key.
-
-      - name: Cache cargo build artifacts
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: esdk/performance-tests
 
       - name: Run performance benchmarks - Quick Mode
         run: cargo run --release -- --quick --keyring ${{ matrix.keyring }}

@@ -134,6 +134,24 @@ pub use aws_crypto_mpl::types::EncryptionContext;
 /// the materials boundary.
 pub use aws_crypto_mpl::types::EsdkCommitmentPolicy as CommitmentPolicy;
 
+/// What [`Client::decrypt_stream`](crate::Client::decrypt_stream) does with a message that has a signing algorithm suite.
+///
+/// Plaintext written before the signature verifies is unverified:
+/// don't act on it until `send` returns `Ok`, and discard it on `Err`.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[non_exhaustive]
+pub enum SignedStreaming {
+    /// Fail on a multi-frame signed message.
+    /// A single-frame signed message decrypts, and its plaintext is written after the signature verifies.
+    #[default]
+    RejectMultiFrame,
+    /// Write each regular frame as soon as its tag verifies, before the signature verifies.
+    /// Hold the final frame until the signature verifies.
+    ReleaseRegularFrames,
+    /// Fail right after parsing the header, before decrypting anything.
+    RejectSigned,
+}
+
 /// Commitment policy used when the caller provides none.
 //= spec/client-apis/client.md#initialization
 //# If no [commitment policy](#commitment-policy) is provided the default MUST be [REQUIRE_ENCRYPT_REQUIRE_DECRYPT](../framework/algorithm-suites.md#require_encrypt_require_decrypt).
@@ -142,6 +160,106 @@ const REDACTED: &str = "*** Sensitive Data Redacted ***";
 
 pub(crate) const DEFAULT_COMMITMENT_POLICY: CommitmentPolicy =
     CommitmentPolicy::RequireEncryptRequireDecrypt;
+
+/// Implements the shared read-only byte-buffer interface of an output newtype.
+macro_rules! output_bytes {
+    ($name:ident) => {
+        impl $name {
+            /// Consume the value and return its bytes.
+            #[must_use]
+            pub fn into_inner(self) -> Vec<u8> {
+                self.0
+            }
+
+            /// The number of bytes.
+            #[must_use]
+            pub const fn len(&self) -> usize {
+                self.0.len()
+            }
+
+            /// Whether there are no bytes.
+            #[must_use]
+            pub const fn is_empty(&self) -> bool {
+                self.0.is_empty()
+            }
+        }
+
+        impl std::ops::Deref for $name {
+            type Target = [u8];
+
+            fn deref(&self) -> &[u8] {
+                &self.0
+            }
+        }
+
+        impl AsRef<[u8]> for $name {
+            fn as_ref(&self) -> &[u8] {
+                &self.0
+            }
+        }
+
+        impl PartialEq<[u8]> for $name {
+            fn eq(&self, other: &[u8]) -> bool {
+                self.0 == other
+            }
+        }
+
+        impl PartialEq<&[u8]> for $name {
+            fn eq(&self, other: &&[u8]) -> bool {
+                self.0 == *other
+            }
+        }
+
+        impl<const N: usize> PartialEq<[u8; N]> for $name {
+            fn eq(&self, other: &[u8; N]) -> bool {
+                self.0 == other
+            }
+        }
+
+        impl PartialEq<Vec<u8>> for $name {
+            fn eq(&self, other: &Vec<u8>) -> bool {
+                self.0 == *other
+            }
+        }
+    };
+}
+
+/// Decrypted bytes returned by [`Client::decrypt`](crate::Client::decrypt).
+///
+/// Read it as `&[u8]` through [`Deref`](std::ops::Deref) or [`AsRef`], or take
+/// ownership of the bytes with [`into_inner`](Self::into_inner).
+/// `Debug` does not print the bytes.
+#[derive(Clone, PartialEq, Eq)]
+pub struct Plaintext(Vec<u8>);
+
+impl Plaintext {
+    pub(crate) const fn new(bytes: Vec<u8>) -> Self {
+        Self(bytes)
+    }
+}
+
+output_bytes!(Plaintext);
+
+impl std::fmt::Debug for Plaintext {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("Plaintext").field(&REDACTED).finish()
+    }
+}
+
+/// An encrypted message returned by [`Client::encrypt`](crate::Client::encrypt).
+///
+/// Read it as `&[u8]` through [`Deref`](std::ops::Deref) or [`AsRef`], or take
+/// ownership of the bytes with [`into_inner`](Self::into_inner).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Ciphertext(Vec<u8>);
+
+impl Ciphertext {
+    pub(crate) const fn new(bytes: Vec<u8>) -> Self {
+        Self(bytes)
+    }
+}
+
+output_bytes!(Ciphertext);
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 #[non_exhaustive]
@@ -164,7 +282,7 @@ pub struct EncryptOutput {
     /// Algorithm Suite. See <https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/supported-algorithms.html>
     pub(crate) algorithm_suite_id: AlgorithmSuiteId,
     /// Encrypted message bytes (the serialized AWS Encryption SDK message).
-    pub(crate) ciphertext: Vec<u8>,
+    pub(crate) ciphertext: Ciphertext,
     /// Encryption context associated with the encrypted message.
     pub(crate) encryption_context: EncryptionContext,
 }
@@ -184,13 +302,13 @@ impl EncryptOutput {
 
     /// The encrypted message bytes.
     #[must_use]
-    pub fn ciphertext(&self) -> &[u8] {
+    pub const fn ciphertext(&self) -> &Ciphertext {
         &self.ciphertext
     }
 
     /// Consume the output and return the ciphertext.
     #[must_use]
-    pub fn into_ciphertext(self) -> Vec<u8> {
+    pub fn into_ciphertext(self) -> Ciphertext {
         self.ciphertext
     }
 }
@@ -217,7 +335,7 @@ impl EncryptStreamOutput {
         &self.encryption_context
     }
 }
-#[derive(PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 #[non_exhaustive]
 /// Output of [`Client::decrypt`](crate::Client::decrypt).
 pub struct DecryptOutput {
@@ -228,19 +346,9 @@ pub struct DecryptOutput {
     /// Decrypted plaintext data
     //= spec/client-apis/decrypt.md#plaintext
     //= type=implication
-    //= reason=Vec<u8> is a sequence of bytes by definition
+    //= reason=Plaintext wraps a Vec<u8>, a sequence of bytes by definition
     //# This MUST be a sequence of bytes.
-    pub(crate) plaintext: Vec<u8>,
-}
-
-impl std::fmt::Debug for DecryptOutput {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("DecryptOutput")
-            .field("algorithm_suite_id", &self.algorithm_suite_id)
-            .field("encryption_context", &self.encryption_context)
-            .field("plaintext", &REDACTED)
-            .finish()
-    }
+    pub(crate) plaintext: Plaintext,
 }
 
 impl DecryptOutput {
@@ -258,13 +366,13 @@ impl DecryptOutput {
 
     /// The decrypted plaintext.
     #[must_use]
-    pub fn plaintext(&self) -> &[u8] {
+    pub const fn plaintext(&self) -> &Plaintext {
         &self.plaintext
     }
 
     /// Consume the output and return the plaintext.
     #[must_use]
-    pub fn into_plaintext(self) -> Vec<u8> {
+    pub fn into_plaintext(self) -> Plaintext {
         self.plaintext
     }
 }
@@ -432,14 +540,6 @@ impl<'a> EncryptInputBuilder<'a> {
         algorithm_suite_id: Option<AlgorithmSuiteId>,
     ) -> Self {
         self.algorithm_suite_id = algorithm_suite_id;
-        self
-    }
-
-    /// Set the key-value pairs to associate with the encrypted data.
-    /// Default is empty.
-    #[must_use]
-    pub(crate) fn encryption_context(mut self, ec: impl Into<EncryptionContext>) -> Self {
-        self.encryption_context = Some(ec.into());
         self
     }
 
@@ -651,14 +751,6 @@ impl EncryptStreamInputBuilder {
         self
     }
 
-    /// Set the key-value pairs to associate with the encrypted data.
-    /// Default is empty.
-    #[must_use]
-    pub(crate) fn encryption_context(mut self, ec: impl Into<EncryptionContext>) -> Self {
-        self.encryption_context = Some(ec.into());
-        self
-    }
-
     /// Set the encryption context from an `Option`.
     /// `None` leaves it unset.
     /// To set a value, use [`Self::encryption_context`].
@@ -850,16 +942,6 @@ impl<'a> DecryptInputBuilder<'a> {
         self
     }
 
-    /// Set the encryption context to verify against the encrypted message.
-    /// If non-empty, decrypt requires every entry to be present in the message's encryption
-    /// context (subset check).
-    /// Default is empty.
-    #[must_use]
-    pub(crate) fn encryption_context(mut self, ec: impl Into<EncryptionContext>) -> Self {
-        self.encryption_context = Some(ec.into());
-        self
-    }
-
     /// Set the encryption context from an `Option`.
     /// `None` leaves it unset.
     /// To set a value, use [`Self::encryption_context`].
@@ -967,6 +1049,7 @@ pub(crate) struct DecryptStreamInput {
     pub(crate) cmm: Option<SharedCmm>,
     pub(crate) max_encrypted_data_keys: Option<NonZeroUsize>,
     pub(crate) commitment_policy: CommitmentPolicy,
+    pub(crate) signed_streaming: SignedStreaming,
 }
 
 impl DecryptStreamInput {
@@ -989,6 +1072,7 @@ pub(crate) struct DecryptStreamInputBuilder {
     cmm: Option<SharedCmm>,
     max_encrypted_data_keys: Option<NonZeroUsize>,
     commitment_policy: Option<CommitmentPolicy>,
+    signed_streaming: Option<SignedStreaming>,
 }
 
 impl DecryptStreamInputBuilder {
@@ -996,15 +1080,26 @@ impl DecryptStreamInputBuilder {
         get_encryption_context: encryption_context -> EncryptionContext,
         get_keyring: keyring -> SharedKeyring,
         get_cmm: cmm -> SharedCmm,
+        get_signed_streaming: signed_streaming -> SignedStreaming,
     );
 
-    /// Set the encryption context to verify against the encrypted message.
-    /// If non-empty, `decrypt_stream` requires every entry to be present in the message's
-    /// encryption context (subset check).
-    /// Default is empty.
+    /// Set what `decrypt_stream` does with a signed message.
+    /// Default is [`SignedStreaming::RejectMultiFrame`].
     #[must_use]
-    pub(crate) fn encryption_context(mut self, ec: impl Into<EncryptionContext>) -> Self {
-        self.encryption_context = Some(ec.into());
+    pub(crate) const fn signed_streaming(mut self, signed_streaming: SignedStreaming) -> Self {
+        self.signed_streaming = Some(signed_streaming);
+        self
+    }
+
+    /// Set what `decrypt_stream` does with a signed message, from an `Option`.
+    /// `None` leaves it unset.
+    /// To set a value, use [`Self::signed_streaming`].
+    #[must_use]
+    pub(crate) const fn set_signed_streaming(
+        mut self,
+        signed_streaming: Option<SignedStreaming>,
+    ) -> Self {
+        self.signed_streaming = signed_streaming;
         self
     }
 
@@ -1089,6 +1184,7 @@ impl DecryptStreamInputBuilder {
             cmm: self.cmm,
             max_encrypted_data_keys: self.max_encrypted_data_keys,
             commitment_policy: self.commitment_policy.unwrap_or(DEFAULT_COMMITMENT_POLICY),
+            signed_streaming: self.signed_streaming.unwrap_or_default(),
         })
     }
 }

@@ -1,0 +1,28 @@
+[package]
+name = "aws-esdk-test-server"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+description = "Hand-rolled rpcv2Cbor Language_Server for the ESDK TestServer, delegating to aws-esdk."
+
+[[bin]]
+name = "esdk-test-server"
+path = "src/main.rs"
+
+[dependencies]
+# Real product SDK under test, from this repo's head of main.
+aws-esdk = { path = ".." }
+# The MPL aws-esdk is built on, for the keyrings and key store the server
+# constructs.
+aws-crypto-mpl = { path = "../../mpl" }
+
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal"] }
+axum = "0.8"
+ciborium = "0.2"
+serde = { version = "1", features = ["derive"] }
+serde_bytes = "0.11"
+uuid = { version = "1", features = ["v4"] }
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
