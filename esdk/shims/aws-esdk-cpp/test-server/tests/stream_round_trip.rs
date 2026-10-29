@@ -2,11 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! Offline streaming round trips through the C++ facade with a raw-AES keyring
-//! over the rpcv2Cbor wire: EncryptStream -> DecryptStream, plus each cross-mode
-//! pairing with the blob operations. The multi-frame plaintext spans several
-//! frames plus a partial final frame under a non-signing committing suite
-//! (streamed decrypt refuses multi-frame signed messages). Needs no AWS access,
-//! so it always runs.
+//! over the rpcv2Cbor wire: EncryptStream -> DecryptStream,
+//! plus each cross-mode pairing with the blob operations.
+//! The multi-frame plaintext spans several frames plus a partial final frame,
+//! under the default signing suite.
+//! Needs no AWS access, so it always runs.
 
 use std::sync::Arc;
 
@@ -14,8 +14,8 @@ use aws_esdk_cpp_test_server::backend::CppBackend;
 use aws_esdk_cpp_test_server::model::{
     AesWrappingAlg, CreateClientRequest, CreateClientResponse, CryptographicMaterialsManager,
     DecryptRequest, DecryptResponse, DecryptStreamRequest, DecryptStreamResponse, DefaultCmmConfig,
-    EncryptRequest, EncryptResponse, EncryptStreamRequest, EncryptStreamResponse,
-    EsdkAlgorithmSuiteId, EsdkClientConfig, EsdkCommitmentPolicy, Keyring, RawAesKeyringConfig,
+    EncryptRequest, EncryptResponse, EncryptStreamRequest, EncryptStreamResponse, EsdkClientConfig,
+    EsdkCommitmentPolicy, Keyring, RawAesKeyringConfig,
 };
 use aws_esdk_cpp_test_server::wire::app;
 use axum::body::Body;
@@ -84,7 +84,6 @@ async fn stream_round_trip_multi_frame() {
     let state = Arc::new(CppBackend::new());
     let client_id = create_raw_aes_client(&state).await;
 
-    // Several 1024-byte frames plus a partial final frame.
     let frame_length: i64 = 1024;
     let plaintext: Vec<u8> = (0..(3 * frame_length as usize + 100))
         .map(|i| (i * 31 + 7) as u8)
@@ -94,7 +93,7 @@ async fn stream_round_trip_multi_frame() {
         client_id: client_id.clone(),
         plaintext: plaintext.clone(),
         encryption_context: None,
-        algorithm_suite_id: Some(EsdkAlgorithmSuiteId::Alg256GcmCommit),
+        algorithm_suite_id: None,
         frame_length: Some(frame_length),
         plaintext_length_bound: None,
     };
@@ -154,9 +153,7 @@ async fn blob_encrypt_decrypts_as_stream() {
         client_id: client_id.clone(),
         plaintext: plaintext.clone(),
         encryption_context: None,
-        // Non-signing committing suite: streamed decrypt refuses multi-frame
-        // signed messages, and the default suite signs.
-        algorithm_suite_id: Some(EsdkAlgorithmSuiteId::Alg256GcmCommit),
+        algorithm_suite_id: None,
         frame_length: None,
     };
     let encrypted: EncryptResponse = call(&state, "Encrypt", &encrypt).await;
@@ -170,5 +167,73 @@ async fn blob_encrypt_decrypts_as_stream() {
     assert_eq!(
         decrypted.plaintext, plaintext,
         "streamed decrypt of a one-shot-encrypted message must recover the plaintext"
+    );
+}
+
+/// Commons ENC-007.
+#[tokio::test(flavor = "multi_thread")]
+async fn stream_encrypt_enforces_plaintext_length_bound() {
+    let state = Arc::new(CppBackend::new());
+    let client_id = create_raw_aes_client(&state).await;
+
+    let plaintext = b"plaintext-length-bound plaintext, comfortably over sixteen bytes".to_vec();
+
+    let within_bound = EncryptStreamRequest {
+        client_id: client_id.clone(),
+        plaintext: plaintext.clone(),
+        encryption_context: None,
+        algorithm_suite_id: None,
+        frame_length: None,
+        plaintext_length_bound: Some(plaintext.len() as i64),
+    };
+    let encrypted: EncryptStreamResponse = call(&state, "EncryptStream", &within_bound).await;
+    assert!(!encrypted.ciphertext.is_empty());
+
+    let over_bound = EncryptStreamRequest {
+        client_id,
+        plaintext: plaintext.clone(),
+        encryption_context: None,
+        algorithm_suite_id: None,
+        frame_length: None,
+        plaintext_length_bound: Some(plaintext.len() as i64 - 1),
+    };
+    let mut body = Vec::new();
+    ciborium::into_writer(&over_bound, &mut body).expect("encode request");
+    let request = Request::builder()
+        .method("POST")
+        .uri("/service/ESDKTestServer/operation/EncryptStream")
+        .header("smithy-protocol", "rpc-v2-cbor")
+        .header("content-type", "application/cbor")
+        .body(Body::from(body))
+        .expect("build request");
+    let response = app(Arc::clone(&state))
+        .oneshot(request)
+        .await
+        .expect("dispatch");
+    assert_eq!(
+        response.status(),
+        400,
+        "a plaintext longer than the bound must be rejected"
+    );
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("read body");
+    let ciborium::value::Value::Map(map) =
+        ciborium::from_reader(&bytes[..]).expect("decode cbor error")
+    else {
+        panic!("error body was not a CBOR map");
+    };
+    let error_type = map
+        .iter()
+        .find_map(|(k, v)| match (k, v) {
+            (ciborium::value::Value::Text(k), ciborium::value::Value::Text(v)) if k == "__type" => {
+                Some(v.clone())
+            }
+            _ => None,
+        })
+        .expect("error carries __type");
+    assert_eq!(
+        error_type, "aws.cryptography.esdk.testserver#ESDKClientError",
+        "an over-bound plaintext is the modeled ESDK error",
     );
 }

@@ -66,6 +66,8 @@ extern "C" {
         algorithm_suite_id: u16,
         frame_length: u32,
         max_encrypted_data_keys: u32,
+        has_plaintext_length_bound: u8,
+        plaintext_length_bound: u64,
         ec_keys: *const *const c_char,
         ec_vals: *const *const c_char,
         ec_len: usize,
@@ -304,6 +306,7 @@ pub fn decrypt(
     }
 }
 
+#[expect(clippy::too_many_arguments)]
 pub fn encrypt_stream(
     client: &CppClient,
     plaintext: &[u8],
@@ -311,6 +314,7 @@ pub fn encrypt_stream(
     algorithm_suite_id: u16,
     frame_length: u32,
     max_encrypted_data_keys: u32,
+    plaintext_length_bound: Option<u64>,
     encryption_context: &[(String, String)],
 ) -> Result<Vec<u8>, String> {
     let ec = to_c_encryption_context(encryption_context)?;
@@ -327,6 +331,8 @@ pub fn encrypt_stream(
             algorithm_suite_id,
             frame_length,
             max_encrypted_data_keys,
+            u8::from(plaintext_length_bound.is_some()),
+            plaintext_length_bound.unwrap_or(0),
             ec.key_ptrs.as_ptr(),
             ec.val_ptrs.as_ptr(),
             ec.key_ptrs.len(),

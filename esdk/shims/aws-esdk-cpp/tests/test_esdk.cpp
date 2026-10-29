@@ -638,7 +638,7 @@ void test_streaming() {
                                      .with_max_encrypted_data_keys(3)
                                      .with_commitment_policy(Aws::Esdk::CommitmentPolicy::RequireEncryptRequireDecrypt));
     // MUST be a non-signing suite to test round-trip here.
-    // Streamed decrypt of multi-frame signed messages is refused by any ESDK.
+    // By default, streamed decrypt refuses a multi-frame signed message.
     //
     //= spec/shim/esdk-shim.md#encrypt-stream-and-decrypt-stream
     //= type=test
@@ -920,7 +920,7 @@ void test_streaming_signed_message_refused() {
     // One-shot decrypt handles it.
     ESDK_CHECK(sdk.decrypt(ciphertext, keyring).plaintext == plaintext);
 
-    // Streamed decrypt refuses: it never releases plaintext it cannot yet verify.
+    // By default, streamed decrypt refuses: it releases no plaintext that it cannot yet verify.
     //= spec/shim/esdk-shim.md#encrypt-stream-and-decrypt-stream
     //= type=test
     //# - Streamed decrypt MUST NOT release plaintext the core ESDK would not release,
@@ -937,6 +937,92 @@ void test_streaming_signed_message_refused() {
         ++::esdk_test::g_failures;
         std::cerr << "FAIL: streamed decrypt of multi-frame signed message did not throw\n";
     } catch (const Aws::Esdk::AwsEncryptionSdkException&) {
+        // expected
+    }
+}
+
+void test_streaming_signed_message_settings() {
+    std::vector<std::uint8_t> key(32, 0x2A);
+    Aws::Esdk::RawAesKeyring keyring("test-ns", "test-key", key,
+                                     Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16);
+    Aws::Esdk::Client sdk;
+    std::vector<std::uint8_t> plaintext(10000, 0x5A);
+    auto ciphertext = sdk.encrypt(plaintext, keyring,
+                                  Aws::Esdk::EncryptOptions().with_frame_length(4096))
+                          .ciphertext;
+
+    // ReleaseRegularFrames streams the multi-frame signed message.
+    auto dec = sdk.create_decrypt_stream(
+        keyring, Aws::Esdk::DecryptOptions().with_signed_streaming(
+                     Aws::Esdk::SignedStreaming::ReleaseRegularFrames));
+    std::vector<std::uint8_t> recovered;
+    for (std::size_t off = 0; off < ciphertext.size(); off += 4096) {
+        auto n = std::min<std::size_t>(4096, ciphertext.size() - off);
+        auto out = dec.write(ciphertext.data() + off, n);
+        recovered.insert(recovered.end(), out.data(), out.data() + out.size());
+    }
+    auto result = dec.finish();
+    recovered.insert(recovered.end(), result.trailing_output.data(),
+                     result.trailing_output.data() + result.trailing_output.size());
+    ESDK_CHECK(recovered == plaintext);
+
+    // RejectMultiFrame, set explicitly, refuses it.
+    ++::esdk_test::g_checks;
+    try {
+        auto refuse = sdk.create_decrypt_stream(
+            keyring, Aws::Esdk::DecryptOptions().with_signed_streaming(
+                         Aws::Esdk::SignedStreaming::RejectMultiFrame));
+        refuse.write(ciphertext.data(), ciphertext.size());
+        refuse.finish();
+        ++::esdk_test::g_failures;
+        std::cerr << "FAIL: RejectMultiFrame streamed decrypt of a multi-frame signed message did not throw\n";
+    } catch (const Aws::Esdk::ValidationException&) {
+        // expected
+    }
+
+    // RejectSigned fails at the header.
+    ++::esdk_test::g_checks;
+    try {
+        auto reject = sdk.create_decrypt_stream(
+            keyring, Aws::Esdk::DecryptOptions().with_signed_streaming(
+                         Aws::Esdk::SignedStreaming::RejectSigned));
+        reject.write(ciphertext.data(), ciphertext.size());
+        reject.finish();
+        ++::esdk_test::g_failures;
+        std::cerr << "FAIL: RejectSigned streamed decrypt of a signed message did not throw\n";
+    } catch (const Aws::Esdk::ValidationException&) {
+        // expected
+    }
+}
+
+void test_streaming_plaintext_length_bound() {
+    std::vector<std::uint8_t> key(32, 0x2A);
+    Aws::Esdk::RawAesKeyring keyring("test-ns", "test-key", key,
+                                     Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16);
+    Aws::Esdk::Client sdk;
+    std::vector<std::uint8_t> plaintext(300, 0x5A);
+
+    // A bound equal to the plaintext length succeeds.
+    auto within = sdk.create_encrypt_stream(
+        keyring, Aws::Esdk::EncryptOptions().with_plaintext_length_bound(plaintext.size()));
+    std::vector<std::uint8_t> ciphertext;
+    auto out = within.write(plaintext);
+    ciphertext.insert(ciphertext.end(), out.begin(), out.end());
+    auto fin = within.finish();
+    ciphertext.insert(ciphertext.end(), fin.trailing_output.begin(), fin.trailing_output.end());
+    ESDK_CHECK(sdk.decrypt(ciphertext, keyring).plaintext == plaintext);
+
+    // A plaintext longer than the bound fails the stream.
+    ++::esdk_test::g_checks;
+    try {
+        auto over = sdk.create_encrypt_stream(
+            keyring,
+            Aws::Esdk::EncryptOptions().with_plaintext_length_bound(plaintext.size() - 1));
+        over.write(plaintext);
+        over.finish();
+        ++::esdk_test::g_failures;
+        std::cerr << "FAIL: over-bound streamed encrypt did not throw\n";
+    } catch (const Aws::Esdk::ValidationException&) {
         // expected
     }
 }
@@ -1029,6 +1115,8 @@ int main(int argc, char** argv) {
         test_decrypt_stream_write_string_view();
         test_streaming();
         test_streaming_signed_message_refused();
+        test_streaming_signed_message_settings();
+        test_streaming_plaintext_length_bound();
         test_streaming_pump();
         test_streaming_pump_io_failure();
     } catch (const std::exception& e) {

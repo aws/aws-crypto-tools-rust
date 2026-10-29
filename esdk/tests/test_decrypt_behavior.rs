@@ -149,9 +149,6 @@ async fn test_decrypt_fails_with_trailing_bytes_after_message() {
     );
 }
 
-// Multi-frame signed messages are rejected in streaming mode. The "MUST fail
-// immediately after parsing the header" requirement is type=exception on the
-// source (decrypt.rs); we fail during body decode rather than at header parse.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_streaming_fails_for_multi_frame_signed() {
     let keyring = test_keyring().await;
