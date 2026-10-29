@@ -89,8 +89,7 @@ async fn stream_round_trip_multi_frame() {
         client_id: client_id.clone(),
         plaintext: plaintext.clone(),
         encryption_context: None,
-        // Streamed decrypt refuses multi-frame signed messages, and the default suite signs.
-        algorithm_suite_id: Some(EsdkAlgorithmSuiteId::Alg256GcmCommit),
+        algorithm_suite_id: None,
         frame_length: Some(frame_length),
         plaintext_length_bound: None,
     };

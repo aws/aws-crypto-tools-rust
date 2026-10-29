@@ -14,7 +14,7 @@
 // then decrypts it back while withholding the plaintext until it is authenticated.
 //
 // A non-signing suite is used so streamed decrypt works regardless of message size;
-// the ESDK refuses streamed decrypt of a multi-frame signed message.
+// by default, the ESDK refuses streamed decrypt of a multi-frame signed message.
 
 #include <cstdint>
 #include <cstdio>

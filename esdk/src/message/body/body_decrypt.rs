@@ -23,7 +23,7 @@ async fn release_previous_frame(
     if fail_if_multi_frame {
         return Err(err(
             Kind::Validation,
-            "streaming a multi-frame signed message would release plaintext before signature verification. Use the non-streaming `decrypt` API for multi-frame signed messages",
+            "streaming a multi-frame signed message would release plaintext before signature verification. Use the non-streaming `decrypt` API, or set `SignedStreaming::ReleaseRegularFrames`",
         ));
     }
     write_to_sink(w, result).await
