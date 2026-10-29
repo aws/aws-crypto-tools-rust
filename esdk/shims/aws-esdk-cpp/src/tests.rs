@@ -383,8 +383,8 @@ fn max_edks_zero_is_no_limit_positive_is_limit() {
     //# The shim MUST translate zero to the core ESDK's "no limit" representation,
     //# and a positive value `n` to a limit of `n`.
     assert_eq!(max_edks_target_to_core(0), None);
-    assert_eq!(max_edks_target_to_core(1), std::num::NonZeroUsize::new(1));
-    assert_eq!(max_edks_target_to_core(42), std::num::NonZeroUsize::new(42));
+    assert_eq!(max_edks_target_to_core(1), Some(1));
+    assert_eq!(max_edks_target_to_core(42), Some(42));
 }
 
 #[test]
@@ -1022,10 +1022,7 @@ fn encrypt_settings_forwards_every_optional_input() {
     //# - MUST provide the target-supplied maximum-encrypted-data-keys value to
     //# the core ESDK, converted as defined in
     //# [Maximum encrypted data keys](#maximum-encrypted-data-keys).
-    assert_eq!(
-        config.max_encrypted_data_keys(),
-        std::num::NonZeroUsize::new(5)
-    );
+    assert_eq!(config.max_encrypted_data_keys(), Some(5));
 
     //= spec/shim/esdk-shim.md#encrypt-inputs
     //= type=test
@@ -1081,10 +1078,7 @@ fn decrypt_client_forwards_every_optional_input() {
     //# - MUST provide the target-supplied maximum-encrypted-data-keys value to
     //# the core ESDK, converted as defined in
     //# [Maximum encrypted data keys](#maximum-encrypted-data-keys).
-    assert_eq!(
-        config.max_encrypted_data_keys(),
-        std::num::NonZeroUsize::new(7)
-    );
+    assert_eq!(config.max_encrypted_data_keys(), Some(7));
 
     //= spec/shim/esdk-shim.md#decrypt-inputs
     //= type=test

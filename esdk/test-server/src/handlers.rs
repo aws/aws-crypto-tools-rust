@@ -24,7 +24,6 @@ use aws_esdk::{
     Client,
 };
 use std::collections::HashMap;
-use std::num::{NonZeroU32, NonZeroUsize};
 use std::sync::Mutex;
 
 /// The ESDK client and keyring a registered client encrypts/decrypts with.
@@ -79,13 +78,13 @@ fn map_algorithm_suite(id: EsdkAlgorithmSuiteId) -> MplAlgorithmSuiteId {
     }
 }
 
-fn max_edks(config: &EsdkClientConfig) -> Result<Option<NonZeroUsize>, ServerError> {
+fn max_edks(config: &EsdkClientConfig) -> Result<Option<usize>, ServerError> {
     let Some(v) = config.max_encrypted_data_keys else {
         return Ok(None);
     };
     usize::try_from(v)
         .ok()
-        .and_then(NonZeroUsize::new)
+        .filter(|&n| n > 0)
         .map(Some)
         .ok_or_else(|| {
             ServerError::generic(format!("maxEncryptedDataKeys must be positive, got {v}"))
@@ -99,13 +98,10 @@ fn encryption_context(
 }
 
 // The commons suite expects an out-of-range frame length as ESDKClientError.
-fn frame_length(frame: i64) -> Result<NonZeroU32, ServerError> {
-    u32::try_from(frame)
-        .ok()
-        .and_then(NonZeroU32::new)
-        .ok_or_else(|| {
-            ServerError::esdk(format!("frameLength must be in 1..=u32::MAX, got {frame}"))
-        })
+fn frame_length(frame: i64) -> Result<u32, ServerError> {
+    u32::try_from(frame).ok().filter(|&n| n > 0).ok_or_else(|| {
+        ServerError::esdk(format!("frameLength must be in 1..=u32::MAX, got {frame}"))
+    })
 }
 
 impl AppState {

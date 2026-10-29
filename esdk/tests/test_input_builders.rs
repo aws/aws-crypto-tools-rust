@@ -10,7 +10,6 @@ use aws_esdk::Client;
 use aws_esdk::cmm::SharedCmm;
 use aws_esdk::keyring::SharedKeyring;
 use aws_esdk::types::{AlgorithmSuiteId, CommitmentPolicy, EncryptionContext};
-use std::num::{NonZeroU32, NonZeroUsize};
 use test_helpers::{count_frames, esdk_with, test_keyring};
 
 const SUITE: AlgorithmSuiteId = AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256;
@@ -30,8 +29,8 @@ fn conflicting_ec() -> EncryptionContext {
     ec
 }
 
-fn frame_length() -> NonZeroU32 {
-    NonZeroU32::new(FRAME_LENGTH).unwrap()
+fn frame_length() -> u32 {
+    FRAME_LENGTH
 }
 
 /// Two full frames plus a one-byte final frame at `FRAME_LENGTH`.
@@ -414,7 +413,7 @@ async fn test_getters_return_set_values() {
     let keyring = SharedKeyring::new(test_keyring().await);
     let cmm = SharedCmm::new(DefaultCmm::new(keyring.clone()));
     let bytes = plaintext();
-    let edks = NonZeroUsize::new(3).unwrap();
+    let edks = 3;
     let esdk = Client::default();
 
     let b = Client::builder();

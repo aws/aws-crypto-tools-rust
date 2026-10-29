@@ -52,6 +52,16 @@ fn validate_material_source(
 //# This value MUST default to 4096 bytes.
 const DEFAULT_FRAME_LENGTH: NonZeroU32 = NonZeroU32::new(4096).expect("4096 is non-zero");
 
+/// The frame length to encrypt with: the default when unset, an error when 0.
+//= spec/client-apis/encrypt.md#frame-length
+//# This value MUST be greater than 0 and MUST NOT exceed the value 2^32 - 1.
+fn frame_length_or_default(frame_length: Option<u32>) -> Result<NonZeroU32, Error> {
+    match frame_length {
+        None => Ok(DEFAULT_FRAME_LENGTH),
+        Some(n) => NonZeroU32::new(n).ok_or_else(|| val_err("frame_length must be greater than 0")),
+    }
+}
+
 /// The output a streaming encrypt or decrypt writes to:
 /// any [`AsyncWrite`](tokio::io::AsyncWrite) that is `Unpin + Send`.
 //= spec/client-apis/streaming.md#outputs
@@ -475,7 +485,7 @@ macro_rules! getters {
 pub(crate) struct EncryptInputBuilder<'a> {
     algorithm_suite_id: Option<AlgorithmSuiteId>,
     encryption_context: Option<EncryptionContext>,
-    frame_length: Option<NonZeroU32>,
+    frame_length: Option<u32>,
     keyring: Option<SharedKeyring>,
     cmm: Option<SharedCmm>,
     plaintext: Option<&'a [u8]>,
@@ -520,7 +530,7 @@ impl<'a> EncryptInputBuilder<'a> {
         get_keyring: keyring -> SharedKeyring,
         get_cmm: cmm -> SharedCmm,
         get_algorithm_suite_id: algorithm_suite_id -> AlgorithmSuiteId,
-        get_frame_length: frame_length -> NonZeroU32,
+        get_frame_length: frame_length -> u32,
     );
 
     /// Set the algorithm suite.
@@ -557,13 +567,8 @@ impl<'a> EncryptInputBuilder<'a> {
 
     /// Set the bytes of plaintext data per frame.
     /// Default is 4096.
-    //
-    //= spec/client-apis/encrypt.md#frame-length
-    //= type=implication
-    //= reason=NonZeroU32 is greater than 0 and at most u32::MAX = 2^32 - 1
-    //# This value MUST be greater than 0 and MUST NOT exceed the value 2^32 - 1.
     #[must_use]
-    pub(crate) const fn frame_length(mut self, frame_length: NonZeroU32) -> Self {
+    pub(crate) const fn frame_length(mut self, frame_length: u32) -> Self {
         self.frame_length = Some(frame_length);
         self
     }
@@ -572,7 +577,7 @@ impl<'a> EncryptInputBuilder<'a> {
     /// `None` leaves it unset.
     /// To set a value, use [`Self::frame_length`].
     #[must_use]
-    pub(crate) const fn set_frame_length(mut self, frame_length: Option<NonZeroU32>) -> Self {
+    pub(crate) const fn set_frame_length(mut self, frame_length: Option<u32>) -> Self {
         self.frame_length = frame_length;
         self
     }
@@ -654,7 +659,7 @@ impl<'a> EncryptInputBuilder<'a> {
     ///
     /// # Errors
     ///
-    /// - [`Validation`](crate::Error::Validation): no plaintext was set, or not exactly one of a keyring or CMM was set.
+    /// - [`Validation`](crate::Error::Validation): no plaintext was set, not exactly one of a keyring or CMM was set, or `frame_length` is 0.
     pub(crate) fn build(self) -> Result<EncryptInput<'a>, Error> {
         let plaintext = required(self.plaintext, "plaintext")?;
         //= spec/client-apis/encrypt.md#input
@@ -666,7 +671,7 @@ impl<'a> EncryptInputBuilder<'a> {
         Ok(EncryptInput {
             algorithm_suite_id: self.algorithm_suite_id,
             encryption_context: self.encryption_context.unwrap_or_default(),
-            frame_length: self.frame_length.unwrap_or(DEFAULT_FRAME_LENGTH),
+            frame_length: frame_length_or_default(self.frame_length)?,
             keyring: self.keyring,
             cmm: self.cmm,
             plaintext,
@@ -713,7 +718,7 @@ impl EncryptStreamInput {
 pub(crate) struct EncryptStreamInputBuilder {
     algorithm_suite_id: Option<AlgorithmSuiteId>,
     encryption_context: Option<EncryptionContext>,
-    frame_length: Option<NonZeroU32>,
+    frame_length: Option<u32>,
     keyring: Option<SharedKeyring>,
     cmm: Option<SharedCmm>,
     data_size: Option<usize>,
@@ -727,7 +732,7 @@ impl EncryptStreamInputBuilder {
         get_keyring: keyring -> SharedKeyring,
         get_cmm: cmm -> SharedCmm,
         get_algorithm_suite_id: algorithm_suite_id -> AlgorithmSuiteId,
-        get_frame_length: frame_length -> NonZeroU32,
+        get_frame_length: frame_length -> u32,
         get_data_size: data_size -> usize,
     );
 
@@ -766,7 +771,7 @@ impl EncryptStreamInputBuilder {
     /// Set the bytes of plaintext data per frame.
     /// Default is 4096.
     #[must_use]
-    pub(crate) const fn frame_length(mut self, frame_length: NonZeroU32) -> Self {
+    pub(crate) const fn frame_length(mut self, frame_length: u32) -> Self {
         self.frame_length = Some(frame_length);
         self
     }
@@ -775,7 +780,7 @@ impl EncryptStreamInputBuilder {
     /// `None` leaves it unset.
     /// To set a value, use [`Self::frame_length`].
     #[must_use]
-    pub(crate) const fn set_frame_length(mut self, frame_length: Option<NonZeroU32>) -> Self {
+    pub(crate) const fn set_frame_length(mut self, frame_length: Option<u32>) -> Self {
         self.frame_length = frame_length;
         self
     }
@@ -860,13 +865,13 @@ impl EncryptStreamInputBuilder {
     ///
     /// # Errors
     ///
-    /// - [`Validation`](crate::Error::Validation): not exactly one of a keyring or CMM was set.
+    /// - [`Validation`](crate::Error::Validation): not exactly one of a keyring or CMM was set, or `frame_length` is 0.
     pub(crate) fn build(self) -> Result<EncryptStreamInput, Error> {
         validate_material_source(self.keyring.as_ref(), self.cmm.as_ref())?;
         Ok(EncryptStreamInput {
             algorithm_suite_id: self.algorithm_suite_id,
             encryption_context: self.encryption_context.unwrap_or_default(),
-            frame_length: self.frame_length.unwrap_or(DEFAULT_FRAME_LENGTH),
+            frame_length: frame_length_or_default(self.frame_length)?,
             keyring: self.keyring,
             cmm: self.cmm,
             data_size: self.data_size,

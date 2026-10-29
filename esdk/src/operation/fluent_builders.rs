@@ -15,7 +15,6 @@ use aws_crypto_mpl::cmm::SharedCmm;
 use aws_crypto_mpl::keyring::SharedKeyring;
 use aws_crypto_mpl::shared::IntoShared;
 use std::fmt;
-use std::num::NonZeroU32;
 use tokio::io::{AsyncRead, AsyncWrite};
 
 /// A stream reader held by a streaming fluent builder.
@@ -141,8 +140,8 @@ macro_rules! encrypt_members {
             get_algorithm_suite_id -> AlgorithmSuiteId
         );
         member!(
-            /// Bytes of plaintext per frame. Default is 4096.
-            frame_length(NonZeroU32), set_frame_length, get_frame_length -> NonZeroU32
+            /// Bytes of plaintext per frame. Must be greater than 0. Default is 4096.
+            frame_length(u32), set_frame_length, get_frame_length -> u32
         );
     };
 }

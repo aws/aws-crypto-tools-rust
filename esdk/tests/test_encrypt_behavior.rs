@@ -17,7 +17,6 @@ use aws_crypto_mpl::cmm::{
 };
 use aws_esdk::types::*;
 use aws_esdk::*;
-use std::num::NonZeroU32;
 use std::sync::Arc;
 use test_helpers::*;
 
@@ -441,7 +440,7 @@ async fn test_frame_length_input_used() {
         .encrypt()
         .plaintext(b"custom frame length")
         .keyring(keyring.clone())
-        .frame_length(NonZeroU32::new(512).unwrap())
+        .frame_length(512)
         .send()
         .await
         .unwrap()

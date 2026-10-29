@@ -871,8 +871,8 @@ fn encryption_context_core_to_target(
 //# The shim MUST translate zero
 //# to the core ESDK's "no limit" representation, and a positive value `n` to a
 //# limit of `n`.
-fn max_edks_target_to_core(n: u32) -> Option<std::num::NonZeroUsize> {
-    std::num::NonZeroUsize::new(usize::try_from(n).unwrap_or(usize::MAX))
+fn max_edks_target_to_core(n: u32) -> Option<usize> {
+    (n != 0).then(|| usize::try_from(n).unwrap_or(usize::MAX))
 }
 
 // C++ to Rust for Frame Length
@@ -1299,7 +1299,7 @@ fn encrypt(input: &ffi::EncryptInput) -> Result<ffi::EncryptOutput, String> {
         //# source (see [Resources](#resources)).
         .keyring(keyring.inner.clone())
         .set_algorithm_suite_id(settings.algorithm_suite_id)
-        .set_frame_length(settings.frame_length)
+        .set_frame_length(settings.frame_length.map(NonZeroU32::get))
         .send();
     let output = TOKIO_RUNTIME.block_on(output).map_err(core_err)?;
     Ok(ffi::EncryptOutput {
@@ -1933,7 +1933,7 @@ fn create_encrypt_stream(input: &ffi::EncryptInput) -> Result<Box<EncryptStream>
             &input.encryption_context,
         )))
         .set_algorithm_suite_id(settings.algorithm_suite_id)
-        .set_frame_length(settings.frame_length)
+        .set_frame_length(settings.frame_length.map(NonZeroU32::get))
         .set_data_size(
             input
                 .plaintext_length_bound

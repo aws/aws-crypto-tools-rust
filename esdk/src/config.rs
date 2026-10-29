@@ -4,6 +4,7 @@
 //! The [`Config`] a [`Client`](crate::Client) applies to every operation, and its [`Builder`].
 
 use crate::Error;
+use crate::error::val_err;
 use crate::shapes::{CommitmentPolicy, DEFAULT_COMMITMENT_POLICY};
 use std::num::NonZeroUsize;
 
@@ -55,7 +56,7 @@ impl Config {
     pub const fn to_builder(&self) -> Builder {
         Builder {
             commitment_policy: Some(self.commitment_policy),
-            max_encrypted_data_keys: self.max_encrypted_data_keys,
+            max_encrypted_data_keys: self.max_encrypted_data_keys(),
         }
     }
 
@@ -67,8 +68,11 @@ impl Config {
 
     /// The maximum number of encrypted data keys per message, if capped.
     #[must_use]
-    pub const fn max_encrypted_data_keys(&self) -> Option<NonZeroUsize> {
-        self.max_encrypted_data_keys
+    pub const fn max_encrypted_data_keys(&self) -> Option<usize> {
+        match self.max_encrypted_data_keys {
+            Some(n) => Some(n.get()),
+            None => None,
+        }
     }
 }
 
@@ -77,7 +81,7 @@ impl Config {
 #[allow(missing_copy_implementations)] // not Copy, like Config, so it can gain settings that aren't Copy
 pub struct Builder {
     commitment_policy: Option<CommitmentPolicy>,
-    max_encrypted_data_keys: Option<NonZeroUsize>,
+    max_encrypted_data_keys: Option<usize>,
 }
 
 impl Builder {
@@ -98,8 +102,9 @@ impl Builder {
     }
 
     /// Set the maximum number of encrypted data keys per message.
+    /// It must be greater than 0.
     #[must_use]
-    pub const fn max_encrypted_data_keys(mut self, max_encrypted_data_keys: NonZeroUsize) -> Self {
+    pub const fn max_encrypted_data_keys(mut self, max_encrypted_data_keys: usize) -> Self {
         self.max_encrypted_data_keys = Some(max_encrypted_data_keys);
         self
     }
@@ -107,7 +112,7 @@ impl Builder {
     /// Set or clear the maximum number of encrypted data keys from an `Option`.
     pub const fn set_max_encrypted_data_keys(
         &mut self,
-        max_encrypted_data_keys: Option<NonZeroUsize>,
+        max_encrypted_data_keys: Option<usize>,
     ) -> &mut Self {
         self.max_encrypted_data_keys = max_encrypted_data_keys;
         self
@@ -123,7 +128,7 @@ impl Builder {
     /// The maximum number of encrypted data keys set so far.
     #[must_use]
     #[allow(clippy::ref_option)] // AWS SDK for Rust getter shape
-    pub const fn get_max_encrypted_data_keys(&self) -> &Option<NonZeroUsize> {
+    pub const fn get_max_encrypted_data_keys(&self) -> &Option<usize> {
         &self.max_encrypted_data_keys
     }
 
@@ -132,12 +137,18 @@ impl Builder {
     ///
     /// # Errors
     ///
-    /// Currently never fails. Returns a `Result` so that a future validated
-    /// setting is not a breaking change.
+    /// - [`Validation`](crate::Error::Validation): `max_encrypted_data_keys` is 0.
     pub fn build(self) -> Result<Config, Error> {
+        let max_encrypted_data_keys = match self.max_encrypted_data_keys {
+            None => None,
+            Some(n) => Some(
+                NonZeroUsize::new(n)
+                    .ok_or_else(|| val_err("max_encrypted_data_keys must be greater than 0"))?,
+            ),
+        };
         Ok(Config {
             commitment_policy: self.commitment_policy.unwrap_or(DEFAULT_COMMITMENT_POLICY),
-            max_encrypted_data_keys: self.max_encrypted_data_keys,
+            max_encrypted_data_keys,
         })
     }
 }
