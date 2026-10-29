@@ -212,6 +212,8 @@ name = "aws-mpl-primitives"
 version = "0.1.0"
 dependencies = [
  "aws-lc-rs",
+ "pem",
+ "zeroize",
 ]
 
 [[package]]
@@ -1822,6 +1824,16 @@ dependencies = [
  "redox_syscall",
  "smallvec",
  "windows-link",
+]
+
+[[package]]
+name = "pem"
+version = "4.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d354a98a3d1251555de99e8fdd8afda05573c31b82f59063a7b0a29b5527f120"
+dependencies = [
+ "base64",
+ "serde_core",
 ]
 
 [[package]]
