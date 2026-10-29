@@ -25,7 +25,7 @@ use aws_db_esdk::search::{
 use aws_db_esdk::types::CryptoAction;
 use aws_db_esdk::{TableConfig, aws_config, aws_sdk_dynamodb, aws_sdk_kms, key_store};
 
-const TABLE_NAME: &str = "UnitInspectionTable";
+const TABLE_NAME: &str = "UnitInspectionTestTableCS";
 const KEY_STORE_TABLE_NAME: &str = "KeyStoreDdbTable";
 const KMS_KEY_ARN: &str =
     "arn:aws:kms:us-west-2:370957321024:key/9d989aa2-2f9c-438c-a745-cc57d3ad0126";

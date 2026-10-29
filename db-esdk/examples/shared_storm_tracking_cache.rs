@@ -14,7 +14,7 @@
 //! near expiry, one request refreshes the entry while the others keep using the cached value.
 //!
 //! Requires AWS credentials, an existing key store with a provisioned branch key,
-//! and two DynamoDB tables, each with partition key `partition_key`, type S.
+//! and two DynamoDB tables, each with partition key `partition_key` (S) and sort key `sort_key` (N).
 
 use std::collections::HashMap;
 use std::time::Duration;
@@ -26,8 +26,9 @@ use aws_db_esdk::keyring::HierarchicalKeyring;
 use aws_db_esdk::types::CryptoAction;
 use aws_db_esdk::{TableConfig, aws_config, aws_sdk_dynamodb, aws_sdk_kms, key_store};
 
-const ORDERS_TABLE: &str = "OrdersTable";
-const CUSTOMERS_TABLE: &str = "CustomersTable";
+// The AWS Crypto Tools CI test tables. Replace these with your own tables.
+const ORDERS_TABLE: &str = "DynamoDbEncryptionInterceptorTestTable";
+const CUSTOMERS_TABLE: &str = "DynamoDbEncryptionInterceptorTestTableCS";
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -79,7 +80,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .await?;
         Ok(TableConfig::builder()
             .partition_key_name("partition_key")
+            .sort_key_name("sort_key")
             .attribute_actions_on_encrypt("partition_key", CryptoAction::SignOnly)
+            .attribute_actions_on_encrypt("sort_key", CryptoAction::SignOnly)
             .attribute_actions_on_encrypt("sensitive_data", CryptoAction::EncryptAndSign)
             .keyring(keyring)
             .build()?)
@@ -99,6 +102,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "partition_key".to_string(),
                 AttributeValue::S("SharedCacheExample".into()),
             ),
+            ("sort_key".to_string(), AttributeValue::N("0".into())),
             (
                 "sensitive_data".to_string(),
                 AttributeValue::S(format!("{table} secret")),
@@ -110,10 +114,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .send()
             .await?;
 
-        let key = HashMap::from([(
-            "partition_key".to_string(),
-            AttributeValue::S("SharedCacheExample".into()),
-        )]);
+        let key = HashMap::from([
+            (
+                "partition_key".to_string(),
+                AttributeValue::S("SharedCacheExample".into()),
+            ),
+            ("sort_key".to_string(), AttributeValue::N("0".into())),
+        ]);
         let output = ddb
             .get_item()
             .table_name(table)

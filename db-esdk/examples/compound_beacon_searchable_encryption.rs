@@ -25,7 +25,7 @@ use aws_db_esdk::search::{
 use aws_db_esdk::types::CryptoAction;
 use aws_db_esdk::{TableConfig, aws_config, aws_sdk_dynamodb, aws_sdk_kms, key_store};
 
-const TABLE_NAME: &str = "UnitInspectionTable";
+const TABLE_NAME: &str = "UnitInspectionTestTableCS";
 const GSI_NAME: &str = "last4UnitCompound-index";
 const KEY_STORE_TABLE_NAME: &str = "KeyStoreDdbTable";
 const KMS_KEY_ARN: &str =
