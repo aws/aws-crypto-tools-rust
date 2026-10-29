@@ -39,7 +39,7 @@ jobs:
 
       # Each filter matches its crate, plus the crates it depends on.
       # ex. an mpl change re-tests mpl, esdk, the C++ shim, and their TestServers.
-      # A change to a `shared` path runs everything.
+      # A change to CI itself (`ci`) or a `shared` path runs all of CI.
       - name: Filter changed paths
         if: github.event_name == 'pull_request'
         id: filter
@@ -71,8 +71,10 @@ jobs:
             esdk-cpp-test-server:
               - *mpl
               - 'esdk/**'
-            shared:
+            # Any change to CI (workflows, actions, CI config) runs all of CI.
+            ci:
               - '.github/**'
+            shared:
               - 'scripts/spec-source.json'
               - 'scripts/resolve-spec.sh'
               - 'errors.toml'
@@ -82,9 +84,11 @@ jobs:
         id: set
         env:
           # PRs only test the files that changed.
-          # Pushes to main/scheduled runs/"shared" files resolve to "all" and test everything.
+          # Pushes to main, scheduled runs, and "ci" or "shared" changes resolve to "all" and run everything.
           CHANGES: >-
-            ${{ (github.event_name != 'pull_request' || contains(steps.filter.outputs.changes, '"shared"'))
+            ${{ (github.event_name != 'pull_request'
+                 || contains(steps.filter.outputs.changes, '"ci"')
+                 || contains(steps.filter.outputs.changes, '"shared"'))
               && '"all"' || steps.filter.outputs.changes }}
           # JOBS defines when/what to run.
           # ex. `when` "esdk" changes, test `project` "esdk".
@@ -125,6 +129,12 @@ jobs:
               ],
               "prim-test-server": [
                 {"when": "prim-test-server"}
+              ],
+              "benchmarks": [
+                {"when": "esdk"}
+              ],
+              "benchmarks-cpp": [
+                {"when": "esdk"}
               ]
             }
         run: |
@@ -276,6 +286,27 @@ jobs:
       checkout-languages: rust
     secrets:
       repo-pat: ${{ secrets.COMMONS_REPO_PAT }}
+
+  # Benchmarks only upload to CloudWatch on the daily run.
+  # Not in pr-ci-all-required, so a slow or noisy benchmark can't block a merge.
+  benchmarks:
+    name: Performance Benchmarks
+    needs: detect
+    if: fromJSON(needs.detect.outputs.jobs)['benchmarks'] != null
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/performance-benchmarks.yml
+
+  # Not in pr-ci-all-required; see benchmarks.
+  benchmarks-cpp:
+    name: Performance Benchmarks (C++)
+    needs: detect
+    if: fromJSON(needs.detect.outputs.jobs)['benchmarks-cpp'] != null
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/performance-benchmarks-cpp.yml
 
   # The generated error types must match errors.toml.
   gen-errors:

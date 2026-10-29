@@ -7,12 +7,9 @@ permissions:
   contents: read
 
 on:
+  # ci.yml calls this on PRs, pushes to main, and the daily run.
+  workflow_call:
   workflow_dispatch:
-  schedule:
-    - cron: "00 09 * * *"
-  pull_request:
-    paths:
-      - "esdk/performance-tests/**"
 
 jobs:
   benchmark:
@@ -72,8 +69,9 @@ jobs:
           LOG_FILE="cloudwatch_logs.json"
           LOG_GROUP="aws-esdk-performance-benchmarks"
           # Distinct stream per keyring so series don't mix in the shared log group.
-          # "ubuntu-latest" keeps the stream name from before the CodeBuild move, so the series continues.
-          LOG_STREAM="rust-${{ matrix.keyring }}/ubuntu-latest/quick_benchmarks/${{ github.workflow }}"
+          # "ubuntu-latest" and the workflow name are fixed, so the stream name from
+          # before the move into ci.yml and onto CodeBuild stays the same.
+          LOG_STREAM="rust-${{ matrix.keyring }}/ubuntu-latest/quick_benchmarks/Performance Benchmarks"
 
           aws logs create-log-stream \
             --log-group-name "$LOG_GROUP" \
