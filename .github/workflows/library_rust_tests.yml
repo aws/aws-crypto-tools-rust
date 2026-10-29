@@ -58,14 +58,24 @@ jobs:
       # aws/aws-encryption-sdk `library_rust_tests.yml` uses. The role ARN is
       # public (no repo secret needed); access is gated by the role's OIDC
       # trust policy, which must permit `repo:aws/aws-crypto-tools-rust:*`.
-      # db-esdk's tests and examples also reach the DB-ESDK DynamoDB test tables,
-      # so it assumes the DB-ESDK CI role that aws-database-encryption-sdk-dynamodb uses.
       - name: Configure AWS Credentials
+        if: matrix.project != 'db-esdk'
         uses: aws-actions/configure-aws-credentials@v6
         with:
           aws-region: us-west-2
-          role-to-assume: ${{ matrix.project == 'db-esdk' && 'arn:aws:iam::370957321024:role/GitHub-CI-DDBEC-Dafny-Role-us-west-2' || 'arn:aws:iam::370957321024:role/GitHub-CI-Public-ESDK-Dafny-Role-us-west-2' }}
+          role-to-assume: arn:aws:iam::370957321024:role/GitHub-CI-Public-ESDK-Dafny-Role-us-west-2
           role-session-name: RustTests
+          special-characters-workaround: "true" # Some environments (example: windowsOS) cannot tolerate special characters in a secret key.
+
+      # db-esdk's tests and examples also reach the DB-ESDK DynamoDB test tables,
+      # so it uses the CI role aws-database-encryption-sdk-dynamodb uses.
+      - name: Configure AWS Credentials (DB-ESDK)
+        if: matrix.project == 'db-esdk'
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-region: us-west-2
+          role-to-assume: arn:aws:iam::370957321024:role/GitHub-CI-DDBEC-Dafny-Role-us-west-2
+          role-session-name: DDBEC-Dafny-Rust-Tests
           special-characters-workaround: "true" # Some environments (example: windowsOS) cannot tolerate special characters in a secret key.
 
       - name: Format check
