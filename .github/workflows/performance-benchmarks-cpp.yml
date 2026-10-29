@@ -75,7 +75,7 @@ jobs:
           LOG_FILE="cloudwatch_logs.json"
           LOG_GROUP="aws-esdk-performance-benchmarks"
           # One stream per keyring.
-          # Keep this name as is, even "ubuntu-latest": a new name starts a new series in CloudWatch.
+          # Keep this name as is: a new name starts a new series in CloudWatch.
           LOG_STREAM="rust-cpp-${{ matrix.keyring }}/ubuntu-latest/quick_benchmarks/Performance Benchmarks (C++)"
 
           aws logs create-log-stream \
