@@ -110,9 +110,11 @@ jobs:
               "test-server-builds": [
                 {"when": "esdk-test-server", "name": "esdk-test-server", "server": "esdk/test-server"},
                 {"when": "esdk-cpp-test-server", "name": "esdk-cpp-test-server (ubuntu)", "server": "esdk/shims/aws-esdk-cpp/test-server", "prebuild": "esdk/shims/aws-esdk-cpp", "os": "ubuntu-latest"},
-                {"when": "esdk-cpp-test-server", "name": "esdk-cpp-test-server (macos)", "server": "esdk/shims/aws-esdk-cpp/test-server", "prebuild": "esdk/shims/aws-esdk-cpp", "os": "macos-latest"},
                 {"when": "mpl-test-server", "name": "mpl-test-server", "server": "mpl-test-server"},
                 {"when": "prim-test-server", "name": "prim-test-server", "server": "prim-test-server"}
+              ],
+              "test-server-builds-macos": [
+                {"when": "esdk-cpp-test-server", "name": "esdk-cpp-test-server (macos)", "server": "esdk/shims/aws-esdk-cpp/test-server", "prebuild": "esdk/shims/aws-esdk-cpp", "os": "macos-latest"}
               ],
               "esdk-test-server": [
                 {"when": "esdk-test-server", "focus": "rust"},
@@ -142,6 +144,21 @@ jobs:
     uses: ./.github/workflows/library_rust_tests.yml
     with:
       projects: ${{ toJSON(fromJSON(needs.detect.outputs.jobs)['rust-tests'].*.project) }}
+      os: '["ubuntu"]'
+
+  # macOS and Windows jobs run and show red on failure,
+  # but pr-ci-all-required does not wait on them.
+  rust-tests-macos-windows:
+    name: Rust tests (macOS, Windows)
+    needs: detect
+    if: fromJSON(needs.detect.outputs.jobs)['rust-tests'] != null
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/library_rust_tests.yml
+    with:
+      projects: ${{ toJSON(fromJSON(needs.detect.outputs.jobs)['rust-tests'].*.project) }}
+      os: '["macos", "windows"]'
 
   supply-chain:
     name: Supply chain
@@ -161,6 +178,20 @@ jobs:
       contents: read
       id-token: write
     uses: ./.github/workflows/library_cpp_shim_tests.yml
+    with:
+      os: '["ubuntu"]'
+
+  # Not in pr-ci-all-required; see rust-tests-macos-windows.
+  cpp-shim-macos:
+    name: C++ shim (macOS)
+    needs: detect
+    if: fromJSON(needs.detect.outputs.jobs)['cpp-shim'] != null
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/library_cpp_shim_tests.yml
+    with:
+      os: '["macos"]'
 
   duvet:
     name: Duvet
@@ -181,6 +212,17 @@ jobs:
     uses: ./.github/workflows/test_server_build.yml
     with:
       builds: ${{ toJSON(fromJSON(needs.detect.outputs.jobs)['test-server-builds']) }}
+
+  # Not in pr-ci-all-required; see rust-tests-macos-windows.
+  test-server-builds-macos:
+    name: TestServer builds (macOS)
+    needs: detect
+    if: fromJSON(needs.detect.outputs.jobs)['test-server-builds-macos'] != null
+    permissions:
+      contents: read
+    uses: ./.github/workflows/test_server_build.yml
+    with:
+      builds: ${{ toJSON(fromJSON(needs.detect.outputs.jobs)['test-server-builds-macos']) }}
 
   # Cross-language TestServer runs.
   esdk-test-server:

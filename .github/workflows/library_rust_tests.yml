@@ -8,6 +8,10 @@ on:
         description: "JSON array of project subdirectories to build and test (e.g. [\"mpl\",\"esdk\"])."
         required: true
         type: string
+      os:
+        description: "JSON array of OSes to run on: any of \"ubuntu\" (CodeBuild), \"macos\", \"windows\"."
+        required: true
+        type: string
 
 jobs:
   testRust:
@@ -16,17 +20,8 @@ jobs:
       fail-fast: false
       matrix:
         project: ${{ fromJSON(inputs.projects) }}
-        os: [ubuntu, macos, windows]
-        include:
-          - os: ubuntu
-            runner: codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}
-          - os: macos
-            runner: macos-latest
-          - os: windows
-            runner: windows-latest
-    runs-on: ${{ matrix.runner }}
-    # macOS and Windows still run, but a failure there does not block the PR.
-    continue-on-error: ${{ matrix.os != 'ubuntu' }}
+        os: ${{ fromJSON(inputs.os) }}
+    runs-on: ${{ matrix.os == 'macos' && 'macos-latest' || matrix.os == 'windows' && 'windows-latest' || format('codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-{0}-{1}', github.run_id, github.run_attempt) }}
     permissions:
       id-token: write
       contents: read

@@ -3,6 +3,11 @@ name: Library C++ Shim Tests
 
 on:
   workflow_call:
+    inputs:
+      os:
+        description: "JSON array of OSes to run on: any of \"ubuntu\" (CodeBuild), \"macos\"."
+        required: true
+        type: string
 
 jobs:
   shim:
@@ -10,15 +15,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu, macos]
-        include:
-          - os: ubuntu
-            runner: codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}
-          - os: macos
-            runner: macos-latest
-    runs-on: ${{ matrix.runner }}
-    # macOS still runs, but a failure there does not block the PR.
-    continue-on-error: ${{ matrix.os != 'ubuntu' }}
+        os: ${{ fromJSON(inputs.os) }}
+    runs-on: ${{ matrix.os == 'macos' && 'macos-latest' || format('codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-{0}-{1}', github.run_id, github.run_attempt) }}
     permissions:
       contents: read
       id-token: write
