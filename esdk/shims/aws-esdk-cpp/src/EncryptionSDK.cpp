@@ -237,6 +237,9 @@ auto guard(F&& f) -> decltype(f()) {
 ::ffi::OptU32 to_opt(const std::optional<std::uint32_t>& o) {
     return o ? ::ffi::OptU32{true, *o} : ::ffi::OptU32{false, 0};
 }
+::ffi::OptU64 to_opt(const std::optional<std::uint64_t>& o) {
+    return o ? ::ffi::OptU64{true, *o} : ::ffi::OptU64{false, 0};
+}
 ::ffi::OptString to_opt(const std::optional<std::string>& o, const std::string& name) {
     return o ? ::ffi::OptString{true, to_rust_string(*o, name)} : ::ffi::OptString{false, {}};
 }
@@ -245,6 +248,11 @@ auto guard(F&& f) -> decltype(f()) {
 }
 ::ffi::OptCommitmentPolicy to_opt(const std::optional<CommitmentPolicy>& o) {
     return o ? ::ffi::OptCommitmentPolicy{true, to_ffi(*o)} : ::ffi::OptCommitmentPolicy{false, {}};
+}
+::ffi::OptSignedStreaming to_opt(const std::optional<SignedStreaming>& o) {
+    return o ? ::ffi::OptSignedStreaming{
+                   true, static_cast<::ffi::SignedStreaming>(static_cast<std::uint8_t>(*o))}
+             : ::ffi::OptSignedStreaming{false, {}};
 }
 
 ::rust::Vec<::ffi::EncryptionContextItem> to_ec(const std::map<std::string, std::string>& ec) {
@@ -641,6 +649,7 @@ EncryptStream Client::create_encrypt_stream(const Keyring& keyring,
     in.frame_length = detail::to_opt(options.frame_length_);
     in.commitment_policy = detail::to_opt(commitment_policy_);
     in.max_encrypted_data_keys = detail::to_opt(max_encrypted_data_keys_);
+    in.plaintext_length_bound = detail::to_opt(options.plaintext_length_bound_);
     // Keyring MUST be retained.
     // The stream outlives this call and must not outlive the keyring it was created from.
     return EncryptStream(std::make_shared<detail::EncryptStreamImpl>(
@@ -655,6 +664,7 @@ DecryptStream Client::create_decrypt_stream(const Keyring& keyring,
     in.encryption_context = detail::to_ec(options.encryption_context_);
     in.commitment_policy = detail::to_opt(commitment_policy_);
     in.max_encrypted_data_keys = detail::to_opt(max_encrypted_data_keys_);
+    in.signed_streaming = detail::to_opt(options.signed_streaming_);
     // Keyring MUST be retained.
     // The stream outlives this call and must not outlive the keyring it was created from.
     return DecryptStream(std::make_shared<detail::DecryptStreamImpl>(
