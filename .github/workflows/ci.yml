@@ -27,7 +27,7 @@ jobs:
     name: Detect what to run
     # Forks lack this repo's AWS role and secrets, so skip their scheduled runs.
     if: github.event_name != 'schedule' || github.repository_owner == 'aws'
-    runs-on: codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}
+    runs-on: &codebuild-linux codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}
     permissions:
       contents: read
       # dorny/paths-filter lists the PR's files through the GitHub API.
@@ -249,7 +249,7 @@ jobs:
       id-token: write
     uses: aws/aws-crypto-tools-commons/.github/workflows/esdk-test-server-reusable.yml@main
     with:
-      runner: codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}
+      runner: *codebuild-linux
       commons-ref: main
       # Only run tests that involve the focus language (ex. skip Python <--> Java tests for this Rust repo)
       focus: ${{ matrix.focus }}
@@ -266,7 +266,7 @@ jobs:
       actions: read
     uses: aws/aws-crypto-tools-commons/.github/workflows/mpl-test-server-reusable.yml@main
     with:
-      runner: codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}
+      runner: *codebuild-linux
       focus: rust
       checkout-languages: rust
     secrets:
@@ -281,7 +281,7 @@ jobs:
       actions: read
     uses: aws/aws-crypto-tools-commons/.github/workflows/primitives-test-server-reusable.yml@main
     with:
-      runner: codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}
+      runner: *codebuild-linux
       focus: rust
       checkout-languages: rust
     secrets:
@@ -312,7 +312,7 @@ jobs:
   gen-errors:
     name: Error codegen is current
     needs: detect
-    runs-on: codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}
+    runs-on: *codebuild-linux
     permissions:
       contents: read
     steps:
@@ -339,7 +339,7 @@ jobs:
   license-headers:
     name: License headers
     needs: detect
-    runs-on: codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}
+    runs-on: *codebuild-linux
     permissions:
       contents: read
     steps:
@@ -363,7 +363,7 @@ jobs:
       - prim-test-server
       - gen-errors
       - license-headers
-    runs-on: codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}
+    runs-on: *codebuild-linux
     steps:
       - name: Check job results
         env:
