@@ -112,13 +112,13 @@ jobs:
                 {"when": "esdk", "name": "aws-esdk-cpp", "project": "esdk/shims/aws-esdk-cpp", "artifact": "aws-esdk-cpp-duvet-report"}
               ],
               "test-server-builds": [
-                {"when": "esdk-test-server", "name": "esdk-test-server", "server": "esdk/test-server"},
-                {"when": "esdk-cpp-test-server", "name": "esdk-cpp-test-server (ubuntu)", "server": "esdk/shims/aws-esdk-cpp/test-server", "prebuild": "esdk/shims/aws-esdk-cpp", "os": "ubuntu-latest"},
-                {"when": "mpl-test-server", "name": "mpl-test-server", "server": "mpl-test-server"},
-                {"when": "prim-test-server", "name": "prim-test-server", "server": "prim-test-server"}
+                {"when": "esdk-test-server", "name": "esdk-test-server", "server": "esdk/test-server", "runner": "codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}"},
+                {"when": "esdk-cpp-test-server", "name": "esdk-cpp-test-server (ubuntu)", "server": "esdk/shims/aws-esdk-cpp/test-server", "prebuild": "esdk/shims/aws-esdk-cpp", "runner": "codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}"},
+                {"when": "mpl-test-server", "name": "mpl-test-server", "server": "mpl-test-server", "runner": "codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}"},
+                {"when": "prim-test-server", "name": "prim-test-server", "server": "prim-test-server", "runner": "codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}"}
               ],
               "test-server-builds-macos": [
-                {"when": "esdk-cpp-test-server", "name": "esdk-cpp-test-server (macos)", "server": "esdk/shims/aws-esdk-cpp/test-server", "prebuild": "esdk/shims/aws-esdk-cpp", "os": "macos-latest"}
+                {"when": "esdk-cpp-test-server", "name": "esdk-cpp-test-server (macos)", "server": "esdk/shims/aws-esdk-cpp/test-server", "prebuild": "esdk/shims/aws-esdk-cpp", "runner": "macos-latest"}
               ],
               "esdk-test-server": [
                 {"when": "esdk-test-server", "focus": "rust"},
@@ -154,7 +154,7 @@ jobs:
     uses: ./.github/workflows/library_rust_tests.yml
     with:
       projects: ${{ toJSON(fromJSON(needs.detect.outputs.jobs)['rust-tests'].*.project) }}
-      os: '["ubuntu"]'
+      platforms: '[{"os": "ubuntu", "runner": "codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}"}]'
 
   # macOS and Windows jobs run and show red on failure,
   # but pr-ci-all-required does not wait on them.
@@ -168,7 +168,7 @@ jobs:
     uses: ./.github/workflows/library_rust_tests.yml
     with:
       projects: ${{ toJSON(fromJSON(needs.detect.outputs.jobs)['rust-tests'].*.project) }}
-      os: '["macos", "windows"]'
+      platforms: '[{"os": "macos", "runner": "macos-latest"}, {"os": "windows", "runner": "windows-latest"}]'
 
   supply-chain:
     name: Supply chain
@@ -189,7 +189,7 @@ jobs:
       id-token: write
     uses: ./.github/workflows/library_cpp_shim_tests.yml
     with:
-      os: '["ubuntu"]'
+      platforms: '[{"os": "ubuntu", "runner": "codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}"}]'
 
   # Not in pr-ci-all-required; see rust-tests-macos-windows.
   cpp-shim-macos:
@@ -201,7 +201,7 @@ jobs:
       id-token: write
     uses: ./.github/workflows/library_cpp_shim_tests.yml
     with:
-      os: '["macos"]'
+      platforms: '[{"os": "macos", "runner": "macos-latest"}]'
 
   duvet:
     name: Duvet

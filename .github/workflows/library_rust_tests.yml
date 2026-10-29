@@ -8,20 +8,23 @@ on:
         description: "JSON array of project subdirectories to build and test (e.g. [\"mpl\",\"esdk\"])."
         required: true
         type: string
-      os:
-        description: "JSON array of OSes to run on: any of \"ubuntu\" (CodeBuild), \"macos\", \"windows\"."
-        required: true
+      platforms:
+        description: "JSON array of {os, runner} objects to run on."
         type: string
+        default: >-
+          [{"os": "ubuntu", "runner": "codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}"},
+           {"os": "macos", "runner": "macos-latest"},
+           {"os": "windows", "runner": "windows-latest"}]
 
 jobs:
   testRust:
-    name: ${{ matrix.project }} (${{ matrix.os }})
+    name: ${{ matrix.project }} (${{ matrix.platform.os }})
     strategy:
       fail-fast: false
       matrix:
         project: ${{ fromJSON(inputs.projects) }}
-        os: ${{ fromJSON(inputs.os) }}
-    runs-on: ${{ matrix.os == 'macos' && 'macos-latest' || matrix.os == 'windows' && 'windows-latest' || format('codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-{0}-{1}', github.run_id, github.run_attempt) }}
+        platform: ${{ fromJSON(inputs.platforms) }}
+    runs-on: ${{ matrix.platform.runner }}
     permissions:
       id-token: write
       contents: read
