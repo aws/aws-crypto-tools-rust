@@ -25,7 +25,12 @@ jobs:
       matrix:
         os: [ubuntu-latest]
         keyring: [hierarchical, raw-aes]
-    runs-on: ${{ matrix.os }}
+    # The standard runner for a private repo has 2 vCPUs, so the concurrency-2
+    # test shares the CPU and reports about double the latency. Set the repo
+    # variable PERF_BENCHMARK_RUNNER to a 4+ core larger-runner label to fix
+    # that; until it is set, this falls back to matrix.os. Every result row
+    # records cpu_count, so the two kinds of run stay distinguishable.
+    runs-on: ${{ vars.PERF_BENCHMARK_RUNNER || matrix.os }}
     permissions:
       id-token: write
       contents: read
