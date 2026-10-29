@@ -29,6 +29,10 @@ jobs:
         with:
           submodules: 'true'
 
+      # The CodeBuild runner image has no Rust toolchain, and cargo-deny runs as a cargo subcommand.
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
       - name: Install cargo-deny
         uses: taiki-e/install-action@cargo-deny
 
