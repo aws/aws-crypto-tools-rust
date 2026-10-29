@@ -18,6 +18,8 @@ This version of `aws-esdk` is not on crates.io yet.
 The `aws-esdk` 1.x on crates.io is a different implementation with a different API.
 Build this one from this repository, which also holds `aws-crypto-mpl` and the other crates it depends on.
 
+To move code from 1.x to this version, see the [migration guide](MIGRATION.md).
+
 Building needs:
 
 - Rust and `cargo`

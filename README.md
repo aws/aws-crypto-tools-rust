@@ -3,6 +3,8 @@
 📣 Note: This repository contains all projects supported in Rust
 by the @aws/aws-crypto-tools team.
 
+To migrate from the Dafny-based `aws-esdk` 1.x to the native `aws-esdk` 2.x, see the [ESDK migration guide](esdk/MIGRATION.md).
+
 This repository uses semantic versioning and uses [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/) to determine project versions.
 
 ### Versioning policy for errors
