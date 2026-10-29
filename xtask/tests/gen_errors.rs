@@ -20,7 +20,7 @@ fn generation_error(spec: &xtask::Spec) -> String {
 #[test]
 fn the_checked_in_spec_generates_every_library() {
     let outputs = xtask::generate(&spec()).unwrap();
-    assert_eq!(outputs.len(), 3);
+    assert_eq!(outputs.len(), 4);
     for out in outputs {
         assert!(out.contents.starts_with(xtask::HEADER), "{}", out.path);
     }
