@@ -6,8 +6,32 @@ mod fixtures;
 mod test_helpers;
 
 use aws_esdk::Client;
-use aws_esdk::types::EncryptionContext;
-use test_helpers::{multi_frame_signed_for_stream, multi_frame_unsigned_for_stream, test_keyring};
+use aws_esdk::keyring::RawAesKeyring;
+use aws_esdk::types::{EncryptionContext, SignedStreaming};
+use test_helpers::{
+    aes_keyring, encrypt_with_signing_suite, multi_frame_signed_for_stream,
+    multi_frame_unsigned_for_stream, test_keyring,
+};
+
+/// Stream-decrypt `ct` with `setting`, returning the result and the bytes written, even on failure.
+async fn decrypt_stream_with(
+    keyring: RawAesKeyring,
+    ct: &[u8],
+    setting: SignedStreaming,
+) -> (Result<(), aws_esdk::Error>, Vec<u8>) {
+    let mut ct_cursor = std::io::Cursor::new(ct);
+    let mut output: Vec<u8> = Vec::new();
+    let result = Client::default()
+        .decrypt_stream()
+        .keyring(keyring)
+        .signed_streaming(setting)
+        .ciphertext(&mut ct_cursor)
+        .plaintext(&mut output)
+        .send()
+        .await
+        .map(|_| ());
+    (result, output)
+}
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_streaming_encrypt_decrypt_round_trip() {
@@ -137,6 +161,60 @@ async fn test_decrypt_stream_multi_frame_unsigned_accepted() {
         output, plaintext,
         "multi-frame unsigned round-trip mismatch"
     );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_decrypt_stream_release_regular_frames_round_trips() {
+    let (plaintext, keyring, ct) = multi_frame_signed_for_stream().await;
+    //= spec/client-apis/decrypt.md#decrypt-the-message-body
+    //= type=test
+    //# - If the streamed Decrypt operation is using an algorithm suite with a signature algorithm,
+    //# all plaintext decrypted from regular frames SHOULD be released as soon as the above calculation,
+    //# including tag verification, succeeds.
+    let (result, output) =
+        decrypt_stream_with(keyring, &ct, SignedStreaming::ReleaseRegularFrames).await;
+    result.unwrap();
+    assert_eq!(output, plaintext);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_decrypt_stream_release_regular_frames_holds_final_frame() {
+    // Corrupt the signature.
+    // Of the three 10-byte frames, only the two regular frames reach the output.
+    let (plaintext, keyring, mut ct) = multi_frame_signed_for_stream().await;
+    let last = ct.len() - 1;
+    ct[last] ^= 0x01;
+    //= spec/client-apis/decrypt.md#decrypt-the-message-body
+    //= type=test
+    //= reason=The final frame is not released on err
+    //# Any plaintext decrypted from [nonframed data](../data-format/message-body.md#nonframed-data) or
+    //# a final frame in a streamed Decrypt operation MUST NOT be released until [signature verification](#verify-the-signature)
+    //# successfully completes.
+    let (result, output) =
+        decrypt_stream_with(keyring, &ct, SignedStreaming::ReleaseRegularFrames).await;
+    assert!(result.unwrap_err().is_cryptographic());
+    assert_eq!(output, plaintext[..20]);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_decrypt_stream_reject_signed_fails_after_header() {
+    // This keyring cannot decrypt the message.
+    // A Validation error, not NoMatchingDataKey, shows that decrypt fails before fetching materials.
+    let ct = encrypt_with_signing_suite(b"single frame").await;
+    //= spec/client-apis/decrypt.md#behavior
+    //= type=test
+    //= reason=The configuration option is `SignedStreaming::RejectSigned`; setting this causes decryption to fail
+    //# - The ESDK MUST provide a configuration option that causes the decryption operation
+    //# to fail immediately after parsing the header if a signed algorithm suite is used.
+    let (result, output) =
+        decrypt_stream_with(aes_keyring(9).await, &ct, SignedStreaming::RejectSigned).await;
+    assert!(result.unwrap_err().is_validation());
+    assert!(output.is_empty());
+
+    let (plaintext, keyring, ct) = multi_frame_unsigned_for_stream().await;
+    let (result, output) = decrypt_stream_with(keyring, &ct, SignedStreaming::RejectSigned).await;
+    result.unwrap();
+    assert_eq!(output, plaintext);
 }
 
 #[tokio::test(flavor = "multi_thread")]

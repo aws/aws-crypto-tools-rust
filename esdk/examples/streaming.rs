@@ -7,7 +7,7 @@
 //! The streaming APIs read from any tokio `AsyncRead` and write to any `AsyncWrite`,
 //! so a file, socket, or S3 object of any size passes through in bounded memory.
 //!
-//! The example uses a non-signing suite: streamed decrypt rejects a multi-frame signed message.
+//! The example uses a non-signing suite: by default, streamed decrypt rejects a multi-frame signed message.
 //!
 //! Runs offline.
 

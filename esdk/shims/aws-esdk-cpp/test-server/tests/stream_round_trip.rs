@@ -2,11 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! Offline streaming round trips through the C++ facade with a raw-AES keyring
-//! over the rpcv2Cbor wire: EncryptStream -> DecryptStream, plus each cross-mode
-//! pairing with the blob operations. The multi-frame plaintext spans several
-//! frames plus a partial final frame under a non-signing committing suite
-//! (streamed decrypt refuses multi-frame signed messages). Needs no AWS access,
-//! so it always runs.
+//! over the rpcv2Cbor wire: EncryptStream -> DecryptStream,
+//! plus each cross-mode pairing with the blob operations.
+//! The multi-frame plaintext spans several frames plus a partial final frame,
+//! under the default signing suite.
+//! Needs no AWS access, so it always runs.
 
 use std::sync::Arc;
 
@@ -14,8 +14,8 @@ use aws_esdk_cpp_test_server::backend::CppBackend;
 use aws_esdk_cpp_test_server::model::{
     AesWrappingAlg, CreateClientRequest, CreateClientResponse, CryptographicMaterialsManager,
     DecryptRequest, DecryptResponse, DecryptStreamRequest, DecryptStreamResponse, DefaultCmmConfig,
-    EncryptRequest, EncryptResponse, EncryptStreamRequest, EncryptStreamResponse,
-    EsdkAlgorithmSuiteId, EsdkClientConfig, EsdkCommitmentPolicy, Keyring, RawAesKeyringConfig,
+    EncryptRequest, EncryptResponse, EncryptStreamRequest, EncryptStreamResponse, EsdkClientConfig,
+    EsdkCommitmentPolicy, Keyring, RawAesKeyringConfig,
 };
 use aws_esdk_cpp_test_server::wire::app;
 use axum::body::Body;
@@ -93,7 +93,7 @@ async fn stream_round_trip_multi_frame() {
         client_id: client_id.clone(),
         plaintext: plaintext.clone(),
         encryption_context: None,
-        algorithm_suite_id: Some(EsdkAlgorithmSuiteId::Alg256GcmCommit),
+        algorithm_suite_id: None,
         frame_length: Some(frame_length),
         plaintext_length_bound: None,
     };
@@ -153,9 +153,7 @@ async fn blob_encrypt_decrypts_as_stream() {
         client_id: client_id.clone(),
         plaintext: plaintext.clone(),
         encryption_context: None,
-        // Non-signing committing suite: streamed decrypt refuses multi-frame
-        // signed messages, and the default suite signs.
-        algorithm_suite_id: Some(EsdkAlgorithmSuiteId::Alg256GcmCommit),
+        algorithm_suite_id: None,
         frame_length: None,
     };
     let encrypted: EncryptResponse = call(&state, "Encrypt", &encrypt).await;
