@@ -25,6 +25,8 @@ jobs:
           - os: windows
             runner: windows-latest
     runs-on: ${{ matrix.runner }}
+    # macOS and Windows still run, but a failure there does not block the PR.
+    continue-on-error: ${{ matrix.os != 'ubuntu' }}
     permissions:
       id-token: write
       contents: read

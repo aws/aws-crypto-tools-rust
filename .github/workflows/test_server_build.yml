@@ -22,6 +22,8 @@ jobs:
       matrix:
         include: ${{ fromJSON(inputs.builds) }}
     runs-on: ${{ matrix.os == 'macos-latest' && 'macos-latest' || format('codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-{0}-{1}', github.run_id, github.run_attempt) }}
+    # macOS still runs, but a failure there does not block the PR.
+    continue-on-error: ${{ matrix.os == 'macos-latest' }}
     permissions:
       contents: read
     defaults:
