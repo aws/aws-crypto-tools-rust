@@ -237,7 +237,7 @@ jobs:
       contents: read
       actions: read
       id-token: write
-    uses: aws/aws-crypto-tools-commons/.github/workflows/esdk-test-server-reusable.yml@lucmcdon/codebuild-runners
+    uses: aws/aws-crypto-tools-commons/.github/workflows/esdk-test-server-reusable.yml@main
     with:
       runner: codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}
       commons-ref: main
@@ -254,7 +254,7 @@ jobs:
     permissions:
       contents: read
       actions: read
-    uses: aws/aws-crypto-tools-commons/.github/workflows/mpl-test-server-reusable.yml@lucmcdon/codebuild-runners
+    uses: aws/aws-crypto-tools-commons/.github/workflows/mpl-test-server-reusable.yml@main
     with:
       runner: codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}
       focus: rust
@@ -269,7 +269,7 @@ jobs:
     permissions:
       contents: read
       actions: read
-    uses: aws/aws-crypto-tools-commons/.github/workflows/primitives-test-server-reusable.yml@lucmcdon/codebuild-runners
+    uses: aws/aws-crypto-tools-commons/.github/workflows/primitives-test-server-reusable.yml@main
     with:
       runner: codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}
       focus: rust
