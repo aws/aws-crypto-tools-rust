@@ -13,7 +13,6 @@ on:
   pull_request:
     paths:
       - "esdk/performance-tests/**"
-      - ".github/workflows/performance-benchmarks.yml"
 
 jobs:
   benchmark:

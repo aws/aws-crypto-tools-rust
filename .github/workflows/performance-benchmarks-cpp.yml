@@ -14,7 +14,6 @@ on:
     paths:
       - "esdk/shims/aws-esdk-cpp/**"
       - "!esdk/shims/aws-esdk-cpp/test-server/**"
-      - ".github/workflows/performance-benchmarks-cpp.yml"
 
 jobs:
   benchmark:
