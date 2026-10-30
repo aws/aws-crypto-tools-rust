@@ -216,7 +216,7 @@ impl GetEncryptionMaterialsInputBuilder {
 }
 
 /// Output of [`Cmm::get_encryption_materials`](super::Cmm::get_encryption_materials).
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct GetEncryptionMaterialsOutput {
     pub(crate) encryption_materials: EncryptionMaterials,
@@ -496,7 +496,7 @@ impl DecryptMaterialsInputBuilder {
 }
 
 /// Output of [`Cmm::decrypt_materials`](super::Cmm::decrypt_materials).
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct DecryptMaterialsOutput {
     pub(crate) decryption_materials: DecryptionMaterials,

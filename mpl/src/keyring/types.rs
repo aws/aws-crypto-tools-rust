@@ -8,7 +8,7 @@ use crate::builder::required;
 use crate::structures::{DecryptionMaterials, EncryptedDataKey, EncryptionMaterials};
 
 /// Input for [`Keyring::on_encrypt`](super::Keyring::on_encrypt).
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct OnEncryptInput {
     pub(crate) materials: EncryptionMaterials,
@@ -76,7 +76,7 @@ impl OnEncryptInputBuilder {
 }
 
 /// Output of [`Keyring::on_encrypt`](super::Keyring::on_encrypt).
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct OnEncryptOutput {
     pub(crate) materials: EncryptionMaterials,
@@ -144,7 +144,7 @@ impl OnEncryptOutputBuilder {
 }
 
 /// Input for [`Keyring::on_decrypt`](super::Keyring::on_decrypt).
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct OnDecryptInput {
     pub(crate) materials: DecryptionMaterials,
@@ -256,7 +256,7 @@ impl OnDecryptInputBuilder {
 }
 
 /// Output of [`Keyring::on_decrypt`](super::Keyring::on_decrypt).
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct OnDecryptOutput {
     pub(crate) materials: DecryptionMaterials,
