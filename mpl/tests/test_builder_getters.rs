@@ -153,8 +153,8 @@ async fn key_store() -> DynamoDbKeyStore {
     DynamoDbKeyStore::builder()
         .ddb_table_name("table")
         .logical_key_store_name("table")
-        .kms_configuration(KmsConfiguration::KmsKeyArn(
-            "arn:aws:kms:us-west-2:111122223333:key/k".into(),
+        .kms_configuration(KmsConfiguration::kms_key_arn(
+            "arn:aws:kms:us-west-2:111122223333:key/k",
         ))
         .kms_client(kms())
         .ddb_client(ddb())
@@ -604,7 +604,7 @@ async fn every_builder_getter_tracks_its_setter() {
         kms_configuration,
         set_kms_configuration,
         get_kms_configuration,
-        KmsConfiguration::KmsKeyArn("arn".into())
+        KmsConfiguration::kms_key_arn("arn")
     );
     check!(DynamoDbKeyStore::builder(), id, set_id, get_id, "x");
     check!(
@@ -662,7 +662,7 @@ async fn every_builder_getter_tracks_its_setter() {
         kms_configuration,
         set_kms_configuration,
         get_kms_configuration,
-        KmsConfiguration::KmsKeyArn("arn".into())
+        KmsConfiguration::kms_key_arn("arn")
     );
     check!(
         CreateKeyStoreOutput::builder(),

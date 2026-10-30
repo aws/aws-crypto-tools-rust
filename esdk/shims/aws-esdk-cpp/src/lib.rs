@@ -904,10 +904,10 @@ fn make_kms_config(
         )),
         //= spec/shim/esdk-shim.md#kms-configuration
         //# - The shim MUST translate a KMS key ARN configuration.
-        ffi::KmsConfigurationType::KmsKeyArn => Ok(KmsConfiguration::KmsKeyArn(value.into())),
+        ffi::KmsConfigurationType::KmsKeyArn => Ok(KmsConfiguration::kms_key_arn(value)),
         //= spec/shim/esdk-shim.md#kms-configuration
         //# - The shim MUST translate a KMS multi-Region-key ARN configuration.
-        ffi::KmsConfigurationType::KmsMrKeyArn => Ok(KmsConfiguration::KmsMrKeyArn(value.into())),
+        ffi::KmsConfigurationType::KmsMrKeyArn => Ok(KmsConfiguration::kms_mr_key_arn(value)),
         //= spec/shim/esdk-shim.md#kms-configuration
         //# - The shim MUST translate a discovery configuration.
         ffi::KmsConfigurationType::Discovery => Ok(KmsConfiguration::Discovery(

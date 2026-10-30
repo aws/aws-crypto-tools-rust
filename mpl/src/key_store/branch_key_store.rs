@@ -111,8 +111,8 @@ impl DynamoDbKeyStore {
     /// have no single ARN to wrap under and are rejected.
     fn configured_kms_key_arn(&self) -> Result<&str, Error> {
         match &self.inner.kms_configuration {
-            KmsConfiguration::KmsKeyArn(arn) => Ok(arn.as_str()),
-            KmsConfiguration::KmsMrKeyArn(arn) => Ok(arn.as_str()),
+            KmsConfiguration::KmsKeyArn(arn) => Ok(arn.arn()),
+            KmsConfiguration::KmsMrKeyArn(arn) => Ok(arn.arn()),
             KmsConfiguration::Discovery(_) | KmsConfiguration::MrDiscovery(_) => Err(Error::new(
                 Kind::Validation,
                 "operation requires a single-key KMS configuration (KmsKeyArn or \
@@ -1119,10 +1119,8 @@ fn item_from_ec_and_enc(
 #[cfg(feature = "default-aws-sdk-clients")]
 fn region_from_kms_config(config: &KmsConfiguration) -> Option<String> {
     match config {
-        KmsConfiguration::KmsKeyArn(arn) => parse_arn(arn.as_str()).ok().map(|parts| parts.region),
-        KmsConfiguration::KmsMrKeyArn(arn) => {
-            parse_arn(arn.as_str()).ok().map(|parts| parts.region)
-        }
+        KmsConfiguration::KmsKeyArn(arn) => parse_arn(arn.arn()).ok().map(|parts| parts.region),
+        KmsConfiguration::KmsMrKeyArn(arn) => parse_arn(arn.arn()).ok().map(|parts| parts.region),
         KmsConfiguration::MrDiscovery(mr_discovery) => Some(mr_discovery.region().to_string()),
         KmsConfiguration::Discovery(_) => None,
     }

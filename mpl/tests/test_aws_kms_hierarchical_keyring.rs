@@ -112,9 +112,8 @@ fn key_store_never_consulted() -> DynamoDbKeyStore {
     build_without_io(
         DynamoDbKeyStore::builder()
             .ddb_table_name("test-table")
-            .kms_configuration(KmsConfiguration::KmsKeyArn(
-                "arn:aws:kms:us-west-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab"
-                    .into(),
+            .kms_configuration(KmsConfiguration::kms_key_arn(
+                "arn:aws:kms:us-west-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab",
             ))
             .logical_key_store_name("test-logical")
             .kms_client(kms)
