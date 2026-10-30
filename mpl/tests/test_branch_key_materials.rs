@@ -14,7 +14,7 @@ fn test_valid_construction() {
         .branch_key(branch_key)
         .branch_key_id("key-id".to_string())
         .branch_key_version(version)
-        .encryption_context(ec)
+        .set_encryption_context(Some(ec))
         .build();
     assert!(result.is_ok());
     let mat = result.unwrap();
@@ -38,7 +38,7 @@ fn test_construction_accepts_various_version_strings() {
             .branch_key(branch_key)
             .branch_key_id("id".to_string())
             .branch_key_version(uuid.to_string())
-            .encryption_context(EncryptionContext::new())
+            .set_encryption_context(Some(EncryptionContext::new()))
             .build();
         assert!(result.is_ok(), "Construction should succeed: {}", uuid);
     }
@@ -52,7 +52,7 @@ fn test_branch_key_32_bytes_by_construction() {
         .branch_key(branch_key)
         .branch_key_id("id".to_string())
         .branch_key_version("a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d".to_string())
-        .encryption_context(EncryptionContext::new())
+        .set_encryption_context(Some(EncryptionContext::new()))
         .build()
         .unwrap();
     assert_eq!(mat.branch_key().len(), 32);
@@ -65,7 +65,7 @@ fn test_branch_key_version_getter() {
         .branch_key([0x00; 32])
         .branch_key_id("id".to_string())
         .branch_key_version(version.to_string())
-        .encryption_context(EncryptionContext::new())
+        .set_encryption_context(Some(EncryptionContext::new()))
         .build()
         .unwrap();
     assert_eq!(mat.branch_key_version(), version);
@@ -79,7 +79,7 @@ fn test_branch_key_encryption_context_getter() {
         .branch_key([0x00; 32])
         .branch_key_id("id".to_string())
         .branch_key_version("a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d".to_string())
-        .encryption_context(ec)
+        .set_encryption_context(Some(ec))
         .build()
         .unwrap();
     assert_eq!(mat.encryption_context().len(), 1);
@@ -91,7 +91,7 @@ fn test_debug_redacts_branch_key() {
         .branch_key([0xFF; 32])
         .branch_key_id("id".to_string())
         .branch_key_version("a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d".to_string())
-        .encryption_context(EncryptionContext::new())
+        .set_encryption_context(Some(EncryptionContext::new()))
         .build()
         .unwrap();
     let debug_output = format!("{:?}", mat);
@@ -106,7 +106,7 @@ fn build_rejects_missing_and_empty_fields() {
             .branch_key([0u8; 32])
             .branch_key_id("id")
             .branch_key_version("a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d")
-            .encryption_context(EncryptionContext::new())
+            .set_encryption_context(Some(EncryptionContext::new()))
     };
     for builder in [
         valid().set_branch_key(None),

@@ -216,7 +216,7 @@ async fn test_frame_fields_deserialized_from_wire() {
     //# - The AAD MUST be the serialized [message body AAD](../data-format/message-body-aad.md),
     //# constructed according to the [Message Body AAD](../data-format/message-body-aad.md) specification, as follows:
     assert_eq!(
-        decrypt_ciphertext(&ct).await.into_plaintext(),
+        decrypt_ciphertext(&ct).await.into_plaintext().into_inner(),
         pt,
         "valid ct must decrypt"
     );
@@ -291,7 +291,8 @@ async fn test_decrypt_final_frame_held_until_signature_verification() {
         .send()
         .await
         .unwrap()
-        .into_ciphertext();
+        .into_ciphertext()
+        .into_inner();
 
     // Tamper with the last byte of the signature to cause verification failure
     let mut tampered_ct = valid_ct.clone();
@@ -460,7 +461,7 @@ async fn test_sequence_number_end_value_is_0xffffffff() {
     assert_eq!(f.tag_offset, f.content_offset + 5, "tag follows content");
 
     // Round-trip corroboration
-    let result = decrypt_ciphertext(&ct).await.into_plaintext();
+    let result = decrypt_ciphertext(&ct).await.into_plaintext().into_inner();
     assert_eq!(result, pt);
 }
 
@@ -485,7 +486,7 @@ async fn test_decrypt_first_frame_sequence_number_is_one() {
         "first frame sequence number must be 1 on the wire"
     );
     // Round-trip corroboration
-    let result = decrypt_ciphertext(&ct).await.into_plaintext();
+    let result = decrypt_ciphertext(&ct).await.into_plaintext().into_inner();
     assert_eq!(result, pt);
 }
 
@@ -559,7 +560,7 @@ async fn test_decrypt_sequence_numbers_increment() {
     }
 
     // Round-trip corroboration
-    let result = decrypt_ciphertext(&ct).await.into_plaintext();
+    let result = decrypt_ciphertext(&ct).await.into_plaintext().into_inner();
     assert_eq!(result, pt);
 }
 

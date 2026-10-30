@@ -22,7 +22,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // The AWS Crypto Tools CI test key store.
     // Replace these with your own key store's table, name, and KMS key ARN.
-    let key_store = key_store::Client::builder()
+    let key_store = key_store::DynamoDbKeyStore::builder()
         .ddb_table_name("KeyStoreDdbTable")
         .logical_key_store_name("KeyStoreDdbTable")
         .kms_configuration(KmsConfiguration::KmsKeyArn(
@@ -52,7 +52,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let result = esdk
         .encrypt()
         .plaintext(plaintext)
-        .encryption_context(encryption_context.clone())
+        .set_encryption_context(Some(encryption_context.clone()))
         .keyring(keyring.clone())
         .send()
         .await;
@@ -80,7 +80,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let decrypted = esdk
         .decrypt()
         .ciphertext(encrypted.ciphertext())
-        .encryption_context(encryption_context)
+        .set_encryption_context(Some(encryption_context))
         .keyring(keyring)
         .send()
         .await?;

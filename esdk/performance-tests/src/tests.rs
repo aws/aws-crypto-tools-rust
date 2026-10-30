@@ -34,7 +34,7 @@ impl EsdkBenchmark {
         let encrypt_request = esdk_client
             .encrypt()
             .plaintext(data)
-            .encryption_context(Self::benchmark_encryption_context(data.len()))
+            .set_encryption_context(Some(Self::benchmark_encryption_context(data.len())))
             .keyring(keyring.clone());
 
         let encrypt_start = Instant::now();
@@ -58,7 +58,7 @@ impl EsdkBenchmark {
             .map_err(|e| anyhow::anyhow!("decrypt failed: {e}"))?;
         let decrypt_duration = decrypt_start.elapsed().as_secs_f64() * 1000.0;
 
-        if data != decrypt_output.plaintext() {
+        if decrypt_output.plaintext() != data {
             return Err(anyhow::anyhow!("data integrity check failed"));
         }
 

@@ -31,12 +31,13 @@ async fn encrypt_with(
     Client::default()
         .encrypt()
         .plaintext(b"hello")
-        .encryption_context(context())
+        .set_encryption_context(Some(context()))
         .keyring(keyring)
         .send()
         .await
         .unwrap()
         .into_ciphertext()
+        .into_inner()
 }
 
 async fn decrypt_with(
@@ -49,7 +50,7 @@ async fn decrypt_with(
         .keyring(keyring)
         .send()
         .await
-        .map(|out| out.into_plaintext())
+        .map(|out| out.into_plaintext().into_inner())
 }
 
 /// The error from decrypting, against `fake`, a message encrypted under the fake's branch key.
@@ -289,7 +290,8 @@ async fn a_tampered_frame_is_cryptographic() {
         .send()
         .await
         .unwrap()
-        .into_ciphertext();
+        .into_ciphertext()
+        .into_inner();
     // The last content byte of the final frame, just before its 16-byte tag.
     let i = ciphertext.len() - 17;
     ciphertext[i] ^= 1;
@@ -313,7 +315,7 @@ async fn an_encryption_context_mismatch_names_the_key_not_the_value() {
     let err = Client::default()
         .decrypt()
         .ciphertext(&ciphertext)
-        .encryption_context(other)
+        .set_encryption_context(Some(other))
         .keyring(keyring)
         .send()
         .await
@@ -392,7 +394,7 @@ async fn create_key_condition_failure_is_an_already_exists_conflict() {
         .await
         .create_key()
         .branch_key_id(BRANCH_KEY_ID)
-        .encryption_context(EncryptionContext::new())
+        .set_encryption_context(Some(EncryptionContext::new()))
         .send()
         .await
         .unwrap_err();
@@ -607,7 +609,7 @@ async fn create_key_kms_access_denied_names_the_kms_key() {
         .await
         .create_key()
         .branch_key_id(BRANCH_KEY_ID)
-        .encryption_context(EncryptionContext::new())
+        .set_encryption_context(Some(EncryptionContext::new()))
         .send()
         .await
         .unwrap_err();
@@ -787,7 +789,7 @@ const RECORD_KEY_ARN: &str = "arn:aws:kms:us-west-2:444455556666:key/5678efgh";
 
 /// A hierarchical keyring over a discovery key store: the KMS key comes from each branch key record.
 async fn discovery_keyring(fake: &FakeAws) -> aws_crypto_mpl::keyring::HierarchicalKeyring {
-    let key_store = aws_crypto_mpl::key_store::Client::builder()
+    let key_store = aws_crypto_mpl::key_store::DynamoDbKeyStore::builder()
         .ddb_table_name(TABLE)
         .logical_key_store_name(TABLE)
         .kms_configuration(

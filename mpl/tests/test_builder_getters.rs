@@ -11,7 +11,7 @@ use aws_crypto_mpl::aws_sdk_dynamodb::Client as DynamoDbClient;
 use aws_crypto_mpl::aws_sdk_kms::Client as KmsClient;
 use aws_crypto_mpl::cmc::*;
 use aws_crypto_mpl::cmm::*;
-use aws_crypto_mpl::key_store::Client as KeyStoreClient;
+use aws_crypto_mpl::key_store::DynamoDbKeyStore;
 use aws_crypto_mpl::key_store::operation::create_key::{CreateKeyInput, CreateKeyOutput};
 use aws_crypto_mpl::key_store::operation::create_key_store::CreateKeyStoreOutput;
 use aws_crypto_mpl::key_store::operation::get_active_branch_key::{
@@ -107,7 +107,7 @@ fn bkm() -> BranchKeyMaterials {
         .branch_key([0u8; 32])
         .branch_key_id("b")
         .branch_key_version("v")
-        .encryption_context(ec())
+        .set_encryption_context(Some(ec()))
         .build()
         .unwrap()
 }
@@ -115,7 +115,7 @@ fn bkm() -> BranchKeyMaterials {
 fn beacon() -> BeaconKeyMaterials {
     BeaconKeyMaterials::builder()
         .beacon_key_id("b")
-        .encryption_context(ec())
+        .set_encryption_context(Some(ec()))
         .build()
         .unwrap()
 }
@@ -149,8 +149,8 @@ fn ddb() -> DynamoDbClient {
     DynamoDbClient::new(&sdk_config())
 }
 
-async fn key_store() -> KeyStoreClient {
-    KeyStoreClient::builder()
+async fn key_store() -> DynamoDbKeyStore {
+    DynamoDbKeyStore::builder()
         .ddb_table_name("table")
         .logical_key_store_name("table")
         .kms_configuration(KmsConfiguration::KmsKeyArn(
@@ -167,10 +167,10 @@ async fn key_store() -> KeyStoreClient {
 async fn every_builder_getter_tracks_its_setter() {
     check!(
         GetBranchKeyIdInput::builder(),
-        encryption_context,
+        set_encryption_context,
         set_encryption_context,
         get_encryption_context,
-        ec()
+        Some(ec())
     );
     check!(
         GetBranchKeyIdOutput::builder(),
@@ -181,10 +181,10 @@ async fn every_builder_getter_tracks_its_setter() {
     );
     check!(
         SharedBranchKeySupplier::new(Supplier).get_branch_key_id(),
-        encryption_context,
+        set_encryption_context,
         set_encryption_context,
         get_encryption_context,
-        ec()
+        Some(ec())
     );
     check!(
         HierarchicalKeyring::builder(),
@@ -433,10 +433,10 @@ async fn every_builder_getter_tracks_its_setter() {
     );
     check!(
         DefaultCmm::new(keyring()).get_encryption_materials(),
-        encryption_context,
+        set_encryption_context,
         set_encryption_context,
         get_encryption_context,
-        ec()
+        Some(ec())
     );
     check!(
         DefaultCmm::new(keyring()).get_encryption_materials(),
@@ -454,10 +454,10 @@ async fn every_builder_getter_tracks_its_setter() {
     );
     check!(
         DefaultCmm::new(keyring()).get_encryption_materials(),
-        required_encryption_context_keys,
+        set_required_encryption_context_keys,
         set_required_encryption_context_keys,
         get_required_encryption_context_keys,
-        ["x"]
+        Some(["x"].map(String::from).into())
     );
     check!(
         DefaultCmm::new(keyring()).get_encryption_materials(),
@@ -482,31 +482,31 @@ async fn every_builder_getter_tracks_its_setter() {
     );
     check!(
         DefaultCmm::new(keyring()).decrypt_materials(),
-        encrypted_data_keys,
+        set_encrypted_data_keys,
         set_encrypted_data_keys,
         get_encrypted_data_keys,
-        vec![edk()]
+        Some(vec![edk()])
     );
     check!(
         DefaultCmm::new(keyring()).decrypt_materials(),
-        encryption_context,
+        set_encryption_context,
         set_encryption_context,
         get_encryption_context,
-        ec()
+        Some(ec())
     );
     check!(
         DefaultCmm::new(keyring()).decrypt_materials(),
-        reproduced_encryption_context,
+        set_reproduced_encryption_context,
         set_reproduced_encryption_context,
         get_reproduced_encryption_context,
-        ec()
+        Some(ec())
     );
     check!(
         GetEncryptionMaterialsInput::builder(),
-        encryption_context,
+        set_encryption_context,
         set_encryption_context,
         get_encryption_context,
-        ec()
+        Some(ec())
     );
     check!(
         GetEncryptionMaterialsInput::builder(),
@@ -524,10 +524,10 @@ async fn every_builder_getter_tracks_its_setter() {
     );
     check!(
         GetEncryptionMaterialsInput::builder(),
-        required_encryption_context_keys,
+        set_required_encryption_context_keys,
         set_required_encryption_context_keys,
         get_required_encryption_context_keys,
-        ["x"]
+        Some(["x"].map(String::from).into())
     );
     check!(
         GetEncryptionMaterialsInput::builder(),
@@ -559,24 +559,24 @@ async fn every_builder_getter_tracks_its_setter() {
     );
     check!(
         DecryptMaterialsInput::builder(),
-        encrypted_data_keys,
+        set_encrypted_data_keys,
         set_encrypted_data_keys,
         get_encrypted_data_keys,
-        vec![edk()]
+        Some(vec![edk()])
     );
     check!(
         DecryptMaterialsInput::builder(),
-        encryption_context,
+        set_encryption_context,
         set_encryption_context,
         get_encryption_context,
-        ec()
+        Some(ec())
     );
     check!(
         DecryptMaterialsInput::builder(),
-        reproduced_encryption_context,
+        set_reproduced_encryption_context,
         set_reproduced_encryption_context,
         get_reproduced_encryption_context,
-        ec()
+        Some(ec())
     );
     check!(
         DecryptMaterialsOutput::builder(),
@@ -586,43 +586,43 @@ async fn every_builder_getter_tracks_its_setter() {
         dec()
     );
     check!(
-        KeyStoreClient::builder(),
+        DynamoDbKeyStore::builder(),
         ddb_table_name,
         set_ddb_table_name,
         get_ddb_table_name,
         "x"
     );
     check!(
-        KeyStoreClient::builder(),
+        DynamoDbKeyStore::builder(),
         logical_key_store_name,
         set_logical_key_store_name,
         get_logical_key_store_name,
         "x"
     );
     check!(
-        KeyStoreClient::builder(),
+        DynamoDbKeyStore::builder(),
         kms_configuration,
         set_kms_configuration,
         get_kms_configuration,
         KmsConfiguration::KmsKeyArn("arn".into())
     );
-    check!(KeyStoreClient::builder(), id, set_id, get_id, "x");
+    check!(DynamoDbKeyStore::builder(), id, set_id, get_id, "x");
     check!(
-        KeyStoreClient::builder(),
-        grant_tokens,
+        DynamoDbKeyStore::builder(),
+        set_grant_tokens,
         set_grant_tokens,
         get_grant_tokens,
-        ["x"]
+        Some(["x"].map(String::from).into())
     );
     check!(
-        KeyStoreClient::builder(),
+        DynamoDbKeyStore::builder(),
         kms_client,
         set_kms_client,
         get_kms_client,
         kms()
     );
     check!(
-        KeyStoreClient::builder(),
+        DynamoDbKeyStore::builder(),
         ddb_client,
         set_ddb_client,
         get_ddb_client,
@@ -652,10 +652,10 @@ async fn every_builder_getter_tracks_its_setter() {
     );
     check!(
         GetKeyStoreInfoOutput::builder(),
-        grant_tokens,
+        set_grant_tokens,
         set_grant_tokens,
         get_grant_tokens,
-        ["x"]
+        Some(["x"].map(String::from).into())
     );
     check!(
         GetKeyStoreInfoOutput::builder(),
@@ -680,10 +680,10 @@ async fn every_builder_getter_tracks_its_setter() {
     );
     check!(
         CreateKeyInput::builder(),
-        encryption_context,
+        set_encryption_context,
         set_encryption_context,
         get_encryption_context,
-        ec()
+        Some(ec())
     );
     check!(
         CreateKeyOutput::builder(),
@@ -764,10 +764,10 @@ async fn every_builder_getter_tracks_its_setter() {
     );
     check!(
         keyring().on_decrypt(),
-        encrypted_data_keys,
+        set_encrypted_data_keys,
         set_encrypted_data_keys,
         get_encrypted_data_keys,
-        vec![edk()]
+        Some(vec![edk()])
     );
     check!(
         RawAesKeyring::builder(),
@@ -820,10 +820,10 @@ async fn every_builder_getter_tracks_its_setter() {
     );
     check!(
         OnDecryptInput::builder(),
-        encrypted_data_keys,
+        set_encrypted_data_keys,
         set_encrypted_data_keys,
         get_encrypted_data_keys,
-        vec![edk()]
+        Some(vec![edk()])
     );
     check!(
         OnDecryptOutput::builder(),
@@ -841,10 +841,10 @@ async fn every_builder_getter_tracks_its_setter() {
     );
     check!(
         BeaconKeyMaterials::builder(),
-        encryption_context,
+        set_encryption_context,
         set_encryption_context,
         get_encryption_context,
-        ec()
+        Some(ec())
     );
     check!(
         BeaconKeyMaterials::builder(),
@@ -855,10 +855,10 @@ async fn every_builder_getter_tracks_its_setter() {
     );
     check!(
         BeaconKeyMaterials::builder(),
-        hmac_keys,
+        set_hmac_keys,
         set_hmac_keys,
         get_hmac_keys,
-        BTreeMap::new()
+        Some(BTreeMap::new())
     );
     check!(
         BranchKeyMaterials::builder(),
@@ -883,10 +883,10 @@ async fn every_builder_getter_tracks_its_setter() {
     );
     check!(
         BranchKeyMaterials::builder(),
-        encryption_context,
+        set_encryption_context,
         set_encryption_context,
         get_encryption_context,
-        ec()
+        Some(ec())
     );
     check!(
         DecryptionMaterials::builder(),
@@ -960,9 +960,9 @@ async fn every_builder_getter_tracks_its_setter() {
     );
     check!(
         EncryptionMaterials::builder(),
-        symmetric_signing_keys,
+        set_symmetric_signing_keys,
         set_symmetric_signing_keys,
         get_symmetric_signing_keys,
-        vec![SymmetricSigningKey::new(vec![1])]
+        Some(vec![SymmetricSigningKey::new(vec![1])])
     );
 }
