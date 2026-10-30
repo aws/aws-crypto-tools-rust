@@ -264,11 +264,17 @@ jobs:
     permissions:
       contents: read
       actions: read
+      # The reusable workflow's test job assumes aws-role-arn through GitHub OIDC.
+      id-token: write
+      # Its resolve job reads the pull request description.
+      pull-requests: read
     uses: aws/aws-crypto-tools-commons/.github/workflows/mpl-test-server-reusable.yml@main
     with:
       runner: *codebuild-linux
       focus: rust
       checkout-languages: rust
+      # The hierarchical keyring Tests read their branch keys with this role.
+      aws-role-arn: arn:aws:iam::370957321024:role/GitHub-CI-Public-ESDK-Dafny-Role-us-west-2
     secrets:
       repo-pat: ${{ secrets.COMMONS_REPO_PAT }}
 
