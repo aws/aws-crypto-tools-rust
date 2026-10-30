@@ -42,47 +42,51 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Clients take their region and credentials from the default AWS config chain.
     let cfg = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
 
+    // Each step is boxed so this function keeps one pointer per step, not a
+    // copy of each step's state; unboxed, a debug build overflows the 1 MiB
+    // Windows main-thread stack.
+
     // Step 0: the plaintext starting state — write and read our own item.
-    step_0::run(&cfg, PARTITION_KEY, STEP_0_KEY, STEP_0_KEY).await?;
+    Box::pin(step_0::run(&cfg, PARTITION_KEY, STEP_0_KEY, STEP_0_KEY)).await?;
 
     // Step 1 deployed: still plaintext, but readers are ready for encryption.
-    step_1::run(&cfg, PARTITION_KEY, STEP_1_KEY, STEP_1_KEY).await?;
+    Box::pin(step_1::run(&cfg, PARTITION_KEY, STEP_1_KEY, STEP_1_KEY)).await?;
     // Step 1 reads Step 0's plaintext item; the old Step 0 reader reads Step 1's.
-    step_1::run(&cfg, PARTITION_KEY, STEP_1_KEY, STEP_0_KEY).await?;
-    step_0::run(&cfg, PARTITION_KEY, STEP_0_KEY, STEP_1_KEY).await?;
+    Box::pin(step_1::run(&cfg, PARTITION_KEY, STEP_1_KEY, STEP_0_KEY)).await?;
+    Box::pin(step_0::run(&cfg, PARTITION_KEY, STEP_0_KEY, STEP_1_KEY)).await?;
 
     // Step 2 deployed: new writes are encrypted; both kinds are still readable.
-    step_2::run(&cfg, PARTITION_KEY, STEP_2_KEY, STEP_2_KEY).await?;
+    Box::pin(step_2::run(&cfg, PARTITION_KEY, STEP_2_KEY, STEP_2_KEY)).await?;
     // Step 2 reads the earlier plaintext items.
-    step_2::run(&cfg, PARTITION_KEY, STEP_2_KEY, STEP_0_KEY).await?;
-    step_2::run(&cfg, PARTITION_KEY, STEP_2_KEY, STEP_1_KEY).await?;
+    Box::pin(step_2::run(&cfg, PARTITION_KEY, STEP_2_KEY, STEP_0_KEY)).await?;
+    Box::pin(step_2::run(&cfg, PARTITION_KEY, STEP_2_KEY, STEP_1_KEY)).await?;
     // The Step 1 reader decrypts Step 2's encrypted item.
-    step_1::run(&cfg, PARTITION_KEY, STEP_1_KEY, STEP_2_KEY).await?;
+    Box::pin(step_1::run(&cfg, PARTITION_KEY, STEP_1_KEY, STEP_2_KEY)).await?;
     // The plaintext Step 0 reader cannot read Step 2's encrypted item.
     expect_err(
         "step 0 reading an encrypted item",
-        step_0::run(&cfg, PARTITION_KEY, STEP_0_KEY, STEP_2_KEY),
+        Box::pin(step_0::run(&cfg, PARTITION_KEY, STEP_0_KEY, STEP_2_KEY)),
     )
     .await?;
 
     // (Operator back-fills here: re-encrypt every remaining plaintext item.)
 
     // Step 3 deployed: fully encrypted, plaintext reads are refused.
-    step_3::run(&cfg, PARTITION_KEY, STEP_3_KEY, STEP_3_KEY).await?;
+    Box::pin(step_3::run(&cfg, PARTITION_KEY, STEP_3_KEY, STEP_3_KEY)).await?;
     // Step 2 and Step 3 readers both read Step 3's / Step 2's encrypted items.
-    step_2::run(&cfg, PARTITION_KEY, STEP_2_KEY, STEP_3_KEY).await?;
-    step_3::run(&cfg, PARTITION_KEY, STEP_3_KEY, STEP_2_KEY).await?;
+    Box::pin(step_2::run(&cfg, PARTITION_KEY, STEP_2_KEY, STEP_3_KEY)).await?;
+    Box::pin(step_3::run(&cfg, PARTITION_KEY, STEP_3_KEY, STEP_2_KEY)).await?;
     // The Step 1 reader still decrypts Step 3's encrypted item.
-    step_1::run(&cfg, PARTITION_KEY, STEP_1_KEY, STEP_3_KEY).await?;
+    Box::pin(step_1::run(&cfg, PARTITION_KEY, STEP_1_KEY, STEP_3_KEY)).await?;
     // Step 3 refuses the still-plaintext items from Steps 0 and 1.
     expect_err(
         "step 3 reading a plaintext item written by step 0",
-        step_3::run(&cfg, PARTITION_KEY, STEP_3_KEY, STEP_0_KEY),
+        Box::pin(step_3::run(&cfg, PARTITION_KEY, STEP_3_KEY, STEP_0_KEY)),
     )
     .await?;
     expect_err(
         "step 3 reading a plaintext item written by step 1",
-        step_3::run(&cfg, PARTITION_KEY, STEP_3_KEY, STEP_1_KEY),
+        Box::pin(step_3::run(&cfg, PARTITION_KEY, STEP_3_KEY, STEP_1_KEY)),
     )
     .await?;
 
