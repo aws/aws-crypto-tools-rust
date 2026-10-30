@@ -316,7 +316,7 @@ impl<'a> EncryptStreamFluentBuilder<'a> {
     member!(
         /// An upper bound on the plaintext length, in bytes.
         /// It is passed to the CMM, and encrypt fails if the stream is longer.
-        data_size(usize), set_data_size, get_data_size -> usize
+        data_size(u64), set_data_size, get_data_size -> u64
     );
 
     /// Encrypt the `plaintext` reader into the `ciphertext` writer.

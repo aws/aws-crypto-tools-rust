@@ -173,7 +173,7 @@ impl AppState {
         let data_size = req
             .plaintext_length_bound
             .map(|bound| {
-                usize::try_from(bound).map_err(|_| {
+                u64::try_from(bound).map_err(|_| {
                     ServerError::esdk(format!(
                         "plaintextLengthBound must be non-negative, got {bound}"
                     ))

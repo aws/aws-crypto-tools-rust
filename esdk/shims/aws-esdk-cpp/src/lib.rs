@@ -1934,21 +1934,7 @@ fn create_encrypt_stream(input: &ffi::EncryptInput) -> Result<Box<EncryptStream>
         )))
         .set_algorithm_suite_id(settings.algorithm_suite_id)
         .set_frame_length(settings.frame_length.map(NonZeroU32::get))
-        .set_data_size(
-            input
-                .plaintext_length_bound
-                .to_option()
-                .map(|bound| {
-                    usize::try_from(bound).map_err(|e| {
-                        shim_err(
-                            ffi::ShimErrorKind::Validation,
-                            "plaintext length bound translation",
-                            e,
-                        )
-                    })
-                })
-                .transpose()?,
-        );
+        .set_data_size(input.plaintext_length_bound.to_option());
     Ok(Box::new(EncryptStream {
         state: StreamState::spawn("encrypt_stream", move |mut reader, mut writer| {
             let output = TOKIO_RUNTIME

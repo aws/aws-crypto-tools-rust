@@ -696,7 +696,7 @@ pub(crate) struct EncryptStreamInput {
     //= reason=EncryptStreamInput accepts unknown-length plaintext via a stream; data_size serves as the optional Plaintext Length Bound
     //# If the [plaintext](#plaintext) is of unknown length, the caller MAY also input a
     //# [Plaintext Length Bound](#plaintext-length-bound).
-    pub(crate) data_size: Option<usize>,
+    pub(crate) data_size: Option<u64>,
     pub(crate) max_encrypted_data_keys: Option<NonZeroUsize>,
     pub(crate) commitment_policy: CommitmentPolicy,
 }
@@ -721,7 +721,7 @@ pub(crate) struct EncryptStreamInputBuilder {
     frame_length: Option<u32>,
     keyring: Option<SharedKeyring>,
     cmm: Option<SharedCmm>,
-    data_size: Option<usize>,
+    data_size: Option<u64>,
     max_encrypted_data_keys: Option<NonZeroUsize>,
     commitment_policy: Option<CommitmentPolicy>,
 }
@@ -733,7 +733,7 @@ impl EncryptStreamInputBuilder {
         get_cmm: cmm -> SharedCmm,
         get_algorithm_suite_id: algorithm_suite_id -> AlgorithmSuiteId,
         get_frame_length: frame_length -> u32,
-        get_data_size: data_size -> usize,
+        get_data_size: data_size -> u64,
     );
 
     /// Set the algorithm suite.
@@ -825,7 +825,7 @@ impl EncryptStreamInputBuilder {
     /// CMM or keyring requires the plaintext length up front (e.g. for a
     /// signing scheme that pre-computes a digest size).
     #[must_use]
-    pub(crate) const fn data_size(mut self, data_size: usize) -> Self {
+    pub(crate) const fn data_size(mut self, data_size: u64) -> Self {
         self.data_size = Some(data_size);
         self
     }
@@ -834,7 +834,7 @@ impl EncryptStreamInputBuilder {
     /// `None` leaves it unset.
     /// To set a value, use [`Self::data_size`].
     #[must_use]
-    pub(crate) const fn set_data_size(mut self, data_size: Option<usize>) -> Self {
+    pub(crate) const fn set_data_size(mut self, data_size: Option<u64>) -> Self {
         self.data_size = data_size;
         self
     }

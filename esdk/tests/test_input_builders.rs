@@ -146,7 +146,7 @@ async fn test_encrypt_stream_setters_take_effect() {
         .keyring(keyring.clone())
         .algorithm_suite_id(SUITE)
         .frame_length(frame_length())
-        .data_size(plaintext.len())
+        .data_size(u64::try_from(plaintext.len()).unwrap())
         .plaintext(plaintext.as_slice())
         .ciphertext(&mut ct)
         .send()
@@ -163,7 +163,7 @@ async fn test_encrypt_stream_setters_take_effect() {
         .set_keyring(Some(keyring.clone()))
         .set_algorithm_suite_id(Some(SUITE))
         .set_frame_length(Some(frame_length()))
-        .set_data_size(Some(plaintext.len()))
+        .set_data_size(Some(u64::try_from(plaintext.len()).unwrap()))
         .plaintext(plaintext.as_slice())
         .ciphertext(&mut ct)
         .send()
@@ -455,12 +455,15 @@ async fn test_getters_return_set_values() {
         .cmm(cmm.clone())
         .algorithm_suite_id(SUITE)
         .frame_length(frame_length())
-        .data_size(bytes.len());
+        .data_size(u64::try_from(bytes.len()).unwrap());
     assert_eq!(b.get_encryption_context(), &Some(ec()));
     assert!(b.get_keyring().is_some() && b.get_cmm().is_some());
     assert_eq!(b.get_algorithm_suite_id(), &Some(SUITE));
     assert_eq!(b.get_frame_length(), &Some(frame_length()));
-    assert_eq!(b.get_data_size(), &Some(bytes.len()));
+    assert_eq!(
+        b.get_data_size(),
+        &Some(u64::try_from(bytes.len()).unwrap())
+    );
     assert!(b.get_plaintext().is_some() && b.get_ciphertext().is_some());
 
     let b = esdk.decrypt();
