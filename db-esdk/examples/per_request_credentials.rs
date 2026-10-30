@@ -7,6 +7,7 @@
 //! and a DynamoDB table with:
 //! - partition key `partition_key`, type S
 //! - sort key `sort_key`, type N
+//!
 //! The request credentials are read from AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and AWS_SESSION_TOKEN.
 //! Each KMS call also carries this request's headers.
 
