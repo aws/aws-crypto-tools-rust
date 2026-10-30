@@ -27,7 +27,7 @@ jobs:
     name: Detect what to run
     # Forks lack this repo's AWS role and secrets, so skip their scheduled runs.
     if: github.event_name != 'schedule' || github.repository_owner == 'aws'
-    runs-on: ubuntu-latest
+    runs-on: &codebuild-linux codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}
     permissions:
       contents: read
       # dorny/paths-filter lists the PR's files through the GitHub API.
@@ -39,7 +39,7 @@ jobs:
 
       # Each filter matches its crate, plus the crates it depends on.
       # ex. an mpl change re-tests mpl, esdk, the C++ shim, and their TestServers.
-      # A change to a `shared` path runs everything.
+      # A change to CI itself (`ci`) or a `shared` path runs all of CI.
       - name: Filter changed paths
         if: github.event_name == 'pull_request'
         id: filter
@@ -77,8 +77,10 @@ jobs:
             esdk-cpp-test-server:
               - *mpl
               - 'esdk/**'
-            shared:
+            # Any change to CI (workflows, actions, CI config) runs all of CI.
+            ci:
               - '.github/**'
+            shared:
               - 'scripts/spec-source.json'
               - 'scripts/resolve-spec.sh'
               - 'errors.toml'
@@ -88,9 +90,11 @@ jobs:
         id: set
         env:
           # PRs only test the files that changed.
-          # Pushes to main/scheduled runs/"shared" files resolve to "all" and test everything.
+          # Pushes to main, scheduled runs, and "ci" or "shared" changes resolve to "all" and run everything.
           CHANGES: >-
-            ${{ (github.event_name != 'pull_request' || contains(steps.filter.outputs.changes, '"shared"'))
+            ${{ (github.event_name != 'pull_request'
+                 || contains(steps.filter.outputs.changes, '"ci"')
+                 || contains(steps.filter.outputs.changes, '"shared"'))
               && '"all"' || steps.filter.outputs.changes }}
           # JOBS defines when/what to run.
           # ex. `when` "esdk" changes, test `project` "esdk".
@@ -117,12 +121,14 @@ jobs:
                 {"when": "db-esdk", "name": "db-esdk", "project": "db-esdk", "artifact": "db-esdk-duvet-report"}
               ],
               "test-server-builds": [
-                {"when": "esdk-test-server", "name": "esdk-test-server", "server": "esdk/test-server"},
-                {"when": "esdk-cpp-test-server", "name": "esdk-cpp-test-server (ubuntu)", "server": "esdk/shims/aws-esdk-cpp/test-server", "prebuild": "esdk/shims/aws-esdk-cpp", "os": "ubuntu-latest"},
-                {"when": "esdk-cpp-test-server", "name": "esdk-cpp-test-server (macos)", "server": "esdk/shims/aws-esdk-cpp/test-server", "prebuild": "esdk/shims/aws-esdk-cpp", "os": "macos-latest"},
-                {"when": "mpl-test-server", "name": "mpl-test-server", "server": "mpl-test-server"},
-                {"when": "prim-test-server", "name": "prim-test-server", "server": "prim-test-server"},
-                {"when": "db-esdk-test-server", "name": "db-esdk-test-server", "server": "db-esdk-test-server"}
+                {"when": "esdk-test-server", "name": "esdk-test-server", "server": "esdk/test-server", "runner": "codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}"},
+                {"when": "esdk-cpp-test-server", "name": "esdk-cpp-test-server (ubuntu)", "server": "esdk/shims/aws-esdk-cpp/test-server", "prebuild": "esdk/shims/aws-esdk-cpp", "runner": "codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}"},
+                {"when": "mpl-test-server", "name": "mpl-test-server", "server": "mpl-test-server", "runner": "codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}"},
+                {"when": "prim-test-server", "name": "prim-test-server", "server": "prim-test-server", "runner": "codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}"},
+                {"when": "db-esdk-test-server", "name": "db-esdk-test-server", "server": "db-esdk-test-server", "runner": "codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}"}
+              ],
+              "test-server-builds-macos": [
+                {"when": "esdk-cpp-test-server", "name": "esdk-cpp-test-server (macos)", "server": "esdk/shims/aws-esdk-cpp/test-server", "prebuild": "esdk/shims/aws-esdk-cpp", "runner": "macos-latest"}
               ],
               "esdk-test-server": [
                 {"when": "esdk-test-server", "focus": "rust"},
@@ -136,6 +142,12 @@ jobs:
               ],
               "db-esdk-test-server": [
                 {"when": "db-esdk-test-server"}
+              ],
+              "benchmarks": [
+                {"when": "esdk"}
+              ],
+              "benchmarks-cpp": [
+                {"when": "esdk"}
               ]
             }
         run: |
@@ -155,6 +167,21 @@ jobs:
     uses: ./.github/workflows/library_rust_tests.yml
     with:
       projects: ${{ toJSON(fromJSON(needs.detect.outputs.jobs)['rust-tests'].*.project) }}
+      platforms: '[{"os": "ubuntu", "runner": "codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}"}]'
+
+  # macOS and Windows jobs run and show red on failure,
+  # but pr-ci-all-required does not wait on them.
+  rust-tests-macos-windows:
+    name: Rust tests (macOS, Windows)
+    needs: detect
+    if: fromJSON(needs.detect.outputs.jobs)['rust-tests'] != null
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/library_rust_tests.yml
+    with:
+      projects: ${{ toJSON(fromJSON(needs.detect.outputs.jobs)['rust-tests'].*.project) }}
+      platforms: '[{"os": "macos", "runner": "macos-latest"}, {"os": "windows", "runner": "windows-latest"}]'
 
   supply-chain:
     name: Supply chain
@@ -174,6 +201,20 @@ jobs:
       contents: read
       id-token: write
     uses: ./.github/workflows/library_cpp_shim_tests.yml
+    with:
+      platforms: '[{"os": "ubuntu", "runner": "codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}"}]'
+
+  # Not in pr-ci-all-required; see rust-tests-macos-windows.
+  cpp-shim-macos:
+    name: C++ shim (macOS)
+    needs: detect
+    if: fromJSON(needs.detect.outputs.jobs)['cpp-shim'] != null
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/library_cpp_shim_tests.yml
+    with:
+      platforms: '[{"os": "macos", "runner": "macos-latest"}]'
 
   duvet:
     name: Duvet
@@ -195,6 +236,17 @@ jobs:
     with:
       builds: ${{ toJSON(fromJSON(needs.detect.outputs.jobs)['test-server-builds']) }}
 
+  # Not in pr-ci-all-required; see rust-tests-macos-windows.
+  test-server-builds-macos:
+    name: TestServer builds (macOS)
+    needs: detect
+    if: fromJSON(needs.detect.outputs.jobs)['test-server-builds-macos'] != null
+    permissions:
+      contents: read
+    uses: ./.github/workflows/test_server_build.yml
+    with:
+      builds: ${{ toJSON(fromJSON(needs.detect.outputs.jobs)['test-server-builds-macos']) }}
+
   # Cross-language TestServer runs.
   esdk-test-server:
     name: ESDK TestServer (${{ matrix.focus }})
@@ -210,6 +262,7 @@ jobs:
       id-token: write
     uses: aws/aws-crypto-tools-commons/.github/workflows/esdk-test-server-reusable.yml@main
     with:
+      runner: *codebuild-linux
       commons-ref: main
       # Only run tests that involve the focus language (ex. skip Python <--> Java tests for this Rust repo)
       focus: ${{ matrix.focus }}
@@ -226,6 +279,7 @@ jobs:
       actions: read
     uses: aws/aws-crypto-tools-commons/.github/workflows/mpl-test-server-reusable.yml@main
     with:
+      runner: *codebuild-linux
       focus: rust
       checkout-languages: rust
     secrets:
@@ -240,6 +294,7 @@ jobs:
       actions: read
     uses: aws/aws-crypto-tools-commons/.github/workflows/primitives-test-server-reusable.yml@main
     with:
+      runner: *codebuild-linux
       focus: rust
       checkout-languages: rust
     secrets:
@@ -258,16 +313,38 @@ jobs:
     # merges (it adds Test-Server-Override support to this reusable workflow); then @main.
     uses: aws/aws-crypto-tools-commons/.github/workflows/dbesdk-test-server-reusable.yml@lucmcdon/db-esdk-rust-native-harness
     with:
+      runner: *codebuild-linux
       # Only run tests that involve the native server (ex. skip Java <--> .NET tests for this Rust repo)
       focus: rust-native
     secrets:
       repo-pat: ${{ secrets.COMMONS_REPO_PAT }}
 
+  # Benchmarks only upload to CloudWatch on the daily run.
+  # Not in pr-ci-all-required, so a slow or noisy benchmark can't block a merge.
+  benchmarks:
+    name: Performance Benchmarks
+    needs: detect
+    if: fromJSON(needs.detect.outputs.jobs)['benchmarks'] != null
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/performance-benchmarks.yml
+
+  # Not in pr-ci-all-required; see benchmarks.
+  benchmarks-cpp:
+    name: Performance Benchmarks (C++)
+    needs: detect
+    if: fromJSON(needs.detect.outputs.jobs)['benchmarks-cpp'] != null
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/performance-benchmarks-cpp.yml
+
   # The generated error types must match errors.toml.
   gen-errors:
     name: Error codegen is current
     needs: detect
-    runs-on: ubuntu-latest
+    runs-on: *codebuild-linux
     permissions:
       contents: read
     steps:
@@ -294,7 +371,7 @@ jobs:
   license-headers:
     name: License headers
     needs: detect
-    runs-on: ubuntu-latest
+    runs-on: *codebuild-linux
     permissions:
       contents: read
     steps:
@@ -319,7 +396,7 @@ jobs:
       - db-esdk-test-server
       - gen-errors
       - license-headers
-    runs-on: ubuntu-latest
+    runs-on: *codebuild-linux
     steps:
       - name: Check job results
         env:
