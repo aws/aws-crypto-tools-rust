@@ -54,18 +54,6 @@ fn tenant_context(tenant: &str) -> EncryptionContext {
     EncryptionContext::from([("tenant", tenant), ("purpose", "example")])
 }
 
-async fn fixed_keyring(
-    key_store: &key_store::DynamoDbKeyStore,
-    branch_key_id: &str,
-) -> Result<HierarchicalKeyring, MplError> {
-    HierarchicalKeyring::builder()
-        .key_store(key_store.clone())
-        .ttl(Duration::from_secs(600))
-        .branch_key_id(branch_key_id)
-        .build()
-        .await
-}
-
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let sdk_config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
@@ -95,9 +83,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let branch_key_a = create_branch_key().await?;
     let branch_key_b = create_branch_key().await?;
 
-    let keyring = HierarchicalKeyring::builder()
+    // Every keyring below shares these settings.
+    // Each one starts from a clone of this builder and adds only its branch key choice.
+    let template = HierarchicalKeyring::builder()
         .key_store(key_store.clone())
-        .ttl(Duration::from_secs(600))
+        .ttl(Duration::from_secs(600));
+
+    let keyring = template
+        .clone()
         .branch_key_id_supplier(TenantBranchKeySupplier {
             tenant_a: branch_key_a.clone(),
             tenant_b: branch_key_b.clone(),
@@ -124,8 +117,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .send()
         .await?;
 
-    let keyring_a = fixed_keyring(&key_store, &branch_key_a).await?;
-    let keyring_b = fixed_keyring(&key_store, &branch_key_b).await?;
+    let keyring_a = template
+        .clone()
+        .branch_key_id(&branch_key_a)
+        .build()
+        .await?;
+    let keyring_b = template.branch_key_id(&branch_key_b).build().await?;
 
     // Tenant B's branch key cannot decrypt tenant A's message.
     let result = esdk

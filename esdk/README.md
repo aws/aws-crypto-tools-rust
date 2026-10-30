@@ -122,6 +122,7 @@ Run one with `cargo run --example <name>`:
 | `custom_cmm` | implement your own cryptographic materials manager (CMM) | no |
 | `set_algorithm_suite` | encrypt with a non-default algorithm suite | no |
 | `set_commitment_policy` | encrypt and decrypt under a non-default commitment policy | no |
+| `configure_client` | set the commitment policy, the encrypted data key limit, the algorithm suite and the frame length | no |
 | `hierarchical_keyring` | encrypt and decrypt with a hierarchical keyring | KMS + DynamoDB |
 | `branch_key_supplier` | pick a branch key per tenant | KMS + DynamoDB |
 | `rotate_branch_key` | create a branch key and rotate it | KMS + DynamoDB |
