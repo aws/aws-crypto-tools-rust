@@ -8,8 +8,7 @@ use crate::message::header_types::HeaderBody;
 use crate::message::serializable_types::{is_esdk_encrypted_data_keys, is_esdk_encryption_context};
 use crate::shapes::{AlgorithmSuiteId, CommitmentPolicy, EncryptionContext, MaterialSource};
 use aws_crypto_mpl::cmm::DefaultCmm;
-use aws_crypto_mpl::cmm::{Cmm, SharedCmm};
-use aws_crypto_mpl::keyring::Keyring;
+use aws_crypto_mpl::cmm::SharedCmm;
 use aws_crypto_mpl::types::{
     AlgorithmSuiteId as MplAlgorithmSuiteId, CommitmentPolicy as MplCommitmentPolicy,
     DecryptionMaterials, EncryptedDataKey, EncryptionMaterials,
@@ -100,13 +99,14 @@ pub(crate) async fn get_decryption_materials(
         .decrypt_materials()
         .algorithm_suite_id(MplAlgorithmSuiteId::Esdk(algorithm_suite_id))
         .commitment_policy(policy)
-        .encrypted_data_keys(edks)
-        .encryption_context(encryption_context);
+        .set_encrypted_data_keys(Some(edks))
+        .set_encryption_context(Some(encryption_context));
 
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
     //# - Reproduced Encryption Context: This MUST be the [input](#input) encryption context.
     if !reproduced_encryption_context.is_empty() {
-        request = request.reproduced_encryption_context(reproduced_encryption_context.clone());
+        request =
+            request.set_reproduced_encryption_context(Some(reproduced_encryption_context.clone()));
     }
 
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
@@ -172,7 +172,7 @@ pub(crate) async fn get_encryption_materials(
     //# Otherwise, this MUST be an empty encryption context.
     let mut request = cmm
         .get_encryption_materials()
-        .encryption_context(encryption_context)
+        .set_encryption_context(Some(encryption_context))
         .commitment_policy(policy);
 
     //= spec/client-apis/encrypt.md#get-the-encryption-materials

@@ -28,7 +28,12 @@ fn providers(edks: &[EncryptedDataKey]) -> Vec<&str> {
 #[async_trait]
 impl Keyring for AuditKeyring {
     async fn on_encrypt(&self, input: OnEncryptInput) -> Result<OnEncryptOutput, MplError> {
-        let output = Keyring::on_encrypt(&self.inner, input).await?;
+        let output = self
+            .inner
+            .on_encrypt()
+            .materials(input.into_materials())
+            .send()
+            .await?;
         println!(
             "audit: encrypt wrote data keys for {:?}",
             providers(output.materials().encrypted_data_keys())
@@ -41,7 +46,15 @@ impl Keyring for AuditKeyring {
             "audit: decrypt tried data keys from {:?}",
             providers(input.encrypted_data_keys())
         );
-        Keyring::on_decrypt(&self.inner, input).await
+        {
+            let (materials, encrypted_data_keys) = input.into_parts();
+            self.inner
+                .on_decrypt()
+                .materials(materials)
+                .set_encrypted_data_keys(Some(encrypted_data_keys))
+                .send()
+        }
+        .await
     }
 }
 
@@ -67,7 +80,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let encrypted = esdk
         .encrypt()
         .plaintext(plaintext)
-        .encryption_context(encryption_context.clone())
+        .set_encryption_context(Some(encryption_context.clone()))
         .keyring(keyring.clone())
         .send()
         .await?;
@@ -75,7 +88,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let decrypted = esdk
         .decrypt()
         .ciphertext(encrypted.ciphertext())
-        .encryption_context(encryption_context)
+        .set_encryption_context(Some(encryption_context))
         .keyring(keyring)
         .send()
         .await?;

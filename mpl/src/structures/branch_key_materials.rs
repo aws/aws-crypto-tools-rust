@@ -6,6 +6,7 @@
 use super::encryption_context::EncryptionContext;
 use crate::Error;
 use crate::builder::required;
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 /// Materials for establishing a key hierarchy to reuse a data key that wraps other data keys.
 ///
@@ -138,16 +139,20 @@ impl BranchKeyMaterialsBuilder {
         &self.branch_key_version
     }
 
-    /// Set the custom encryption context of the branch key.
+    /// Adds a key-value pair to the custom encryption context of the branch key.
+    ///
+    /// To override the contents of this collection use [`set_encryption_context`](Self::set_encryption_context).
     /// Required.
     #[must_use]
-    pub fn encryption_context(mut self, encryption_context: impl Into<EncryptionContext>) -> Self {
-        self.encryption_context = Some(encryption_context.into());
+    pub fn encryption_context(mut self, k: impl Into<String>, v: impl Into<String>) -> Self {
+        self.encryption_context
+            .get_or_insert_with(Default::default)
+            .insert(k, v);
         self
     }
 
     /// Set or clear the encryption context from an `Option`.
-    /// To set a value, use [`Self::encryption_context`].
+    /// To add one entry, use [`Self::encryption_context`].
     #[must_use]
     pub fn set_encryption_context(mut self, encryption_context: Option<EncryptionContext>) -> Self {
         self.encryption_context = encryption_context;
@@ -165,20 +170,20 @@ impl BranchKeyMaterialsBuilder {
     /// # Errors
     ///
     /// - [`Validation`](crate::Error::Validation): a field is unset, or `branch_key_id` or `branch_key_version` is empty.
-    pub fn build(self) -> Result<BranchKeyMaterials, Error> {
-        let branch_key_id = required(self.branch_key_id, "branch_key_id")?;
+    pub fn build(mut self) -> Result<BranchKeyMaterials, Error> {
+        let branch_key_id = required(self.branch_key_id.take(), "branch_key_id")?;
         if branch_key_id.is_empty() {
             return Err(Error::validation("branch_key_id must not be empty"));
         }
-        let branch_key_version = required(self.branch_key_version, "branch_key_version")?;
+        let branch_key_version = required(self.branch_key_version.take(), "branch_key_version")?;
         if branch_key_version.is_empty() {
             return Err(Error::validation("branch_key_version must not be empty"));
         }
         Ok(BranchKeyMaterials {
-            branch_key: required(self.branch_key, "branch_key")?,
+            branch_key: required(self.branch_key.take(), "branch_key")?,
             branch_key_id,
             branch_key_version,
-            encryption_context: required(self.encryption_context, "encryption_context")?,
+            encryption_context: required(self.encryption_context.take(), "encryption_context")?,
         })
     }
 }
@@ -196,3 +201,19 @@ impl std::fmt::Debug for BranchKeyMaterialsBuilder {
             .finish()
     }
 }
+
+impl Drop for BranchKeyMaterials {
+    fn drop(&mut self) {
+        self.branch_key.zeroize();
+    }
+}
+
+impl ZeroizeOnDrop for BranchKeyMaterials {}
+
+impl Drop for BranchKeyMaterialsBuilder {
+    fn drop(&mut self) {
+        self.branch_key.zeroize();
+    }
+}
+
+impl ZeroizeOnDrop for BranchKeyMaterialsBuilder {}

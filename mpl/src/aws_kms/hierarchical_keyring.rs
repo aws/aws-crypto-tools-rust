@@ -17,7 +17,9 @@ use async_trait::async_trait;
 
 use crate::aws_kms::branch_key_wrap;
 use crate::aws_kms::cache_entry_identifier;
-use crate::cmc::{CacheEntry, CachedMaterials, Cmc, DefaultCmc, SharedCmc};
+#[cfg(feature = "rt-tokio")]
+use crate::cmc::DefaultCmc;
+use crate::cmc::{CacheEntry, CachedMaterials, SharedCmc};
 use crate::key_store;
 use crate::keyring::Keyring;
 use crate::keyring::{OnDecryptInput, OnDecryptOutput, OnEncryptInput, OnEncryptOutput};
@@ -55,16 +57,20 @@ pub struct GetBranchKeyIdInputBuilder {
 }
 
 impl GetBranchKeyIdInputBuilder {
-    /// Set the encryption context of the message being encrypted or decrypted.
+    /// Adds a key-value pair to the encryption context of the message being encrypted or decrypted.
+    ///
+    /// To override the contents of this collection use [`set_encryption_context`](Self::set_encryption_context).
     /// Required.
     #[must_use]
-    pub fn encryption_context(mut self, encryption_context: impl Into<EncryptionContext>) -> Self {
-        self.encryption_context = Some(encryption_context.into());
+    pub fn encryption_context(mut self, k: impl Into<String>, v: impl Into<String>) -> Self {
+        self.encryption_context
+            .get_or_insert_with(Default::default)
+            .insert(k, v);
         self
     }
 
     /// Set or clear the encryption context from an `Option`.
-    /// To set a value, use [`Self::encryption_context`].
+    /// To add one entry, use [`Self::encryption_context`].
     #[must_use]
     pub fn set_encryption_context(mut self, encryption_context: Option<EncryptionContext>) -> Self {
         self.encryption_context = encryption_context;
@@ -189,23 +195,13 @@ pub trait BranchKeySupplier: Send + Sync {
 crate::shared::shared_handle!(
     /// A branch key supplier whose concrete type is chosen at runtime.
     ///
-    /// It implements [`BranchKeySupplier`], so it can be passed anywhere a branch key supplier is accepted.
+    /// Pass it anywhere a branch key supplier is accepted.
     /// Callers that know their branch key supplier's type pass it directly and never need this one.
     ///
     /// Its operation returns a fluent builder: set the input, then call `send`.
     SharedBranchKeySupplier,
     BranchKeySupplier
 );
-
-#[async_trait::async_trait]
-impl BranchKeySupplier for SharedBranchKeySupplier {
-    async fn get_branch_key_id(
-        &self,
-        input: GetBranchKeyIdInput,
-    ) -> Result<GetBranchKeyIdOutput, Error> {
-        BranchKeySupplier::get_branch_key_id(&*self.0, input).await
-    }
-}
 
 impl SharedBranchKeySupplier {
     /// Start a [`BranchKeySupplier::get_branch_key_id`] call.
@@ -232,15 +228,17 @@ impl GetBranchKeyIdFluentBuilder {
         &self.inner
     }
 
-    /// Set the encryption context of the message being encrypted or decrypted.
+    /// Adds a key-value pair to the encryption context of the message being encrypted or decrypted.
+    ///
+    /// To override the contents of this collection use [`set_encryption_context`](Self::set_encryption_context).
     /// Required.
-    pub fn encryption_context(mut self, encryption_context: impl Into<EncryptionContext>) -> Self {
-        self.inner = self.inner.encryption_context(encryption_context);
+    pub fn encryption_context(mut self, k: impl Into<String>, v: impl Into<String>) -> Self {
+        self.inner = self.inner.encryption_context(k, v);
         self
     }
 
     /// Set or clear the encryption context from an `Option`.
-    /// To set a value, use [`Self::encryption_context`].
+    /// To add one entry, use [`Self::encryption_context`].
     pub fn set_encryption_context(mut self, encryption_context: Option<EncryptionContext>) -> Self {
         self.inner = self.inner.set_encryption_context(encryption_context);
         self
@@ -274,7 +272,7 @@ pub struct HierarchicalKeyring {
 }
 
 struct HierarchicalKeyringInner {
-    key_store: key_store::Client,
+    key_store: key_store::SharedKeyStore,
 
     ttl: Duration,
 
@@ -299,6 +297,12 @@ struct HierarchicalKeyringInner {
 }
 
 impl HierarchicalKeyring {
+    /// The configured branch key ID, or `"supplier"` when a branch key ID supplier chooses it.
+    #[must_use]
+    pub fn name(&self) -> Cow<'_, str> {
+        Cow::Borrowed(self.inner.branch_key_id.as_deref().unwrap_or("supplier"))
+    }
+
     /// Start a builder for `HierarchicalKeyring`.
     #[must_use]
     pub fn builder() -> HierarchicalKeyringBuilder {
@@ -327,7 +331,7 @@ impl HierarchicalKeyring {
 
     /// The configured key store.
     #[must_use]
-    pub fn key_store(&self) -> &key_store::Client {
+    pub fn key_store(&self) -> &key_store::SharedKeyStore {
         &self.inner.key_store
     }
 
@@ -346,13 +350,14 @@ impl HierarchicalKeyring {
 }
 
 /// Entry capacity of the [`DefaultCmc`] a keyring builds when no cache is set.
+#[cfg(feature = "rt-tokio")]
 const DEFAULT_CACHE_ENTRY_CAPACITY: usize = 1000;
 
 /// Builder for [`HierarchicalKeyring`], returned by
 /// [`HierarchicalKeyring::builder`].
 #[derive(Default)]
 pub struct HierarchicalKeyringBuilder {
-    key_store: Option<key_store::Client>,
+    key_store: Option<key_store::SharedKeyStore>,
     ttl: Option<Duration>,
     branch_key_id: Option<String>,
     branch_key_id_supplier: Option<SharedBranchKeySupplier>,
@@ -374,24 +379,24 @@ impl HierarchicalKeyringBuilder {
     /// The key store.
     /// Required.
     ///
-    /// Pass the [`key_store::Client`](crate::key_store::Client) that [`key_store::Client::builder`](crate::key_store::Client::builder) builds, or any [`KeyStore`](crate::key_store::KeyStore).
+    /// Pass a [`DynamoDbKeyStore`](crate::key_store::DynamoDbKeyStore), a [`SharedKeyStore`](crate::key_store::SharedKeyStore), or any [`KeyStore`](crate::key_store::KeyStore).
     #[must_use]
-    pub fn key_store(mut self, key_store: impl Into<key_store::Client>) -> Self {
-        self.key_store = Some(key_store.into());
+    pub fn key_store(mut self, key_store: impl IntoShared<key_store::SharedKeyStore>) -> Self {
+        self.key_store = Some(key_store.into_shared());
         self
     }
 
     /// Set or clear the key store from an `Option`.
     /// To set a value, use [`Self::key_store`].
     #[must_use]
-    pub fn set_key_store(mut self, key_store: Option<key_store::Client>) -> Self {
+    pub fn set_key_store(mut self, key_store: Option<key_store::SharedKeyStore>) -> Self {
         self.key_store = key_store;
         self
     }
 
     /// The key store, if set.
     #[must_use]
-    pub const fn get_key_store(&self) -> &Option<key_store::Client> {
+    pub const fn get_key_store(&self) -> &Option<key_store::SharedKeyStore> {
         &self.key_store
     }
 
@@ -442,7 +447,10 @@ impl HierarchicalKeyringBuilder {
     /// A [`BranchKeySupplier`].
     /// Set this or [`branch_key_id`](Self::branch_key_id), not both.
     #[must_use]
-    pub fn branch_key_id_supplier(mut self, supplier: impl BranchKeySupplier + 'static) -> Self {
+    pub fn branch_key_id_supplier(
+        mut self,
+        supplier: impl IntoShared<SharedBranchKeySupplier>,
+    ) -> Self {
         self.branch_key_id_supplier = Some(supplier.into_shared());
         self
     }
@@ -464,11 +472,12 @@ impl HierarchicalKeyringBuilder {
     /// The cache for branch key materials.
     /// Pass clones of one cache to several keyrings to share its entries.
     /// When unset, the keyring builds its own [`DefaultCmc`] with an entry capacity of 1000.
+    /// Without the `rt-tokio` feature, it is required.
     ///
-    /// The cache's [grace period](Cmc::grace_period), if it has one, must be less than the [TTL](Self::ttl).
+    /// The cache's [grace period](crate::cmc::Cmc::grace_period), if it has one, must be less than the [TTL](Self::ttl).
     /// The default cache's grace period is 10 seconds.
     #[must_use]
-    pub fn cache(mut self, cache: impl Cmc + 'static) -> Self {
+    pub fn cache(mut self, cache: impl IntoShared<SharedCmc>) -> Self {
         self.cache = Some(cache.into_shared());
         self
     }
@@ -513,11 +522,11 @@ impl HierarchicalKeyringBuilder {
     ///
     /// # Errors
     ///
-    /// - [`Validation`](crate::Error::Validation): no key store or TTL is set, the TTL is zero, both or neither of a branch key id and a branch key id supplier are set, a storm-tracking grace period is not less than the TTL, or the materials cache rejects its parameters.
+    /// - [`Validation`](crate::Error::Validation): no key store or TTL is set, the TTL is zero, both or neither of a branch key id and a branch key id supplier are set, no cache is set without the `rt-tokio` feature, a storm-tracking grace period is not less than the TTL, or the materials cache rejects its parameters.
     /// - [`Cryptographic`](crate::Error::Cryptographic): the random number generator failed while creating the default partition id.
     ///
     /// If the key store's [`get_key_store_info`](crate::key_store::KeyStore::get_key_store_info) fails, returns that error unchanged.
-    /// The key store [`key_store::Client::builder`](crate::key_store::Client::builder) builds does not fail it.
+    /// A [`DynamoDbKeyStore`](crate::key_store::DynamoDbKeyStore) does not fail it.
     pub async fn build(self) -> Result<HierarchicalKeyring, Error> {
         let Self {
             key_store,
@@ -552,12 +561,19 @@ impl HierarchicalKeyringBuilder {
 
         let cache = match cache {
             Some(cache) => cache,
-            None => SharedCmc::new(
-                DefaultCmc::builder()
-                    .entry_capacity(DEFAULT_CACHE_ENTRY_CAPACITY)
-                    .build()
-                    .map_err(|e| Error::wrap("could not create the default materials cache", e))?,
-            ),
+            #[cfg(feature = "rt-tokio")]
+            None => DefaultCmc::builder()
+                .entry_capacity(DEFAULT_CACHE_ENTRY_CAPACITY)
+                .build()
+                .map_err(|e| Error::wrap("could not create the default materials cache", e))?
+                .into_shared(),
+            #[cfg(not(feature = "rt-tokio"))]
+            None => {
+                return Err(Error::new(
+                    Kind::Validation,
+                    "cache is required without the `rt-tokio` feature",
+                ));
+            }
         };
 
         if let Some(grace_period) = cache.grace_period()
@@ -625,10 +641,9 @@ fn uuid_16_bytes_to_str(bytes: &[u8; CIPHERTEXT_VERSION_LEN]) -> String {
 }
 
 #[async_trait]
-impl Keyring for HierarchicalKeyring {
-    /// The configured branch key ID, or `"supplier"` when a branch key ID supplier chooses it.
+impl Keyring for crate::shared::Builtin<HierarchicalKeyring> {
     fn name(&self) -> Cow<'_, str> {
-        Cow::Borrowed(self.inner.branch_key_id.as_deref().unwrap_or("supplier"))
+        self.0.name()
     }
 
     async fn on_encrypt(&self, input: OnEncryptInput) -> Result<OnEncryptOutput, Error> {
@@ -829,7 +844,7 @@ impl HierarchicalKeyring {
         // the supplier path — a static branch key id never pays for it.
         Ok(supplier
             .get_branch_key_id()
-            .encryption_context(encryption_context.clone())
+            .set_encryption_context(Some(encryption_context.clone()))
             .send()
             .await?
             .into_branch_key_id())

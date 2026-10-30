@@ -20,7 +20,7 @@ use super::{
     DecryptMaterialsInput, DecryptMaterialsOutput, GetEncryptionMaterialsInput,
     GetEncryptionMaterialsOutput,
 };
-use crate::keyring::{Keyring, SharedKeyring};
+use crate::keyring::SharedKeyring;
 use crate::shared::IntoShared;
 use crate::structures::{
     AsymmetricSignatureAlgorithm, DecryptionMaterials, EncryptionContext, EncryptionMaterials,
@@ -62,8 +62,14 @@ pub struct DefaultCmm {
 }
 
 impl DefaultCmm {
+    /// `"default"`.
+    #[must_use]
+    pub fn name(&self) -> Cow<'_, str> {
+        Cow::Borrowed("default")
+    }
+
     /// Construct a `DefaultCmm` wrapping the given keyring.
-    pub fn new(keyring: impl Keyring + 'static) -> Self {
+    pub fn new(keyring: impl IntoShared<SharedKeyring>) -> Self {
         Self {
             keyring: keyring.into_shared(),
         }
@@ -71,9 +77,9 @@ impl DefaultCmm {
 }
 
 #[async_trait]
-impl Cmm for DefaultCmm {
+impl Cmm for crate::shared::Builtin<DefaultCmm> {
     fn name(&self) -> Cow<'_, str> {
-        Cow::Borrowed("default")
+        self.0.name()
     }
 
     async fn get_encryption_materials(
@@ -144,19 +150,15 @@ impl Cmm for DefaultCmm {
             None
         };
 
-        // Required-encryption-context-keys come from the request (or empty).
-        let reck = input
-            .required_encryption_context_keys()
-            .cloned()
-            .unwrap_or_default();
+        let reck = input.required_encryption_context_keys().clone();
 
         // Build empty materials carrying the resolved suite, the (possibly
         // signing-key-augmented) EC, the input's RECK, and the freshly
         // generated signing key. The keyring populates the PDK and EDK list.
         let empty_materials = EncryptionMaterials::builder()
             .algorithm_suite_id(suite_id)
-            .encryption_context(ec)
-            .required_encryption_context_keys(reck)
+            .set_encryption_context(Some(ec))
+            .set_required_encryption_context_keys(Some(reck))
             .set_signing_key(signing_key)
             .build()?;
 
@@ -232,8 +234,8 @@ impl Cmm for DefaultCmm {
         // recovering it from one of the input's encrypted data keys.
         let empty_materials = DecryptionMaterials::builder()
             .algorithm_suite_id(suite_id)
-            .encryption_context(ec)
-            .required_encryption_context_keys(required_encryption_context_keys)
+            .set_encryption_context(Some(ec))
+            .set_required_encryption_context_keys(Some(required_encryption_context_keys))
             .set_verification_key(verification_key)
             .build()?;
 
@@ -241,7 +243,7 @@ impl Cmm for DefaultCmm {
             .keyring
             .on_decrypt()
             .materials(empty_materials)
-            .encrypted_data_keys(input.encrypted_data_keys)
+            .set_encrypted_data_keys(Some(input.encrypted_data_keys))
             .send()
             .await?
             .into_materials();

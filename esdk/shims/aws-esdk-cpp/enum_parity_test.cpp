@@ -1,3 +1,6 @@
+// Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 // detail::to_ffi() converts the C++ enums to the Rust enums
 // with a plain static_cast (i.e. the same enum byte value),
 // so the enum byte values must match.
@@ -71,6 +74,9 @@ static_assert(eq(Aws::Esdk::ConflictReason::ConcurrentModification, 1), "Conflic
 static_assert(eq(Aws::Esdk::CommitmentPolicy::ForbidEncryptAllowDecrypt, ::aws_esdk_ffi::EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt), "ForbidEncryptAllowDecrypt");
 static_assert(eq(Aws::Esdk::CommitmentPolicy::RequireEncryptAllowDecrypt, ::aws_esdk_ffi::EsdkCommitmentPolicy::RequireEncryptAllowDecrypt), "RequireEncryptAllowDecrypt");
 static_assert(eq(Aws::Esdk::CommitmentPolicy::RequireEncryptRequireDecrypt, ::aws_esdk_ffi::EsdkCommitmentPolicy::RequireEncryptRequireDecrypt), "RequireEncryptRequireDecrypt");
+static_assert(eq(Aws::Esdk::SignedStreaming::RejectMultiFrame, ::aws_esdk_ffi::SignedStreaming::RejectMultiFrame), "RejectMultiFrame");
+static_assert(eq(Aws::Esdk::SignedStreaming::ReleaseRegularFrames, ::aws_esdk_ffi::SignedStreaming::ReleaseRegularFrames), "ReleaseRegularFrames");
+static_assert(eq(Aws::Esdk::SignedStreaming::RejectSigned, ::aws_esdk_ffi::SignedStreaming::RejectSigned), "RejectSigned");
 
 static_assert(eq(Aws::Esdk::AesWrappingAlgorithm::AlgAes128GcmIv12Tag16, ::aws_esdk_ffi::AesWrappingAlg::AlgAes128GcmIv12Tag16), "AlgAes128GcmIv12Tag16");
 static_assert(eq(Aws::Esdk::AesWrappingAlgorithm::AlgAes192GcmIv12Tag16, ::aws_esdk_ffi::AesWrappingAlg::AlgAes192GcmIv12Tag16), "AlgAes192GcmIv12Tag16");

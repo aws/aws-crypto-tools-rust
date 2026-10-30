@@ -1,3 +1,6 @@
+// Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 // EncryptionSDK.cpp - translates public types in EncryptionSDK.h to private cxx-generated types
 
 #include "aws/esdk/EncryptionSDK.h"
@@ -5,6 +8,7 @@
 #include <algorithm>
 #include <map>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -200,6 +204,15 @@ auto guard(F&& f) -> decltype(f()) {
 
 // Conversions from public type to FFI type
 
+// ::rust::String throws std::invalid_argument on non-UTF-8 input.
+::rust::String to_rust_string(const std::string& s, const std::string& name) {
+    try {
+        return ::rust::String(s);
+    } catch (const std::invalid_argument&) {
+        throw ValidationException(name + " must be valid UTF-8");
+    }
+}
+
 ::ffi::Duration to_ffi(std::chrono::nanoseconds d, const char* field) {
     if (d.count() < 0) {
         throw ValidationException(std::string(field) + " must not be negative");
@@ -224,8 +237,11 @@ auto guard(F&& f) -> decltype(f()) {
 ::ffi::OptU32 to_opt(const std::optional<std::uint32_t>& o) {
     return o ? ::ffi::OptU32{true, *o} : ::ffi::OptU32{false, 0};
 }
-::ffi::OptString to_opt(const std::optional<std::string>& o) {
-    return o ? ::ffi::OptString{true, ::rust::String(*o)} : ::ffi::OptString{false, {}};
+::ffi::OptU64 to_opt(const std::optional<std::uint64_t>& o) {
+    return o ? ::ffi::OptU64{true, *o} : ::ffi::OptU64{false, 0};
+}
+::ffi::OptString to_opt(const std::optional<std::string>& o, const std::string& name) {
+    return o ? ::ffi::OptString{true, to_rust_string(*o, name)} : ::ffi::OptString{false, {}};
 }
 ::ffi::OptAlgId to_opt(const std::optional<AlgorithmSuiteId>& o) {
     return o ? ::ffi::OptAlgId{true, to_ffi(*o)} : ::ffi::OptAlgId{false, {}};
@@ -233,13 +249,18 @@ auto guard(F&& f) -> decltype(f()) {
 ::ffi::OptCommitmentPolicy to_opt(const std::optional<CommitmentPolicy>& o) {
     return o ? ::ffi::OptCommitmentPolicy{true, to_ffi(*o)} : ::ffi::OptCommitmentPolicy{false, {}};
 }
+::ffi::OptSignedStreaming to_opt(const std::optional<SignedStreaming>& o) {
+    return o ? ::ffi::OptSignedStreaming{
+                   true, static_cast<::ffi::SignedStreaming>(static_cast<std::uint8_t>(*o))}
+             : ::ffi::OptSignedStreaming{false, {}};
+}
 
 ::rust::Vec<::ffi::EncryptionContextItem> to_ec(const std::map<std::string, std::string>& ec) {
     ::rust::Vec<::ffi::EncryptionContextItem> out;
     for (const auto& kv : ec) {
         ::ffi::EncryptionContextItem item;
-        item.key = ::rust::String(kv.first);
-        item.value = ::rust::String(kv.second);
+        item.key = to_rust_string(kv.first, "encryption context keys");
+        item.value = to_rust_string(kv.second, "encryption context values");
         out.push_back(std::move(item));
     }
     return out;
@@ -259,20 +280,31 @@ std::map<std::string, std::string> from_ec(const ::rust::Vec<::ffi::EncryptionCo
     return out;
 }
 
-// Aws::Esdk::Bytes
+// Aws::Esdk::Plaintext and Aws::Esdk::Ciphertext
+
+void RustBufferDeleter::operator()(void* buffer) const {
+    delete static_cast<::rust::Vec<std::uint8_t>*>(buffer);
+}
 
 struct BytesFactory {
     // Zero-copy wrapper for Rust buffer in C++-accessible type
-    static Bytes make(::rust::Vec<std::uint8_t> buf) {
-        auto owner = std::make_shared<::rust::Vec<std::uint8_t>>(std::move(buf));
-        const std::uint8_t* data = owner->data();
-        const std::size_t size = owner->size();
-        return Bytes(data, size, std::move(owner));
+    template <typename T>
+    static T make(::rust::Vec<std::uint8_t> buf) {
+        auto owned = std::make_unique<::rust::Vec<std::uint8_t>>(std::move(buf));
+        T out;
+        out.data_ = owned->data();
+        out.size_ = owned->size();
+        out.owner_.reset(owned.release());
+        return out;
     }
 };
 
-Bytes make_bytes(::rust::Vec<std::uint8_t> buf) {
-    return BytesFactory::make(std::move(buf));
+Plaintext make_plaintext(::rust::Vec<std::uint8_t> buf) {
+    return BytesFactory::make<Plaintext>(std::move(buf));
+}
+
+Ciphertext make_ciphertext(::rust::Vec<std::uint8_t> buf) {
+    return BytesFactory::make<Ciphertext>(std::move(buf));
 }
 
 // MPL Client Config
@@ -290,9 +322,9 @@ struct ClientConfigImpl {
 struct CredentialsAccess {
     static ::ffi::Credentials to_ffi(const Credentials& c) {
         ::ffi::Credentials out;
-        out.access_key_id = ::rust::String(c.access_key_id_);
-        out.secret_access_key = ::rust::String(c.secret_access_key_);
-        out.session_token = to_opt(c.session_token_);
+        out.access_key_id = to_rust_string(c.access_key_id_, "access_key_id");
+        out.secret_access_key = to_rust_string(c.secret_access_key_, "secret_access_key");
+        out.session_token = to_opt(c.session_token_, "session_token");
         out.expiration = c.expiration_
             ? ::ffi::OptDuration{true, detail::to_ffi(c.expiration_->time_since_epoch(),
                                                       "credentials expiration")}
@@ -385,7 +417,7 @@ AwsSdkClientConfig& AwsSdkClientConfig::with_adaptive_retry(bool a) {
     return *this;
 }
 AwsSdkClientConfig& AwsSdkClientConfig::with_region(const std::string& r) {
-    impl_->cfg.region = ::ffi::OptString{true, ::rust::String(r)};
+    impl_->cfg.region = ::ffi::OptString{true, detail::to_rust_string(r, "region")};
     return *this;
 }
 AwsSdkClientConfig& AwsSdkClientConfig::with_credentials(const Credentials& credentials) {
@@ -415,7 +447,8 @@ KmsClient KmsClient::with_headers(
     const std::vector<std::pair<std::string, std::string>>& headers) const {
     ::rust::Vec<::ffi::HttpHeader> ffi_headers;
     for (const auto& [name, value] : headers) {
-        ffi_headers.push_back(::ffi::HttpHeader{::rust::String(name), ::rust::String(value)});
+        ffi_headers.push_back(::ffi::HttpHeader{detail::to_rust_string(name, "header names"),
+                                                detail::to_rust_string(value, "header values")});
     }
     return KmsClient(std::make_shared<detail::KmsClientImpl>(
         detail::Retained{},
@@ -455,13 +488,14 @@ KeyStore::KeyStore(const std::string& table_name,
           }(),
           detail::guard([&] {
               ::ffi::KeyStoreConfig c{};
-              c.ddb_table_name = ::rust::String(table_name);
-              c.logical_key_store_name = ::rust::String(logical_key_store_name);
+              c.ddb_table_name = detail::to_rust_string(table_name, "table_name");
+              c.logical_key_store_name =
+                  detail::to_rust_string(logical_key_store_name, "logical_key_store_name");
               c.kms_configuration_type = ::ffi::KmsConfigurationType::KmsKeyArn;
-              c.kms_configuration_value = ::rust::String(kms_arn);
-              c.id = detail::to_opt(options.key_store_id_);
+              c.kms_configuration_value = detail::to_rust_string(kms_arn, "kms_arn");
+              c.id = detail::to_opt(options.key_store_id_, "key_store_id");
               for (const auto& token : options.grant_tokens_) {
-                  c.grant_tokens.push_back(::rust::String(token));
+                  c.grant_tokens.push_back(detail::to_rust_string(token, "grant tokens"));
               }
               // A null handle tells the shim to defer to the core ESDK's default client.
               if (options.kms_client_) c.kms_client = &*options.kms_client_->impl_->handle;
@@ -522,10 +556,10 @@ HierarchicalKeyring::HierarchicalKeyring(KeyStore key_store,
                          : detail::Retained{key_store.impl_},
           detail::guard([&] {
               ::ffi::HierarchicalKeyringInput in{};
-              in.branch_key_id = ::rust::String(branch_key_id);
+              in.branch_key_id = detail::to_rust_string(branch_key_id, "branch_key_id");
               in.key_store = &*key_store.impl_->handle;
               in.ttl = detail::to_ffi(ttl, "ttl");
-              in.partition_id = detail::to_opt(options.partition_id_);
+              in.partition_id = detail::to_opt(options.partition_id_, "partition_id");
               // A null handle tells the shim to defer to the core ESDK's default cache.
               if (options.cache_) in.cache = &*options.cache_->impl_->handle;
               return ::ffi::create_hierarchical_keyring(in);
@@ -538,8 +572,8 @@ RawAesKeyring::RawAesKeyring(const std::string& key_namespace,
     : Keyring(std::make_shared<detail::KeyringImpl>(
           detail::Retained{}, detail::guard([&] {
               ::ffi::RawAesKeyringInput in{};
-              in.key_namespace = ::rust::String(key_namespace);
-              in.key_name = ::rust::String(key_name);
+              in.key_namespace = detail::to_rust_string(key_namespace, "key_namespace");
+              in.key_name = detail::to_rust_string(key_name, "key_name");
               in.wrapping_key =
                   ::rust::Slice<const std::uint8_t>(wrapping_key.data(), wrapping_key.size());
               in.wrapping_alg = detail::to_ffi(wrapping_alg);
@@ -577,7 +611,7 @@ EncryptResult Client::encrypt(const std::uint8_t* plaintext,
     in.max_encrypted_data_keys = detail::to_opt(max_encrypted_data_keys_);
     ::ffi::EncryptOutput out = detail::guard([&] { return ::ffi::encrypt(in); });
     EncryptResult result;
-    result.ciphertext = detail::make_bytes(std::move(out.ciphertext));
+    result.ciphertext = detail::make_ciphertext(std::move(out.ciphertext));
     result.encryption_context = detail::from_ec(out.encryption_context);
     result.algorithm_suite_id = detail::alg_from_ffi(out.algorithm_suite_id);
     return result;
@@ -589,7 +623,7 @@ DecryptResult Client::decrypt(const std::vector<std::uint8_t>& ciphertext,
     return decrypt(ciphertext.data(), ciphertext.size(), keyring, options);
 }
 
-DecryptResult Client::decrypt(const Bytes& ciphertext,
+DecryptResult Client::decrypt(const Ciphertext& ciphertext,
                                      const Keyring& keyring,
                                      const DecryptOptions& options) const {
     return decrypt(ciphertext.data(), ciphertext.size(), keyring, options);
@@ -616,7 +650,7 @@ DecryptResult Client::decrypt(const std::uint8_t* ciphertext,
     in.max_encrypted_data_keys = detail::to_opt(max_encrypted_data_keys_);
     ::ffi::DecryptOutput out = detail::guard([&] { return ::ffi::decrypt(in); });
     DecryptResult result;
-    result.plaintext = detail::make_bytes(std::move(out.plaintext));
+    result.plaintext = detail::make_plaintext(std::move(out.plaintext));
     result.encryption_context = detail::from_ec(out.encryption_context);
     result.algorithm_suite_id = detail::alg_from_ffi(out.algorithm_suite_id);
     return result;
@@ -642,6 +676,7 @@ EncryptStream Client::create_encrypt_stream(const Keyring& keyring,
     //# operation MUST defer to the core ESDK's default.
     in.commitment_policy = detail::to_opt(commitment_policy_);
     in.max_encrypted_data_keys = detail::to_opt(max_encrypted_data_keys_);
+    in.plaintext_length_bound = detail::to_opt(options.plaintext_length_bound_);
     // Keyring MUST be retained.
     // The stream outlives this call and must not outlive the keyring it was created from.
     return EncryptStream(std::make_shared<detail::EncryptStreamImpl>(
@@ -665,6 +700,7 @@ DecryptStream Client::create_decrypt_stream(const Keyring& keyring,
     //# operation MUST defer to the core ESDK's default.
     in.commitment_policy = detail::to_opt(commitment_policy_);
     in.max_encrypted_data_keys = detail::to_opt(max_encrypted_data_keys_);
+    in.signed_streaming = detail::to_opt(options.signed_streaming_);
     // Keyring MUST be retained.
     // The stream outlives this call and must not outlive the keyring it was created from.
     return DecryptStream(std::make_shared<detail::DecryptStreamImpl>(
@@ -672,43 +708,43 @@ DecryptStream Client::create_decrypt_stream(const Keyring& keyring,
         detail::guard([&] { return ::ffi::create_decrypt_stream(in); })));
 }
 
-Bytes EncryptStream::write(const std::uint8_t* data, std::size_t size) {
+Ciphertext EncryptStream::write(const std::uint8_t* data, std::size_t size) {
     static const std::uint8_t empty = 0;
     // An empty write is a poll.
     // Keep the slice pointer valid even when the caller passes null with size 0.
     if (size == 0) data = &empty;
-    return detail::make_bytes(detail::guard([&] {
+    return detail::make_ciphertext(detail::guard([&] {
         return ::ffi::encrypt_stream_write(*impl_->handle,
                                            ::rust::Slice<const std::uint8_t>(data, size));
     }));
 }
 
-StreamResult EncryptStream::finish() {
+EncryptStreamResult EncryptStream::finish() {
     ::ffi::StreamFinishOutput out =
         detail::guard([&] { return ::ffi::encrypt_stream_finish(*impl_->handle); });
-    StreamResult result;
-    result.trailing_output = detail::make_bytes(std::move(out.trailing_output));
+    EncryptStreamResult result;
+    result.trailing_output = detail::make_ciphertext(std::move(out.trailing_output));
     result.encryption_context = detail::from_ec(out.encryption_context);
     result.algorithm_suite_id = detail::alg_from_ffi(out.algorithm_suite_id);
     return result;
 }
 
-Bytes DecryptStream::write(const std::uint8_t* data, std::size_t size) {
+Plaintext DecryptStream::write(const std::uint8_t* data, std::size_t size) {
     static const std::uint8_t empty = 0;
     // An empty write is a poll.
     // Keep the slice pointer valid even when the caller passes null with size 0.
     if (size == 0) data = &empty;
-    return detail::make_bytes(detail::guard([&] {
+    return detail::make_plaintext(detail::guard([&] {
         return ::ffi::decrypt_stream_write(*impl_->handle,
                                            ::rust::Slice<const std::uint8_t>(data, size));
     }));
 }
 
-StreamResult DecryptStream::finish() {
+DecryptStreamResult DecryptStream::finish() {
     ::ffi::StreamFinishOutput out =
         detail::guard([&] { return ::ffi::decrypt_stream_finish(*impl_->handle); });
-    StreamResult result;
-    result.trailing_output = detail::make_bytes(std::move(out.trailing_output));
+    DecryptStreamResult result;
+    result.trailing_output = detail::make_plaintext(std::move(out.trailing_output));
     result.encryption_context = detail::from_ec(out.encryption_context);
     result.algorithm_suite_id = detail::alg_from_ffi(out.algorithm_suite_id);
     return result;
@@ -720,10 +756,10 @@ namespace detail {
 // produced bytes to `sink`; then finalizes and appends the trailing output.
 // Throws if `source` fails before end-of-stream or `sink` rejects a write.
 template <typename Stream>
-StreamResult pump_stream(Stream& stream, std::istream& source, std::ostream& sink) {
+auto pump_stream(Stream& stream, std::istream& source, std::ostream& sink) {
     char buf[4096];
     while (source.read(buf, sizeof(buf)) || source.gcount() > 0) {
-        Bytes produced = stream.write(reinterpret_cast<const std::uint8_t*>(buf),
+        auto produced = stream.write(reinterpret_cast<const std::uint8_t*>(buf),
                                       static_cast<std::size_t>(source.gcount()));
         sink.write(reinterpret_cast<const char*>(produced.data()),
                    static_cast<std::streamsize>(produced.size()));
@@ -731,7 +767,7 @@ StreamResult pump_stream(Stream& stream, std::istream& source, std::ostream& sin
     // If `source` failed to read, throw so an incomplete output is not surfaced
     if (source.bad() || !source.eof())
         throw AwsEncryptionSdkException("reading from the source stream failed before the end of input");
-    StreamResult result = stream.finish();
+    auto result = stream.finish();
     sink.write(reinterpret_cast<const char*>(result.trailing_output.data()),
                static_cast<std::streamsize>(result.trailing_output.size()));
     // If `sink` failed to write, throw so an incomplete output is not surfaced
@@ -742,14 +778,14 @@ StreamResult pump_stream(Stream& stream, std::istream& source, std::ostream& sin
 
 }  // namespace detail
 
-StreamResult Client::encrypt_stream(std::istream& source, std::ostream& sink,
+EncryptStreamResult Client::encrypt_stream(std::istream& source, std::ostream& sink,
                                            const Keyring& keyring,
                                            const EncryptOptions& options) const {
     EncryptStream stream = create_encrypt_stream(keyring, options);
     return detail::pump_stream(stream, source, sink);
 }
 
-StreamResult Client::decrypt_stream(std::istream& source, std::ostream& sink,
+DecryptStreamResult Client::decrypt_stream(std::istream& source, std::ostream& sink,
                                            const Keyring& keyring,
                                            const DecryptOptions& options) const {
     DecryptStream stream = create_decrypt_stream(keyring, options);

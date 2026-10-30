@@ -75,7 +75,7 @@
 //! and [`reason`](ConflictError::reason) says why:
 //!
 //! ```no_run
-//! # async fn example(key_store: aws_crypto_mpl::key_store::Client) -> Result<(), aws_crypto_mpl::Error> {
+//! # async fn example(key_store: aws_crypto_mpl::key_store::DynamoDbKeyStore) -> Result<(), aws_crypto_mpl::Error> {
 //! use aws_crypto_mpl::error::ConflictReason;
 //! use aws_crypto_mpl::Error;
 //!
@@ -89,7 +89,7 @@
 //! let create = key_store
 //!     .create_key()
 //!     .branch_key_id("my-branch-key")
-//!     .encryption_context(aws_crypto_mpl::types::EncryptionContext::new());
+//!     .set_encryption_context(Some(aws_crypto_mpl::types::EncryptionContext::new()));
 //! match create.send().await {
 //!     Ok(_) => {}
 //!     // The branch key ID is in use; use the existing key or pick another ID.
@@ -152,8 +152,8 @@
 //!
 //! Keyring and CMM authors: see [Errors for keyring and CMM authors](crate::keyring#errors-for-keyring-and-cmm-authors).
 
-use aws_sdk_kms::config::http::HttpResponse;
-use aws_sdk_kms::error::SdkError;
+use aws_smithy_runtime_api::client::orchestrator::HttpResponse;
+use aws_smithy_runtime_api::client::result::SdkError;
 
 // `cargo xtask gen-errors` writes `generated.rs` from `errors.toml` at the repository root.
 pub(crate) mod generated;
@@ -170,10 +170,10 @@ pub use aws_mpl_primitives::error::{
     BranchKey, Cache, CmmResource, Collection, ConflictReason, DataKeyInfo, DynamoDbTable,
     KeyringResource, KmsKey, Resource, RetryKind, Service,
 };
-pub use aws_sdk_kms::operation::RequestId;
 pub use aws_smithy_types::error::display::DisplayErrorContext;
 pub use aws_smithy_types::error::metadata::{ErrorMetadata, ProvideErrorMetadata};
 pub use aws_smithy_types::retry::{ErrorKind as RetryErrorKind, ProvideErrorKind};
+pub use aws_types::request_id::RequestId;
 
 impl Error {
     /// Classify a failed AWS SDK call to `service` about `resource`.
@@ -453,7 +453,7 @@ fn classify_sdk_error<E: ProvideErrorMetadata>(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "kms"))]
 mod tests {
     use super::*;
     use aws_sdk_kms::operation::decrypt::DecryptError;

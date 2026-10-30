@@ -1,3 +1,6 @@
+// Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 //! Your custom keyring, defined in Rust and exported to C++.
 //!
 //! Step 2 (`AuditKeyring`): define your keyring.
@@ -26,7 +29,12 @@ fn providers(edks: &[EncryptedDataKey]) -> Vec<&str> {
 #[async_trait]
 impl Keyring for AuditKeyring {
     async fn on_encrypt(&self, input: OnEncryptInput) -> Result<OnEncryptOutput, Error> {
-        let output = Keyring::on_encrypt(&self.inner, input).await?;
+        let output = self
+            .inner
+            .on_encrypt()
+            .materials(input.into_materials())
+            .send()
+            .await?;
         println!(
             "audit: encrypt wrote data keys for {:?}",
             providers(output.materials().encrypted_data_keys())
@@ -39,7 +47,15 @@ impl Keyring for AuditKeyring {
             "audit: decrypt tried data keys from {:?}",
             providers(input.encrypted_data_keys())
         );
-        Keyring::on_decrypt(&self.inner, input).await
+        {
+            let (materials, encrypted_data_keys) = input.into_parts();
+            self.inner
+                .on_decrypt()
+                .materials(materials)
+                .set_encrypted_data_keys(Some(encrypted_data_keys))
+                .send()
+        }
+        .await
     }
 }
 

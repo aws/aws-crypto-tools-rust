@@ -15,7 +15,7 @@ use crate::message::{
 };
 use crate::shapes::{
     CommitmentPolicy, DecryptInput, DecryptOutput, DecryptStreamInput, DecryptStreamOutput,
-    EncryptionContext, MaterialSource, Sink, Source, Tee,
+    EncryptionContext, MaterialSource, Plaintext, SignedStreaming, Sink, Source, Tee,
 };
 use crate::suites::{algorithm_suite_id_from_bytes, get_ecdsa_alg, get_esdk_algorithm_suite_id};
 use aws_crypto_mpl::types::DecryptionMaterials;
@@ -23,20 +23,20 @@ use aws_mpl_primitives::{DigestContext, aes_decrypt, ecdsa_verify_context};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum DecryptMode {
-    /// Plaintext is released to the caller as each frame is decrypted;
-    /// multi-frame signed messages are rejected because their frames would
-    /// reach the caller before the trailing signature is verified.
-    Streaming,
+    /// Writes plaintext to the caller as each frame decrypts.
+    /// The `SignedStreaming` setting says what to do with a signed message.
+    Streaming(SignedStreaming),
     /// Plaintext is returned to the caller only after the whole message is
     /// decrypted and verified; multi-frame signed messages decrypt normally.
     Buffered,
 }
 impl DecryptMode {
-    const fn is_streaming(&self) -> bool {
-        match self {
-            Self::Streaming => true,
-            Self::Buffered => false,
-        }
+    const fn rejects_signed(&self) -> bool {
+        matches!(self, Self::Streaming(SignedStreaming::RejectSigned))
+    }
+
+    const fn rejects_signed_multi_frame(&self) -> bool {
+        matches!(self, Self::Streaming(SignedStreaming::RejectMultiFrame))
     }
 }
 
@@ -94,17 +94,12 @@ where
     R: tokio::io::AsyncRead + Unpin + Send,
     W: tokio::io::AsyncWrite + Unpin + Send,
 {
-    //= spec/client-apis/decrypt.md#behavior
-    //= type=exception
-    //= reason=No such configuration option is provided; multi-frame signed streaming unconditionally fails during body decode and single-frame signed is buffered until after signature verification, so unverified plaintext is never released early.
-    //# - The ESDK MUST provide a configuration option that causes the decryption operation
-    //# to fail immediately after parsing the header if a signed algorithm suite is used.
     let output = internal_decrypt(
         &mut ciphertext,
         &mut plaintext,
         input.material_source(),
         &input.encryption_context,
-        DecryptMode::Streaming,
+        DecryptMode::Streaming(input.signed_streaming),
         input.max_encrypted_data_keys,
         input.commitment_policy,
     )
@@ -163,7 +158,7 @@ pub(crate) async fn decrypt(input: &DecryptInput<'_>) -> Result<DecryptOutput, E
         //= type=implication
         //= reason=DecryptOutput struct always contains plaintext field
         //# - Decrypt operation output MUST include a [Plaintext](#plaintext) value.
-        plaintext,
+        plaintext: Plaintext::new(plaintext),
         //= spec/client-apis/decrypt.md#output
         //# - Decrypt operation output MUST include an [encryption context](#encryption-context) value.
         //
@@ -249,6 +244,22 @@ async fn decrypt_steps(
     //# - Decrypt operation Step 1 MUST be [Parse the header](#parse-the-header)
     let (header_body, raw_header, sig_digest) =
         step_parse_header(ciphertext, max_encrypted_data_keys).await?;
+
+    //= spec/client-apis/decrypt.md#behavior
+    //= reason=SignedStreaming::RejectSigned is the option; decrypt fails here, before fetching materials
+    //# - The ESDK MUST provide a configuration option that causes the decryption operation
+    //# to fail immediately after parsing the header if a signed algorithm suite is used.
+    if mode.rejects_signed()
+        && header_body
+            .algorithm_suite()
+            .asymmetric_signature_algorithm()
+            .is_some()
+    {
+        return Err(err(
+            Kind::Validation,
+            "the message's algorithm suite is signed, and SignedStreaming::RejectSigned rejects signed messages",
+        ));
+    }
 
     //= spec/client-apis/decrypt.md#behavior
     //= type=implication
@@ -631,7 +642,7 @@ async fn step_decrypt_body(
         }
         ContentType::Framed => {
             let fail_if_multi_frame =
-                state.dec_mat.verification_key().is_some() && mode.is_streaming();
+                state.dec_mat.verification_key().is_some() && mode.rejects_signed_multi_frame();
             body::read_and_decrypt_framed_message_body(
                 ciphertext,
                 plaintext,

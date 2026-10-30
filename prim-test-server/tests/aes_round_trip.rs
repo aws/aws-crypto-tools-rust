@@ -1,3 +1,6 @@
+// Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 //! AES-GCM encrypt → decrypt round trip via the rpcv2Cbor wire layer.
 
 use aws_prim_test_server::model::{

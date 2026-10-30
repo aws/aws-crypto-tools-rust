@@ -14,8 +14,9 @@ use aws_esdk::cmm::{
     Cmm, DecryptMaterialsInput, DecryptMaterialsOutput, DefaultCmm, GetEncryptionMaterialsInput,
     GetEncryptionMaterialsOutput,
 };
-use aws_esdk::keyring::{Keyring, RawAesKeyring};
+use aws_esdk::keyring::{RawAesKeyring, SharedKeyring};
 use aws_esdk::mpl::Error as MplError;
+use aws_esdk::mpl::shared::IntoShared;
 use aws_esdk::types::{AesWrappingAlg, AlgorithmSuiteId, EncryptionContext};
 use aws_esdk::{Error, async_trait};
 
@@ -26,7 +27,7 @@ struct SigningSuiteOnlyCmm {
 }
 
 impl SigningSuiteOnlyCmm {
-    fn new(keyring: impl Keyring + 'static) -> Self {
+    fn new(keyring: impl IntoShared<SharedKeyring>) -> Self {
         Self {
             inner: DefaultCmm::new(keyring),
         }
@@ -41,7 +42,18 @@ impl Cmm for SigningSuiteOnlyCmm {
     ) -> Result<GetEncryptionMaterialsOutput, MplError> {
         // The caller may leave the suite unset and let the default CMM choose,
         // so check the suite on the materials it returns.
-        let output = Cmm::get_encryption_materials(&self.inner, input).await?;
+        let output = self
+            .inner
+            .get_encryption_materials()
+            .set_encryption_context(Some(input.encryption_context().clone()))
+            .commitment_policy(input.commitment_policy())
+            .set_algorithm_suite_id(input.algorithm_suite_id())
+            .set_required_encryption_context_keys(Some(
+                input.required_encryption_context_keys().clone(),
+            ))
+            .set_max_plaintext_length(input.max_plaintext_length())
+            .send()
+            .await?;
         let suite = output.encryption_materials().algorithm_suite();
         if suite.asymmetric_signature_algorithm().is_none() {
             return Err(MplError::validation("algorithm suite must use signing"));
@@ -56,7 +68,15 @@ impl Cmm for SigningSuiteOnlyCmm {
         if !input.algorithm_suite_id().has_asymmetric_signing() {
             return Err(MplError::validation("algorithm suite must use signing"));
         }
-        Cmm::decrypt_materials(&self.inner, input).await
+        self.inner
+            .decrypt_materials()
+            .algorithm_suite_id(input.algorithm_suite_id())
+            .commitment_policy(input.commitment_policy())
+            .set_encrypted_data_keys(Some(input.encrypted_data_keys().to_vec()))
+            .set_encryption_context(Some(input.encryption_context().clone()))
+            .set_reproduced_encryption_context(input.reproduced_encryption_context().cloned())
+            .send()
+            .await
     }
 }
 
@@ -82,7 +102,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let encrypted = esdk
         .encrypt()
         .plaintext(plaintext)
-        .encryption_context(encryption_context.clone())
+        .set_encryption_context(Some(encryption_context.clone()))
         .cmm(cmm.clone())
         .send()
         .await?;
@@ -90,7 +110,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let decrypted = esdk
         .decrypt()
         .ciphertext(encrypted.ciphertext())
-        .encryption_context(encryption_context.clone())
+        .set_encryption_context(Some(encryption_context.clone()))
         .cmm(cmm.clone())
         .send()
         .await?;
@@ -104,7 +124,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let result = esdk
         .encrypt()
         .plaintext(plaintext)
-        .encryption_context(encryption_context)
+        .set_encryption_context(Some(encryption_context))
         .cmm(cmm)
         .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
         .send()

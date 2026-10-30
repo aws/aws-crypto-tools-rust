@@ -26,7 +26,7 @@ async fn test_signing_suite_produces_footer() {
         "signing suite must produce a footer with a P-384 DER signature (64..=104 bytes), got: {sig_len}"
     );
     // Verify the ciphertext actually decrypts — proves the footer is valid, not just present.
-    let pt = decrypt_ciphertext(&ct).await.into_plaintext();
+    let pt = decrypt_ciphertext(&ct).await.into_plaintext().into_inner();
     assert_eq!(pt, b"signature presence test");
 }
 
@@ -47,7 +47,7 @@ async fn test_signature_uses_signing_algorithm() {
     let output = Client::default()
         .encrypt()
         .plaintext(b"algorithm choice test")
-        .encryption_context(aws_esdk::types::EncryptionContext::new())
+        .set_encryption_context(Some(aws_esdk::types::EncryptionContext::new()))
         .keyring(keyring)
         .algorithm_suite_id(
             aws_esdk::types::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,
@@ -115,7 +115,7 @@ async fn test_signature_key_is_signing_key() {
     let output = Client::default()
         .encrypt()
         .plaintext(b"signing key direct test")
-        .encryption_context(aws_esdk::types::EncryptionContext::new())
+        .set_encryption_context(Some(aws_esdk::types::EncryptionContext::new()))
         .keyring(keyring)
         .algorithm_suite_id(
             aws_esdk::types::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,
@@ -306,7 +306,7 @@ async fn test_footer_equals_calculated() {
     let output = Client::default()
         .encrypt()
         .plaintext(b"footer equals calculated test")
-        .encryption_context(aws_esdk::types::EncryptionContext::new())
+        .set_encryption_context(Some(aws_esdk::types::EncryptionContext::new()))
         .keyring(keyring.clone())
         .algorithm_suite_id(
             aws_esdk::types::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,
@@ -343,12 +343,13 @@ async fn test_footer_equals_calculated() {
     let pt = Client::default()
         .decrypt()
         .ciphertext(ct)
-        .encryption_context(aws_esdk::types::EncryptionContext::new())
+        .set_encryption_context(Some(aws_esdk::types::EncryptionContext::new()))
         .keyring(keyring)
         .send()
         .await
         .unwrap()
-        .into_plaintext();
+        .into_plaintext()
+        .into_inner();
     assert_eq!(pt, b"footer equals calculated test");
 }
 
@@ -366,7 +367,7 @@ async fn test_no_signature_without_signing_suite() {
         !has_footer(&ct),
         "non-signing suite must NOT produce a trailing footer"
     );
-    let pt = decrypt_ciphertext(&ct).await.into_plaintext();
+    let pt = decrypt_ciphertext(&ct).await.into_plaintext().into_inner();
     assert_eq!(
         pt, b"no signature test",
         "round-trip with non-signing suite must succeed"
@@ -380,7 +381,7 @@ async fn test_footer_serialized_releases_all_bytes() {
     let ct = Client::default()
         .encrypt()
         .plaintext(b"release all bytes test")
-        .encryption_context(aws_esdk::types::EncryptionContext::new())
+        .set_encryption_context(Some(aws_esdk::types::EncryptionContext::new()))
         .keyring(keyring.clone())
         .algorithm_suite_id(
             aws_esdk::types::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,
@@ -388,7 +389,8 @@ async fn test_footer_serialized_releases_all_bytes() {
         .send()
         .await
         .unwrap()
-        .into_ciphertext();
+        .into_ciphertext()
+        .into_inner();
 
     let (footer_offset, sig_len) = find_footer_offset(&ct);
     assert!(sig_len > 0, "footer must contain a signature");

@@ -1,3 +1,6 @@
+// Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 use crate::DigestAlg;
 use crate::Error;
 use crate::err;
@@ -217,7 +220,7 @@ fn check_sig_len(alg: EcdsaSignatureAlgorithm, signature: &[u8]) -> Result<(), E
 /// Returns an [`Error`] if `signature` is not [`signature_len`] bytes for
 /// `alg`, if `key` is not a valid DER-encoded private key for `alg`, if the
 /// signing operation fails, or if no canonical-length signature is produced
-/// within [`MAX_SIGN_ATTEMPTS`].
+/// within 128 attempts.
 pub fn ecdsa_sign(
     alg: EcdsaSignatureAlgorithm,
     key: &[u8],
@@ -246,7 +249,7 @@ pub fn ecdsa_sign(
 /// Returns an [`Error`] if `signature` is not [`signature_len`] bytes for
 /// `alg`, if `key` is not a valid DER-encoded private key for `alg`, if the
 /// signing operation fails, or if no canonical-length signature is produced
-/// within [`MAX_SIGN_ATTEMPTS`].
+/// within 128 attempts.
 pub fn ecdsa_sign_digest(
     alg: EcdsaSignatureAlgorithm,
     key: &[u8],

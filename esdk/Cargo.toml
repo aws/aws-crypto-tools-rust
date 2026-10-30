@@ -4,9 +4,9 @@ version = "2.0.0"
 edition = "2024"
 keywords = ["cryptography", "security", "encryption"]
 categories = ["cryptography"]
-license = "ISC AND (Apache-2.0 OR ISC)"
+license = "Apache-2.0"
 description = "AWS Encryption SDK for Rust — client-side envelope encryption using the AWS Encryption SDK message format."
-repository = "https://github.com/aws/aws-client-encryption-rust/aws-esdk/"
+repository = "https://github.com/aws/aws-crypto-tools-rust"
 authors = ["AWS-CryptoTools"]
 documentation = "https://docs.rs/crate/aws-esdk"
 readme = "README.md"
@@ -15,10 +15,9 @@ readme = "README.md"
 tokio = { version = "1.49", default-features = false, features = ["io-util", "rt"] }
 
 aws-smithy-types = "1.8.1"
-aws-sdk-kms = "1.123.0"
-aws-sdk-dynamodb = "1.130.0"
-aws-crypto-mpl = { path = "../mpl" }
-aws-mpl-primitives = { path = "../prim" }
+aws-types = "1.6.0"
+aws-crypto-mpl = { path = "../mpl", default-features = false }
+aws-mpl-primitives = { path = "../prim", default-features = false }
 aws-lc-rs = { version = "1.18.1", default-features = false }
 zeroize = "1.9.0"
 
@@ -42,8 +41,14 @@ rustdoc-args = [
 ]
 
 [features]
-default = ["aws-lc-rs/aws-lc-sys"]
-fips = ["aws-lc-rs/fips"]
-track = []
-kms = []
-ddb = []
+default = ["aws-lc-sys", "kms", "ddb", "default-aws-sdk-clients", "rt-tokio"]
+# The crypto backend: `aws-lc-sys` (the default), or `fips` for AWS-LC's FIPS module.
+# To use AWS-LC FIPS with ESDK, simply set `features = ["fips"]`.
+aws-lc-sys = ["aws-lc-rs/aws-lc-sys", "aws-mpl-primitives/aws-lc-sys", "aws-crypto-mpl/aws-lc-sys"]
+fips = ["aws-lc-rs/fips", "aws-mpl-primitives/fips", "aws-crypto-mpl/fips"]
+# These turn on the Material Providers Library's features of the same name.
+# See its Cargo.toml, or the README's "Cargo features" section.
+kms = ["aws-crypto-mpl/kms"]
+ddb = ["aws-crypto-mpl/ddb"]
+default-aws-sdk-clients = ["aws-crypto-mpl/default-aws-sdk-clients"]
+rt-tokio = ["aws-crypto-mpl/rt-tokio"]

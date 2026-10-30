@@ -51,7 +51,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let encrypted = esdk
         .encrypt()
         .plaintext(b"the quick brown fox")
-        .encryption_context(encryption_context.clone())
+        .set_encryption_context(Some(encryption_context.clone()))
         .keyring(keyring.clone())
         .send()
         .await?;
@@ -59,7 +59,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let decrypted = esdk
         .decrypt()
         .ciphertext(encrypted.ciphertext())
-        .encryption_context(encryption_context)
+        .set_encryption_context(Some(encryption_context))
         .keyring(keyring)
         .send()
         .await?;
@@ -130,6 +130,31 @@ Run one with `cargo run --example <name>`:
 | `per_request_credentials` | call AWS KMS with credentials issued for one request | KMS + DynamoDB |
 
 The examples that need AWS also need credentials, a KMS key, and a key store table in DynamoDB.
+
+## Cargo features
+
+All of these except `fips` are on by default.
+
+| Feature | What it adds | Without it |
+|---|---|---|
+| `kms`, `ddb` | the AWS KMS and DynamoDB SDKs, for the built-in key store | use your own key store, or a keyring that doesn't need one |
+| `default-aws-sdk-clients` | the key store builder creates its own KMS and DynamoDB clients from your AWS credentials and region (this pulls in `aws-config` and the AWS SDK's HTTPS and TLS client) | create the clients yourself and pass them with `kms_client` and `ddb_client` |
+| `rt-tokio` | the tokio-based caches, which the hierarchical keyring uses by default | pass the hierarchical keyring a `cache`, such as `LocalCmc` |
+| `aws-lc-sys` | the default crypto backend, AWS-LC | turn on `fips` instead |
+| `fips` (off by default) | AWS-LC's FIPS module as the crypto backend; takes precedence over `aws-lc-sys` | |
+
+To use FIPS, add `fips`. It takes precedence over the default backend:
+
+```toml
+aws-esdk = { version = "2", features = ["fips"] }
+```
+
+To pick features, turn off the defaults and list the ones you want, with a crypto backend:
+
+```toml
+# Bring your own KMS and DynamoDB clients, without aws-config or the default HTTPS client
+aws-esdk = { version = "2", default-features = false, features = ["aws-lc-sys", "kms", "ddb", "rt-tokio"] }
+```
 
 ## Development
 
