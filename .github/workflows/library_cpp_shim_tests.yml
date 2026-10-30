@@ -3,15 +3,22 @@ name: Library C++ Shim Tests
 
 on:
   workflow_call:
+    inputs:
+      platforms:
+        description: "JSON array of {os, runner} objects to run on."
+        type: string
+        default: >-
+          [{"os": "ubuntu", "runner": "codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}"},
+           {"os": "macos", "runner": "macos-latest"}]
 
 jobs:
   shim:
-    name: build + test (${{ matrix.os }})
+    name: build + test (${{ matrix.platform.os }})
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu, macos]
-    runs-on: ${{ matrix.os }}-latest
+        platform: ${{ fromJSON(inputs.platforms) }}
+    runs-on: ${{ matrix.platform.runner }}
     permissions:
       contents: read
       id-token: write

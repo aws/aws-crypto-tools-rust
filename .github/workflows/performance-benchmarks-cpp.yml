@@ -7,26 +7,20 @@ permissions:
   contents: read
 
 on:
+  # ci.yml calls this on PRs, pushes to main, and the daily run.
+  workflow_call:
   workflow_dispatch:
-  schedule:
-    - cron: "30 09 * * *"
-  pull_request:
-    paths:
-      - "esdk/shims/aws-esdk-cpp/**"
-      - "!esdk/shims/aws-esdk-cpp/test-server/**"
-      - ".github/workflows/performance-benchmarks-cpp.yml"
 
 jobs:
   benchmark:
     # Skip the scheduled run on forks.
     if: github.event_name != 'schedule' || github.repository_owner == 'aws'
-    name: ${{ matrix.keyring }} cpp (${{ matrix.os }})
+    name: ${{ matrix.keyring }} cpp
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest]
         keyring: [hierarchical, raw-aes]
-    runs-on: ${{ matrix.os }}
+    runs-on: codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}
     permissions:
       id-token: write
       contents: read
@@ -72,13 +66,16 @@ jobs:
           UPLOAD_FILE="cloudwatch_logs.json"
           jq -c --arg ts "$(date +%s)000" '[.results[] as $result | .metadata as $meta | {timestamp: ($ts | tonumber), message: ({metadata: $meta, result: $result} | tostring)}]' "$LOG_FILE" > "$UPLOAD_FILE"
 
+      # PRs only check that the benchmark runs. Only the daily run publishes,
+      # so PR numbers don't mix into the tracked series.
       - name: Upload logs to CloudWatch
+        if: github.event_name == 'schedule'
         working-directory: esdk/shims/aws-esdk-cpp/performance-tests/results/raw-data
         run: |
           LOG_FILE="cloudwatch_logs.json"
           LOG_GROUP="aws-esdk-performance-benchmarks"
           # Distinct stream per keyring so series don't mix in the shared log group.
-          LOG_STREAM="rust-cpp-${{ matrix.keyring }}/${{ matrix.os }}/quick_benchmarks/${{ github.workflow }}"
+          LOG_STREAM="rust-cpp-${{ matrix.keyring }}/ubuntu-latest/quick_benchmarks/Performance Benchmarks (C++)"
 
           aws logs create-log-stream \
             --log-group-name "$LOG_GROUP" \

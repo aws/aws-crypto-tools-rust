@@ -20,7 +20,7 @@ jobs:
       fail-fast: false
       matrix:
         include: ${{ fromJSON(inputs.projects) }}
-    runs-on: ubuntu-latest
+    runs-on: codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}
     permissions:
       contents: read
     defaults:
@@ -29,10 +29,12 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
       # Install duvet at its latest published release, matching the duvet
       # workflow in aws-cryptographic-material-providers-library. duvet has no
-      # prebuilt binary, so it builds from source; cargo/rustup are
-      # preinstalled on the runner.
+      # prebuilt binary, so it builds from source.
       - name: Install duvet
         run: cargo +stable install duvet
 
