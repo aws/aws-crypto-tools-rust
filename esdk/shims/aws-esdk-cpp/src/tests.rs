@@ -47,6 +47,12 @@ fn unset_policy() -> ffi::OptCommitmentPolicy {
         value: P { repr: 0 },
     }
 }
+fn unset_signed_streaming() -> ffi::OptSignedStreaming {
+    ffi::OptSignedStreaming {
+        set: false,
+        value: ffi::SignedStreaming { repr: 0 },
+    }
+}
 fn set_policy(value: P) -> ffi::OptCommitmentPolicy {
     ffi::OptCommitmentPolicy { set: true, value }
 }
@@ -98,6 +104,7 @@ fn unset_decrypt_input() -> ffi::DecryptInput<'static> {
         keyring: std::ptr::null(),
         max_encrypted_data_keys: unset_u32(),
         commitment_policy: unset_policy(),
+        signed_streaming: unset_signed_streaming(),
     }
 }
 
@@ -265,6 +272,26 @@ fn alg_id_round_trips_through_both_conversions() {
         let back = alg_id_core_to_target(core).expect("round-trips back");
         assert_eq!(back.repr, n);
     }
+}
+
+#[test]
+fn signed_streaming_target_to_core_accepts_exactly_known_reprs() {
+    use super::SignedStreaming as C;
+    use ffi::SignedStreaming as T;
+    for (target, expected_core) in [
+        (T::RejectMultiFrame, C::RejectMultiFrame),
+        (T::ReleaseRegularFrames, C::ReleaseRegularFrames),
+        (T::RejectSigned, C::RejectSigned),
+    ] {
+        assert_eq!(
+            signed_streaming_target_to_core(target).unwrap(),
+            expected_core
+        );
+    }
+    let accepted: Vec<u8> = (0..=u8::MAX)
+        .filter(|&n| signed_streaming_target_to_core(T { repr: n }).is_ok())
+        .collect();
+    assert_eq!(accepted, vec![1u8, 2, 3]);
 }
 
 #[test]
@@ -1044,6 +1071,7 @@ fn decrypt_client_forwards_every_optional_input() {
         keyring: std::ptr::null(),
         max_encrypted_data_keys: set_u32(7),
         commitment_policy: set_policy(P::RequireEncryptAllowDecrypt),
+        signed_streaming: unset_signed_streaming(),
     };
     let esdk = decrypt_client(&input).expect("settings convert");
     let config = esdk.config();

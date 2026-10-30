@@ -249,6 +249,11 @@ auto guard(F&& f) -> decltype(f()) {
 ::ffi::OptCommitmentPolicy to_opt(const std::optional<CommitmentPolicy>& o) {
     return o ? ::ffi::OptCommitmentPolicy{true, to_ffi(*o)} : ::ffi::OptCommitmentPolicy{false, {}};
 }
+::ffi::OptSignedStreaming to_opt(const std::optional<SignedStreaming>& o) {
+    return o ? ::ffi::OptSignedStreaming{
+                   true, static_cast<::ffi::SignedStreaming>(static_cast<std::uint8_t>(*o))}
+             : ::ffi::OptSignedStreaming{false, {}};
+}
 
 ::rust::Vec<::ffi::EncryptionContextItem> to_ec(const std::map<std::string, std::string>& ec) {
     ::rust::Vec<::ffi::EncryptionContextItem> out;
@@ -695,6 +700,7 @@ DecryptStream Client::create_decrypt_stream(const Keyring& keyring,
     //# operation MUST defer to the core ESDK's default.
     in.commitment_policy = detail::to_opt(commitment_policy_);
     in.max_encrypted_data_keys = detail::to_opt(max_encrypted_data_keys_);
+    in.signed_streaming = detail::to_opt(options.signed_streaming_);
     // Keyring MUST be retained.
     // The stream outlives this call and must not outlive the keyring it was created from.
     return DecryptStream(std::make_shared<detail::DecryptStreamImpl>(
