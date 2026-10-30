@@ -19,7 +19,7 @@ on:
 jobs:
   retry:
     if: github.event.workflow_run.conclusion == 'failure'
-    runs-on: ubuntu-latest
+    runs-on: codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}
     permissions:
       # Required to call reRunWorkflowFailedJobs.
       actions: write

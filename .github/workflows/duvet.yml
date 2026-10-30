@@ -20,7 +20,7 @@ jobs:
       fail-fast: false
       matrix:
         include: ${{ fromJSON(inputs.projects) }}
-    runs-on: ubuntu-latest
+    runs-on: codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}
     permissions:
       contents: read
     defaults:
@@ -29,10 +29,15 @@ jobs:
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: stable
+
       # Install a pinned duvet release with its published Cargo.lock (--locked),
       # so a new crates.io release never runs here unreviewed. Bump the version
       # in a PR after reading the changelog. duvet has no prebuilt binary, so it
-      # builds from source; cargo/rustup are preinstalled on the runner.
+      # builds from source.
       - name: Install duvet
         run: cargo +stable install duvet --version 0.4.3 --locked
 

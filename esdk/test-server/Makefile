@@ -5,9 +5,9 @@
 SHELL := bash
 
 # Port for the server (override: make run-server PORT=9090).
-PORT ?= 8093
+PORT ?= 8092
 
-BIN      := target/release/esdk-cpp-test-server
+BIN      := target/release/esdk-test-server
 PID_FILE := .server.pid
 LOG_FILE := .server.log
 
@@ -15,30 +15,23 @@ LOG_FILE := .server.log
 # repository coordinates live in server-config.json next to this
 # Makefile; COMMONS_BRANCH overrides the configured branch at invocation time.
 MAKEFILE_DIR := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
-REPO_ROOT    := $(abspath $(MAKEFILE_DIR)/..)
-SHIM_DIR     := $(abspath $(MAKEFILE_DIR)/../esdk/shims/aws-esdk-cpp)
+REPO_ROOT    := $(abspath $(MAKEFILE_DIR)/../..)
 COMMONS_CONFIGURATION := $(MAKEFILE_DIR)/server-config.json
 COMMONS_BRANCH ?=
 CLONE_DIR      ?= $(MAKEFILE_DIR)/.commons-clone
 CLONE_ORCH_DIR := $(CLONE_DIR)/esdk/test-server/orchestrator
 
-.PHONY: help build-shim build-server run-server start-server wait-for-server \
-        stop-server test test-server check-java fmt clippy check clean
+.PHONY: help build-server run-server start-server wait-for-server stop-server \
+        test test-server check-java fmt clippy check clean
 
 help: ## Show this help
-	@echo "ESDK TestServer (C++ shim) — make targets"
+	@echo "ESDK TestServer (Rust) — make targets"
 	@grep -E '^[a-zA-Z0-9_-]+:.*## ' "$(lastword $(MAKEFILE_LIST))" \
 		| sort | awk 'BEGIN{FS=":.*## "}{printf "  %-18s %s\n", $$1, $$2}'
 	@echo ""
 	@echo "  PORT=$(PORT)"
 
-# The server links the shim's cdylib, so the shim must be built first. Building
-# it as a separate step (not from build.rs) keeps the two heavy Rust builds from
-# running at once.
-build-shim: ## Build the aws-esdk-cpp shim (cdylib + cxx bridge); prerequisite for the server
-	cd "$(SHIM_DIR)" && cargo build --release
-
-build-server: build-shim ## Build the server (release)
+build-server: ## Build the server (release)
 	cargo build --release
 
 run-server: build-server ## Run the server in the FOREGROUND on PORT (Ctrl-C to stop)
@@ -46,7 +39,7 @@ run-server: build-server ## Run the server in the FOREGROUND on PORT (Ctrl-C to 
 
 start-server: build-server ## Start the server in the BACKGROUND on PORT (writes .server.pid)
 	@$(BIN) $(PORT) >"$(LOG_FILE)" 2>&1 & echo $$! >"$(PID_FILE)"; \
-		echo "started esdk-cpp-test-server (pid $$(cat $(PID_FILE))) on port $(PORT)"
+		echo "started esdk-test-server (pid $$(cat $(PID_FILE))) on port $(PORT)"
 
 wait-for-server: ## Block until the server accepts connections on PORT (120s timeout)
 	@for i in $$(seq 1 120); do \
@@ -61,7 +54,7 @@ stop-server: ## Stop the background server and free PORT
 		if [ -n "$$pids" ]; then kill $$pids 2>/dev/null || true; fi; \
 		echo "stopped server on port $(PORT)"
 
-test: build-shim ## Run the server's tests (the live round trip SKIPs without ESDK_TEST_* env)
+test: ## Run the server's tests
 	cargo test
 
 check-java: ## Verify JAVA_HOME points at a JDK 21+ (the commons orchestrator needs it)
@@ -73,12 +66,13 @@ check-java: ## Verify JAVA_HOME points at a JDK 21+ (the commons orchestrator ne
 		echo "ERROR: JDK 21+ required, JAVA_HOME has major version '$$v'." >&2; exit 1; \
 	fi
 
-# Bootstrap-then-delegate: parse the commons coordinates, clone commons at the
-# branch head, and run the orchestrator core in the clone with this working tree
-# as the live C++-shim server source. `context=language:rust-cpp` must match the
-# language id under which server-config.json is registered in commons.
-# Needs AWS credentials and a JDK 21+.
-test-server: check-java build-server ## Run the complete cross-language TestServer via the commons orchestrator; COMMONS_BRANCH=<b> overrides
+# Bootstrap-then-delegate (the single orchestrated entry point): parse the
+# commons coordinates, clone commons at the branch head, and run the
+# orchestrator core in the clone with this working tree as the live Rust
+# library + server source. The core builds and launches every configured
+# Language_Server, runs the full Tests matrix, and tears down; its exit code
+# propagates. Needs AWS credentials and a JDK 21+.
+test-server: check-java ## Run the complete cross-language TestServer via the commons orchestrator; COMMONS_BRANCH=<b> overrides
 	@set -eo pipefail; \
 	if ! coords=$$(python3 -c 'import json,sys; c=json.load(open(sys.argv[1]))["commonsRepository"]; print(c["url"]); print(c["branch"])' "$(COMMONS_CONFIGURATION)" 2>/dev/null); then \
 		echo "ERROR: missing or unparseable $(COMMONS_CONFIGURATION); halting before any clone." >&2; exit 1; \
@@ -93,14 +87,14 @@ test-server: check-java build-server ## Run the complete cross-language TestServ
 	if [ ! -d "$(CLONE_ORCH_DIR)" ]; then \
 		echo "ERROR: branch $$branch of $$url has no orchestrator at esdk/test-server/orchestrator." >&2; exit 1; \
 	fi; \
-	echo "==> Delegating: context=language:rust-cpp languageRepoRoot=$(REPO_ROOT)"; \
+	echo "==> Delegating: context=language:rust languageRepoRoot=$(REPO_ROOT)"; \
 	cd "$(CLONE_ORCH_DIR)" && ./gradlew --console=plain run \
-		--args="context=language:rust-cpp languageRepoRoot=$(REPO_ROOT) commonsOrigin.url=$$url commonsOrigin.branch=$$branch commonsOrigin.reason=$$reason"
+		--args="context=language:rust languageRepoRoot=$(REPO_ROOT) commonsOrigin.url=$$url commonsOrigin.branch=$$branch commonsOrigin.reason=$$reason"
 
 fmt: ## Check formatting
 	cargo fmt --all -- --check
 
-clippy: build-shim ## Lint with warnings denied
+clippy: ## Lint with warnings denied
 	cargo clippy --all-targets -- -D warnings
 
 check: fmt clippy build-server test ## fmt + clippy + build + test (the CI gate)
