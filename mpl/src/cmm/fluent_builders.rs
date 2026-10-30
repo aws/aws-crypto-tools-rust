@@ -136,7 +136,7 @@ impl GetEncryptionMaterialsFluentBuilder {
 
     /// Set the maximum plaintext length the materials are for.
     /// When unset, there is no bound.
-    pub fn max_plaintext_length(mut self, max_plaintext_length: impl Into<u64>) -> Self {
+    pub fn max_plaintext_length(mut self, max_plaintext_length: u64) -> Self {
         self.inner = self.inner.max_plaintext_length(max_plaintext_length);
         self
     }

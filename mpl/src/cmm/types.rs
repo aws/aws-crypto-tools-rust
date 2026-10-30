@@ -180,8 +180,8 @@ impl GetEncryptionMaterialsInputBuilder {
     /// Set the maximum plaintext length the materials are for.
     /// When unset, there is no bound.
     #[must_use]
-    pub fn max_plaintext_length(mut self, max_plaintext_length: impl Into<u64>) -> Self {
-        self.max_plaintext_length = Some(max_plaintext_length.into());
+    pub fn max_plaintext_length(mut self, max_plaintext_length: u64) -> Self {
+        self.max_plaintext_length = Some(max_plaintext_length);
         self
     }
 
