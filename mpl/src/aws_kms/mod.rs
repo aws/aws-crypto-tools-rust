@@ -11,6 +11,10 @@ pub(crate) mod cache_entry_identifier;
 
 pub mod hierarchical_keyring;
 
+#[cfg(feature = "kms")]
+// Only the DynamoDB key store calls AWS KMS today.
+// TODO: remove this `allow` once an AWS KMS keyring uses this module.
+#[cfg_attr(not(feature = "ddb"), allow(dead_code))]
 pub(crate) mod user_agent;
 
 /// Internals that integration tests reach.

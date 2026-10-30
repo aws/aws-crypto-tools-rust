@@ -71,12 +71,13 @@ use aws_sdk_kms::operation::decrypt::DecryptError;
 
 use aws_crypto_mpl::__test_internals::aws_kms::unwrap as branch_key_unwrap;
 use aws_crypto_mpl::Error;
-use aws_crypto_mpl::cmc::{Cmc, LocalCmc, SharedCmc};
-use aws_crypto_mpl::key_store::Client as KeyStoreClient;
+use aws_crypto_mpl::cmc::{LocalCmc, SharedCmc};
 use aws_crypto_mpl::key_store::types::KmsConfiguration;
 use aws_crypto_mpl::key_store::types::{Discovery, MrDiscovery};
+use aws_crypto_mpl::key_store::{DynamoDbKeyStore, SharedKeyStore};
 use aws_crypto_mpl::keyring::HierarchicalKeyring;
 use aws_crypto_mpl::keyring::SharedKeyring;
+use aws_crypto_mpl::shared::IntoShared;
 use aws_crypto_mpl::types::{
     AlgorithmSuiteId, BranchKeyMaterials, DecryptionMaterials, EncryptionContext,
     EncryptionMaterials, EsdkAlgorithmSuiteId,
@@ -98,9 +99,9 @@ async fn build_clients() -> (KmsClient, DynamoDbClient) {
     (KmsClient::new(&cfg), DynamoDbClient::new(&cfg))
 }
 
-async fn build_key_store() -> KeyStoreClient {
+async fn build_key_store() -> DynamoDbKeyStore {
     let (kms, ddb) = build_clients().await;
-    KeyStoreClient::builder()
+    DynamoDbKeyStore::builder()
         .ddb_table_name(BRANCH_KEY_STORE_NAME)
         .kms_configuration(KmsConfiguration::KmsKeyArn(KEY_ARN.into()))
         .logical_key_store_name(LOGICAL_KEY_STORE_NAME)
@@ -118,7 +119,7 @@ const FIXTURE_TTL: Duration = Duration::from_secs(3600);
 /// Build a keyring over `key_store` for `branch_key_id`, with its own `LocalCmc`.
 /// Every test varies only these three things, so they share one fixture.
 async fn keyring_for(
-    key_store: impl Into<KeyStoreClient>,
+    key_store: impl aws_crypto_mpl::shared::IntoShared<SharedKeyStore>,
     branch_key_id: &str,
     partition: &str,
 ) -> SharedKeyring {
@@ -134,10 +135,10 @@ async fn keyring_for(
 /// Same, with an explicit cache. Used by the shared-cache tests, which hand
 /// two keyrings the same `SharedCmc`.
 async fn keyring_with_cache(
-    key_store: impl Into<KeyStoreClient>,
+    key_store: impl aws_crypto_mpl::shared::IntoShared<SharedKeyStore>,
     branch_key_id: &str,
     partition: &str,
-    cache: impl Cmc + 'static,
+    cache: impl IntoShared<SharedCmc>,
 ) -> SharedKeyring {
     SharedKeyring::new(
         HierarchicalKeyring::builder()
@@ -165,7 +166,7 @@ fn fresh_materials() -> EncryptionMaterials {
     ec.insert("region", "us-west-2");
     EncryptionMaterials::builder()
         .algorithm_suite_id(non_signing_suite())
-        .encryption_context(ec)
+        .set_encryption_context(Some(ec))
         .build()
         .unwrap()
 }
@@ -249,13 +250,13 @@ async fn integ_on_decrypt_round_trips_through_real_key_store_and_kms() {
     // used; the AAD bound into the EDK ciphertext is computed over this EC.
     let dm_in = DecryptionMaterials::builder()
         .algorithm_suite_id(non_signing_suite())
-        .encryption_context(ec)
+        .set_encryption_context(Some(ec))
         .build()
         .unwrap();
     let dm_out = keyring
         .on_decrypt()
         .materials(dm_in)
-        .encrypted_data_keys(edks.to_vec())
+        .set_encrypted_data_keys(Some(edks.to_vec()))
         .send()
         .await
         .expect("on_decrypt against real key store must succeed for an EDK we just produced")
@@ -296,8 +297,8 @@ async fn ddb_client_us_west_2() -> DynamoDbClient {
 async fn build_key_store_with_kms_and_logical_name(
     kms: KmsClient,
     logical_key_store_name: &str,
-) -> KeyStoreClient {
-    KeyStoreClient::builder()
+) -> DynamoDbKeyStore {
+    DynamoDbKeyStore::builder()
         .ddb_table_name(BRANCH_KEY_STORE_NAME)
         .kms_configuration(KmsConfiguration::KmsKeyArn(KEY_ARN.into()))
         .logical_key_store_name(logical_key_store_name)
@@ -376,13 +377,13 @@ async fn run_round_trip(
 
     let dm_in = DecryptionMaterials::builder()
         .algorithm_suite_id(suite_id)
-        .encryption_context(ec)
+        .set_encryption_context(Some(ec))
         .build()
         .unwrap();
     let dm_out = keyring
         .on_decrypt()
         .materials(dm_in)
-        .encrypted_data_keys(edks.to_vec())
+        .set_encrypted_data_keys(Some(edks.to_vec()))
         .send()
         .await
         .expect("on_decrypt against real key store must succeed for an EDK we just produced")
@@ -416,7 +417,7 @@ async fn integ_on_encrypt_with_pre_existing_pdk_round_trips() {
     ec.insert("region", "us-west-2");
     let materials_in = EncryptionMaterials::builder()
         .algorithm_suite_id(suite)
-        .encryption_context(ec)
+        .set_encryption_context(Some(ec))
         .plaintext_data_key(aws_crypto_mpl::types::PlaintextDataKey::new(zeroed.clone()))
         .build()
         .unwrap();
@@ -671,9 +672,9 @@ const DISCOVERY_BRANCH_KEY_ACTIVE_VERSION: &str = "6b7a8ef4-8c1c-4f63-b196-a6ef7
 
 /// Build a key store in Discovery mode: no configured KMS key ARN, so each
 /// record's own `kms-arn` is used for the KMS Decrypt.
-async fn build_discovery_key_store() -> KeyStoreClient {
+async fn build_discovery_key_store() -> DynamoDbKeyStore {
     let (kms, ddb) = build_clients().await;
-    KeyStoreClient::builder()
+    DynamoDbKeyStore::builder()
         .ddb_table_name(BRANCH_KEY_STORE_NAME)
         .kms_configuration(KmsConfiguration::Discovery(
             Discovery::builder().build().unwrap(),
@@ -692,14 +693,12 @@ async fn integ_discovery_key_store_wraps_under_the_records_own_kms_key() {
     // KEY_ARN. Discovery must pick that ARN up from the record, so
     // on_encrypt succeeds and the EDK is unwrappable with the same
     // record's materials.
-    let keyring = SharedKeyring::new(
-        keyring_for(
-            build_discovery_key_store().await,
-            DISCOVERY_BRANCH_KEY_ID,
-            "partition-id-integ-discovery",
-        )
-        .await,
-    );
+    let keyring = keyring_for(
+        build_discovery_key_store().await,
+        DISCOVERY_BRANCH_KEY_ID,
+        "partition-id-integ-discovery",
+    )
+    .await;
 
     let materials_in = fresh_materials();
     let ec = materials_in.encryption_context().clone();
@@ -744,14 +743,12 @@ async fn integ_pinned_key_store_rejects_a_branch_key_under_another_kms_key() {
     // through a key store pinned to KEY_ARN MUST fail, because the record's
     // kms-arn disagrees with the configured one. Without this, the Discovery
     // test would pass even if Discovery were silently ignoring the record.
-    let keyring = SharedKeyring::new(
-        keyring_for(
-            build_key_store().await,
-            DISCOVERY_BRANCH_KEY_ID,
-            "partition-id-integ-discovery-negative",
-        )
-        .await,
-    );
+    let keyring = keyring_for(
+        build_key_store().await,
+        DISCOVERY_BRANCH_KEY_ID,
+        "partition-id-integ-discovery-negative",
+    )
+    .await;
 
     let err = keyring
         .on_encrypt()
@@ -831,9 +828,9 @@ const EAST_BRANCH_KEY: &str = "MyEastBranch2";
 
 /// Build a key store in MRDiscovery mode: the record's `kms-arn` is used, but
 /// rewritten into `region` first.
-async fn build_mr_discovery_key_store(region: &str) -> KeyStoreClient {
+async fn build_mr_discovery_key_store(region: &str) -> DynamoDbKeyStore {
     let (kms, ddb) = build_clients().await;
-    KeyStoreClient::builder()
+    DynamoDbKeyStore::builder()
         .ddb_table_name(BRANCH_KEY_STORE_NAME)
         .kms_configuration(KmsConfiguration::MrDiscovery(
             MrDiscovery::builder().region(region).build().unwrap(),
@@ -851,14 +848,12 @@ async fn integ_mr_discovery_key_store_reaches_an_mrk_replica_in_the_configured_r
     // build_clients() pins KMS to us-west-2, and MrDiscovery rewrites the
     // record's us-east-1 ARN to us-west-2, so the decrypt lands on the
     // replica that client can reach.
-    let keyring = SharedKeyring::new(
-        keyring_for(
-            build_mr_discovery_key_store("us-west-2").await,
-            EAST_BRANCH_KEY,
-            "partition-id-integ-mrdiscovery",
-        )
-        .await,
-    );
+    let keyring = keyring_for(
+        build_mr_discovery_key_store("us-west-2").await,
+        EAST_BRANCH_KEY,
+        "partition-id-integ-mrdiscovery",
+    )
+    .await;
 
     let materials_out = keyring.on_encrypt().materials(fresh_materials()).send().await.expect(
         "MrDiscovery MUST rewrite the record's us-east-1 ARN into us-west-2 and reach the replica",
@@ -875,14 +870,12 @@ async fn integ_discovery_key_store_cannot_reach_an_out_of_region_mrk() {
     // The contrast half of Dafny's TestGetKeysForMrk: plain Discovery does no
     // region rewrite, so the us-east-1 ARN from the record goes to the
     // us-west-2 client and KMS rejects it.
-    let keyring = SharedKeyring::new(
-        keyring_for(
-            build_discovery_key_store().await,
-            EAST_BRANCH_KEY,
-            "partition-id-integ-mrdiscovery-negative",
-        )
-        .await,
-    );
+    let keyring = keyring_for(
+        build_discovery_key_store().await,
+        EAST_BRANCH_KEY,
+        "partition-id-integ-mrdiscovery-negative",
+    )
+    .await;
 
     let err = keyring
         .on_encrypt()

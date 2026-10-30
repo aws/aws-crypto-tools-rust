@@ -26,7 +26,7 @@ async fn test_encryption_context_on_decrypt() {
     let encrypt_output = esdk
         .encrypt()
         .plaintext(asdf)
-        .encryption_context(encryption_context.clone())
+        .set_encryption_context(Some(encryption_context.clone()))
         .keyring(raw_aes_keyring.clone())
         .send()
         .await
@@ -37,7 +37,7 @@ async fn test_encryption_context_on_decrypt() {
     let decrypt_output = esdk
         .decrypt()
         .ciphertext(esdk_ciphertext)
-        .encryption_context(encryption_context)
+        .set_encryption_context(Some(encryption_context))
         .keyring(raw_aes_keyring)
         .send()
         .await
@@ -60,7 +60,7 @@ async fn test_mismatched_encryption_context_on_decrypt() {
     let encrypt_output = esdk
         .encrypt()
         .plaintext(asdf)
-        .encryption_context(encryption_context.clone())
+        .set_encryption_context(Some(encryption_context.clone()))
         .keyring(raw_aes_keyring.clone())
         .send()
         .await
@@ -74,7 +74,7 @@ async fn test_mismatched_encryption_context_on_decrypt() {
         .keyring(raw_aes_keyring);
     let err = decrypt_builder
         .clone()
-        .encryption_context(bad_encryption_context)
+        .set_encryption_context(Some(bad_encryption_context))
         .send()
         .await
         .expect_err("decrypt must fail when reproduced encryption context has mismatched values");
@@ -97,7 +97,7 @@ async fn test_mismatched_encryption_context_on_decrypt() {
     // Test that if we supply the right ec we will succeed.
     let _ = decrypt_builder
         .clone()
-        .encryption_context(encryption_context)
+        .set_encryption_context(Some(encryption_context))
         .send()
         .await
         .unwrap();

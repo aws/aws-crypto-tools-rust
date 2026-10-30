@@ -1,0 +1,58 @@
+# Reusable workflow: fmt, clippy, build, and unit tests for this repo's TestServer crates.
+# `builds` is a JSON array of {name, server, prebuild, runner}:
+#   name      job name
+#   server    crate directory
+#   prebuild  optional crate to `cargo build` first, for a server that links its output
+#   runner    runner label
+name: TestServer Build
+
+on:
+  workflow_call:
+    inputs:
+      builds:
+        description: "JSON array of {name, server, prebuild, runner} objects."
+        required: true
+        type: string
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(inputs.builds) }}
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: ${{ matrix.server }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-rust
+        with:
+          components: clippy, rustfmt
+          workspaces: |
+            ${{ matrix.server }}
+            ${{ matrix.prebuild }}
+
+      # A separate step keeps the two heavy Rust builds from running at once.
+      - name: Build ${{ matrix.prebuild }}
+        if: matrix.prebuild
+        working-directory: ${{ matrix.prebuild }}
+        run: cargo build
+
+      - name: Format check
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Build
+        run: cargo build --verbose
+
+      - name: Test
+        run: cargo test --verbose

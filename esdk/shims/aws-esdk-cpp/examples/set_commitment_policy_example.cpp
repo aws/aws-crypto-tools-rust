@@ -1,3 +1,6 @@
+// Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 // Encrypts and decrypts under a non-default commitment policy.
 //
 // The default policy, RequireEncryptRequireDecrypt, encrypts and decrypts only with key-committing suites.

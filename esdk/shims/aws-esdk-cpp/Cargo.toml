@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 keywords = ["crypto", "cryptography", "security", "encryption", "c++"]
 categories = ["cryptography", "external-ffi-bindings"]
-license = "ISC AND (Apache-2.0 OR ISC)"
+license = "Apache-2.0"
 description = "C++ shim exposing the Rust implementation of the AWS Encryption SDK to C++ callers."
 repository = "https://github.com/aws/aws-crypto-tools-rust"
 authors = ["AWS-CryptoTools"]
@@ -27,5 +27,7 @@ aws-smithy-runtime-api = { version = "1.19", features = ["client"] }
 cxx-build = "1.0.202"
 cc = "1.6.0"
 
-# Declare this crate as its own workspace root so cargo builds it standalone
+# Declare this crate as its own workspace root so cargo builds it standalone.
+# Keep crates materialized under the test server's commons clone out of it.
 [workspace]
+exclude = ["test-server/.commons-clone"]

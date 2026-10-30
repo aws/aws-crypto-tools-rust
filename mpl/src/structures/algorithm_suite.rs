@@ -5,6 +5,8 @@
 
 use std::fmt;
 
+use zeroize::{Zeroize, ZeroizeOnDrop};
+
 use crate::Error;
 use crate::error::Kind;
 
@@ -526,7 +528,7 @@ impl Format {
 // ============================================================================
 
 /// Plaintext data key (secret).
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, Zeroize, ZeroizeOnDrop)]
 pub struct PlaintextDataKey(Vec<u8>);
 
 impl From<Vec<u8>> for PlaintextDataKey {
@@ -560,17 +562,10 @@ impl PlaintextDataKey {
         self.0.is_empty()
     }
 
-    /// Zero the plaintext data key material.
-    //
-    pub fn zeroize(&mut self) {
-        let ptr = self.0.as_mut_ptr();
-        let len = self.0.len();
-        for i in 0..len {
-            // SAFETY: we're within bounds of the allocated Vec
-            unsafe {
-                core::ptr::write_volatile(ptr.add(i), 0u8);
-            }
-        }
+    /// Whether `self` and `other` hold the same bytes, compared in constant time.
+    #[must_use]
+    pub fn ct_eq(&self, other: &Self) -> bool {
+        aws_mpl_primitives::constant_time_equal(&self.0, &other.0)
     }
 }
 
@@ -599,7 +594,7 @@ impl fmt::Debug for PlaintextDataKey {
 }
 
 /// Signing key (secret).
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, Zeroize, ZeroizeOnDrop)]
 pub struct SigningKey(Vec<u8>);
 
 impl From<Vec<u8>> for SigningKey {
@@ -631,6 +626,12 @@ impl SigningKey {
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
+    }
+
+    /// Whether `self` and `other` hold the same bytes, compared in constant time.
+    #[must_use]
+    pub fn ct_eq(&self, other: &Self) -> bool {
+        aws_mpl_primitives::constant_time_equal(&self.0, &other.0)
     }
 }
 
@@ -677,7 +678,7 @@ impl VerificationKey {
 }
 
 /// Symmetric signing key (secret).
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, Zeroize, ZeroizeOnDrop)]
 pub struct SymmetricSigningKey(Vec<u8>);
 
 impl From<Vec<u8>> for SymmetricSigningKey {
@@ -709,6 +710,12 @@ impl SymmetricSigningKey {
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
+    }
+
+    /// Whether `self` and `other` hold the same bytes, compared in constant time.
+    #[must_use]
+    pub fn ct_eq(&self, other: &Self) -> bool {
+        aws_mpl_primitives::constant_time_equal(&self.0, &other.0)
     }
 }
 

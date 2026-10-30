@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 use super::encryption_context::EncryptionContext;
 use crate::Error;
 use crate::builder::required;
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 /// Materials used in structured encryption containing HMAC keys derived from a beacon key.
 ///
@@ -95,16 +96,20 @@ impl BeaconKeyMaterialsBuilder {
         &self.beacon_key_id
     }
 
-    /// Set the custom encryption context of the beacon key.
+    /// Adds a key-value pair to the custom encryption context of the beacon key.
+    ///
+    /// To override the contents of this collection use [`set_encryption_context`](Self::set_encryption_context).
     /// Required.
     #[must_use]
-    pub fn encryption_context(mut self, encryption_context: impl Into<EncryptionContext>) -> Self {
-        self.encryption_context = Some(encryption_context.into());
+    pub fn encryption_context(mut self, k: impl Into<String>, v: impl Into<String>) -> Self {
+        self.encryption_context
+            .get_or_insert_with(Default::default)
+            .insert(k, v);
         self
     }
 
     /// Set or clear the encryption context from an `Option`.
-    /// To set a value, use [`Self::encryption_context`].
+    /// To add one entry, use [`Self::encryption_context`].
     #[must_use]
     pub fn set_encryption_context(mut self, encryption_context: Option<EncryptionContext>) -> Self {
         self.encryption_context = encryption_context;
@@ -138,15 +143,19 @@ impl BeaconKeyMaterialsBuilder {
         &self.beacon_key
     }
 
-    /// Set the HMAC keys derived from the beacon key, by name.
+    /// Adds a key-value pair to the HMAC keys derived from the beacon key, by name.
+    ///
+    /// To override the contents of this collection use [`set_hmac_keys`](Self::set_hmac_keys).
     #[must_use]
-    pub fn hmac_keys(mut self, hmac_keys: impl Into<BTreeMap<String, Vec<u8>>>) -> Self {
-        self.hmac_keys = Some(hmac_keys.into());
+    pub fn hmac_keys(mut self, k: impl Into<String>, v: impl Into<Vec<u8>>) -> Self {
+        self.hmac_keys
+            .get_or_insert_with(Default::default)
+            .insert(k.into(), v.into());
         self
     }
 
     /// Set or clear the HMAC keys from an `Option`.
-    /// To set a value, use [`Self::hmac_keys`].
+    /// To add one entry, use [`Self::hmac_keys`].
     #[must_use]
     pub fn set_hmac_keys(mut self, hmac_keys: Option<BTreeMap<String, Vec<u8>>>) -> Self {
         self.hmac_keys = hmac_keys;
@@ -164,16 +173,16 @@ impl BeaconKeyMaterialsBuilder {
     /// # Errors
     ///
     /// - [`Validation`](crate::Error::Validation): `beacon_key_id` or `encryption_context` is unset, or `beacon_key_id` is empty.
-    pub fn build(self) -> Result<BeaconKeyMaterials, Error> {
-        let beacon_key_id = required(self.beacon_key_id, "beacon_key_id")?;
+    pub fn build(mut self) -> Result<BeaconKeyMaterials, Error> {
+        let beacon_key_id = required(self.beacon_key_id.take(), "beacon_key_id")?;
         if beacon_key_id.is_empty() {
             return Err(Error::validation("beacon_key_id must not be empty"));
         }
         Ok(BeaconKeyMaterials {
             beacon_key_id,
-            encryption_context: required(self.encryption_context, "encryption_context")?,
-            beacon_key: self.beacon_key,
-            hmac_keys: self.hmac_keys,
+            encryption_context: required(self.encryption_context.take(), "encryption_context")?,
+            beacon_key: self.beacon_key.take(),
+            hmac_keys: self.hmac_keys.take(),
         })
     }
 }
@@ -196,3 +205,30 @@ fn redact_key(key: Option<&[u8]>) -> Option<String> {
 fn redact_keys(keys: Option<&BTreeMap<String, Vec<u8>>>) -> Option<String> {
     keys.map(|m| format!("[{} keys; REDACTED]", m.len()))
 }
+
+/// Zero beacon and HMAC key bytes.
+fn zeroize_keys(
+    beacon_key: &mut Option<Vec<u8>>,
+    hmac_keys: &mut Option<BTreeMap<String, Vec<u8>>>,
+) {
+    beacon_key.zeroize();
+    if let Some(keys) = hmac_keys {
+        keys.values_mut().for_each(Zeroize::zeroize);
+    }
+}
+
+impl Drop for BeaconKeyMaterials {
+    fn drop(&mut self) {
+        zeroize_keys(&mut self.beacon_key, &mut self.hmac_keys);
+    }
+}
+
+impl ZeroizeOnDrop for BeaconKeyMaterials {}
+
+impl Drop for BeaconKeyMaterialsBuilder {
+    fn drop(&mut self) {
+        zeroize_keys(&mut self.beacon_key, &mut self.hmac_keys);
+    }
+}
+
+impl ZeroizeOnDrop for BeaconKeyMaterialsBuilder {}

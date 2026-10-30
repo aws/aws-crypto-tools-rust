@@ -1,21 +1,25 @@
+// Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 // Encrypt a buffer to a file (and decrypt it back) without copying.
 //
 // The ESDK's encrypt/decrypt methods accept their input payloads (plaintext/ciphertext, respectively)
 // as either an std::vector or a pointer.
-// They return their output payloads as Aws::Esdk::Bytes.
+// They return their output payloads as Aws::Esdk::Ciphertext and Aws::Esdk::Plaintext.
 //
 // Why not std::vector everywhere, like a normal C++ API?
-// Because every conversion to or from std::vector is a full copy of your payload
-// to/from the Rust library, which can be expensive in memory and compute.
-// The alternative types provide options for improved performance.
+// Passing a std::vector as input is free: the ESDK reads its bytes in place.
+// But your data often isn't in a vector, and output can't become one without a copy.
+// The alternative types avoid those copies.
 //
-// On input: your data usually isn't in a vector; it's in a file, or you're reading it from a socket.
-// A vector-only API would force you to copy it into a vector first.
-// The pointer overload borrows your buffer where it is instead, saving you copy cost.
+// On input: if your data is already in a std::vector, pass the vector. Nothing is copied.
+// If it isn't (an mmap'd file, a socket buffer, another library's buffer), don't copy it
+// into a vector just to call the ESDK. Pass a pointer and length instead; nothing is copied either.
+// This example does that: it decrypts straight from an mmap'd file.
 //
 // On output: the C++ shim produces ciphertext in a buffer owned by the Rust ESDK.
 // That buffer cannot become a std::vector without copying every byte; but usually, it doesn't need to.
-// Output sinks (fwrite, sockets, etc.) can read from Aws::Esdk::Bytes directly
+// Output sinks (fwrite, sockets, etc.) can read from these types directly
 // without needing to pay for a copy to std::vector.
 // You only need to copy the output to an std::vector if you must modify the bytes
 // or feed an API that insists on owning a vector.
@@ -91,7 +95,7 @@ int main() {
         esdk.decrypt(static_cast<const std::uint8_t*>(mapped), file_size, keyring);
     munmap(mapped, file_size);
 
-    // Consume the plaintext directly through the returned Aws::Esdk::Bytes.
+    // Consume the plaintext directly through the returned Aws::Esdk::Plaintext.
     // No to_vector() needed.
     if (decrypted.plaintext.size() != PAYLOAD_BYTES ||
         std::memcmp(decrypted.plaintext.data(), data, PAYLOAD_BYTES) != 0) {

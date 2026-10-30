@@ -53,7 +53,7 @@ async fn test_keyring_constructs_default_cmm_for_decrypt() {
     let ct = Client::default()
         .encrypt()
         .plaintext(pt)
-        .encryption_context(ec.clone())
+        .set_encryption_context(Some(ec.clone()))
         .cmm(default_cmm)
         .send()
         .await
@@ -72,7 +72,7 @@ async fn test_keyring_constructs_default_cmm_for_decrypt() {
     let result = Client::default()
         .decrypt()
         .ciphertext(ct.ciphertext())
-        .encryption_context(ec)
+        .set_encryption_context(Some(ec))
         .keyring(keyring)
         .send()
         .await
@@ -94,7 +94,7 @@ async fn test_keyring_constructs_default_cmm_for_encrypt() {
     let ct = Client::default()
         .encrypt()
         .plaintext(pt)
-        .encryption_context(ec.clone())
+        .set_encryption_context(Some(ec.clone()))
         .keyring(keyring.clone())
         .send()
         .await
@@ -110,7 +110,7 @@ async fn test_keyring_constructs_default_cmm_for_encrypt() {
     let result = Client::default()
         .decrypt()
         .ciphertext(ct.ciphertext())
-        .encryption_context(ec)
+        .set_encryption_context(Some(ec))
         .cmm(default_cmm)
         .send()
         .await
@@ -132,7 +132,8 @@ async fn test_decrypt_fails_with_wrong_keyring() {
         .send()
         .await
         .unwrap()
-        .into_ciphertext();
+        .into_ciphertext()
+        .into_inner();
 
     let wrong_keyring = aes_keyring(1).await;
     let result = Client::default()

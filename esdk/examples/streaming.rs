@@ -7,7 +7,7 @@
 //! The streaming APIs read from any tokio `AsyncRead` and write to any `AsyncWrite`,
 //! so a file, socket, or S3 object of any size passes through in bounded memory.
 //!
-//! The example uses a non-signing suite: streamed decrypt rejects a multi-frame signed message.
+//! The example uses a non-signing suite: by default, streamed decrypt rejects a multi-frame signed message.
 //!
 //! Runs offline.
 
@@ -48,7 +48,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let output = File::create(&ciphertext_path).await?;
     let result = esdk
         .encrypt_stream()
-        .encryption_context(encryption_context.clone())
+        .set_encryption_context(Some(encryption_context.clone()))
         .keyring(keyring.clone())
         .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
         .plaintext(input)
@@ -67,7 +67,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let output = File::create(&decrypted_path).await?;
     let result = esdk
         .decrypt_stream()
-        .encryption_context(encryption_context)
+        .set_encryption_context(Some(encryption_context))
         .keyring(keyring)
         .ciphertext(input)
         .plaintext(output)

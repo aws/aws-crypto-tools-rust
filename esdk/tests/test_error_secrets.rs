@@ -10,6 +10,7 @@ use aws_crypto_mpl::async_trait;
 use aws_crypto_mpl::keyring::{Keyring, RawAesKeyring, SharedKeyring};
 use aws_crypto_mpl::keyring::{OnDecryptInput, OnEncryptInput};
 use aws_crypto_mpl::keyring::{OnDecryptOutput, OnEncryptOutput};
+use aws_crypto_mpl::shared::IntoShared;
 use aws_crypto_mpl::types::AesWrappingAlg;
 use aws_crypto_mpl::types::{EncryptionContext, EncryptionMaterials, PlaintextDataKey};
 use aws_esdk::types::AlgorithmSuiteId;
@@ -73,9 +74,11 @@ impl Keyring for KnownDataKey {
         let m = input.materials();
         let m = EncryptionMaterials::builder()
             .algorithm_suite_id(m.algorithm_suite_id())
-            .encrypted_data_keys(m.encrypted_data_keys().to_vec())
-            .encryption_context(m.encryption_context().clone())
-            .required_encryption_context_keys(m.required_encryption_context_keys().clone())
+            .set_encrypted_data_keys(Some(m.encrypted_data_keys().to_vec()))
+            .set_encryption_context(Some(m.encryption_context().clone()))
+            .set_required_encryption_context_keys(Some(
+                m.required_encryption_context_keys().clone(),
+            ))
             .plaintext_data_key(PlaintextDataKey::new(vec![KEY_BYTE; 32]))
             .set_signing_key(m.signing_key().cloned())
             .set_symmetric_signing_keys(m.symmetric_signing_keys().map(<[_]>::to_vec))
@@ -87,7 +90,13 @@ impl Keyring for KnownDataKey {
         &self,
         input: OnDecryptInput,
     ) -> Result<OnDecryptOutput, aws_crypto_mpl::Error> {
-        Keyring::on_decrypt(&self.0, input).await
+        let (materials, encrypted_data_keys) = input.into_parts();
+        self.0
+            .on_decrypt()
+            .materials(materials)
+            .set_encrypted_data_keys(Some(encrypted_data_keys))
+            .send()
+            .await
     }
 }
 
@@ -95,19 +104,20 @@ async fn ciphertext() -> Vec<u8> {
     Client::default()
         .encrypt()
         .plaintext(PLAINTEXT.as_bytes())
-        .encryption_context(context(EC_VALUE))
+        .set_encryption_context(Some(context(EC_VALUE)))
         .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
         .keyring(KnownDataKey(SharedKeyring::new(raw("name"))))
         .send()
         .await
         .unwrap()
         .into_ciphertext()
+        .into_inner()
 }
 
 async fn decrypt_error(
     ciphertext: &[u8],
     ec: Option<&str>,
-    keyring: impl Keyring + 'static,
+    keyring: impl IntoShared<SharedKeyring>,
 ) -> Error {
     Client::default()
         .decrypt()
@@ -158,7 +168,7 @@ async fn malformed_branch_key_records_contain_no_attribute_values() {
         let err = Client::default()
             .encrypt()
             .plaintext(PLAINTEXT.as_bytes())
-            .encryption_context(context(EC_VALUE))
+            .set_encryption_context(Some(context(EC_VALUE)))
             .keyring(fake.keyring().await)
             .send()
             .await
@@ -181,7 +191,7 @@ async fn kms_failures_contain_no_branch_key_bytes() {
     let err = Client::default()
         .encrypt()
         .plaintext(PLAINTEXT.as_bytes())
-        .encryption_context(context(EC_VALUE))
+        .set_encryption_context(Some(context(EC_VALUE)))
         .keyring(fake.keyring().await)
         .send()
         .await
@@ -195,12 +205,13 @@ async fn hierarchical_decrypt_error(fake: FakeAws) -> Error {
     let ciphertext = Client::default()
         .encrypt()
         .plaintext(PLAINTEXT.as_bytes())
-        .encryption_context(context(EC_VALUE))
+        .set_encryption_context(Some(context(EC_VALUE)))
         .keyring(FakeAws::ok().keyring().await)
         .send()
         .await
         .unwrap()
-        .into_ciphertext();
+        .into_ciphertext()
+        .into_inner();
     Client::default()
         .decrypt()
         .ciphertext(&ciphertext)
@@ -259,6 +270,10 @@ async fn debug_hides_the_plaintext() {
         .await
         .unwrap();
     assert_eq!(decrypted.plaintext(), PLAINTEXT.as_bytes());
+    assert_eq!(
+        format!("{:?}", decrypted.plaintext()),
+        r#"Plaintext("*** Sensitive Data Redacted ***")"#
+    );
     let output_debug = format!("{decrypted:?}");
 
     // `{:?}` of a `&[u8]` prints decimal bytes; the first three of PLAINTEXT are "SEC".

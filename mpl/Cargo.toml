@@ -2,26 +2,63 @@
 name = "aws-crypto-mpl"
 version = "0.1.0"
 edition = "2024"
+keywords = ["cryptography", "security", "encryption"]
+categories = ["cryptography"]
 license = "Apache-2.0"
-description = "aws-cryptographic-material-providers-library is a low level library for implementing client side encryption."
+description = "AWS Cryptographic Material Providers Library for Rust: keyrings, cryptographic materials managers, and caches for client-side encryption."
+repository = "https://github.com/aws/aws-crypto-tools-rust"
 authors = ["AWS-CryptoTools"]
 
 [dependencies]
 async-trait = "0.1.92"
-aws-config = "1.12.0"
-aws-mpl-primitives = { path = "../prim" }
-aws-sdk-dynamodb = "1.130.0"
-aws-sdk-kms = "1.123.0"
+aws-config = { version = "1.12.0", default-features = false, optional = true }
+aws-mpl-primitives = { path = "../prim", default-features = false }
+aws-sdk-dynamodb = { version = "1.130.0", default-features = false, optional = true }
+aws-sdk-kms = { version = "1.123.0", default-features = false, optional = true }
+aws-smithy-runtime-api = { version = "1.19.0", features = ["client"] }
 aws-smithy-types = "1.8.1"
+aws-types = "1.6.0"
 base64 = "0.23.1"
 lru = "0.18.5"
 time = { version = "0.3.55", default-features = false, features = ["std", "formatting", "macros"] }
-tokio = { version = "1.49", features = ["rt", "time"], default-features = false }
+tokio = { version = "1.49", default-features = false, optional = true }
 uuid = { version = "1.27.0", features = ["v4"] }
+zeroize = { version = "1.9.0", features = ["derive"] }
 
 [features]
-default = []
-test-utils = []
+default = ["aws-lc-sys", "kms", "ddb", "default-aws-sdk-clients", "rt-tokio"]
+# The crypto backend: `aws-lc-sys` (the default), or `fips` for AWS-LC's FIPS module.
+# To use AWS-LC FIPS with MPL, simply set `features = ["fips"]`.
+aws-lc-sys = ["aws-mpl-primitives/aws-lc-sys"]
+fips = ["aws-mpl-primitives/fips"]
+# The AWS KMS SDK. The built-in key store needs `kms` and `ddb`.
+kms = ["dep:aws-sdk-kms"]
+# The Amazon DynamoDB SDK. The built-in key store needs `kms` and `ddb`.
+ddb = ["dep:aws-sdk-dynamodb"]
+# Lets the key store builder create its own KMS and DynamoDB clients
+# when you don't pass them in, from your AWS credentials and region.
+# That pulls in `aws-config` and the AWS SDK's HTTPS and TLS client.
+# Turn it off to drop them; then always pass `kms_client` and `ddb_client`.
+default-aws-sdk-clients = [
+    "rt-tokio",
+    "dep:aws-config",
+    "aws-config/default-https-client",
+    "aws-config/credentials-process",
+    "aws-config/sso",
+    "aws-sdk-kms?/default-https-client",
+    "aws-sdk-dynamodb?/default-https-client",
+]
+# The tokio runtime, like the AWS SDK's `rt-tokio` feature.
+# `StormTrackingCmc` and `DefaultCmc` sleep with tokio, so they need it.
+# Turn it off to drop tokio; then always pass the hierarchical keyring a `cache`.
+rt-tokio = [
+    "dep:tokio",
+    "tokio/time",
+    "aws-config?/rt-tokio",
+    "aws-sdk-kms?/rt-tokio",
+    "aws-sdk-dynamodb?/rt-tokio",
+]
+test-utils = ["kms", "ddb", "rt-tokio"]
 
 [dev-dependencies]
 # Used only to construct AWS SDK errors for the classifier unit tests.
@@ -30,3 +67,5 @@ aws-smithy-runtime-api = { version = "1.19.0", features = ["http-1x"] }
 # cache-identifier byte-layout assertions.
 aws-lc-rs = "1.18.1"
 tokio = { version = "1.49", features = ["rt", "macros", "test-util", "time"], default-features = false }
+# Turns on `test-utils` for this crate's own tests.
+aws-crypto-mpl = { path = ".", features = ["test-utils"] }

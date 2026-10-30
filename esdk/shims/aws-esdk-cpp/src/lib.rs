@@ -1,3 +1,6 @@
+// Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 //! # aws-esdk-cpp — a C++ shim over the AWS Encryption SDK for Rust
 
 //! This file defines the shim's interactions with the Rust ESDK.
@@ -124,12 +127,12 @@
 //= spec/shim/shim.md#streaming
 //# If a core library resource or operation supports [streamed](../client-apis/streaming.md) inputs/outputs,
 //# the shim library SHOULD support it as well.
-use aws_config::{AppName, BehaviorVersion, Region, SdkConfig};
+use aws_config::{BehaviorVersion, FrameworkMetadata, Region, SdkConfig};
 use aws_crypto_mpl::aws_config;
 use aws_crypto_mpl::cmc::{
     DefaultCmc, LocalCmc, SharedCmc, StormTrackingCmc, StormTrackingCmcBuilder,
 };
-use aws_crypto_mpl::key_store::Client as KeyStoreClient;
+use aws_crypto_mpl::key_store::DynamoDbKeyStore;
 use aws_crypto_mpl::key_store::types::{Discovery, KmsConfiguration, MrDiscovery};
 use aws_crypto_mpl::keyring::HierarchicalKeyring;
 use aws_crypto_mpl::keyring::{RawAesKeyring, SharedKeyring};
@@ -137,6 +140,7 @@ use aws_crypto_mpl::types::{EsdkAlgorithmSuiteId, EsdkCommitmentPolicy};
 use aws_crypto_mpl::{aws_sdk_dynamodb, aws_sdk_kms};
 use aws_esdk::Client;
 use aws_esdk::error::{Resource, RetryKind, Service};
+use aws_esdk::types::SignedStreaming;
 use aws_sdk_kms::config::{IdentityCache, SharedCredentialsProvider, SharedHttpClient};
 use aws_smithy_runtime::client::defaults::default_http_client_plugin_v2;
 use aws_smithy_runtime_api::client::runtime_components::RuntimeComponentsBuilder;
@@ -164,6 +168,10 @@ mod ffi {
         set: bool,
         value: u32,
     }
+    struct OptU64 {
+        set: bool,
+        value: u64,
+    }
     struct OptString {
         set: bool,
         value: String,
@@ -175,6 +183,10 @@ mod ffi {
     struct OptCommitmentPolicy {
         set: bool,
         value: EsdkCommitmentPolicy,
+    }
+    struct OptSignedStreaming {
+        set: bool,
+        value: SignedStreaming,
     }
     struct OptDuration {
         set: bool,
@@ -199,6 +211,13 @@ mod ffi {
         ForbidEncryptAllowDecrypt = 1,
         RequireEncryptAllowDecrypt = 2,
         RequireEncryptRequireDecrypt = 3,
+    }
+
+    /// Specifies what a streamed decrypt does with a signed message.
+    enum SignedStreaming {
+        RejectMultiFrame = 1,
+        ReleaseRegularFrames = 2,
+        RejectSigned = 3,
     }
 
     /// ESDK Rust's error kinds, under the same names.
@@ -255,6 +274,8 @@ mod ffi {
         /// Whether to require committing algorithms on encrypt/decrypt.
         /// Core default is `EsdkCommitmentPolicy::RequireEncryptRequireDecrypt`
         pub commitment_policy: OptCommitmentPolicy,
+        /// Upper bound on the plaintext length; only `create_encrypt_stream` reads it.
+        pub plaintext_length_bound: OptU64,
     }
     struct EncryptOutput {
         /// Algorithm Suite used to encrypt the message
@@ -277,6 +298,9 @@ mod ffi {
         /// Whether to require committing algorithms on encrypt/decrypt.
         /// Core default is `EsdkCommitmentPolicy::RequireEncryptRequireDecrypt`
         pub commitment_policy: OptCommitmentPolicy,
+        /// Specifies what `create_decrypt_stream` does with a signed message.
+        /// The one-shot `decrypt` ignores it; this is only used in streamed decrypt.
+        pub signed_streaming: OptSignedStreaming,
     }
 
     struct StreamFinishOutput {
@@ -463,9 +487,11 @@ macro_rules! opt_to_option {
 
 opt_to_option!(
     OptU32 => u32,
+    OptU64 => u64,
     OptString => String,
     OptAlgId => ffi::EsdkAlgorithmSuiteId,
     OptCommitmentPolicy => ffi::EsdkCommitmentPolicy,
+    OptSignedStreaming => ffi::SignedStreaming,
     OptDuration => ffi::Duration,
 );
 
@@ -491,7 +517,7 @@ struct MplDdbClient {
 }
 
 struct KeyStore {
-    inner: KeyStoreClient,
+    inner: DynamoDbKeyStore,
 }
 
 struct Keyring {
@@ -774,6 +800,21 @@ fn alg_id_core_to_target(e: EsdkAlgorithmSuiteId) -> Result<ffi::EsdkAlgorithmSu
     }
 }
 
+// C++ to Rust for SignedStreaming
+fn signed_streaming_target_to_core(x: ffi::SignedStreaming) -> Result<SignedStreaming, String> {
+    use ffi::SignedStreaming as Target;
+    match x {
+        Target::RejectMultiFrame => Ok(SignedStreaming::RejectMultiFrame),
+        Target::ReleaseRegularFrames => Ok(SignedStreaming::ReleaseRegularFrames),
+        Target::RejectSigned => Ok(SignedStreaming::RejectSigned),
+        _ => Err(shim_err(
+            ffi::ShimErrorKind::Validation,
+            "signed streaming translation",
+            format!("unrecognized SignedStreaming value: {}", x.repr),
+        )),
+    }
+}
+
 // C++ to Rust for Commitment Policy
 //= spec/shim/esdk-shim.md#commitment-policy
 //# - The shim MUST translate the target commitment policy to the core ESDK
@@ -1024,27 +1065,18 @@ fn make_retry_config(config: &ffi::RetryConfig) -> Option<aws_config::retry::Ret
 
 // AWS SDK client configuration
 
-fn shim_user_agent() -> String {
-    //= spec/shim/esdk-shim.md#service-client-configuration
-    //# - The shim MUST set a user-agent on each service client of the form
-    //# `AwsEncryptionSdk-Shim-<target-language>-<core-language>-<version>`, where
-    //# `<target-language>` is the target language, `<core-language>` is the core
-    //# ESDK's implementation language, and `<version>` is the shim's published version.
-    format!(
-        "AwsEncryptionSdk-Shim-C++-Rust-{}",
-        env!("CARGO_PKG_VERSION")
-    )
-}
+// A library built on the AWS SDK for Rust identifies itself with FrameworkMetadata.
+// The SDK renders it into the User-Agent as `lib/<name>/<version>`.
+const SHIM_FRAMEWORK_NAME: &str = "AwsEncryptionSdk-Shim-C++-Rust";
 
-fn merge_user_agent(current_app_name: &str, shim_ua: &str) -> String {
-    if current_app_name.is_empty() {
-        shim_ua.to_string()
-    } else {
-        //= spec/shim/esdk-shim.md#service-client-configuration
-        //# - The shim MUST preserve any user-agent already present in the loaded
-        //# configuration, appending its own rather than replacing it.
-        format!("{} {}", current_app_name, shim_ua)
-    }
+//= spec/shim/esdk-shim.md#service-client-configuration
+//# - The shim MUST set a user-agent on each service client of the form
+//# `AwsEncryptionSdk-Shim-<target-language>-<core-language>-<version>`, where
+//# `<target-language>` is the target language, `<core-language>` is the core
+//# ESDK's implementation language, and `<version>` is the shim's published version.
+fn shim_framework_metadata() -> FrameworkMetadata {
+    FrameworkMetadata::new(SHIM_FRAMEWORK_NAME, Some(env!("CARGO_PKG_VERSION")))
+        .expect("the shim framework metadata name and version are valid")
 }
 
 // Loaded once per process.
@@ -1062,21 +1094,19 @@ fn default_http_client() -> Option<SharedHttpClient> {
 fn load_default_sdk_config() -> Result<SdkConfig, String> {
     let shared_config =
         TOKIO_RUNTIME.block_on(aws_config::defaults(BehaviorVersion::latest()).load());
+    Ok(with_shim_user_agent(shared_config))
+}
 
-    let user_agent_string = shim_user_agent();
-    let current_app_name = shared_config
-        .app_name()
-        .map(|app_name| app_name.to_string())
-        .unwrap_or_default();
-    let new_app_name = merge_user_agent(&current_app_name, &user_agent_string);
-    let app_name = AppName::new(new_app_name).map_err(|e| {
-        shim_err(
-            ffi::ShimErrorKind::Validation,
-            "client configuration",
-            format!("invalid app name: {e}"),
-        )
-    })?;
-    Ok(shared_config.to_builder().app_name(app_name).build())
+fn with_shim_user_agent(loaded: SdkConfig) -> SdkConfig {
+    //= spec/shim/esdk-shim.md#service-client-configuration
+    //= type=implication
+    //= reason=FrameworkMetadata is appended to the User-Agent and the shim sets no app name, so any user-agent already present in the loaded configuration is preserved.
+    //# - The shim MUST preserve any user-agent already present in the loaded
+    //# configuration, appending its own rather than replacing it.
+    loaded
+        .to_builder()
+        .framework_metadata(shim_framework_metadata())
+        .build()
 }
 
 /// Convert C++ static credentials to AWS SDK credentials.
@@ -1259,7 +1289,9 @@ fn encrypt(input: &ffi::EncryptInput) -> Result<ffi::EncryptOutput, String> {
         //= spec/shim/esdk-shim.md#encrypt-inputs
         //# - MUST provide the target-supplied encryption context to the core ESDK,
         //# converted as defined in [Encryption context](#encryption-context).
-        .encryption_context(encryption_context_target_to_core(&input.encryption_context))
+        .set_encryption_context(Some(encryption_context_target_to_core(
+            &input.encryption_context,
+        )))
         //= spec/shim/esdk-shim.md#materials-source
         //= type=implication
         //= reason=The shim sets exactly one materials-source field (keyring) and never sets the cmm field.
@@ -1281,7 +1313,7 @@ fn encrypt(input: &ffi::EncryptInput) -> Result<ffi::EncryptOutput, String> {
         encryption_context: encryption_context_core_to_target(output.encryption_context()),
         //= spec/shim/esdk-shim.md#encrypt-outputs
         //# - MUST return the core ESDK's ciphertext unmodified.
-        ciphertext: output.into_ciphertext(),
+        ciphertext: output.into_ciphertext().into_inner(),
     })
 }
 
@@ -1299,7 +1331,9 @@ fn decrypt(input: &ffi::DecryptInput) -> Result<ffi::DecryptOutput, String> {
         //= spec/shim/esdk-shim.md#decrypt-inputs
         //# - MUST provide the target-supplied encryption context to the core ESDK,
         //# converted as defined in [Encryption context](#encryption-context).
-        .encryption_context(encryption_context_target_to_core(&input.encryption_context))
+        .set_encryption_context(Some(encryption_context_target_to_core(
+            &input.encryption_context,
+        )))
         .keyring(keyring.inner.clone())
         .send();
     let output = TOKIO_RUNTIME.block_on(output).map_err(core_err)?;
@@ -1314,7 +1348,7 @@ fn decrypt(input: &ffi::DecryptInput) -> Result<ffi::DecryptOutput, String> {
         encryption_context: encryption_context_core_to_target(output.encryption_context()),
         //= spec/shim/esdk-shim.md#decrypt-outputs
         //# - MUST return the core ESDK's plaintext unmodified.
-        plaintext: output.into_plaintext(),
+        plaintext: output.into_plaintext().into_inner(),
     })
 }
 
@@ -1493,7 +1527,7 @@ fn ddb_client_with_credentials(
 //= spec/shim/esdk-shim.md#create-key-store
 //# - The shim MUST provide an operation that creates a key store backed by the core ESDK.
 fn create_keystore(input: &ffi::KeyStoreConfig) -> Result<Box<KeyStore>, String> {
-    let builder = KeyStoreClient::builder()
+    let builder = DynamoDbKeyStore::builder()
         //= spec/shim/esdk-shim.md#create-key-store
         //# - Creating a key store MUST provide the target-supplied table name and logical key
         //# store name to the core ESDK.
@@ -1895,9 +1929,26 @@ fn create_encrypt_stream(input: &ffi::EncryptInput) -> Result<Box<EncryptStream>
         .esdk
         .encrypt_stream()
         .keyring(keyring.inner.clone())
-        .encryption_context(encryption_context_target_to_core(&input.encryption_context))
+        .set_encryption_context(Some(encryption_context_target_to_core(
+            &input.encryption_context,
+        )))
         .set_algorithm_suite_id(settings.algorithm_suite_id)
-        .set_frame_length(settings.frame_length);
+        .set_frame_length(settings.frame_length)
+        .set_data_size(
+            input
+                .plaintext_length_bound
+                .to_option()
+                .map(|bound| {
+                    usize::try_from(bound).map_err(|e| {
+                        shim_err(
+                            ffi::ShimErrorKind::Validation,
+                            "plaintext length bound translation",
+                            e,
+                        )
+                    })
+                })
+                .transpose()?,
+        );
     Ok(Box::new(EncryptStream {
         state: StreamState::spawn("encrypt_stream", move |mut reader, mut writer| {
             let output = TOKIO_RUNTIME
@@ -1933,7 +1984,16 @@ fn create_decrypt_stream(input: &ffi::DecryptInput) -> Result<Box<DecryptStream>
     let builder = decrypt_client(input)?
         .decrypt_stream()
         .keyring(keyring.inner.clone())
-        .encryption_context(encryption_context_target_to_core(&input.encryption_context));
+        .set_encryption_context(Some(encryption_context_target_to_core(
+            &input.encryption_context,
+        )))
+        .set_signed_streaming(
+            input
+                .signed_streaming
+                .to_option()
+                .map(signed_streaming_target_to_core)
+                .transpose()?,
+        );
     Ok(Box::new(DecryptStream {
         state: StreamState::spawn("decrypt_stream", move |mut reader, mut writer| {
             let output = TOKIO_RUNTIME
@@ -1995,10 +2055,10 @@ fn decrypt_stream_finish(stream: &mut DecryptStream) -> Result<ffi::StreamFinish
 /// Pass this to C++ via `Aws::Esdk::Keyring::adopt`.
 /// Ownership transfers to the returned pointer; consumers MUST NOT `adopt` this handle more than once.
 pub fn into_keyring_handle(
-    keyring: impl aws_crypto_mpl::keyring::Keyring + 'static,
+    keyring: impl aws_crypto_mpl::shared::IntoShared<SharedKeyring>,
 ) -> *mut std::ffi::c_void {
     Box::into_raw(Box::new(Keyring {
-        inner: SharedKeyring::new(keyring),
+        inner: keyring.into_shared(),
     }))
     .cast()
 }

@@ -7,13 +7,16 @@
 //! Each trait has a handle that can be stored: [`SharedKeyring`](crate::keyring::SharedKeyring),
 //! [`SharedCmm`](crate::cmm::SharedCmm), [`SharedCmc`](crate::cmc::SharedCmc), and
 //! [`SharedBranchKeySupplier`](crate::keyring::SharedBranchKeySupplier).
-//! A [`key_store::Client`](crate::key_store::Client) holds a key store instead.
+//! A [`key_store::SharedKeyStore`](crate::key_store::SharedKeyStore) holds a key store instead.
 //!
-//! Each handle implements its own trait, so a handle works anywhere a component does.
-//! APIs take `impl Keyring + 'static` and convert with [`IntoShared`]:
+//! A handle is called like an AWS SDK client: each operation returns a fluent builder.
+//! The trait is what an implementation writes. Neither the handle nor a built-in component
+//! such as [`RawAesKeyring`](crate::keyring::RawAesKeyring) implements it, so each has one
+//! method per operation: the fluent one.
+//! APIs take `impl IntoShared<SharedKeyring>`, which accepts a component or an existing handle:
 //!
 //! ```ignore
-//! pub fn keyring(mut self, keyring: impl Keyring + 'static) -> Self {
+//! pub fn keyring(mut self, keyring: impl IntoShared<SharedKeyring>) -> Self {
 //!     self.keyring = Some(keyring.into_shared());
 //!     self
 //! }
@@ -29,10 +32,7 @@
 //! esdk.encrypt().plaintext(pt).keyring(shared);  // reuses the handle, no second Arc
 //! ```
 //!
-//! This matches the AWS SDK for Rust (`SharedCredentialsProvider`, `SharedHttpClient`)
-//! and its `aws_smithy_runtime_api::shared` module.
-
-use std::any::{Any, TypeId};
+//! [`IntoShared`] follows the AWS SDK for Rust's `aws_smithy_runtime_api::shared` module.
 
 /// The conversion a handle implements for every implementation of its trait.
 ///
@@ -59,27 +59,6 @@ where
     }
 }
 
-/// Return `value` itself if it is already a `Shared`, otherwise `wrap(value)`.
-pub(crate) fn maybe_shared<Shared, MaybeShared>(
-    value: MaybeShared,
-    wrap: impl FnOnce(MaybeShared) -> Shared,
-) -> Shared
-where
-    Shared: 'static,
-    MaybeShared: 'static,
-{
-    if TypeId::of::<MaybeShared>() == TypeId::of::<Shared>() {
-        let mut value = Some(value);
-        (&mut value as &mut dyn Any)
-            .downcast_mut::<Option<Shared>>()
-            .expect("TypeId matched")
-            .take()
-            .expect("set to Some above")
-    } else {
-        wrap(value)
-    }
-}
-
 macro_rules! shared_handle {
     ($(#[$meta:meta])* $name:ident, $trait:ident) => {
         $(#[$meta])*
@@ -87,10 +66,9 @@ macro_rules! shared_handle {
         pub struct $name(::std::sync::Arc<dyn $trait>);
 
         impl $name {
-            /// Wrap `component` in a handle.
-            /// An existing handle is returned as-is, not wrapped again.
-            pub fn new(component: impl $trait + 'static) -> Self {
-                $crate::shared::maybe_shared(component, |c| Self(::std::sync::Arc::new(c)))
+            /// Wrap `component` in a handle. An existing handle is returned as-is.
+            pub fn new(component: impl $crate::shared::IntoShared<Self>) -> Self {
+                component.into_shared()
             }
 
             /// Whether both handles refer to the same component.
@@ -110,10 +88,31 @@ macro_rules! shared_handle {
 
         impl<T: $trait + 'static> $crate::shared::FromUnshared<T> for $name {
             fn from_unshared(value: T) -> Self {
-                Self::new(value)
+                Self(::std::sync::Arc::new(value))
+            }
+        }
+
+        /// A handle converts to itself, so an existing handle is not wrapped again.
+        impl $crate::shared::FromUnshared<$name> for $name {
+            fn from_unshared(value: $name) -> Self {
+                value
             }
         }
     };
 }
 
 pub(crate) use shared_handle;
+
+/// A built-in component as an implementation of its trait.
+///
+/// The built-in types have only the fluent calls, so the trait is implemented here instead.
+#[derive(Clone, Debug)]
+pub(crate) struct Builtin<T>(pub(crate) T);
+
+impl<T> std::ops::Deref for Builtin<T> {
+    type Target = T;
+
+    fn deref(&self) -> &T {
+        &self.0
+    }
+}
