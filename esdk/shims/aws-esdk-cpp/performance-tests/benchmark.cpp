@@ -1,10 +1,11 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// Performance benchmark for the C++ hierarchical keyring. Exercises
-// encrypt/decrypt through Aws::Esdk::EncryptionSDK and measures throughput,
-// resident memory, and concurrent round trips. Results are written as JSON and,
-// in CI, published to CloudWatch Logs under language "rust-cpp".
+// Performance benchmark for the C++ shim. Exercises encrypt/decrypt through
+// Aws::Esdk::Client with a selectable keyring (--keyring hierarchical
+// or raw-aes) and measures throughput, resident memory, and concurrent round
+// trips. Results are written as JSON and, in CI, published to CloudWatch Logs
+// under language "rust-cpp".
 
 #include <algorithm>
 #include <atomic>
@@ -16,6 +17,7 @@
 #include <iostream>
 #include <map>
 #include <mutex>
+#include <optional>
 #include <random>
 #include <string>
 #include <thread>
@@ -52,8 +54,8 @@ std::vector<std::uint8_t> random_bytes(std::size_t n) {
 // One encrypt+decrypt round trip; returns {encrypt_ms, decrypt_ms}. Throws on
 // failure or a plaintext mismatch.
 std::pair<double, double> encrypt_decrypt(
-    Aws::Esdk::EncryptionSDK& sdk,
-    const Aws::Esdk::HierarchicalKeyring& keyring,
+    const Aws::Esdk::Client& sdk,
+    const Aws::Esdk::Keyring& keyring,
     const std::vector<std::uint8_t>& data) {
     Aws::Esdk::EncryptOptions encrypt_options;
     encrypt_options.with_encryption_context(
@@ -74,13 +76,13 @@ std::pair<double, double> encrypt_decrypt(
 }
 
 // Operations per second and latency percentiles over serial round trips.
-BenchmarkResult run_throughput(Aws::Esdk::EncryptionSDK& sdk,
-                               const Aws::Esdk::HierarchicalKeyring& keyring,
+BenchmarkResult run_throughput(const Aws::Esdk::Client& sdk,
+                               const Aws::Esdk::Keyring& keyring,
                                std::size_t data_size, int warmup,
                                int measurement) {
     auto data = random_bytes(data_size);
 
-    // Warmup also primes the branch-key cache.
+    // Warmup; for the hierarchical keyring this also primes the branch-key cache.
     for (int i = 0; i < warmup; ++i) {
         encrypt_decrypt(sdk, keyring, data);
     }
@@ -124,8 +126,8 @@ BenchmarkResult run_throughput(Aws::Esdk::EncryptionSDK& sdk,
 
 // Peak resident-memory delta and payload-bytes-per-byte efficiency during one
 // operation, sampled from a background thread.
-BenchmarkResult run_memory(Aws::Esdk::EncryptionSDK& sdk,
-                           const Aws::Esdk::HierarchicalKeyring& keyring,
+BenchmarkResult run_memory(const Aws::Esdk::Client& sdk,
+                           const Aws::Esdk::Keyring& keyring,
                            std::size_t data_size) {
     auto data = random_bytes(data_size);
     double peak_delta_mb = 0.0;
@@ -180,8 +182,8 @@ BenchmarkResult run_memory(Aws::Esdk::EncryptionSDK& sdk,
 }
 
 // Parallel throughput across workers sharing one keyring and SDK facade.
-BenchmarkResult run_concurrent(Aws::Esdk::EncryptionSDK& sdk,
-                               const Aws::Esdk::HierarchicalKeyring& keyring,
+BenchmarkResult run_concurrent(const Aws::Esdk::Client& sdk,
+                               const Aws::Esdk::Keyring& keyring,
                                std::size_t data_size, int concurrency) {
     std::mutex mutex;
     std::vector<double> all_times;
@@ -240,10 +242,22 @@ BenchmarkResult run_concurrent(Aws::Esdk::EncryptionSDK& sdk,
     return result;
 }
 
+// Constructs the keyring selected on the command line. The raw AES keyring
+// wraps locally; the hierarchical keyring reads the key store described by env.
+Aws::Esdk::Keyring make_benchmark_keyring(
+    const std::string& keyring_name,
+    const std::optional<esdk_bench::KeyStoreEnv>& env) {
+    if (keyring_name == "raw-aes") {
+        return esdk_bench::make_raw_aes_keyring();
+    }
+    return esdk_bench::make_hierarchical_keyring(*env);
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
     std::string output = "results/raw-data/cpp_results.json";
+    std::string keyring_name = "hierarchical";
     BenchmarkConfig config;
     bool quick = false;
 
@@ -253,8 +267,16 @@ int main(int argc, char** argv) {
             quick = true;
         } else if (arg == "--output" && i + 1 < argc) {
             output = argv[++i];
+        } else if (arg == "--keyring" && i + 1 < argc) {
+            keyring_name = argv[++i];
+            if (keyring_name != "hierarchical" && keyring_name != "raw-aes") {
+                std::cerr << "unknown keyring: " << keyring_name
+                          << " (expected hierarchical or raw-aes)\n";
+                return 2;
+            }
         } else {
-            std::cerr << "usage: " << argv[0] << " [--quick] [--output FILE]\n";
+            std::cerr << "usage: " << argv[0]
+                      << " [--quick] [--keyring hierarchical|raw-aes] [--output FILE]\n";
             return 2;
         }
     }
@@ -262,18 +284,23 @@ int main(int argc, char** argv) {
         config = esdk_bench::quick_config();
     }
 
-    auto env = esdk_bench::load_env();
-    if (!env) {
-        std::cout << "SKIP: set ESDK_TEST_KMS_KEY_ARN, ESDK_TEST_DDB_TABLE, "
-                     "ESDK_TEST_LOGICAL_KEYSTORE, and ESDK_TEST_BRANCH_KEY_ID to "
-                     "run the C++ performance benchmark.\n";
-        return 0;
+    // Only the hierarchical keyring needs key store coordinates; the raw AES
+    // keyring wraps data keys locally.
+    std::optional<esdk_bench::KeyStoreEnv> env;
+    if (keyring_name == "hierarchical") {
+        env = esdk_bench::load_env();
+        if (!env) {
+            std::cout << "SKIP: set ESDK_TEST_KMS_KEY_ARN, ESDK_TEST_DDB_TABLE, "
+                         "ESDK_TEST_LOGICAL_KEYSTORE, and ESDK_TEST_BRANCH_KEY_ID to "
+                         "run the C++ hierarchical keyring benchmark.\n";
+            return 0;
+        }
     }
 
-    Aws::Esdk::EncryptionSDK sdk;
+    Aws::Esdk::Client sdk;
     std::vector<BenchmarkResult> results;
     try {
-        auto keyring = esdk_bench::make_keyring(*env);
+        auto keyring = make_benchmark_keyring(keyring_name, env);
 
         for (std::size_t data_size : config.data_sizes) {
             results.push_back(
@@ -296,7 +323,8 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    esdk_bench::write_results_json(output, results, esdk_bench::collect_run_info());
+    esdk_bench::write_results_json(output, results, esdk_bench::collect_run_info(),
+                                   keyring_name);
     std::cout << "wrote " << results.size() << " results to " << output << "\n";
     return 0;
 }

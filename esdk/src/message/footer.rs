@@ -3,15 +3,16 @@
 
 //! Message footer serialization/deserialization.
 
+use super::Error;
 use super::serialize_functions::{read_u16, read_vec, write_bytes, write_u16};
-use super::{Error, ser_err};
-use crate::types::{SafeRead, SafeWrite};
+use crate::error::{Kind, err};
+use crate::shapes::{Source, Tee};
 
 /// Write a message footer (signature length + signature bytes).
 ///
 /// The caller is responsible for ensuring this is only called when the algorithm suite
 /// includes a signature algorithm.
-pub(crate) fn write_footer(w: &mut dyn SafeWrite, signature: &[u8]) -> Result<(), Error> {
+pub(crate) fn write_footer(w: &mut Tee, signature: &[u8]) -> Result<(), Error> {
     //= spec/client-apis/encrypt.md#construct-the-signature
     //# The order for message footer serialization MUST conform to the [Message Footer](../data-format/message-footer.md) specification.
     //
@@ -25,9 +26,9 @@ pub(crate) fn write_footer(w: &mut dyn SafeWrite, signature: &[u8]) -> Result<()
     //= spec/client-apis/encrypt.md#construct-the-signature
     //# The value MUST be the length of the output of the signature calculation above.
     let Ok(len) = u16::try_from(signature.len()) else {
-        return ser_err(&format!(
-            "Signature length {} exceeds u16::MAX",
-            signature.len()
+        return Err(err(
+            Kind::Internal,
+            format!("signature length {} exceeds u16::MAX", signature.len()),
         ));
     };
 
@@ -61,7 +62,7 @@ pub(crate) fn write_footer(w: &mut dyn SafeWrite, signature: &[u8]) -> Result<()
 }
 
 /// Read a message footer, returning the signature bytes.
-pub(crate) fn read_footer(r: &mut dyn SafeRead, raw: &mut dyn SafeWrite) -> Result<Vec<u8>, Error> {
+pub(crate) async fn read_footer(r: &mut dyn Source, raw: &mut Tee) -> Result<Vec<u8>, Error> {
     //= spec/client-apis/decrypt.md#verify-the-signature
     //# The order for message footer deserialization MUST conform to the [Message Footer](../data-format/message-footer.md) specification.
     //
@@ -77,12 +78,12 @@ pub(crate) fn read_footer(r: &mut dyn SafeRead, raw: &mut dyn SafeWrite) -> Resu
     //
     //= spec/data-format/message-footer.md#signature-length
     //# The signature length value MUST be a UInt16.
-    let len = read_u16(r, raw)?;
+    let len = read_u16(r, raw).await?;
 
     // Signature
 
     //= spec/data-format/message-footer.md#signature
     //= type=implication
     //# The signature MUST be interpreted as bytes.
-    read_vec(r, usize::from(len), raw)
+    read_vec(r, usize::from(len), raw).await
 }

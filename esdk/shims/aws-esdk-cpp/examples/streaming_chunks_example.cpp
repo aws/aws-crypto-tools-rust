@@ -1,3 +1,6 @@
+// Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 // Example demonstrating use of lower-level streaming APIs.
 //
 // The higher-level APIs in streaming_example.cpp are the right tool for most cases.
@@ -11,7 +14,7 @@
 // then decrypts it back while withholding the plaintext until it is authenticated.
 //
 // A non-signing suite is used so streamed decrypt works regardless of message size;
-// the ESDK refuses streamed decrypt of a multi-frame signed message.
+// by default, the ESDK refuses streamed decrypt of a multi-frame signed message.
 
 #include <cstdint>
 #include <cstdio>
@@ -20,6 +23,7 @@
 #include <map>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <vector>
 #include <aws/esdk/EncryptionSDK.h>
 
@@ -29,7 +33,7 @@ const char* PLAINTEXT_FILE = "streaming_chunks_example_plaintext.txt";
 const char* CIPHERTEXT_FILE = "streaming_chunks_example_ciphertext.bin";
 const char* DECRYPTED_FILE = "streaming_chunks_example_decrypted.txt";
 
-void append(std::vector<std::uint8_t>& dst, const Aws::Esdk::Bytes& src) {
+void append(std::vector<std::uint8_t>& dst, const Aws::Esdk::Plaintext& src) {
     dst.insert(dst.end(), src.begin(), src.end());
 }
 
@@ -63,7 +67,7 @@ int main() {
             {"is not", "secret"},
         };
 
-        Aws::Esdk::EncryptionSDK esdk;
+        Aws::Esdk::Client esdk;
 
         // Encrypt
         {
@@ -80,10 +84,9 @@ int main() {
             char chunk[512];
             while (in.read(chunk, sizeof chunk), in.gcount() > 0) {
                 // Feed each chunk.
-                Aws::Esdk::Bytes produced =
+                Aws::Esdk::Ciphertext produced =
                     // write() returns the ciphertext produced so far, possibly empty until a frame fills.
-                    enc.write(reinterpret_cast<const std::uint8_t*>(chunk),
-                              static_cast<std::size_t>(in.gcount()));
+                    enc.write(std::string_view(chunk, static_cast<std::size_t>(in.gcount())));
                 // You can forward the ciphertext produced so far to an output stream
                 // (in contrast to plaintext, which you MUST buffer; see below).
                 out.write(reinterpret_cast<const char*>(produced.data()), produced.size());
@@ -93,7 +96,7 @@ int main() {
             // Check for EOF first so a truncated read never becomes a valid message.
             if (!in.eof() || in.bad())
                 throw std::runtime_error("failed reading plaintext file");
-            Aws::Esdk::Bytes trailing = enc.finish().trailing_output;
+            Aws::Esdk::Ciphertext trailing = enc.finish().trailing_output;
             out.write(reinterpret_cast<const char*>(trailing.data()), trailing.size());
             if (!out) throw std::runtime_error("failed writing ciphertext file");
         }
@@ -113,8 +116,8 @@ int main() {
             std::vector<std::uint8_t> unverified;
             char chunk[1024];
             while (in.read(chunk, sizeof chunk), in.gcount() > 0) {
-                append(unverified, dec.write(reinterpret_cast<const std::uint8_t*>(chunk),
-                                             static_cast<std::size_t>(in.gcount())));
+                append(unverified,
+                       dec.write(std::string_view(chunk, static_cast<std::size_t>(in.gcount()))));
             }
             if (!in.eof() || in.bad())
                 throw std::runtime_error("failed reading ciphertext file");
