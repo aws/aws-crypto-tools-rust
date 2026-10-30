@@ -21,7 +21,7 @@ use aws_crypto_mpl::types::{
     AlgorithmSuiteId, BeaconKeyMaterials, BranchKeyMaterials, DecryptionMaterials,
     EncryptionContext, EncryptionMaterials, EsdkAlgorithmSuiteId,
 };
-use aws_crypto_mpl::types::{BytesUsage, CacheEntry, CachedMaterials, MessageUsage, UsageMetadata};
+use aws_crypto_mpl::types::{CacheEntry, CachedMaterials, UsageMetadata};
 
 /// Positional shorthand for the `Cmc` operations.
 #[async_trait]
@@ -110,8 +110,8 @@ fn make_entry_at(creation: SystemTime, expiry: SystemTime) -> CacheEntry {
         .expiry_time(expiry)
         .usage_metadata(
             UsageMetadata::builder()
-                .messages_used(MessageUsage::new(0))
-                .bytes_used(BytesUsage::new(0))
+                .messages_used(0)
+                .bytes_used(0)
                 .build()
                 .expect("usage metadata builds"),
         )
@@ -930,8 +930,8 @@ async fn test_all_material_variants_round_trip() {
     let now = anchor_now();
     let expiry = now + Duration::from_secs(3600);
     let usage = UsageMetadata::builder()
-        .messages_used(MessageUsage::new(0))
-        .bytes_used(BytesUsage::new(0))
+        .messages_used(0)
+        .bytes_used(0)
         .build()
         .expect("usage metadata builds");
 

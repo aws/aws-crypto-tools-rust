@@ -145,8 +145,8 @@ async fn shared_cmc_fluent_builders_reach_the_cache() {
         .into_entry()
         .expect("the entry put above")
         .usage_metadata();
-    assert_eq!(usage.messages_used().get(), 1);
-    assert_eq!(usage.bytes_used().get(), 7);
+    assert_eq!(usage.messages_used(), 1);
+    assert_eq!(usage.bytes_used(), 7);
 
     cache
         .delete_cache_entry()

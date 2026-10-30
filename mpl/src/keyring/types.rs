@@ -35,7 +35,7 @@ impl OnEncryptInput {
 }
 
 /// Builder for [`OnEncryptInput`].
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct OnEncryptInputBuilder {
     materials: Option<EncryptionMaterials>,
 }
@@ -103,7 +103,7 @@ impl OnEncryptOutput {
 }
 
 /// Builder for [`OnEncryptOutput`].
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct OnEncryptOutputBuilder {
     materials: Option<EncryptionMaterials>,
 }
@@ -184,7 +184,7 @@ impl OnDecryptInput {
 }
 
 /// Builder for [`OnDecryptInput`].
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct OnDecryptInputBuilder {
     materials: Option<DecryptionMaterials>,
     encrypted_data_keys: Option<Vec<EncryptedDataKey>>,
@@ -283,7 +283,7 @@ impl OnDecryptOutput {
 }
 
 /// Builder for [`OnDecryptOutput`].
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct OnDecryptOutputBuilder {
     materials: Option<DecryptionMaterials>,
 }

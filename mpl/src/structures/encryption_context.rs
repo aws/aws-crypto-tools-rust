@@ -12,6 +12,7 @@ use std::collections::{BTreeMap, HashMap};
 /// Iteration and [`serialize`](Self::serialize) visit keys in ascending UTF-8 byte order,
 /// the order the message format requires.
 #[derive(Clone, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct EncryptionContext(BTreeMap<String, String>);
 
 impl std::fmt::Debug for EncryptionContext {

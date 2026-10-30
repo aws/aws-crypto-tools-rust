@@ -17,6 +17,7 @@ use super::encryption_context::EncryptionContext;
 
 /// Materials needed for encryption.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct EncryptionMaterials {
     algorithm_suite_id: AlgorithmSuiteId,
     encrypted_data_keys: Vec<EncryptedDataKey>,
@@ -154,7 +155,7 @@ impl EncryptionMaterials {
 ///
 /// `algorithm_suite_id` is required.
 /// The encryption context, required encryption context keys, and encrypted data keys default to empty.
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct EncryptionMaterialsBuilder {
     algorithm_suite_id: Option<AlgorithmSuiteId>,
     encrypted_data_keys: Option<Vec<EncryptedDataKey>>,

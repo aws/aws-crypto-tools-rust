@@ -340,6 +340,7 @@ impl EsdkAlgorithmSuiteId {
 /// This struct is opaque: there is no public constructor. Construct one by
 /// calling [`AlgorithmSuiteId::specification`] on a chosen suite.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct AlgorithmSuite {
     id: [u8; 2],
     encryption_algorithm: EncryptionAlgorithm,

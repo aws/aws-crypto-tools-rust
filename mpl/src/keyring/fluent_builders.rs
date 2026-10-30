@@ -29,7 +29,7 @@ impl SharedKeyring {
 }
 
 /// Fluent builder for [`SharedKeyring::on_encrypt`].
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[must_use = "does nothing until `send` is called"]
 pub struct OnEncryptFluentBuilder {
     handle: SharedKeyring,
@@ -77,7 +77,7 @@ impl OnEncryptFluentBuilder {
 }
 
 /// Fluent builder for [`SharedKeyring::on_decrypt`].
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[must_use = "does nothing until `send` is called"]
 pub struct OnDecryptFluentBuilder {
     handle: SharedKeyring,

@@ -16,6 +16,7 @@ use super::encryption_context::EncryptionContext;
 
 /// Materials needed for decryption.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct DecryptionMaterials {
     algorithm_suite_id: AlgorithmSuiteId,
     encryption_context: EncryptionContext,
@@ -124,7 +125,7 @@ impl DecryptionMaterials {
 ///
 /// `algorithm_suite_id` is required.
 /// The encryption context and required encryption context keys default to empty.
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct DecryptionMaterialsBuilder {
     algorithm_suite_id: Option<AlgorithmSuiteId>,
     encryption_context: Option<EncryptionContext>,

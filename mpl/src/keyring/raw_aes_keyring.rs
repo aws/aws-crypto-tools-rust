@@ -220,7 +220,9 @@ impl RawAesKeyring {
 }
 
 /// Builder for [`RawAesKeyring`].
-#[derive(Default)]
+///
+/// Each clone holds its own copy of the wrapping key, zeroized when that clone drops.
+#[derive(Clone, Default)]
 pub struct RawAesKeyringBuilder {
     key_namespace: Option<String>,
     key_name: Option<String>,

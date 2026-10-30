@@ -240,14 +240,14 @@ async fn every_builder_getter_tracks_its_setter() {
         messages_used,
         set_messages_used,
         get_messages_used,
-        MessageUsage::new(1)
+        1
     );
     check!(
         UsageMetadata::builder(),
         bytes_used,
         set_bytes_used,
         get_bytes_used,
-        BytesUsage::new(1)
+        1
     );
     check!(
         CacheEntry::builder(),

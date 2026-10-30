@@ -243,7 +243,7 @@ impl GetEncryptionMaterialsOutput {
 }
 
 /// Builder for [`GetEncryptionMaterialsOutput`].
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct GetEncryptionMaterialsOutputBuilder {
     encryption_materials: Option<EncryptionMaterials>,
 }
@@ -523,7 +523,7 @@ impl DecryptMaterialsOutput {
 }
 
 /// Builder for [`DecryptMaterialsOutput`].
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct DecryptMaterialsOutputBuilder {
     decryption_materials: Option<DecryptionMaterials>,
 }

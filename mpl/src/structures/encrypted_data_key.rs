@@ -10,6 +10,7 @@ use crate::builder::required;
 ///
 /// Construct with [`EncryptedDataKey::builder`].
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct EncryptedDataKey {
     /// The MUST-be-binary half of the spec citation below is satisfied by
     /// construction — Rust's `String` is a UTF-8 byte sequence. The

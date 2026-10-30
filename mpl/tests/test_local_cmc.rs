@@ -40,7 +40,7 @@ use aws_crypto_mpl::types::{
     AlgorithmSuiteId, BeaconKeyMaterials, BranchKeyMaterials, DecryptionMaterials,
     EncryptionContext, EncryptionMaterials, EsdkAlgorithmSuiteId,
 };
-use aws_crypto_mpl::types::{BytesUsage, CacheEntry, CachedMaterials, MessageUsage, UsageMetadata};
+use aws_crypto_mpl::types::{CacheEntry, CachedMaterials, UsageMetadata};
 
 /// Positional shorthand for the `Cmc` operations.
 #[async_trait]
@@ -141,8 +141,8 @@ fn make_entry_at(creation: SystemTime, expiry: SystemTime) -> CacheEntry {
         .expiry_time(expiry)
         .usage_metadata(
             UsageMetadata::builder()
-                .messages_used(MessageUsage::new(0))
-                .bytes_used(BytesUsage::new(0))
+                .messages_used(0)
+                .bytes_used(0)
                 .build()
                 .expect("usage metadata builds"),
         )
@@ -540,8 +540,8 @@ async fn test_usage_metadata_round_trips_through_put_get() {
     let creation = now;
     let expiry = now + STANDARD_TTL;
     let usage = UsageMetadata::builder()
-        .messages_used(MessageUsage::new(7))
-        .bytes_used(BytesUsage::new(2048))
+        .messages_used(7)
+        .bytes_used(2048)
         .build()
         .expect("usage metadata builds");
 
@@ -620,13 +620,13 @@ async fn test_concurrent_put_atomic_visibility() {
     let expiry = now + STANDARD_TTL;
 
     let usage_a = UsageMetadata::builder()
-        .messages_used(MessageUsage::new(11))
-        .bytes_used(BytesUsage::new(111))
+        .messages_used(11)
+        .bytes_used(111)
         .build()
         .expect("usage metadata builds");
     let usage_b = UsageMetadata::builder()
-        .messages_used(MessageUsage::new(22))
-        .bytes_used(BytesUsage::new(222))
+        .messages_used(22)
+        .bytes_used(222)
         .build()
         .expect("usage metadata builds");
 
@@ -678,8 +678,8 @@ async fn test_concurrent_put_atomic_visibility() {
 
 fn usage(messages: u64, bytes: u64) -> UsageMetadata {
     UsageMetadata::builder()
-        .messages_used(MessageUsage::new(messages))
-        .bytes_used(BytesUsage::new(bytes))
+        .messages_used(messages)
+        .bytes_used(bytes)
         .build()
         .expect("usage metadata builds")
 }

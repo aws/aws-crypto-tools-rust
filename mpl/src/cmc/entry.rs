@@ -32,65 +32,13 @@ pub enum CachedMaterials {
     BeaconKey(BeaconKeyMaterials),
 }
 
-/// Number of messages that have been encrypted with the cached encryption
-/// materials.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[non_exhaustive]
-pub struct MessageUsage(u64);
-
-impl MessageUsage {
-    /// Construct a message count.
-    #[must_use]
-    pub const fn new(messages: u64) -> Self {
-        Self(messages)
-    }
-
-    /// The number of messages.
-    #[must_use]
-    pub const fn get(self) -> u64 {
-        self.0
-    }
-}
-
-impl From<u64> for MessageUsage {
-    fn from(messages: u64) -> Self {
-        Self(messages)
-    }
-}
-
-/// Number of plaintext bytes that have been encrypted with the cached
-/// encryption materials.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[non_exhaustive]
-pub struct BytesUsage(u64);
-
-impl BytesUsage {
-    /// Construct a byte count.
-    #[must_use]
-    pub const fn new(bytes: u64) -> Self {
-        Self(bytes)
-    }
-
-    /// The number of bytes.
-    #[must_use]
-    pub const fn get(self) -> u64 {
-        self.0
-    }
-}
-
-impl From<u64> for BytesUsage {
-    fn from(bytes: u64) -> Self {
-        Self(bytes)
-    }
-}
-
 /// Per-entry usage metadata. The caching CMM consults these counters when
 /// deciding whether the cached materials are still safe to reuse.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct UsageMetadata {
-    messages_used: MessageUsage,
-    bytes_used: BytesUsage,
+    messages_used: u64,
+    bytes_used: u64,
 }
 
 impl UsageMetadata {
@@ -102,13 +50,13 @@ impl UsageMetadata {
 
     /// Number of messages encrypted by the cached encryption materials.
     #[must_use]
-    pub const fn messages_used(&self) -> MessageUsage {
+    pub const fn messages_used(&self) -> u64 {
         self.messages_used
     }
 
     /// Number of plaintext bytes encrypted by the cached encryption materials.
     #[must_use]
-    pub const fn bytes_used(&self) -> BytesUsage {
+    pub const fn bytes_used(&self) -> u64 {
         self.bytes_used
     }
 }
@@ -116,14 +64,14 @@ impl UsageMetadata {
 /// Builder for [`UsageMetadata`], returned by [`UsageMetadata::builder`].
 #[derive(Debug, Clone, Copy, Default)]
 pub struct UsageMetadataBuilder {
-    messages_used: Option<MessageUsage>,
-    bytes_used: Option<BytesUsage>,
+    messages_used: Option<u64>,
+    bytes_used: Option<u64>,
 }
 
 impl UsageMetadataBuilder {
     /// Set the number of messages encrypted. Defaults to 0.
     #[must_use]
-    pub const fn messages_used(mut self, messages_used: MessageUsage) -> Self {
+    pub const fn messages_used(mut self, messages_used: u64) -> Self {
         self.messages_used = Some(messages_used);
         self
     }
@@ -131,20 +79,20 @@ impl UsageMetadataBuilder {
     /// Set or clear the message count, for forwarding an existing `Option`.
     /// `None` applies the default documented on [`messages_used`](Self::messages_used).
     #[must_use]
-    pub const fn set_messages_used(mut self, messages_used: Option<MessageUsage>) -> Self {
+    pub const fn set_messages_used(mut self, messages_used: Option<u64>) -> Self {
         self.messages_used = messages_used;
         self
     }
 
     /// The messages used, if set.
     #[must_use]
-    pub const fn get_messages_used(&self) -> &Option<MessageUsage> {
+    pub const fn get_messages_used(&self) -> &Option<u64> {
         &self.messages_used
     }
 
     /// Set the number of plaintext bytes encrypted. Defaults to 0.
     #[must_use]
-    pub const fn bytes_used(mut self, bytes_used: BytesUsage) -> Self {
+    pub const fn bytes_used(mut self, bytes_used: u64) -> Self {
         self.bytes_used = Some(bytes_used);
         self
     }
@@ -152,14 +100,14 @@ impl UsageMetadataBuilder {
     /// Set or clear the byte count, for forwarding an existing `Option`.
     /// `None` applies the default documented on [`bytes_used`](Self::bytes_used).
     #[must_use]
-    pub const fn set_bytes_used(mut self, bytes_used: Option<BytesUsage>) -> Self {
+    pub const fn set_bytes_used(mut self, bytes_used: Option<u64>) -> Self {
         self.bytes_used = bytes_used;
         self
     }
 
     /// The bytes used, if set.
     #[must_use]
-    pub const fn get_bytes_used(&self) -> &Option<BytesUsage> {
+    pub const fn get_bytes_used(&self) -> &Option<u64> {
         &self.bytes_used
     }
 
@@ -241,13 +189,13 @@ impl CacheEntry {
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
         let (Some(messages), Some(total_bytes)) = (
-            usage.messages_used.get().checked_add(1),
-            usage.bytes_used.get().checked_add(bytes),
+            usage.messages_used.checked_add(1),
+            usage.bytes_used.checked_add(bytes),
         ) else {
             return false;
         };
-        usage.messages_used = MessageUsage(messages);
-        usage.bytes_used = BytesUsage(total_bytes);
+        usage.messages_used = messages;
+        usage.bytes_used = total_bytes;
         true
     }
 }
