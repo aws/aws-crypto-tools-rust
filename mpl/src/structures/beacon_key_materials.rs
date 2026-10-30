@@ -13,6 +13,7 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 /// Materials used in structured encryption containing HMAC keys derived from a beacon key.
 ///
 /// Construct with [`BeaconKeyMaterials::builder`].
+#[derive(Clone)]
 #[non_exhaustive]
 pub struct BeaconKeyMaterials {
     beacon_key_id: String,
@@ -65,7 +66,7 @@ impl std::fmt::Debug for BeaconKeyMaterials {
 }
 
 /// Builder for [`BeaconKeyMaterials`].
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct BeaconKeyMaterialsBuilder {
     beacon_key_id: Option<String>,
     encryption_context: Option<EncryptionContext>,

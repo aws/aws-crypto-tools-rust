@@ -11,7 +11,7 @@ use crate::Error;
 use crate::builder::required;
 
 /// Input for [`Cmc::put_cache_entry`](super::Cmc::put_cache_entry).
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct PutCacheEntryInput {
     identifier: Vec<u8>,
@@ -45,7 +45,7 @@ impl PutCacheEntryInput {
 }
 
 /// Builder for [`PutCacheEntryInput`], returned by [`PutCacheEntryInput::builder`].
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct PutCacheEntryInputBuilder {
     identifier: Option<Vec<u8>>,
     entry: Option<CacheEntry>,

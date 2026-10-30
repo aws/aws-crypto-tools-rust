@@ -19,7 +19,7 @@ use crate::structures::{
 /// Per the CMC spec's `#materials` section, a cache entry may carry one of
 /// four material kinds: encryption, decryption, branch-key, or beacon-key
 /// materials. The variant tracks which kind of materials this entry holds.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[non_exhaustive]
 pub enum CachedMaterials {
     /// Encryption materials cached by a caching CMM on the encrypt path.
@@ -137,6 +137,18 @@ pub struct CacheEntry {
     usage_metadata: Mutex<UsageMetadata>,
 }
 
+/// The clone starts with a copy of this entry's usage counters at the time of the clone.
+impl Clone for CacheEntry {
+    fn clone(&self) -> Self {
+        Self {
+            materials: self.materials.clone(),
+            creation_time: self.creation_time,
+            expiry_time: self.expiry_time,
+            usage_metadata: Mutex::new(self.usage_metadata()),
+        }
+    }
+}
+
 impl CacheEntry {
     /// Start a builder for `CacheEntry`.
     #[must_use]
@@ -201,7 +213,7 @@ impl CacheEntry {
 }
 
 /// Builder for [`CacheEntry`], returned by [`CacheEntry::builder`].
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct CacheEntryBuilder {
     materials: Option<CachedMaterials>,
     creation_time: Option<SystemTime>,

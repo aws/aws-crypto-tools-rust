@@ -883,7 +883,7 @@ pub mod builders {
     use super::{ArcError, ErrorData, Kind, Remote, RetryKind};
 
     /// Builds a [`CryptographicError`](super::CryptographicError).
-    #[derive(Debug, Default)]
+    #[derive(Debug, Clone, Default)]
     #[must_use]
     pub struct CryptographicErrorBuilder {
         message: String,
@@ -930,7 +930,7 @@ pub mod builders {
     }
 
     /// Builds a [`InternalError`](super::InternalError).
-    #[derive(Debug, Default)]
+    #[derive(Debug, Clone, Default)]
     #[must_use]
     pub struct InternalErrorBuilder {
         message: String,

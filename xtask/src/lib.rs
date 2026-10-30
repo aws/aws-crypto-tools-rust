@@ -1894,7 +1894,7 @@ pub mod builders {{
                 s,
                 r"
     /// Builds a [`{st}`](super::{st}).
-    #[derive(Debug, Default)]
+    #[derive(Debug, Clone, Default)]
     #[must_use]
     pub struct {st}Builder {{
         message: String,

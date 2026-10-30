@@ -46,7 +46,7 @@ impl SharedCmc {
 }
 
 /// Fluent builder for [`SharedCmc::put_cache_entry`].
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[must_use = "does nothing until `send` is called"]
 pub struct PutCacheEntryFluentBuilder {
     handle: SharedCmc,

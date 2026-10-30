@@ -975,7 +975,7 @@ impl GetBeaconKeyOutput {
 }
 
 /// Builder for [`GetBeaconKeyOutput`].
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct GetBeaconKeyOutputBuilder {
     beacon_key_materials: Option<BeaconKeyMaterials>,
 }
