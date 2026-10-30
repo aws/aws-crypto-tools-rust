@@ -3,5 +3,7 @@
     "raw-aes",
     "default-cmm"
   ],
-  "unsupportedFeatures": []
+  "unsupportedFeatures": [
+    "hierarchical"
+  ]
 }
