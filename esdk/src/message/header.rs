@@ -211,11 +211,10 @@ pub(crate) fn validate_suite_data(
     header_body: &HeaderBody,
     expected_suite_data: &[u8],
 ) -> Result<(), Error> {
-    //= spec/client-apis/key-derivation.md#hkdf-commit-key
+    //= spec/framework/transitive-requirements.md#hkdf-commit-key
     //= type=implication
     //= reason=aws_lc_rs::constant_time::verify_slices_are_equal performs a constant-time slice equality check by aws-lc-rs API contract
-    //# The AWS Encryption SDK MUST compare the derived commit key
-    //# with the commit key in the message header in constant time.
+    //# Verification of the commitment key MUST be a constant time comparison.
     if constant_time::verify_slices_are_equal(header_body.suite_data(), expected_suite_data)
         .is_err()
     {
