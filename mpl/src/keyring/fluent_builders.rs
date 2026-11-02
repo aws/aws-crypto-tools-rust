@@ -8,6 +8,8 @@ use super::{
     OnEncryptInputBuilder, OnEncryptOutput, SharedKeyring,
 };
 use crate::Error;
+use crate::error::KeyringResource;
+use crate::structures::materials_checks;
 use crate::structures::{DecryptionMaterials, EncryptedDataKey, EncryptionMaterials};
 
 impl SharedKeyring {
@@ -68,11 +70,19 @@ impl OnEncryptFluentBuilder {
     /// # Errors
     ///
     /// - [`Validation`](crate::Error::Validation): `materials` is unset.
+    /// - [`InvalidMaterials`](crate::Error::InvalidMaterials), naming the keyring:
+    ///   the input or returned materials are invalid,
+    ///   the returned materials have no plaintext data key,
+    ///   or the keyring changed anything other than adding a plaintext data key and encrypted data keys.
     ///
     /// Otherwise, the errors [`Keyring::on_encrypt`] documents.
     pub async fn send(self) -> Result<OnEncryptOutput, Error> {
         let input = self.inner.build()?;
-        Keyring::on_encrypt(&*self.handle.0, input).await
+        let before = input.materials().clone();
+        let output = Keyring::on_encrypt(&*self.handle.0, input).await?;
+        materials_checks::check_encryption_transition(&before, output.materials())
+            .map_err(|e| e.with_resource(KeyringResource::new(self.handle.name())))?;
+        Ok(output)
     }
 }
 
@@ -141,11 +151,20 @@ impl OnDecryptFluentBuilder {
     /// # Errors
     ///
     /// - [`Validation`](crate::Error::Validation): `materials` or `encrypted_data_keys` is unset.
+    /// - [`InvalidMaterials`](crate::Error::InvalidMaterials), naming the keyring:
+    ///   the input or returned materials are invalid,
+    ///   the input materials already have a plaintext data key,
+    ///   the returned materials have none,
+    ///   or the keyring changed anything other than adding the plaintext data key.
     ///
     /// Otherwise, the errors [`Keyring::on_decrypt`] documents.
     pub async fn send(self) -> Result<OnDecryptOutput, Error> {
         let input = self.inner.build()?;
-        Keyring::on_decrypt(&*self.handle.0, input).await
+        let before = input.materials().clone();
+        let output = Keyring::on_decrypt(&*self.handle.0, input).await?;
+        materials_checks::check_decryption_transition(&before, output.materials())
+            .map_err(|e| e.with_resource(KeyringResource::new(self.handle.name())))?;
+        Ok(output)
     }
 }
 
