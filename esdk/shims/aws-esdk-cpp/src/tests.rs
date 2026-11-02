@@ -1042,8 +1042,8 @@ fn create_keystore_forwards_id_and_grant_tokens() {
 fn create_raw_aes_keyring_rejects_unsupported_wrapping_alg() {
     //= spec/shim/esdk-shim.md#aes-wrapping-algorithm
     //= type=test
-    //# - The shim MUST return an error when the target wrapping algorithm is not a
-    //# supported value.
+    //# - The shim MUST return an error when the target wrapping algorithm configuration is not
+    //# supported.
     let unset = expect_err(create_raw_aes_keyring(&ffi::RawAesKeyringInput {
         key_namespace: "test-ns".to_string(),
         key_name: "test-key".to_string(),
