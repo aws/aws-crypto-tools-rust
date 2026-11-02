@@ -199,8 +199,8 @@ void test_raw_aes_mismatched_key_length_throws() {
     //= spec/shim/esdk-shim.md#aes-wrapping-algorithm
     //= type=test
     //= reason=A 16-byte key is too short for AES 256 (needs 32)
-    //# - The shim MUST translate the target AES wrapping algorithm to the core ESDK
-    //# wrapping algorithm of the same meaning.
+    //# - The shim MUST translate the target AES wrapping algorithm configuration to
+    //# the core ESDK wrapping algorithm configuration.
     CHECK_THROWS_TYPE(Aws::Esdk::ValidationException,Aws::Esdk::RawAesKeyring(
                          "test-ns", "test-key", short_key,
                          Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16));
@@ -335,7 +335,7 @@ void test_error_kinds() {
 
     //= spec/shim/shim.md#error-classification
     //= type=test
-    //# - When the core library distinguishes kinds of errors, the shim SHOULD expose
+    //# - When the core library distinguishes kinds of errors, the shim MUST expose
     //# the same kinds under the core library's own names, expressed in the target
     //# language's error mechanism.
     // Malformed message -> ESDK Rust's SerializationError
@@ -366,7 +366,7 @@ void test_values_this_library_does_not_know() {
     const auto unknown_kind = encoded_error("255", "");
     //= spec/shim/shim.md#error-classification
     //= type=test
-    //# - An error whose kind the shim does not expose MUST be reported as the shim's
+    //# - An error type the shim does not expose MUST be reported as the shim's
     //# own base error type.
     CHECK_THROWS_TYPE(Aws::Esdk::AwsEncryptionSdkException,
                       Aws::Esdk::detail::throw_shim_exception(unknown_kind));
@@ -640,7 +640,7 @@ void test_streaming() {
     // MUST be a non-signing suite to test round-trip here.
     // By default, streamed decrypt refuses a multi-frame signed message.
     //
-    //= spec/shim/esdk-shim.md#encrypt-stream-and-decrypt-stream
+    //= spec/shim/esdk-shim.md#encrypt-decrypt-streams
     //= type=test
     //# - The ESDK shim SHOULD provide streaming encrypt and decrypt operations,
     //# accepting the same inputs as [encrypt](#encrypt-inputs) and
@@ -687,7 +687,7 @@ void test_streaming() {
     //# operation, and returns the operation's result together with any output not
     //# yet returned by a write step.
     auto enc_fin = enc.finish();
-    //= spec/shim/esdk-shim.md#encrypt-stream-and-decrypt-stream
+    //= spec/shim/esdk-shim.md#encrypt-decrypt-streams
     //= type=test
     //# - A successful finish step MUST return the same non-payload outputs as
     //# [encrypt outputs](#encrypt-outputs) or [decrypt outputs](#decrypt-outputs).
@@ -921,7 +921,7 @@ void test_streaming_signed_message_refused() {
     ESDK_CHECK(sdk.decrypt(ciphertext, keyring).plaintext == plaintext);
 
     // By default, streamed decrypt refuses: it releases no plaintext that it cannot yet verify.
-    //= spec/shim/esdk-shim.md#encrypt-stream-and-decrypt-stream
+    //= spec/shim/esdk-shim.md#encrypt-decrypt-streams
     //= type=test
     //# - Streamed decrypt MUST NOT release plaintext the core ESDK would not release,
     //# and the shim MUST surface the core ESDK's refusal to stream a message whose

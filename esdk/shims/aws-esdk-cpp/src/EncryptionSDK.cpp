@@ -185,7 +185,7 @@ std::optional<ShimError> decode_shim_error(std::string_view what) {
         case ::ffi::ShimErrorKind::Throttling: throw ThrottlingException(m, std::move(d));
         case ::ffi::ShimErrorKind::Conflict: throw ConflictException(m, std::move(d));
         //= spec/shim/shim.md#error-classification
-        //# - An error whose kind the shim does not expose MUST be reported as the shim's
+        //# - An error type the shim does not expose MUST be reported as the shim's
         //# own base error type.
         default: throw AwsEncryptionSdkException(std::nullopt, std::move(d), m);
     }
