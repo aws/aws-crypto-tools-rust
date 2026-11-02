@@ -80,7 +80,7 @@ impl GetKeyStoreInfoOutput {
 
     /// The KMS configuration of the key store.
     #[must_use]
-    pub const fn kms_configuration(&self) -> &KmsConfiguration {
+    pub fn kms_configuration(&self) -> &KmsConfiguration {
         &self.kms_configuration
     }
 }
@@ -114,7 +114,7 @@ impl GetKeyStoreInfoOutputBuilder {
 
     /// The key store ID, if set.
     #[must_use]
-    pub const fn get_key_store_id(&self) -> &Option<String> {
+    pub fn get_key_store_id(&self) -> &Option<String> {
         &self.key_store_id
     }
 
@@ -136,7 +136,7 @@ impl GetKeyStoreInfoOutputBuilder {
 
     /// The key store name, if set.
     #[must_use]
-    pub const fn get_key_store_name(&self) -> &Option<String> {
+    pub fn get_key_store_name(&self) -> &Option<String> {
         &self.key_store_name
     }
 
@@ -158,7 +158,7 @@ impl GetKeyStoreInfoOutputBuilder {
 
     /// The logical key store name, if set.
     #[must_use]
-    pub const fn get_logical_key_store_name(&self) -> &Option<String> {
+    pub fn get_logical_key_store_name(&self) -> &Option<String> {
         &self.logical_key_store_name
     }
 
@@ -184,7 +184,7 @@ impl GetKeyStoreInfoOutputBuilder {
 
     /// The grant tokens, if set.
     #[must_use]
-    pub const fn get_grant_tokens(&self) -> &Option<Vec<String>> {
+    pub fn get_grant_tokens(&self) -> &Option<Vec<String>> {
         &self.grant_tokens
     }
 
@@ -206,7 +206,7 @@ impl GetKeyStoreInfoOutputBuilder {
 
     /// The KMS configuration, if set.
     #[must_use]
-    pub const fn get_kms_configuration(&self) -> &Option<KmsConfiguration> {
+    pub fn get_kms_configuration(&self) -> &Option<KmsConfiguration> {
         &self.kms_configuration
     }
 
@@ -309,7 +309,7 @@ impl CreateKeyStoreOutputBuilder {
 
     /// The table ARN, if set.
     #[must_use]
-    pub const fn get_table_arn(&self) -> &Option<String> {
+    pub fn get_table_arn(&self) -> &Option<String> {
         &self.table_arn
     }
 
@@ -381,7 +381,7 @@ impl CreateKeyInputBuilder {
 
     /// The branch key identifier, if set.
     #[must_use]
-    pub const fn get_branch_key_id(&self) -> &Option<String> {
+    pub fn get_branch_key_id(&self) -> &Option<String> {
         &self.branch_key_id
     }
 
@@ -407,7 +407,7 @@ impl CreateKeyInputBuilder {
 
     /// The encryption context, if set.
     #[must_use]
-    pub const fn get_encryption_context(&self) -> &Option<EncryptionContext> {
+    pub fn get_encryption_context(&self) -> &Option<EncryptionContext> {
         &self.encryption_context
     }
 
@@ -476,7 +476,7 @@ impl CreateKeyOutputBuilder {
 
     /// The branch key ID, if set.
     #[must_use]
-    pub const fn get_branch_key_id(&self) -> &Option<String> {
+    pub fn get_branch_key_id(&self) -> &Option<String> {
         &self.branch_key_id
     }
 
@@ -538,7 +538,7 @@ impl VersionKeyInputBuilder {
 
     /// The branch key identifier, if set.
     #[must_use]
-    pub const fn get_branch_key_id(&self) -> &Option<String> {
+    pub fn get_branch_key_id(&self) -> &Option<String> {
         &self.branch_key_id
     }
 
@@ -628,7 +628,7 @@ impl GetActiveBranchKeyInputBuilder {
 
     /// The branch key identifier, if set.
     #[must_use]
-    pub const fn get_branch_key_id(&self) -> &Option<String> {
+    pub fn get_branch_key_id(&self) -> &Option<String> {
         &self.branch_key_id
     }
 
@@ -660,7 +660,7 @@ impl GetActiveBranchKeyOutput {
 
     /// The ACTIVE branch key materials.
     #[must_use]
-    pub const fn branch_key_materials(&self) -> &BranchKeyMaterials {
+    pub fn branch_key_materials(&self) -> &BranchKeyMaterials {
         &self.branch_key_materials
     }
 
@@ -702,7 +702,7 @@ impl GetActiveBranchKeyOutputBuilder {
 
     /// The branch key materials, if set.
     #[must_use]
-    pub const fn get_branch_key_materials(&self) -> &Option<BranchKeyMaterials> {
+    pub fn get_branch_key_materials(&self) -> &Option<BranchKeyMaterials> {
         &self.branch_key_materials
     }
 
@@ -772,7 +772,7 @@ impl GetBranchKeyVersionInputBuilder {
 
     /// The branch key identifier, if set.
     #[must_use]
-    pub const fn get_branch_key_id(&self) -> &Option<String> {
+    pub fn get_branch_key_id(&self) -> &Option<String> {
         &self.branch_key_id
     }
 
@@ -794,7 +794,7 @@ impl GetBranchKeyVersionInputBuilder {
 
     /// The branch key version, if set.
     #[must_use]
-    pub const fn get_branch_key_version(&self) -> &Option<String> {
+    pub fn get_branch_key_version(&self) -> &Option<String> {
         &self.branch_key_version
     }
 
@@ -827,7 +827,7 @@ impl GetBranchKeyVersionOutput {
 
     /// The branch key materials for the requested version.
     #[must_use]
-    pub const fn branch_key_materials(&self) -> &BranchKeyMaterials {
+    pub fn branch_key_materials(&self) -> &BranchKeyMaterials {
         &self.branch_key_materials
     }
 
@@ -869,7 +869,7 @@ impl GetBranchKeyVersionOutputBuilder {
 
     /// The branch key materials, if set.
     #[must_use]
-    pub const fn get_branch_key_materials(&self) -> &Option<BranchKeyMaterials> {
+    pub fn get_branch_key_materials(&self) -> &Option<BranchKeyMaterials> {
         &self.branch_key_materials
     }
 
@@ -931,7 +931,7 @@ impl GetBeaconKeyInputBuilder {
 
     /// The branch key identifier, if set.
     #[must_use]
-    pub const fn get_branch_key_id(&self) -> &Option<String> {
+    pub fn get_branch_key_id(&self) -> &Option<String> {
         &self.branch_key_id
     }
 
@@ -963,7 +963,7 @@ impl GetBeaconKeyOutput {
 
     /// The beacon key materials.
     #[must_use]
-    pub const fn beacon_key_materials(&self) -> &BeaconKeyMaterials {
+    pub fn beacon_key_materials(&self) -> &BeaconKeyMaterials {
         &self.beacon_key_materials
     }
 
@@ -1005,7 +1005,7 @@ impl GetBeaconKeyOutputBuilder {
 
     /// The beacon key materials, if set.
     #[must_use]
-    pub const fn get_beacon_key_materials(&self) -> &Option<BeaconKeyMaterials> {
+    pub fn get_beacon_key_materials(&self) -> &Option<BeaconKeyMaterials> {
         &self.beacon_key_materials
     }
 

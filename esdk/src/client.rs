@@ -66,7 +66,7 @@ pub struct Client {
 impl Client {
     /// Construct a `Client` from a [`Config`].
     #[must_use]
-    pub const fn from_conf(config: Config) -> Self {
+    pub fn from_conf(config: Config) -> Self {
         Self { config }
     }
 
@@ -78,7 +78,7 @@ impl Client {
 
     /// Borrow this client's configuration.
     #[must_use]
-    pub const fn config(&self) -> &Config {
+    pub fn config(&self) -> &Config {
         &self.config
     }
 
@@ -182,13 +182,13 @@ impl Builder {
     //# - On client initialization,
     //# the caller MUST have the option to provide a [commitment policy](#commitment-policy).
     #[must_use]
-    pub const fn commitment_policy(mut self, p: CommitmentPolicy) -> Self {
+    pub fn commitment_policy(mut self, p: CommitmentPolicy) -> Self {
         self.config = self.config.commitment_policy(p);
         self
     }
 
     /// Set or clear the commitment policy from an `Option`.
-    pub const fn set_commitment_policy(
+    pub fn set_commitment_policy(
         &mut self,
         commitment_policy: Option<CommitmentPolicy>,
     ) -> &mut Self {
@@ -201,13 +201,13 @@ impl Builder {
     //# - On client initialization,
     //# the caller MUST have the option to provide a [maximum number of encrypted data keys](#maximum-number-of-encrypted-data-keys).
     #[must_use]
-    pub const fn max_encrypted_data_keys(mut self, n: usize) -> Self {
+    pub fn max_encrypted_data_keys(mut self, n: usize) -> Self {
         self.config = self.config.max_encrypted_data_keys(n);
         self
     }
 
     /// Set or clear the maximum number of encrypted data keys from an `Option`.
-    pub const fn set_max_encrypted_data_keys(
+    pub fn set_max_encrypted_data_keys(
         &mut self,
         max_encrypted_data_keys: Option<usize>,
     ) -> &mut Self {
@@ -219,14 +219,14 @@ impl Builder {
     /// The commitment policy set so far.
     #[must_use]
     #[allow(clippy::ref_option)] // AWS SDK for Rust getter shape
-    pub const fn get_commitment_policy(&self) -> &Option<CommitmentPolicy> {
+    pub fn get_commitment_policy(&self) -> &Option<CommitmentPolicy> {
         self.config.get_commitment_policy()
     }
 
     /// The maximum number of encrypted data keys set so far.
     #[must_use]
     #[allow(clippy::ref_option)] // AWS SDK for Rust getter shape
-    pub const fn get_max_encrypted_data_keys(&self) -> &Option<usize> {
+    pub fn get_max_encrypted_data_keys(&self) -> &Option<usize> {
         self.config.get_max_encrypted_data_keys()
     }
 

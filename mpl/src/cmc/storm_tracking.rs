@@ -432,7 +432,7 @@ impl std::fmt::Debug for StormTrackingCmcBuilder {
 impl StormTrackingCmcBuilder {
     /// Set the maximum number of entries. Defaults to 1000.
     #[must_use]
-    pub const fn entry_capacity(mut self, n: usize) -> Self {
+    pub fn entry_capacity(mut self, n: usize) -> Self {
         self.entry_capacity = Some(n);
         self
     }
@@ -440,7 +440,7 @@ impl StormTrackingCmcBuilder {
     /// Set how many least-recently-used entries each get checks for expired entries to evict.
     /// Defaults to 1.
     #[must_use]
-    pub const fn entry_pruning_tail_size(mut self, n: usize) -> Self {
+    pub fn entry_pruning_tail_size(mut self, n: usize) -> Self {
         self.entry_pruning_tail_size = Some(n);
         self
     }
@@ -448,7 +448,7 @@ impl StormTrackingCmcBuilder {
     /// Set how long before an entry expires the cache sends one caller to refresh it.
     /// Defaults to 10 seconds.
     #[must_use]
-    pub const fn grace_period(mut self, d: Duration) -> Self {
+    pub fn grace_period(mut self, d: Duration) -> Self {
         self.grace_period = Some(d);
         self
     }
@@ -456,7 +456,7 @@ impl StormTrackingCmcBuilder {
     /// Set how long one caller has to refresh an entry before another caller may try.
     /// Defaults to 1 second.
     #[must_use]
-    pub const fn grace_interval(mut self, d: Duration) -> Self {
+    pub fn grace_interval(mut self, d: Duration) -> Self {
         self.grace_interval = Some(d);
         self
     }
@@ -464,7 +464,7 @@ impl StormTrackingCmcBuilder {
     /// Set the maximum number of refreshes in flight at once.
     /// Defaults to 20. Must be at least 1.
     #[must_use]
-    pub const fn fan_out(mut self, n: usize) -> Self {
+    pub fn fan_out(mut self, n: usize) -> Self {
         self.fan_out = Some(n);
         self
     }
@@ -472,7 +472,7 @@ impl StormTrackingCmcBuilder {
     /// Set how long a caller waits for another caller's refresh before failing.
     /// Defaults to 10 seconds.
     #[must_use]
-    pub const fn in_flight_ttl(mut self, d: Duration) -> Self {
+    pub fn in_flight_ttl(mut self, d: Duration) -> Self {
         self.in_flight_ttl = Some(d);
         self
     }
@@ -480,7 +480,7 @@ impl StormTrackingCmcBuilder {
     /// Set how long a waiting caller sleeps between checks of the cache.
     /// Defaults to 20 milliseconds.
     #[must_use]
-    pub const fn sleep(mut self, d: Duration) -> Self {
+    pub fn sleep(mut self, d: Duration) -> Self {
         self.sleep = Some(d);
         self
     }
@@ -488,98 +488,98 @@ impl StormTrackingCmcBuilder {
     /// Set or clear `entry_capacity`, for forwarding an existing `Option`.
     /// `None` applies the default documented on [`entry_capacity`](Self::entry_capacity).
     #[must_use]
-    pub const fn set_entry_capacity(mut self, v: Option<usize>) -> Self {
+    pub fn set_entry_capacity(mut self, v: Option<usize>) -> Self {
         self.entry_capacity = v;
         self
     }
 
     /// The entry capacity, if set.
     #[must_use]
-    pub const fn get_entry_capacity(&self) -> &Option<usize> {
+    pub fn get_entry_capacity(&self) -> &Option<usize> {
         &self.entry_capacity
     }
 
     /// Set or clear `entry_pruning_tail_size`, for forwarding an existing `Option`.
     /// `None` applies the default documented on [`entry_pruning_tail_size`](Self::entry_pruning_tail_size).
     #[must_use]
-    pub const fn set_entry_pruning_tail_size(mut self, v: Option<usize>) -> Self {
+    pub fn set_entry_pruning_tail_size(mut self, v: Option<usize>) -> Self {
         self.entry_pruning_tail_size = v;
         self
     }
 
     /// The entry pruning tail size, if set.
     #[must_use]
-    pub const fn get_entry_pruning_tail_size(&self) -> &Option<usize> {
+    pub fn get_entry_pruning_tail_size(&self) -> &Option<usize> {
         &self.entry_pruning_tail_size
     }
 
     /// Set or clear `grace_period`, for forwarding an existing `Option`.
     /// `None` applies the default documented on [`grace_period`](Self::grace_period).
     #[must_use]
-    pub const fn set_grace_period(mut self, v: Option<Duration>) -> Self {
+    pub fn set_grace_period(mut self, v: Option<Duration>) -> Self {
         self.grace_period = v;
         self
     }
 
     /// The grace period, if set.
     #[must_use]
-    pub const fn get_grace_period(&self) -> &Option<Duration> {
+    pub fn get_grace_period(&self) -> &Option<Duration> {
         &self.grace_period
     }
 
     /// Set or clear `grace_interval`, for forwarding an existing `Option`.
     /// `None` applies the default documented on [`grace_interval`](Self::grace_interval).
     #[must_use]
-    pub const fn set_grace_interval(mut self, v: Option<Duration>) -> Self {
+    pub fn set_grace_interval(mut self, v: Option<Duration>) -> Self {
         self.grace_interval = v;
         self
     }
 
     /// The grace interval, if set.
     #[must_use]
-    pub const fn get_grace_interval(&self) -> &Option<Duration> {
+    pub fn get_grace_interval(&self) -> &Option<Duration> {
         &self.grace_interval
     }
 
     /// Set or clear `fan_out`, for forwarding an existing `Option`.
     /// `None` applies the default documented on [`fan_out`](Self::fan_out).
     #[must_use]
-    pub const fn set_fan_out(mut self, v: Option<usize>) -> Self {
+    pub fn set_fan_out(mut self, v: Option<usize>) -> Self {
         self.fan_out = v;
         self
     }
 
     /// The fan-out, if set.
     #[must_use]
-    pub const fn get_fan_out(&self) -> &Option<usize> {
+    pub fn get_fan_out(&self) -> &Option<usize> {
         &self.fan_out
     }
 
     /// Set or clear `in_flight_ttl`, for forwarding an existing `Option`.
     /// `None` applies the default documented on [`in_flight_ttl`](Self::in_flight_ttl).
     #[must_use]
-    pub const fn set_in_flight_ttl(mut self, v: Option<Duration>) -> Self {
+    pub fn set_in_flight_ttl(mut self, v: Option<Duration>) -> Self {
         self.in_flight_ttl = v;
         self
     }
 
     /// The inflight TTL, if set.
     #[must_use]
-    pub const fn get_in_flight_ttl(&self) -> &Option<Duration> {
+    pub fn get_in_flight_ttl(&self) -> &Option<Duration> {
         &self.in_flight_ttl
     }
 
     /// Set or clear `sleep`, for forwarding an existing `Option`.
     /// `None` applies the default documented on [`sleep`](Self::sleep).
     #[must_use]
-    pub const fn set_sleep(mut self, v: Option<Duration>) -> Self {
+    pub fn set_sleep(mut self, v: Option<Duration>) -> Self {
         self.sleep = v;
         self
     }
 
     /// The sleep duration, if set.
     #[must_use]
-    pub const fn get_sleep(&self) -> &Option<Duration> {
+    pub fn get_sleep(&self) -> &Option<Duration> {
         &self.sleep
     }
 

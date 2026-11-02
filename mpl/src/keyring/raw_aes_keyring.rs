@@ -267,7 +267,7 @@ impl RawAesKeyringBuilder {
 
     /// The key namespace, if set.
     #[must_use]
-    pub const fn get_key_namespace(&self) -> &Option<String> {
+    pub fn get_key_namespace(&self) -> &Option<String> {
         &self.key_namespace
     }
 
@@ -289,7 +289,7 @@ impl RawAesKeyringBuilder {
 
     /// The key name, if set.
     #[must_use]
-    pub const fn get_key_name(&self) -> &Option<String> {
+    pub fn get_key_name(&self) -> &Option<String> {
         &self.key_name
     }
 
@@ -314,14 +314,14 @@ impl RawAesKeyringBuilder {
 
     /// The wrapping key, if set.
     #[must_use]
-    pub const fn get_wrapping_key(&self) -> &Option<Vec<u8>> {
+    pub fn get_wrapping_key(&self) -> &Option<Vec<u8>> {
         &self.wrapping_key
     }
 
     /// Set the wrapping algorithm.
     /// Required.
     #[must_use]
-    pub const fn wrapping_alg(mut self, wrapping_alg: AesWrappingAlg) -> Self {
+    pub fn wrapping_alg(mut self, wrapping_alg: AesWrappingAlg) -> Self {
         self.wrapping_alg = Some(wrapping_alg);
         self
     }
@@ -329,14 +329,14 @@ impl RawAesKeyringBuilder {
     /// Set or clear the wrapping algorithm from an `Option`.
     /// To set a value, use [`Self::wrapping_alg`].
     #[must_use]
-    pub const fn set_wrapping_alg(mut self, wrapping_alg: Option<AesWrappingAlg>) -> Self {
+    pub fn set_wrapping_alg(mut self, wrapping_alg: Option<AesWrappingAlg>) -> Self {
         self.wrapping_alg = wrapping_alg;
         self
     }
 
     /// The wrapping algorithm, if set.
     #[must_use]
-    pub const fn get_wrapping_alg(&self) -> &Option<AesWrappingAlg> {
+    pub fn get_wrapping_alg(&self) -> &Option<AesWrappingAlg> {
         &self.wrapping_alg
     }
 

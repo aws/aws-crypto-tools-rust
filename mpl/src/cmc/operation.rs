@@ -31,7 +31,7 @@ impl PutCacheEntryInput {
 
     /// The entry to store.
     #[must_use]
-    pub const fn entry(&self) -> &CacheEntry {
+    pub fn entry(&self) -> &CacheEntry {
         &self.entry
     }
 
@@ -66,7 +66,7 @@ impl PutCacheEntryInputBuilder {
 
     /// The identifier, if set.
     #[must_use]
-    pub const fn get_identifier(&self) -> &Option<Vec<u8>> {
+    pub fn get_identifier(&self) -> &Option<Vec<u8>> {
         &self.identifier
     }
 
@@ -86,7 +86,7 @@ impl PutCacheEntryInputBuilder {
 
     /// The entry, if set.
     #[must_use]
-    pub const fn get_entry(&self) -> &Option<CacheEntry> {
+    pub fn get_entry(&self) -> &Option<CacheEntry> {
         &self.entry
     }
 
@@ -127,7 +127,7 @@ impl PutCacheEntryOutputBuilder {
     /// # Errors
     ///
     /// Never returns an error.
-    pub const fn build(self) -> Result<PutCacheEntryOutput, Error> {
+    pub fn build(self) -> Result<PutCacheEntryOutput, Error> {
         Ok(PutCacheEntryOutput {})
     }
 }
@@ -182,7 +182,7 @@ impl GetCacheEntryInputBuilder {
 
     /// The identifier, if set.
     #[must_use]
-    pub const fn get_identifier(&self) -> &Option<Vec<u8>> {
+    pub fn get_identifier(&self) -> &Option<Vec<u8>> {
         &self.identifier
     }
 
@@ -215,7 +215,7 @@ impl GetCacheEntryOutput {
 
     /// The cached entry, or `None` on a cache miss.
     #[must_use]
-    pub const fn entry(&self) -> Option<&CacheEntry> {
+    pub fn entry(&self) -> Option<&CacheEntry> {
         self.entry.as_ref()
     }
 
@@ -249,7 +249,7 @@ impl GetCacheEntryOutputBuilder {
 
     /// The entry, if set.
     #[must_use]
-    pub const fn get_entry(&self) -> &Option<CacheEntry> {
+    pub fn get_entry(&self) -> &Option<CacheEntry> {
         &self.entry
     }
 
@@ -313,7 +313,7 @@ impl DeleteCacheEntryInputBuilder {
 
     /// The identifier, if set.
     #[must_use]
-    pub const fn get_identifier(&self) -> &Option<Vec<u8>> {
+    pub fn get_identifier(&self) -> &Option<Vec<u8>> {
         &self.identifier
     }
 
@@ -353,7 +353,7 @@ impl DeleteCacheEntryOutputBuilder {
     /// # Errors
     ///
     /// Never returns an error.
-    pub const fn build(self) -> Result<DeleteCacheEntryOutput, Error> {
+    pub fn build(self) -> Result<DeleteCacheEntryOutput, Error> {
         Ok(DeleteCacheEntryOutput {})
     }
 }
@@ -381,7 +381,7 @@ impl UpdateUsageMetadataInput {
 
     /// The plaintext bytes of the one message being counted against the entry.
     #[must_use]
-    pub const fn bytes_used(&self) -> u64 {
+    pub fn bytes_used(&self) -> u64 {
         self.bytes_used
     }
 }
@@ -410,27 +410,27 @@ impl UpdateUsageMetadataInputBuilder {
 
     /// The identifier, if set.
     #[must_use]
-    pub const fn get_identifier(&self) -> &Option<Vec<u8>> {
+    pub fn get_identifier(&self) -> &Option<Vec<u8>> {
         &self.identifier
     }
 
     /// Set the plaintext bytes of the message. Required.
     #[must_use]
-    pub const fn bytes_used(mut self, bytes_used: u64) -> Self {
+    pub fn bytes_used(mut self, bytes_used: u64) -> Self {
         self.bytes_used = Some(bytes_used);
         self
     }
 
     /// Set or clear the plaintext bytes, for forwarding an existing `Option`.
     #[must_use]
-    pub const fn set_bytes_used(mut self, bytes_used: Option<u64>) -> Self {
+    pub fn set_bytes_used(mut self, bytes_used: Option<u64>) -> Self {
         self.bytes_used = bytes_used;
         self
     }
 
     /// The bytes used, if set.
     #[must_use]
-    pub const fn get_bytes_used(&self) -> &Option<u64> {
+    pub fn get_bytes_used(&self) -> &Option<u64> {
         &self.bytes_used
     }
 
@@ -471,7 +471,7 @@ impl UpdateUsageMetadataOutputBuilder {
     /// # Errors
     ///
     /// Never returns an error.
-    pub const fn build(self) -> Result<UpdateUsageMetadataOutput, Error> {
+    pub fn build(self) -> Result<UpdateUsageMetadataOutput, Error> {
         Ok(UpdateUsageMetadataOutput {})
     }
 }

@@ -220,7 +220,7 @@ impl DynamoDbKeyStoreBuilder {
 
     /// The DynamoDB table name, if set.
     #[must_use]
-    pub const fn get_ddb_table_name(&self) -> &Option<String> {
+    pub fn get_ddb_table_name(&self) -> &Option<String> {
         &self.ddb_table_name
     }
 
@@ -242,7 +242,7 @@ impl DynamoDbKeyStoreBuilder {
 
     /// The logical key store name, if set.
     #[must_use]
-    pub const fn get_logical_key_store_name(&self) -> &Option<String> {
+    pub fn get_logical_key_store_name(&self) -> &Option<String> {
         &self.logical_key_store_name
     }
 
@@ -264,7 +264,7 @@ impl DynamoDbKeyStoreBuilder {
 
     /// The KMS configuration, if set.
     #[must_use]
-    pub const fn get_kms_configuration(&self) -> &Option<KmsConfiguration> {
+    pub fn get_kms_configuration(&self) -> &Option<KmsConfiguration> {
         &self.kms_configuration
     }
 
@@ -286,7 +286,7 @@ impl DynamoDbKeyStoreBuilder {
 
     /// The ID, if set.
     #[must_use]
-    pub const fn get_id(&self) -> &Option<String> {
+    pub fn get_id(&self) -> &Option<String> {
         &self.id
     }
 
@@ -311,7 +311,7 @@ impl DynamoDbKeyStoreBuilder {
 
     /// The grant tokens, if set.
     #[must_use]
-    pub const fn get_grant_tokens(&self) -> &Option<Vec<String>> {
+    pub fn get_grant_tokens(&self) -> &Option<Vec<String>> {
         &self.grant_tokens
     }
 
@@ -334,7 +334,7 @@ impl DynamoDbKeyStoreBuilder {
 
     /// The KMS client, if set.
     #[must_use]
-    pub const fn get_kms_client(&self) -> &Option<KmsClient> {
+    pub fn get_kms_client(&self) -> &Option<KmsClient> {
         &self.kms_client
     }
 
@@ -357,7 +357,7 @@ impl DynamoDbKeyStoreBuilder {
 
     /// The DynamoDB client, if set.
     #[must_use]
-    pub const fn get_ddb_client(&self) -> &Option<DynamoDbClient> {
+    pub fn get_ddb_client(&self) -> &Option<DynamoDbClient> {
         &self.ddb_client
     }
 

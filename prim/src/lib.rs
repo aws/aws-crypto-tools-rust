@@ -58,6 +58,7 @@
     clippy::string_lit_chars_any,
     clippy::tests_outside_test_module,
 )]
+#![allow(clippy::missing_const_for_fn)] // a public const fn can't drop const later without breaking callers
 
 pub mod error;
 

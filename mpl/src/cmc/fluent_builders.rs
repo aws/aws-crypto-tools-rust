@@ -56,7 +56,7 @@ pub struct PutCacheEntryFluentBuilder {
 impl PutCacheEntryFluentBuilder {
     /// The input set so far.
     #[must_use]
-    pub const fn as_input(&self) -> &PutCacheEntryInputBuilder {
+    pub fn as_input(&self) -> &PutCacheEntryInputBuilder {
         &self.inner
     }
 
@@ -74,7 +74,7 @@ impl PutCacheEntryFluentBuilder {
 
     /// The identifier, if set.
     #[must_use]
-    pub const fn get_identifier(&self) -> &Option<Vec<u8>> {
+    pub fn get_identifier(&self) -> &Option<Vec<u8>> {
         self.inner.get_identifier()
     }
 
@@ -92,7 +92,7 @@ impl PutCacheEntryFluentBuilder {
 
     /// The entry, if set.
     #[must_use]
-    pub const fn get_entry(&self) -> &Option<CacheEntry> {
+    pub fn get_entry(&self) -> &Option<CacheEntry> {
         self.inner.get_entry()
     }
 
@@ -121,7 +121,7 @@ pub struct GetCacheEntryFluentBuilder {
 impl GetCacheEntryFluentBuilder {
     /// The input set so far.
     #[must_use]
-    pub const fn as_input(&self) -> &GetCacheEntryInputBuilder {
+    pub fn as_input(&self) -> &GetCacheEntryInputBuilder {
         &self.inner
     }
 
@@ -139,7 +139,7 @@ impl GetCacheEntryFluentBuilder {
 
     /// The identifier, if set.
     #[must_use]
-    pub const fn get_identifier(&self) -> &Option<Vec<u8>> {
+    pub fn get_identifier(&self) -> &Option<Vec<u8>> {
         self.inner.get_identifier()
     }
 
@@ -168,7 +168,7 @@ pub struct DeleteCacheEntryFluentBuilder {
 impl DeleteCacheEntryFluentBuilder {
     /// The input set so far.
     #[must_use]
-    pub const fn as_input(&self) -> &DeleteCacheEntryInputBuilder {
+    pub fn as_input(&self) -> &DeleteCacheEntryInputBuilder {
         &self.inner
     }
 
@@ -186,7 +186,7 @@ impl DeleteCacheEntryFluentBuilder {
 
     /// The identifier, if set.
     #[must_use]
-    pub const fn get_identifier(&self) -> &Option<Vec<u8>> {
+    pub fn get_identifier(&self) -> &Option<Vec<u8>> {
         self.inner.get_identifier()
     }
 
@@ -215,7 +215,7 @@ pub struct UpdateUsageMetadataFluentBuilder {
 impl UpdateUsageMetadataFluentBuilder {
     /// The input set so far.
     #[must_use]
-    pub const fn as_input(&self) -> &UpdateUsageMetadataInputBuilder {
+    pub fn as_input(&self) -> &UpdateUsageMetadataInputBuilder {
         &self.inner
     }
 
@@ -233,7 +233,7 @@ impl UpdateUsageMetadataFluentBuilder {
 
     /// The identifier, if set.
     #[must_use]
-    pub const fn get_identifier(&self) -> &Option<Vec<u8>> {
+    pub fn get_identifier(&self) -> &Option<Vec<u8>> {
         self.inner.get_identifier()
     }
 
@@ -251,7 +251,7 @@ impl UpdateUsageMetadataFluentBuilder {
 
     /// The bytes used, if set.
     #[must_use]
-    pub const fn get_bytes_used(&self) -> &Option<u64> {
+    pub fn get_bytes_used(&self) -> &Option<u64> {
         self.inner.get_bytes_used()
     }
 

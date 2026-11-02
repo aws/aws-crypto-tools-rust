@@ -79,7 +79,7 @@ impl EncryptedDataKeyBuilder {
 
     /// The key provider ID, if set.
     #[must_use]
-    pub const fn get_key_provider_id(&self) -> &Option<String> {
+    pub fn get_key_provider_id(&self) -> &Option<String> {
         &self.key_provider_id
     }
 
@@ -101,7 +101,7 @@ impl EncryptedDataKeyBuilder {
 
     /// The key provider info, if set.
     #[must_use]
-    pub const fn get_key_provider_info(&self) -> &Option<Vec<u8>> {
+    pub fn get_key_provider_info(&self) -> &Option<Vec<u8>> {
         &self.key_provider_info
     }
 
@@ -123,7 +123,7 @@ impl EncryptedDataKeyBuilder {
 
     /// The ciphertext, if set.
     #[must_use]
-    pub const fn get_ciphertext(&self) -> &Option<Vec<u8>> {
+    pub fn get_ciphertext(&self) -> &Option<Vec<u8>> {
         &self.ciphertext
     }
 

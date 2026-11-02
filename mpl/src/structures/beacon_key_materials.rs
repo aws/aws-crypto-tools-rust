@@ -37,7 +37,7 @@ impl BeaconKeyMaterials {
 
     /// The custom encryption context of the beacon key.
     #[must_use]
-    pub const fn encryption_context(&self) -> &EncryptionContext {
+    pub fn encryption_context(&self) -> &EncryptionContext {
         &self.encryption_context
     }
 
@@ -49,7 +49,7 @@ impl BeaconKeyMaterials {
 
     /// The HMAC keys derived from the beacon key, by name, if present.
     #[must_use]
-    pub const fn hmac_keys(&self) -> Option<&BTreeMap<String, Vec<u8>>> {
+    pub fn hmac_keys(&self) -> Option<&BTreeMap<String, Vec<u8>>> {
         self.hmac_keys.as_ref()
     }
 }
@@ -93,7 +93,7 @@ impl BeaconKeyMaterialsBuilder {
 
     /// The beacon key ID, if set.
     #[must_use]
-    pub const fn get_beacon_key_id(&self) -> &Option<String> {
+    pub fn get_beacon_key_id(&self) -> &Option<String> {
         &self.beacon_key_id
     }
 
@@ -119,7 +119,7 @@ impl BeaconKeyMaterialsBuilder {
 
     /// The encryption context, if set.
     #[must_use]
-    pub const fn get_encryption_context(&self) -> &Option<EncryptionContext> {
+    pub fn get_encryption_context(&self) -> &Option<EncryptionContext> {
         &self.encryption_context
     }
 
@@ -140,7 +140,7 @@ impl BeaconKeyMaterialsBuilder {
 
     /// The beacon key, if set.
     #[must_use]
-    pub const fn get_beacon_key(&self) -> &Option<Vec<u8>> {
+    pub fn get_beacon_key(&self) -> &Option<Vec<u8>> {
         &self.beacon_key
     }
 
@@ -165,7 +165,7 @@ impl BeaconKeyMaterialsBuilder {
 
     /// The HMAC keys, if set.
     #[must_use]
-    pub const fn get_hmac_keys(&self) -> &Option<BTreeMap<String, Vec<u8>>> {
+    pub fn get_hmac_keys(&self) -> &Option<BTreeMap<String, Vec<u8>>> {
         &self.hmac_keys
     }
 

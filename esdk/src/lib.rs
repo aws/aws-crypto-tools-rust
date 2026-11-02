@@ -193,6 +193,7 @@
 #![allow(clippy::redundant_pub_crate)] // false positive: conflicts with unreachable_pub
 #![allow(clippy::too_many_lines)] // disagree: arbitrary line-count threshold
 #![allow(unused_crate_dependencies)] // false positives across workspace dev-deps
+#![allow(clippy::missing_const_for_fn)] // a public const fn can't drop const later without breaking callers
 
 mod builder;
 pub mod client;

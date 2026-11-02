@@ -48,7 +48,7 @@ macro_rules! member {
         $(#[doc = $doc])+
         #[must_use]
         #[allow(clippy::ref_option, clippy::ref_option_ref)] // AWS SDK for Rust getter shape
-        pub const fn $get(&self) -> &Option<$ty> {
+        pub fn $get(&self) -> &Option<$ty> {
             self.inner.$get()
         }
     };
@@ -71,7 +71,7 @@ macro_rules! member {
         $(#[doc = $doc])+
         #[must_use]
         #[allow(clippy::ref_option, clippy::ref_option_ref)] // AWS SDK for Rust getter shape
-        pub const fn $get(&self) -> &Option<$ty> {
+        pub fn $get(&self) -> &Option<$ty> {
             self.inner.$get()
         }
     };
@@ -99,7 +99,7 @@ macro_rules! stream_member {
         $(#[doc = $doc])+
         #[must_use]
         #[allow(clippy::ref_option)] // AWS SDK for Rust getter shape
-        pub const fn $get(&self) -> &Option<$ty<'a>> {
+        pub fn $get(&self) -> &Option<$ty<'a>> {
             &self.$name
         }
     };

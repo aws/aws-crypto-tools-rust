@@ -159,7 +159,7 @@ impl KmsKeyArnBuilder {
     /// The KMS key ARN set on this builder, if any.
     #[must_use]
     #[allow(clippy::ref_option)] // AWS SDK for Rust getter shape
-    pub const fn get_arn(&self) -> &Option<String> {
+    pub fn get_arn(&self) -> &Option<String> {
         &self.arn
     }
 
@@ -224,7 +224,7 @@ impl KmsMrKeyArnBuilder {
     /// The KMS key ARN set on this builder, if any.
     #[must_use]
     #[allow(clippy::ref_option)] // AWS SDK for Rust getter shape
-    pub const fn get_arn(&self) -> &Option<String> {
+    pub fn get_arn(&self) -> &Option<String> {
         &self.arn
     }
 
@@ -264,7 +264,7 @@ impl DiscoveryBuilder {
     /// # Errors
     ///
     /// Never returns an error.
-    pub const fn build(self) -> Result<Discovery, Error> {
+    pub fn build(self) -> Result<Discovery, Error> {
         Ok(Discovery {})
     }
 }
@@ -315,7 +315,7 @@ impl MrDiscoveryBuilder {
     /// The region set on this builder, if any.
     #[must_use]
     #[allow(clippy::ref_option)] // AWS SDK for Rust getter shape
-    pub const fn get_region(&self) -> &Option<String> {
+    pub fn get_region(&self) -> &Option<String> {
         &self.region
     }
 

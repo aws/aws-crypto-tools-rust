@@ -50,13 +50,13 @@ impl UsageMetadata {
 
     /// Number of messages encrypted by the cached encryption materials.
     #[must_use]
-    pub const fn messages_used(&self) -> u64 {
+    pub fn messages_used(&self) -> u64 {
         self.messages_used
     }
 
     /// Number of plaintext bytes encrypted by the cached encryption materials.
     #[must_use]
-    pub const fn bytes_used(&self) -> u64 {
+    pub fn bytes_used(&self) -> u64 {
         self.bytes_used
     }
 }
@@ -71,7 +71,7 @@ pub struct UsageMetadataBuilder {
 impl UsageMetadataBuilder {
     /// Set the number of messages encrypted. Defaults to 0.
     #[must_use]
-    pub const fn messages_used(mut self, messages_used: u64) -> Self {
+    pub fn messages_used(mut self, messages_used: u64) -> Self {
         self.messages_used = Some(messages_used);
         self
     }
@@ -79,20 +79,20 @@ impl UsageMetadataBuilder {
     /// Set or clear the message count, for forwarding an existing `Option`.
     /// `None` applies the default documented on [`messages_used`](Self::messages_used).
     #[must_use]
-    pub const fn set_messages_used(mut self, messages_used: Option<u64>) -> Self {
+    pub fn set_messages_used(mut self, messages_used: Option<u64>) -> Self {
         self.messages_used = messages_used;
         self
     }
 
     /// The messages used, if set.
     #[must_use]
-    pub const fn get_messages_used(&self) -> &Option<u64> {
+    pub fn get_messages_used(&self) -> &Option<u64> {
         &self.messages_used
     }
 
     /// Set the number of plaintext bytes encrypted. Defaults to 0.
     #[must_use]
-    pub const fn bytes_used(mut self, bytes_used: u64) -> Self {
+    pub fn bytes_used(mut self, bytes_used: u64) -> Self {
         self.bytes_used = Some(bytes_used);
         self
     }
@@ -100,14 +100,14 @@ impl UsageMetadataBuilder {
     /// Set or clear the byte count, for forwarding an existing `Option`.
     /// `None` applies the default documented on [`bytes_used`](Self::bytes_used).
     #[must_use]
-    pub const fn set_bytes_used(mut self, bytes_used: Option<u64>) -> Self {
+    pub fn set_bytes_used(mut self, bytes_used: Option<u64>) -> Self {
         self.bytes_used = bytes_used;
         self
     }
 
     /// The bytes used, if set.
     #[must_use]
-    pub const fn get_bytes_used(&self) -> &Option<u64> {
+    pub fn get_bytes_used(&self) -> &Option<u64> {
         &self.bytes_used
     }
 
@@ -247,53 +247,53 @@ impl CacheEntryBuilder {
 
     /// The materials, if set.
     #[must_use]
-    pub const fn get_materials(&self) -> &Option<CachedMaterials> {
+    pub fn get_materials(&self) -> &Option<CachedMaterials> {
         &self.materials
     }
 
     /// Set the creation time. Required.
     #[must_use]
-    pub const fn creation_time(mut self, creation_time: SystemTime) -> Self {
+    pub fn creation_time(mut self, creation_time: SystemTime) -> Self {
         self.creation_time = Some(creation_time);
         self
     }
 
     /// Set or clear the creation time, for forwarding an existing `Option`.
     #[must_use]
-    pub const fn set_creation_time(mut self, creation_time: Option<SystemTime>) -> Self {
+    pub fn set_creation_time(mut self, creation_time: Option<SystemTime>) -> Self {
         self.creation_time = creation_time;
         self
     }
 
     /// The creation time, if set.
     #[must_use]
-    pub const fn get_creation_time(&self) -> &Option<SystemTime> {
+    pub fn get_creation_time(&self) -> &Option<SystemTime> {
         &self.creation_time
     }
 
     /// Set the expiry time. Required.
     #[must_use]
-    pub const fn expiry_time(mut self, expiry_time: SystemTime) -> Self {
+    pub fn expiry_time(mut self, expiry_time: SystemTime) -> Self {
         self.expiry_time = Some(expiry_time);
         self
     }
 
     /// Set or clear the expiry time, for forwarding an existing `Option`.
     #[must_use]
-    pub const fn set_expiry_time(mut self, expiry_time: Option<SystemTime>) -> Self {
+    pub fn set_expiry_time(mut self, expiry_time: Option<SystemTime>) -> Self {
         self.expiry_time = expiry_time;
         self
     }
 
     /// The expiry time, if set.
     #[must_use]
-    pub const fn get_expiry_time(&self) -> &Option<SystemTime> {
+    pub fn get_expiry_time(&self) -> &Option<SystemTime> {
         &self.expiry_time
     }
 
     /// Set the usage metadata. Defaults to zero messages and zero bytes.
     #[must_use]
-    pub const fn usage_metadata(mut self, usage_metadata: UsageMetadata) -> Self {
+    pub fn usage_metadata(mut self, usage_metadata: UsageMetadata) -> Self {
         self.usage_metadata = Some(usage_metadata);
         self
     }
@@ -301,14 +301,14 @@ impl CacheEntryBuilder {
     /// Set or clear the usage metadata, for forwarding an existing `Option`.
     /// `None` applies the default documented on [`usage_metadata`](Self::usage_metadata).
     #[must_use]
-    pub const fn set_usage_metadata(mut self, usage_metadata: Option<UsageMetadata>) -> Self {
+    pub fn set_usage_metadata(mut self, usage_metadata: Option<UsageMetadata>) -> Self {
         self.usage_metadata = usage_metadata;
         self
     }
 
     /// The usage metadata, if set.
     #[must_use]
-    pub const fn get_usage_metadata(&self) -> &Option<UsageMetadata> {
+    pub fn get_usage_metadata(&self) -> &Option<UsageMetadata> {
         &self.usage_metadata
     }
 

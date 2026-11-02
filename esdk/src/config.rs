@@ -53,7 +53,7 @@ impl Config {
 
     /// A builder preloaded with this config's values.
     #[must_use]
-    pub const fn to_builder(&self) -> Builder {
+    pub fn to_builder(&self) -> Builder {
         Builder {
             commitment_policy: Some(self.commitment_policy),
             max_encrypted_data_keys: self.max_encrypted_data_keys(),
@@ -62,17 +62,14 @@ impl Config {
 
     /// The commitment policy applied to every operation.
     #[must_use]
-    pub const fn commitment_policy(&self) -> CommitmentPolicy {
+    pub fn commitment_policy(&self) -> CommitmentPolicy {
         self.commitment_policy
     }
 
     /// The maximum number of encrypted data keys per message, if capped.
     #[must_use]
-    pub const fn max_encrypted_data_keys(&self) -> Option<usize> {
-        match self.max_encrypted_data_keys {
-            Some(n) => Some(n.get()),
-            None => None,
-        }
+    pub fn max_encrypted_data_keys(&self) -> Option<usize> {
+        self.max_encrypted_data_keys.map(NonZeroUsize::get)
     }
 }
 
@@ -87,13 +84,13 @@ pub struct Builder {
 impl Builder {
     /// Set the commitment policy.
     #[must_use]
-    pub const fn commitment_policy(mut self, commitment_policy: CommitmentPolicy) -> Self {
+    pub fn commitment_policy(mut self, commitment_policy: CommitmentPolicy) -> Self {
         self.commitment_policy = Some(commitment_policy);
         self
     }
 
     /// Set or clear the commitment policy from an `Option`.
-    pub const fn set_commitment_policy(
+    pub fn set_commitment_policy(
         &mut self,
         commitment_policy: Option<CommitmentPolicy>,
     ) -> &mut Self {
@@ -104,13 +101,13 @@ impl Builder {
     /// Set the maximum number of encrypted data keys per message.
     /// It must be greater than 0.
     #[must_use]
-    pub const fn max_encrypted_data_keys(mut self, max_encrypted_data_keys: usize) -> Self {
+    pub fn max_encrypted_data_keys(mut self, max_encrypted_data_keys: usize) -> Self {
         self.max_encrypted_data_keys = Some(max_encrypted_data_keys);
         self
     }
 
     /// Set or clear the maximum number of encrypted data keys from an `Option`.
-    pub const fn set_max_encrypted_data_keys(
+    pub fn set_max_encrypted_data_keys(
         &mut self,
         max_encrypted_data_keys: Option<usize>,
     ) -> &mut Self {
@@ -121,14 +118,14 @@ impl Builder {
     /// The commitment policy set so far.
     #[must_use]
     #[allow(clippy::ref_option)] // AWS SDK for Rust getter shape
-    pub const fn get_commitment_policy(&self) -> &Option<CommitmentPolicy> {
+    pub fn get_commitment_policy(&self) -> &Option<CommitmentPolicy> {
         &self.commitment_policy
     }
 
     /// The maximum number of encrypted data keys set so far.
     #[must_use]
     #[allow(clippy::ref_option)] // AWS SDK for Rust getter shape
-    pub const fn get_max_encrypted_data_keys(&self) -> &Option<usize> {
+    pub fn get_max_encrypted_data_keys(&self) -> &Option<usize> {
         &self.max_encrypted_data_keys
     }
 

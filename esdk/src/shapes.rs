@@ -183,13 +183,13 @@ macro_rules! output_bytes {
 
             /// The number of bytes.
             #[must_use]
-            pub const fn len(&self) -> usize {
+            pub fn len(&self) -> usize {
                 self.0.len()
             }
 
             /// Whether there are no bytes.
             #[must_use]
-            pub const fn is_empty(&self) -> bool {
+            pub fn is_empty(&self) -> bool {
                 self.0.is_empty()
             }
         }
@@ -300,19 +300,19 @@ pub struct EncryptOutput {
 impl EncryptOutput {
     /// The algorithm suite the message is encrypted with.
     #[must_use]
-    pub const fn algorithm_suite_id(&self) -> AlgorithmSuiteId {
+    pub fn algorithm_suite_id(&self) -> AlgorithmSuiteId {
         self.algorithm_suite_id
     }
 
     /// The encryption context bound to the message.
     #[must_use]
-    pub const fn encryption_context(&self) -> &EncryptionContext {
+    pub fn encryption_context(&self) -> &EncryptionContext {
         &self.encryption_context
     }
 
     /// The encrypted message bytes.
     #[must_use]
-    pub const fn ciphertext(&self) -> &Ciphertext {
+    pub fn ciphertext(&self) -> &Ciphertext {
         &self.ciphertext
     }
 
@@ -335,13 +335,13 @@ pub struct EncryptStreamOutput {
 impl EncryptStreamOutput {
     /// The algorithm suite the message is encrypted with.
     #[must_use]
-    pub const fn algorithm_suite_id(&self) -> AlgorithmSuiteId {
+    pub fn algorithm_suite_id(&self) -> AlgorithmSuiteId {
         self.algorithm_suite_id
     }
 
     /// The encryption context bound to the message.
     #[must_use]
-    pub const fn encryption_context(&self) -> &EncryptionContext {
+    pub fn encryption_context(&self) -> &EncryptionContext {
         &self.encryption_context
     }
 }
@@ -364,19 +364,19 @@ pub struct DecryptOutput {
 impl DecryptOutput {
     /// The algorithm suite the message is encrypted with.
     #[must_use]
-    pub const fn algorithm_suite_id(&self) -> AlgorithmSuiteId {
+    pub fn algorithm_suite_id(&self) -> AlgorithmSuiteId {
         self.algorithm_suite_id
     }
 
     /// The encryption context bound to the message.
     #[must_use]
-    pub const fn encryption_context(&self) -> &EncryptionContext {
+    pub fn encryption_context(&self) -> &EncryptionContext {
         &self.encryption_context
     }
 
     /// The decrypted plaintext.
     #[must_use]
-    pub const fn plaintext(&self) -> &Plaintext {
+    pub fn plaintext(&self) -> &Plaintext {
         &self.plaintext
     }
 
@@ -399,13 +399,13 @@ pub struct DecryptStreamOutput {
 impl DecryptStreamOutput {
     /// The algorithm suite the message is encrypted with.
     #[must_use]
-    pub const fn algorithm_suite_id(&self) -> AlgorithmSuiteId {
+    pub fn algorithm_suite_id(&self) -> AlgorithmSuiteId {
         self.algorithm_suite_id
     }
 
     /// The encryption context bound to the message.
     #[must_use]
-    pub const fn encryption_context(&self) -> &EncryptionContext {
+    pub fn encryption_context(&self) -> &EncryptionContext {
         &self.encryption_context
     }
 }

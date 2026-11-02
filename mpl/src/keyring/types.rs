@@ -23,7 +23,7 @@ impl OnEncryptInput {
 
     /// The encryption materials to add a data key to.
     #[must_use]
-    pub const fn materials(&self) -> &EncryptionMaterials {
+    pub fn materials(&self) -> &EncryptionMaterials {
         &self.materials
     }
 
@@ -59,7 +59,7 @@ impl OnEncryptInputBuilder {
 
     /// The materials, if set.
     #[must_use]
-    pub const fn get_materials(&self) -> &Option<EncryptionMaterials> {
+    pub fn get_materials(&self) -> &Option<EncryptionMaterials> {
         &self.materials
     }
 
@@ -91,7 +91,7 @@ impl OnEncryptOutput {
 
     /// The encryption materials with the keyring's data key added.
     #[must_use]
-    pub const fn materials(&self) -> &EncryptionMaterials {
+    pub fn materials(&self) -> &EncryptionMaterials {
         &self.materials
     }
 
@@ -127,7 +127,7 @@ impl OnEncryptOutputBuilder {
 
     /// The materials, if set.
     #[must_use]
-    pub const fn get_materials(&self) -> &Option<EncryptionMaterials> {
+    pub fn get_materials(&self) -> &Option<EncryptionMaterials> {
         &self.materials
     }
 
@@ -160,7 +160,7 @@ impl OnDecryptInput {
 
     /// The decryption materials to add the plaintext data key to.
     #[must_use]
-    pub const fn materials(&self) -> &DecryptionMaterials {
+    pub fn materials(&self) -> &DecryptionMaterials {
         &self.materials
     }
 
@@ -209,7 +209,7 @@ impl OnDecryptInputBuilder {
 
     /// The materials, if set.
     #[must_use]
-    pub const fn get_materials(&self) -> &Option<DecryptionMaterials> {
+    pub fn get_materials(&self) -> &Option<DecryptionMaterials> {
         &self.materials
     }
 
@@ -238,7 +238,7 @@ impl OnDecryptInputBuilder {
 
     /// The encrypted data keys, if set.
     #[must_use]
-    pub const fn get_encrypted_data_keys(&self) -> &Option<Vec<EncryptedDataKey>> {
+    pub fn get_encrypted_data_keys(&self) -> &Option<Vec<EncryptedDataKey>> {
         &self.encrypted_data_keys
     }
 
@@ -271,7 +271,7 @@ impl OnDecryptOutput {
 
     /// The decryption materials with the plaintext data key added.
     #[must_use]
-    pub const fn materials(&self) -> &DecryptionMaterials {
+    pub fn materials(&self) -> &DecryptionMaterials {
         &self.materials
     }
 
@@ -307,7 +307,7 @@ impl OnDecryptOutputBuilder {
 
     /// The materials, if set.
     #[must_use]
-    pub const fn get_materials(&self) -> &Option<DecryptionMaterials> {
+    pub fn get_materials(&self) -> &Option<DecryptionMaterials> {
         &self.materials
     }
 

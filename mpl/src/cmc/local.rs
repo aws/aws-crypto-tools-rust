@@ -205,28 +205,28 @@ impl LocalCmcBuilder {
     /// With a capacity of 0 the cache stores nothing:
     /// `put` does nothing and `get` returns `None`.
     #[must_use]
-    pub const fn entry_capacity(mut self, n: usize) -> Self {
+    pub fn entry_capacity(mut self, n: usize) -> Self {
         self.entry_capacity = Some(n);
         self
     }
 
     /// Set or clear the maximum number of entries, for forwarding an existing `Option`.
     #[must_use]
-    pub const fn set_entry_capacity(mut self, n: Option<usize>) -> Self {
+    pub fn set_entry_capacity(mut self, n: Option<usize>) -> Self {
         self.entry_capacity = n;
         self
     }
 
     /// The entry capacity, if set.
     #[must_use]
-    pub const fn get_entry_capacity(&self) -> &Option<usize> {
+    pub fn get_entry_capacity(&self) -> &Option<usize> {
         &self.entry_capacity
     }
 
     /// Set how many least-recently-used entries each get checks for expired entries to evict.
     /// Defaults to 1.
     #[must_use]
-    pub const fn entry_pruning_tail_size(mut self, n: usize) -> Self {
+    pub fn entry_pruning_tail_size(mut self, n: usize) -> Self {
         self.entry_pruning_tail_size = Some(n);
         self
     }
@@ -234,14 +234,14 @@ impl LocalCmcBuilder {
     /// Set or clear `entry_pruning_tail_size`, for forwarding an existing `Option`.
     /// `None` applies the default documented on [`entry_pruning_tail_size`](Self::entry_pruning_tail_size).
     #[must_use]
-    pub const fn set_entry_pruning_tail_size(mut self, n: Option<usize>) -> Self {
+    pub fn set_entry_pruning_tail_size(mut self, n: Option<usize>) -> Self {
         self.entry_pruning_tail_size = n;
         self
     }
 
     /// The entry pruning tail size, if set.
     #[must_use]
-    pub const fn get_entry_pruning_tail_size(&self) -> &Option<usize> {
+    pub fn get_entry_pruning_tail_size(&self) -> &Option<usize> {
         &self.entry_pruning_tail_size
     }
 

@@ -45,7 +45,7 @@ impl GetBranchKeyIdInput {
 
     /// The encryption context of the message being encrypted or decrypted.
     #[must_use]
-    pub const fn encryption_context(&self) -> &EncryptionContext {
+    pub fn encryption_context(&self) -> &EncryptionContext {
         &self.encryption_context
     }
 }
@@ -79,7 +79,7 @@ impl GetBranchKeyIdInputBuilder {
 
     /// The encryption context, if set.
     #[must_use]
-    pub const fn get_encryption_context(&self) -> &Option<EncryptionContext> {
+    pub fn get_encryption_context(&self) -> &Option<EncryptionContext> {
         &self.encryption_context
     }
 
@@ -147,7 +147,7 @@ impl GetBranchKeyIdOutputBuilder {
 
     /// The branch key ID, if set.
     #[must_use]
-    pub const fn get_branch_key_id(&self) -> &Option<String> {
+    pub fn get_branch_key_id(&self) -> &Option<String> {
         &self.branch_key_id
     }
 
@@ -224,7 +224,7 @@ pub struct GetBranchKeyIdFluentBuilder {
 impl GetBranchKeyIdFluentBuilder {
     /// The input set so far.
     #[must_use]
-    pub const fn as_input(&self) -> &GetBranchKeyIdInputBuilder {
+    pub fn as_input(&self) -> &GetBranchKeyIdInputBuilder {
         &self.inner
     }
 
@@ -246,7 +246,7 @@ impl GetBranchKeyIdFluentBuilder {
 
     /// The encryption context, if set.
     #[must_use]
-    pub const fn get_encryption_context(&self) -> &Option<EncryptionContext> {
+    pub fn get_encryption_context(&self) -> &Option<EncryptionContext> {
         self.inner.get_encryption_context()
     }
 
@@ -398,7 +398,7 @@ impl HierarchicalKeyringBuilder {
 
     /// The key store, if set.
     #[must_use]
-    pub const fn get_key_store(&self) -> &Option<key_store::SharedKeyStore> {
+    pub fn get_key_store(&self) -> &Option<key_store::SharedKeyStore> {
         &self.key_store
     }
 
@@ -420,7 +420,7 @@ impl HierarchicalKeyringBuilder {
 
     /// The TTL, if set.
     #[must_use]
-    pub const fn get_ttl(&self) -> &Option<Duration> {
+    pub fn get_ttl(&self) -> &Option<Duration> {
         &self.ttl
     }
 
@@ -442,7 +442,7 @@ impl HierarchicalKeyringBuilder {
 
     /// The branch key ID, if set.
     #[must_use]
-    pub const fn get_branch_key_id(&self) -> &Option<String> {
+    pub fn get_branch_key_id(&self) -> &Option<String> {
         &self.branch_key_id
     }
 
@@ -470,7 +470,7 @@ impl HierarchicalKeyringBuilder {
 
     /// The branch key ID supplier, if set.
     #[must_use]
-    pub const fn get_branch_key_id_supplier(&self) -> &Option<SharedBranchKeyIdSupplier> {
+    pub fn get_branch_key_id_supplier(&self) -> &Option<SharedBranchKeyIdSupplier> {
         &self.branch_key_id_supplier
     }
 
@@ -497,7 +497,7 @@ impl HierarchicalKeyringBuilder {
 
     /// The cache, if set.
     #[must_use]
-    pub const fn get_cache(&self) -> &Option<SharedCmc> {
+    pub fn get_cache(&self) -> &Option<SharedCmc> {
         &self.cache
     }
 
@@ -519,7 +519,7 @@ impl HierarchicalKeyringBuilder {
 
     /// The partition ID, if set.
     #[must_use]
-    pub const fn get_partition_id(&self) -> &Option<String> {
+    pub fn get_partition_id(&self) -> &Option<String> {
         &self.partition_id
     }
 
