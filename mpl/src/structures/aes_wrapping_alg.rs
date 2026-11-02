@@ -22,7 +22,7 @@ impl AesWrappingAlg {
     /// The wrapping key length this algorithm needs, in bytes.
     #[must_use]
     pub fn key_length(self) -> usize {
-        usize::from(self.primitive().key_len())
+        self.primitive().key_length()
     }
 
     /// The primitive that implements this algorithm.

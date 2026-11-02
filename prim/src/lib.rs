@@ -143,8 +143,8 @@ pub enum AesGcm {
 
 impl AesGcm {
     #[must_use]
-    /// Return key length associated with the algorithm
-    pub const fn key_len(&self) -> u8 {
+    /// The key length, in bytes, for this algorithm.
+    pub const fn key_length(&self) -> usize {
         match self {
             Self::Aes128Gcm => 16,
             Self::Aes192Gcm => 24,
