@@ -1,8 +1,7 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! `describe_encrypted_data_keys` and `describe_header_encrypted_data_keys`, on headers built
-//! byte by byte.
+//! `describe_encrypted_data_keys` and `describe_header_encrypted_data_keys`, on headers built byte by byte.
 
 use std::collections::HashMap;
 
@@ -13,8 +12,8 @@ use aws_db_esdk::{
     describe_header_encrypted_data_keys,
 };
 
-/// The Dafny `testAwsKmsHDataKey` ciphertext; it holds branch key version
-/// `155b7a3d-7625-4826-4302-113d1179075a`.
+/// The Dafny `testAwsKmsHDataKey` ciphertext.
+/// It holds branch key version `155b7a3d-7625-4826-4302-113d1179075a`.
 const HIERARCHY_CIPHERTEXT: [u8; 140] = [
     64, 92, 115, 7, 85, 121, 112, 79, 69, 12, 82, 25, 67, 34, 11, 66, 93, 45, 40, 23, 90, 61, 16,
     28, 59, 114, 52, 122, 50, 23, 11, 101, 48, 53, 30, 120, 51, 74, 77, 53, 57, 99, 53, 13, 30, 21,
@@ -45,8 +44,8 @@ fn header(flavor: u8, edks: &[(&str, &[u8], &[u8])]) -> Vec<u8> {
     versioned_header(1, flavor, edks)
 }
 
-/// A header with `version`, `flavor` and `edks` (provider id, provider info, ciphertext), a
-/// two-attribute legend, the encryption context `{abc: def}`, and an arbitrary commitment.
+/// A header with `version`, `flavor`, and `edks` (provider id, provider info, ciphertext),
+/// a two-attribute legend, the encryption context `{abc: def}`, and an arbitrary commitment.
 fn versioned_header(version: u8, flavor: u8, edks: &[(&str, &[u8], &[u8])]) -> Vec<u8> {
     let mut out = vec![version, flavor];
     out.extend_from_slice(&[7; 32]);
@@ -91,7 +90,7 @@ fn accepts_a_binary_header_or_an_encrypted_item() {
     //# This operation MUST take in either of the following:
     assert_eq!(from_header, from_item);
     assert_eq!(from_header.len(), 2);
-    // A version-2 header is described the same way.
+    // Describe reads a version-2 header the same way.
     let v2 = versioned_header(2, 1, &[KMS_EDK, HIERARCHY_EDK]);
     assert_eq!(
         describe_header_encrypted_data_keys(&v2).unwrap(),
@@ -123,7 +122,7 @@ fn item_header_is_read_only_from_binary_aws_dbe_head() {
         "partition_key".to_owned(),
         AttributeValue::S("id-1".to_owned()),
     );
-    // A binary attribute with another name must not be taken for the header.
+    // Describe must not read a binary attribute with another name as the header.
     item.insert(
         "aws_dbe_foot".to_owned(),
         AttributeValue::B(Blob::new(header(1, &[HIERARCHY_EDK]))),
@@ -137,7 +136,7 @@ fn item_header_is_read_only_from_binary_aws_dbe_head() {
         describe_header_encrypted_data_keys(&bytes).unwrap()
     );
 
-    // An item with no binary aws_dbe_head is rejected.
+    // Describe rejects an item with no binary aws_dbe_head.
     let missing = HashMap::from([(
         "partition_key".to_owned(),
         AttributeValue::S("id".to_owned()),
@@ -240,8 +239,8 @@ fn hierarchy_branch_key_version_is_parsed_from_ciphertext() {
         Some(HIERARCHY_VERSION)
     );
 
-    // The version is bytes 76..92 of the ciphertext: after the 48-byte wrapped data key, the
-    // 16-byte salt, and the 12-byte IV.
+    // The version is bytes 76..92 of the ciphertext:
+    // after the 48-byte wrapped data key, the 16-byte salt, and the 12-byte IV.
     let mut ciphertext = [0u8; 48 + 44];
     ciphertext[76..92].copy_from_slice(&[0xab; 16]);
     let edk = ("aws-kms-hierarchy", b"id".as_slice(), ciphertext.as_slice());
@@ -251,8 +250,8 @@ fn hierarchy_branch_key_version_is_parsed_from_ciphertext() {
         Some("abababab-abab-abab-abab-abababababab")
     );
 
-    // A ciphertext too short for the wrapped data key, or for the version, is a
-    // Serialization error rather than a panic or a garbage version.
+    // A ciphertext too short for the wrapped data key or for the version is a Serialization error.
+    // Describe must not panic or return a garbage version.
     for len in [40, 48 + 28 + 8] {
         let ciphertext = vec![0u8; len];
         let edk = ("aws-kms-hierarchy", b"id".as_slice(), ciphertext.as_slice());

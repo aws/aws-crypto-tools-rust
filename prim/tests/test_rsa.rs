@@ -1,11 +1,12 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! RSA tests ported from Dafny `TestRSA.dfy`: encrypt/decrypt round trips for
-//! every padding scheme, the modulus length, and the failures for empty input,
-//! malformed keys, wrong keys, tampered ciphertext and oversized plaintext.
+//! RSA tests ported from Dafny `TestRSA.dfy`:
+//! - encrypt/decrypt round trips for every padding scheme
+//! - the modulus length
+//! - failures for empty input, malformed keys, wrong keys, tampered ciphertext, etc.
 //!
-//! The keys below are throwaway test keys. They protect nothing.
+//! The keys below are throwaway test keys that protect nothing.
 
 use aws_mpl_primitives::{RsaPadding, rsa_decrypt, rsa_encrypt, rsa_modulus_length_bits};
 

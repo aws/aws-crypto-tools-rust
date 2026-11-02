@@ -3,8 +3,8 @@
 
 //! Virtual field values: the parts of an item a virtual field joins, each transformed.
 //!
-//! Strings are measured and cut in UTF-16 code units, as in the other implementations,
-//! so every implementation computes the same value for the same item.
+//! This module measures and cuts strings in UTF-16 code units, as the other implementations do.
+//! So every implementation computes the same value for the same item.
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -54,7 +54,7 @@ impl VirtPart {
     }
 }
 
-/// The virtual field `loc` names, when `loc` is a whole attribute that is a virtual field.
+/// The virtual field that `loc` names, when `loc` is a whole attribute that is a virtual field.
 fn virtual_field<'a>(loc: &TermLoc, vf: &'a VirtualFieldMap) -> Option<&'a VirtField> {
     if loc.is_whole_attribute() {
         vf.get(loc.attribute_name())

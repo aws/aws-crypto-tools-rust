@@ -1,8 +1,7 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Required encryption context CMM: a CMM that makes the caller supply
-//! some encryption context keys again on every decrypt, so the message never stores them.
+//! The required encryption context CMM.
 
 use crate::Error;
 use crate::builder::required;
@@ -20,8 +19,8 @@ use crate::shared::IntoShared;
 
 /// A CMM that wraps another CMM and requires some encryption context keys.
 ///
-/// On encrypt, the encryption context must have every required key;
-/// the underlying CMM marks them required, so the message does not store them.
+/// On encrypt, the encryption context must have every required key.
+/// The underlying CMM marks them required, so the message does not store them.
 /// On decrypt, the reproduced encryption context must supply every required key.
 ///
 /// ```
@@ -62,7 +61,7 @@ impl RequiredEncryptionContextCmm {
         RequiredEncryptionContextCmmBuilder::default()
     }
 
-    /// The encryption context keys every call must supply.
+    /// The encryption context keys that every call must supply.
     #[must_use]
     pub const fn required_encryption_context_keys(&self) -> &BTreeSet<String> {
         &self.required_encryption_context_keys
@@ -78,21 +77,24 @@ pub struct RequiredEncryptionContextCmmBuilder {
 }
 
 impl RequiredEncryptionContextCmmBuilder {
-    /// The CMM that supplies the materials. Required.
+    /// Set the CMM that supplies the materials.
+    /// Required.
     #[must_use]
     pub fn underlying_cmm(mut self, cmm: impl IntoShared<SharedCmm>) -> Self {
         self.underlying_cmm = Some(cmm.into_shared());
         self
     }
 
-    /// The CMM that supplies the materials. See [`Self::underlying_cmm`].
+    /// Set or clear the underlying CMM from an `Option`.
+    /// To set a value, use [`Self::underlying_cmm`].
     #[must_use]
     pub fn set_underlying_cmm(mut self, cmm: Option<SharedCmm>) -> Self {
         self.underlying_cmm = cmm;
         self
     }
 
-    /// Add an encryption context key that every call must supply. At least one is required.
+    /// Add an encryption context key that every call must supply.
+    /// At least one is required.
     #[must_use]
     pub fn required_encryption_context_keys(mut self, key: impl Into<String>) -> Self {
         self.required_encryption_context_keys
@@ -101,7 +103,8 @@ impl RequiredEncryptionContextCmmBuilder {
         self
     }
 
-    /// Replace the required encryption context keys. See [`Self::required_encryption_context_keys`].
+    /// Replace the required encryption context keys, or clear them with `None`.
+    /// To add one key, use [`Self::required_encryption_context_keys`].
     #[must_use]
     pub fn set_required_encryption_context_keys(
         mut self,

@@ -1,8 +1,8 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Structured encryption: encrypt and sign a set of fields, each with its own crypto action,
-//! into fields plus a header and a footer; and the reverse.
+//! Structured encryption: encrypt and sign a set of fields, each with its own crypto action.
+//! Encryption outputs the fields plus a header and a footer, and decryption reverses it.
 //!
 //! [`StructuredEncryption`] is the layer beneath the item encryptor.
 //! It is public only for the test server, and is not a supported API.
@@ -597,8 +597,6 @@ pub(crate) async fn decrypt_path_structure(
         return Err(val_err("an attribute appears more than once"));
     }
 
-    // Parse the Header
-
     //= spec/structured-encryption/decrypt-path-structure.md#behavior
     //= reason=the footer is verified (?) before crypt decrypts any field; the CMM call consumes the parsed header
     //# This operation MUST perform all the above steps,
@@ -617,8 +615,6 @@ pub(crate) async fn decrypt_path_structure(
     let head = PartialHeader::deserialize(&header_bytes)?;
     let header_suite = DbeSuite::from_flavor(head.flavor)?;
     let canon = for_decrypt(table, data, &head.legend)?;
-
-    // Retrieve Decryption Materials
 
     //= spec/structured-encryption/decrypt-path-structure.md#retrieve-decryption-materials
     //# This operation MUST [calculate the appropriate CMM and encryption context](#create-new-encryption-context-and-cmm).
@@ -708,8 +704,6 @@ pub(crate) async fn decrypt_path_structure(
     //# The header field value MUST be [verified](header.md#commitment-verification)
     PartialHeader::verify_commitment(suite.commit, &commit, &header_bytes)?;
 
-    // Verify Signatures
-
     //= spec/structured-encryption/decrypt-path-structure.md#verify-signatures
     //# This operation MUST deserialize the bytes in [Terminal Value](./structures.md#terminal-value)
     //# according to the [footer format](./footer.md).
@@ -722,8 +716,6 @@ pub(crate) async fn decrypt_path_structure(
     //= reason=the ? returns before crypt decrypts any field
     //# Decryption MUST fail immediately if verification fails.
     footer.validate(&mat, head.data_keys.len(), &canon, &header_bytes)?;
-
-    // Construct Decrypted Structured Data
 
     let decrypted = crypt::crypt(Mode::Decrypt, suite, key.as_bytes(), &head.msg_id, canon)?;
 
@@ -761,8 +753,9 @@ pub(crate) async fn decrypt_path_structure(
     Ok((out, parsed))
 }
 
-/// The action the header's legend gives each field of `data`, which must hold the header and footer.
-/// Needs no materials: nothing is verified or decrypted.
+/// The action that the header's legend gives each field of `data`.
+/// `data` must hold the header and footer.
+/// This needs no materials, because it does not verify or decrypt anything.
 pub(crate) fn resolve_auth_actions(
     table: &str,
     data: Vec<AuthField>,

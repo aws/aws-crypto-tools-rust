@@ -67,8 +67,7 @@ fn private_key(private_key_pem: &[u8]) -> Result<PrivateDecryptingKey, Error> {
 ///
 /// # Errors
 ///
-/// Returns an [`Error`] if `public_key_pem` is not a PEM-encoded X.509
-/// `SubjectPublicKeyInfo` RSA public key.
+/// Returns an [`Error`] if `public_key_pem` is not a PEM-encoded X.509 `SubjectPublicKeyInfo` RSA public key.
 pub fn rsa_modulus_length_bits(public_key_pem: &[u8]) -> Result<u32, Error> {
     let key = public_key(public_key_pem)?;
     u32::try_from(key.key_size_bits())
@@ -79,8 +78,10 @@ pub fn rsa_modulus_length_bits(public_key_pem: &[u8]) -> Result<u32, Error> {
 ///
 /// # Errors
 ///
-/// Returns an [`Error`] if `public_key_pem` or `plaintext` is empty, if the
-/// key does not parse, or if `plaintext` is too long for the key and padding.
+/// Returns an [`Error`] if:
+/// - `public_key_pem` or `plaintext` is empty
+/// - the key does not parse
+/// - `plaintext` is too long for the key and padding
 pub fn rsa_encrypt(
     padding: RsaPadding,
     public_key_pem: &[u8],
@@ -115,9 +116,10 @@ pub fn rsa_encrypt(
 ///
 /// # Errors
 ///
-/// Returns an [`Error`] if `private_key_pem` or `ciphertext` is empty, if the
-/// key does not parse, or if `ciphertext` does not decrypt under the key and
-/// padding.
+/// Returns an [`Error`] if:
+/// - `private_key_pem` or `ciphertext` is empty
+/// - the key does not parse
+/// - `ciphertext` does not decrypt under the key and padding
 pub fn rsa_decrypt(
     padding: RsaPadding,
     private_key_pem: &[u8],

@@ -1,8 +1,8 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! The configuration checks of the reference implementation's `Beacon.dfy` and
-//! `BeaconPartition.dfy`: each invalid beacon version, and the error it is rejected with.
+//! The configuration checks of the reference implementation's `Beacon.dfy` and `BeaconPartition.dfy`:
+//! each invalid beacon version, and the error that rejects it.
 
 use std::collections::HashMap;
 

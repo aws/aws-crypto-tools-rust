@@ -1,8 +1,9 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! The AWS KMS multi-Region key (MRK) keyring: an AWS KMS keyring that also
-//! decrypts data keys wrapped by a replica of its multi-Region key in another region.
+//! The AWS KMS multi-Region key (MRK) keyring.
+//! It works like the AWS KMS keyring,
+//! and also decrypts data keys wrapped by a replica of its multi-Region key in another region.
 
 use std::borrow::Cow;
 
@@ -14,13 +15,13 @@ use crate::aws_kms::aws_kms_keyring::AwsKmsKeyring;
 use crate::aws_kms::mrk_match::aws_kms_mrk_match_for_decrypt;
 use crate::keyring::{Keyring, OnDecryptInput, OnDecryptOutput, OnEncryptInput, OnEncryptOutput};
 
-/// A keyring that protects each data key with one AWS KMS key, and on decrypt
-/// also accepts a data key wrapped by any replica of that key, when it is a multi-Region key.
+/// A keyring that protects each data key with one AWS KMS key.
+/// When that key is a multi-Region key, decrypting also accepts a data key wrapped by any replica of it.
 ///
-/// It encrypts exactly like [`AwsKmsKeyring`]. On decrypt it tries each `aws-kms`
-/// encrypted data key whose key ARN is this keyring's key, or is a multi-Region key
-/// that differs from it only in region. It always calls AWS KMS `Decrypt` with this
-/// keyring's own key, so the KMS client must be in that key's region.
+/// It encrypts exactly like [`AwsKmsKeyring`].
+/// On decrypt, it tries each `aws-kms` encrypted data key whose key ARN is this keyring's key,
+/// or a multi-Region key that differs from this keyring's key only in region.
+/// It calls AWS KMS `Decrypt` with this keyring's own key, so the KMS client must be in that key's region.
 ///
 /// ```no_run
 /// use aws_crypto_mpl::keyring::AwsKmsMrkKeyring;
@@ -48,7 +49,7 @@ impl std::fmt::Debug for AwsKmsMrkKeyring {
 }
 
 impl AwsKmsMrkKeyring {
-    /// `aws-kms-mrk` and the KMS key, which errors show.
+    /// The name that error messages show for this keyring: `aws-kms-mrk` and the KMS key identifier.
     #[must_use]
     pub fn name(&self) -> Cow<'_, str> {
         Cow::Owned(format!("aws-kms-mrk {}", self.inner.kms_key_id()))
@@ -60,13 +61,13 @@ impl AwsKmsMrkKeyring {
         AwsKmsMrkKeyringBuilder::default()
     }
 
-    /// The AWS KMS key identifier this keyring uses.
+    /// The AWS KMS key identifier that this keyring uses.
     #[must_use]
     pub fn kms_key_id(&self) -> &str {
         self.inner.kms_key_id()
     }
 
-    /// The grant tokens sent with every AWS KMS request.
+    /// The grant tokens that this keyring sends with every AWS KMS request.
     #[must_use]
     pub fn grant_tokens(&self) -> &[String] {
         self.inner.grant_tokens()
@@ -83,7 +84,8 @@ pub struct AwsKmsMrkKeyringBuilder {
 }
 
 impl AwsKmsMrkKeyringBuilder {
-    /// The AWS KMS key: a key ARN, key ID, alias name, or alias ARN. Required.
+    /// The AWS KMS key: a key ARN, key ID, alias name, or alias ARN.
+    /// Required.
     ///
     /// Decrypting needs a key ARN.
     #[must_use]
@@ -99,7 +101,8 @@ impl AwsKmsMrkKeyringBuilder {
         self
     }
 
-    /// The AWS KMS client, in the key's region. Required.
+    /// The AWS KMS client, in the key's region.
+    /// Required.
     #[must_use]
     pub fn kms_client(mut self, kms_client: KmsClient) -> Self {
         self.kms_client = Some(kms_client);
@@ -133,8 +136,10 @@ impl AwsKmsMrkKeyringBuilder {
     ///
     /// # Errors
     ///
-    /// - [`Validation`](crate::Error::Validation): no key or client, a malformed key identifier,
-    ///   or more than 10 grant tokens, or a grant token of the wrong length.
+    /// - [`Validation`](crate::Error::Validation): no key or client,
+    ///   a malformed key identifier,
+    ///   more than 10 grant tokens,
+    ///   or a grant token of the wrong length.
     pub fn build(self) -> Result<AwsKmsMrkKeyring, Error> {
         let inner = AwsKmsKeyring::builder()
             .set_kms_key_id(self.kms_key_id)

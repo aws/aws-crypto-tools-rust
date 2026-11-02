@@ -1,9 +1,9 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! The AWS KMS multi-Region key (MRK) discovery keyring: unwraps data keys with
-//! whichever AWS KMS key wrapped them, using the replica in its own region for a
-//! multi-Region key.
+//! The AWS KMS multi-Region key (MRK) discovery keyring.
+//! It unwraps data keys with whichever AWS KMS key wrapped them.
+//! For a multi-Region key, it uses the replica in the keyring's region.
 
 use std::borrow::Cow;
 use std::sync::Arc;
@@ -22,12 +22,13 @@ use crate::keyring::{Keyring, OnDecryptInput, OnDecryptOutput, OnEncryptInput, O
 use crate::structures::EncryptedDataKey;
 
 /// A keyring that decrypts with the AWS KMS key named in each encrypted data key,
-/// in its own region.
+/// using the replica in the keyring's region for a multi-Region key.
 ///
-/// It cannot encrypt. On decrypt it tries every `aws-kms` encrypted data key the
-/// [`DiscoveryFilter`] allows whose key is in this keyring's region, or is a
-/// multi-Region key in any region. For a multi-Region key it calls AWS KMS `Decrypt`
-/// with the key ARN rewritten to this keyring's region, so it decrypts with the local replica.
+/// It cannot encrypt.
+/// On decrypt, it tries every `aws-kms` encrypted data key that the [`DiscoveryFilter`] allows
+/// and whose key is in this keyring's region or is a multi-Region key in any region.
+/// For a multi-Region key, it calls AWS KMS `Decrypt` with the key ARN changed to this keyring's region,
+/// so the local replica decrypts it.
 /// The KMS client must be in the keyring's region.
 ///
 /// ```no_run
@@ -70,7 +71,7 @@ impl std::fmt::Debug for AwsKmsMrkDiscoveryKeyring {
 }
 
 impl AwsKmsMrkDiscoveryKeyring {
-    /// `aws-kms-mrk-discovery` and the region, which errors show.
+    /// The name that error messages show for this keyring: `aws-kms-mrk-discovery` and the region.
     #[must_use]
     pub fn name(&self) -> Cow<'_, str> {
         Cow::Owned(format!("aws-kms-mrk-discovery {}", self.inner.region))
@@ -82,25 +83,25 @@ impl AwsKmsMrkDiscoveryKeyring {
         AwsKmsMrkDiscoveryKeyringBuilder::default()
     }
 
-    /// The region this keyring decrypts in.
+    /// The region that this keyring decrypts in.
     #[must_use]
     pub fn region(&self) -> &str {
         &self.inner.region
     }
 
-    /// The filter on the AWS KMS keys this keyring uses, if any.
+    /// The filter on the AWS KMS keys that this keyring uses, if any.
     #[must_use]
     pub fn discovery_filter(&self) -> Option<&DiscoveryFilter> {
         self.inner.discovery_filter.as_ref()
     }
 
-    /// The grant tokens sent with every AWS KMS request.
+    /// The grant tokens that this keyring sends with every AWS KMS request.
     #[must_use]
     pub fn grant_tokens(&self) -> &[String] {
         &self.inner.grant_tokens
     }
 
-    /// The key ARN to call AWS KMS `Decrypt` with for `edk`, when this keyring should try it.
+    /// The key ARN to pass to AWS KMS `Decrypt` for `edk`, or `None` when this keyring should not try `edk`.
     fn key_arn(&self, edk: &EncryptedDataKey) -> Result<Option<String>, Error> {
         if edk.key_provider_id() != PROVIDER_ID {
             return Ok(None);
@@ -118,7 +119,7 @@ impl AwsKmsMrkDiscoveryKeyring {
                 "Only AWS KMS Keys supported",
             ));
         }
-        // A parsed ARN has six `:`-separated parts: arn:partition:kms:region:account:resource.
+        // parse_kms_arn accepted `key_id`, so it has six parts: arn:partition:kms:region:account:resource.
         let mut parts: Vec<&str> = key_id.split(':').collect();
         let is_mrk = parts[5].starts_with("key/mrk-");
         let filter_allows = self
@@ -147,7 +148,8 @@ pub struct AwsKmsMrkDiscoveryKeyringBuilder {
 }
 
 impl AwsKmsMrkDiscoveryKeyringBuilder {
-    /// The AWS KMS client, in [`Self::region`]. Required.
+    /// The AWS KMS client, in [`Self::region`].
+    /// Required.
     #[must_use]
     pub fn kms_client(mut self, kms_client: KmsClient) -> Self {
         self.kms_client = Some(kms_client);
@@ -161,7 +163,8 @@ impl AwsKmsMrkDiscoveryKeyringBuilder {
         self
     }
 
-    /// The region this keyring decrypts in. Required.
+    /// The region that this keyring decrypts in.
+    /// Required.
     #[must_use]
     pub fn region(mut self, region: impl Into<String>) -> Self {
         self.region = Some(region.into());
@@ -175,7 +178,8 @@ impl AwsKmsMrkDiscoveryKeyringBuilder {
         self
     }
 
-    /// Use only the AWS KMS keys this filter allows. Optional: without one, any key.
+    /// Use only the AWS KMS keys that this filter allows.
+    /// Optional: with no filter, the keyring tries any AWS KMS key.
     #[must_use]
     pub fn discovery_filter(mut self, discovery_filter: DiscoveryFilter) -> Self {
         self.discovery_filter = Some(discovery_filter);
@@ -209,8 +213,9 @@ impl AwsKmsMrkDiscoveryKeyringBuilder {
     ///
     /// # Errors
     ///
-    /// - [`Validation`](crate::Error::Validation): no client or region, a client whose
-    ///   region is not the keyring's region, more than 10 grant tokens,
+    /// - [`Validation`](crate::Error::Validation): no client or region,
+    ///   a client whose region is not the keyring's region,
+    ///   more than 10 grant tokens,
     ///   or a grant token of the wrong length.
     pub fn build(self) -> Result<AwsKmsMrkDiscoveryKeyring, Error> {
         let client = required(self.kms_client, "kms_client")?;

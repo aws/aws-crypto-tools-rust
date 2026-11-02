@@ -1,7 +1,7 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! ResolveAttributes: the plaintext virtual field and compound beacon values of an item.
+//! ResolveAttributes: the plaintext values of an item's virtual fields and compound beacons.
 
 use std::collections::HashMap;
 
@@ -14,7 +14,7 @@ use crate::error::{Error, val_err};
 #[derive(Clone, Debug, Default, PartialEq)]
 #[non_exhaustive]
 pub struct ResolveAttributesInput {
-    /// The table whose configuration is used.
+    /// The table whose configuration to use.
     pub table_name: String,
     /// The plaintext item to examine.
     pub item: HashMap<String, AttributeValue>,
@@ -27,7 +27,7 @@ impl ResolveAttributesInput {
         ResolveAttributesInputBuilder::default()
     }
 
-    /// The table whose configuration is used.
+    /// The table whose configuration to use.
     #[must_use]
     pub fn table_name(&self) -> &str {
         &self.table_name
@@ -49,7 +49,7 @@ pub struct ResolveAttributesInputBuilder {
 }
 
 impl ResolveAttributesInputBuilder {
-    /// The table whose configuration is used. Required.
+    /// The table whose configuration to use. Required.
     #[must_use]
     pub fn table_name(mut self, name: impl Into<String>) -> Self {
         self.table_name = Some(name.into());
@@ -123,7 +123,7 @@ impl ResolveAttributesOutput {
 
     /// The plaintext value of each compound beacon the item has, by beacon name.
     ///
-    /// The value written to the table is the beaconized form, not this plaintext.
+    /// The client writes the beaconized form of each value to the table, not this plaintext.
     #[must_use]
     pub const fn compound_beacons(&self) -> &HashMap<String, String> {
         &self.compound_beacons
@@ -131,14 +131,14 @@ impl ResolveAttributesOutput {
 }
 
 impl Transforms {
-    /// The plaintext virtual field and compound beacon values of an item,
+    /// The plaintext values of an item's virtual fields and compound beacons,
     /// computed with the configuration of its table.
     ///
-    /// A table with no configuration, or with no search configuration, gives empty maps.
+    /// For a table with no configuration or no search configuration, both maps are empty.
     ///
     /// # Errors
     ///
-    /// A `Validation` error when a compound beacon part of the item contains the split character.
+    /// A `Validation` error when an item value that makes up part of a compound beacon contains the beacon's split character.
     pub async fn resolve_attributes(
         &self,
         input: ResolveAttributesInput,

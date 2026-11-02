@@ -5,7 +5,8 @@
 
 use std::cmp::Ordering;
 
-/// The digits of `s` as an integer; other characters are skipped. Saturates when too big.
+/// The digits of `s` as an integer, skipping other characters.
+/// Saturates at `i64::MAX`.
 fn str_to_int_inner(s: &str) -> i64 {
     s.chars()
         .filter_map(|c| c.to_digit(10))
@@ -44,7 +45,7 @@ fn split_dot(x: &str) -> (&str, &str) {
     }
 }
 
-/// Compare digit strings of the same length, or a shorter string as smaller.
+/// Compare two digit strings of the same length by value.
 fn str_cmp(x: &str, y: &str) -> Ordering {
     x.cmp(y)
 }
@@ -240,7 +241,8 @@ mod tests {
 
     #[test]
     fn one_two_zero_matrix() {
-        // Ascending by value; every spelling equals its own group and exceeds earlier groups.
+        // The groups ascend by value.
+        // Every spelling equals the others in its group and exceeds every spelling in earlier groups.
         let groups = [NEGATIVE_TWO, NEGATIVE_ONE, ZERO, ONE, TWO];
         for (gi, group) in groups.iter().enumerate() {
             for (i, x) in group.iter().enumerate() {

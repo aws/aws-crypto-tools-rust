@@ -77,8 +77,8 @@ async fn round_trip(
     (ciphertext, header)
 }
 
-/// The header checks every Dafny round trip makes: the default suite,
-/// only the verification key stored, and one data key.
+/// The header checks that every Dafny round trip makes:
+/// the default suite, only the verification key stored, and one data key.
 fn assert_default_header(header: &ParsedHeader) {
     assert_eq!(header.algorithm_suite_id(), DEFAULT_SUITE);
     let stored: Vec<&str> = header.stored_encryption_context().keys().collect();
@@ -230,7 +230,8 @@ async fn round_trip_v2_complex() {
 
 #[tokio::test]
 async fn round_trip_v2_complex_decrypts_under_different_actions() {
-    // The decrypt configuration's actions differ; decryption follows the header.
+    // The decrypt configuration has different actions.
+    // Decrypt uses the actions in the header.
     let decrypt_actions = actions([
         ("bar", CryptoAction::SignAndIncludeInEncryptionContext),
         ("sortKey", CryptoAction::SignAndIncludeInEncryptionContext),
@@ -243,7 +244,7 @@ async fn round_trip_v2_complex_decrypts_under_different_actions() {
     ]);
     let encryptor = encryptor_for(complex_actions());
     let decryptor = encryptor_for(decrypt_actions);
-    // The number is normalized in the encryption context, but not in the item.
+    // Encrypt normalizes the number in the encryption context but leaves it as is in the item.
     let (_, header) = round_trip(
         &encryptor,
         &decryptor,

@@ -3,14 +3,10 @@
 
 //! Picks a branch key per tenant from each item's primary key.
 //!
-//! A multi-tenant table gives each tenant its own branch key,
+//! Each tenant in the table has its own branch key,
 //! so one tenant's branch key cannot decrypt another tenant's items.
 //! One hierarchical keyring serves every tenant:
 //! its supplier reads the tenant from the item's partition key and returns that tenant's branch key ID.
-//!
-//! The example creates a branch key for each of two tenants,
-//! puts an item for each through the supplier,
-//! and shows that a client fixed to one tenant's branch key cannot read the other tenant's item.
 //!
 //! Requires AWS credentials, an existing key store, and a DynamoDB table with:
 //! - partition key `partition_key`, type S
@@ -98,7 +94,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let ddb_sdk = aws_sdk_dynamodb::Client::new(&sdk_config);
 
     // The AWS Crypto Tools CI test key store.
-    // Replace these with your own key store's table, name, and KMS key ARN.
+    // Replace these with your own key store's table, logical name, and KMS key ARN.
     let key_store = key_store::DynamoDbKeyStore::builder()
         .ddb_table_name("KeyStoreDdbTable")
         .logical_key_store_name("KeyStoreDdbTable")
@@ -122,8 +118,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let branch_key_a = create_branch_key().await?;
     let branch_key_b = create_branch_key().await?;
 
-    // `ItemKeyBranchKeySupplier` hands the keyring each item's primary key,
-    // so the supplier works with items, not encryption contexts.
+    // The keyring passes the supplier an encryption context.
+    // `ItemKeyBranchKeySupplier` rebuilds the item's primary key from it,
+    // so `TenantBranchKeySupplier` works with primary keys.
     let keyring = HierarchicalKeyring::builder()
         .key_store(key_store.clone())
         .ttl(Duration::from_secs(600))

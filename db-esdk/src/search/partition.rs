@@ -1,12 +1,11 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Choosing the beacon partition an item is written in.
+//! Choosing the beacon partition that an item is written in.
 //!
-//! A beacon version with a `maximum_number_of_partitions` above 1 writes each item's
-//! beacons in one of that many partitions, which spreads items with the same plaintext
-//! across several beacon values. A [`PartitionSelector`] picks the partition;
-//! without one, each item gets a random partition.
+//! A beacon version with a `maximum_number_of_partitions` above 1 writes each item's beacons in one of that many partitions.
+//! This spreads items with the same plaintext across several beacon values.
+//! A [`PartitionSelector`] picks the partition; without one, each item gets a random partition.
 
 use std::sync::Arc;
 
@@ -62,7 +61,8 @@ pub struct GetPartitionNumberInputBuilder {
 }
 
 impl GetPartitionNumberInputBuilder {
-    /// Add one attribute of the item. Call again to add more.
+    /// Add one attribute of the item.
+    /// Call again to add more.
     #[must_use]
     pub fn item(mut self, name: impl Into<String>, value: AttributeValue) -> Self {
         self.item
@@ -71,35 +71,36 @@ impl GetPartitionNumberInputBuilder {
         self
     }
 
-    /// Set or clear the whole item. To add one attribute, use [`Self::item`].
+    /// Set or clear the whole item.
+    /// To add one attribute, use [`Self::item`].
     #[must_use]
     pub fn set_item(mut self, item: Option<Item>) -> Self {
         self.item = item;
         self
     }
 
-    /// The number of partitions. Required.
+    /// The number of partitions (required).
     #[must_use]
     pub const fn number_of_partitions(mut self, count: u8) -> Self {
         self.number_of_partitions = Some(count);
         self
     }
 
-    /// The number of partitions. See [`Self::number_of_partitions`].
+    /// The number of partitions; see [`Self::number_of_partitions`].
     #[must_use]
     pub const fn set_number_of_partitions(mut self, count: Option<u8>) -> Self {
         self.number_of_partitions = count;
         self
     }
 
-    /// The logical table name. Required.
+    /// The logical table name (required).
     #[must_use]
     pub fn logical_table_name(mut self, name: impl Into<String>) -> Self {
         self.logical_table_name = Some(name.into());
         self
     }
 
-    /// The logical table name. See [`Self::logical_table_name`].
+    /// The logical table name; see [`Self::logical_table_name`].
     #[must_use]
     pub fn set_logical_table_name(mut self, name: Option<String>) -> Self {
         self.logical_table_name = name;
@@ -138,7 +139,7 @@ impl GetPartitionNumberOutput {
         GetPartitionNumberOutputBuilder::default()
     }
 
-    /// The partition the item is written in.
+    /// The partition that the item is written in.
     #[must_use]
     pub const fn partition_number(&self) -> u8 {
         self.partition_number
@@ -153,14 +154,15 @@ pub struct GetPartitionNumberOutputBuilder {
 }
 
 impl GetPartitionNumberOutputBuilder {
-    /// The partition the item is written in. Required; must be less than the number of partitions.
+    /// The partition that the item is written in.
+    /// Required, and less than the number of partitions.
     #[must_use]
     pub const fn partition_number(mut self, partition: u8) -> Self {
         self.partition_number = Some(partition);
         self
     }
 
-    /// The partition. See [`Self::partition_number`].
+    /// The partition; see [`Self::partition_number`].
     #[must_use]
     pub const fn set_partition_number(mut self, partition: Option<u8>) -> Self {
         self.partition_number = partition;
@@ -181,7 +183,7 @@ impl GetPartitionNumberOutputBuilder {
     }
 }
 
-/// User-supplied callback that picks the beacon partition an item is written in.
+/// A callback that you supply to pick the beacon partition that an item is written in.
 ///
 /// Set it with
 /// [`BeaconVersionBuilder::partition_selector`](crate::search::BeaconVersionBuilder::partition_selector).
@@ -193,7 +195,7 @@ pub trait PartitionSelector: Send + Sync {
     ///
     /// # Errors
     ///
-    /// Any error returned fails the write as-is.
+    /// The write fails with the error that this method returns, unchanged.
     //= spec/searchable-encryption/search-config.md#partition-selector
     //= type=implication
     //= reason=the output type holds the item's partition number
@@ -211,7 +213,8 @@ pub trait PartitionSelector: Send + Sync {
 pub struct SharedPartitionSelector(Arc<dyn PartitionSelector>);
 
 impl SharedPartitionSelector {
-    /// Wrap `selector` in a handle. An existing handle is returned as-is.
+    /// Wrap `selector` in a handle.
+    /// An existing handle comes back unchanged.
     pub fn new(selector: impl aws_crypto_mpl::shared::IntoShared<Self>) -> Self {
         selector.into_shared()
     }

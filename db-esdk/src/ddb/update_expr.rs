@@ -1,7 +1,7 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! The attributes a DynamoDB update expression names.
+//! The attributes that a DynamoDB update expression names.
 
 use std::collections::HashMap;
 
@@ -15,8 +15,8 @@ const IGNORED: [&str; 6] = [
     "if_not_exists",
 ];
 
-/// The root attribute of every attribute path in `expr`,
-/// each `#name` resolved through `names` when it is there.
+/// The root attribute of every attribute path in `expr`.
+/// A `#name` that `names` maps becomes its attribute name; any other stays as written.
 pub(crate) fn extract_attributes(
     expr: &str,
     names: Option<&HashMap<String, String>>,
@@ -41,7 +41,7 @@ fn chop(s: &str) -> &str {
     chop_one(chop_one(s, '.'), '[')
 }
 
-/// Every attribute path's root attribute named in `s`, in order.
+/// The root attribute of every attribute path in `s`, in order.
 fn extract_attrs(s: &str) -> Vec<String> {
     let chars: Vec<char> = s.chars().collect();
     let mut out = Vec::new();

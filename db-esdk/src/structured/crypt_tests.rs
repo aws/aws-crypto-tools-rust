@@ -468,8 +468,8 @@ fn crypt_round_trips_empty_value() {
     assert_eq!(dec[0].data, Terminal::new(STRING, Vec::new()));
 }
 
-// HKDF-SHA-512 (no salt) of the data key, info "AWS_DBE_COMMIT_KEY" || message id,
-// computed independently with Python's hmac module.
+// HKDF-SHA-512 of the data key, with no salt and info "AWS_DBE_COMMIT_KEY" || message id.
+// Computed independently with Python's hmac module.
 #[test]
 fn commit_key_known_answer() {
     let ck = commit_key(suite(), &DATA_KEY, &MSG_ID).unwrap();
@@ -506,8 +506,8 @@ fn commit_key_known_answer() {
     );
 }
 
-/// Returns materials with the plaintext data key `DATA_KEY`, so a test can recompute
-/// what encryption derived from it.
+/// Returns materials with the plaintext data key `DATA_KEY`.
+/// A test can then recompute what encryption derived from it.
 struct FixedKeyCmm;
 
 #[aws_crypto_mpl::async_trait]
@@ -545,9 +545,9 @@ impl aws_crypto_mpl::cmm::Cmm for FixedKeyCmm {
     }
 }
 
-// Recomputes the stored commitment, HMAC-SHA-512 over the partial header (see
-// `header_commitment`), with a commit key from the CMM's data key and the header's message
-// id. It fails if encryption derives the commit key from another key or another id.
+// Recomputes the stored commitment: HMAC-SHA-512 over the partial header (see `header_commitment`),
+// under a commit key derived from the CMM's data key and the header's message id.
+// It fails if encryption derives the commit key from another key or another id.
 #[tokio::test]
 async fn stored_commitment_uses_data_key_and_header_message_id() {
     let (out, _) = crate::structured::encrypt_path_structure(
@@ -589,9 +589,9 @@ async fn stored_commitment_uses_data_key_and_header_message_id() {
     assert_eq!(stored, &full[..COMMITMENT_LEN]);
 }
 
-// The field root key is HKDF-SHA-512 (no salt) of the data key, info "AWS_DBE_DERIVE_KEY" ||
-// message id (computed independently with Python's hmac module); the first encrypted field
-// opens under field_key(root, 0) with its canonical path as AAD.
+// The field root key is HKDF-SHA-512 of the data key, with no salt and info "AWS_DBE_DERIVE_KEY" || message id.
+// Computed independently with Python's hmac module.
+// The first encrypted field opens under field_key(root, 0), with its canonical path as AAD.
 #[test]
 fn crypt_encrypts_first_field_under_root_key_offset_zero() {
     let root = unhex("2c8aa8ac569062534c6cc5bfbbe5ed90967d7311a3f925169433151865270700");

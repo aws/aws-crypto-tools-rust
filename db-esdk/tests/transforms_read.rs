@@ -1,9 +1,9 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! The read transforms, ported from the Dafny `GetItemTransform.dfy`, `QueryTransform.dfy`,
-//! `ScanTransform.dfy`, `BatchGetItemTransform.dfy`, and `TransactGetItemsTransform.dfy`,
-//! plus the checks those files leave out.
+//! The read transforms, ported from the Dafny
+//! `GetItemTransform.dfy`, `QueryTransform.dfy`, `ScanTransform.dfy`, `BatchGetItemTransform.dfy`, and `TransactGetItemsTransform.dfy`.
+//! Also covers the checks that those files leave out.
 
 mod transforms_support;
 
@@ -50,8 +50,6 @@ async fn encrypt(t: &Transforms, it: Item) -> Item {
     .unwrap()
 }
 
-// --- GetItem ---
-
 fn get_input(table: &str) -> GetItemInput {
     GetItemInput::builder()
         .table_name(table)
@@ -69,7 +67,7 @@ async fn get_item_input_passthrough() {
 
 #[tokio::test]
 async fn get_item_output_passthrough() {
-    // An unconfigured table's item is returned as is, even if it looks encrypted.
+    // The transform returns the item of an unconfigured table unchanged, even if it looks encrypted.
     let output = GetItemOutput::builder()
         .item("encrypt", AttributeValue::B(vec![1, 2, 3].into()))
         .build();
@@ -166,15 +164,13 @@ async fn get_item_output_not_encrypted() {
     );
 }
 
-// --- Query ---
-
 fn query_input(table: &str) -> QueryInput {
     QueryInput::builder().table_name(table).build().unwrap()
 }
 
 #[tokio::test]
 async fn query_input_passthrough() {
-    // On table foo, both the legacy parameter and the filter on `encrypt` are rejected.
+    // On table foo, the transform would reject both the legacy parameter and the filter on `encrypt`.
     let input = QueryInput::builder()
         .table_name("no_such_table")
         .attributes_to_get("sign")
@@ -387,15 +383,13 @@ async fn get_number_of_queries_without_beacons() {
     }
 }
 
-// --- Scan ---
-
 fn scan_input(table: &str) -> ScanInput {
     ScanInput::builder().table_name(table).build().unwrap()
 }
 
 #[tokio::test]
 async fn scan_input_passthrough() {
-    // On table foo, both the legacy parameter and the filter on `encrypt` are rejected.
+    // On table foo, the transform would reject both the legacy parameter and the filter on `encrypt`.
     let input = ScanInput::builder()
         .table_name("no_such_table")
         .attributes_to_get("sign")
@@ -472,8 +466,10 @@ async fn scan_input_legacy_parameters() {
 
 #[tokio::test]
 async fn scan_input_filter_expression_too_long() {
-    // No spec requirement: DynamoDB's 4096-character expression limit, ported from Dafny,
-    // checked before modify-before-scan's beacon rewrite. 4096 is the limit: one more fails.
+    // No spec requirement covers this.
+    // Like Dafny, the transform checks DynamoDB's 4096-character expression limit
+    // before modify-before-scan rewrites the beacons.
+    // 4096 is the limit: one more fails.
     let input = ScanInput::builder()
         .table_name("foo")
         .filter_expression("a".repeat(4097))
@@ -543,8 +539,6 @@ async fn scan_output_tampered() {
     //# Scan MUST yield an error.
     assert!(matches!(err, Error::Cryptographic(_)), "{err:?}");
 }
-
-// --- BatchGetItem ---
 
 fn batch_get_input() -> BatchGetItemInput {
     BatchGetItemInput::builder()
@@ -633,8 +627,6 @@ async fn batch_get_item_output_tampered() {
     //# BatchGetItem MUST yield an error.
     assert!(matches!(err, Error::Cryptographic(_)), "{err:?}");
 }
-
-// --- TransactGetItems ---
 
 fn transact_get_input(tables: &[&str]) -> TransactGetItemsInput {
     TransactGetItemsInput::builder()

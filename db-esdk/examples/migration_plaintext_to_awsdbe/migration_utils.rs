@@ -1,18 +1,18 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Shared values and helpers for the plaintext-to-AWS-DBE migration steps.
+//! Values and helpers that the migration steps share.
 
 use std::collections::HashMap;
 
 use aws_db_esdk::aws_sdk_dynamodb::types::AttributeValue;
 
-// One value per crypto action, written by every step.
+// Every step writes one value per crypto action.
 pub const ENCRYPTED_AND_SIGNED_VALUE: &str = "this will be encrypted and signed";
 pub const SIGN_ONLY_VALUE: &str = "this will never be encrypted, but it will be signed";
 pub const DO_NOTHING_VALUE: &str = "this will never be encrypted nor signed";
 
-/// The item every step writes: the primary key plus one attribute per action.
+/// The item that every step writes: the primary key plus one attribute per crypto action.
 pub fn sample_item(
     partition_key_value: &str,
     sort_key_value: &str,
@@ -41,7 +41,7 @@ pub fn sample_item(
     ])
 }
 
-/// The primary key used to read a single item back.
+/// The primary key of one item, for reading it back.
 pub fn primary_key(
     partition_key_value: &str,
     sort_key_value: &str,
@@ -58,12 +58,11 @@ pub fn primary_key(
     ])
 }
 
-/// Check that a returned item matches what the steps write.
+/// Checks that a returned item matches what the steps write.
 ///
-/// Fails if any attribute is missing or has the wrong value. In particular,
-/// reading a client-side-encrypted item with a plaintext reader leaves
-/// `attribute1` absent, which surfaces here as
-/// "attribute1 not found or not a string".
+/// Fails if any attribute is missing or has the wrong value.
+/// For example, a plaintext reader that gets an encrypted item sees `attribute1` as binary,
+/// so this fails with "attribute1 not found or not a string".
 pub fn verify_returned_item(
     item: &HashMap<String, AttributeValue>,
     partition_key_value: &str,

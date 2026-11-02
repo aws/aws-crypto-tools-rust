@@ -1,9 +1,9 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Tests of the search configuration builders, and of converting a configuration to its
-//! checked form. The fixtures are ported from `BeaconTestFixtures.dfy`, and the conversion
-//! cases from `ConfigToInfo.dfy` and the configuration cases of `Beacon.dfy`.
+//! Tests of the search configuration builders, and of converting a configuration to its checked form.
+//! The fixtures come from `BeaconTestFixtures.dfy`.
+//! The conversion cases come from `ConfigToInfo.dfy` and the configuration cases of `Beacon.dfy`.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -40,11 +40,9 @@ use crate::search::term_loc::TermLoc;
 use crate::table_config::TableConfig;
 use crate::types::{AesWrappingAlg, CryptoAction};
 
-// ---------------------------------------------------------------------------
 // Fixtures, ported from BeaconTestFixtures.dfy.
-// ---------------------------------------------------------------------------
 
-/// The beacon key every [`FakeKeyStore`] returns: `GetLiteralSource([1,2,3,4,5], ...)`.
+/// The beacon key that every [`FakeKeyStore`] returns: `GetLiteralSource([1,2,3,4,5], ...)`.
 pub(crate) const BEACON_KEY: [u8; 5] = [1, 2, 3, 4, 5];
 
 /// An offline key store whose beacon key is always [`BEACON_KEY`].
@@ -453,9 +451,7 @@ fn store() -> key_store::SharedKeyStore {
     fake_key_store().0
 }
 
-// ---------------------------------------------------------------------------
 // Builders.
-// ---------------------------------------------------------------------------
 
 #[test]
 fn search_config_builder_checks_versions() {
@@ -1211,9 +1207,7 @@ fn transform_builders() {
     ));
 }
 
-// ---------------------------------------------------------------------------
 // Conversion: ConfigToInfo.dfy.
-// ---------------------------------------------------------------------------
 
 #[tokio::test]
 async fn two_beacons_one_loc() {
@@ -1283,7 +1277,7 @@ async fn ns_with_eb() {
     let info = convert_with(&[], version).unwrap();
     assert_eq!(info.version.beacons["Name"].beacon_name(), "aws_dbe_b_Name");
 
-    // A fully signed one is written to the attribute of its name, so it is not.
+    // A fully signed one is not: it is written to the encrypted attribute `Name`.
     let fully_signed = compound("Name", None, Some(vec![year(), month()]), None);
     let version = lotsa_beacons(store())
         .set_compound_beacons(Some(vec![fully_signed]))
@@ -1294,9 +1288,7 @@ async fn ns_with_eb() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // Conversion: the configuration cases of Beacon.dfy.
-// ---------------------------------------------------------------------------
 
 #[tokio::test]
 async fn lotsa_beacons_converts() {
@@ -1409,7 +1401,7 @@ async fn bad_prefix_between_signed_and_encrypted_parts() {
         .set_compound_beacons(Some(vec![bad_prefix2()]))
         .set_virtual_fields(None);
 
-    // `Nothing` must be signed for the prefix check to be reached.
+    // Until `Nothing` is signed, the signed-part check fails before the prefix check runs.
     // Rejected by beacons.md#initialization-failure: a signed part holds only SIGN_ONLY fields.
     assert_eq!(
         validation_message(convert_with(&[], version)),
@@ -1493,7 +1485,9 @@ async fn set_in_compound() {
     );
 }
 
-/// `GetLotsaBeacons` plus `beacons`, with `shareBeacon` encrypted.
+/// The `Validation` message from converting `GetLotsaBeacons` with `shareBeacon` encrypted.
+/// `standards`, if set, replaces its standard beacons, and `extra` adds more.
+/// `keep_compound: false` drops its compound beacons.
 fn share_case(
     standards: Option<Vec<StandardBeacon>>,
     extra: Vec<StandardBeacon>,
@@ -1736,7 +1730,7 @@ async fn compound_mixed_uses_global_parts() {
     let Beacon::Compound(mixed) = &info.version.beacons["Mixed"] else {
         panic!("Mixed is not a compound beacon");
     };
-    // Local parts, then the global parts the constructors name; signed first.
+    // Local parts, then the global parts that the constructors name; signed first.
     let parts: Vec<&str> = mixed.parts.iter().map(BeaconPart::name).collect();
     assert_eq!(parts, ["Month", "Year", "Title", "Name"]);
     assert_eq!(mixed.num_signed, 2);
@@ -1745,9 +1739,7 @@ async fn compound_mixed_uses_global_parts() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // Conversion: the remaining checks.
-// ---------------------------------------------------------------------------
 
 #[tokio::test]
 async fn no_search_config_converts_to_none() {
@@ -1888,7 +1880,7 @@ async fn signed_and_encrypted_locations() {
         validation_message(convert_with(&[], version)),
         "StandardBeacon yb not defined on an encrypted field."
     );
-    // A virtual field on signed-only fields is not encrypted either.
+    // A virtual field built from signed-only fields is not an encrypted field.
     let version = lotsa_beacons(store())
         .virtual_fields(virtual_field(
             "YearVF",

@@ -1,7 +1,7 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! The multi-keyring: combines keyrings so each data key is wrapped by all of them.
+//! The multi-keyring.
 
 use std::borrow::Cow;
 use std::sync::Arc;
@@ -16,9 +16,9 @@ use crate::shared::IntoShared;
 
 /// A keyring made of other keyrings.
 ///
-/// On encrypt, the generator keyring makes the data key, then every child keyring wraps it,
-/// so the message has one encrypted data key from each. Without a generator, the materials
-/// must already have a data key.
+/// On encrypt, the generator keyring makes the data key, then every child keyring wraps it.
+/// The materials end up with one encrypted data key from each keyring.
+/// Without a generator, the materials must already have a data key.
 ///
 /// On decrypt, it tries the generator, then each child in order, and returns the first success.
 ///
@@ -73,7 +73,7 @@ impl std::fmt::Debug for MultiKeyring {
 }
 
 impl MultiKeyring {
-    /// `multi`, which errors show.
+    /// `"multi"`.
     #[must_use]
     pub fn name(&self) -> Cow<'_, str> {
         Cow::Borrowed("multi")
@@ -91,7 +91,7 @@ impl MultiKeyring {
         self.inner.generator.as_ref()
     }
 
-    /// The keyrings that wrap the data key the generator made.
+    /// The child keyrings, which wrap the data key after the generator.
     #[must_use]
     pub fn child_keyrings(&self) -> &[SharedKeyring] {
         &self.inner.child_keyrings
@@ -124,15 +124,16 @@ pub struct MultiKeyringBuilder {
 }
 
 impl MultiKeyringBuilder {
-    /// The keyring that makes the data key.
-    /// Optional, but a multi-keyring without one cannot make a data key.
+    /// Set the keyring that makes the data key.
+    /// Optional: without one, the input materials must already have a data key.
     #[must_use]
     pub fn generator(mut self, generator: impl IntoShared<SharedKeyring>) -> Self {
         self.generator = Some(generator.into_shared());
         self
     }
 
-    /// The generator keyring. See [`Self::generator`].
+    /// Set or clear the generator from an `Option`.
+    /// To set a value, use [`Self::generator`].
     #[must_use]
     pub fn set_generator(mut self, generator: Option<SharedKeyring>) -> Self {
         self.generator = generator;
@@ -148,7 +149,8 @@ impl MultiKeyringBuilder {
         self
     }
 
-    /// Replace the child keyrings. See [`Self::child_keyrings`].
+    /// Replace the child keyrings, or clear them with `None`.
+    /// To add one keyring, use [`Self::child_keyrings`].
     #[must_use]
     pub fn set_child_keyrings(mut self, child_keyrings: Option<Vec<SharedKeyring>>) -> Self {
         self.child_keyrings = child_keyrings;

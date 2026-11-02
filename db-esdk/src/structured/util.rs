@@ -114,12 +114,14 @@ pub(crate) struct CanonItem {
     pub(crate) action: CryptoAction,
 }
 
-/// The number of UTF-16 code units in `s`, which the reference implementation's string lengths count.
+/// The number of UTF-16 code units in `s`.
+/// The reference implementation measures string lengths in these units.
 pub(crate) fn utf16_len(s: &str) -> usize {
     s.encode_utf16().count()
 }
 
-/// Compare strings by UTF-16 code units, the order the reference implementation sorts strings in.
+/// Compare strings by UTF-16 code units.
+/// The reference implementation sorts strings in this order.
 pub(crate) fn utf16_cmp(a: &str, b: &str) -> std::cmp::Ordering {
     //= spec/dynamodb-encryption-client/string-ordering.md#utf-16-binary-order
     //# When ordering strings,

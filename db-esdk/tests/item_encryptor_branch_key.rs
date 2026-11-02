@@ -1,9 +1,9 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! `ItemKeyBranchKeySupplier`: the item key a supplier sees for each encryption context.
-//! Ported from `DynamoDbEncryptionBranchKeyIdSupplierTest.dfy` (with an in-test supplier
-//! instead of a key store) and from the selector contexts of `DynamoDBItemEncryptorTest.dfy`.
+//! `ItemKeyBranchKeySupplier`: the item key that a supplier sees for each encryption context.
+//! Ported from `DynamoDbEncryptionBranchKeyIdSupplierTest.dfy`, with an in-test supplier in place of a key store,
+//! and from the selector contexts of `DynamoDBItemEncryptorTest.dfy`.
 
 mod item_encryptor_support;
 
@@ -23,8 +23,8 @@ use item_encryptor_support::*;
 const BRANCH_KEY_ID_A: &str = "3f43a9af-08c5-4317-b694-3d3e883dcaef";
 const BRANCH_KEY_ID_B: &str = "4bb57643-07c1-419e-92ad-0df0df149d7c";
 
-/// The Dafny `TestBranchKeyIdSupplier`: picks a branch key from the `branchKey` attribute,
-/// and records the item key it was given.
+/// The Dafny `TestBranchKeyIdSupplier`:
+/// picks a branch key from the `branchKey` attribute and records the item key that it was given.
 #[derive(Default, Clone)]
 struct TestSupplier {
     seen: Arc<Mutex<Vec<Item>>>,
@@ -49,7 +49,7 @@ impl ItemKeySupplier for TestSupplier {
     }
 }
 
-/// Call the supplier with `ec`; returns the result and the item key it saw.
+/// Call the supplier with `ec` and return the result and the item key that the supplier saw.
 async fn select(ec: EncryptionContext) -> (Result<String, MplError>, Option<Item>) {
     let inner = TestSupplier::default();
     let supplier = ItemKeyBranchKeySupplier::new(inner.clone());
@@ -65,7 +65,7 @@ async fn select(ec: EncryptionContext) -> (Result<String, MplError>, Option<Item
     (result, seen)
 }
 
-/// The error message when the context is rejected before the supplier is called.
+/// The error message of `ItemKeyBranchKeySupplier` when it rejects `ec` before calling the supplier.
 async fn rejection(ec: EncryptionContext) -> String {
     match select(ec).await {
         (Err(MplError::Validation(e)), None) => e.message().to_owned(),
@@ -79,7 +79,7 @@ fn ec<const N: usize>(pairs: [(&str, &str); N]) -> EncryptionContext {
 
 #[tokio::test]
 async fn picks_branch_key_from_v1_context() {
-    // "CASE_A" and "CASE_B" as DynamoDB strings: type 0x0001, then the UTF-8 bytes, base64.
+    // The base64 of "CASE_A" and "CASE_B" as DynamoDB strings: type 0x0001, then the UTF-8 bytes.
     let (id, seen) = select(ec([
         ("aws-crypto-partition-name", "branchKey"),
         ("aws-crypto-attr.branchKey", "AAFDQVNFX0E="),
@@ -110,7 +110,7 @@ async fn picks_branch_key_from_v1_context() {
 
 #[tokio::test]
 async fn supplier_errors_pass_through_unchanged() {
-    // "CASE_C": a value TestSupplier has no key for.
+    // "CASE_C": a value that TestSupplier has no key for.
     let (result, seen) = select(ec([
         ("aws-crypto-partition-name", "branchKey"),
         ("aws-crypto-attr.branchKey", "AAFDQVNFX0M="),
@@ -128,7 +128,7 @@ async fn supplier_errors_pass_through_unchanged() {
     assert_eq!(seen.unwrap(), item([("branchKey", s("CASE_C"))]));
 }
 
-/// The item key the supplier sees for the context of an item encrypted by `encryptor`.
+/// The item key that the supplier sees for the context of an item encrypted by `encryptor`.
 async fn item_key_for(encryptor: &aws_db_esdk::ItemEncryptor, input: Item) -> Item {
     let out = encryptor
         .encrypt_item()
@@ -272,7 +272,7 @@ async fn rejects_context_without_partition_value() {
 async fn rejects_context_without_sort_value() {
     let context = ec([
         ("aws-crypto-partition-name", "bar"),
-        // "key" as a DynamoDB string: type 0x0001 + UTF-8, base64.
+        // The base64 of "key" as a DynamoDB string: type 0x0001, then the UTF-8 bytes.
         ("aws-crypto-attr.bar", "AAFrZXk="),
         ("aws-crypto-sort-name", "sort"),
     ]);
@@ -287,9 +287,9 @@ async fn rejects_context_without_sort_value() {
 
 #[tokio::test]
 async fn rejects_malformed_contexts() {
-    // Adjacent guard for #behavior "If the field \"aws-crypto-legend\" exists ... it MUST deserialize"
-    // and "... does not exist ... it MUST deserialize": a context that cannot be deserialized fails.
-    // No spec rule names these errors, so no requirement is cited here.
+    // The #behavior rules require deserializing the context, with or without "aws-crypto-legend".
+    // This test checks that a context that cannot be deserialized fails.
+    // No spec rule names these errors, so the test cites no requirement.
     let base = ("aws-crypto-partition-name", "bar");
     let v2 = [
         ("aws-crypto-table-name", "foo"),
@@ -339,10 +339,9 @@ async fn rejects_malformed_contexts() {
 
 #[tokio::test]
 async fn rejects_attribute_name_over_65535_characters() {
-    // Adjacent guard: the rebuilt Key must hold valid DynamoDB attribute names
-    // (cf. ddb-item-conversion "MUST NOT have any Key strings ... more than 65535 characters");
-    // no rule of this spec covers it.
-    // "key" as a DynamoDB string: type 0x0001 + UTF-8, base64.
+    // The rebuilt Key must hold valid DynamoDB attribute names.
+    // No rule of this spec covers that; ddb-item-conversion limits Key strings to 65535 characters.
+    // The base64 of "key" as a DynamoDB string: type 0x0001, then the UTF-8 bytes.
     let context_named = |name: &str| {
         let key = format!("aws-crypto-attr.{name}");
         ec([
@@ -363,7 +362,8 @@ async fn rejects_attribute_name_over_65535_characters() {
 
 #[tokio::test]
 async fn decodes_v2_binary_and_skips_the_bare_prefix() {
-    // A 'B' legend entry holds a base64 terminal; a key that is only the prefix is not an attribute.
+    // A 'B' legend entry holds a base64 terminal.
+    // A context key that is only the `aws-crypto-attr.` prefix names no attribute, so the supplier skips it.
     let context = ec([
         ("aws-crypto-table-name", "foo"),
         ("aws-crypto-partition-name", "bar"),

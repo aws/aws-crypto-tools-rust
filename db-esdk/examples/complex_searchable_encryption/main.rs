@@ -1,18 +1,19 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Runs the searchable-encryption workshop end to end: one table of six record
-//! types (meetings, employees, projects, reservations, tickets, time cards),
-//! a rich beacon configuration, and 23 queries over the beacons.
+//! Runs the searchable encryption workshop end to end:
+//! - one table that holds six record types: meetings, employees, projects, reservations, tickets, and time cards
+//! - a beacon configuration with many standard and compound beacons
+//! - 23 queries over the beacons
 //!
-//! Beacons let you query encrypted attributes. The data here is illustrative and
-//! may not meet the distribution and correlation guidance for real beacons; see
+//! The data here is for illustration.
+//! It may not meet the distribution and correlation guidance for real beacons; see
 //! <https://docs.aws.amazon.com/database-encryption-sdk/latest/devguide/searchable-encryption.html#are-beacons-right-for-me>.
 //!
 //! Requires AWS credentials, an existing key store with a provisioned branch key,
 //! and a DynamoDB table `ComplexBeaconTestTable` with:
 //! - partition key `partition_key`, type S
-//! - global secondary indexes over the compound-beacon attributes this config writes:
+//! - global secondary indexes over the compound beacon attributes that this configuration writes:
 //!   - `GSI-0`: hash `PK`, range `SK`
 //!   - `GSI-1`: hash `PK1`, range `SK1`
 //!   - `GSI-2`: hash `PK2`
@@ -40,7 +41,7 @@ async fn main() -> Result<(), BoxError> {
     let ddb_sdk = aws_sdk_dynamodb::Client::new(&sdk_config);
 
     // The AWS Crypto Tools CI test key store.
-    // Replace these with your own key store's table, name, and KMS key ARN.
+    // Replace these with your own key store's table, logical name, and KMS key ARN.
     let key_store = key_store::DynamoDbKeyStore::builder()
         .ddb_table_name(KEY_STORE_TABLE_NAME)
         .logical_key_store_name(KEY_STORE_TABLE_NAME)

@@ -3,10 +3,10 @@
 
 //! Expressions over beacons.
 //!
-//! A query on a beaconized attribute is rewritten to compare the beacon instead:
+//! The client rewrites a query on a beaconized attribute to compare the beacon:
 //! `A = :v` becomes `aws_dbe_b_A = :v`, with `:v` replaced by its beacon value.
 //! A beacon matches more items than the plaintext would,
-//! so the decrypted results are filtered again with the original expression.
+//! so the client filters the decrypted results again with the original expression.
 
 use std::collections::HashMap;
 
@@ -148,7 +148,7 @@ impl BeaconVersionInfo {
         })
     }
 
-    /// The beacon value `expr[pos]`, a value, is compared to.
+    /// The beacon that the value at `expr[pos]` is compared to.
     fn beacon_for_value(
         &self,
         expr: &[Token],
@@ -399,7 +399,7 @@ impl BeaconVersionInfo {
         Ok(items)
     }
 
-    /// The beacon key id that value `value`, compared to `attr`, names.
+    /// The beacon key id that `value` names when it is compared to `attr`.
     fn key_id_from_attr(
         &self,
         attr: Option<&Token>,
@@ -630,8 +630,8 @@ impl BeaconVersionInfo {
         })
     }
 
-    /// [`Self::beaconize`], once per partition the query must cover when it takes
-    /// fewer queries than there are partitions: the filters are joined with OR.
+    /// [`Self::beaconize`], once per partition that the query must cover.
+    /// When the query takes fewer queries than there are partitions, this joins the filters with OR.
     pub(crate) async fn do_beaconize(
         &self,
         context: &ExprContext,
@@ -805,7 +805,7 @@ fn get_in_pos(expr: &[Token], mut pos: usize) -> Option<usize> {
     }
 }
 
-/// The attribute `expr[pos]`, a value, is compared to.
+/// The attribute that the value at `expr[pos]` is compared to.
 fn attr_for_value(expr: &[Token], pos: usize) -> Option<&Token> {
     let is_attr = |t: &Token| matches!(t, Token::Attr(_));
     if pos + 2 < expr.len() && expr[pos + 1].is_comp() && is_attr(&expr[pos + 2]) {
@@ -836,7 +836,7 @@ fn attr_for_value(expr: &[Token], pos: usize) -> Option<&Token> {
     is_attr(&expr[in_pos - 1]).then(|| &expr[in_pos - 1])
 }
 
-/// Whether the function `expr[pos]`, an attribute, is passed to needs its value:
+/// Whether the function that takes the attribute at `expr[pos]` needs its value:
 /// `attribute_exists` and `attribute_not_exists` do not.
 fn op_needs_beacon(expr: &[Token], pos: usize) -> bool {
     if pos < 2 || expr[pos - 1] != Token::Open {
@@ -848,7 +848,7 @@ fn op_needs_beacon(expr: &[Token], pos: usize) -> bool {
     )
 }
 
-/// Whether the function `expr[pos]`, an attribute, is passed to can take a beacon:
+/// Whether the function that takes the attribute at `expr[pos]` can take a beacon:
 /// `size` and `attribute_type` cannot.
 fn is_allowed_on_beacon_pred(expr: &[Token], pos: usize) -> bool {
     if pos < 2 || expr[pos - 1] != Token::Open {
@@ -868,7 +868,7 @@ fn is_allowed_on_beacon(expr: &[Token], pos: usize, name: &str) -> Result<(), Er
     }
 }
 
-/// The first name `prev` followed by two capital letters that `values` lacks or maps to `value`.
+/// The first name of `prev` plus two capital letters that `values` lacks or maps to `value`.
 fn make_new_name(prev: &str, values: &Values, value: &AttributeValue) -> Result<String, Error> {
     for i in b'A'..=b'Z' {
         for j in b'A'..=b'Z' {

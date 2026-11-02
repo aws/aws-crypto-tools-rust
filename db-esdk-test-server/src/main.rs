@@ -3,8 +3,11 @@
 
 //! Runnable entry point for the native Rust DB-ESDK Language_Server.
 //!
-//! Binds an rpcv2Cbor HTTP endpoint on a port taken from (in order) the first
-//! CLI argument, the `DBESDK_TESTSERVER_PORT` env var, or the default 8104.
+//! Serves rpcv2Cbor over HTTP on 127.0.0.1.
+//! The port is the first of these that is set:
+//! - the first CLI argument
+//! - the `DBESDK_TESTSERVER_PORT` env var
+//! - the default, 8104
 
 use std::net::SocketAddr;
 use std::sync::Arc;

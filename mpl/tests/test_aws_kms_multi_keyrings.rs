@@ -1,14 +1,14 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Tests for the AWS KMS multi-keyring builders (Dafny `AwsKmsMultiKeys.dfy`,
-//! `AwsKmsMrkMultiKeys.dfy`, `AwsKmsDiscoveryMultiKeys.dfy`,
-//! `AwsKmsMrkDiscoveryMultiKeys.dfy`), and through them the discovery, MRK and
-//! MRK-discovery keyrings.
+//! Tests for the AWS KMS multi-keyring builders,
+//! and through them the discovery, MRK and MRK-discovery keyrings.
+//! The Dafny counterparts are `AwsKmsMultiKeys.dfy`, `AwsKmsMrkMultiKeys.dfy`,
+//! `AwsKmsDiscoveryMultiKeys.dfy`, and `AwsKmsMrkDiscoveryMultiKeys.dfy`.
 //!
-//! The round trips call AWS KMS with the CI test key
-//! `9d989aa2-2f9c-438c-a745-cc57d3ad0126` in account `370957321024`, region `us-west-2`,
-//! like the other AWS KMS keyring tests. Without credentials they fail.
+//! The round trips call AWS KMS with the CI test key `9d989aa2-2f9c-438c-a745-cc57d3ad0126`
+//! in account `370957321024`, region `us-west-2`.
+//! They fail without credentials for that account.
 
 use aws_config::{BehaviorVersion, Region, SdkConfig};
 use aws_crypto_mpl::keyring::{DiscoveryFilter, MultiKeyring};

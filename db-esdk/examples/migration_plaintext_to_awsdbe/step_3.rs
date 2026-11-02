@@ -1,16 +1,14 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Step 3 — final state, fully encrypted.
+//! Step 3: the final state, with every item encrypted.
 //!
-//! Takes the default plaintext override
-//! (`ForbidPlaintextWriteForbidPlaintextRead`), so it is not set at all:
-//!   - Write: forbidden as plaintext (always encrypted).
-//!   - Read:  forbidden as plaintext — reading a plaintext item now fails.
+//! Leaves the plaintext override unset, so it takes the default, `ForbidPlaintextWriteForbidPlaintextRead`:
+//!   - Write: always encrypted.
+//!   - Read:  encrypted only; reading a plaintext item fails.
 //!
-//! Only run this after every remaining plaintext item has been re-encrypted
-//! (the Step 2 back-fill). Once deployed, every item your system reads is
-//! encrypted and authenticated, and migration is complete.
+//! Deploy step 3 only after re-encrypting every remaining plaintext item, as step 2 describes.
+//! From then on, every item that your system reads is encrypted and authenticated.
 
 use aws_db_esdk::aws_config;
 use aws_db_esdk::aws_sdk_dynamodb;
@@ -25,11 +23,9 @@ pub async fn run(
     sort_key_read: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let ddb_sdk = aws_sdk_dynamodb::Client::new(sdk_config);
-    // No plaintext override: take the default, which forbids plaintext writes
-    // and reads.
+    // `None` takes the default plaintext override, which forbids plaintext writes and reads.
     let ddb = encrypted_client(sdk_config, ddb_sdk, None).await?;
 
-    // Written encrypted.
     ddb.put_item()
         .table_name(DDB_TABLE_NAME)
         .set_item(Some(sample_item(partition_key, sort_key_write)))

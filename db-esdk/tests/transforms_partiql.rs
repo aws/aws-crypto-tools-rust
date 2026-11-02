@@ -1,8 +1,8 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! The PartiQL transforms, ported from the Dafny `ExecuteStatementTransform.dfy`,
-//! `BatchExecuteStatementTransform.dfy`, and `ExecuteTransactionTransform.dfy`.
+//! The PartiQL transforms,
+//! ported from the Dafny `ExecuteStatementTransform.dfy`, `BatchExecuteStatementTransform.dfy`, and `ExecuteTransactionTransform.dfy`.
 
 mod transforms_support;
 
@@ -135,7 +135,7 @@ async fn batch_execute_statement_input_passthrough() {
 
 #[tokio::test]
 async fn batch_execute_statement_input_encrypted() {
-    // The configured table is the second statement's: every statement is checked.
+    // Only the second statement names the configured table, so the transform must check every statement.
     let result = transforms()
         .batch_execute_statement_input(batch_execute_statement(&[
             "update \"no_such_table\"",

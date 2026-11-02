@@ -92,7 +92,8 @@ fn region_of(kms_key_id: &str) -> Option<String> {
     }
 }
 
-/// Builder for a [`MultiKeyring`] of [`AwsKmsKeyring`]s. Start it with [`MultiKeyring::aws_kms`].
+/// Builder for a [`MultiKeyring`] of [`AwsKmsKeyring`]s.
+/// Start it with [`MultiKeyring::aws_kms`].
 ///
 /// The generator key makes and wraps the data key; each other key also wraps it.
 /// Each keyring gets a KMS client in its key's region.
@@ -166,9 +167,9 @@ impl AwsKmsMultiKeyringBuilder {
         self
     }
 
-    /// The AWS SDK configuration each KMS client is made from, with the key's region.
-    /// Optional with the `default-aws-sdk-clients` feature: the default is
-    /// your AWS credentials and region.
+    /// The AWS SDK configuration to make each KMS client from.
+    /// The client for a key ARN uses the ARN's region; the client for any other key uses this configuration's region.
+    /// Optional with the `default-aws-sdk-clients` feature: the default uses your AWS credentials and region.
     #[must_use]
     pub fn sdk_config(mut self, sdk_config: SdkConfig) -> Self {
         self.sdk_config = Some(sdk_config);
@@ -187,8 +188,9 @@ impl AwsKmsMultiKeyringBuilder {
     /// # Errors
     ///
     /// - [`Validation`](crate::Error::Validation): no generator and no other key,
-    ///   a malformed key identifier, a grant token list that is too long or has a token
-    ///   of the wrong length, or no `sdk_config` without the `default-aws-sdk-clients` feature.
+    ///   a malformed key identifier,
+    ///   a grant token list that is too long or has a token of the wrong length,
+    ///   or no `sdk_config` without the `default-aws-sdk-clients` feature.
     pub async fn build(self) -> Result<MultiKeyring, Error> {
         let grant_tokens = valid_grant_tokens(self.grant_tokens)?;
         let kms_key_ids = self.kms_key_ids.unwrap_or_default();
@@ -223,7 +225,7 @@ impl AwsKmsMultiKeyringBuilder {
 /// Start it with [`MultiKeyring::aws_kms_discovery`].
 ///
 /// Each region gets a discovery keyring with a KMS client in that region,
-/// so it decrypts data keys wrapped by AWS KMS keys in any of the regions.
+/// so the multi-keyring decrypts data keys wrapped by AWS KMS keys in any of those regions.
 ///
 /// ```no_run
 /// use aws_crypto_mpl::keyring::{DiscoveryFilter, MultiKeyring};
@@ -253,7 +255,8 @@ pub struct AwsKmsDiscoveryMultiKeyringBuilder {
 }
 
 impl AwsKmsDiscoveryMultiKeyringBuilder {
-    /// Add an AWS region. At least one is required.
+    /// Add an AWS region.
+    /// At least one is required.
     #[must_use]
     pub fn regions(mut self, region: impl Into<String>) -> Self {
         self.regions
@@ -269,7 +272,8 @@ impl AwsKmsDiscoveryMultiKeyringBuilder {
         self
     }
 
-    /// Use only the AWS KMS keys this filter allows. Optional: without one, any key.
+    /// Use only the AWS KMS keys that this filter allows.
+    /// Optional: with no filter, the keyring tries any AWS KMS key.
     #[must_use]
     pub fn discovery_filter(mut self, discovery_filter: DiscoveryFilter) -> Self {
         self.discovery_filter = Some(discovery_filter);
@@ -299,8 +303,9 @@ impl AwsKmsDiscoveryMultiKeyringBuilder {
         self
     }
 
-    /// The AWS SDK configuration each KMS client is made from, with its region.
-    /// Optional with the `default-aws-sdk-clients` feature: the default is your AWS credentials.
+    /// The AWS SDK configuration to make each KMS client from.
+    /// Each client uses one of the configured regions.
+    /// Optional with the `default-aws-sdk-clients` feature: the default uses your AWS credentials.
     #[must_use]
     pub fn sdk_config(mut self, sdk_config: SdkConfig) -> Self {
         self.sdk_config = Some(sdk_config);
@@ -318,7 +323,8 @@ impl AwsKmsDiscoveryMultiKeyringBuilder {
     ///
     /// # Errors
     ///
-    /// - [`Validation`](crate::Error::Validation): no region, a blank region,
+    /// - [`Validation`](crate::Error::Validation): no region,
+    ///   a blank region,
     ///   a grant token list that is too long or has a token of the wrong length,
     ///   or no `sdk_config` without the `default-aws-sdk-clients` feature.
     pub async fn build(self) -> Result<MultiKeyring, Error> {
@@ -356,7 +362,7 @@ fn mrk_key_id(kms_key_id: &str) -> Option<&str> {
     (key_id.starts_with("mrk-") && !resource.starts_with("alias/")).then_some(key_id)
 }
 
-/// Fail when two of `kms_key_ids` are the same multi-Region key, in any regions.
+/// Fail when two of `kms_key_ids` name the same multi-Region key, in the same or different regions.
 fn mrks_are_unique<'a>(kms_key_ids: impl Iterator<Item = &'a String> + Clone) -> Result<(), Error> {
     let mut seen = std::collections::HashSet::new();
     let duplicated: std::collections::HashSet<&str> = kms_key_ids
@@ -377,12 +383,13 @@ fn mrks_are_unique<'a>(kms_key_ids: impl Iterator<Item = &'a String> + Clone) ->
     )))
 }
 
-/// Builder for a [`MultiKeyring`] of [`AwsKmsMrkKeyring`]s. Start it with [`MultiKeyring::aws_kms_mrk`].
+/// Builder for a [`MultiKeyring`] of [`AwsKmsMrkKeyring`]s.
+/// Start it with [`MultiKeyring::aws_kms_mrk`].
 ///
 /// The generator key makes and wraps the data key; each other key also wraps it.
-/// Each keyring gets a KMS client in its key's region. On decrypt each keyring also
-/// accepts data keys wrapped by a replica of its multi-Region key. No two keys may be
-/// the same multi-Region key.
+/// Each keyring gets a KMS client in its key's region.
+/// On decrypt, each keyring also accepts data keys wrapped by a replica of its multi-Region key.
+/// No two keys may be the same multi-Region key.
 ///
 /// ```no_run
 /// use aws_crypto_mpl::keyring::MultiKeyring;
@@ -453,9 +460,9 @@ impl AwsKmsMrkMultiKeyringBuilder {
         self
     }
 
-    /// The AWS SDK configuration each KMS client is made from, with the key's region.
-    /// Optional with the `default-aws-sdk-clients` feature: the default is
-    /// your AWS credentials and region.
+    /// The AWS SDK configuration to make each KMS client from.
+    /// The client for a key ARN uses the ARN's region; the client for any other key uses this configuration's region.
+    /// Optional with the `default-aws-sdk-clients` feature: the default uses your AWS credentials and region.
     #[must_use]
     pub fn sdk_config(mut self, sdk_config: SdkConfig) -> Self {
         self.sdk_config = Some(sdk_config);
@@ -474,7 +481,8 @@ impl AwsKmsMrkMultiKeyringBuilder {
     /// # Errors
     ///
     /// - [`Validation`](crate::Error::Validation): no generator and no other key,
-    ///   a malformed key identifier, two keys that are the same multi-Region key,
+    ///   a malformed key identifier,
+    ///   two keys that are the same multi-Region key,
     ///   a grant token list that is too long or has a token of the wrong length,
     ///   or no `sdk_config` without the `default-aws-sdk-clients` feature.
     pub async fn build(self) -> Result<MultiKeyring, Error> {
@@ -512,8 +520,8 @@ impl AwsKmsMrkMultiKeyringBuilder {
 /// Start it with [`MultiKeyring::aws_kms_mrk_discovery`].
 ///
 /// Each region gets an MRK discovery keyring with a KMS client in that region,
-/// so it decrypts data keys wrapped by AWS KMS keys in any of the regions,
-/// and by multi-Region keys with a replica in any of them.
+/// so the multi-keyring decrypts data keys wrapped by AWS KMS keys in any of those regions,
+/// and by multi-Region keys that have a replica in any of them.
 ///
 /// ```no_run
 /// use aws_crypto_mpl::keyring::{DiscoveryFilter, MultiKeyring};
@@ -543,7 +551,8 @@ pub struct AwsKmsMrkDiscoveryMultiKeyringBuilder {
 }
 
 impl AwsKmsMrkDiscoveryMultiKeyringBuilder {
-    /// Add an AWS region. At least one is required.
+    /// Add an AWS region.
+    /// At least one is required.
     #[must_use]
     pub fn regions(mut self, region: impl Into<String>) -> Self {
         self.regions
@@ -559,7 +568,8 @@ impl AwsKmsMrkDiscoveryMultiKeyringBuilder {
         self
     }
 
-    /// Use only the AWS KMS keys this filter allows. Optional: without one, any key.
+    /// Use only the AWS KMS keys that this filter allows.
+    /// Optional: with no filter, the keyring tries any AWS KMS key.
     #[must_use]
     pub fn discovery_filter(mut self, discovery_filter: DiscoveryFilter) -> Self {
         self.discovery_filter = Some(discovery_filter);
@@ -589,8 +599,9 @@ impl AwsKmsMrkDiscoveryMultiKeyringBuilder {
         self
     }
 
-    /// The AWS SDK configuration each KMS client is made from, with its region.
-    /// Optional with the `default-aws-sdk-clients` feature: the default is your AWS credentials.
+    /// The AWS SDK configuration to make each KMS client from.
+    /// Each client uses one of the configured regions.
+    /// Optional with the `default-aws-sdk-clients` feature: the default uses your AWS credentials.
     #[must_use]
     pub fn sdk_config(mut self, sdk_config: SdkConfig) -> Self {
         self.sdk_config = Some(sdk_config);
@@ -608,7 +619,8 @@ impl AwsKmsMrkDiscoveryMultiKeyringBuilder {
     ///
     /// # Errors
     ///
-    /// - [`Validation`](crate::Error::Validation): no region, a blank region,
+    /// - [`Validation`](crate::Error::Validation): no region,
+    ///   a blank region,
     ///   a grant token list that is too long or has a token of the wrong length,
     ///   or no `sdk_config` without the `default-aws-sdk-clients` feature.
     pub async fn build(self) -> Result<MultiKeyring, Error> {

@@ -27,8 +27,8 @@ pub use operations::{
 ///
 /// It has the same operations, inputs, and outputs as [`aws_sdk_dynamodb::Client`].
 /// Requests for a table with no configuration pass through unchanged.
-/// Every operation returns [`Error`]; a failed DynamoDB call keeps DynamoDB's own error,
-/// which [`Error::as_service_error`] returns.
+/// Every operation returns [`Error`].
+/// When the DynamoDB call fails, [`Error::as_service_error`] returns DynamoDB's own error.
 ///
 /// Cloning is cheap: clones share the configuration.
 ///
@@ -102,13 +102,17 @@ impl Client {
         GetItemFluentBuilder::new(self.ddb.get_item(), self.transforms.clone())
     }
 
-    /// Update an item. On a configured table the update must not touch a signed attribute.
+    /// Update an item.
+    ///
+    /// On a configured table the update must not touch a signed attribute.
     #[must_use]
     pub fn update_item(&self) -> UpdateItemFluentBuilder {
         UpdateItemFluentBuilder::new(self.ddb.update_item(), self.transforms.clone())
     }
 
-    /// Delete an item. On a configured table the condition must not read an encrypted attribute.
+    /// Delete an item.
+    ///
+    /// On a configured table the condition must not read an encrypted attribute.
     #[must_use]
     pub fn delete_item(&self) -> DeleteItemFluentBuilder {
         DeleteItemFluentBuilder::new(self.ddb.delete_item(), self.transforms.clone())
@@ -157,13 +161,17 @@ impl Client {
         TransactGetItemsFluentBuilder::new(self.ddb.transact_get_items(), self.transforms.clone())
     }
 
-    /// Run a PartiQL statement. A statement on a configured table is rejected.
+    /// Run a PartiQL statement.
+    ///
+    /// The client rejects a statement on a configured table.
     #[must_use]
     pub fn execute_statement(&self) -> ExecuteStatementFluentBuilder {
         ExecuteStatementFluentBuilder::new(self.ddb.execute_statement(), self.transforms.clone())
     }
 
-    /// Run a batch of PartiQL statements. A statement on a configured table is rejected.
+    /// Run a batch of PartiQL statements.
+    ///
+    /// The client rejects a statement on a configured table.
     #[must_use]
     pub fn batch_execute_statement(&self) -> BatchExecuteStatementFluentBuilder {
         BatchExecuteStatementFluentBuilder::new(
@@ -172,7 +180,9 @@ impl Client {
         )
     }
 
-    /// Run PartiQL statements in one transaction. A statement on a configured table is rejected.
+    /// Run PartiQL statements in one transaction.
+    ///
+    /// The client rejects a statement on a configured table.
     #[must_use]
     pub fn execute_transaction(&self) -> ExecuteTransactionFluentBuilder {
         ExecuteTransactionFluentBuilder::new(
@@ -181,9 +191,10 @@ impl Client {
         )
     }
 
-    /// The plaintext virtual field and compound beacon values this client computes for an item.
+    /// Compute the plaintext values of an item's virtual fields and compound beacons.
     ///
-    /// Use it while developing a search configuration. It sends nothing to DynamoDB.
+    /// Use it while developing a search configuration.
+    /// It sends nothing to DynamoDB.
     #[must_use]
     pub fn resolve_attributes(&self) -> ResolveAttributesFluentBuilder {
         ResolveAttributesFluentBuilder::new(self.transforms.clone())
@@ -224,7 +235,7 @@ impl ClientBuilder {
         self
     }
 
-    /// Add the configuration of table `name`, the table name requests use.
+    /// Add the configuration for table `name`, as requests name the table.
     ///
     /// Call once per table. A table with no configuration passes through unencrypted.
     #[must_use]
@@ -276,7 +287,7 @@ impl ClientBuilder {
     }
 }
 
-/// A request the AWS SDK builder could not build.
+/// The `Validation` error for a request that the AWS SDK builder could not build.
 fn build_error(err: aws_sdk_dynamodb::error::BuildError) -> Error {
     Error::with_cause(Kind::Validation, "the DynamoDB request is invalid", err)
 }

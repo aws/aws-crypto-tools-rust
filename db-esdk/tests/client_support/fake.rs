@@ -3,14 +3,19 @@
 
 //! An in-process fake DynamoDB that keeps its tables in memory.
 //!
-//! It is the HTTP client of a real `aws_sdk_dynamodb::Client`, so requests go through
-//! the SDK's serializers and responses through its deserializers, and nothing leaves the process.
-//! It reads the operation from `X-Amz-Target` and answers from its tables.
+//! The fake is the HTTP client of a real `aws_sdk_dynamodb::Client`.
+//! Requests go through the SDK's serializers and responses through its deserializers,
+//! and nothing leaves the process.
+//! The fake reads the operation from `X-Amz-Target` and answers from its tables.
 //!
-//! Expressions: a condition, key condition, or filter is `AND`-joined terms, each
-//! `name = :value`, `attribute_exists(name)`, or `attribute_not_exists(name)`;
-//! an update is `SET name = :value, ...`. PartiQL: only `SELECT ... FROM "table"` runs.
-//! Anything else gets a `ValidationException`, so a test never passes on an ignored expression.
+//! The fake understands only these expressions:
+//! - condition, key condition, and filter: terms joined by `AND`,
+//!   each `name = :value`, `attribute_exists(name)`, or `attribute_not_exists(name)`
+//! - update: `SET name = :value, ...`
+//! - PartiQL: `SELECT ... FROM "table"`
+//!
+//! It answers anything else with a `ValidationException`,
+//! so a test cannot pass because the fake ignored an expression.
 
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -35,7 +40,7 @@ pub type Item = HashMap<String, AttributeValue>;
 type Obj = BTreeMap<String, Json>;
 type Reply = Result<Json, &'static str>;
 
-/// The request ID every response carries.
+/// The request ID that every response carries.
 pub const REQUEST_ID: &str = "fake-request-id";
 
 const VALIDATION: &str = "ValidationException";
@@ -43,7 +48,8 @@ const NOT_FOUND: &str = "ResourceNotFoundException";
 const CONDITION_FAILED: &str = "ConditionalCheckFailedException";
 const TRANSACTION_CANCELED: &str = "TransactionCanceledException";
 
-/// A fake DynamoDB. Clones share the tables.
+/// A fake DynamoDB.
+/// Clones share the tables.
 #[derive(Clone, Debug, Default)]
 pub struct FakeDdb {
     state: Arc<Mutex<State>>,
@@ -54,9 +60,10 @@ struct State {
     tables: BTreeMap<String, Table>,
     /// Each operation called, in order.
     calls: Vec<String>,
-    /// Canned responses, by operation, used before the tables are consulted.
+    /// Canned responses by operation.
+    /// The fake answers from these before it looks at the tables.
     canned: HashMap<String, VecDeque<(u16, String)>>,
-    /// How many of each table's BatchWriteItem requests, from the first, are returned unprocessed.
+    /// Per table, how many BatchWriteItem requests the fake returns unprocessed, counting from the first.
     unprocessed: HashMap<String, usize>,
 }
 
@@ -98,7 +105,7 @@ impl FakeDdb {
         self
     }
 
-    /// An SDK client whose every request this fake answers.
+    /// An SDK client that sends every request to this fake.
     pub fn client(&self) -> aws_sdk_dynamodb::Client {
         let config = aws_sdk_dynamodb::Config::builder()
             .behavior_version(aws_sdk_dynamodb::config::BehaviorVersion::latest())
@@ -299,7 +306,8 @@ impl<'a> Expressions<'a> {
             .ok_or(VALIDATION)
     }
 
-    /// Whether `item` (absent when there is no item) satisfies `expr`.
+    /// Whether `item` satisfies `expr`.
+    /// `item` is `None` when the table has no item with the key.
     fn matches(&self, expr: Option<&str>, item: Option<&Obj>) -> Result<bool, &'static str> {
         let Some(expr) = expr else {
             return Ok(true);
@@ -354,7 +362,7 @@ fn call_arg<'t>(term: &'t str, func: &str) -> Option<&'t str> {
         .strip_suffix(')')
 }
 
-/// The table a `SELECT ... FROM "table"` statement reads.
+/// The table that a `SELECT ... FROM "table"` statement reads.
 fn select_table(statement: &str) -> Result<&str, &'static str> {
     let trimmed = statement.trim_start();
     if !trimmed
@@ -405,7 +413,7 @@ fn delete(
     Ok(t.items.remove(&key))
 }
 
-/// Update `request`'s key: the old item, the new item, and the attributes set.
+/// Update `request`'s key, returning the old item, the new item, and the attributes that the update set.
 fn update(
     tables: &mut BTreeMap<String, Table>,
     request: &Json,
@@ -442,7 +450,7 @@ fn item_or_empty(item: Option<Obj>) -> Json {
     )
 }
 
-/// The first item of the table a SELECT statement reads, as `{"Item": ...}`.
+/// The first item of the table that a SELECT statement reads, as `{"Item": ...}`.
 fn select_first(tables: &BTreeMap<String, Table>, statement: &Json) -> Reply {
     let table = select_table(str_field(statement, "Statement")?)?;
     let t = tables.get(table).ok_or(NOT_FOUND)?;

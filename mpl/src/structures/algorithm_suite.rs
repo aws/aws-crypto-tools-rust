@@ -47,7 +47,7 @@ impl AlgorithmSuiteId {
             .or_else(|| DbeAlgorithmSuiteId::from_id_bytes(bytes).map(Self::Dbe))
     }
 
-    /// The format whose suites this id belongs to.
+    /// The format that this suite belongs to.
     pub const fn format(self) -> Format {
         match self {
             Self::Esdk(_) => Format::Esdk,
@@ -94,9 +94,9 @@ impl From<DbeAlgorithmSuiteId> for AlgorithmSuiteId {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum DbeAlgorithmSuiteId {
-    /// 67 00 — DBE.ALG_AES_256_GCM_HKDF_SHA512_COMMIT_KEY_SYMSIG_HMAC_SHA384
+    /// 67 00 -- DBE.ALG_AES_256_GCM_HKDF_SHA512_COMMIT_KEY_SYMSIG_HMAC_SHA384
     AlgAes256GcmHkdfSha512CommitKeySymsigHmacSha384,
-    /// 67 01 — DBE.ALG_AES_256_GCM_HKDF_SHA512_COMMIT_KEY_ECDSA_P384_SYMSIG_HMAC_SHA384
+    /// 67 01 -- DBE.ALG_AES_256_GCM_HKDF_SHA512_COMMIT_KEY_ECDSA_P384_SYMSIG_HMAC_SHA384
     AlgAes256GcmHkdfSha512CommitKeyEcdsaP384SymsigHmacSha384,
 }
 
@@ -105,8 +105,9 @@ const ALL_DBE_SUITES: [DbeAlgorithmSuiteId; 2] = [
     DbeAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384SymsigHmacSha384,
 ];
 
-/// The intermediate key wrapping every DBE suite uses: HKDF-SHA-512 derives both
-/// the key-encryption key and the MAC key, and AES-256-GCM encrypts the data key.
+/// The intermediate key wrapping that every DBE suite uses.
+/// HKDF-SHA-512 derives both the key-encryption key and the MAC key.
+/// AES-256-GCM encrypts the data key.
 const DBE_EDK_WRAPPING: EdkWrapping =
     EdkWrapping::IntermediateKeyWrapping(IntermediateKeyWrapping {
         key_encryption_key_kdf: KeyDerivationAlgorithm::HkdfSha512,
@@ -623,7 +624,8 @@ pub enum AsymmetricSignatureAlgorithm {
     EcdsaP384,
 }
 
-/// Symmetric signature algorithm. No ESDK suite uses one; every DBE suite uses HMAC-SHA-384.
+/// Symmetric signature algorithm.
+/// No ESDK suite uses one; every DBE suite uses HMAC-SHA-384.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum SymmetricSignatureAlgorithm {
@@ -640,14 +642,14 @@ pub enum SymmetricSignatureAlgorithm {
 pub enum EdkWrapping {
     /// The keyring encrypts the plaintext data key itself.
     DirectKeyWrapping,
-    /// The keyring encrypts a fresh intermediate key; keys derived from it
-    /// encrypt the plaintext data key and sign the message.
+    /// The keyring encrypts a fresh intermediate key.
+    /// Keys derived from it encrypt the plaintext data key and sign the message.
     IntermediateKeyWrapping(IntermediateKeyWrapping),
 }
 
 /// The key derivations of [`EdkWrapping::IntermediateKeyWrapping`].
 ///
-/// The plaintext data key is encrypted with AES-GCM at the suite's encryption key length.
+/// Keyrings encrypt the plaintext data key with AES-GCM, using a key of the suite's encryption key length.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub struct IntermediateKeyWrapping {

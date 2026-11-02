@@ -21,7 +21,7 @@ pub(crate) const BEACON_PREFIX: &str = "aws_dbe_b_";
 /// The checked search configuration of a table.
 #[derive(Debug)]
 pub(crate) struct SearchInfo {
-    /// The beacon version items are written and read with.
+    /// The beacon version that items are written and read with.
     pub(crate) version: BeaconVersionInfo,
 }
 
@@ -38,7 +38,7 @@ pub(crate) struct BeaconVersionInfo {
     pub(crate) encrypted_fields: BTreeSet<String>,
     /// The most partitions any beacon is divided across.
     pub(crate) max_partitions: u8,
-    /// What picks the partition an item is written in.
+    /// What picks the partition that an item is written in.
     pub(crate) partition_selector: SharedPartitionSelector,
 }
 
@@ -147,7 +147,7 @@ impl BeaconVersionInfo {
         Ok(out)
     }
 
-    /// The values of the beacons on encrypted fields, under the beacon key `key_id` selects.
+    /// The values of the beacons on encrypted fields, under the beacon key that `key_id` selects.
     pub(crate) async fn generate_encrypted_beacons(
         &self,
         item: &Item,

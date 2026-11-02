@@ -1,6 +1,6 @@
 .PHONY: clippy test examples duvet
 
-# Fetches the pinned spec into ./spec, extracts its requirements, writes the report.
+# Fetches the spec pinned in scripts/spec-source.json, then rebuilds the requirements and report from scratch.
 duvet:
 	scripts/resolve-spec.sh
 	rm -rf .duvet/reports .duvet/requirements
@@ -25,7 +25,7 @@ EXAMPLES := $(basename $(notdir $(wildcard examples/*.rs))) \
             $(notdir $(patsubst %/main.rs,%,$(wildcard examples/*/main.rs)))
 LOCAL_EXAMPLES := custom_keyring item_encryptor set_algorithm_suite
 ifeq ($(LOCAL_ONLY),)
-# get_encrypted_data_key_description reads the item hierarchical_keyring writes, so that runs first.
+# get_encrypted_data_key_description reads the item that hierarchical_keyring writes, so hierarchical_keyring runs first.
 RUN_EXAMPLES := hierarchical_keyring $(filter-out hierarchical_keyring,$(EXAMPLES))
 else
 RUN_EXAMPLES := $(LOCAL_EXAMPLES)

@@ -44,7 +44,7 @@ pub(crate) enum Token {
     Size,
 }
 
-/// The attributes `expr` reads the value of, each `#name` resolved through `names`.
+/// The attributes whose values `expr` reads, with each `#name` resolved through `names`.
 ///
 /// The attribute of `attribute_exists`, `attribute_not_exists`, and `size` is left out:
 /// those functions do not read the attribute's value.
@@ -53,7 +53,8 @@ pub(crate) fn extract_attributes(
     names: Option<&HashMap<String, String>>,
 ) -> Vec<String> {
     let mut out = Vec::new();
-    // Counts down to the token a value-ignoring function applies to; negative when there is none.
+    // Counts down to the attribute token of a function that does not read the value (`is_special`).
+    // Negative when no such function is pending.
     let mut tokens_until_skip: i64 = -1;
     for token in parse_expr(expr) {
         if is_special(&token) {
@@ -70,7 +71,7 @@ pub(crate) fn extract_attributes(
     out
 }
 
-/// Every attribute `expr` names, in order, each `#name` resolved through `names`.
+/// Every attribute that `expr` names, in order, with each `#name` resolved through `names`.
 pub(crate) fn all_attributes(expr: &str, names: Option<&HashMap<String, String>>) -> Vec<String> {
     parse_expr(expr)
         .into_iter()
@@ -97,7 +98,7 @@ fn attr_name(name: String, names: Option<&HashMap<String, String>>) -> String {
     }
 }
 
-/// The tokens of `s`, up to the first character no token starts with.
+/// The tokens of `s`, up to the first character that no token starts with.
 pub(crate) fn parse_expr(s: &str) -> Vec<Token> {
     let chars: Vec<char> = s.chars().collect();
     let mut out = Vec::new();
@@ -109,7 +110,8 @@ pub(crate) fn parse_expr(s: &str) -> Vec<Token> {
     out
 }
 
-/// Whether the characters of `s` at `pos` are `pre`, ignoring ASCII case. `pre` is lowercase.
+/// Whether the characters of `s` at `pos` are `pre`, ignoring ASCII case.
+/// `pre` must be lowercase.
 fn prefix_lower(pre: &str, s: &[char], pos: usize) -> bool {
     let pre: Vec<char> = pre.chars().collect();
     s.len() >= pos + pre.len()
@@ -272,7 +274,7 @@ impl Token {
     }
 }
 
-/// The location an attribute token names: its parsed path, or the whole token as one attribute.
+/// The location that an attribute token names: its parsed path, or the whole token as one attribute.
 pub(crate) fn attr_loc(s: &str) -> TermLoc {
     TermLoc::parse(s).unwrap_or_else(|_| TermLoc::attribute(s))
 }
@@ -442,7 +444,7 @@ fn eval_err(msg: &str) -> Error {
     val_err(msg)
 }
 
-/// The length DynamoDB's `size` function gives `v`.
+/// The length that DynamoDB's `size` function returns for `v`.
 fn get_size(v: &AttributeValue) -> usize {
     match v {
         AttributeValue::S(s) | AttributeValue::N(s) => utf16_len(s),

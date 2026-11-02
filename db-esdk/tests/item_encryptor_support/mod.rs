@@ -24,7 +24,7 @@ pub const TABLE: &str = "foo";
 
 pub const HEADER: &str = "aws_dbe_head";
 pub const FOOTER: &str = "aws_dbe_foot";
-/// The suite a table with no configured suite encrypts with.
+/// The suite that the encryptor uses for a table with no configured suite.
 pub const DEFAULT_SUITE: AlgorithmSuiteId =
     AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384SymsigHmacSha384;
 

@@ -1,13 +1,13 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Native Rust mirror of the DB-ESDK TestServer Smithy model shapes this server
-//! serves, with serde renames matching each model member name and `serde_bytes`
-//! on blob members so they travel as CBOR byte strings (rpcv2Cbor), not arrays.
+//! Rust types for the DB-ESDK TestServer Smithy model shapes that this server serves.
 //!
-//! `AttributeValue` and `Keyring` are modeled in Smithy as structures whose
-//! members are all optional ("tagged union via optional members"); the
-//! exactly-one-set invariant is enforced at runtime.
+//! Each field's serde rename matches its model member name.
+//! Blob members use `serde_bytes` so that they travel as CBOR byte strings, not arrays.
+//!
+//! The model makes `AttributeValue` and `Keyring` structures whose members are all optional.
+//! Exactly one member must be set; the server checks that at runtime.
 
 use serde::{Deserialize, Serialize};
 use serde_bytes::ByteBuf;
@@ -110,9 +110,10 @@ pub struct AttributeValue {
     pub m: Option<HashMap<String, AttributeValue>>,
 }
 
-/// The DBE item encryptor configuration. A legacy override, which this server
-/// does not serve, is kept opaque so a request naming it is refused rather
-/// than silently ignored.
+/// The DBE item encryptor configuration.
+///
+/// This server does not support a legacy override.
+/// It keeps that member opaque so that a request that sets it fails instead of the server ignoring it.
 #[derive(Debug, Deserialize)]
 pub struct DbeClientConfig {
     #[serde(rename = "logicalTableName")]
@@ -171,8 +172,9 @@ pub enum PlaintextOverride {
     ForbidWriteForbidRead,
 }
 
-/// The keyring union. Only the variants this server builds are typed; the rest
-/// are kept opaque so naming one is refused.
+/// The keyring union.
+/// Only the variants that this server builds have types.
+/// The server keeps the rest opaque and refuses a request that names one.
 #[derive(Debug, Deserialize)]
 pub struct Keyring {
     #[serde(rename = "AwsKms", default)]
@@ -201,7 +203,7 @@ pub struct Keyring {
     pub other: HashMap<String, ciborium::Value>,
 }
 
-/// A CMM: a tagged union via optional members; exactly one must be set.
+/// A CMM union: every member is optional, and exactly one must be set.
 #[derive(Debug, Default, Deserialize)]
 pub struct CryptographicMaterialsManager {
     #[serde(rename = "Default", default)]
@@ -398,7 +400,7 @@ pub struct StructuredDataTerminal {
     pub type_id: ByteBuf,
 }
 
-/// A field name to terminal map.
+/// A map from field name to terminal.
 pub type StructuredDataMap = HashMap<String, StructuredDataTerminal>;
 
 #[derive(Debug, Deserialize)]

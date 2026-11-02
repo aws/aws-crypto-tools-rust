@@ -16,7 +16,7 @@ use aws_db_esdk::keyring::RawAesKeyring;
 use aws_db_esdk::types::{AesWrappingAlg, CryptoAction};
 use aws_db_esdk::{ItemEncryptor, TableConfig};
 
-// The logical table name is bound to every item, so an item decrypts only under the same name.
+// The encryptor binds the logical table name to every item, so an item decrypts only under the same name.
 const TABLE_NAME: &str = "ItemEncryptDecryptExample";
 
 #[tokio::main]

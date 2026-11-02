@@ -1,7 +1,7 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Tests ported from the reference implementation's `Virtual.dfy`.
+//! Counterparts of the tests in the reference implementation's `Virtual.dfy`.
 
 use super::*;
 use crate::search::test_fixtures::{item, n, s};
@@ -160,7 +160,7 @@ fn substring() {
     assert_eq!(t(&VirtualTransform::substring(0, 3), ""), "");
 }
 
-/// Ported from `GetPosTest` in the reference implementation's `Virtual.dfy`.
+/// The counterpart of `GetPosTest` in the reference implementation's `Virtual.dfy`.
 #[test]
 fn positions() {
     let from_start = [(0, 0), (1, 1), (2, 2), (3, 3), (4, 4)];

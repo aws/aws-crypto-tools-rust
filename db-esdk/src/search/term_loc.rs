@@ -98,7 +98,7 @@ impl TermLoc {
     }
 }
 
-/// The value `parts` select inside `v`.
+/// The value that `parts` select inside `v`.
 fn get_terminal<'a>(
     v: &'a AttributeValue,
     parts: &[Selector],

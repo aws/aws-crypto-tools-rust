@@ -4,7 +4,7 @@
 //!
 //! # Handling errors
 //!
-//! Every operation returns [`Error`]:
+//! Every operation fails with [`Error`]:
 //! a `#[non_exhaustive]` enum with one struct per variant, like an AWS SDK for Rust service error.
 //!
 //! **Decide in two steps.**
@@ -12,31 +12,38 @@
 //!    A retryable error might succeed if the same call is made again later,
 //!    and [`retry_kind`](Error::retry_kind) says how to back off.
 //! 2. Otherwise match on the variant; each variant's docs say what to do.
-//!    Later releases can add variants, so a `match` needs a catch-all arm.
 //!
 //! **Read the details from accessors.**
-//! [`resource`](Error::resource) is the resource you need to act on,
-//! [`service`](Error::service) the AWS service the failed call went to,
-//! [`code`](Error::code) that service's error code,
-//! and [`request_id`](Error::request_id) the ID AWS Support asks for.
+//! - [`resource`](Error::resource): the resource that you need to act on.
+//! - [`service`](Error::service): the AWS service that the failed call went to.
+//! - [`code`](Error::code): that service's error code.
+//! - [`request_id`](Error::request_id): the request ID that AWS Support asks for.
 //!
-//! **Messages are for people.**
-//! [`message`](Error::message) and `Display` are for people and logs:
-//! their text can change in any release, even a patch release.
+//! **Messages are for people and logs.**
+//! The text of [`message`](Error::message) and `Display` can change in any release, even a patch release.
 //! Handle errors from the variant and its accessors, never from the message.
 //!
 //! ## What a minor or patch release can change
 //!
-//! - **Message text.** Any message, and anything `{}`, `{:#}`, or `{:?}` prints, can change.
-//! - **Failures without a specific variant.** An operation should only ever return [`Error`].
-//!   An [`Internal`](Error::Internal) error is a bug, and a release can give it a specific variant.
-//! - **The shape of the source chain.** Reach a source with [`find_source`](Error::find_source),
+//! - **Message text.**
+//!   Any message, and anything that `{}`, `{:#}`, or `{:?}` prints, can change.
+//! - **Failures without a specific variant.**
+//!   An [`Internal`](Error::Internal) error, or any failure that is not an [`Error`], is a bug.
+//!   A release can give that failure a specific variant.
+//! - **The shape of the source chain.**
+//!   Reach a source with [`find_source`](Error::find_source),
 //!   not by calling `source()` a fixed number of times.
-//! - **Which variant a collection of failures gets.** To act on each failure, use [`failures`](Error::failures).
-//! - **New variants and values.** `Error`, `Service`, `Resource`, `ConflictReason`, `RetryKind`,
-//!   and `Collection` are `#[non_exhaustive]`, so every `match` needs a catch-all arm.
+//! - **Which variant a collection of failures gets.**
+//!   To act on each failure, use [`failures`](Error::failures).
+//! - **New variants and values.**
+//!   `Error`, `Service`, `Resource`, `ConflictReason`, `RetryKind`, and `Collection` are `#[non_exhaustive]`,
+//!   so every `match` needs a catch-all arm.
 //!
-//! **Logging.** Log `{:#}`: it adds each error in the source chain.
+//! ## Logging
+//!
+//! Log with `{:#}`: it includes each error in the source chain.
+//!
+//! ## Example
 //!
 //! ```
 //! use aws_db_esdk::Error;
@@ -97,7 +104,7 @@ pub(crate) fn materials_err(msg: impl Into<String>) -> Error {
     Error::new(Kind::InvalidMaterials, msg)
 }
 
-/// An `Internal` error: an invariant of this library was violated.
+/// An `Internal` error: an invariant of this library does not hold.
 #[track_caller]
 pub(crate) fn internal_err(msg: impl Into<String>) -> Error {
     Error::new(Kind::Internal, msg)
@@ -112,7 +119,7 @@ const DDB_CONFLICT_CODES: [&str; 2] = [
 impl Error {
     /// Classify a failed DynamoDB call `operation` on `table`.
     ///
-    /// The SDK error is the source, so [`as_service_error`](Self::as_service_error) finds it.
+    /// The result keeps the SDK error as its source, so [`as_service_error`](Self::as_service_error) finds it.
     #[track_caller]
     pub(crate) fn from_ddb<E>(
         operation: &str,
@@ -147,13 +154,14 @@ impl Error {
         ))
     }
 
-    /// DynamoDB's own error, when this error is a failed DynamoDB call on your table.
+    /// DynamoDB's own error, when this error comes from a failed DynamoDB call.
     ///
     /// `E` is the operation's error type, such as
-    /// [`PutItemError`](crate::aws_sdk_dynamodb::operation::put_item::PutItemError),
-    /// so code written for `aws_sdk_dynamodb` can match it as before.
-    /// `None` when DynamoDB did not fail, for example when encryption failed,
-    /// or when the failure is of a different operation.
+    /// [`PutItemError`](crate::aws_sdk_dynamodb::operation::put_item::PutItemError).
+    /// Match it the same way as an error from `aws_sdk_dynamodb`.
+    ///
+    /// Returns `None` when DynamoDB did not fail (for example, when encryption failed),
+    /// or when `E` is a different operation's error type.
     ///
     /// ```
     /// use aws_db_esdk::Error;

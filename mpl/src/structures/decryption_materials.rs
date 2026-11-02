@@ -58,8 +58,8 @@ impl DecryptionMaterials {
         self.add_data_key_inner(plaintext_data_key.into(), None)
     }
 
-    /// Add the plaintext data key a keyring recovered, and the symmetric signing key
-    /// derived alongside it.
+    /// Add the plaintext data key that a keyring recovered,
+    /// and the symmetric signing key that the keyring derived with it.
     ///
     /// Keyrings use this for suites with intermediate key wrapping, such as the DBE suites.
     ///
@@ -393,7 +393,6 @@ impl DecryptionMaterialsBuilder {
             ));
         }
 
-        // With symmetric signing, a plaintext data key comes with its symmetric signing key.
         if algorithm_suite_id.has_symmetric_signing()
             && self.plaintext_data_key.is_some()
             && self.symmetric_signing_key.is_none()

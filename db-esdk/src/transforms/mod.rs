@@ -3,15 +3,16 @@
 
 //! The request and response transforms behind [`Client`](crate::Client).
 //!
-//! Each DynamoDB operation has an input transform, run on the request before it is sent,
-//! and an output transform, run on the response before it is returned.
-//! A write's input transform encrypts the items it writes;
-//! a read's output transform decrypts the items it returns.
-//! A PartiQL statement on a configured table is rejected.
+//! Each DynamoDB operation has two transforms:
+//! the input transform runs on the request before the client sends it,
+//! and the output transform runs on the response before the client returns it.
+//! A write's input transform encrypts the items that it writes;
+//! a read's output transform decrypts the items that it returns.
+//! The PartiQL input transforms reject a statement on a configured table.
 //! A request for a table with no configuration passes through unchanged.
 
-// Every transform is `async`, so callers await each one the same way,
-// including the pass-through transforms that have nothing to await yet.
+// Every transform is `async` so that callers await each one the same way,
+// including the pass-through transforms that have nothing to await.
 #![allow(clippy::unused_async, clippy::unused_async_trait_impl)]
 
 mod partiql;
@@ -89,7 +90,7 @@ pub struct TransformsBuilder {
 }
 
 impl TransformsBuilder {
-    /// Add the configuration of table `name`, the table name requests use.
+    /// Add the configuration of table `name`, the `TableName` that requests use.
     #[must_use]
     pub fn table_encryption_configs(
         mut self,
@@ -139,7 +140,7 @@ impl TransformsBuilder {
                     BeaconKeySource::Single(_) => None,
                 });
             if let Some(search) = &search {
-                // A fully signed compound beacon is written in plaintext, as a SIGN_ONLY attribute.
+                // The client writes a fully signed compound beacon in plaintext, so its action is SIGN_ONLY.
                 for beacon in search.version.signed_beacon_names() {
                     //= spec/searchable-encryption/beacons.md#signed-beacons
                     //# `NAME` MUST be automatically configured with an attribute action of SIGN_ONLY.
@@ -282,7 +283,7 @@ fn validate_expression_length(expr: Option<&str>, name: &str) -> Result<(), Erro
 }
 
 /// Reject a key condition or filter expression that reads an encrypted attribute:
-/// with no beacons, an encrypted attribute cannot be searched.
+/// without beacons, DynamoDB cannot search an encrypted attribute.
 fn test_beaconize(
     table: &ItemEncryptor,
     key_expr: Option<&str>,
@@ -351,7 +352,7 @@ fn key_id_from_header(
     Ok(MaybeKeyId::Id(id))
 }
 
-/// Encrypt and sign an item about to be written to `table`, adding its beacons.
+/// Encrypt and sign an item for a write to `table`, and add its beacons.
 async fn encrypt(table: &Table, item: Item) -> Result<Item, Error> {
     let Some(search) = &table.search else {
         return Ok(table
@@ -502,7 +503,7 @@ async fn encrypt(table: &Table, item: Item) -> Result<Item, Error> {
     Ok(out)
 }
 
-/// Verify and decrypt an item read from `table`, without its `aws_dbe_` attributes.
+/// Verify and decrypt an item read from `table`, and remove its `aws_dbe_` attributes.
 async fn decrypt(table: &ItemEncryptor, item: Item) -> Result<Item, Error> {
     let plaintext = table
         .decrypt_item()
@@ -534,8 +535,8 @@ async fn decrypt(table: &ItemEncryptor, item: Item) -> Result<Item, Error> {
 /// Verify and decrypt the items of a query or scan of `table`,
 /// then filter them again with the original expressions and remove their beacons.
 ///
-/// With a multi key store, an item encrypted under a different beacon key than the query names
-/// is dropped.
+/// With a multi key store, drop each item that was encrypted under a beacon key
+/// other than the one that the query names.
 async fn decrypt_search_results(
     table: &Table,
     items: Vec<Item>,
@@ -648,8 +649,8 @@ fn remove_beacons(item: HashMap<String, AttributeValue>) -> Item {
         .collect()
 }
 
-// The item encryptor already drops `aws_dbe_` attributes, so only a direct call
-// shows whether `remove_beacons` removes them itself.
+// The item encryptor already drops `aws_dbe_` attributes,
+// so only a direct call shows whether `remove_beacons` removes them itself.
 #[cfg(test)]
 mod tests {
     use super::*;

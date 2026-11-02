@@ -1,11 +1,10 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! The PartiQL operations' transforms: execute statement, batch execute statement,
-//! and execute transaction.
+//! The transforms of the PartiQL operations: ExecuteStatement, BatchExecuteStatement, and ExecuteTransaction.
 //!
-//! A PartiQL statement cannot be rewritten to work on encrypted attributes,
-//! so a statement on a configured table is rejected before it is sent.
+//! The client cannot rewrite a PartiQL statement to work on encrypted attributes,
+//! so these transforms reject a statement on a configured table before the client sends it.
 //! A statement on any other table passes through unchanged, and so does its response.
 
 use aws_crypto_mpl::aws_sdk_dynamodb::operation::batch_execute_statement::{
@@ -28,7 +27,7 @@ impl Transforms {
     /// # Errors
     ///
     /// A `Validation` error when the statement names a configured table,
-    /// or when no table name can be read from it.
+    /// or when the transform cannot read a table name from it.
     pub async fn execute_statement_input(
         &self,
         input: ExecuteStatementInput,
@@ -53,7 +52,7 @@ impl Transforms {
         Ok(input)
     }
 
-    /// An ExecuteStatement response needs no change, so it passes through unchanged.
+    /// Return the ExecuteStatement response unchanged.
     ///
     /// # Errors
     ///
@@ -72,7 +71,7 @@ impl Transforms {
     /// # Errors
     ///
     /// A `Validation` error when a statement names a configured table,
-    /// or when no table name can be read from one.
+    /// or when the transform cannot read a table name from one.
     pub async fn batch_execute_statement_input(
         &self,
         input: BatchExecuteStatementInput,
@@ -99,7 +98,7 @@ impl Transforms {
         Ok(input)
     }
 
-    /// A BatchExecuteStatement response needs no change, so it passes through unchanged.
+    /// Return the BatchExecuteStatement response unchanged.
     ///
     /// # Errors
     ///
@@ -118,7 +117,7 @@ impl Transforms {
     /// # Errors
     ///
     /// A `Validation` error when a statement names a configured table,
-    /// or when no table name can be read from one.
+    /// or when the transform cannot read a table name from one.
     pub async fn execute_transaction_input(
         &self,
         input: ExecuteTransactionInput,
@@ -145,7 +144,7 @@ impl Transforms {
         Ok(input)
     }
 
-    /// An ExecuteTransaction response needs no change, so it passes through unchanged.
+    /// Return the ExecuteTransaction response unchanged.
     ///
     /// # Errors
     ///
@@ -159,11 +158,11 @@ impl Transforms {
     }
 }
 
-/// The table a PartiQL statement reads or writes.
+/// The table that a PartiQL statement reads or writes.
 ///
-/// Handles `SELECT`, `UPDATE`, `DELETE`, `INSERT`, and `EXISTS(SELECT ...)`,
-/// as in the DynamoDB PartiQL reference. For `SELECT ... FROM "table"."index"`
-/// it is the table.
+/// Recognizes `SELECT`, `UPDATE`, `DELETE`, `INSERT`, and `EXISTS(SELECT ...)`,
+/// as the DynamoDB PartiQL reference defines them.
+/// For `SELECT ... FROM "table"."index"`, the result is the table.
 fn table_from_statement(s: &str) -> Result<&str, Error> {
     table_from_statement_inner(s)
         .ok_or_else(|| val_err("Unable to extract table name from PartiQL statement."))
@@ -189,8 +188,8 @@ fn table_from_statement_inner(s: &str) -> Option<&str> {
     }
 }
 
-/// The token after the first bare `from`: one that is not quoted
-/// and not part of a longer token. Expressions never contain one.
+/// The token after the first bare `from`, one that is neither quoted nor part of a longer token.
+/// A PartiQL expression never contains a bare `from`, so the first one starts the FROM clause.
 fn table_from_select_statement_inner(mut s: &str) -> Option<&str> {
     loop {
         if s.is_empty() {
@@ -273,8 +272,9 @@ fn strip_leading_whitespace(s: &str) -> &str {
     s.trim_start_matches(|c: char| c.is_ascii() && is_whitespace(c as u8))
 }
 
-/// The length in bytes of the token `s` starts with: through the closing quote when it
-/// starts with a double quote, else up to the next whitespace.
+/// The length in bytes of the token that `s` starts with:
+/// - a token that starts with a double quote runs through the closing quote;
+/// - any other token runs up to the next whitespace.
 fn find_token_len(s: &str) -> usize {
     let bytes = s.as_bytes();
     match bytes.first() {

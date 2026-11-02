@@ -1,13 +1,14 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! The JSON the DynamoDB wire protocol needs: enough to read the SDK's requests
-//! and write the fake's responses.
+//! The subset of JSON that the DynamoDB wire protocol needs:
+//! enough to read the SDK's requests and write the fake's responses.
 
 use std::collections::BTreeMap;
 use std::fmt::{self, Write as _};
 
-/// A JSON value. Objects are sorted, so equal values serialize identically.
+/// A JSON value.
+/// Objects keep their keys sorted, so equal values serialize to the same text.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Json {
     Null,

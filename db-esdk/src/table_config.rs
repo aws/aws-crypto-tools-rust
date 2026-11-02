@@ -88,7 +88,8 @@ impl TableConfig {
         TableConfigBuilder::default()
     }
 
-    /// The name bound into every item, if set. Otherwise the table's name is used.
+    /// The name bound into every item, if set.
+    /// When it is unset, items are bound to the table's name.
     #[must_use]
     pub fn logical_table_name(&self) -> Option<&str> {
         self.logical_table_name.as_deref()
@@ -226,7 +227,7 @@ pub struct TableConfigBuilder {
 impl TableConfigBuilder {
     /// The name bound into every item, so an item decrypts only under the same name.
     ///
-    /// Optional: it defaults to the table name the configuration is given with.
+    /// Optional: it defaults to the name of the table that this configuration is for.
     /// Set it only when the physical table name changes, for example after a restore.
     #[must_use]
     pub fn logical_table_name(mut self, name: impl Into<String>) -> Self {
@@ -234,21 +235,24 @@ impl TableConfigBuilder {
         self
     }
 
-    /// The name bound into every item. See [`Self::logical_table_name`].
+    /// The name bound into every item.
+    /// See [`Self::logical_table_name`].
     #[must_use]
     pub fn set_logical_table_name(mut self, name: Option<String>) -> Self {
         self.logical_table_name = name;
         self
     }
 
-    /// The partition key attribute's name. Required.
+    /// The partition key attribute's name.
+    /// Required.
     #[must_use]
     pub fn partition_key_name(mut self, name: impl Into<String>) -> Self {
         self.partition_key_name = Some(name.into());
         self
     }
 
-    /// The partition key attribute's name. See [`Self::partition_key_name`].
+    /// The partition key attribute's name.
+    /// See [`Self::partition_key_name`].
     #[must_use]
     pub fn set_partition_key_name(mut self, name: Option<String>) -> Self {
         self.partition_key_name = name;
@@ -262,7 +266,8 @@ impl TableConfigBuilder {
         self
     }
 
-    /// The sort key attribute's name. See [`Self::sort_key_name`].
+    /// The sort key attribute's name.
+    /// See [`Self::sort_key_name`].
     #[must_use]
     pub fn set_sort_key_name(mut self, name: Option<String>) -> Self {
         self.sort_key_name = name;
@@ -287,7 +292,8 @@ impl TableConfigBuilder {
         self
     }
 
-    /// Replace every attribute action. See [`Self::attribute_actions_on_encrypt`].
+    /// Replace every attribute action.
+    /// See [`Self::attribute_actions_on_encrypt`].
     #[must_use]
     pub fn set_attribute_actions_on_encrypt(
         mut self,
@@ -308,7 +314,8 @@ impl TableConfigBuilder {
         self
     }
 
-    /// Replace the attributes left out of the signature. See [`Self::allowed_unsigned_attributes`].
+    /// Replace the attributes left out of the signature.
+    /// See [`Self::allowed_unsigned_attributes`].
     #[must_use]
     pub fn set_allowed_unsigned_attributes(mut self, names: Option<Vec<String>>) -> Self {
         self.allowed_unsigned_attributes = names;
@@ -324,7 +331,8 @@ impl TableConfigBuilder {
         self
     }
 
-    /// The prefix of attributes left out of the signature. See [`Self::allowed_unsigned_attribute_prefix`].
+    /// The prefix of attributes left out of the signature.
+    /// See [`Self::allowed_unsigned_attribute_prefix`].
     #[must_use]
     pub fn set_allowed_unsigned_attribute_prefix(mut self, prefix: Option<String>) -> Self {
         self.allowed_unsigned_attribute_prefix = prefix;
@@ -341,21 +349,24 @@ impl TableConfigBuilder {
         self
     }
 
-    /// The algorithm suite new items are written with. See [`Self::algorithm_suite_id`].
+    /// The algorithm suite new items are written with.
+    /// See [`Self::algorithm_suite_id`].
     #[must_use]
     pub const fn set_algorithm_suite_id(mut self, id: Option<AlgorithmSuiteId>) -> Self {
         self.algorithm_suite_id = id;
         self
     }
 
-    /// The keyring that protects each item's data key. Set this or [`Self::cmm`].
+    /// The keyring that protects each item's data key.
+    /// Set this or [`Self::cmm`].
     #[must_use]
     pub fn keyring(mut self, keyring: impl IntoShared<SharedKeyring>) -> Self {
         self.keyring = Some(keyring.into_shared());
         self
     }
 
-    /// The keyring. See [`Self::keyring`].
+    /// The keyring.
+    /// See [`Self::keyring`].
     #[must_use]
     pub fn set_keyring(mut self, keyring: Option<SharedKeyring>) -> Self {
         self.keyring = keyring;
@@ -370,7 +381,8 @@ impl TableConfigBuilder {
         self
     }
 
-    /// The cryptographic materials manager. See [`Self::cmm`].
+    /// The cryptographic materials manager.
+    /// See [`Self::cmm`].
     #[must_use]
     pub fn set_cmm(mut self, cmm: Option<SharedCmm>) -> Self {
         self.cmm = cmm;
@@ -384,7 +396,8 @@ impl TableConfigBuilder {
         self
     }
 
-    /// Whether plaintext items are written and read. See [`Self::plaintext_override`].
+    /// Whether plaintext items are written and read.
+    /// See [`Self::plaintext_override`].
     #[must_use]
     pub const fn set_plaintext_override(mut self, policy: Option<PlaintextOverride>) -> Self {
         self.plaintext_override = policy;
@@ -401,7 +414,8 @@ impl TableConfigBuilder {
         self
     }
 
-    /// The beacons. See [`Self::search`].
+    /// The beacons.
+    /// See [`Self::search`].
     #[must_use]
     pub fn set_search(mut self, search: Option<SearchConfig>) -> Self {
         self.search = search;

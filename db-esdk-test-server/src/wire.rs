@@ -3,10 +3,11 @@
 
 //! rpcv2Cbor HTTP wire layer.
 //!
-//! Routes `POST /service/{Service}/operation/{Operation}`, validates the
-//! `smithy-protocol` header, decodes the CBOR request body into the operation's
-//! input, dispatches to a handler, and encodes the CBOR response or a modeled
-//! error.
+//! For each `POST /service/{Service}/operation/{Operation}`, the router:
+//! - checks the `smithy-protocol` header
+//! - decodes the CBOR request body into the operation's input
+//! - calls the operation's handler
+//! - encodes the CBOR response or a modeled error
 
 use crate::error::ServerError;
 use crate::handlers::AppState;
@@ -26,7 +27,8 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::sync::Arc;
 
-/// Build the router. Shared with tests so they can drive the real wire in-process.
+/// Build the router.
+/// Tests call this to send real rpcv2Cbor requests to the server in-process.
 pub fn app(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/service/{service}/operation/{operation}", post(dispatch))

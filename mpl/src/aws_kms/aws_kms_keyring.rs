@@ -23,9 +23,9 @@ use crate::structures::{
     EncryptionMaterials, PlaintextDataKey,
 };
 
-/// The key provider ID of every encrypted data key this keyring writes.
+/// The key provider ID of every encrypted data key that this keyring writes.
 pub(crate) const PROVIDER_ID: &str = "aws-kms";
-/// The longest AWS KMS key identifier.
+/// The maximum length of an AWS KMS key identifier.
 pub(crate) const MAX_AWS_KMS_IDENTIFIER_LENGTH: usize = 2048;
 /// AWS KMS ciphertexts are 1 to 6144 bytes.
 const MAX_CIPHERTEXT_LENGTH: usize = 6144;
@@ -93,9 +93,10 @@ pub(crate) fn parse_kms_identifier(identifier: &str) -> Result<KmsIdentifier, St
 
 /// A keyring that protects each data key with one AWS KMS key.
 ///
-/// On encrypt it calls AWS KMS `GenerateDataKey` (or `Encrypt` when the materials already
-/// have a data key). On decrypt it tries only the encrypted data keys this KMS key wrote,
-/// so decrypting needs the key's ARN, not an alias.
+/// On encrypt, it calls AWS KMS `GenerateDataKey`,
+/// or `Encrypt` when the materials already have a data key.
+/// On decrypt, it tries only the encrypted data keys that this KMS key wrote.
+/// Decrypting needs a key ARN: a keyring built with a key ID or an alias fails on decrypt.
 ///
 /// ```no_run
 /// use aws_crypto_mpl::keyring::AwsKmsKeyring;
@@ -131,7 +132,7 @@ impl std::fmt::Debug for AwsKmsKeyring {
 }
 
 impl AwsKmsKeyring {
-    /// `aws-kms` and the KMS key, which errors show.
+    /// The name that error messages show for this keyring: `aws-kms` and the KMS key identifier.
     #[must_use]
     pub fn name(&self) -> Cow<'_, str> {
         Cow::Owned(format!("aws-kms {}", self.inner.kms_key_id))
@@ -143,13 +144,13 @@ impl AwsKmsKeyring {
         AwsKmsKeyringBuilder::default()
     }
 
-    /// The AWS KMS key identifier this keyring uses.
+    /// The AWS KMS key identifier that this keyring uses.
     #[must_use]
     pub fn kms_key_id(&self) -> &str {
         &self.inner.kms_key_id
     }
 
-    /// The grant tokens sent with every AWS KMS request.
+    /// The grant tokens that this keyring sends with every AWS KMS request.
     #[must_use]
     pub fn grant_tokens(&self) -> &[String] {
         &self.inner.grant_tokens
@@ -163,7 +164,8 @@ impl AwsKmsKeyring {
         service_err(&self.inner.kms_key_id, message)
     }
 
-    /// `GenerateDataKey` of `len` bytes: the plaintext, the ciphertext, and the key ARN.
+    /// Call AWS KMS `GenerateDataKey` for a data key of `len` bytes.
+    /// Returns the plaintext, the ciphertext, and the ARN of the KMS key.
     async fn generate_data_key(
         &self,
         ec: &HashMap<String, String>,
@@ -216,7 +218,8 @@ impl AwsKmsKeyring {
         Ok((PlaintextDataKey::new(plaintext), ciphertext, key_id))
     }
 
-    /// `Encrypt` of `plaintext`: the ciphertext and the key ARN.
+    /// Call AWS KMS `Encrypt` on `plaintext`.
+    /// Returns the ciphertext and the ARN of the KMS key.
     async fn encrypt(
         &self,
         ec: &HashMap<String, String>,
@@ -256,8 +259,8 @@ impl AwsKmsKeyring {
         Ok((ciphertext, key_id))
     }
 
-    /// Add a data key wrapped by this keyring's AWS KMS key to `materials`,
-    /// generating the data key when they have none.
+    /// Wrap the data key in `materials` with this keyring's AWS KMS key and add the encrypted data key.
+    /// Generates the data key first when `materials` has none.
     pub(crate) async fn wrap_materials(
         &self,
         materials: EncryptionMaterials,
@@ -304,10 +307,10 @@ impl AwsKmsKeyring {
         )
     }
 
-    /// Decrypt the first encrypted data key whose AWS KMS key `matches` this keyring's key,
-    /// calling AWS KMS `Decrypt` with this keyring's key.
+    /// Try each encrypted data key whose AWS KMS key `matches` this keyring's key,
+    /// and return the first one that AWS KMS `Decrypt` with this keyring's key unwraps.
     ///
-    /// `matches` gets this keyring's key ARN and the key ARN the data key names.
+    /// `matches` takes this keyring's key ARN, then the key ARN that the encrypted data key names.
     pub(crate) async fn unwrap_materials(
         &self,
         input: OnDecryptInput,
@@ -407,9 +410,10 @@ pub(crate) fn service_err(key_id: &str, message: impl Into<String>) -> Error {
     )
 }
 
-/// `Decrypt` of `ciphertext` with the AWS KMS key `key_id`: the plaintext, of `len` bytes.
+/// Call AWS KMS `Decrypt` on `ciphertext` with the AWS KMS key `key_id`.
+/// Returns the plaintext, which must be `len` bytes.
 ///
-/// The response must name `key_id`.
+/// Fails unless the response names `key_id`.
 async fn kms_decrypt(
     client: &KmsClient,
     key_id: &str,
@@ -443,7 +447,8 @@ async fn kms_decrypt(
         .ok_or_else(|| service_err(key_id, "Invalid response from KMS Decrypt"))
 }
 
-/// Unwrap `edk` with the AWS KMS key `key_id` into the decryption materials.
+/// Unwrap `edk` with the AWS KMS key `key_id`.
+/// Returns a copy of `materials` with the plaintext data key added.
 pub(crate) async fn decrypt_edk(
     client: &KmsClient,
     key_id: &str,
@@ -473,7 +478,8 @@ pub(crate) async fn decrypt_edk(
     }
 }
 
-/// The grant tokens, checked: at most 10, each 1 to 8192 characters.
+/// Check `grant_tokens`: at most 10, each 1 to 8192 characters.
+/// Returns an empty list for `None`.
 pub(crate) fn valid_grant_tokens(grant_tokens: Option<Vec<String>>) -> Result<Vec<String>, Error> {
     let grant_tokens = grant_tokens.unwrap_or_default();
     if grant_tokens.len() > MAX_GRANT_TOKENS {
@@ -540,7 +546,8 @@ pub struct AwsKmsKeyringBuilder {
 }
 
 impl AwsKmsKeyringBuilder {
-    /// The AWS KMS key: a key ARN, key ID, alias name, or alias ARN. Required.
+    /// The AWS KMS key: a key ARN, key ID, alias name, or alias ARN.
+    /// Required.
     ///
     /// Decrypting needs a key ARN.
     #[must_use]
@@ -556,7 +563,8 @@ impl AwsKmsKeyringBuilder {
         self
     }
 
-    /// The AWS KMS client, in the key's region. Required.
+    /// The AWS KMS client, in the key's region.
+    /// Required.
     #[must_use]
     pub fn kms_client(mut self, kms_client: KmsClient) -> Self {
         self.kms_client = Some(kms_client);
@@ -590,8 +598,10 @@ impl AwsKmsKeyringBuilder {
     ///
     /// # Errors
     ///
-    /// - [`Validation`](crate::Error::Validation): no key or client, a malformed key identifier,
-    ///   or more than 10 grant tokens, or a grant token of the wrong length.
+    /// - [`Validation`](crate::Error::Validation): no key or client,
+    ///   a malformed key identifier,
+    ///   more than 10 grant tokens,
+    ///   or a grant token of the wrong length.
     pub fn build(self) -> Result<AwsKmsKeyring, Error> {
         let kms_key_id = required(self.kms_key_id, "kms_key_id")?;
         let client = required(self.kms_client, "kms_client")?;

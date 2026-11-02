@@ -18,7 +18,7 @@ use crate::search::key_source::KeyLocation;
 use crate::search::partition::GetPartitionNumberInput;
 use crate::types::CryptoAction;
 
-/// The expression value naming the beacon partition a query reads.
+/// The expression value that names the beacon partition that a query reads.
 pub(crate) const PARTITION_NAME: &str = ":aws_dbe_partition";
 /// The attribute written to every item of a table with beacons.
 const VERSION_TAG: &str = "aws_dbe_v_1";
@@ -26,12 +26,12 @@ const VERSION_TAG: &str = "aws_dbe_v_1";
 type Values = HashMap<String, AttributeValue>;
 
 impl SearchInfo {
-    /// The partition `item` is written in, as the partition selector picks it.
+    /// The partition that the partition selector picks for `item`.
     ///
     /// # Errors
     ///
-    /// The selector's error, or a `Validation` error when the selector
-    /// returns a partition that is not less than the number of partitions.
+    /// The selector's error,
+    /// or a `Validation` error when the selector returns a partition that is not less than the number of partitions.
     pub(crate) async fn get_partition(
         &self,
         item: &Item,

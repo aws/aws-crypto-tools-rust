@@ -1,8 +1,8 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! The wire shapes of the DDB-SDK transform operations: the transforms client, and the
-//! minimal DynamoDB request and response shapes the model carries.
+//! The wire shapes of the DDB-SDK transform operations:
+//! the transforms client, and the minimal DynamoDB request and response shapes that the model carries.
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

@@ -1,8 +1,8 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! The searchable-encryption (beacon) configuration: the wire shapes of the
-//! TestServer model's `SearchConfig`, and their conversion to `aws_db_esdk::search`.
+//! The searchable-encryption (beacon) configuration:
+//! the wire shapes of the TestServer model's `SearchConfig`, and their conversion to `aws_db_esdk::search`.
 
 use std::collections::HashMap;
 use std::time::Duration;

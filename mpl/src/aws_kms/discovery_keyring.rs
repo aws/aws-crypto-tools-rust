@@ -45,7 +45,7 @@ impl DiscoveryFilter {
         &self.account_ids
     }
 
-    /// Whether the AWS KMS key ARN with this partition and account passes the filter.
+    /// Whether the filter allows an AWS KMS key in `partition` and `account`.
     pub(crate) fn allows(&self, partition: &str, account: &str) -> bool {
         self.partition == partition && self.account_ids.iter().any(|a| a == account)
     }
@@ -60,7 +60,8 @@ pub struct DiscoveryFilterBuilder {
 }
 
 impl DiscoveryFilterBuilder {
-    /// The AWS partition, such as `aws`. Required.
+    /// The AWS partition, such as `aws`.
+    /// Required.
     #[must_use]
     pub fn partition(mut self, partition: impl Into<String>) -> Self {
         self.partition = Some(partition.into());
@@ -74,7 +75,8 @@ impl DiscoveryFilterBuilder {
         self
     }
 
-    /// Add an AWS account whose keys the keyring may use. At least one is required.
+    /// Add an AWS account whose keys the keyring may use.
+    /// At least one is required.
     #[must_use]
     pub fn account_ids(mut self, account_id: impl Into<String>) -> Self {
         self.account_ids
@@ -95,7 +97,8 @@ impl DiscoveryFilterBuilder {
     /// # Errors
     ///
     /// - [`Validation`](crate::Error::Validation): the partition is unset or blank,
-    ///   or there is no account ID, or an account ID is blank.
+    ///   there is no account ID,
+    ///   or an account ID is blank.
     pub fn build(self) -> Result<DiscoveryFilter, Error> {
         let partition = required(self.partition, "partition")?;
         let account_ids = self.account_ids.unwrap_or_default();
@@ -123,8 +126,9 @@ impl DiscoveryFilterBuilder {
 
 /// A keyring that decrypts with the AWS KMS key named in each encrypted data key.
 ///
-/// It cannot encrypt. On decrypt it tries every `aws-kms` encrypted data key the
-/// [`DiscoveryFilter`] allows, calling AWS KMS `Decrypt` with the key ARN the data key names.
+/// It cannot encrypt.
+/// On decrypt, it tries every `aws-kms` encrypted data key that the [`DiscoveryFilter`] allows.
+/// For each one, it calls AWS KMS `Decrypt` with the key ARN that the encrypted data key names.
 /// The KMS client must be in that key's region.
 ///
 /// ```no_run
@@ -164,7 +168,7 @@ impl std::fmt::Debug for AwsKmsDiscoveryKeyring {
 }
 
 impl AwsKmsDiscoveryKeyring {
-    /// `aws-kms-discovery`, which errors show.
+    /// The name that error messages show for this keyring: `aws-kms-discovery`.
     #[must_use]
     pub fn name(&self) -> Cow<'_, str> {
         Cow::Borrowed("aws-kms-discovery")
@@ -176,19 +180,19 @@ impl AwsKmsDiscoveryKeyring {
         AwsKmsDiscoveryKeyringBuilder::default()
     }
 
-    /// The filter on the AWS KMS keys this keyring uses, if any.
+    /// The filter on the AWS KMS keys that this keyring uses, if any.
     #[must_use]
     pub fn discovery_filter(&self) -> Option<&DiscoveryFilter> {
         self.inner.discovery_filter.as_ref()
     }
 
-    /// The grant tokens sent with every AWS KMS request.
+    /// The grant tokens that this keyring sends with every AWS KMS request.
     #[must_use]
     pub fn grant_tokens(&self) -> &[String] {
         &self.inner.grant_tokens
     }
 
-    /// The key ARN of `edk` when this keyring should try it.
+    /// The key ARN that `edk` names, or `None` when this keyring should not try `edk`.
     fn key_arn<'a>(&self, edk: &'a EncryptedDataKey) -> Result<Option<&'a str>, Error> {
         if edk.key_provider_id() != PROVIDER_ID {
             return Ok(None);
@@ -206,7 +210,7 @@ impl AwsKmsDiscoveryKeyring {
                 "Only AWS KMS Keys supported",
             ));
         }
-        // A parsed ARN has six `:`-separated parts: arn:partition:kms:region:account:resource.
+        // parse_kms_arn accepted `key_id`, so it has six parts: arn:partition:kms:region:account:resource.
         let parts: Vec<&str> = key_id.split(':').collect();
         let allowed = self
             .inner
@@ -227,7 +231,8 @@ pub struct AwsKmsDiscoveryKeyringBuilder {
 }
 
 impl AwsKmsDiscoveryKeyringBuilder {
-    /// The AWS KMS client. Required.
+    /// The AWS KMS client.
+    /// Required.
     #[must_use]
     pub fn kms_client(mut self, kms_client: KmsClient) -> Self {
         self.kms_client = Some(kms_client);
@@ -241,7 +246,8 @@ impl AwsKmsDiscoveryKeyringBuilder {
         self
     }
 
-    /// Use only the AWS KMS keys this filter allows. Optional: without one, any key.
+    /// Use only the AWS KMS keys that this filter allows.
+    /// Optional: with no filter, the keyring tries any AWS KMS key.
     #[must_use]
     pub fn discovery_filter(mut self, discovery_filter: DiscoveryFilter) -> Self {
         self.discovery_filter = Some(discovery_filter);
@@ -275,7 +281,8 @@ impl AwsKmsDiscoveryKeyringBuilder {
     ///
     /// # Errors
     ///
-    /// - [`Validation`](crate::Error::Validation): no client, more than 10 grant tokens,
+    /// - [`Validation`](crate::Error::Validation): no client,
+    ///   more than 10 grant tokens,
     ///   or a grant token of the wrong length.
     pub fn build(self) -> Result<AwsKmsDiscoveryKeyring, Error> {
         let client = required(self.kms_client, "kms_client")?;

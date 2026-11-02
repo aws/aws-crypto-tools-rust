@@ -3,9 +3,9 @@
 
 //! Item encrypt/decrypt and `Client` put/get run concurrently across threads and tasks.
 //!
-//! One `ItemEncryptor` or `Client` is shared by every thread, the way a service shares
-//! one client. Each encrypt must still draw its own message ID: two items with the
-//! same message ID and data key get the same field keys and AES-GCM nonces.
+//! Every thread shares one `ItemEncryptor` or `Client`, the way a service shares one client.
+//! Each encrypt must still draw its own message ID:
+//! two items with the same message ID and data key get the same field keys and AES-GCM nonces.
 
 mod client_support;
 mod item_encryptor_support;
@@ -22,7 +22,7 @@ const THREADS: usize = 8;
 const ITERS_PER_THREAD: usize = 24;
 const HEADER: &str = "aws_dbe_head";
 
-/// The 32-byte message ID: header version (1) + flavor (1) + message ID (32).
+/// The 32-byte message ID, which follows the 1-byte version and the 1-byte flavor in the header.
 fn message_id(encrypted: &Item) -> Vec<u8> {
     match &encrypted[HEADER] {
         AttributeValue::B(b) => b.as_ref()[2..34].to_vec(),

@@ -25,7 +25,7 @@ async fn put(client: &Client, table: &str, i: Item) {
         .expect("the put succeeds");
 }
 
-/// A client with items `a/1`, `a/2`, and `b/1` in [`TABLE`], and `a/1` in [`PLAIN_TABLE`].
+/// A fake and a client, with items `a/1`, `a/2`, and `b/1` in [`TABLE`] and `a/1` in [`PLAIN_TABLE`].
 async fn populated() -> (client_support::FakeDdb, Client) {
     let (fake, client) = setup();
     for (bar, sign) in [("a", "1"), ("a", "2"), ("b", "1")] {

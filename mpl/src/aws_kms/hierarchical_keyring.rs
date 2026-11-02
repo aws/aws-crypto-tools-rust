@@ -871,8 +871,8 @@ impl HierarchicalKeyring {
     /// compute the cache identifier,
     /// get the branch key materials from the cache or else the key store,
     /// and unwrap the EDK ciphertext.
-    /// Returns the recovered plaintext data key, and the symmetric signing key
-    /// when the algorithm suite uses intermediate key wrapping.
+    /// Returns the recovered plaintext data key.
+    /// When the algorithm suite uses intermediate key wrapping, also returns the symmetric signing key.
     ///
     /// The caller (`on_decrypt`) is responsible for filtering the EDK
     /// list and for collecting per-EDK errors into the final error.
@@ -882,9 +882,9 @@ impl HierarchicalKeyring {
         edk: &EncryptedDataKey,
         branch_key_id: &str,
     ) -> Result<(PlaintextDataKey, Option<SymmetricSigningKey>), Error> {
-        // With intermediate key wrapping the ciphertext is the encrypted
-        // plaintext data key followed by the branch key's wrapping of the
-        // intermediate key; otherwise it is the branch key's wrapping alone.
+        // With intermediate key wrapping, the ciphertext is the encrypted plaintext data key
+        // followed by the branch key's wrapping of the intermediate key.
+        // Otherwise it is only the branch key's wrapping.
         let suite = materials.algorithm_suite();
         let (encrypted_pdk, ciphertext) = match suite.edk_wrapping() {
             EdkWrapping::IntermediateKeyWrapping(_) => {
@@ -921,8 +921,8 @@ impl HierarchicalKeyring {
         let Some(encrypted_pdk) = encrypted_pdk else {
             return Ok((PlaintextDataKey::new(unwrapped), None));
         };
-        // The unwrapped bytes are the intermediate key; keys derived from it
-        // decrypt the plaintext data key and sign the message.
+        // The unwrapped bytes are the intermediate key.
+        // Keys derived from it decrypt the plaintext data key and sign the message.
         let aad = materials
             .encryption_context()
             .serialize()
@@ -933,8 +933,9 @@ impl HierarchicalKeyring {
         Ok((plaintext_dk, Some(signing_key)))
     }
 
-    /// Unwrap `ciphertext`, the branch key's wrapping in an EDK, with version
-    /// `branch_key_version` of the branch key, from the cache or the key store.
+    /// Unwrap `ciphertext` with version `branch_key_version` of the branch key,
+    /// taken from the cache or the key store.
+    /// `ciphertext` is the part of the EDK that the branch key wrapped.
     async fn decrypt_edk_at_version(
         &self,
         materials: &DecryptionMaterials,
@@ -1007,11 +1008,11 @@ fn name_branch_key_in_cache_wait(mut e: Error, branch_key_id: &str) -> Error {
     e
 }
 
-/// The EDK ciphertext that wraps `plaintext_dk` under the branch key, and the
-/// symmetric signing key when the algorithm suite uses intermediate key wrapping.
+/// Wrap `plaintext_dk` under the branch key and return the EDK ciphertext.
+/// When the algorithm suite uses intermediate key wrapping, also return the symmetric signing key.
 ///
-/// With intermediate key wrapping, the branch key wraps a fresh intermediate key;
-/// keys derived from it encrypt the plaintext data key and sign the message.
+/// With intermediate key wrapping, the branch key wraps a fresh intermediate key.
+/// Keys derived from the intermediate key encrypt the plaintext data key and sign the message.
 /// The ciphertext is the encrypted plaintext data key followed by that wrapping.
 fn wrap_data_key(
     bkm: &BranchKeyMaterials,

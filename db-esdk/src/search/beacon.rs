@@ -421,8 +421,9 @@ impl CompoundInfo {
         match part {
             BeaconPart::Encrypted { prefix, beacon } => {
                 let MaybeKeyMap::Keys(keys) = keys else {
-                    // An encrypted part needs a key, as `Beacon::get_beacon_value` checks for
-                    // standard beacons (search-config.md#get-beacon-key-for-query).
+                    // An encrypted part needs a key.
+                    // `Beacon::get_beacon_value` makes the same check for standard beacons
+                    // (search-config.md#get-beacon-key-for-query).
                     return Err(val_err(format!(
                         "Need KeyId for beacon {} but no KeyId found in query.",
                         beacon.name

@@ -1,8 +1,8 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! The footer: one HMAC recipient tag per encrypted data key, then an optional ECDSA signature,
-//! both over a hash of the header, the encryption context, and every signed field.
+//! The footer: one HMAC recipient tag per encrypted data key, then an optional ECDSA signature.
+//! Both cover a hash of the header, the encryption context, and every signed field.
 
 use aws_crypto_mpl::types::{DecryptionMaterials, EncryptionContext, EncryptionMaterials};
 use aws_mpl_primitives::{

@@ -1,23 +1,22 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Plaintext DynamoDB table -> AWS Database Encryption SDK migration.
+//! Migrates a plaintext DynamoDB table to the AWS Database Encryption SDK.
 //!
-//! Walks the four migration steps in deployment order and, at each step,
-//! reads items the other steps wrote — showing exactly which reads succeed
-//! and which are refused as the dataset moves from plaintext to encrypted:
+//! Runs the four migration steps in deployment order.
+//! At each step, it reads the items that the other steps wrote, to show which reads succeed and which fail:
+//! - step 0, a plain DynamoDB client: writes plaintext, reads plaintext only
+//! - step 1, `ForcePlaintextWriteAllowPlaintextRead`: writes plaintext, reads plaintext or encrypted
+//! - step 2, `ForbidPlaintextWriteAllowPlaintextRead`: writes encrypted, reads plaintext or encrypted
+//! - step 3, the default plaintext override: writes encrypted, reads encrypted only
 //!
-//!   Step 0  plain client          write plaintext, read plaintext only
-//!   Step 1  ForcePlaintextWrite…  write plaintext, read plaintext or encrypted
-//!   Step 2  ForbidPlaintextWrite… write encrypted, read plaintext or encrypted
-//!   Step 3  (default)             write encrypted, read encrypted only
+//! Each step writes its own item, under its own sort key.
+//! To read another step's item, a step reads that step's sort key.
 //!
-//! Each step writes its own item at its own sort key and reads one item back,
-//! so a step reads another step's item by reading that step's sort key.
-//!
-//! Requires AWS credentials, the key store in `common.rs` with its branch key
-//! provisioned, and a DynamoDB table with partition key `partition_key` (S)
-//! and sort key `sort_key` (N).
+//! Requires AWS credentials, the key store in `common.rs` with its branch key provisioned,
+//! and a DynamoDB table with:
+//! - partition key `partition_key`, type S
+//! - sort key `sort_key`, type N
 
 mod common;
 mod migration_utils;
@@ -42,16 +41,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Clients take their region and credentials from the default AWS config chain.
     let cfg = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
 
-    // Each step is boxed so this function keeps one pointer per step, not a
-    // copy of each step's state; unboxed, a debug build overflows the 1 MiB
-    // Windows main-thread stack.
+    // `Box::pin` puts each step's future on the heap, so `main` holds only a pointer to it.
+    // Unboxed, the futures overflow the 1 MiB main thread stack on Windows in a debug build.
 
-    // Step 0: the plaintext starting state — write and read our own item.
+    // Step 0: the plaintext starting state, which writes and reads its own item.
     Box::pin(step_0::run(&cfg, PARTITION_KEY, STEP_0_KEY, STEP_0_KEY)).await?;
 
     // Step 1 deployed: still plaintext, but readers are ready for encryption.
     Box::pin(step_1::run(&cfg, PARTITION_KEY, STEP_1_KEY, STEP_1_KEY)).await?;
-    // Step 1 reads Step 0's plaintext item; the old Step 0 reader reads Step 1's.
+    // Step 1 reads step 0's plaintext item; the old step 0 reader reads step 1's.
     Box::pin(step_1::run(&cfg, PARTITION_KEY, STEP_1_KEY, STEP_0_KEY)).await?;
     Box::pin(step_0::run(&cfg, PARTITION_KEY, STEP_0_KEY, STEP_1_KEY)).await?;
 
@@ -60,25 +58,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Step 2 reads the earlier plaintext items.
     Box::pin(step_2::run(&cfg, PARTITION_KEY, STEP_2_KEY, STEP_0_KEY)).await?;
     Box::pin(step_2::run(&cfg, PARTITION_KEY, STEP_2_KEY, STEP_1_KEY)).await?;
-    // The Step 1 reader decrypts Step 2's encrypted item.
+    // The step 1 reader decrypts step 2's encrypted item.
     Box::pin(step_1::run(&cfg, PARTITION_KEY, STEP_1_KEY, STEP_2_KEY)).await?;
-    // The plaintext Step 0 reader cannot read Step 2's encrypted item.
+    // The plaintext step 0 reader cannot read step 2's encrypted item.
     expect_err(
         "step 0 reading an encrypted item",
         Box::pin(step_0::run(&cfg, PARTITION_KEY, STEP_0_KEY, STEP_2_KEY)),
     )
     .await?;
 
-    // (Operator back-fills here: re-encrypt every remaining plaintext item.)
+    // In a real migration, re-encrypt every remaining plaintext item here, before deploying step 3.
 
-    // Step 3 deployed: fully encrypted, plaintext reads are refused.
+    // Step 3 deployed: every write is encrypted, and plaintext reads fail.
     Box::pin(step_3::run(&cfg, PARTITION_KEY, STEP_3_KEY, STEP_3_KEY)).await?;
-    // Step 2 and Step 3 readers both read Step 3's / Step 2's encrypted items.
+    // Step 2 reads step 3's encrypted item, and step 3 reads step 2's.
     Box::pin(step_2::run(&cfg, PARTITION_KEY, STEP_2_KEY, STEP_3_KEY)).await?;
     Box::pin(step_3::run(&cfg, PARTITION_KEY, STEP_3_KEY, STEP_2_KEY)).await?;
-    // The Step 1 reader still decrypts Step 3's encrypted item.
+    // The step 1 reader still decrypts step 3's encrypted item.
     Box::pin(step_1::run(&cfg, PARTITION_KEY, STEP_1_KEY, STEP_3_KEY)).await?;
-    // Step 3 refuses the still-plaintext items from Steps 0 and 1.
+    // Step 3 refuses the items from steps 0 and 1, which are still plaintext.
     expect_err(
         "step 3 reading a plaintext item written by step 0",
         Box::pin(step_3::run(&cfg, PARTITION_KEY, STEP_3_KEY, STEP_0_KEY)),
@@ -94,11 +92,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-/// Run a step we expect to fail, and turn that failure into success.
+/// Runs a step that must fail, and returns `Ok` if it does.
 ///
-/// Reading an encrypted item with a plaintext reader, or a plaintext item with
-/// a plaintext-forbidding reader, is supposed to fail — so a success here is
-/// the error.
+/// A plaintext reader must fail on an encrypted item.
+/// A reader that forbids plaintext must fail on a plaintext item.
+/// So if the step succeeds, `expect_err` returns an error.
 async fn expect_err(
     label: &str,
     step: impl Future<Output = Result<(), Box<dyn std::error::Error>>>,

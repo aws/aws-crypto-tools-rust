@@ -28,7 +28,7 @@ fn no_list<T>(l: Option<&Vec<T>>) -> bool {
 }
 
 impl Transforms {
-    /// A GetItem request needs no change, so it passes through unchanged.
+    /// Return the GetItem request unchanged.
     ///
     /// # Errors
     ///
@@ -37,7 +37,7 @@ impl Transforms {
         Ok(input)
     }
 
-    /// Verify and decrypt the item a GetItem response returns.
+    /// Verify and decrypt the item that a GetItem response returns.
     ///
     /// # Errors
     ///
@@ -81,13 +81,14 @@ impl Transforms {
 
     /// Check a Query request on a configured table.
     ///
+    /// On a table with beacons, rewrite the key condition and filter expressions to compare beacons.
+    ///
     /// # Errors
     ///
     /// A `Validation` error when the request sets a legacy parameter
     /// (`AttributesToGet`, `KeyConditions`, `QueryFilter`, or `ConditionalOperator`),
     /// when its key condition or filter expression is longer than 4096 characters,
     /// or when either reads an encrypted attribute that has no beacon.
-    /// On a table with beacons, the expressions are rewritten to compare beacons.
     pub async fn query_input(&self, mut input: QueryInput) -> Result<QueryInput, Error> {
         let Some(table) = self.table_info(input.table_name.as_deref()) else {
             //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#modify-before-query
@@ -155,13 +156,13 @@ impl Transforms {
         Ok(input)
     }
 
-    /// How many queries, one per beacon partition, together read every item `input` matches.
+    /// The number of queries needed to read every item that `input` matches, one per beacon partition.
     ///
-    /// Run the query once for each partition, with `:aws_dbe_partition` set to
-    /// `0`, `1`, ... in its expression attribute values.
-    /// The count is the least common multiple of the partition counts of the beacons
-    /// the key condition compares, at most the beacon version's maximum number of partitions.
-    /// It is 1 for a table without beacons.
+    /// Run the query once for each partition,
+    /// with `:aws_dbe_partition` set to `0`, `1`, ... in its expression attribute values.
+    /// The count is the least common multiple of the partition counts of the beacons that the key condition compares.
+    /// It is at most the beacon version's maximum number of partitions,
+    /// and 1 for a table without beacons.
     ///
     /// # Errors
     ///
@@ -191,15 +192,15 @@ impl Transforms {
         )
     }
 
-    /// Verify and decrypt each item a Query response returns.
+    /// Verify and decrypt each item that a Query response returns.
     ///
-    /// On a table with beacons, the items are filtered again with the original
-    /// key condition and filter, dropping those that matched only by their beacons.
+    /// On a table with beacons, filter the items again with the original key condition and filter,
+    /// and drop the items that matched only by their beacons.
     ///
     /// # Errors
     ///
-    /// A `Validation` error when the original key condition or filter expression
-    /// is longer than 4096 characters, or cannot be evaluated.
+    /// A `Validation` error when the original key condition or filter expression is longer than 4096 characters,
+    /// or when evaluating it fails.
     /// Decryption errors keep their variant.
     pub async fn query_output(
         &self,
@@ -238,13 +239,14 @@ impl Transforms {
 
     /// Check a Scan request on a configured table.
     ///
+    /// On a table with beacons, rewrite the filter expression to compare beacons.
+    ///
     /// # Errors
     ///
     /// A `Validation` error when the request sets a legacy parameter
     /// (`AttributesToGet`, `ScanFilter`, or `ConditionalOperator`),
     /// when its filter expression is longer than 4096 characters,
     /// or when it reads an encrypted attribute that has no beacon.
-    /// On a table with beacons, the filter is rewritten to compare beacons.
     pub async fn scan_input(&self, mut input: ScanInput) -> Result<ScanInput, Error> {
         let Some(table) = self.table_info(input.table_name.as_deref()) else {
             //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#modify-before-scan
@@ -298,15 +300,15 @@ impl Transforms {
         Ok(input)
     }
 
-    /// Verify and decrypt each item a Scan response returns.
+    /// Verify and decrypt each item that a Scan response returns.
     ///
-    /// On a table with beacons, the items are filtered again with the original filter,
-    /// dropping those that matched only by their beacons.
+    /// On a table with beacons, filter the items again with the original filter,
+    /// and drop the items that matched only by their beacons.
     ///
     /// # Errors
     ///
     /// A `Validation` error when the original filter expression is longer than 4096 characters,
-    /// or cannot be evaluated.
+    /// or when evaluating it fails.
     /// Decryption errors keep their variant.
     pub async fn scan_output(
         &self,
@@ -342,7 +344,7 @@ impl Transforms {
         Ok(output)
     }
 
-    /// A BatchGetItem request needs no change, so it passes through unchanged.
+    /// Return the BatchGetItem request unchanged.
     ///
     /// # Errors
     ///
@@ -354,7 +356,7 @@ impl Transforms {
         Ok(input)
     }
 
-    /// Verify and decrypt each item a BatchGetItem response returns for a configured table.
+    /// Verify and decrypt each item that a BatchGetItem response returns for a configured table.
     ///
     /// # Errors
     ///
@@ -368,7 +370,7 @@ impl Transforms {
             return Ok(output);
         }
         let mut responses = output.responses.take().unwrap_or_default();
-        // Sorted, so the same response always fails on the same table.
+        // Sort the table names so that a response with several bad tables always fails on the same one.
         let mut names: Vec<String> = responses.keys().cloned().collect();
         names.sort();
         let mut result = HashMap::with_capacity(names.len());
@@ -401,7 +403,7 @@ impl Transforms {
         Ok(output)
     }
 
-    /// A TransactGetItems request needs no change, so it passes through unchanged.
+    /// Return the TransactGetItems request unchanged.
     ///
     /// # Errors
     ///
@@ -413,7 +415,7 @@ impl Transforms {
         Ok(input)
     }
 
-    /// Verify and decrypt each item a TransactGetItems response returns for a configured table.
+    /// Verify and decrypt each item that a TransactGetItems response returns for a configured table.
     ///
     /// The `n`th response is the item of the `n`th get of `original_input`.
     ///

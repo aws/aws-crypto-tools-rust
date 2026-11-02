@@ -1,9 +1,9 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! The write transforms, ported from the Dafny `PutItemTransform.dfy`,
-//! `UpdateItemTransform.dfy`, `DeleteItemTransform.dfy`, `BatchWriteItemTransform.dfy`,
-//! and `TransactWriteItemsTransform.dfy`, plus the checks those files leave out.
+//! The write transforms, ported from the Dafny
+//! `PutItemTransform.dfy`, `UpdateItemTransform.dfy`, `DeleteItemTransform.dfy`, `BatchWriteItemTransform.dfy`, and `TransactWriteItemsTransform.dfy`.
+//! Also covers the checks that those files leave out.
 
 mod transforms_support;
 
@@ -64,8 +64,6 @@ fn get_input() -> GetItemInput {
         .unwrap()
 }
 
-// --- PutItem ---
-
 #[tokio::test]
 async fn put_item_input_passthrough() {
     let input = put_input("no_such_table", HashMap::new());
@@ -83,7 +81,8 @@ async fn put_item_input_encrypts_and_signs() {
     let t = transforms();
     let encrypted = encrypt(&t, item_n(1)).await;
 
-    // Signed and unsigned plaintext attributes are unchanged; the encrypted one is binary.
+    // Signed and unsigned plaintext attributes are unchanged.
+    // The encrypted one is binary.
     assert_eq!(encrypted["bar"], s("bar1"));
     assert_eq!(encrypted["sign"], s("sign1"));
     assert_eq!(encrypted["plain"], s("plain1"));
@@ -122,7 +121,7 @@ async fn put_item_input_encrypts_and_signs() {
 
 #[tokio::test]
 async fn put_item_attribute_name_too_long_bytes() {
-    // 0xE9 is a 2-byte UTF-8 char, so 40000 chars => 80000 bytes, exceeding the 65535-byte limit.
+    // U+00E9 takes 2 bytes in UTF-8, so 40000 of them take 80000 bytes, over the 65535-byte limit.
     let long_key: String = std::iter::repeat_n('\u{e9}', 40000).collect();
     let input = put_input(
         "foo",
@@ -215,8 +214,8 @@ async fn put_item_input_condition_on_encrypted() {
     );
 }
 
-/// `attribute_not_exists` and the other value-ignoring functions do not read the
-/// attribute they name, so they may name an encrypted one (`FilterExpr.ExtractAttributes`).
+/// `attribute_not_exists` and the other functions that ignore the value do not read the attribute that they name,
+/// so they may name an encrypted attribute (`FilterExpr.ExtractAttributes`).
 #[tokio::test]
 async fn put_item_input_existence_check_on_encrypted() {
     let input = PutItemInput::builder()
@@ -331,8 +330,6 @@ async fn put_item_output_tampered_old_item() {
     assert!(matches!(err, Error::Cryptographic(_)), "{err:?}");
 }
 
-// --- UpdateItem ---
-
 fn update_input(table: &str, expr: Option<&str>) -> UpdateItemInput {
     UpdateItemInput::builder()
         .table_name(table)
@@ -344,7 +341,7 @@ fn update_input(table: &str, expr: Option<&str>) -> UpdateItemInput {
 
 #[tokio::test]
 async fn update_item_input_passthrough() {
-    // On table foo, both the legacy parameter and the update of signed `sign` are rejected.
+    // On table foo, the transform would reject both the legacy parameter and the update of signed `sign`.
     let input = UpdateItemInput::builder()
         .table_name("no_such_table")
         .set_key(Some(HashMap::new()))
@@ -398,7 +395,8 @@ async fn update_item_input_update_expression_invalid() {
 
 #[tokio::test]
 async fn update_item_input_update_expression_plain() {
-    // Dafny uses `no_such_table` here; `foo` also lets an unsigned attribute be updated.
+    // Dafny tests only `no_such_table`.
+    // This test adds `foo`, which accepts an update of the unsigned attribute `plain`.
     let input = update_input("no_such_table", Some("SET plain = :p"));
     let out = transforms().update_item_input(input.clone()).await.unwrap();
     assert_eq!(out, input);
@@ -585,8 +583,6 @@ async fn update_item_output_tampered_whole_item() {
     assert!(matches!(err, Error::Cryptographic(_)), "{err:?}");
 }
 
-// --- DeleteItem ---
-
 fn delete_input(table: &str) -> DeleteItemInput {
     DeleteItemInput::builder()
         .table_name(table)
@@ -597,7 +593,7 @@ fn delete_input(table: &str) -> DeleteItemInput {
 
 #[tokio::test]
 async fn delete_item_input_passthrough() {
-    // On table foo, both the legacy parameter and the condition on `encrypt` are rejected.
+    // On table foo, the transform would reject both the legacy parameter and the condition on `encrypt`.
     let input = DeleteItemInput::builder()
         .table_name("no_such_table")
         .set_key(Some(HashMap::new()))
@@ -745,8 +741,6 @@ async fn delete_item_output_tampered_old_item() {
     //# is the `Attributes` field in the original response
     assert!(matches!(err, Error::Cryptographic(_)), "{err:?}");
 }
-
-// --- BatchWriteItem ---
 
 fn make_put(it: Item) -> WriteRequest {
     WriteRequest::builder()
@@ -923,7 +917,7 @@ async fn batch_write_item_output_transform_unprocessed3() {
 
 #[tokio::test]
 async fn batch_write_item_output_transform_unprocessed4() {
-    // With sort key `sign`, items sharing the partition key `bar1` are told apart by it.
+    // With sort key `sign`, the transform can tell apart items that share the partition key `bar1`.
     let item1a = item(&[
         ("bar", s("bar1")),
         ("sign", s("sign2")),
@@ -1065,8 +1059,6 @@ async fn batch_write_item_force_plaintext_write() {
         output
     );
 }
-
-// --- TransactWriteItems ---
 
 fn transact_input(items: Vec<TransactWriteItem>) -> TransactWriteItemsInput {
     TransactWriteItemsInput::builder()

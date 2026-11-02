@@ -1,9 +1,8 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Populates the table with one item of each of the six workshop record types.
-//! The configured client encrypts the data client-side and writes the beacon
-//! attributes alongside it.
+//! Puts the sample items for each of the six workshop record types.
+//! The client encrypts each item and adds its beacon attributes before writing it.
 
 use std::collections::HashMap;
 

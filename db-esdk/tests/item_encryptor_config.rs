@@ -20,7 +20,7 @@ fn validation_message<T: std::fmt::Debug>(result: Result<T, Error>) -> String {
     }
 }
 
-/// The error of building an item encryptor for `config`.
+/// The `Validation` error message from building an item encryptor for `config`.
 fn encryptor_error(config: aws_db_esdk::TableConfigBuilder) -> String {
     validation_message(
         ItemEncryptor::builder()

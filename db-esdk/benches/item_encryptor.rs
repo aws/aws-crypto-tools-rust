@@ -36,8 +36,9 @@ fn keyring() -> RawAesKeyring {
         .unwrap()
 }
 
-/// An item with `attrs` encrypted attributes besides the partition key, each a mix of
-/// scalar, binary, list and map values so the canonical serialization is exercised.
+/// An item with a partition key and `attrs` more attributes, most of them encrypted.
+/// The attributes cycle through string, binary, list, and map values,
+/// so the benchmark serializes each kind of value.
 fn make_item(attrs: usize) -> (Item, HashMap<String, CryptoAction>) {
     let mut item = Item::new();
     let mut actions = HashMap::new();

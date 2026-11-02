@@ -53,8 +53,8 @@ fn canon_path_nested_segments_in_order() {
     assert_eq!(canon_path("t", &path(&["a", "bc"])), expected);
 }
 
-// The segment length counts UTF-16 code units, as the reference does, while the
-// name itself is written as UTF-8.
+// The segment length counts UTF-16 code units, as the reference does.
+// The name itself is written as UTF-8.
 #[test]
 fn canon_path_length_counts_utf16_units() {
     let grin = "\u{1F600}";
@@ -74,8 +74,8 @@ fn utf16_len_counts_code_units() {
     assert_eq!(utf16_len("\u{1F600}"), 2);
 }
 
-// U+FFFF sorts before U+1F600 by UTF-8 bytes, but after it by UTF-16 code units
-// (0xFFFF > 0xD83D), and the reference sorts by UTF-16.
+// U+FFFF sorts before U+1F600 by UTF-8 bytes, but after it by UTF-16 code units (0xFFFF > 0xD83D).
+// The reference sorts by UTF-16.
 #[test]
 fn utf16_cmp_differs_from_byte_order() {
     let bmp_max = "\u{FFFF}";

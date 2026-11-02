@@ -19,11 +19,12 @@ pub enum CommitmentPolicy {
     Dbe(DbeCommitmentPolicy),
 }
 
-/// DBE Format Commitment Policy ENUM. Every DBE suite commits to its key.
+/// DBE Format Commitment Policy ENUM.
+/// Every DBE suite commits to its key.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum DbeCommitmentPolicy {
-    /// `DBE.REQUIRE_ENCRYPT_REQUIRE_DECRYPT` — encrypt and decrypt with DBE suites only.
+    /// `DBE.REQUIRE_ENCRYPT_REQUIRE_DECRYPT`: encrypt and decrypt with DBE suites only.
     RequireEncryptRequireDecrypt,
 }
 
@@ -82,7 +83,6 @@ impl CommitmentPolicy {
                 Self::Dbe(DbeCommitmentPolicy::RequireEncryptRequireDecrypt),
                 AlgorithmSuiteId::Dbe(_),
             ) => true,
-            // A policy never permits another format's suites.
             (Self::Esdk(_), AlgorithmSuiteId::Dbe(_))
             | (Self::Dbe(_), AlgorithmSuiteId::Esdk(_)) => false,
         }
@@ -103,7 +103,6 @@ impl CommitmentPolicy {
                 Self::Dbe(DbeCommitmentPolicy::RequireEncryptRequireDecrypt),
                 AlgorithmSuiteId::Dbe(_),
             ) => true,
-            // A policy never permits another format's suites.
             (Self::Esdk(_), AlgorithmSuiteId::Dbe(_))
             | (Self::Dbe(_), AlgorithmSuiteId::Esdk(_)) => false,
         }

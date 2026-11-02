@@ -28,7 +28,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let sdk_config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
 
     // The AWS Crypto Tools CI test key store.
-    // Replace these with your own key store's table, name, and KMS key ARN.
+    // Replace these with your own key store's table, logical name, and KMS key ARN.
     let key_store = key_store::DynamoDbKeyStore::builder()
         .ddb_table_name("KeyStoreDdbTable")
         .logical_key_store_name("KeyStoreDdbTable")
@@ -40,7 +40,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build()
         .await?;
 
-    // The branch key's encryption context is bound to every version of it.
+    // The key store binds the branch key's encryption context to every version of the key.
     let branch_key_context = EncryptionContext::from([("purpose", "example")]);
     let branch_key_id = key_store
         .create_key()

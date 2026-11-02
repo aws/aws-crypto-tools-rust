@@ -1,7 +1,7 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Tests ported from the reference implementation's `Beacon.dfy` and `BeaconPartition.dfy`.
+//! Counterparts of the tests in the reference implementation's `Beacon.dfy` and `BeaconPartition.dfy`.
 
 use aws_smithy_types::Blob;
 
@@ -327,7 +327,7 @@ async fn compound_queries() {
         (s(&format!("N_{NAME_BEACON}")), s("Y_1984"))
     );
     assert_eq!(mixed_query(&info, "M_bar").await, s("M_bar"));
-    // Title parts hash: `T_` and 8 hex digits, the signed part unchanged.
+    // A Title part becomes `T_` and 8 hex digits; a signed part is unchanged.
     let title_foo = format!("T_{}", spec_beacon("Title", b"foo", 32));
     for (value, want) in [
         ("T_foo", title_foo.clone()),
@@ -834,7 +834,7 @@ fn part_value_with_split_fails() {
     let part = &cmp.parts[0];
     let err = cmp.part_value_calc("a.b", &MaybeKeyMap::DontUseKeys, part, 0);
 
-    // The query-path guard for beacons.md#value-for-a-compound-beacon: no part value contains the split character.
+    // A query also rejects a part value that contains the split character (beacons.md#value-for-a-compound-beacon).
     assert_eq!(
         val_msg(err),
         "Value 'a.b' for beacon part Name contains the split character '.'."
@@ -961,7 +961,7 @@ async fn compound_uses_the_first_constructor_that_succeeds() {
 
 #[test]
 fn compound_value_is_never_empty() {
-    // A validated configuration always has a required part; build one without, directly.
+    // Validation rejects a constructor with no required part, so build one by hand.
     let info = lotsa_info();
     let Beacon::Compound(cmp) = &info.version.beacons["NameTitle"] else {
         panic!("NameTitle is a compound beacon");

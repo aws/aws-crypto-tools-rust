@@ -1,8 +1,8 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Fixtures for the `Client` tests: an in-process fake DynamoDB and the
-//! DynamoDbEncryptionTransforms test configuration (`TestFixtures.dfy`).
+//! Fixtures for the `Client` tests:
+//! an in-process fake DynamoDB and the DynamoDbEncryptionTransforms test configuration (`TestFixtures.dfy`).
 #![allow(dead_code)]
 
 pub mod fake;
@@ -31,8 +31,8 @@ pub fn keyring() -> RawAesKeyring {
         .expect("a valid keyring")
 }
 
-/// `GetDynamoDbEncryptionTransforms2`'s table: partition key `bar`, sort key `sign`,
-/// `encrypt` encrypted, and `plain` neither encrypted nor signed.
+/// The table of `GetDynamoDbEncryptionTransforms2`:
+/// partition key `bar`, sort key `sign`, `encrypt` encrypted, and `plain` neither encrypted nor signed.
 pub fn table_config() -> TableConfig {
     TableConfig::builder()
         .logical_table_name(TABLE)
@@ -55,7 +55,7 @@ pub fn fake() -> FakeDdb {
         .with_table(PLAIN_TABLE, "bar", Some("sign"))
 }
 
-/// A fake, and a client that encrypts [`TABLE`] and sends to the fake.
+/// A fake, and a client that encrypts [`TABLE`] and sends its requests to the fake.
 pub fn setup() -> (FakeDdb, Client) {
     let fake = fake();
     let client = Client::builder()
@@ -80,8 +80,8 @@ pub fn key(bar: &str, sign: &str) -> Item {
     item(&[("bar", bar), ("sign", sign)])
 }
 
-/// An item of `BatchWriteItemTransform.dfy`: `Item1` is `(1, 1)`, `Item2` is `(2, 2)`,
-/// and `Item1a`, `Item1b`, `Item1c` are `(1, 2)`, `(1, 3)`, `(1, 4)`.
+/// An item of `BatchWriteItemTransform.dfy`:
+/// `Item1` is `(1, 1)`, `Item2` is `(2, 2)`, and `Item1a`, `Item1b`, `Item1c` are `(1, 2)`, `(1, 3)`, `(1, 4)`.
 pub fn dafny_item(bar: u8, n: u8) -> Item {
     item(&[
         ("bar", &format!("bar{bar}")),
@@ -91,7 +91,7 @@ pub fn dafny_item(bar: u8, n: u8) -> Item {
     ])
 }
 
-/// An item of [`TABLE`] with every kind of attribute.
+/// An item of [`TABLE`] with an attribute for each crypto action.
 pub fn full_item(bar: &str, sign: &str) -> Item {
     item(&[
         ("bar", bar),

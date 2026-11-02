@@ -79,8 +79,8 @@ jobs:
           role-session-name: RustTests
           special-characters-workaround: "true" # Some environments (example: windowsOS) cannot tolerate special characters in a secret key.
 
-      # db-esdk's tests and examples also reach the DB-ESDK DynamoDB test tables,
-      # so it uses the CI role aws-database-encryption-sdk-dynamodb uses.
+      # db-esdk's tests and examples also use the DB-ESDK DynamoDB test tables.
+      # This is the CI role that aws-database-encryption-sdk-dynamodb uses, and it can reach them.
       - name: Configure AWS Credentials (DB-ESDK)
         if: matrix.project == 'db-esdk'
         uses: aws-actions/configure-aws-credentials@v6

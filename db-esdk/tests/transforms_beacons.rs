@@ -1,10 +1,10 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! The transforms of a table with a search configuration, ported from the Dafny
-//! `PutItemTransform.dfy` (`TestPutItemInputMulti*`) with the beacons of
-//! `BeaconTestFixtures.GetLotsaBeacons`, plus the beacon paths of Query, Scan,
-//! and `ResolveAttributes` that the Dafny transform tests leave out.
+//! The transforms of a table with a search configuration.
+//! Ported from the Dafny `PutItemTransform.dfy` (`TestPutItemInputMulti*`),
+//! with the beacons of `BeaconTestFixtures.GetLotsaBeacons`.
+//! Also covers the beacon paths of Query, Scan, and `ResolveAttributes` that the Dafny transform tests leave out.
 
 mod transforms_support;
 
@@ -139,8 +139,9 @@ fn query_name(name: &str) -> QueryInput {
         .unwrap()
 }
 
-/// `simple_item` as read back: the fully signed compound beacon `JustSigned` is a
-/// real, plaintext attribute, so it is not removed with the `aws_dbe_` beacons.
+/// `simple_item` as read back.
+/// The fully signed compound beacon `JustSigned` is a real plaintext attribute,
+/// so the read transforms keep it when they remove the `aws_dbe_` beacons.
 fn simple_item_read() -> Item {
     let mut it = simple_item();
     it.insert("JustSigned".into(), s("Y_1984.M_May"));
@@ -153,8 +154,6 @@ fn multi_item(key: &str) -> Item {
     it.insert("TheKeyField".into(), s(key));
     it
 }
-
-// --- PutItem ---
 
 #[tokio::test]
 async fn put_item_adds_the_lotsa_beacons() {
@@ -170,7 +169,7 @@ async fn put_item_adds_the_lotsa_beacons() {
     assert_eq!(beacon(&out, "Name"), NAME_BEACON);
     assert_eq!(beacon(&out, "Title"), TITLE_BEACON);
 
-    // A fully signed compound beacon is written in plaintext.
+    // The transform writes a fully signed compound beacon in plaintext.
     //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#encrypt-before-putitem
     //= type=test
     //# Signed Beacons MUST be [added](ddb-support.md#addsignedbeacons).
@@ -232,7 +231,7 @@ async fn put_item_multi_hierarchical_beacons_use_the_item_key() {
         key_store::SharedKeyStore::new(beacon_store.clone()),
     );
     // The item has no key field, so the beacon key id can only come from the data key.
-    // (A key field naming another key is rejected; see put_item_multi_key_id_must_match_the_header.)
+    // put_item_multi_key_id_must_match_the_header covers a key field that names another key.
     let out = put(&t, simple_item()).await;
     // The fake key store gives every branch key id the same beacon key.
     //= spec/dynamodb-encryption-client/ddb-support.md#getencryptedbeacons
@@ -351,8 +350,6 @@ async fn put_item_multi_key_id_must_match_the_header() {
     );
 }
 
-// --- BatchWriteItem ---
-
 #[tokio::test]
 async fn batch_write_item_adds_the_lotsa_beacons() {
     let t = beacon_transforms();
@@ -438,8 +435,6 @@ async fn batch_write_item_multi_key_id_must_match_the_header() {
         "The beacon key id in TheKeyField does not match the branch key id id1 that encrypted the item.",
     );
 }
-
-// --- TransactWriteItems ---
 
 #[tokio::test]
 async fn transact_write_items_adds_the_lotsa_beacons() {
@@ -527,8 +522,6 @@ async fn transact_write_items_multi_key_id_must_match_the_header() {
     );
 }
 
-// --- Query ---
-
 #[tokio::test]
 async fn query_input_beaconizes_encrypted_field() {
     let out = beacon_transforms()
@@ -612,7 +605,8 @@ async fn query_input_rejects_key_conditions() {
 async fn query_output_filter_error_fails_the_query() {
     let t = beacon_transforms();
     let mine = put(&t, simple_item()).await;
-    // DynamoDB compared beacons; the plaintext re-filter cannot read `:y` as a number.
+    // DynamoDB filtered on beacons and returned the item.
+    // The transform then filters the plaintext again and cannot read `:y` as a number.
     let input = QueryInput::builder()
         .table_name("foo")
         .key_condition_expression("Name = :n")
@@ -694,8 +688,8 @@ impl ItemKeySupplier for TenantSupplier {
     }
 }
 
-/// The multi-tenant table `foo` whose keyring can decrypt the items of both tenants,
-/// with the search configuration `search`.
+/// The multi-tenant table `foo` with the search configuration `search`,
+/// and a keyring that can decrypt the items of both tenants.
 async fn two_tenant_config(search: Option<SearchConfig>) -> TableConfig {
     let keyring = HierarchicalKeyring::builder()
         .key_store(fake_key_store())
@@ -727,14 +721,14 @@ async fn two_tenant_transforms() -> Transforms {
         .unwrap()
 }
 
-/// An item whose data key is under another tenant's branch key is dropped, even when its
-/// attributes match the query.
+/// Query drops an item whose data key is under another tenant's branch key,
+/// even when the item's attributes match the query.
 #[tokio::test]
 async fn query_output_multi_drops_items_of_other_tenants() {
     let t = two_tenant_transforms().await;
     let mine = put(&t, multi_item("id1")).await;
     // `TheKeyField` claims tenant `id1`, but the supplier encrypts it under `id2`.
-    // The write transforms reject that item, so it is encrypted without them.
+    // The write transforms reject that item, so the test encrypts it with an `ItemEncryptor`.
     let mut theirs = multi_item("id1");
     theirs.insert("bar".into(), s("key2"));
     let theirs = ItemEncryptor::builder()
@@ -783,8 +777,8 @@ async fn query_output_multi_drops_items_of_other_tenants() {
     assert_eq!(out.items, Some(vec![mine_read]));
 }
 
-/// An item whose header has two encrypted data keys has no single beacon key id:
-/// the query fails instead of discarding the item, as in the reference implementation.
+/// An item whose header has two encrypted data keys has no single beacon key id.
+/// The query fails instead of discarding the item, like the Dafny implementation does.
 #[tokio::test]
 async fn query_output_multi_fails_on_an_item_with_two_data_keys() {
     let hierarchical = HierarchicalKeyring::builder()
@@ -799,7 +793,7 @@ async fn query_output_multi_fails_on_an_item_with_two_data_keys() {
         .child_keyrings(static_keyring())
         .build()
         .unwrap();
-    // Writing with search refuses two data keys, so write the item without it.
+    // A write with search rejects two data keys, so the test writes the item without search.
     let config = multi_actions(TableConfig::builder())
         .logical_table_name("foo")
         .partition_key_name("bar")
@@ -828,8 +822,6 @@ async fn query_output_multi_fails_on_an_item_with_two_data_keys() {
         "Query result has more than one Encrypted Data Key",
     );
 }
-
-// --- Scan ---
 
 #[tokio::test]
 async fn scan_beaconizes_and_filters() {
@@ -870,8 +862,6 @@ async fn scan_beaconizes_and_filters() {
     assert_eq!(out.items, Some(vec![simple_item_read()]));
     assert_eq!(out.count, 1);
 }
-
-// --- Read outputs remove beacons ---
 
 /// `simple_item` encrypted for table `foo`, with its `aws_dbe_b_` beacons.
 async fn beaconed(t: &Transforms) -> Item {
@@ -999,8 +989,6 @@ async fn transact_get_items_output_removes_beacons() {
         ])
     );
 }
-
-// --- ResolveAttributes ---
 
 fn resolve_input(table: &str, it: Item) -> ResolveAttributesInput {
     ResolveAttributesInput::builder()

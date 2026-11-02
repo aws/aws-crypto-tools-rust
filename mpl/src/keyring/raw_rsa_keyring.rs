@@ -19,9 +19,9 @@ use crate::keyring::Keyring;
 use crate::keyring::{OnDecryptInput, OnDecryptOutput, OnEncryptInput, OnEncryptOutput};
 use crate::structures::{AlgorithmSuite, EncryptedDataKey, PlaintextDataKey};
 
-/// Key namespace prefix reserved for the AWS KMS keyrings, as for the raw AES keyring:
-/// the key namespace becomes the EDK's key provider ID,
-/// which must not claim to come from an AWS KMS keyring.
+/// Key namespace prefix reserved for the AWS KMS keyrings.
+/// The key namespace becomes the EDK's key provider ID,
+/// and that ID must not claim to come from an AWS KMS keyring.
 const RESERVED_KEY_NAMESPACE_PREFIX: &str = "aws-kms";
 
 /// A keyring that wraps data keys with a local RSA public key
@@ -118,7 +118,8 @@ impl RawRsaKeyring {
         })
     }
 
-    /// RSA-decrypt `wrapped` under the private key, checking the result is a data key of `suite`.
+    /// RSA-decrypt `wrapped` under the private key,
+    /// and check that the result has the encryption key length of `suite`.
     fn unwrap(
         &self,
         private_key: &[u8],
@@ -303,7 +304,7 @@ impl RawRsaKeyringBuilder {
         let key_namespace = required(self.key_namespace.take(), "key_namespace")?;
         let key_name = required(self.key_name.take(), "key_name")?;
         let padding_scheme = required(self.padding_scheme.take(), "padding_scheme")?;
-        // An empty key is no key.
+        // Treat an empty key as unset.
         let public_key = self.public_key.take().filter(|key| !key.is_empty());
         let private_key = self.private_key.take().filter(|key| !key.is_empty());
 
@@ -360,8 +361,8 @@ impl Keyring for crate::shared::Builtin<RawRsaKeyring> {
 
         let materials = match (suite.edk_wrapping(), materials.plaintext_data_key()) {
             (EdkWrapping::IntermediateKeyWrapping(_), existing) => {
-                // Wrap a fresh intermediate key; keys derived from it encrypt the
-                // plaintext data key and sign the message.
+                // Wrap a fresh intermediate key.
+                // Keys derived from it encrypt the plaintext data key and sign the message.
                 let aad = materials
                     .encryption_context()
                     .serialize()
@@ -499,7 +500,7 @@ impl Keyring for crate::shared::Builtin<RawRsaKeyring> {
     }
 }
 
-/// Generate a random key of the algorithm suite's encryption-key length.
+/// Generate a random key of the algorithm suite's encryption key length.
 fn generate_random_data_key(suite: AlgorithmSuite) -> Result<PlaintextDataKey, Error> {
     let mut bytes = vec![0u8; suite.encryption_key_length()];
     generate_random_bytes(&mut bytes).map_err(|e| {

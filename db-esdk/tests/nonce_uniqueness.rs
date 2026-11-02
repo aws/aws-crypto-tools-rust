@@ -1,12 +1,14 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Nonce/IV uniqueness, observed on encrypted items.
+//! Nonce and IV uniqueness, observed on encrypted items.
 //!
-//! Each encrypted field is AES-256-GCM under a key and nonce derived from the data key,
-//! the item's message ID, and the field's position. A repeated key+nonce pair breaks
-//! AES-GCM, so: every encrypt draws a fresh random message ID, two fields of one item
-//! never share a key+nonce, and the keyring wraps each data key under a fresh IV.
+//! The encryptor encrypts each field with AES-256-GCM,
+//! under a key and nonce derived from the data key, the item's message ID, and the field's position.
+//! A repeated key and nonce pair breaks AES-GCM, so these tests check that:
+//! - every encrypt draws a fresh random message ID
+//! - two fields of one item never share a key and nonce
+//! - the keyring wraps each data key under a fresh IV
 
 mod item_encryptor_support;
 
@@ -30,7 +32,7 @@ fn binary(item: &Item, name: &str) -> Vec<u8> {
     }
 }
 
-/// Header version (1) + flavor (1) + message ID (32).
+/// The 32-byte message ID, which follows the 1-byte version and the 1-byte flavor in the header.
 fn message_id(encrypted: &Item) -> Vec<u8> {
     binary(encrypted, HEADER)[2..34].to_vec()
 }
@@ -84,7 +86,7 @@ async fn repeated_encrypts_of_one_item_never_repeat_a_nonce() {
 
 #[tokio::test]
 async fn equal_fields_of_one_item_get_different_keys_and_nonces() {
-    // Ten encrypted fields with the same value: equal ciphertexts would mean a shared key+nonce.
+    // Ten encrypted fields with the same value: equal ciphertexts would mean a shared key and nonce.
     let names: Vec<String> = (0..10).map(|n| format!("f{n}")).collect();
     let mut acts = actions([("bar", CryptoAction::SignOnly)]);
     let mut input = item([("bar", s("key"))]);

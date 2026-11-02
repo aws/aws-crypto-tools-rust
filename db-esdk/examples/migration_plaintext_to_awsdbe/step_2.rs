@@ -1,15 +1,15 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Step 2 — start writing encrypted items.
+//! Step 2: start writing encrypted items.
 //!
 //! Uses `PlaintextOverride::ForbidPlaintextWriteAllowPlaintextRead`:
-//!   - Write: forbidden as plaintext (always encrypted).
-//!   - Read:  plaintext or encrypted, both allowed.
+//!   - Write: always encrypted.
+//!   - Read:  plaintext or encrypted.
 //!
-//! After this deploys, the dataset holds a mix of plaintext and encrypted
-//! items; Step 1 already made every reader able to read both. Before Step 3,
-//! back-fill: re-encrypt all remaining plaintext items in the dataset.
+//! Once step 2 is deployed, the dataset holds both plaintext and encrypted items.
+//! Step 1 already made every reader able to read both.
+//! Before step 3, re-encrypt every remaining plaintext item in the dataset.
 
 use aws_db_esdk::aws_config;
 use aws_db_esdk::aws_sdk_dynamodb;

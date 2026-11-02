@@ -178,7 +178,7 @@ impl CryptoItem {
         &self.data
     }
 
-    /// What is done with the terminal.
+    /// The action to take on the terminal when encrypting.
     #[must_use]
     pub const fn action(&self) -> CryptoAction {
         self.action
@@ -331,7 +331,8 @@ pub struct EncryptStructureFluentBuilder {
 }
 
 impl EncryptStructureFluentBuilder {
-    /// The logical table name, bound into every signature. Required.
+    /// The logical table name, bound into every signature.
+    /// Required.
     #[must_use]
     pub fn table_name(mut self, name: impl Into<String>) -> Self {
         self.table_name = Some(name.into());
@@ -345,7 +346,9 @@ impl EncryptStructureFluentBuilder {
         self
     }
 
-    /// Add one plaintext field. Call again to add more. Required.
+    /// Add one plaintext field.
+    /// Call again to add more.
+    /// Required.
     #[must_use]
     pub fn plaintext_structure(
         mut self,
@@ -368,7 +371,8 @@ impl EncryptStructureFluentBuilder {
         self
     }
 
-    /// Add the action of one field. Call again to add more.
+    /// Add the action of one field.
+    /// Call again to add more.
     /// Required, with exactly the fields of the plaintext structure.
     #[must_use]
     pub fn crypto_schema(mut self, name: impl Into<String>, action: CryptoAction) -> Self {
@@ -385,7 +389,8 @@ impl EncryptStructureFluentBuilder {
         self
     }
 
-    /// The CMM that provides the encryption materials. Required.
+    /// The CMM that provides the encryption materials.
+    /// Required.
     #[must_use]
     pub fn cmm(mut self, cmm: SharedCmm) -> Self {
         self.cmm = Some(cmm);
@@ -399,7 +404,8 @@ impl EncryptStructureFluentBuilder {
         self
     }
 
-    /// The algorithm suite. The default signs with ECDSA P-384 and HMAC-SHA-384.
+    /// The algorithm suite.
+    /// The default signs with ECDSA P-384 and HMAC-SHA-384.
     #[must_use]
     pub const fn algorithm_suite_id(mut self, id: AlgorithmSuiteId) -> Self {
         self.algorithm_suite_id = Some(id);
@@ -413,7 +419,8 @@ impl EncryptStructureFluentBuilder {
         self
     }
 
-    /// Add one encryption context entry. Call again to add more.
+    /// Add one encryption context entry.
+    /// Call again to add more.
     #[must_use]
     pub fn encryption_context(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
         add_context(&mut self.encryption_context, key.into(), value.into());
@@ -512,7 +519,8 @@ pub struct DecryptStructureFluentBuilder {
 }
 
 impl DecryptStructureFluentBuilder {
-    /// The logical table name the structure was encrypted for. Required.
+    /// The logical table name that the structure was encrypted for.
+    /// Required.
     #[must_use]
     pub fn table_name(mut self, name: impl Into<String>) -> Self {
         self.table_name = Some(name.into());
@@ -526,7 +534,9 @@ impl DecryptStructureFluentBuilder {
         self
     }
 
-    /// Add one encrypted field, the header and footer included. Call again to add more. Required.
+    /// Add one encrypted field, the header and footer included.
+    /// Call again to add more.
+    /// Required.
     #[must_use]
     pub fn encrypted_structure(
         mut self,
@@ -549,7 +559,8 @@ impl DecryptStructureFluentBuilder {
         self
     }
 
-    /// Add whether one field is signed. Call again to add more.
+    /// Add whether one field is signed.
+    /// Call again to add more.
     /// Required, with exactly the fields of the encrypted structure.
     #[must_use]
     pub fn authenticate_schema(
@@ -573,7 +584,8 @@ impl DecryptStructureFluentBuilder {
         self
     }
 
-    /// The CMM that provides the decryption materials. Required.
+    /// The CMM that provides the decryption materials.
+    /// Required.
     #[must_use]
     pub fn cmm(mut self, cmm: SharedCmm) -> Self {
         self.cmm = Some(cmm);
@@ -587,7 +599,7 @@ impl DecryptStructureFluentBuilder {
         self
     }
 
-    /// Add one encryption context entry the structure must have been encrypted with.
+    /// Add one encryption context entry that the structure must have been encrypted with.
     /// Call again to add more.
     #[must_use]
     pub fn encryption_context(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
@@ -689,7 +701,8 @@ pub struct EncryptPathStructureFluentBuilder {
 }
 
 impl EncryptPathStructureFluentBuilder {
-    /// The logical table name, bound into every signature. Required.
+    /// The logical table name, bound into every signature.
+    /// Required.
     #[must_use]
     pub fn table_name(mut self, name: impl Into<String>) -> Self {
         self.table_name = Some(name.into());
@@ -703,7 +716,9 @@ impl EncryptPathStructureFluentBuilder {
         self
     }
 
-    /// Add one plaintext terminal. Call again to add more. Required.
+    /// Add one plaintext terminal.
+    /// Call again to add more.
+    /// Required.
     #[must_use]
     pub fn plaintext_structure(mut self, item: CryptoItem) -> Self {
         self.plaintext_structure
@@ -719,7 +734,8 @@ impl EncryptPathStructureFluentBuilder {
         self
     }
 
-    /// The CMM that provides the encryption materials. Required.
+    /// The CMM that provides the encryption materials.
+    /// Required.
     #[must_use]
     pub fn cmm(mut self, cmm: SharedCmm) -> Self {
         self.cmm = Some(cmm);
@@ -733,7 +749,8 @@ impl EncryptPathStructureFluentBuilder {
         self
     }
 
-    /// The algorithm suite. The default signs with ECDSA P-384 and HMAC-SHA-384.
+    /// The algorithm suite.
+    /// The default signs with ECDSA P-384 and HMAC-SHA-384.
     #[must_use]
     pub const fn algorithm_suite_id(mut self, id: AlgorithmSuiteId) -> Self {
         self.algorithm_suite_id = Some(id);
@@ -747,7 +764,8 @@ impl EncryptPathStructureFluentBuilder {
         self
     }
 
-    /// Add one encryption context entry. Call again to add more.
+    /// Add one encryption context entry.
+    /// Call again to add more.
     #[must_use]
     pub fn encryption_context(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
         add_context(&mut self.encryption_context, key.into(), value.into());
@@ -842,7 +860,8 @@ pub struct DecryptPathStructureFluentBuilder {
 }
 
 impl DecryptPathStructureFluentBuilder {
-    /// The logical table name the structure was encrypted for. Required.
+    /// The logical table name that the structure was encrypted for.
+    /// Required.
     #[must_use]
     pub fn table_name(mut self, name: impl Into<String>) -> Self {
         self.table_name = Some(name.into());
@@ -856,7 +875,9 @@ impl DecryptPathStructureFluentBuilder {
         self
     }
 
-    /// Add one encrypted terminal, the header and footer included. Call again to add more. Required.
+    /// Add one encrypted terminal, the header and footer included.
+    /// Call again to add more.
+    /// Required.
     #[must_use]
     pub fn encrypted_structure(mut self, item: AuthItem) -> Self {
         self.encrypted_structure
@@ -872,7 +893,8 @@ impl DecryptPathStructureFluentBuilder {
         self
     }
 
-    /// The CMM that provides the decryption materials. Required.
+    /// The CMM that provides the decryption materials.
+    /// Required.
     #[must_use]
     pub fn cmm(mut self, cmm: SharedCmm) -> Self {
         self.cmm = Some(cmm);
@@ -886,7 +908,7 @@ impl DecryptPathStructureFluentBuilder {
         self
     }
 
-    /// Add one encryption context entry the structure must have been encrypted with.
+    /// Add one encryption context entry that the structure must have been encrypted with.
     /// Call again to add more.
     #[must_use]
     pub fn encryption_context(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
@@ -971,7 +993,8 @@ pub struct ResolveAuthActionsFluentBuilder {
 }
 
 impl ResolveAuthActionsFluentBuilder {
-    /// The logical table name the structure was encrypted for. Required.
+    /// The logical table name that the structure was encrypted for.
+    /// Required.
     #[must_use]
     pub fn table_name(mut self, name: impl Into<String>) -> Self {
         self.table_name = Some(name.into());
@@ -985,7 +1008,9 @@ impl ResolveAuthActionsFluentBuilder {
         self
     }
 
-    /// Add one terminal, the header and footer included. Call again to add more. Required.
+    /// Add one terminal, the header and footer included.
+    /// Call again to add more.
+    /// Required.
     #[must_use]
     pub fn auth_actions(mut self, item: AuthItem) -> Self {
         self.auth_actions.get_or_insert_with(Vec::new).push(item);
@@ -999,7 +1024,8 @@ impl ResolveAuthActionsFluentBuilder {
         self
     }
 
-    /// The serialized header. Required.
+    /// The serialized header.
+    /// Required.
     #[must_use]
     pub fn header_bytes(mut self, header: impl Into<Vec<u8>>) -> Self {
         self.header_bytes = Some(header.into());
@@ -1013,7 +1039,8 @@ impl ResolveAuthActionsFluentBuilder {
         self
     }
 
-    /// Find each terminal's action. Nothing is verified or decrypted.
+    /// Find each terminal's action.
+    /// This call does not verify or decrypt anything.
     ///
     /// # Errors
     ///

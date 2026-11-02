@@ -94,8 +94,8 @@ macro_rules! setter {
     };
 }
 
-/// A fluent builder wrapping the AWS SDK's, with every member's setters,
-/// and `with_input`, which sets every member from a whole input.
+/// A fluent builder that wraps the AWS SDK's fluent builder of the same name.
+/// It has a setter for every member, plus `with_input`, which sets every member from a whole input.
 macro_rules! fluent_builder {
     (
         $(#[$doc:meta])*
@@ -238,8 +238,10 @@ fluent_builder! {
 }
 
 impl UpdateItemFluentBuilder {
-    /// Update the item. On a configured table, the update must not touch a signed attribute,
-    /// and a returned whole item is verified and decrypted.
+    /// Update the item.
+    ///
+    /// On a configured table, the update must not touch a signed attribute.
+    /// When the response returns the whole item, the client verifies and decrypts it.
     ///
     /// # Errors
     ///
@@ -276,8 +278,10 @@ fluent_builder! {
 }
 
 impl DeleteItemFluentBuilder {
-    /// Delete the item. On a configured table, the condition must not read an encrypted attribute,
-    /// and a returned old item is verified and decrypted.
+    /// Delete the item.
+    ///
+    /// On a configured table, the condition must not read an encrypted attribute.
+    /// When the response returns the old item, the client verifies and decrypts it.
     ///
     /// # Errors
     ///
@@ -308,7 +312,7 @@ impl BatchWriteItemFluentBuilder {
     /// Encrypt and sign each item written to a configured table, then write the batch.
     ///
     /// Each unprocessed put request in the response holds the original plaintext item,
-    /// so it can be sent again with this client.
+    /// so you can send it again with this client.
     ///
     /// # Errors
     ///
@@ -543,8 +547,8 @@ impl ExecuteStatementFluentBuilder {
     ///
     /// # Errors
     ///
-    /// A `Validation` error, before any call to DynamoDB, when the statement names
-    /// a configured table, or when no table name can be read from it.
+    /// A `Validation` error, before any call to DynamoDB,
+    /// when the statement names a configured table or the client cannot read a table name from it.
     /// A failed DynamoDB call keeps DynamoDB's error: see [`Error::as_service_error`].
     pub async fn send(self) -> Result<execute_statement::ExecuteStatementOutput, Error> {
         let input = self.inner.as_input().clone().build().map_err(build_error)?;
@@ -575,8 +579,8 @@ impl BatchExecuteStatementFluentBuilder {
     ///
     /// # Errors
     ///
-    /// A `Validation` error, before any call to DynamoDB, when a statement names
-    /// a configured table, or when no table name can be read from one.
+    /// A `Validation` error, before any call to DynamoDB,
+    /// when a statement names a configured table or the client cannot read a table name from one.
     /// A failed DynamoDB call keeps DynamoDB's error: see [`Error::as_service_error`].
     pub async fn send(self) -> Result<batch_execute_statement::BatchExecuteStatementOutput, Error> {
         let input = self.inner.as_input().clone().build().map_err(build_error)?;
@@ -608,8 +612,8 @@ impl ExecuteTransactionFluentBuilder {
     ///
     /// # Errors
     ///
-    /// A `Validation` error, before any call to DynamoDB, when a statement names
-    /// a configured table, or when no table name can be read from one.
+    /// A `Validation` error, before any call to DynamoDB,
+    /// when a statement names a configured table or the client cannot read a table name from one.
     /// A failed DynamoDB call keeps DynamoDB's error: see [`Error::as_service_error`].
     pub async fn send(self) -> Result<execute_transaction::ExecuteTransactionOutput, Error> {
         let input = self.inner.as_input().clone().build().map_err(build_error)?;
@@ -627,8 +631,9 @@ impl ExecuteTransactionFluentBuilder {
     }
 }
 
-/// The ResolveAttributes operation: the plaintext virtual field and compound beacon
-/// values the client computes for an item. It sends nothing to DynamoDB.
+/// The ResolveAttributes operation: compute the plaintext values of an item's virtual fields and compound beacons.
+///
+/// It sends nothing to DynamoDB.
 /// Set the request, then call [`send`](Self::send).
 #[derive(Clone, Debug)]
 #[non_exhaustive]
@@ -645,7 +650,7 @@ impl ResolveAttributesFluentBuilder {
         }
     }
 
-    /// The table whose configuration is used. Required.
+    /// The table whose configuration the client uses. Required.
     #[must_use]
     pub fn table_name(mut self, name: impl Into<String>) -> Self {
         self.inner = self.inner.table_name(name);
@@ -685,14 +690,14 @@ impl ResolveAttributesFluentBuilder {
         self.inner.get_item()
     }
 
-    /// Compute the item's virtual field and compound beacon values.
+    /// Compute the values of the item's virtual fields and compound beacons.
     ///
     /// A table with no search configuration gives empty maps.
     ///
     /// # Errors
     ///
     /// A `Validation` error when the table name or the item is not set,
-    /// or when a compound beacon part of the item contains the split character.
+    /// or when the item's value for a part of a compound beacon contains the split character.
     pub async fn send(self) -> Result<ResolveAttributesOutput, Error> {
         let input = self.inner.build()?;
         self.transforms.resolve_attributes(input).await

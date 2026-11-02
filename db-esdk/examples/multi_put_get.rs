@@ -5,7 +5,7 @@
 //!
 //! `batch_write_item`, `transact_write_items`, `batch_get_item`, and `transact_get_items`
 //! take and return the same types as in `aws_sdk_dynamodb`.
-//! Items for a configured table are encrypted on write and decrypted on read.
+//! The client encrypts the items for a configured table on write, and decrypts them on read.
 //!
 //! Requires AWS credentials and a DynamoDB table with:
 //! - partition key `partition_key`, type S

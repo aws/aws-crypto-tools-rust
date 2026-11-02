@@ -1,8 +1,8 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Structured encryption failures: tampered headers, footers, and fields,
-//! encryption context mismatches, and every input validation error.
+//! Structured encryption failures:
+//! tampered headers, footers, and fields, encryption context mismatches, and input validation errors.
 
 mod structured_api_support;
 
@@ -102,14 +102,15 @@ fn assert_validation(err: &Error, msg: &str) {
 
 #[tokio::test]
 async fn untampered_structure_decrypts() {
-    // The control for every tamper test below.
+    // The tamper tests change one part of this item, so their failures come from that change.
     let out = decrypt(encrypted_default().await).await.unwrap();
     assert_eq!(out, test_structured_data());
 }
 
 #[tokio::test]
 async fn tampered_header_message_id_fails_key_commitment() {
-    // Byte 2 is the first byte of the message id. The commitment covers it.
+    // Byte 2 is the first byte of the message id.
+    // The key commitment covers it.
     let data = with_value(encrypted_default().await, HEADER, |v| v[2] ^= 1);
     let err = decrypt(data).await.unwrap_err();
     assert_cryptographic(
@@ -166,13 +167,14 @@ async fn tampered_header_stored_encryption_context_fails() {
         v[pos + 4] = b'f';
     });
     let err = decrypt(data).await.unwrap_err();
-    // The stored context is the AAD the data key was wrapped under.
+    // The keyring uses the stored context as AAD when it unwraps the data key.
     assert!(matches!(err, Error::Cryptographic(_)), "{err:?}");
 }
 
 #[tokio::test]
 async fn tampered_footer_recipient_tag_fails() {
-    // End-to-end guard for footer.md#recipient-tag-verification (cited in footer_tests.rs).
+    // End-to-end check of footer.md#recipient-tag-verification.
+    // footer_tests.rs carries its citation.
     let data = with_value(encrypted_default().await, FOOTER, |v| v[0] ^= 1);
     let err = decrypt(data).await.unwrap_err();
 
@@ -187,7 +189,8 @@ async fn tampered_footer_recipient_tag_fails() {
 
 #[tokio::test]
 async fn tampered_footer_signature_fails() {
-    // End-to-end guard for footer.md#signature-verification (cited in footer_tests.rs).
+    // End-to-end check of footer.md#signature-verification.
+    // footer_tests.rs carries its citation.
     let data = with_value(encrypted_default().await, FOOTER, |v| {
         *v.last_mut().unwrap() ^= 1;
     });
@@ -197,7 +200,7 @@ async fn tampered_footer_signature_fails() {
 
 #[tokio::test]
 async fn truncated_footer_fails_to_parse() {
-    // End-to-end guard for footer.md#footer-format: tags, then a signature only for ECDSA suites.
+    // End-to-end check of footer.md#footer-format: tags, then a signature only for ECDSA suites.
     let data = with_value(encrypted_default().await, FOOTER, |v| {
         v.pop();
     });
@@ -381,7 +384,7 @@ async fn changed_sign_and_include_field_fails() {
         .unwrap();
     assert_eq!(out["pk"].value(), b"a");
 
-    // The value is bound into the encryption context the data key was wrapped under.
+    // The keyring wraps the data key under an encryption context that includes this value.
     let data = with_value(enc.clone(), "pk", |v| v[0] = b'b');
     let err = decrypt_with(data, schema.clone(), None).await.unwrap_err();
     assert!(matches!(err, Error::Cryptographic(_)), "{err:?}");
@@ -625,7 +628,8 @@ async fn invalid_decrypt_input_fails_before_calling_the_cmm() {
 
 #[tokio::test]
 async fn header_is_parsed_before_the_cmm_is_called() {
-    // Adjacent guard for decrypt-path-structure.md#behavior (step order): the header is parsed before Decrypt Materials is called; the order requirement is cited on tampered_ciphertext_fails.
+    // decrypt-path-structure.md#behavior orders the steps: decrypt parses the header before it calls Decrypt Materials.
+    // tampered_ciphertext_fails cites that requirement, so this test cites none.
     let data = with_value(encrypted_default().await, HEADER, |v| v[0] = 3);
     let (cmm, calls) = decrypt_recording_cmm(OnDecrypt::Forward);
     let err = decrypt_using(data, test_authenticate_schema(), None, cmm)
@@ -772,7 +776,7 @@ async fn required_context_cmm_checks_the_decryption_materials() {
         (HEADER.to_owned(), AuthenticateAction::DoNotSign),
         (FOOTER.to_owned(), AuthenticateAction::DoNotSign),
     ]);
-    // The CMM returns materials without the attribute entries, which only the header lacks.
+    // The CMM returns materials with only the context that the header stores, which leaves out the attribute entries.
     let (cmm, _) = decrypt_recording_cmm(OnDecrypt::StoredContextOnly);
     let err = decrypt_using(enc, schema, None, cmm).await.unwrap_err();
     assert!(matches!(err, Error::InvalidMaterials(_)), "{err:?}");
@@ -853,8 +857,8 @@ async fn encrypt_rejects_duplicate_paths() {
 
 #[tokio::test]
 async fn encrypt_rejects_reserved_encryption_context_values() {
-    // Adjacent guard for encrypt-path-structure.md#encryption-context (an exception):
-    // like the reference, encrypt rejects aws-crypto- values, not keys.
+    // The source cites encrypt-path-structure.md#encryption-context as an exception:
+    // like the Dafny reference, encrypt rejects aws-crypto- values, not keys.
     let mut ec = EncryptionContext::new();
     ec.insert("k", "aws-crypto-x");
     let err = encrypt_path(
@@ -1073,7 +1077,7 @@ async fn materials_with_a_non_dbe_suite_fail() {
     assert_validation(&err, "the algorithm suite is not a DB-ESDK algorithm suite");
 }
 
-/// Encrypt `test_structured_data` with the materials `on_encrypt` returns.
+/// Encrypt `test_structured_data` with the materials that `on_encrypt` returns.
 async fn encrypt_with(on_encrypt: OnEncrypt) -> Error {
     let (cmm, _) = recording_cmm(on_encrypt);
     client()
@@ -1089,7 +1093,8 @@ async fn encrypt_with(on_encrypt: OnEncrypt) -> Error {
 
 #[tokio::test]
 async fn materials_without_a_plaintext_data_key_fail() {
-    // Adjacent guard for encrypt-path-structure.md#calculate-cipherkey-and-nonce: the FieldRootKey needs the materials' plaintext data key; materials without one are rejected.
+    // encrypt-path-structure.md#calculate-cipherkey-and-nonce derives the FieldRootKey from the materials' plaintext data key.
+    // No rule covers materials without one, so this test cites no requirement.
     let err = encrypt_with(OnEncrypt::NoPlaintextKey).await;
     assert!(matches!(err, Error::InvalidMaterials(_)), "{err:?}");
     assert!(
@@ -1101,12 +1106,13 @@ async fn materials_without_a_plaintext_data_key_fail() {
 
 #[tokio::test]
 async fn materials_context_too_large_for_the_header_fails() {
-    // Adjacent guard for encrypt-path-structure.md#header-field: the header must store the materials' encryption context; a context too large to serialize is rejected.
+    // encrypt-path-structure.md#header-field stores the materials' encryption context in the header.
+    // No rule covers a context too large to serialize, so this test cites no requirement.
     let err = encrypt_with(OnEncrypt::OversizedContext).await;
     assert_validation(&err, "the materials' encryption context cannot be stored");
 }
 
-/// Decrypt the default encrypted structure with the materials `on_decrypt` returns.
+/// Decrypt the default encrypted structure with the materials that `on_decrypt` returns.
 async fn decrypt_with_materials(on_decrypt: OnDecrypt) -> Error {
     let (cmm, _) = decrypt_recording_cmm(on_decrypt);
     decrypt_using(
@@ -1121,7 +1127,8 @@ async fn decrypt_with_materials(on_decrypt: OnDecrypt) -> Error {
 
 #[tokio::test]
 async fn decrypt_materials_without_a_plaintext_data_key_fail() {
-    // Adjacent guard for decrypt-path-structure.md#calculate-cipherkey-and-nonce: the field keys need the materials' plaintext data key; decryption materials without one are rejected.
+    // decrypt-path-structure.md#calculate-cipherkey-and-nonce derives the field keys from the materials' plaintext data key.
+    // No rule covers decryption materials without one, so this test cites no requirement.
     let err = decrypt_with_materials(OnDecrypt::NoPlaintextKey).await;
     assert!(matches!(err, Error::InvalidMaterials(_)), "{err:?}");
     assert!(
@@ -1133,7 +1140,8 @@ async fn decrypt_materials_without_a_plaintext_data_key_fail() {
 
 #[tokio::test]
 async fn decrypt_materials_context_too_large_for_a_header_fails() {
-    // Adjacent guard for header.md#encryption-context: the materials' encryption context must be storable in a header; a decryption context too large to serialize is rejected.
+    // header.md#encryption-context requires that the materials' encryption context fit in a header.
+    // No rule covers a decryption context too large to serialize, so this test cites no requirement.
     let err = decrypt_with_materials(OnDecrypt::OversizedContext).await;
     assert_validation(&err, "the materials' encryption context cannot be stored");
 }

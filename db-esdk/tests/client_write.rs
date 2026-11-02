@@ -54,8 +54,8 @@ fn delete_request(k: Item) -> WriteRequest {
         .build()
 }
 
-/// Assert `stored` is the encrypted form of `plaintext`: the same signed and unsigned
-/// attributes, `encrypt` as ciphertext, and the header and footer.
+/// Assert that `stored` is the encrypted form of `plaintext`:
+/// the same signed and unsigned attributes, `encrypt` as ciphertext, and the header and footer.
 fn assert_encrypted(stored: &Item, plaintext: &Item) {
     let mut names: Vec<&str> = stored.keys().map(String::as_str).collect();
     names.sort_unstable();
@@ -263,8 +263,8 @@ async fn put_item_rejects_reserved_attributes_before_calling_dynamodb() {
     assert!(fake.calls().is_empty());
 }
 
-// Through the client, the same check as transforms_write.rs::put_item_input_condition_on_encrypted,
-// which carries the encrypt-before-putitem ConditionExpression citation.
+// Runs the check of transforms_write.rs::put_item_input_condition_on_encrypted through the client.
+// That test carries the encrypt-before-putitem citation for ConditionExpression.
 #[tokio::test]
 async fn put_item_rejects_a_condition_on_an_encrypted_attribute() {
     let (fake, client) = setup();
@@ -287,8 +287,8 @@ async fn put_item_rejects_a_condition_on_an_encrypted_attribute() {
     assert!(fake.calls().is_empty());
 }
 
-// Through the client, the same check as transforms_write.rs::put_item_input_legacy_parameters,
-// which carries the encrypt-before-putitem legacy-parameter citation.
+// Runs the check of transforms_write.rs::put_item_input_legacy_parameters through the client.
+// That test carries the encrypt-before-putitem citation for legacy parameters.
 #[tokio::test]
 async fn put_item_rejects_the_legacy_expected_parameter() {
     let (fake, client) = setup();
@@ -462,7 +462,7 @@ async fn update_item_rejects_the_legacy_attribute_updates_parameter() {
     assert!(fake.calls().is_empty());
 }
 
-// TestUpdateItemInputPassthrough: a signed attribute of the configured table means nothing elsewhere.
+// TestUpdateItemInputPassthrough: on an unconfigured table, an update can set `encrypt` like any attribute.
 #[tokio::test]
 async fn update_item_of_an_unconfigured_table_passes_through() {
     let (fake, client) = setup();
@@ -604,8 +604,8 @@ async fn batch_write_item_returns_unprocessed_puts_as_plaintext() {
     assert!(fake.items(TABLE).is_empty());
 }
 
-// TestBatchWriteItemOutputTransformUnprocessed3: only the first request of each table
-// comes back unprocessed.
+// TestBatchWriteItemOutputTransformUnprocessed3:
+// only the first request of each table comes back unprocessed.
 #[tokio::test]
 async fn batch_write_item_returns_some_unprocessed_puts_as_plaintext() {
     let (fake, client) = setup();
@@ -736,8 +736,8 @@ async fn transact_write_items_encrypts_puts_and_runs_every_action() {
 }
 
 // TestTransactWriteItemsInputEmpty.
-// Through the client, the same check as transforms_write.rs::transact_write_items_input_empty,
-// which carries the encrypt-before-transactwriteitems fifth-field citation.
+// Runs the check of transforms_write.rs::transact_write_items_input_empty through the client.
+// That test carries the encrypt-before-transactwriteitems citation for the fifth field.
 #[tokio::test]
 async fn transact_write_items_rejects_an_action_with_no_operation() {
     let (fake, client) = setup();
@@ -794,8 +794,8 @@ async fn transact_write_items_rejects_a_reserved_attribute_in_a_put() {
     assert!(fake.calls().is_empty());
 }
 
-// Through the client, the same check as transforms_write.rs::transact_write_items_input_rejections,
-// which carries the encrypt-before-transactwriteitems UpdateExpression citation.
+// Runs the check of transforms_write.rs::transact_write_items_input_rejections through the client.
+// That test carries the encrypt-before-transactwriteitems citation for UpdateExpression.
 #[tokio::test]
 async fn transact_write_items_rejects_an_update_of_a_signed_attribute() {
     let (fake, client) = setup();

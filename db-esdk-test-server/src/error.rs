@@ -6,8 +6,7 @@
 /// A modeled TestServer error.
 #[derive(Debug, Clone)]
 pub enum ServerError {
-    /// Framework-side failure: bad or unknown clientId, malformed request,
-    /// unsupported configuration variant or operation.
+    /// A failure in the test server itself: an unknown clientId, a malformed request, an unsupported operation, etc.
     Generic(String),
     /// A failure from the DB-ESDK library; the message is the library error's.
     Client(String),

@@ -1,8 +1,9 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! The AWS KMS RSA keyring: wraps data keys client-side with the public key of an
-//! asymmetric AWS KMS RSA key, and unwraps them with AWS KMS `Decrypt`.
+//! The AWS KMS RSA keyring.
+//! It wraps data keys locally with the public key of an asymmetric AWS KMS RSA key,
+//! and unwraps them with AWS KMS `Decrypt`.
 
 use std::borrow::Cow;
 use std::sync::Arc;
@@ -32,17 +33,18 @@ use crate::structures::{
     PlaintextDataKey,
 };
 
-/// The key provider ID of every encrypted data key this keyring writes.
+/// The key provider ID of every encrypted data key that this keyring writes.
 pub(crate) const RSA_PROVIDER_ID: &str = "aws-kms-rsa";
-/// AWS KMS supports no RSA key shorter than this.
+/// The shortest RSA key, in bits, that AWS KMS supports.
 const MIN_KMS_RSA_KEY_LEN: u32 = 2048;
 
 /// A keyring that protects each data key with an asymmetric AWS KMS RSA key.
 ///
-/// On encrypt it RSA-encrypts the data key locally with the key's public key, so encrypting
-/// needs no AWS KMS call. On decrypt it calls AWS KMS `Decrypt` with the key.
-/// AWS KMS RSA keys take no encryption context, so the keyring binds the
-/// encryption context by encrypting its SHA-384 digest with the data key.
+/// On encrypt, it RSA-encrypts the data key locally with the key's public key.
+/// Encrypting needs no AWS KMS call.
+/// On decrypt, it calls AWS KMS `Decrypt` with the key.
+/// AWS KMS RSA keys take no encryption context.
+/// To bind the encryption context, the keyring encrypts its SHA-384 digest together with the data key.
 ///
 /// Use it with an algorithm suite without asymmetric signing.
 ///
@@ -88,7 +90,7 @@ impl std::fmt::Debug for AwsKmsRsaKeyring {
 }
 
 impl AwsKmsRsaKeyring {
-    /// `aws-kms-rsa` and the KMS key, which errors show.
+    /// The name that error messages show for this keyring: `aws-kms-rsa` and the KMS key ARN.
     #[must_use]
     pub fn name(&self) -> Cow<'_, str> {
         Cow::Owned(format!("{RSA_PROVIDER_ID} {}", self.inner.kms_key_id))
@@ -100,7 +102,7 @@ impl AwsKmsRsaKeyring {
         AwsKmsRsaKeyringBuilder::default()
     }
 
-    /// The AWS KMS key ARN this keyring uses.
+    /// The AWS KMS key ARN that this keyring uses.
     #[must_use]
     pub fn kms_key_id(&self) -> &str {
         &self.inner.kms_key_id
@@ -118,13 +120,13 @@ impl AwsKmsRsaKeyring {
         &self.inner.encryption_algorithm
     }
 
-    /// The grant tokens sent with every AWS KMS request.
+    /// The grant tokens that this keyring sends with every AWS KMS request.
     #[must_use]
     pub fn grant_tokens(&self) -> &[String] {
         &self.inner.grant_tokens
     }
 
-    /// RSA-encrypt the encryption context digest followed by `material` under `public_key`.
+    /// RSA-encrypt the SHA-384 digest of `ec`, followed by `material`, under `public_key`.
     fn wrap(
         &self,
         public_key: &[u8],
@@ -142,9 +144,10 @@ impl AwsKmsRsaKeyring {
         })
     }
 
-    /// AWS KMS `Decrypt` of `wrapped`: the material after the encryption context digest.
+    /// Call AWS KMS `Decrypt` on `wrapped`.
+    /// Returns the material that follows the encryption context digest in the plaintext.
     ///
-    /// The response must name this keyring's key and begin with `ec_digest`.
+    /// Fails unless the response names this keyring's key and the plaintext begins with `ec_digest`.
     async fn unwrap(
         &self,
         client: &KmsClient,
@@ -157,8 +160,8 @@ impl AwsKmsRsaKeyring {
             return Err(Error::new(Kind::Cryptographic, "Ciphertext length invalid"));
         }
         let resource = Some(Resource::KmsKey(KmsKey::new(key_id.to_owned())));
-        // AWS KMS RSA keys take no encryption context;
-        // the encryption context digest in the plaintext binds it instead.
+        // AWS KMS RSA keys take no encryption context, so this request sends none.
+        // The digest at the start of the plaintext binds the encryption context.
         let response = client
             .decrypt()
             .key_id(key_id)
@@ -190,7 +193,7 @@ impl AwsKmsRsaKeyring {
         Ok(Zeroizing::new(plaintext[ec_digest.len()..].to_vec()))
     }
 
-    /// Whether `edk` was written by an AWS KMS RSA key that MRK-matches this keyring's key.
+    /// Whether `edk` names an AWS KMS RSA key that is this keyring's key or a multi-Region replica of it.
     fn wrote(&self, edk: &EncryptedDataKey) -> Result<bool, Error> {
         if edk.key_provider_id() != RSA_PROVIDER_ID {
             return Ok(false);
@@ -208,7 +211,8 @@ impl AwsKmsRsaKeyring {
         ))
     }
 
-    /// Unwrap `edk` into `materials`.
+    /// Unwrap `edk`.
+    /// Returns a copy of `materials` with the plaintext data key added.
     async fn decrypt_edk(
         &self,
         client: &KmsClient,
@@ -257,7 +261,7 @@ fn encryption_context_digest(ec: &EncryptionContext) -> Result<Vec<u8>, Error> {
     Ok(out)
 }
 
-/// The asymmetric-signing refusal both operations share.
+/// Fail when `suite` uses asymmetric signing, which this keyring supports on neither encrypt nor decrypt.
 fn reject_asymmetric_signing(suite: &AlgorithmSuite) -> Result<(), Error> {
     if suite.asymmetric_signature_algorithm().is_some() {
         return Err(Error::new(
@@ -293,7 +297,8 @@ pub struct AwsKmsRsaKeyringBuilder {
 }
 
 impl AwsKmsRsaKeyringBuilder {
-    /// The AWS KMS RSA key ARN. Required.
+    /// The AWS KMS RSA key ARN.
+    /// Required.
     #[must_use]
     pub fn kms_key_id(mut self, kms_key_id: impl Into<String>) -> Self {
         self.kms_key_id = Some(kms_key_id.into());
@@ -313,9 +318,10 @@ impl AwsKmsRsaKeyringBuilder {
         &self.kms_key_id
     }
 
-    /// The PEM-encoded X.509 `SubjectPublicKeyInfo` public key of the AWS KMS key,
-    /// at least 2048 bits, as AWS KMS `GetPublicKey` returns it once PEM-encoded.
-    /// Needed to encrypt. Set this, the AWS KMS client, or both.
+    /// The public key of the AWS KMS key: a PEM-encoded X.509 `SubjectPublicKeyInfo` of at least 2048 bits.
+    /// This is the key that AWS KMS `GetPublicKey` returns, PEM-encoded.
+    /// Needed to encrypt.
+    /// Set this, the AWS KMS client, or both.
     #[must_use]
     pub fn public_key(mut self, public_key: impl Into<Vec<u8>>) -> Self {
         self.public_key = Some(public_key.into());
@@ -335,7 +341,8 @@ impl AwsKmsRsaKeyringBuilder {
         &self.public_key
     }
 
-    /// The RSA encryption algorithm: `RsaesOaepSha1` or `RsaesOaepSha256`. Required.
+    /// The RSA encryption algorithm: `RsaesOaepSha1` or `RsaesOaepSha256`.
+    /// Required.
     #[must_use]
     pub fn encryption_algorithm(mut self, encryption_algorithm: EncryptionAlgorithmSpec) -> Self {
         self.encryption_algorithm = Some(encryption_algorithm);
@@ -358,7 +365,8 @@ impl AwsKmsRsaKeyringBuilder {
         &self.encryption_algorithm
     }
 
-    /// The AWS KMS client, in the key's region. Needed to decrypt.
+    /// The AWS KMS client, in the key's region.
+    /// Needed to decrypt.
     /// Set this, the public key, or both.
     #[must_use]
     pub fn kms_client(mut self, kms_client: KmsClient) -> Self {
@@ -406,14 +414,15 @@ impl AwsKmsRsaKeyringBuilder {
     /// # Errors
     ///
     /// - [`Validation`](crate::Error::Validation): no key ARN or encryption algorithm,
-    ///   neither a public key nor an AWS KMS client, an encryption algorithm other than
-    ///   RSAES-OAEP, a key identifier that is not an AWS KMS key ARN,
+    ///   neither a public key nor an AWS KMS client,
+    ///   an encryption algorithm other than RSAES-OAEP,
+    ///   a key identifier that is not an AWS KMS key ARN,
     ///   a public key that is not a PEM RSA public key of at least 2048 bits,
     ///   or invalid grant tokens.
     pub fn build(self) -> Result<AwsKmsRsaKeyring, Error> {
         let kms_key_id = required(self.kms_key_id, "kms_key_id")?;
         let encryption_algorithm = required(self.encryption_algorithm, "encryption_algorithm")?;
-        // An empty key is no key.
+        // Treat an empty public key as unset.
         let public_key = self.public_key.filter(|key| !key.is_empty());
         if public_key.is_none() && self.kms_client.is_none() {
             return Err(Error::new(
@@ -488,8 +497,8 @@ impl Keyring for crate::shared::Builtin<AwsKmsRsaKeyring> {
 
         let materials = match (suite.edk_wrapping(), materials.plaintext_data_key()) {
             (EdkWrapping::IntermediateKeyWrapping(_), existing) => {
-                // Wrap a fresh intermediate key; keys derived from it encrypt the
-                // plaintext data key and sign the message.
+                // Wrap a fresh intermediate key.
+                // Keys derived from it encrypt the plaintext data key and sign the message.
                 let aad = ec
                     .serialize()
                     .map_err(|e| Error::wrap("failed to serialize the encryption context", e))?;

@@ -8,7 +8,7 @@
 //! - partition key `partition_key`, type S
 //! - sort key `sort_key`, type N
 //!
-//! The request credentials are read from AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and AWS_SESSION_TOKEN.
+//! The example reads the request credentials from AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and AWS_SESSION_TOKEN.
 //! Each KMS call also carries this request's headers.
 
 use std::collections::HashMap;
@@ -24,7 +24,7 @@ use aws_smithy_http_client::tls::{Provider, rustls_provider::CryptoMode};
 
 const TABLE_NAME: &str = "DynamoDbEncryptionInterceptorTestTableCS";
 
-/// Stands in for the credentials a service receives with each request.
+/// Stands in for the credentials that a service receives with each request.
 fn credentials_for_request() -> Result<Credentials, Box<dyn std::error::Error>> {
     let access_key_id = std::env::var("AWS_ACCESS_KEY_ID")?;
     let secret_access_key = std::env::var("AWS_SECRET_ACCESS_KEY")?;
@@ -84,7 +84,7 @@ async fn handle_request(
     );
 
     // The AWS Crypto Tools CI test key store.
-    // Replace these with your own key store's table, name, and KMS key ARN.
+    // Replace these with your own key store's table, logical name, and KMS key ARN.
     let key_store = key_store::DynamoDbKeyStore::builder()
         .ddb_table_name("KeyStoreDdbTable")
         .logical_key_store_name("KeyStoreDdbTable")
@@ -96,8 +96,8 @@ async fn handle_request(
         .build()
         .await?;
 
-    // A keyring with its own cache, so branch key material fetched with one request's
-    // credentials is never served to another request.
+    // Each request builds its own keyring, with its own cache.
+    // So no other request gets the branch key material that this request's credentials fetched.
     let keyring = HierarchicalKeyring::builder()
         .key_store(key_store)
         .branch_key_id("3ce7656b-e166-40f3-8c9b-a920ce6596cd")
@@ -151,9 +151,8 @@ async fn handle_request(
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Created once and shared by every request.
-    // One HTTP client gives the KMS and DynamoDB clients, and every per-request copy of them,
-    // a single connection pool.
+    // `main` creates these clients once, and every request shares them.
+    // With one HTTP client, the KMS and DynamoDB clients and every per-request copy of them share one connection pool.
     // DynamoDB calls use the default credential chain; KMS calls use each request's credentials.
     let http_client = aws_smithy_http_client::Builder::new()
         .tls_provider(Provider::Rustls(CryptoMode::AwsLc))

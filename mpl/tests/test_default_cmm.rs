@@ -835,10 +835,10 @@ async fn test_decrypt_materials_non_signing_suite_rejects_public_key_from_reprod
     assert!(err.is_validation(), "{:?}", err);
 }
 
-// The DBE commitment policy and suites through the default CMM (Dafny DefaultCMM.dfy):
-// the ECDSA suite gets a signing key and `aws-crypto-public-key`, the keyring adds a
-// symmetric signing key per EDK, and decryption recovers the same keys from the
-// stored context plus the reproduced one.
+// Runs the DBE commitment policy and suites through the default CMM (Dafny DefaultCMM.dfy):
+// - the ECDSA suite gets a signing key and `aws-crypto-public-key`
+// - the keyring adds one symmetric signing key per EDK
+// - decryption recovers the same keys from the stored context plus the reproduced one
 #[tokio::test]
 async fn dbe_suite_round_trips_with_signing_keys() {
     use aws_crypto_mpl::keyring::RawAesKeyring;

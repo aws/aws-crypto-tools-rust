@@ -2,10 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! `Client` PartiQL operations end to end against an in-process fake DynamoDB:
-//! a statement on a configured table is rejected before anything is sent;
-//! any other statement passes through.
-//! Ported from `ExecuteStatementTransform.dfy`, `BatchExecuteStatementTransform.dfy`,
-//! and `ExecuteTransactionTransform.dfy`.
+//! the client rejects a statement on a configured table before sending anything,
+//! and passes any other statement through.
+//! Ported from `ExecuteStatementTransform.dfy`, `BatchExecuteStatementTransform.dfy`, and `ExecuteTransactionTransform.dfy`.
 
 mod client_support;
 
@@ -27,7 +26,7 @@ fn parameterized(statement: &str) -> ParameterizedStatement {
         .unwrap()
 }
 
-/// A client with item `a/1` in [`PLAIN_TABLE`], and that item as the fake stores it.
+/// A fake and a client, with item `a/1` stored in [`PLAIN_TABLE`].
 async fn populated() -> (client_support::FakeDdb, aws_db_esdk::Client) {
     let (fake, client) = setup();
     client

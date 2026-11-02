@@ -58,7 +58,7 @@ impl EncryptionMaterials {
     }
 
     /// Add a plaintext data key, the encrypted data key that wraps it,
-    /// and the symmetric signing key derived alongside that encrypted data key.
+    /// and the symmetric signing key that the keyring derived with that encrypted data key.
     ///
     /// Keyrings use this for suites with intermediate key wrapping, such as the DBE suites.
     ///
@@ -117,7 +117,7 @@ impl EncryptionMaterials {
     }
 
     /// Add an encrypted data key that wraps the existing plaintext data key,
-    /// and the symmetric signing key derived alongside it.
+    /// and the symmetric signing key that the keyring derived with it.
     ///
     /// # Errors
     ///
@@ -518,7 +518,6 @@ impl EncryptionMaterialsBuilder {
             ));
         }
 
-        // With symmetric signing, there is one symmetric signing key per encrypted data key.
         let symmetric_signing_keys = if algorithm_suite_id.has_symmetric_signing() {
             let keys = self.symmetric_signing_keys.unwrap_or_default();
             if keys.len() != self.encrypted_data_keys.as_ref().map_or(0, Vec::len) {

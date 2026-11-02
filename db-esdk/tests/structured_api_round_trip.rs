@@ -1,8 +1,8 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Structured encryption round trips: `HappyCaseTests.dfy`, every crypto action,
-//! both algorithm suites, canonical path ordering, and `resolve_auth_actions`.
+//! Structured encryption round trips:
+//! `HappyCaseTests.dfy`, every crypto action, both algorithm suites, canonical path ordering, and `resolve_auth_actions`.
 
 mod structured_api_support;
 
@@ -28,7 +28,7 @@ const SYMMETRIC_SUITE: AlgorithmSuiteId =
 
 /// One HMAC-SHA-384 recipient tag.
 const TAG_LEN: usize = 48;
-/// The ECDSA P-384 signature the footer holds.
+/// The ECDSA P-384 signature that the footer holds.
 const SIG_LEN: usize = 103;
 /// The AES-GCM tag appended to each encrypted value.
 const GCM_TAG_LEN: usize = 16;
@@ -179,8 +179,7 @@ async fn round_trip_test_structured_data() {
 
 #[tokio::test]
 async fn encrypt_and_sign_value_layout() {
-    // An encrypted value is the original type id, the AES-GCM ciphertext, and the tag,
-    // stored as binary.
+    // An encrypted value is binary: the original type id, the AES-GCM ciphertext, and the tag.
     let value = b"hello".to_vec();
     let enc = client()
         .encrypt_structure()
@@ -325,7 +324,7 @@ async fn default_suite_signs_with_ecdsa() {
 
 #[tokio::test]
 async fn sign_and_include_in_encryption_context_binds_each_type() {
-    // One field of each encoding the encryption context legend distinguishes.
+    // One field of each encoding that the encryption context legend distinguishes.
     let fields = [
         ("b", StructuredDataTerminal::new([0xFF, 0xFF], vec![1, 2])),
         ("f", StructuredDataTerminal::new(BOOLEAN, vec![0])),
@@ -427,8 +426,8 @@ async fn sign_and_include_in_encryption_context_binds_each_type() {
 
 #[tokio::test]
 async fn path_structure_is_output_in_canonical_order() {
-    // Canonical order compares depth, then each member's UTF-16 length, then its bytes;
-    // so ["z"] < ["aa"] < ["a", "a"], whatever the input order.
+    // Canonical order compares depth, then each member's UTF-16 length, then its bytes.
+    // So ["z"] < ["aa"] < ["a", "a"], whatever the input order.
     let input = vec![
         CryptoItem::new(path(&["a", "a"]), blob(), CryptoAction::EncryptAndSign),
         CryptoItem::new(path(&["aa"]), blob(), CryptoAction::SignOnly),
@@ -710,8 +709,8 @@ fn context(pairs: &[(&str, &str)]) -> EncryptionContext {
 
 #[tokio::test]
 async fn get_encryption_materials_is_called_once_with_the_spec_inputs() {
-    // Two encrypted fields of 13 and 5 bytes; the large SIGN_ONLY and DO_NOTHING values
-    // must not count toward the max plaintext length.
+    // Two encrypted fields of 13 and 5 bytes.
+    // The large SIGN_ONLY and DO_NOTHING values must not count toward the max plaintext length.
     let input = vec![
         CryptoItem::new(path(&["foo"]), blob(), CryptoAction::EncryptAndSign),
         CryptoItem::new(
@@ -846,7 +845,7 @@ async fn sign_and_include_wraps_the_cmm_in_a_required_context_cmm() {
 
 #[tokio::test]
 async fn materials_suite_is_used_even_when_it_differs_from_the_input() {
-    // The CMM asks for the symmetric suite though the caller asked for ECDSA.
+    // The CMM asks for the symmetric suite, even though the caller asked for ECDSA.
     let (overriding, calls) = recording_cmm(OnEncrypt::OverrideSuite(MplAlgorithmSuiteId::Dbe(
         SYMMETRIC_SUITE,
     )));

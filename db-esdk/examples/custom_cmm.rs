@@ -3,10 +3,7 @@
 
 //! Defines a custom cryptographic materials manager (CMM) by implementing the [`Cmm`] trait.
 //!
-//! `SigningSuiteOnlyCmm` wraps a [`DefaultCmm`] and rejects any algorithm suite without an asymmetric signature,
-//! so a caller cannot write or read an item without one through it.
-//! An asymmetric signature lets a reader verify that the item came from someone allowed to write,
-//! not just someone allowed to read.
+//! `SigningSuiteOnlyCmm` wraps a [`DefaultCmm`] and rejects any algorithm suite without an asymmetric signature.
 //!
 //! A table config takes either a keyring or a CMM.
 //!
@@ -146,7 +143,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .send()
         .await?;
 
-    // A suite with only a symmetric signature is rejected.
+    // The CMM rejects a suite with only a symmetric signature.
     let ddb = aws_db_esdk::Client::builder()
         .ddb_client(ddb_sdk)
         .table_encryption_configs(

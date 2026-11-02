@@ -332,16 +332,18 @@ pub fn kbkdf_ctr_hmac(
 /// The length of an AES-KDF-CTR nonce: one AES block.
 const AES_KDF_CTR_NONCE_LEN: usize = 16;
 
-/// The first `length` bytes of the AES-256-CTR keystream of `key`,
+/// Returns the first `length` bytes of the AES-256-CTR keystream of `key`,
 /// starting from the counter block `nonce`.
 ///
-/// This is the `AesKdfCtrStream` key derivation the DB-ESDK uses to derive
-/// each encrypted field's key and nonce.
+/// This is the `AesKdfCtrStream` key derivation that the DB-ESDK uses
+/// to derive the key and nonce for each encrypted field.
 ///
 /// # Errors
 ///
-/// Returns an [`Error`] if `nonce` is not 16 bytes, if `key` is not a
-/// 32-byte AES-256 key, or if the cipher fails.
+/// Returns an [`Error`] if:
+/// - `nonce` is not 16 bytes
+/// - `key` is not a 32-byte AES-256 key
+/// - the cipher fails
 pub fn aes_kdf_ctr_stream(nonce: &[u8], key: &[u8], length: u32) -> Result<Vec<u8>, Error> {
     use aws_lc_rs::cipher::{AES_256, EncryptingKey, EncryptionContext, UnboundCipherKey};
     let Ok(iv) = <[u8; AES_KDF_CTR_NONCE_LEN]>::try_from(nonce) else {

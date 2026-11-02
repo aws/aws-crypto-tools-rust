@@ -3,8 +3,8 @@
 A native Rust implementation of the AWS Database Encryption SDK for DynamoDB.
 
 The AWS Database Encryption SDK encrypts and signs DynamoDB items on the client, before they are written.
-Each item gets its own data key, which one or more wrapping keys from a _keyring_ protect.
-The encrypted data keys are stored in the item, so you don't keep track of them yourself.
+Each item gets its own data key, protected by one or more wrapping keys from a _keyring_.
+The SDK stores the encrypted data keys in the item, so you don't keep track of them yourself.
 
 For each table, you choose what happens to each attribute:
 
@@ -19,7 +19,7 @@ Each encrypted item also gets two attributes:
 `aws_dbe_head`, which holds the encrypted data keys,
 and `aws_dbe_foot`, which holds the signatures.
 
-There are two ways in:
+The crate has two entry points:
 
 - `aws_db_esdk::Client` has the same operations as `aws_sdk_dynamodb::Client`.
   It encrypts items on the way to DynamoDB, and verifies and decrypts them on the way back.
@@ -112,13 +112,15 @@ Every operation returns one `aws_db_esdk::Error`.
 Decide what to do from it in two steps:
 
 1. If `is_retryable()` is true, the same call can succeed later.
-2. Otherwise, match on the variant. For example, `NoMatchingDataKey` means no keyring you gave can decrypt the item,
-   and `Cryptographic` or `Serialization` means the item was changed or is not an encrypted item.
+2. Otherwise, match on the variant.
+   For example, `NoMatchingDataKey` means that no keyring you gave can decrypt the item,
+   and `Cryptographic` or `Serialization` means that the item was changed or is not an encrypted item.
 
 `resource()`, `service()`, `code()`, and `request_id()` say which resource and AWS call failed.
 When DynamoDB itself failed, `as_service_error()` returns DynamoDB's own error,
 so code written for `aws_sdk_dynamodb` can still match it.
-Messages are for people and logs: their text can change in any release, so never match on them.
+Error messages are for people and logs.
+Their text can change in any release, so never match on them.
 The `handling_errors` example shows each step.
 
 ## Searchable encryption
@@ -126,9 +128,9 @@ The `handling_errors` example shows each step.
 An encrypted attribute can't be queried directly.
 A _beacon_ is a truncated HMAC of an attribute's plaintext that DynamoDB can index and query.
 Configure beacons with `TableConfig::builder().search(..)`, from the types in `aws_db_esdk::search`.
-Each beacon is stored in an attribute named `aws_dbe_b_<beacon>`; put your index on that attribute.
-Then query the encrypted attribute by its own name, with the usual `query` and `scan` operations:
-the client rewrites the query to use the beacon.
+The client writes each beacon to an attribute named `aws_dbe_b_<beacon>`; put your index on that attribute.
+Then query the encrypted attribute by its own name, with the usual `query` and `scan` operations.
+The client rewrites the query to use the beacon.
 The `*_searchable_encryption` examples show each kind of beacon.
 
 ## Examples
@@ -151,7 +153,7 @@ Run one with `cargo run --example <name>`:
 | `branch_key_supplier` | pick a branch key per tenant from each item's primary key | KMS + DynamoDB |
 | `shared_storm_tracking_cache` | share one cache across two hierarchical keyrings | KMS + DynamoDB |
 | `per_request_credentials` | call AWS KMS with credentials issued for one request | KMS + DynamoDB |
-| `handling_errors` | handle the errors the SDK returns | KMS + DynamoDB |
+| `handling_errors` | handle the errors that the SDK returns | KMS + DynamoDB |
 | `basic_searchable_encryption` | query an encrypted attribute through a standard beacon | KMS + DynamoDB |
 | `compound_beacon_searchable_encryption` | query two encrypted attributes through one compound beacon | KMS + DynamoDB |
 | `virtual_beacon_searchable_encryption` | query a beacon over a virtual field | KMS + DynamoDB |
@@ -160,7 +162,7 @@ Run one with `cargo run --example <name>`:
 | `migration_plaintext_to_awsdbe` | move a plaintext table to encrypted items, step by step | KMS + DynamoDB |
 
 The examples that need AWS also need credentials, and the tables, KMS key, and key store named in each example's comments.
-`get_encrypted_data_key_description` reads the item `hierarchical_keyring` writes, so run that first.
+`get_encrypted_data_key_description` reads the item that `hierarchical_keyring` writes, so run `hierarchical_keyring` first.
 
 ## Cargo features
 

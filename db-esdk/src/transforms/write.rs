@@ -31,8 +31,8 @@ impl Transforms {
     /// A `Validation` error when the request sets `Expected` or `ConditionalOperator`,
     /// writes an attribute whose name begins with `aws_dbe_`,
     /// has a condition expression that reads an encrypted attribute,
-    /// or, with a multi key store, has a beacon key field that names a different branch key
-    /// than the one that encrypted the item.
+    /// or, with a multi key store,
+    /// has a beacon key field that names a different branch key than the one that encrypted the item.
     /// Encryption errors keep their variant.
     pub async fn put_item_input(&self, mut input: PutItemInput) -> Result<PutItemInput, Error> {
         let Some(table) = self.encrypted_write(input.table_name.as_deref()) else {
@@ -79,7 +79,7 @@ impl Transforms {
         Ok(input)
     }
 
-    /// Decrypt the old item a PutItem response returns.
+    /// Decrypt the old item that a PutItem response returns.
     ///
     /// # Errors
     ///
@@ -165,12 +165,12 @@ impl Transforms {
         Ok(input)
     }
 
-    /// Decrypt the item an UpdateItem response returns, when it returns the whole item.
+    /// Decrypt the item that an UpdateItem response returns, when it returns the whole item.
     ///
     /// # Errors
     ///
     /// A `Validation` error when the response returns only some attributes and any is signed,
-    /// since a part of an item cannot be verified.
+    /// since the client cannot verify part of an item.
     /// Decryption errors keep their variant.
     pub async fn update_item_output(
         &self,
@@ -275,7 +275,7 @@ impl Transforms {
         Ok(input)
     }
 
-    /// Decrypt the old item a DeleteItem response returns.
+    /// Decrypt the old item that a DeleteItem response returns.
     ///
     /// # Errors
     ///
@@ -317,8 +317,8 @@ impl Transforms {
     /// # Errors
     ///
     /// A `Validation` error when a put request writes an attribute whose name begins with `aws_dbe_`,
-    /// or, with a multi key store, its item's beacon key field names a different branch key
-    /// than the one that encrypted it.
+    /// or, with a multi key store,
+    /// when a put item's beacon key field names a different branch key than the one that encrypted the item.
     /// Encryption errors keep their variant.
     pub async fn batch_write_item_input(
         &self,
@@ -393,8 +393,8 @@ impl Transforms {
     /// a put writes an attribute whose name begins with `aws_dbe_`,
     /// a condition expression reads an encrypted attribute,
     /// an update expression names a signed attribute,
-    /// or, with a multi key store, a put item's beacon key field names a different
-    /// branch key than the one that encrypted it.
+    /// or, with a multi key store,
+    /// a put item's beacon key field names a different branch key than the one that encrypted the item.
     /// Encryption errors keep their variant.
     pub async fn transact_write_items_input(
         &self,
@@ -497,7 +497,7 @@ impl Transforms {
         Ok(input)
     }
 
-    /// A TransactWriteItems response returns no items, so it passes through unchanged.
+    /// Return the TransactWriteItems response unchanged: it holds no items to decrypt.
     ///
     /// # Errors
     ///

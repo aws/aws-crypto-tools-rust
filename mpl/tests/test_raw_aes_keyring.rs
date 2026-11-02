@@ -930,10 +930,10 @@ fn test_build_requires_every_field() {
     }
 }
 
-// DBE suites wrap an intermediate key (Dafny IntermediateKeyWrapping.dfy):
-// the EDK ciphertext is the encrypted plaintext data key (32 + 16 bytes) followed by
-// the keyring's wrapping of the intermediate key (32 + 16 bytes), and both sides
-// derive the same symmetric signing key.
+// DBE suites wrap an intermediate key (Dafny IntermediateKeyWrapping.dfy).
+// The EDK ciphertext is the encrypted plaintext data key (32 + 16 bytes),
+// followed by the keyring's wrapping of the intermediate key (32 + 16 bytes).
+// Encrypt and decrypt derive the same symmetric signing key.
 #[tokio::test]
 async fn intermediate_key_wrapping_round_trips_and_yields_one_signing_key_per_edk() {
     use aws_crypto_mpl::types::DbeAlgorithmSuiteId;
@@ -960,7 +960,8 @@ async fn intermediate_key_wrapping_round_trips_and_yields_one_signing_key_per_ed
         .await
         .unwrap()
         .into_materials();
-    // A second keyring adds an EDK to materials that already have a data key.
+    // Run the keyring again, as a second keyring would:
+    // it adds an EDK to materials that already have a data key.
     let encrypted = keyring
         .on_encrypt()
         .materials(encrypted)
@@ -976,7 +977,7 @@ async fn intermediate_key_wrapping_round_trips_and_yields_one_signing_key_per_ed
     );
     let signing_keys = encrypted.symmetric_signing_keys().unwrap();
     assert_eq!(signing_keys.len(), 2);
-    // Each EDK has its own intermediate key, so its own signing key.
+    // Each EDK has its own intermediate key, so it has its own signing key.
     assert!(!signing_keys[0].ct_eq(&signing_keys[1]));
 
     for (i, edk) in edks.iter().enumerate() {
@@ -1008,7 +1009,7 @@ async fn intermediate_key_wrapping_round_trips_and_yields_one_signing_key_per_ed
         );
     }
 
-    // The encryption context is authenticated: another one does not decrypt.
+    // The encryption context is authenticated: a different context does not decrypt.
     let err = keyring
         .on_decrypt()
         .materials(

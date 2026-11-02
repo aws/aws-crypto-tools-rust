@@ -3,10 +3,13 @@
 
 //! The DDB-SDK transform operations.
 //!
-//! `CreateTransformsClient` builds the library's transforms from one or more table
-//! configurations and registers them under a fresh UUID. Each transform operation maps
-//! its wire shape onto the AWS SDK's DynamoDB type, runs the library's transform, and
-//! maps the result back.
+//! `CreateTransformsClient` builds the library's transforms from one or more table configurations.
+//! It registers them under a fresh UUID.
+//!
+//! Each transform operation:
+//! - maps its wire shape onto the AWS SDK's DynamoDB type
+//! - runs the library's transform
+//! - maps the result back
 
 use std::collections::HashMap;
 
@@ -34,7 +37,7 @@ use crate::transforms_model::{
     TransactWriteItemsOutput, Update, UpdateItemInput, WriteRequest, WriteRequestMap,
 };
 
-/// A wire shape the AWS SDK's builder rejected.
+/// The error for a wire shape that the AWS SDK's builder rejected.
 fn build_err(e: impl std::fmt::Display) -> ServerError {
     ServerError::generic(format!("invalid DynamoDB request shape: {e}"))
 }

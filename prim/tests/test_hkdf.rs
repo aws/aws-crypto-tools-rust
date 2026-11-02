@@ -4,10 +4,9 @@
 //! HKDF tests ported from Dafny [`TestAwsCryptographyPrimitivesHKDF.dfy`]
 //! and [`TestHKDF_Rfc5869TestVectors.dfy`].
 //!
-//! The Dafny tests use the RFC 5869 vectors with L = 42 or 82. This port
-//! asks for L=32 and compares against the first 32 bytes of each RFC OKM.
-//! HKDF-Expand output is prefix-stable, so the comparison is exact, not
-//! approximate.
+//! The Dafny tests use the RFC 5869 vectors with L = 42 or 82.
+//! Most tests here ask for L=32 and compare against the first 32 bytes of each RFC OKM.
+//! A shorter HKDF-Expand output is a prefix of the longer one, so the comparison is exact.
 //!
 //! [`TestAwsCryptographyPrimitivesHKDF.dfy`]: https://github.com/aws/aws-cryptographic-material-providers-library/blob/main/AwsCryptographyPrimitives/test/TestAwsCryptographyPrimitivesHKDF.dfy
 //! [`TestHKDF_Rfc5869TestVectors.dfy`]: https://github.com/aws/aws-cryptographic-material-providers-library/blob/main/AwsCryptographyPrimitives/test/TestHKDF_Rfc5869TestVectors.dfy
@@ -161,7 +160,7 @@ fn test_hkdf_no_salt_sha512() -> Result<(), Error> {
     Ok(())
 }
 
-// The full 42-byte OKM of RFC 5869 A.1: lengths other than 16/24/32 work.
+// The full 42-byte OKM of RFC 5869 A.1, a length that is not an AES key size.
 #[test]
 fn test_hkdf_rfc5869_a1_full_length() -> Result<(), Error> {
     let mut okm = [0u8; 42];

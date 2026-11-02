@@ -1,7 +1,7 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! The data shapes of the DB-ESDK configuration and operations.
+//! Types that the DB-ESDK configuration and operations take.
 
 pub use aws_crypto_mpl::types::{
     AesWrappingAlg, EncryptedDataKey, EncryptionContext, PaddingScheme,
@@ -9,9 +9,9 @@ pub use aws_crypto_mpl::types::{
 
 /// A DB-ESDK algorithm suite.
 ///
-/// The DB-ESDK uses only the DBE suites of the Material Providers Library.
-/// The default, [`AlgAes256GcmHkdfSha512CommitKeyEcdsaP384SymsigHmacSha384`](AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384SymsigHmacSha384),
-/// signs each item with ECDSA P-384 and with HMAC-SHA-384.
+/// The DB-ESDK uses only the Material Providers Library's DBE suites.
+/// The default signs each item with both ECDSA P-384 and HMAC-SHA-384:
+/// [`AlgAes256GcmHkdfSha512CommitKeyEcdsaP384SymsigHmacSha384`](AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384SymsigHmacSha384).
 pub use aws_crypto_mpl::types::DbeAlgorithmSuiteId as AlgorithmSuiteId;
 
 /// What to do with an attribute when encrypting an item.
@@ -29,7 +29,9 @@ pub enum CryptoAction {
     SignAndIncludeInEncryptionContext,
     /// Leave the attribute readable and unsigned.
     ///
-    /// The attribute must be allowed unsigned, by name or by prefix.
+    /// The table config must allow the attribute to be unsigned, with
+    /// [`allowed_unsigned_attributes`](crate::TableConfigBuilder::allowed_unsigned_attributes) or
+    /// [`allowed_unsigned_attribute_prefix`](crate::TableConfigBuilder::allowed_unsigned_attribute_prefix).
     DoNothing,
 }
 
@@ -42,7 +44,7 @@ pub enum PlaintextOverride {
     ForcePlaintextWriteAllowPlaintextRead,
     /// Encrypt every item; read both plaintext and encrypted items.
     ForbidPlaintextWriteAllowPlaintextRead,
-    /// Encrypt every item; read only encrypted items. The default.
+    /// Encrypt every item; read only encrypted items (the default).
     #[default]
     ForbidPlaintextWriteForbidPlaintextRead,
 }

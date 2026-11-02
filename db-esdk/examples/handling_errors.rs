@@ -11,7 +11,7 @@
 //! - `resource()`: the resource to act on
 //!
 //! A DynamoDB failure on your own table keeps DynamoDB's own error.
-//! `as_service_error()` returns it, so code written for `aws_sdk_dynamodb` can match it as before.
+//! `as_service_error()` returns it, so code written for `aws_sdk_dynamodb` can match it unchanged.
 //!
 //! Requires AWS credentials, an existing key store with a provisioned branch key,
 //! and a DynamoDB table with:

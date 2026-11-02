@@ -407,8 +407,8 @@ impl Keyring for crate::shared::Builtin<RawAesKeyring> {
         let suite = materials.algorithm_suite();
         let materials = match (suite.edk_wrapping(), materials.plaintext_data_key()) {
             (EdkWrapping::IntermediateKeyWrapping(_), existing) => {
-                // Wrap a fresh intermediate key; keys derived from it encrypt the
-                // plaintext data key and sign the message.
+                // Wrap a fresh intermediate key.
+                // Keys derived from it encrypt the plaintext data key and sign the message.
                 let (plaintext_dk, generated) = match existing {
                     Some(key) => (key.clone(), false),
                     None => (generate_random_data_key(suite)?, true),

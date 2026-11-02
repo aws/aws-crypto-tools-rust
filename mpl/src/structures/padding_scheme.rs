@@ -1,11 +1,11 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! The RSA padding schemes a raw RSA keyring supports.
+//! The RSA padding schemes that a raw RSA keyring supports.
 
 use aws_mpl_primitives::RsaPadding;
 
-/// The RSA padding scheme a raw RSA keyring wraps data keys with.
+/// The RSA padding scheme that a raw RSA keyring wraps data keys with.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum PaddingScheme {

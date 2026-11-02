@@ -208,8 +208,8 @@ fn context_out_of_order() {
     );
 }
 
-// U+FFFF sorts before U+1F600 by UTF-8 bytes but after it by UTF-16 code units,
-// so this order shows the writer sorts keys by their UTF-8 bytes.
+// U+FFFF sorts before U+1F600 by UTF-8 bytes but after it by UTF-16 code units.
+// So this order shows that the writer sorts keys by their UTF-8 bytes.
 #[test]
 fn serialize_context_sorts_keys_by_utf8_bytes() {
     let ec = context(&[("\u{1F600}", "x"), ("a", "y"), ("\u{FFFF}", "z")]);
@@ -225,8 +225,9 @@ fn serialize_context_sorts_keys_by_utf8_bytes() {
     assert_eq!(serialize_context(&ec), expected);
 }
 
-// The reference starts the order check from an empty previous key and requires strictly
-// ascending keys, so an empty key is rejected; an empty value is fine.
+// The reference starts the order check from an empty previous key and requires strictly ascending keys.
+// So it rejects an empty key.
+// An empty value is fine.
 #[test]
 fn context_empty_key_rejected_empty_value_accepted() {
     let ok = [0, 1, 0, 1, b'a', 0, 0];
@@ -313,8 +314,7 @@ fn legend_order_alpha() {
     assert_eq!(legend, [E, S, E, S]);
 }
 
-// Header.dfy TestSchemaOrderLength: the canonical path has the length before the name,
-// so shorter names sort first.
+// Header.dfy TestSchemaOrderLength: the canonical path has the length before the name, so shorter names sort first.
 #[test]
 fn legend_order_length() {
     let legend = legend_of(vec![

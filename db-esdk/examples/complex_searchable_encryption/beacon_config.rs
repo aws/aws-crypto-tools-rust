@@ -1,10 +1,10 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Builds the table's searchable-encryption configuration: the standard and
-//! compound beacons, their encrypted and signed parts, the hierarchical keyring,
-//! and the crypto actions. The constructors here follow the workshop's PK/SK
-//! designs; the queries in `query_requests` read the beacons they produce.
+//! Builds the table's searchable encryption configuration:
+//! the standard and compound beacons, their encrypted and signed parts, the hierarchical keyring, and the crypto actions.
+//! The constructors follow the PK/SK designs from the searchable encryption workshop.
+//! The queries in `query_requests` use the beacons that this configuration writes.
 
 use std::time::Duration;
 
@@ -16,9 +16,9 @@ use aws_db_esdk::search::{
 use aws_db_esdk::types::CryptoAction;
 use aws_db_esdk::{TableConfig, key_store};
 
-/// Attributes encrypted and signed. Beaconized attributes must be here, along
-/// with the other sensitive values (`Attendees`, `Subject`) and the `Location`
-/// map that the location beacons read into.
+/// Attributes to encrypt and sign.
+/// Every attribute with a standard beacon must be here.
+/// So must the other sensitive values (`Attendees`, `Subject`) and the `Location` map that the location beacons read from.
 const ENCRYPT_AND_SIGN: &[&str] = &[
     "EmployeeID",
     "TicketNumber",
@@ -37,8 +37,9 @@ const ENCRYPT_AND_SIGN: &[&str] = &[
     "Subject",
 ];
 
-/// Signed parts and other plaintext attributes. Kept unencrypted so they can be
-/// used in range/sort queries; signed so their authenticity is still protected.
+/// Signed parts and other plaintext attributes.
+/// They stay unencrypted so that range and sort queries can use them,
+/// and signed so that the client detects tampering.
 const SIGN_ONLY: &[&str] = &[
     "TicketModTime",
     "MeetingStart",
@@ -64,9 +65,10 @@ pub async fn table_config(
         .build()
         .await?;
 
-    // Standard beacons. `bits` is how many bits of the HMAC the beacon keeps; 4
-    // suits this small demo set. Production configs must size beacons against
-    // population and performance. Beacons over nested fields name their location.
+    // `bits` is how many bits of the HMAC each beacon keeps.
+    // 4 suits this small demo data set.
+    // In production, size each beacon as `basic_searchable_encryption` describes.
+    // A beacon over a nested field names its location.
     let mut standard_beacons = Vec::new();
     for name in [
         "EmployeeID",
@@ -98,8 +100,8 @@ pub async fn table_config(
         );
     }
 
-    // Encrypted parts. Every prefix in a configuration must be unique, so some
-    // differ from the workshop's suggested prefixes.
+    // Every prefix in a configuration must be unique.
+    // So some prefixes here differ from the ones that the workshop suggests.
     let mut encrypted_parts = Vec::new();
     for (name, prefix) in [
         ("EmployeeID", "E-"),
@@ -121,8 +123,8 @@ pub async fn table_config(
         encrypted_parts.push(EncryptedPart::builder().name(name).prefix(prefix).build()?);
     }
 
-    // Signed parts. All represent dates/times; a signed part placed first in a
-    // compound beacon can be compared for sorting.
+    // Each signed part here is a date or time.
+    // When a signed part comes first in a compound beacon, queries can sort and compare on it.
     let mut signed_parts = Vec::new();
     for (name, prefix) in [
         ("TicketModTime", "M-"),
@@ -133,11 +135,10 @@ pub async fn table_config(
         signed_parts.push(SignedPart::builder().name(name).prefix(prefix).build()?);
     }
 
-    // A constructor from parts that must all be present to match (every part in
-    // this example is required). A beacon's constructors are tried in order; the
-    // first whose parts are all present builds the value, so list specific
-    // constructors before general ones. For a multi-part constructor, the part
-    // order is the order the parts appear in the written beacon value.
+    // Builds a constructor whose parts are all required: an item matches it only if it has every part.
+    // The client tries a beacon's constructors in order, and the first one that matches builds the value.
+    // So list specific constructors before general ones.
+    // The part order is the order that the parts appear in the beacon value.
     let required = |names: &[&str]| -> Result<Constructor, crate::BoxError> {
         let parts = names
             .iter()
@@ -146,7 +147,7 @@ pub async fn table_config(
         Ok(Constructor::builder().set_parts(Some(parts)).build()?)
     };
 
-    // Compound beacons. The split character must not appear in any part value.
+    // The split character must not appear in any part value.
     let compound_beacons = vec![
         CompoundBeacon::builder()
             .name("PK")
@@ -202,7 +203,7 @@ pub async fn table_config(
             .build()?,
     ];
 
-    // One beacon version. `version` and the config's write version are both 1.
+    // `version` matches the search config's `write_version`: both are 1.
     let beacon_version = BeaconVersion::builder()
         .version(1)
         .key_store(key_store.clone())
@@ -223,7 +224,7 @@ pub async fn table_config(
         .versions(beacon_version)
         .build()?;
 
-    // The partition key is listed as SignOnly, as are the plaintext attributes.
+    // The partition key is SignOnly, like the other plaintext attributes.
     let mut table = TableConfig::builder()
         .partition_key_name("partition_key")
         .attribute_actions_on_encrypt("partition_key", CryptoAction::SignOnly);

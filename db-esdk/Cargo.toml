@@ -12,7 +12,7 @@ readme = "README.md"
 
 [lib]
 name = "aws_db_esdk"
-# Benchmarks are criterion-only; libtest would reject criterion's flags.
+# The benchmarks use criterion; running the lib under libtest would reject criterion's flags.
 bench = false
 
 [dependencies]
@@ -23,12 +23,11 @@ aws-types = "1.6.0"
 base64 = "0.23.1"
 zeroize = "1.9.0"
 
-# Necessary for examples
 [dev-dependencies]
 tokio = { version = "1.49", features = ["macros", "rt-multi-thread", "time"] }
 uuid = { version = "1.27.0", features = ["v4"] }
 aws-smithy-http-client = { version = "1.5.0", features = ["rustls-aws-lc"] }
-# The HttpClient trait, for the in-process fake DynamoDB of the Client tests.
+# The Client tests implement its HttpClient trait to fake DynamoDB in-process.
 aws-smithy-runtime-api = "1.19.2"
 criterion = { version = "=0.5.1", default-features = false, features = ["cargo_bench_support"] }
 
@@ -114,7 +113,6 @@ default = ["aws-lc-sys", "kms", "default-aws-sdk-clients", "rt-tokio"]
 # The crypto backend: `aws-lc-sys` (the default), or `fips` for AWS-LC's FIPS module.
 aws-lc-sys = ["aws-mpl-primitives/aws-lc-sys", "aws-crypto-mpl/aws-lc-sys"]
 fips = ["aws-mpl-primitives/fips", "aws-crypto-mpl/fips"]
-# These turn on the Material Providers Library's features of the same name.
 kms = ["aws-crypto-mpl/kms"]
 default-aws-sdk-clients = ["aws-crypto-mpl/default-aws-sdk-clients"]
 rt-tokio = ["aws-crypto-mpl/rt-tokio"]

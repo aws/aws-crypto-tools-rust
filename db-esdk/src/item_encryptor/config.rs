@@ -87,7 +87,8 @@ impl Config {
     /// Validate `table` as the configuration of table `name`.
     ///
     /// A `Validation` error when `name` has fewer than 3 or more than 255 characters,
-    /// or when `table` does not fit its attribute actions.
+    /// or when the attribute actions of `table` are invalid,
+    /// for example a key attribute with the wrong action.
     pub(crate) fn new(name: String, table: TableConfig) -> Result<Self, Error> {
         //= spec/dynamodb-encryption-client/ddb-table-encryption-config.md#dynamodb-table-name
         //# This Table Name MUST be a valid DynamoDB Table Name.
@@ -175,7 +176,7 @@ impl Config {
         })
     }
 
-    /// Whether `attr` is covered by the signature.
+    /// Whether the signature covers `attr`.
     pub(crate) fn in_signature_scope(&self, attr: &str) -> bool {
         //= spec/dynamodb-encryption-client/decrypt-item.md#signature-scope
         //# Otherwise, Attributes MUST be considered as within the signature scope.

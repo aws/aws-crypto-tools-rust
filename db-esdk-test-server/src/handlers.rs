@@ -3,9 +3,8 @@
 
 //! Operation handlers and the `clientId` registry.
 //!
-//! `CreateClient` builds a DB-ESDK item encryptor from the modeled config,
-//! registers it under a fresh UUID, and returns the id. `EncryptItem` and
-//! `DecryptItem` look the encryptor up by `clientId` and run the operation.
+//! `CreateClient` builds a DB-ESDK item encryptor from the modeled config, registers it under a fresh UUID, and returns the id.
+//! `EncryptItem` and `DecryptItem` look up the encryptor by `clientId` and run the operation.
 //! `GetEncryptedDataKeyDescription` needs no client: it only parses a header.
 
 use std::collections::HashMap;
@@ -41,8 +40,7 @@ use crate::model::{
 };
 use crate::search::search_config;
 
-/// Shared server state: the thread-safe `clientId -> ItemEncryptor` and
-/// `clientId -> StructuredClient` registries.
+/// Shared server state: a `clientId` registry for each kind of client.
 #[derive(Default)]
 pub struct AppState {
     clients: Mutex<HashMap<String, ItemEncryptor>>,
@@ -69,7 +67,7 @@ const fn crypto_action(action: CryptoAction) -> DbeCryptoAction {
     }
 }
 
-/// A library Crypto Action as the wire's; `None` for an action the model lacks.
+/// The wire form of a library Crypto Action; `None` for an action that the model lacks.
 const fn from_crypto_action(action: DbeCryptoAction) -> Option<CryptoAction> {
     Some(match action {
         DbeCryptoAction::EncryptAndSign => CryptoAction::EncryptAndSign,
@@ -89,7 +87,7 @@ const fn authenticate_action(action: AuthenticateAction) -> DbeAuthenticateActio
     }
 }
 
-/// A wire terminal as the library's; the type id must be two bytes.
+/// The library form of a wire terminal; the type id must be two bytes.
 fn to_terminal(t: StructuredDataTerminal) -> Result<DbeTerminal, ServerError> {
     let type_id = <[u8; 2]>::try_from(t.type_id.as_slice()).map_err(|_| {
         ServerError::client(format!("typeId must be 2 bytes, found {}", t.type_id.len()))
@@ -120,7 +118,7 @@ fn to_path(path: Vec<String>) -> Vec<PathSegment> {
     path.into_iter().map(PathSegment::member).collect()
 }
 
-/// A library path as the wire's; only structure-member segments are modeled.
+/// The wire form of a library path; the model has only structure-member segments.
 fn from_path(path: &[PathSegment]) -> Result<Vec<String>, ServerError> {
     path.iter()
         .map(|segment| match segment {
@@ -187,7 +185,7 @@ const fn plaintext_override(policy: PlaintextOverride) -> DbePlaintextOverride {
     }
 }
 
-/// A wire `AttributeValue` as the DynamoDB SDK's; exactly one member must be set.
+/// The DynamoDB SDK form of a wire `AttributeValue`; exactly one member must be set.
 pub fn to_ddb(value: AttributeValue) -> Result<DdbAttributeValue, ServerError> {
     let AttributeValue {
         s,
@@ -245,7 +243,7 @@ pub fn to_ddb(value: AttributeValue) -> Result<DdbAttributeValue, ServerError> {
     }
 }
 
-/// The DynamoDB SDK's `AttributeValue` as the wire shape.
+/// The wire form of a DynamoDB SDK `AttributeValue`.
 pub fn from_ddb(value: DdbAttributeValue) -> Result<AttributeValue, ServerError> {
     let mut out = AttributeValue::default();
     match value {
@@ -312,8 +310,8 @@ async fn materials(
 /// The library's table configuration for the wire's `config`.
 pub(crate) async fn table_config(mut config: DbeClientConfig) -> Result<TableConfig, ServerError> {
     if config.legacy_override.is_some() {
-        // The native library has no legacy DDBEC encryptor, so a legacy override
-        // fails as a library validation error, as the Dafny Rust library does.
+        // The native library has no legacy DDBEC encryptor.
+        // Report a legacy override as a client error, as the Dafny Rust library does.
         return Err(ServerError::client("Legacy configuration unsupported."));
     }
     let search = match config.search.take() {
@@ -430,8 +428,7 @@ impl AppState {
         })
     }
 
-    /// Build and register a structured encryption client over the config's
-    /// keyring or CMM; returns its new id.
+    /// Build and register a structured encryption client over the config's keyring or CMM; returns its new id.
     pub async fn create_structured_client(
         &self,
         req: CreateStructuredClientRequest,

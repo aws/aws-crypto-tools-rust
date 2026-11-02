@@ -3,8 +3,9 @@
 
 //! Key derivation and per-field AES-GCM encryption.
 //!
-//! The data key derives a field root key (HKDF), and each encrypted field gets its own
-//! AES-256-GCM key and nonce from the root key by AES-KDF-CTR at the field's position.
+//! HKDF derives a field root key from the data key.
+//! Each encrypted field gets its own AES-256-GCM key and nonce:
+//! the bytes of the root key's AES-KDF-CTR stream at the field's position.
 
 use aws_mpl_primitives::{AesGcm, aes_decrypt, aes_encrypt, aes_kdf_ctr_stream, hkdf_no_salt};
 use zeroize::Zeroizing;
@@ -80,17 +81,18 @@ fn field_key_nonce(offset: u32) -> Vec<u8> {
     out
 }
 
-/// Bytes of key stream each field takes: three AES blocks, of which the first
-/// `KEY_SIZE + NONCE_SIZE` are the field's key and nonce.
+/// The bytes of key stream that each field takes: three AES blocks.
+/// The first `KEY_SIZE + NONCE_SIZE` bytes are the field's key and nonce.
 const FIELD_STRIDE: u32 = 48;
-/// Fields whose keys one key-stream call derives. Bounds the stream buffer.
+/// The number of fields whose keys one call to the key stream derives.
+/// This bounds the size of the stream buffer.
 const FIELD_BATCH: u32 = 64;
 
-/// The AES-GCM keys and nonces of the `count` encrypted fields from `offset`,
-/// `FIELD_STRIDE` bytes apart.
+/// The AES-GCM keys and nonces of `count` encrypted fields, starting at field `offset`.
+/// Each field's key and nonce start `FIELD_STRIDE` bytes after the previous field's.
 ///
-/// Field `i` is keyed by the AES-CTR stream at counter block `3 * i`, so consecutive
-/// fields are consecutive blocks of one stream: one call derives them all.
+/// The key of field `i` comes from the AES-CTR stream at counter block `3 * i`.
+/// So consecutive fields take consecutive blocks of one stream, and one call derives them all.
 fn field_keys(root: &[u8], offset: u32, count: u32) -> Result<Zeroizing<Vec<u8>>, Error> {
     if offset
         .checked_add(count)

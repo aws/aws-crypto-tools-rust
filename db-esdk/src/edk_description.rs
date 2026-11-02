@@ -18,7 +18,7 @@ use crate::structured::{DBE_ALGORITHM_FAMILY, PartialHeader};
 const HIERARCHY_PROVIDER_ID: &str = "aws-kms-hierarchy";
 /// Every AWS KMS keyring's key provider id starts with this.
 const AWS_KMS_PROVIDER_PREFIX: &str = "aws-kms";
-/// A hierarchical EDK's wrapped material: salt, IV, then the branch key version.
+// The material that the branch key wraps in a hierarchical EDK: a salt, an IV, then the branch key version.
 const SALT_LENGTH: usize = 16;
 const IV_LENGTH: usize = 12;
 const VERSION_LENGTH: usize = 16;
@@ -40,21 +40,24 @@ impl EncryptedDataKeyDescription {
         &self.key_provider_id
     }
 
-    /// The key provider info of an AWS KMS key: its key ARN, or a hierarchical keyring's
-    /// branch key id. `None` for every other keyring.
+    /// The key provider info of an AWS KMS keyring's data key:
+    /// the KMS key ARN, or the branch key id for a hierarchical keyring.
+    /// `None` for every other keyring.
     #[must_use]
     pub fn key_provider_info(&self) -> Option<&str> {
         self.key_provider_info.as_deref()
     }
 
-    /// The branch key id. Set for every AWS KMS key, where it equals
-    /// [`key_provider_info`](Self::key_provider_info); `None` for every other keyring.
+    /// The branch key id.
+    /// For every AWS KMS keyring, it equals [`key_provider_info`](Self::key_provider_info).
+    /// `None` for every other keyring.
     #[must_use]
     pub fn branch_key_id(&self) -> Option<&str> {
         self.branch_key_id.as_deref()
     }
 
-    /// The branch key version, as a UUID. Set only for a hierarchical keyring.
+    /// The branch key version, as a UUID.
+    /// Set only for a hierarchical keyring.
     #[must_use]
     pub fn branch_key_version(&self) -> Option<&str> {
         self.branch_key_version.as_deref()
@@ -67,8 +70,8 @@ impl EncryptedDataKeyDescription {
 ///
 /// # Errors
 ///
-/// A [`Validation`](Error::Validation) error when the item has no binary `aws_dbe_head`,
-/// and a [`Serialization`](Error::Serialization) error when the header is malformed.
+/// - [`Validation`](Error::Validation): the item has no binary `aws_dbe_head` attribute.
+/// - [`Serialization`](Error::Serialization): the header is malformed.
 pub fn describe_encrypted_data_keys<S: BuildHasher>(
     item: &HashMap<String, AttributeValue, S>,
 ) -> Result<Vec<EncryptedDataKeyDescription>, Error> {
@@ -87,7 +90,7 @@ pub fn describe_encrypted_data_keys<S: BuildHasher>(
 ///
 /// # Errors
 ///
-/// A [`Serialization`](Error::Serialization) error when the header is malformed.
+/// - [`Serialization`](Error::Serialization): the header is malformed.
 //= spec/dynamodb-encryption-client/ddb-get-encrypted-data-key-description.md#behavior
 //= type=implication
 //= reason=takes no keyring, CMM, or materials, so it cannot decrypt a data key
@@ -153,8 +156,8 @@ fn branch_key_version(ciphertext: &[u8], flavor: u8) -> Result<String, Error> {
             ser_err("the item's header (aws_dbe_head) names an unknown algorithm suite")
         })?
         .specification();
-    // With intermediate key wrapping, the encrypted plaintext data key comes first,
-    // and the material the branch key wrapped follows it.
+    // With intermediate key wrapping, the ciphertext starts with the encrypted data key.
+    // The material that the branch key wrapped follows it.
     let provider_wrapped = match suite.edk_wrapping() {
         EdkWrapping::IntermediateKeyWrapping(_) => ciphertext
             .get(suite.encryption_key_length() + suite.authentication_tag_length()..)
@@ -238,8 +241,8 @@ mod tests {
         edk("aws-kms-rsa", b"keyproviderInfo", &[1, 2, 3, 4, 5])
     }
 
-    /// The Dafny `CreatePartialHeader(...).serialize() + msgID`: the message id stands in for
-    /// the commitment.
+    /// The Dafny test's `CreatePartialHeader(...).serialize() + msgID`.
+    /// The message id stands in for the commitment.
     fn header(flavor: u8, data_keys: Vec<EncryptedDataKey>) -> Vec<u8> {
         let header = PartialHeader {
             version: 1,
@@ -310,7 +313,7 @@ mod tests {
 
     #[test]
     fn aws_kms_hierarchy_data_key_has_branch_key_version() {
-        // Both DBE suites wrap with intermediate keys, so the version is at the same place.
+        // Both DBE suites use intermediate key wrapping, so the version is at the same offset.
         assert_described(1, vec![aws_kms_hierarchy()], &[hierarchy_description()]);
         assert_described(0, vec![aws_kms_hierarchy()], &[hierarchy_description()]);
     }
@@ -395,7 +398,7 @@ mod tests {
 
     #[test]
     fn short_hierarchy_ciphertext_fails() {
-        // Too short for the intermediate-wrapped data key.
+        // Too short for the encrypted data key.
         let bytes = header(1, vec![edk("aws-kms-hierarchy", b"id", &[0; 47])]);
         assert_eq!(
             serialization_message(describe_header_encrypted_data_keys(&bytes)),

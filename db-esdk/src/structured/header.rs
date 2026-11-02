@@ -1,8 +1,8 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! The header: version, flavor, message id, legend, stored encryption context,
-//! encrypted data keys, and the commitment that binds them to the data key.
+//! The header: version, flavor, message id, legend, stored encryption context, and encrypted data keys,
+//! followed by a commitment that binds them to the data key.
 
 use std::collections::BTreeMap;
 
@@ -246,8 +246,6 @@ impl PartialHeader {
         //# The Partial Header MUST be
         let mut out = vec![self.version, self.flavor];
         out.extend_from_slice(&self.msg_id);
-
-        // Encrypt Legend
 
         //= spec/structured-encryption/header.md#encrypt-legend
         //# The Encrypt Legend MUST be serialized as

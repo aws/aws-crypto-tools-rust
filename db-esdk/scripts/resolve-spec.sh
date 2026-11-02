@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Checks out the DB-ESDK specification declared in spec-source.json and links it
-# at <db-esdk>/spec, so duvet annotations cite it as `spec/<area>/<file>.md`.
-# Run on every `make duvet`. The spec lives in the Dafny DB-ESDK repo, so this
-# is a sparse, shallow checkout of only its spec folder. It is not a submodule.
+# Checks out the DB-ESDK spec pinned in spec-source.json and links it at <db-esdk>/spec.
+# Duvet annotations then cite it as `spec/<area>/<file>.md`.
+# The spec lives in the Dafny DB-ESDK repo, so this fetches only its spec folder, at depth 1.
+# `make duvet` runs this every time.
 #
 # DBESDK_SPEC_URL overrides the URL (e.g. a local clone, for offline runs).
 set -euo pipefail

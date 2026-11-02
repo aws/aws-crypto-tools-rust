@@ -2,11 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! Fixtures shared by the `transforms_*` tests, ported from the Dafny
-//! `DynamoDbEncryptionTransforms/test/TestFixtures.dfy` and
-//! `DynamoDbEncryption/test/BeaconTestFixtures.dfy`.
+//! `DynamoDbEncryptionTransforms/test/TestFixtures.dfy` and `DynamoDbEncryption/test/BeaconTestFixtures.dfy`.
 //!
-//! Everything is offline: items are protected by a Raw AES keyring with a fixed key,
-//! and beacon and branch keys come from an in-process key store.
+//! The fixtures run offline:
+//! a Raw AES keyring with a fixed key protects the items,
+//! and an in-process key store supplies the beacon and branch keys.
 
 #![allow(dead_code)]
 
@@ -134,7 +134,7 @@ pub fn transforms_with_override(o: PlaintextOverride) -> Transforms {
         .unwrap()
 }
 
-/// The key every beacon HMAC key is derived from: `GetLiteralSource([1,2,3,4,5], ..)`.
+/// The source key of every beacon HMAC key: `GetLiteralSource([1,2,3,4,5], ..)`.
 pub const BEACON_KEY: [u8; 5] = [1, 2, 3, 4, 5];
 pub const BRANCH_KEY: [u8; 32] = [7u8; 32];
 pub const BRANCH_KEY_VERSION: &str = "11111111-2222-4333-8444-555555555555";
@@ -301,8 +301,8 @@ fn constructor(parts: &[(&str, bool)]) -> Constructor {
         .unwrap()
 }
 
-/// `GetLotsaBeacons` (single key store, key id `foo`) or `GetLotsaBeaconsMulti`
-/// (multi key store, key field `TheKeyField`).
+/// `GetLotsaBeacons` (single key store, key id `foo`),
+/// or `GetLotsaBeaconsMulti` (multi key store, key field `TheKeyField`) when `multi` is true.
 pub fn lotsa_beacons(multi: bool) -> BeaconVersion {
     lotsa_beacons_with(multi, fake_key_store())
 }
@@ -393,7 +393,7 @@ pub fn multi_actions(b: aws_db_esdk::TableConfigBuilder) -> aws_db_esdk::TableCo
 }
 
 /// [`multi_actions`] with no action for the beacon key field `TheKeyField`,
-/// so a multi key store removes that field before an item is encrypted.
+/// so a multi key store removes that field before encryption.
 pub fn multi_actions_without_key_field(
     b: aws_db_esdk::TableConfigBuilder,
 ) -> aws_db_esdk::TableConfigBuilder {
@@ -508,7 +508,7 @@ pub async fn multi_transforms_hierarchical(branch_key_id: &str) -> Transforms {
     multi_transforms_hierarchical_with(branch_key_id, multi_actions).await
 }
 
-/// [`multi_transforms_hierarchical`] with the attribute actions `actions` sets.
+/// [`multi_transforms_hierarchical`] with the attribute actions that `actions` sets.
 pub async fn multi_transforms_hierarchical_with(
     branch_key_id: &str,
     actions: fn(aws_db_esdk::TableConfigBuilder) -> aws_db_esdk::TableConfigBuilder,
@@ -540,7 +540,7 @@ pub fn multi_transforms_with(
     multi_transforms_configured(keyring, store, multi_actions)
 }
 
-/// [`multi_transforms_with`] with the attribute actions `actions` sets.
+/// [`multi_transforms_with`] with the attribute actions that `actions` sets.
 fn multi_transforms_configured(
     keyring: impl IntoShared<SharedKeyring>,
     store: key_store::SharedKeyStore,

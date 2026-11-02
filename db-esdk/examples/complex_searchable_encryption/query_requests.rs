@@ -1,9 +1,8 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Runs the workshop's 23 query access patterns against the beacons. These are
-//! broader than the other searchable-encryption examples and show how to
-//! structure beacon queries for a range of applications.
+//! Runs the workshop's 23 query access patterns against the beacons.
+//! They cover more kinds of beacon query than the other searchable encryption examples.
 
 use std::collections::HashMap;
 use std::future::Future;
@@ -22,9 +21,9 @@ fn entry(name: &str, value: &str) -> (String, AttributeValue) {
 
 /// Runs a query until it returns `expected` items, then returns them.
 ///
-/// Queries read a global secondary index, which is eventually consistent: a
-/// just-written beacon may not appear on the first read. `build` is called
-/// afresh each attempt because sending a query consumes its builder.
+/// Queries read a global secondary index, which is eventually consistent.
+/// So the first read may miss a beacon that was just written.
+/// `retry_query` calls `build` on each attempt, because sending a query consumes its builder.
 async fn retry_query<F, Fut>(
     expected: usize,
     build: F,
@@ -45,7 +44,7 @@ where
     Err(format!("query did not return {expected} items after retries").into())
 }
 
-/// Partition-key values of the returned items, for order-independent assertions.
+/// The partition key of each returned item, for assertions that don't depend on order.
 fn pk_set(items: &[HashMap<String, AttributeValue>]) -> Vec<AttributeValue> {
     items
         .iter()
@@ -164,8 +163,8 @@ async fn run_query2(ddb: &aws_db_esdk::Client) -> Result<(), crate::BoxError> {
 
 async fn run_query3(ddb: &aws_db_esdk::Client) -> Result<(), crate::BoxError> {
     // Meetings by building/floor/room within a date range.
-    // Modified from the workshop: primary keys cannot appear in a filter
-    // expression, so this filters on the individual beacon attributes instead.
+    // A filter expression can't use a primary key attribute,
+    // so this query filters on the individual beacon attributes, unlike the workshop's version.
     let values = HashMap::from([
         entry(":buildingbeacon", "B-SEA33"),
         entry(":building", "SEA33"),
@@ -294,7 +293,6 @@ async fn run_query6(ddb: &aws_db_esdk::Client) -> Result<(), crate::BoxError> {
     })
     .await?;
 
-    // Expected to be `ticket1` and `ticket3`.
     let pks = pk_set(&items);
     assert!(pks.contains(&ss("ticket1-rust")));
     assert!(pks.contains(&ss("ticket3-rust")));
@@ -425,7 +423,6 @@ async fn run_query11(ddb: &aws_db_esdk::Client) -> Result<(), crate::BoxError> {
     })
     .await?;
 
-    // Expected to be `ticket1` and `ticket2`.
     let pks = pk_set(&items);
     assert!(pks.contains(&ss("ticket1-rust")));
     assert!(pks.contains(&ss("ticket2-rust")));
@@ -558,7 +555,6 @@ async fn run_query16(ddb: &aws_db_esdk::Client) -> Result<(), crate::BoxError> {
     })
     .await?;
 
-    // Expected to be `ticket1` and `ticket4`.
     let pks = pk_set(&items);
     assert!(pks.contains(&ss("ticket1-rust")));
     assert!(pks.contains(&ss("ticket4-rust")));
@@ -658,7 +654,6 @@ async fn run_query20(ddb: &aws_db_esdk::Client) -> Result<(), crate::BoxError> {
     })
     .await?;
 
-    // Expected to be `timecard1` and `timecard2`.
     let pks = pk_set(&items);
     assert!(pks.contains(&ss("timecard1-rust")));
     assert!(pks.contains(&ss("timecard2-rust")));
@@ -704,7 +699,6 @@ async fn run_query22(ddb: &aws_db_esdk::Client) -> Result<(), crate::BoxError> {
     })
     .await?;
 
-    // Expected to be `reservation1` and `reservation2`.
     let pks = pk_set(&items);
     assert!(pks.contains(&ss("reservation1-rust")));
     assert!(pks.contains(&ss("reservation2-rust")));
@@ -733,7 +727,6 @@ async fn run_query23(ddb: &aws_db_esdk::Client) -> Result<(), crate::BoxError> {
     })
     .await?;
 
-    // Expected to be `reservation1` and `reservation2`.
     let pks = pk_set(&items);
     assert!(pks.contains(&ss("reservation1-rust")));
     assert!(pks.contains(&ss("reservation2-rust")));

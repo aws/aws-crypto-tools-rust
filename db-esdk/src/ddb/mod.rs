@@ -60,7 +60,8 @@ fn has_duplicates<T: Ord>(items: impl IntoIterator<Item = T>) -> bool {
     !items.into_iter().all(|x| seen.insert(x))
 }
 
-/// Append the Set Count and Set Entries of the already sorted, duplicate-free `sorted`.
+/// Append the Set Count and Set Entries of `sorted`.
+/// `sorted` must already be sorted and have no duplicates.
 fn write_set_entries<T: AsRef<[u8]>>(sorted: &[T], out: &mut Vec<u8>) -> Result<(), String> {
     //= spec/dynamodb-encryption-client/ddb-attribute-serialization.md#set
     //# A Set MUST be serialized as:
@@ -169,7 +170,7 @@ fn map_to_bytes(
     //# Key Value Pair Count MAY be `0`,
     //# in which case [Key Value Pair Entries](#key-value-pair-entries) is an empty bytestring.
     for k in keys {
-        // A bad value is reported before a bad name.
+        // When both the name and the value are bad, report the value's error.
         let name_ok = !k.is_empty() && k.len() <= MAX_ATTR_NAME_LEN;
         if name_ok {
             //= spec/dynamodb-encryption-client/ddb-attribute-serialization.md#key-value-pair-entries
@@ -236,7 +237,8 @@ fn list_to_bytes(l: &[AttributeValue], depth: u64, out: &mut Vec<u8>) -> Result<
     Ok(())
 }
 
-/// Append the serialized value of `a` to `out`; with `prefix`, preceded by its type id and length.
+/// Append the serialized value of `a` to `out`.
+/// With `prefix`, write its type id and length first.
 fn write_attr(
     a: &AttributeValue,
     prefix: bool,
@@ -248,7 +250,7 @@ fn write_attr(
             "Depth of attribute structure to serialize exceeds limit of {MAX_STRUCTURE_DEPTH}"
         ));
     }
-    // The type id and a length placeholder, filled in once the value is written.
+    // Write the type id and a placeholder length, then fill in the length after writing the value.
     let len_at = if prefix {
         //= spec/dynamodb-encryption-client/ddb-attribute-serialization.md#value-type
         //# Value Type MUST be the [Type ID](#type-id) of the type of [Map Value](#map-value).
@@ -306,7 +308,8 @@ fn write_attr(
     Ok(())
 }
 
-/// The serialized value of `a`; with `prefix`, preceded by its type id and length.
+/// The serialized value of `a`.
+/// With `prefix`, it starts with the type id and length.
 fn attr_to_bytes(a: &AttributeValue, prefix: bool, depth: u64) -> Result<Vec<u8>, String> {
     let mut out = Vec::new();
     write_attr(a, prefix, depth, &mut out)?;
@@ -351,7 +354,7 @@ fn utf8(bytes: &[u8]) -> Result<String, String> {
     String::from_utf8(bytes.to_vec()).map_err(|_| "Invalid UTF-8".to_owned())
 }
 
-/// The kind of set being read, which names it in error messages.
+/// The kind of set being read, for error messages.
 #[derive(Clone, Copy)]
 enum SetKind {
     String,
@@ -553,7 +556,8 @@ fn read_map(value: &[u8], pos: usize, depth: u64) -> Result<Read, String> {
     //# [Key Value Pair Entries](#key-value-pair-entries).
     let count = read_u32(value, pos)?;
     let mut p = pos + LENGTH_LEN;
-    // Every entry takes at least PREFIX_LEN bytes, which bounds the capacity.
+    // `count` comes from the bytes being read, so cap the allocation by the bytes left:
+    // every entry takes at least PREFIX_LEN bytes.
     let mut m = HashMap::with_capacity(count.min((value.len() - p) / PREFIX_LEN));
 
     // Key Value Pair Entries
@@ -691,7 +695,7 @@ fn read_list(value: &[u8], pos: usize, depth: u64) -> Result<Read, String> {
     })
 }
 
-/// The attribute value a terminal holds.
+/// The attribute value that a terminal holds.
 pub(crate) fn terminal_to_attr(t: &Terminal) -> Result<AttributeValue, String> {
     //= spec/structured-encryption/structures.md#terminal-value
     //# If these bytes are to be deserialized, these bytes MUST be interpreted as the type indicated in this Terminal Data's [Terminal Type ID](#terminal-type-id).D
@@ -706,8 +710,8 @@ pub(crate) fn terminal_to_attr(t: &Terminal) -> Result<AttributeValue, String> {
     Ok(read.val)
 }
 
-/// The terminals of the item's attributes, leaving out attributes configured `DO_NOTHING`
-/// (unless reserved).
+/// The terminals of the item's attributes.
+/// It leaves out `DO_NOTHING` attributes, except those whose names start with the reserved prefix.
 pub(crate) fn item_to_structured(
     item: &Item,
     actions: &HashMap<String, CryptoAction>,
@@ -879,8 +883,8 @@ mod tests {
 
     #[test]
     fn zero_bytes() {
-        // Empty values: only Null, String, Number and Binary may be zero bytes long; Boolean
-        // needs its one byte and Sets, Maps and Lists need their 4-byte count.
+        // Only Null, String, Number, and Binary values may be zero bytes long.
+        // A Boolean needs its one byte, and a Set, Map, or List needs its 4-byte count.
         assert_eq!(decode(NULL, &[]), Ok(null()));
         assert_eq!(decode(STRING, &[]), Ok(s("")));
         assert_eq!(decode(NUMBER, &[]), Ok(n("")));
@@ -1459,7 +1463,7 @@ mod tests {
 
     #[test]
     fn item_round_trip() {
-        // Set and number values are pre-normalized and pre-sorted.
+        // The set and number values are already normalized and sorted, so they round-trip unchanged.
         let val1 = s("astring");
         let val2 = n("12345");
         let val3 = b(&[1, 2, 3, 4, 5]);
@@ -1580,7 +1584,7 @@ mod tests {
 
     #[test]
     fn decode_attribute_name_too_long() {
-        // A key length of 65536 with that many key bytes present, so the length check fails.
+        // A key length of 65536, with all 65536 key bytes present, so only the length limit fails.
         let map_bytes = [
             &[0, 0, 0, 1, 0, 1, 0, 1, 0, 0][..],
             &vec![0x41; 65_536],
@@ -1710,8 +1714,8 @@ mod tests {
             "Binary Set Structured Data has too few bytes"
         );
 
-        // Truncated or length-mismatched Boolean, Set, Map and List values: every field their
-        // layouts declare must be present, and no bytes may be left over.
+        // Boolean, Set, Map, and List values that are truncated or have the wrong length.
+        // Every field that the layout declares must be present, and no bytes may be left over.
         for (type_id, value, msg) in [
             (
                 BOOLEAN,
@@ -1970,7 +1974,8 @@ mod tests {
             expected
         );
 
-        // At the limit, and counted in UTF-16 code units: 40000 U+00E9 is 80000 UTF-8 bytes.
+        // Names at the limit pass.
+        // The limit counts UTF-16 code units: 40000 U+00E9 is 80000 UTF-8 bytes but 40000 code units.
         for name in ["a".repeat(MAX_ATTR_NAME_LEN), "\u{e9}".repeat(40_000)] {
             let st: HashMap<String, Terminal> =
                 [(name.clone(), Terminal::new(STRING, b"x".to_vec()))].into();
@@ -2020,7 +2025,8 @@ mod tests {
         );
         assert_eq!(utf16_cmp("ab", "abc"), Less);
 
-        // Code point order puts U+FF61 first; its UTF-16 0xFF61 is above the high surrogate 0xD800.
+        // In code point order, U+FF61 comes first.
+        // In UTF-16, 0xFF61 is above 0xD800, the high surrogate that starts U+10002.
         assert_eq!("\u{FF61}".cmp("\u{10002}"), Less);
 
         //= spec/dynamodb-encryption-client/string-ordering.md#utf-16-binary-order

@@ -203,9 +203,8 @@ async fn build_aws_kms(config: &AwsKmsKeyringConfig) -> Result<SharedKeyring, Se
 
 /// An AWS KMS RSA keyring with a KMS client in its key's region.
 ///
-/// Without a configured public key, the key's public key is fetched once with
-/// KMS `GetPublicKey` (DER) and PEM-encoded. The encryption algorithm defaults
-/// to RSAES-OAEP-SHA-256.
+/// Without a configured public key, this fetches the key's public key once with KMS `GetPublicKey` and PEM-encodes it.
+/// The encryption algorithm defaults to RSAES-OAEP-SHA-256.
 async fn build_aws_kms_rsa(config: &AwsKmsRsaKeyringConfig) -> Result<SharedKeyring, ServerError> {
     let sdk_config = sdk_config_for(&config.kms_key_id).await;
     let kms_client = aws_sdk_kms::Client::new(&sdk_config);
@@ -405,8 +404,7 @@ async fn build_hierarchical(
     Ok(SharedKeyring::new(keyring))
 }
 
-/// Routes each item to `routes[value]`, where `value` is the String value of the item key's
-/// `route_attribute`.
+/// Picks the branch key id `routes[value]`, where `value` is the item key's String `route_attribute`.
 struct RoutingSupplier {
     route_attribute: String,
     routes: HashMap<String, String>,

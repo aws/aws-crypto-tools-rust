@@ -1,8 +1,9 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Tests of the search configuration checks, ported from the Dafny `ConfigToInfo.dfy`
-//! and `Beacon.dfy` tests, with their fixtures from `BeaconTestFixtures.dfy`.
+//! Tests of the search configuration checks.
+//! Their counterparts are the Dafny tests in `ConfigToInfo.dfy` and `Beacon.dfy`,
+//! and the fixtures are from `BeaconTestFixtures.dfy`.
 
 use std::collections::HashMap;
 use std::time::Duration;
@@ -91,7 +92,7 @@ impl KeyStore for UnusedKeyStore {
     }
 }
 
-// ---- Fixtures from BeaconTestFixtures.dfy ----
+// Fixtures from BeaconTestFixtures.dfy.
 
 fn std_beacon(name: &str, bits: u8, loc: Option<&str>) -> StandardBeacon {
     StandardBeacon::builder()
@@ -366,7 +367,7 @@ fn info(actions: HashMap<String, CryptoAction>, version: BeaconVersion) -> Beaco
     run(actions, version).unwrap().unwrap().version
 }
 
-/// The message of the `Validation` error `result` must be.
+/// The message of the `Validation` error that `result` must be.
 fn val_msg(result: Result<Option<SearchInfo>, Error>) -> String {
     let err = result.expect_err("the configuration must be rejected");
     assert!(matches!(err, Error::Validation(_)), "{err:?}");
@@ -403,7 +404,7 @@ fn loc(s: &str) -> TermLoc {
     TermLoc::parse(s).unwrap()
 }
 
-// ---- Successful conversion ----
+// Successful conversion.
 
 #[test]
 fn no_search_config_converts_to_none() {
@@ -468,7 +469,7 @@ fn lotsa_beacons_convert() {
         }
     );
 
-    // A beacon without a location beacons the attribute of its own name.
+    // A beacon without a location is computed from the attribute with the beacon's name.
     //= spec/searchable-encryption/beacons.md#standard-beacon-initialization
     //= type=test
     //# If no [terminal location](virtual.md#terminal-location) is provided,
@@ -532,8 +533,8 @@ fn lotsa_beacons_convert() {
     );
 }
 
-/// `TestNSwithEB`, first half: a compound beacon with an encrypted part may share an
-/// encrypted attribute's name.
+/// `TestNSwithEB`, first half:
+/// a compound beacon with an encrypted part may share an encrypted attribute's name.
 #[test]
 fn compound_with_encrypted_part_may_share_encrypted_attribute_name() {
     let mut v = lotsa();
@@ -672,7 +673,7 @@ fn multi_key_field_is_deleted_only_when_not_signed() {
     }
 }
 
-// ---- Rejections ported from ConfigToInfo.dfy ----
+// Rejections from ConfigToInfo.dfy.
 
 #[test]
 fn two_beacons_one_location() {
@@ -747,7 +748,7 @@ fn signed_compound_may_not_share_attribute_name() {
     );
 }
 
-// ---- Rejections ported from Beacon.dfy ----
+// Rejections from Beacon.dfy.
 
 #[test]
 fn bad_prefix() {
@@ -1029,7 +1030,7 @@ fn compound_no_constructor() {
     );
 }
 
-// ---- Further rejections, one per check ----
+// Further rejections, one per check.
 
 #[test]
 fn write_version_must_be_one() {
@@ -1335,7 +1336,7 @@ fn standard_beacon_on_unencrypted_field() {
         fail(bare(vec![std_beacon("Plain", 24, None)])),
         "StandardBeacon Plain not defined on an encrypted field."
     );
-    // A virtual field of only signed parts is not encrypted either.
+    // A virtual field made of only signed parts is not an encrypted field.
     let mut v = bare(vec![std_beacon("YearBeacon", 24, Some("YearField"))]);
     v.virtual_fields = Some(vec![virtual_field(
         "YearField",
@@ -1349,7 +1350,8 @@ fn standard_beacon_on_unencrypted_field() {
 
 #[test]
 fn standard_beacon_bad_location() {
-    // Adjacent guard for virtual.md#segments: "std2[" is not a valid segment; SG1 is cited in virtual_field_bad_location.
+    // Adjacent guard for virtual.md#segments: "std2[" is not a valid segment.
+    // virtual_field_bad_location cites SG1.
     assert_eq!(
         fail(bare(vec![std_beacon("bad", 24, Some("std2["))])),
         "a list index in a path must be written as [N]"
@@ -1440,7 +1442,7 @@ fn duplicate_compound_beacon() {
     //# Initialization MUST fail if there is any duplicates among the names of the
     //# [compound beacons](beacons.md#compound-beacon)
     assert_eq!(fail(v), "two compound beacons are named NameTitle");
-    // A compound beacon may not take a standard beacon's name either.
+    // Nor may a compound beacon take a standard beacon's name.
     let mut v = bare(vec![name_b(), title_b()]);
     v.compound_beacons = Some(vec![compound("Name", vec![title_p()], vec![], None)]);
 

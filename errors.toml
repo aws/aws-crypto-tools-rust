@@ -574,15 +574,15 @@ To handle it:
 1. Check [`is_retryable`](Self::is_retryable); [`retry_kind`](Self::retry_kind) says how to back off.
 2. Otherwise match on the variant; each variant's docs say what to do.
    An error from a keyring, CMM, key store, or cache keeps its variant:
-   each [`aws_crypto_mpl::Error`] variant has one here with the same name.
+   each [`aws_crypto_mpl::Error`] variant has a variant here with the same name.
    Later releases can add variants, so a `match` needs a catch-all arm.
 
 See the [module docs](crate::error) for examples.
 
-For errors from AWS KMS or DynamoDB, the AWS SDK client has already retried according to its `RetryConfig`,
-so retry only at a higher level, with your own backoff.
-Nothing retries materials-cache throttling for you.
-Match `Error::Throttling` only to learn what was throttled.
+The AWS SDK client has already retried a failed AWS KMS or DynamoDB call, as its `RetryConfig` says.
+Retry those errors only at a higher level, with your own backoff.
+Nothing retries a throttled materials cache for you.
+Match `Error::Throttling` only to learn what was throttled, not to decide whether to retry.
 
 Messages are for people and logs: their text can change in any release, even a patch release.
 Decide from the variant and its accessors, never from the message.
@@ -593,7 +593,7 @@ A minor or patch release can also change which variant a failure gets:
 
 See [What a minor or patch release can change](crate::error#what-a-minor-or-patch-release-can-change).
 
-`Error` implements `ProvideErrorKind` so AWS SDK retry code can classify it."""
+`Error` implements `ProvideErrorKind` so that AWS SDK retry code can classify it."""
 
 [[library.from]]
 library = "mpl"

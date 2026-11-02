@@ -49,7 +49,7 @@ fn build_rejects_two_tables_with_one_logical_name() {
     );
 }
 
-/// Put item `a/1` in `table`, and the names of the attributes the fake stores for it.
+/// Put item `a/1` in `table` and return the names of the attributes that the fake stores for it.
 async fn put_and_read_back(
     client: &Client,
     fake: &client_support::FakeDdb,

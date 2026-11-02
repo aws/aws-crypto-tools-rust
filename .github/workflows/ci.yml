@@ -308,13 +308,13 @@ jobs:
       contents: read
       actions: read
       id-token: write
-    # Builds the rust-native server (db-esdk-test-server/) from this commit's checkout.
-    # TEMPORARY: @lucmcdon/db-esdk-rust-native-harness until aws-crypto-tools-commons#58
-    # merges (it adds Test-Server-Override support to this reusable workflow); then @main.
+    # Builds the Rust server in db-esdk-test-server/ from this commit's checkout.
+    # TEMPORARY: pinned to a branch until aws-crypto-tools-commons#58 merges.
+    # That PR adds Test-Server-Override support to this reusable workflow; then switch to @main.
     uses: aws/aws-crypto-tools-commons/.github/workflows/dbesdk-test-server-reusable.yml@lucmcdon/db-esdk-rust-native-harness
     with:
       runner: *codebuild-linux
-      # Only run tests that involve the native server (ex. skip Java <--> .NET tests for this Rust repo)
+      # Run only the tests that involve the Rust server; pairs like Java <--> .NET don't exercise this repo.
       focus: rust-native
     secrets:
       repo-pat: ${{ secrets.COMMONS_REPO_PAT }}

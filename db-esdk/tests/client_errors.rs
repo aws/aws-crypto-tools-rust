@@ -1,8 +1,8 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! A failed DynamoDB call of each `Client` operation keeps DynamoDB's own error,
-//! the table it was about, and the request ID.
+//! When the DynamoDB call of a `Client` operation fails,
+//! the returned error reports DynamoDB's error code, the table that the call was about, and the request ID.
 
 mod client_support;
 
@@ -23,7 +23,7 @@ use aws_db_esdk::{Client, Error};
 use client_support::fake::REQUEST_ID;
 use client_support::{TABLE, full_item, key, s, setup};
 
-/// A table the fake does not have, and no configuration names.
+/// A table that the fake does not have and that no configuration names.
 const MISSING: &str = "missing";
 
 /// Assert `err` is DynamoDB's `ResourceNotFoundException` about `table`, when known.

@@ -3,8 +3,10 @@
 
 //! Puts an item with a standard beacon on an encrypted attribute, then queries that beacon.
 //!
-//! The scenario is a table of unit-inspection records. Two attributes are beaconized:
-//! `inspector_id_last4` (last 4 digits of an inspector ID) and `unit` (a 12-digit serial number).
+//! The scenario is a table of unit inspection records.
+//! Two encrypted attributes get a beacon:
+//! - `inspector_id_last4`, the last 4 digits of an inspector ID
+//! - `unit`, a 12-digit serial number
 //!
 //! Requires AWS credentials, a key store with a provisioned branch key, and a DynamoDB table:
 //! - partition key `work_id`, type S
@@ -39,24 +41,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // A beacon's bit length trades query performance against how much it reveals.
     // See https://docs.aws.amazon.com/database-encryption-sdk/latest/devguide/choosing-beacon-length.html
     //
-    // `inspector_id_last4` ranges over 0..=9,999. The guidance bounds the length to 7..=12;
-    // we pick 10, giving 2^10 = 1,024 HMAC values and ~9.8 suffixes sharing each beacon.
+    // `inspector_id_last4` ranges over 0..=9,999, so the guidance puts its length between 7 and 12 bits.
+    // 10 bits gives 2^10 = 1,024 beacon values, with about 9.8 suffixes sharing each one.
     let last4_beacon = StandardBeacon::builder()
         .name("inspector_id_last4")
         .bits(10)
         .number_of_partitions(1)
         .build()?;
 
-    // `unit` is a 12-digit serial (0..=10^12). The guidance bounds the length to 20..=39;
-    // we pick 30, giving 2^30 ~= 1.1B HMAC values and ~931 serials sharing each beacon.
+    // `unit` ranges over 0..=10^12, so the guidance puts its length between 20 and 39 bits.
+    // 30 bits gives 2^30, about 1.1 billion, beacon values, with about 931 serials sharing each one.
     let unit_beacon = StandardBeacon::builder()
         .name("unit")
         .bits(30)
         .number_of_partitions(1)
         .build()?;
 
-    // The key store holds the beacon keys and branch keys. The beacon version and the
-    // keyring must share the same key store.
+    // The key store holds both the beacon keys and the branch keys.
+    // The beacon version and the keyring must use the same key store.
     let key_store = key_store::DynamoDbKeyStore::builder()
         .ddb_table_name(KEY_STORE_TABLE_NAME)
         .logical_key_store_name(KEY_STORE_TABLE_NAME)
@@ -66,9 +68,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build()
         .await?;
 
-    // A beacon version holds the beacons and the beacon-key source for the table.
-    // The beacon key is created with the same ID as the branch key.
-    // `maximum_number_of_partitions` must exceed each beacon's count; 8 leaves room to grow.
+    // A beacon version holds the table's beacons and says where to find the beacon key.
+    // The beacon key has the same ID as the branch key.
+    // `maximum_number_of_partitions` must exceed each beacon's partition count; 8 leaves room to grow.
     let beacon_version = BeaconVersion::builder()
         .standard_beacons(last4_beacon)
         .standard_beacons(unit_beacon)
@@ -96,7 +98,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build()
         .await?;
 
-    // Beaconized attributes must be EncryptAndSign; the key attributes are SignOnly.
+    // Attributes with a standard beacon must be EncryptAndSign; the key attributes are SignOnly.
     let table = TableConfig::builder()
         .partition_key_name("work_id")
         .sort_key_name("inspection_date")
@@ -137,15 +139,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .send()
         .await?;
 
-    // Query as if on plaintext. The client rewrites the query onto the beacon attributes,
-    // then decrypts the matches and drops any false positives (distinct plaintext, same HMAC).
+    // Write the query against the plaintext attribute names.
+    // The client rewrites it to use the beacon attributes,
+    // then decrypts the matches and drops false positives: items whose plaintext differs but whose beacon matches.
     let names = HashMap::from([
         ("#last4".to_string(), "inspector_id_last4".to_string()),
         ("#unit".to_string(), "unit".to_string()),
     ]);
 
-    // A beacon can span several partitions; query each one. Here there is a single partition.
-    // In general the count comes from the number of beacon partitions configured.
+    // A beacon with several partitions needs one query per partition.
+    // These beacons have one partition each, so one query is enough.
     let num_queries = 1;
     let mut all_results: Vec<HashMap<String, AttributeValue>> = Vec::new();
     for partition in 0..num_queries {
@@ -190,7 +193,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 /// Runs a GSI query until it returns an item, retrying a few times.
-/// GSI reads are eventually consistent, so a just-written item may not appear at once.
+/// GSI reads are eventually consistent, so an item may not appear right after it is written.
 async fn retry_query<F, Fut>(
     query: F,
 ) -> Result<Vec<HashMap<String, AttributeValue>>, Box<dyn std::error::Error>>
@@ -205,7 +208,6 @@ where
         if !items.is_empty() {
             return Ok(items);
         }
-        // The GSI is eventually consistent: give it time to catch up.
         tokio::time::sleep(Duration::from_secs(1)).await;
     }
     Err("query returned no items after 10 tries".into())

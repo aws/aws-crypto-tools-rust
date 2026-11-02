@@ -1,8 +1,8 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Fixtures shared by the `structured_api_*` tests, ported from
-//! `StructuredEncryption/test/StructuredDataTestFixtures.dfy`.
+//! Fixtures shared by the `structured_api_*` tests,
+//! ported from `StructuredEncryption/test/StructuredDataTestFixtures.dfy`.
 
 #![allow(dead_code)]
 
@@ -78,8 +78,8 @@ pub fn test_authenticate_schema() -> HashMap<String, AuthenticateAction> {
     ])
 }
 
-/// A Raw AES keyring with a fixed 32-byte key of `key_byte`,
-/// standing in for the reference's KMS keyring so the tests run offline.
+/// A Raw AES keyring with a fixed 32-byte key of `key_byte`.
+/// It replaces the KMS keyring of the Dafny fixtures, so the tests run offline.
 fn keyring_with_key(key_byte: u8) -> RawAesKeyring {
     RawAesKeyring::builder()
         .key_namespace("structured-api-test")
@@ -179,7 +179,7 @@ pub fn decrypt_recording_cmm(
 }
 
 /// `materials` rebuilt with `suite` and `encryption_context`.
-/// A verification key is kept only if the new suite signs with ECDSA.
+/// The rebuilt materials keep the verification key only if the new suite signs with ECDSA.
 fn rebuilt_materials(
     materials: &DecryptionMaterials,
     suite: MplAlgorithmSuiteId,
@@ -202,13 +202,14 @@ fn rebuilt_materials(
         .build()
 }
 
-/// The symmetric DBE suite, which needs no signing key in the materials.
+/// The symmetric DBE suite, which needs no ECDSA signing key in the materials.
 const SYMMETRIC_DBE_SUITE: DbeAlgorithmSuiteId =
     DbeAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeySymsigHmacSha384;
 
-/// Materials built directly, bypassing any keyring.
-/// With a plaintext data key they carry one encrypted data key (and its symmetric signing key);
-/// without one they carry none, since the MPL allows encrypted data keys only alongside it.
+/// Materials that this function builds itself, without a keyring.
+/// With a plaintext data key, they carry one encrypted data key and, if the suite needs one, a symmetric signing key.
+/// Without a plaintext data key, they carry no encrypted data key,
+/// because the MPL accepts encrypted data keys only alongside a plaintext data key.
 fn direct_materials(
     suite: MplAlgorithmSuiteId,
     plaintext_data_key: Option<PlaintextDataKey>,

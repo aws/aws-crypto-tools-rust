@@ -42,7 +42,7 @@ pub(crate) enum KeyLocation {
     /// The value of an item attribute or virtual field.
     Multi {
         key_field_name: String,
-        /// Whether the key field is removed from an item before it is written.
+        /// Whether the client removes the key field from an item before writing it.
         delete_key: bool,
     },
 }
@@ -200,7 +200,7 @@ impl KeySource {
         Ok(out)
     }
 
-    /// The HMAC keys of `std_names`, for the beacon key `key_id` selects.
+    /// The HMAC keys of `std_names`, for the beacon key that `key_id` selects.
     ///
     /// # Errors
     ///
@@ -235,8 +235,8 @@ impl KeySource {
 
     /// The HMAC key of each of `beacon_names` under beacon key `key_id`.
     ///
-    /// The keys come from the cache when its entry is younger than the TTL,
-    /// otherwise from the key store, and are then cached.
+    /// Reads the keys from the cache when its entry is younger than the TTL.
+    /// Otherwise reads them from the key store and caches them.
     async fn hmac_keys(
         &self,
         beacon_names: &[String],
@@ -365,8 +365,8 @@ fn cached_hmac_keys(entry: &CacheEntry, key_id: &str) -> Result<BTreeMap<String,
     }
 }
 
-/// Each beacon's HMAC key: HKDF-SHA-512 of the beacon key, with no salt and
-/// info `AWS_DBE_SCAN_BEACON` followed by the beacon's name.
+/// Each beacon's HMAC key: HKDF-SHA-512 of the beacon key,
+/// with no salt and with info `AWS_DBE_SCAN_BEACON` followed by the beacon's name.
 fn derive_hmac_keys(
     beacon_names: &[String],
     beacon_key: &[u8],

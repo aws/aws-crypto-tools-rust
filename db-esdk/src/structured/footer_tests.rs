@@ -34,8 +34,10 @@ fn item(canon: &[u8], type_id: [u8; 2], value: &[u8], action: CryptoAction) -> C
     }
 }
 
-// An encrypted field (its value starts with the plaintext type id), a plaintext signed
-// field, and an unsigned field.
+// Three fields:
+// - an encrypted field, whose value starts with the plaintext type id
+// - a plaintext signed field
+// - an unsigned field
 fn fields() -> Vec<CanonItem> {
     vec![
         item(
@@ -111,7 +113,8 @@ fn keypair() -> SignatureKeyPair {
 }
 
 // SHA-384 of HEADER || u64(8) || serialize({"k": "v"}) || canonical A || canonical B,
-// and HMAC-SHA-384 of that hash under SYM_KEY, computed independently with Python's hashlib.
+// and the HMAC-SHA-384 of that hash under SYM_KEY.
+// Computed independently with Python's hashlib.
 const CANON_HASH: &str = "6bbc5fedf86f0e566b8e19342671b09e95e0e213d1dd49d83e1937fe246fe6f1c64eb1f7a41f332c984fd4cca70d2398";
 const TAG: &str = "6b04e5a8c6da421226f60fadd1d721e7c09f421802c432a4b3947175dbd7c5a8ddecc01195e2b9f9f4ca4e7283890bd9";
 

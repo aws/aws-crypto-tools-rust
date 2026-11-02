@@ -1,8 +1,8 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Tests of beacon key lookup and caching, including the reference implementation's
-//! shared-cache tests from `Beacon.dfy`, with in-memory key stores.
+//! Tests of beacon key lookup and caching, with in-memory key stores.
+//! They include the shared-cache tests from the reference implementation's `Beacon.dfy`.
 
 use super::*;
 use crate::search::test_fixtures::{BEACON_KEY, FakeKeyStore, hmac_keys};
@@ -57,7 +57,7 @@ fn keys_of(map: MaybeKeyMap) -> BTreeMap<String, Vec<u8>> {
     }
 }
 
-/// The failing fixture store was asked for the key: the cache did not serve it.
+/// Assert that the failing fixture store was asked for the key, so the cache did not serve it.
 fn assert_store_failed(r: Result<MaybeKeyMap, Error>) {
     match r {
         Err(e @ Error::Validation(_)) => {
@@ -78,7 +78,7 @@ fn val_msg(err: &Error) -> String {
 
 #[test]
 fn zero_ttl_is_rejected() {
-    // Guards the cacheTTL (search-config.md#cachettl, no requirement there): a TTL under 1 s is rejected.
+    // search-config.md#cachettl has no requirement for this: a key source rejects a TTL under 1 s.
     let err = KeySource::new(
         FakeKeyStore::new("ks").client(),
         KeyLocation::Single {
@@ -152,8 +152,9 @@ async fn single_key_store_derives_keys_and_caches_them() {
 
 #[tokio::test]
 async fn key_id_must_fit_the_key_source() {
-    // Guards get-beacon-key-after-encrypt / get-beacon-key-for-query: a single key store
-    // uses only its configured beacon key id, and a multi key store needs one from the item.
+    // Guards get-beacon-key-after-encrypt and get-beacon-key-for-query:
+    // a single key store uses only its configured beacon key id,
+    // and a multi key store needs one from the item.
     let store = FakeKeyStore::new("KeyStoreDdbTable");
     let single = single(&store, None, None);
     for id in [MaybeKeyId::ShouldHave, MaybeKeyId::Id("x".to_owned())] {
@@ -218,7 +219,7 @@ async fn key_store_errors_propagate() {
 #[tokio::test]
 async fn missing_beacon_key_is_invalid_materials() {
     // Guards get-beacon-key-materials, next to "If `GetBeaconKey` fails get beacon key MUST fail":
-    // materials with no beacon key fail too.
+    // materials with no beacon key also fail.
     let store = FakeKeyStore::without_beacon_key();
     let err = single(&store, None, None)
         .get_key_map(&names(), &MaybeKeyId::DontUse)
@@ -231,8 +232,8 @@ async fn missing_beacon_key_is_invalid_materials() {
     );
 }
 
-/// A good key store fills a shared cache; a failing key store with the same logical name
-/// then succeeds exactly when the cache identifier is the same.
+/// A good key store fills a shared cache.
+/// A failing key store with the same logical name then succeeds exactly when the cache identifier is the same.
 async fn shared_cache_case(
     make: fn(&FakeKeyStore, Option<SharedCmc>, Option<&str>) -> KeySource,
     key_id: MaybeKeyId,
@@ -352,7 +353,7 @@ async fn stale_shared_entry_is_refetched() {
     let cache = shared_cache();
     let store = FakeKeyStore::new("KeyStoreDdbTable");
     let src = single(&store, Some(cache.clone()), Some("pid"));
-    // An entry older than this key source's TTL, as one with a longer TTL writes.
+    // An entry older than this key source's TTL, as a key source with a longer TTL can leave in a shared cache.
     let id = src.cache_identifier(KEY_ID).await.unwrap();
     cache
         .put_cache_entry()
@@ -377,8 +378,9 @@ async fn stale_shared_entry_is_refetched() {
 
 #[test]
 fn cached_entry_for_another_key_is_invalid() {
-    // Guards get-beacon-key-materials, next to "If a cache entry exists, get beacon key MUST
-    // return the entry materials": the entry must hold this beacon key id's materials.
+    // Guards get-beacon-key-materials,
+    // next to "If a cache entry exists, get beacon key MUST return the entry materials":
+    // the entry must hold this beacon key id's materials.
     let e = entry("k1", SystemTime::now());
     assert_eq!(
         cached_hmac_keys(&e, "k1").unwrap(),

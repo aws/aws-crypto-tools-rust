@@ -185,7 +185,8 @@ pub(crate) fn convert(table: &TableConfig) -> Result<Option<SearchInfo>, Error> 
     };
     let version = convert_version(&outer, version)?;
 
-    // Fully signed compound beacons are written in plaintext, as SIGN_ONLY attributes.
+    // The client writes a fully signed compound beacon in plaintext, as a SIGN_ONLY attribute named after the beacon.
+    // So the name must be a valid attribute name that no configured attribute uses.
     let signed = version.signed_beacon_names();
     let bad: Vec<&str> = signed
         .iter()
@@ -349,7 +350,7 @@ fn make_key_source(outer: &Outer<'_>, config: &BeaconVersion) -> Result<KeySourc
     }
 }
 
-/// Whether the beacon key field is removed from an item before it is written.
+/// Whether the client removes the beacon key field from an item before writing it.
 fn should_delete_key_field(outer: &Outer<'_>, name: &str) -> Result<bool, Error> {
     match outer.actions.get(name) {
         None | Some(CryptoAction::DoNothing) => Ok(true),

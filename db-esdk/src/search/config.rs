@@ -76,13 +76,15 @@ impl SearchConfig {
         SearchConfigBuilder::default()
     }
 
-    /// The beacon versions items can be read with. Exactly one, version 1.
+    /// The beacon versions that items can be read with.
+    /// There is exactly one: version 1.
     #[must_use]
     pub fn versions(&self) -> &[BeaconVersion] {
         &self.versions
     }
 
-    /// The beacon version new items are written with. Must be 1.
+    /// The beacon version that new items are written with.
+    /// Must be 1.
     #[must_use]
     pub const fn write_version(&self) -> u32 {
         self.write_version
@@ -98,28 +100,32 @@ pub struct SearchConfigBuilder {
 }
 
 impl SearchConfigBuilder {
-    /// Add a beacon version. Required: exactly one, version 1.
+    /// Add a beacon version.
+    /// Required: exactly one, version 1.
     #[must_use]
     pub fn versions(mut self, version: BeaconVersion) -> Self {
         self.versions.get_or_insert_with(Vec::new).push(version);
         self
     }
 
-    /// Replace the beacon versions. See [`Self::versions`].
+    /// Replace the beacon versions.
+    /// See [`Self::versions`].
     #[must_use]
     pub fn set_versions(mut self, versions: Option<Vec<BeaconVersion>>) -> Self {
         self.versions = versions;
         self
     }
 
-    /// The beacon version new items are written with. Required; must be 1.
+    /// The beacon version that new items are written with.
+    /// Required; must be 1.
     #[must_use]
     pub const fn write_version(mut self, version: u32) -> Self {
         self.write_version = Some(version);
         self
     }
 
-    /// The beacon version new items are written with. See [`Self::write_version`].
+    /// The beacon version that new items are written with.
+    /// See [`Self::write_version`].
     #[must_use]
     pub const fn set_write_version(mut self, version: Option<u32>) -> Self {
         self.write_version = version;
@@ -172,7 +178,8 @@ impl BeaconVersion {
         BeaconVersionBuilder::default()
     }
 
-    /// The version number. Must be 1.
+    /// The version number.
+    /// Must be 1.
     #[must_use]
     pub const fn version(&self) -> u32 {
         self.version
@@ -232,7 +239,7 @@ impl BeaconVersion {
         self.default_number_of_partitions
     }
 
-    /// What picks the partition an item is written in, if set.
+    /// What picks the partition that an item is written in, if set.
     #[must_use]
     pub const fn partition_selector(&self) -> Option<&SharedPartitionSelector> {
         self.partition_selector.as_ref()
@@ -257,21 +264,24 @@ pub struct BeaconVersionBuilder {
 }
 
 impl BeaconVersionBuilder {
-    /// The version number. Required; must be 1.
+    /// The version number.
+    /// Required; must be 1.
     #[must_use]
     pub const fn version(mut self, version: u32) -> Self {
         self.version = Some(version);
         self
     }
 
-    /// The version number. See [`Self::version`].
+    /// The version number.
+    /// See [`Self::version`].
     #[must_use]
     pub const fn set_version(mut self, version: Option<u32>) -> Self {
         self.version = version;
         self
     }
 
-    /// The key store that holds the beacon keys. Required.
+    /// The key store that holds the beacon keys.
+    /// Required.
     ///
     /// When items are encrypted with a hierarchical keyring, this should be that keyring's key store.
     #[must_use]
@@ -285,28 +295,32 @@ impl BeaconVersionBuilder {
         self
     }
 
-    /// The key store. See [`Self::key_store`].
+    /// The key store.
+    /// See [`Self::key_store`].
     #[must_use]
     pub fn set_key_store(mut self, key_store: Option<key_store::SharedKeyStore>) -> Self {
         self.key_store = key_store;
         self
     }
 
-    /// Which beacon keys are used. Required.
+    /// Which beacon keys are used.
+    /// Required.
     #[must_use]
     pub fn key_source(mut self, key_source: BeaconKeySource) -> Self {
         self.key_source = Some(key_source);
         self
     }
 
-    /// Which beacon keys are used. See [`Self::key_source`].
+    /// Which beacon keys are used.
+    /// See [`Self::key_source`].
     #[must_use]
     pub fn set_key_source(mut self, key_source: Option<BeaconKeySource>) -> Self {
         self.key_source = key_source;
         self
     }
 
-    /// Add a standard beacon. At least one is required.
+    /// Add a standard beacon.
+    /// At least one is required.
     #[must_use]
     pub fn standard_beacons(mut self, beacon: StandardBeacon) -> Self {
         self.standard_beacons
@@ -315,7 +329,8 @@ impl BeaconVersionBuilder {
         self
     }
 
-    /// Replace the standard beacons. See [`Self::standard_beacons`].
+    /// Replace the standard beacons.
+    /// See [`Self::standard_beacons`].
     #[must_use]
     pub fn set_standard_beacons(mut self, beacons: Option<Vec<StandardBeacon>>) -> Self {
         self.standard_beacons = beacons;
@@ -331,7 +346,8 @@ impl BeaconVersionBuilder {
         self
     }
 
-    /// Replace the compound beacons. See [`Self::compound_beacons`].
+    /// Replace the compound beacons.
+    /// See [`Self::compound_beacons`].
     #[must_use]
     pub fn set_compound_beacons(mut self, beacons: Option<Vec<CompoundBeacon>>) -> Self {
         self.compound_beacons = beacons;
@@ -345,7 +361,8 @@ impl BeaconVersionBuilder {
         self
     }
 
-    /// Replace the virtual fields. See [`Self::virtual_fields`].
+    /// Replace the virtual fields.
+    /// See [`Self::virtual_fields`].
     #[must_use]
     pub fn set_virtual_fields(mut self, fields: Option<Vec<VirtualField>>) -> Self {
         self.virtual_fields = fields;
@@ -359,7 +376,8 @@ impl BeaconVersionBuilder {
         self
     }
 
-    /// Replace the encrypted parts. See [`Self::encrypted_parts`].
+    /// Replace the encrypted parts.
+    /// See [`Self::encrypted_parts`].
     #[must_use]
     pub fn set_encrypted_parts(mut self, parts: Option<Vec<EncryptedPart>>) -> Self {
         self.encrypted_parts = parts;
@@ -373,21 +391,24 @@ impl BeaconVersionBuilder {
         self
     }
 
-    /// Replace the signed parts. See [`Self::signed_parts`].
+    /// Replace the signed parts.
+    /// See [`Self::signed_parts`].
     #[must_use]
     pub fn set_signed_parts(mut self, parts: Option<Vec<SignedPart>>) -> Self {
         self.signed_parts = parts;
         self
     }
 
-    /// The most partitions any beacon is divided across. Optional: the default is 1.
+    /// The most partitions any beacon is divided across.
+    /// Optional: the default is 1.
     #[must_use]
     pub const fn maximum_number_of_partitions(mut self, count: u8) -> Self {
         self.maximum_number_of_partitions = Some(count);
         self
     }
 
-    /// The most partitions. See [`Self::maximum_number_of_partitions`].
+    /// The most partitions.
+    /// See [`Self::maximum_number_of_partitions`].
     #[must_use]
     pub const fn set_maximum_number_of_partitions(mut self, count: Option<u8>) -> Self {
         self.maximum_number_of_partitions = count;
@@ -395,21 +416,23 @@ impl BeaconVersionBuilder {
     }
 
     /// The partitions of a beacon that sets none of its own.
-    /// Optional: the default is the maximum. Must be less than the maximum.
+    /// Optional: the default is the maximum.
+    /// Must be less than the maximum.
     #[must_use]
     pub const fn default_number_of_partitions(mut self, count: u8) -> Self {
         self.default_number_of_partitions = Some(count);
         self
     }
 
-    /// The default partitions. See [`Self::default_number_of_partitions`].
+    /// The default partitions.
+    /// See [`Self::default_number_of_partitions`].
     #[must_use]
     pub const fn set_default_number_of_partitions(mut self, count: Option<u8>) -> Self {
         self.default_number_of_partitions = count;
         self
     }
 
-    /// What picks the partition an item is written in.
+    /// What picks the partition that an item is written in.
     /// Optional: the default picks a random partition.
     #[must_use]
     pub fn partition_selector(
@@ -420,7 +443,8 @@ impl BeaconVersionBuilder {
         self
     }
 
-    /// The partition selector. See [`Self::partition_selector`].
+    /// The partition selector.
+    /// See [`Self::partition_selector`].
     #[must_use]
     pub fn set_partition_selector(mut self, selector: Option<SharedPartitionSelector>) -> Self {
         self.partition_selector = selector;
@@ -429,8 +453,7 @@ impl BeaconVersionBuilder {
 
     /// Build the beacon version.
     ///
-    /// The beacons are checked against the table's attribute actions when the
-    /// [`Client`](crate::Client) is built.
+    /// Building the [`Client`](crate::Client) checks the beacons against the table's attribute actions.
     ///
     /// # Errors
     ///
@@ -541,42 +564,48 @@ pub struct SingleKeyStoreBuilder {
 }
 
 impl SingleKeyStoreBuilder {
-    /// The id of the beacon key: the id of a branch key in the key store. Required.
+    /// The id of the beacon key: the id of a branch key in the key store.
+    /// Required.
     #[must_use]
     pub fn key_id(mut self, key_id: impl Into<String>) -> Self {
         self.key_id = Some(key_id.into());
         self
     }
 
-    /// The id of the beacon key. See [`Self::key_id`].
+    /// The id of the beacon key.
+    /// See [`Self::key_id`].
     #[must_use]
     pub fn set_key_id(mut self, key_id: Option<String>) -> Self {
         self.key_id = key_id;
         self
     }
 
-    /// How long the beacon key is cached before it is fetched again. Required; not zero.
+    /// How long the beacon key is cached before it is fetched again.
+    /// Required; not zero.
     #[must_use]
     pub const fn cache_ttl(mut self, ttl: Duration) -> Self {
         self.cache_ttl = Some(ttl);
         self
     }
 
-    /// How long the beacon key is cached. See [`Self::cache_ttl`].
+    /// How long the beacon key is cached.
+    /// See [`Self::cache_ttl`].
     #[must_use]
     pub const fn set_cache_ttl(mut self, ttl: Option<Duration>) -> Self {
         self.cache_ttl = ttl;
         self
     }
 
-    /// The cache for the beacon key. Optional: the default holds one entry.
+    /// The cache for the beacon key.
+    /// Optional: the default holds one entry.
     #[must_use]
     pub fn cache(mut self, cache: impl IntoShared<SharedCmc>) -> Self {
         self.cache = Some(cache.into_shared());
         self
     }
 
-    /// The cache for the beacon key. See [`Self::cache`].
+    /// The cache for the beacon key.
+    /// See [`Self::cache`].
     #[must_use]
     pub fn set_cache(mut self, cache: Option<SharedCmc>) -> Self {
         self.cache = cache;
@@ -584,14 +613,16 @@ impl SingleKeyStoreBuilder {
     }
 
     /// The partition id that separates this key source's entries in a shared cache.
-    /// Optional: the default is a random id. Key sources with the same id share entries.
+    /// Optional: the default is a random id.
+    /// Key sources with the same id share entries.
     #[must_use]
     pub fn partition_id(mut self, partition_id: impl Into<String>) -> Self {
         self.partition_id = Some(partition_id.into());
         self
     }
 
-    /// The partition id. See [`Self::partition_id`].
+    /// The partition id.
+    /// See [`Self::partition_id`].
     #[must_use]
     pub fn set_partition_id(mut self, partition_id: Option<String>) -> Self {
         self.partition_id = partition_id;
@@ -669,42 +700,48 @@ pub struct MultiKeyStoreBuilder {
 }
 
 impl MultiKeyStoreBuilder {
-    /// The attribute, or virtual field, that holds each item's beacon key id. Required.
+    /// The attribute, or virtual field, that holds each item's beacon key id.
+    /// Required.
     #[must_use]
     pub fn key_field_name(mut self, name: impl Into<String>) -> Self {
         self.key_field_name = Some(name.into());
         self
     }
 
-    /// The attribute that holds the key id. See [`Self::key_field_name`].
+    /// The attribute that holds the key id.
+    /// See [`Self::key_field_name`].
     #[must_use]
     pub fn set_key_field_name(mut self, name: Option<String>) -> Self {
         self.key_field_name = name;
         self
     }
 
-    /// How long a beacon key is cached before it is fetched again. Required; not zero.
+    /// How long a beacon key is cached before it is fetched again.
+    /// Required; not zero.
     #[must_use]
     pub const fn cache_ttl(mut self, ttl: Duration) -> Self {
         self.cache_ttl = Some(ttl);
         self
     }
 
-    /// How long a beacon key is cached. See [`Self::cache_ttl`].
+    /// How long a beacon key is cached.
+    /// See [`Self::cache_ttl`].
     #[must_use]
     pub const fn set_cache_ttl(mut self, ttl: Option<Duration>) -> Self {
         self.cache_ttl = ttl;
         self
     }
 
-    /// The cache for the beacon keys. Optional: the default holds 1000 entries.
+    /// The cache for the beacon keys.
+    /// Optional: the default holds 1000 entries.
     #[must_use]
     pub fn cache(mut self, cache: impl IntoShared<SharedCmc>) -> Self {
         self.cache = Some(cache.into_shared());
         self
     }
 
-    /// The cache for the beacon keys. See [`Self::cache`].
+    /// The cache for the beacon keys.
+    /// See [`Self::cache`].
     #[must_use]
     pub fn set_cache(mut self, cache: Option<SharedCmc>) -> Self {
         self.cache = cache;
@@ -712,14 +749,16 @@ impl MultiKeyStoreBuilder {
     }
 
     /// The partition id that separates this key source's entries in a shared cache.
-    /// Optional: the default is a random id. Key sources with the same id share entries.
+    /// Optional: the default is a random id.
+    /// Key sources with the same id share entries.
     #[must_use]
     pub fn partition_id(mut self, partition_id: impl Into<String>) -> Self {
         self.partition_id = Some(partition_id.into());
         self
     }
 
-    /// The partition id. See [`Self::partition_id`].
+    /// The partition id.
+    /// See [`Self::partition_id`].
     #[must_use]
     pub fn set_partition_id(mut self, partition_id: Option<String>) -> Self {
         self.partition_id = partition_id;
@@ -807,30 +846,35 @@ pub struct StandardBeaconBuilder {
 }
 
 impl StandardBeaconBuilder {
-    /// The beacon's name, and the attribute it beacons unless a location is set. Required.
+    /// The beacon's name, and the attribute that it reads unless a location is set.
+    /// Required.
     #[must_use]
     pub fn name(mut self, name: impl Into<String>) -> Self {
         self.name = Some(name.into());
         self
     }
 
-    /// The beacon's name. See [`Self::name`].
+    /// The beacon's name.
+    /// See [`Self::name`].
     #[must_use]
     pub fn set_name(mut self, name: Option<String>) -> Self {
         self.name = name;
         self
     }
 
-    /// The number of bits of the beacon value, from 1 to 63. Required.
+    /// The number of bits of the beacon value, from 1 to 63.
+    /// Required.
     ///
-    /// Fewer bits make more values share a beacon value, which hides more and matches more.
+    /// With fewer bits, more values share a beacon value.
+    /// That reveals less about each value, and a query returns more false matches.
     #[must_use]
     pub const fn bits(mut self, bits: u8) -> Self {
         self.bits = Some(bits);
         self
     }
 
-    /// The number of bits. See [`Self::bits`].
+    /// The number of bits.
+    /// See [`Self::bits`].
     #[must_use]
     pub const fn set_bits(mut self, bits: Option<u8>) -> Self {
         self.bits = bits;
@@ -845,7 +889,8 @@ impl StandardBeaconBuilder {
         self
     }
 
-    /// The location of the value. See [`Self::location`].
+    /// The location of the value.
+    /// See [`Self::location`].
     #[must_use]
     pub fn set_location(mut self, location: Option<String>) -> Self {
         self.location = location;
@@ -859,7 +904,8 @@ impl StandardBeaconBuilder {
         self
     }
 
-    /// The beacon's style. See [`Self::style`].
+    /// The beacon's style.
+    /// See [`Self::style`].
     #[must_use]
     pub fn set_style(mut self, style: Option<BeaconStyle>) -> Self {
         self.style = style;
@@ -867,14 +913,15 @@ impl StandardBeaconBuilder {
     }
 
     /// The partitions this beacon is divided across, less than the version's maximum.
-    /// Never change it once items are written.
+    /// Do not change it after items are written.
     #[must_use]
     pub const fn number_of_partitions(mut self, count: u8) -> Self {
         self.number_of_partitions = Some(count);
         self
     }
 
-    /// The partitions. See [`Self::number_of_partitions`].
+    /// The partitions.
+    /// See [`Self::number_of_partitions`].
     #[must_use]
     pub const fn set_number_of_partitions(mut self, count: Option<u8>) -> Self {
         self.number_of_partitions = count;
@@ -926,7 +973,7 @@ pub enum BeaconStyle {
     PartOnly(PartOnly),
     /// Computes its values as another beacon does, so the two can be compared.
     Shared(Shared),
-    /// Beacons each element of a set attribute, and is written as a set.
+    /// Computes a beacon value for each element of a set attribute, and writes them as a set.
     AsSet(AsSet),
     /// Both [`Shared`](Self::Shared) and [`AsSet`](Self::AsSet).
     SharedSet(SharedSet),
@@ -1027,14 +1074,16 @@ pub struct SharedBuilder {
 }
 
 impl SharedBuilder {
-    /// The standard beacon whose values this beacon computes. Required.
+    /// The standard beacon whose values this beacon computes.
+    /// Required.
     #[must_use]
     pub fn other(mut self, other: impl Into<String>) -> Self {
         self.other = Some(other.into());
         self
     }
 
-    /// The other beacon. See [`Self::other`].
+    /// The other beacon.
+    /// See [`Self::other`].
     #[must_use]
     pub fn set_other(mut self, other: Option<String>) -> Self {
         self.other = other;
@@ -1084,14 +1133,16 @@ pub struct SharedSetBuilder {
 }
 
 impl SharedSetBuilder {
-    /// The standard beacon whose values this beacon computes. Required.
+    /// The standard beacon whose values this beacon computes.
+    /// Required.
     #[must_use]
     pub fn other(mut self, other: impl Into<String>) -> Self {
         self.other = Some(other.into());
         self
     }
 
-    /// The other beacon. See [`Self::other`].
+    /// The other beacon.
+    /// See [`Self::other`].
     #[must_use]
     pub fn set_other(mut self, other: Option<String>) -> Self {
         self.other = other;
@@ -1175,21 +1226,24 @@ pub struct CompoundBeaconBuilder {
 }
 
 impl CompoundBeaconBuilder {
-    /// The beacon's name. Required.
+    /// The beacon's name.
+    /// Required.
     #[must_use]
     pub fn name(mut self, name: impl Into<String>) -> Self {
         self.name = Some(name.into());
         self
     }
 
-    /// The beacon's name. See [`Self::name`].
+    /// The beacon's name.
+    /// See [`Self::name`].
     #[must_use]
     pub fn set_name(mut self, name: Option<String>) -> Self {
         self.name = name;
         self
     }
 
-    /// The one character that joins the parts, for example `"."`. Required.
+    /// The one character that joins the parts, for example `"."`.
+    /// Required.
     /// It must not appear in any prefix or signed value.
     #[must_use]
     pub fn split(mut self, split: impl Into<String>) -> Self {
@@ -1197,7 +1251,8 @@ impl CompoundBeaconBuilder {
         self
     }
 
-    /// The split character. See [`Self::split`].
+    /// The split character.
+    /// See [`Self::split`].
     #[must_use]
     pub fn set_split(mut self, split: Option<String>) -> Self {
         self.split = split;
@@ -1211,7 +1266,8 @@ impl CompoundBeaconBuilder {
         self
     }
 
-    /// Replace this beacon's encrypted parts. See [`Self::encrypted`].
+    /// Replace this beacon's encrypted parts.
+    /// See [`Self::encrypted`].
     #[must_use]
     pub fn set_encrypted(mut self, parts: Option<Vec<EncryptedPart>>) -> Self {
         self.encrypted = parts;
@@ -1225,17 +1281,19 @@ impl CompoundBeaconBuilder {
         self
     }
 
-    /// Replace this beacon's signed parts. See [`Self::signed`].
+    /// Replace this beacon's signed parts.
+    /// See [`Self::signed`].
     #[must_use]
     pub fn set_signed(mut self, parts: Option<Vec<SignedPart>>) -> Self {
         self.signed = parts;
         self
     }
 
-    /// Add a way to build the beacon. The first that the item has every required part for is used.
+    /// Add a way to build the beacon.
+    /// The beacon uses the first constructor for which the item has every required part.
     ///
-    /// Optional: the default builds from every signed part, then every encrypted part,
-    /// all required. Only this beacon's own parts are used for the default.
+    /// Optional: the default constructor has every signed part, then every encrypted part, all required.
+    /// The default uses only this beacon's own parts, not the version's shared parts.
     #[must_use]
     pub fn constructors(mut self, constructor: Constructor) -> Self {
         self.constructors
@@ -1244,7 +1302,8 @@ impl CompoundBeaconBuilder {
         self
     }
 
-    /// Replace the constructors. See [`Self::constructors`].
+    /// Replace the constructors.
+    /// See [`Self::constructors`].
     #[must_use]
     pub fn set_constructors(mut self, constructors: Option<Vec<Constructor>>) -> Self {
         self.constructors = constructors;
@@ -1314,21 +1373,24 @@ pub struct EncryptedPartBuilder {
 }
 
 impl EncryptedPartBuilder {
-    /// The standard beacon whose value the part holds. Required.
+    /// The standard beacon whose value the part holds.
+    /// Required.
     #[must_use]
     pub fn name(mut self, name: impl Into<String>) -> Self {
         self.name = Some(name.into());
         self
     }
 
-    /// The standard beacon. See [`Self::name`].
+    /// The standard beacon.
+    /// See [`Self::name`].
     #[must_use]
     pub fn set_name(mut self, name: Option<String>) -> Self {
         self.name = name;
         self
     }
 
-    /// The prefix written before the part's value. Required; not empty.
+    /// The prefix written before the part's value.
+    /// Required; not empty.
     /// No part's prefix may begin with another part's prefix.
     #[must_use]
     pub fn prefix(mut self, prefix: impl Into<String>) -> Self {
@@ -1336,7 +1398,8 @@ impl EncryptedPartBuilder {
         self
     }
 
-    /// The prefix. See [`Self::prefix`].
+    /// The prefix.
+    /// See [`Self::prefix`].
     #[must_use]
     pub fn set_prefix(mut self, prefix: Option<String>) -> Self {
         self.prefix = prefix;
@@ -1405,21 +1468,24 @@ pub struct SignedPartBuilder {
 }
 
 impl SignedPartBuilder {
-    /// The part's name, and the attribute it holds unless a location is set. Required.
+    /// The part's name, and the attribute that it holds unless a location is set.
+    /// Required.
     #[must_use]
     pub fn name(mut self, name: impl Into<String>) -> Self {
         self.name = Some(name.into());
         self
     }
 
-    /// The part's name. See [`Self::name`].
+    /// The part's name.
+    /// See [`Self::name`].
     #[must_use]
     pub fn set_name(mut self, name: Option<String>) -> Self {
         self.name = name;
         self
     }
 
-    /// The prefix written before the part's value. Required; not empty.
+    /// The prefix written before the part's value.
+    /// Required; not empty.
     /// No part's prefix may begin with another part's prefix.
     #[must_use]
     pub fn prefix(mut self, prefix: impl Into<String>) -> Self {
@@ -1427,22 +1493,25 @@ impl SignedPartBuilder {
         self
     }
 
-    /// The prefix. See [`Self::prefix`].
+    /// The prefix.
+    /// See [`Self::prefix`].
     #[must_use]
     pub fn set_prefix(mut self, prefix: Option<String>) -> Self {
         self.prefix = prefix;
         self
     }
 
-    /// The DynamoDB document path of the value, which must be `SIGN_ONLY` or
-    /// `SIGN_AND_INCLUDE_IN_ENCRYPTION_CONTEXT`. Optional: the default is the part's name.
+    /// The DynamoDB document path of the value.
+    /// The value must be `SIGN_ONLY` or `SIGN_AND_INCLUDE_IN_ENCRYPTION_CONTEXT`.
+    /// Optional: the default is the part's name.
     #[must_use]
     pub fn location(mut self, location: impl Into<String>) -> Self {
         self.location = Some(location.into());
         self
     }
 
-    /// The location of the value. See [`Self::location`].
+    /// The location of the value.
+    /// See [`Self::location`].
     #[must_use]
     pub fn set_location(mut self, location: Option<String>) -> Self {
         self.location = location;
@@ -1501,14 +1570,16 @@ pub struct ConstructorBuilder {
 }
 
 impl ConstructorBuilder {
-    /// Add a part. At least one is required, and at least one part must be required.
+    /// Add a part.
+    /// A constructor needs at least one part, and at least one of its parts must be required.
     #[must_use]
     pub fn parts(mut self, part: ConstructorPart) -> Self {
         self.parts.get_or_insert_with(Vec::new).push(part);
         self
     }
 
-    /// Replace the parts. See [`Self::parts`].
+    /// Replace the parts.
+    /// See [`Self::parts`].
     #[must_use]
     pub fn set_parts(mut self, parts: Option<Vec<ConstructorPart>>) -> Self {
         self.parts = parts;
@@ -1575,28 +1646,32 @@ pub struct ConstructorPartBuilder {
 }
 
 impl ConstructorPartBuilder {
-    /// The name of the encrypted or signed part. Required.
+    /// The name of the encrypted or signed part.
+    /// Required.
     #[must_use]
     pub fn name(mut self, name: impl Into<String>) -> Self {
         self.name = Some(name.into());
         self
     }
 
-    /// The part's name. See [`Self::name`].
+    /// The part's name.
+    /// See [`Self::name`].
     #[must_use]
     pub fn set_name(mut self, name: Option<String>) -> Self {
         self.name = name;
         self
     }
 
-    /// Whether the item must have the part for the constructor to be used. Required.
+    /// Whether the item must have the part for the constructor to be used.
+    /// Required.
     #[must_use]
     pub const fn required(mut self, required: bool) -> Self {
         self.required = Some(required);
         self
     }
 
-    /// Whether the part is required. See [`Self::required`].
+    /// Whether the part is required.
+    /// See [`Self::required`].
     #[must_use]
     pub const fn set_required(mut self, required: Option<bool>) -> Self {
         self.required = required;
@@ -1618,7 +1693,7 @@ impl ConstructorPartBuilder {
     }
 }
 
-/// A value computed from other values of the item, for a beacon to beacon.
+/// A value computed from other values of the item, for a standard beacon or key source to read.
 /// It is never written to the item.
 #[derive(Clone, Debug)]
 #[non_exhaustive]
@@ -1656,28 +1731,33 @@ pub struct VirtualFieldBuilder {
 }
 
 impl VirtualFieldBuilder {
-    /// The field's name. It must not be an attribute of the table. Required.
+    /// The field's name.
+    /// It must not be an attribute of the table.
+    /// Required.
     #[must_use]
     pub fn name(mut self, name: impl Into<String>) -> Self {
         self.name = Some(name.into());
         self
     }
 
-    /// The field's name. See [`Self::name`].
+    /// The field's name.
+    /// See [`Self::name`].
     #[must_use]
     pub fn set_name(mut self, name: Option<String>) -> Self {
         self.name = name;
         self
     }
 
-    /// Add a part. At least one is required.
+    /// Add a part.
+    /// At least one is required.
     #[must_use]
     pub fn parts(mut self, part: VirtualPart) -> Self {
         self.parts.get_or_insert_with(Vec::new).push(part);
         self
     }
 
-    /// Replace the parts. See [`Self::parts`].
+    /// Replace the parts.
+    /// See [`Self::parts`].
     #[must_use]
     pub fn set_parts(mut self, parts: Option<Vec<VirtualPart>>) -> Self {
         self.parts = parts;
@@ -1739,14 +1819,16 @@ pub struct VirtualPartBuilder {
 }
 
 impl VirtualPartBuilder {
-    /// The DynamoDB document path of a signed value, for example `"a.b[2]"`. Required.
+    /// The DynamoDB document path of a signed value, for example `"a.b[2]"`.
+    /// Required.
     #[must_use]
     pub fn location(mut self, location: impl Into<String>) -> Self {
         self.location = Some(location.into());
         self
     }
 
-    /// The location. See [`Self::location`].
+    /// The location.
+    /// See [`Self::location`].
     #[must_use]
     pub fn set_location(mut self, location: Option<String>) -> Self {
         self.location = location;
@@ -1760,7 +1842,8 @@ impl VirtualPartBuilder {
         self
     }
 
-    /// Replace the transforms. See [`Self::transforms`].
+    /// Replace the transforms.
+    /// See [`Self::transforms`].
     #[must_use]
     pub fn set_transforms(mut self, transforms: Option<Vec<VirtualTransform>>) -> Self {
         self.transforms = transforms;
@@ -1837,13 +1920,15 @@ impl VirtualTransform {
         })
     }
 
-    /// A [`Prefix`](Self::Prefix) transform. See [`GetPrefixBuilder::length`].
+    /// A [`Prefix`](Self::Prefix) transform.
+    /// See [`GetPrefixBuilder::length`].
     #[must_use]
     pub const fn prefix(length: i32) -> Self {
         Self::Prefix(GetPrefix { length })
     }
 
-    /// A [`Suffix`](Self::Suffix) transform. See [`GetSuffixBuilder::length`].
+    /// A [`Suffix`](Self::Suffix) transform.
+    /// See [`GetSuffixBuilder::length`].
     #[must_use]
     pub const fn suffix(length: i32) -> Self {
         Self::Suffix(GetSuffix { length })
@@ -1934,14 +2019,16 @@ pub struct InsertBuilder {
 }
 
 impl InsertBuilder {
-    /// The string appended. Required.
+    /// The string appended.
+    /// Required.
     #[must_use]
     pub fn literal(mut self, literal: impl Into<String>) -> Self {
         self.literal = Some(literal.into());
         self
     }
 
-    /// The string appended. See [`Self::literal`].
+    /// The string appended.
+    /// See [`Self::literal`].
     #[must_use]
     pub fn set_literal(mut self, literal: Option<String>) -> Self {
         self.literal = literal;
@@ -1976,7 +2063,7 @@ impl GetPrefix {
         GetPrefixBuilder::default()
     }
 
-    /// The characters kept, or dropped from the end when negative.
+    /// How many characters are kept, or dropped from the end when negative.
     #[must_use]
     pub const fn length(&self) -> i32 {
         self.length
@@ -1991,7 +2078,8 @@ pub struct GetPrefixBuilder {
 }
 
 impl GetPrefixBuilder {
-    /// How many characters to keep from the front. Required.
+    /// How many characters to keep from the front.
+    /// Required.
     /// When negative, how many to drop from the end: `-1` keeps all but the last.
     #[must_use]
     pub const fn length(mut self, length: i32) -> Self {
@@ -1999,7 +2087,8 @@ impl GetPrefixBuilder {
         self
     }
 
-    /// The length. See [`Self::length`].
+    /// The length.
+    /// See [`Self::length`].
     #[must_use]
     pub const fn set_length(mut self, length: Option<i32>) -> Self {
         self.length = length;
@@ -2034,7 +2123,7 @@ impl GetSuffix {
         GetSuffixBuilder::default()
     }
 
-    /// The characters kept, or dropped from the front when negative.
+    /// How many characters are kept, or dropped from the front when negative.
     #[must_use]
     pub const fn length(&self) -> i32 {
         self.length
@@ -2049,7 +2138,8 @@ pub struct GetSuffixBuilder {
 }
 
 impl GetSuffixBuilder {
-    /// How many characters to keep from the end. Required.
+    /// How many characters to keep from the end.
+    /// Required.
     /// When negative, how many to drop from the front: `-1` keeps all but the first.
     #[must_use]
     pub const fn length(mut self, length: i32) -> Self {
@@ -2057,7 +2147,8 @@ impl GetSuffixBuilder {
         self
     }
 
-    /// The length. See [`Self::length`].
+    /// The length.
+    /// See [`Self::length`].
     #[must_use]
     pub const fn set_length(mut self, length: Option<i32>) -> Self {
         self.length = length;
@@ -2115,28 +2206,32 @@ pub struct GetSubstringBuilder {
 }
 
 impl GetSubstringBuilder {
-    /// The first position kept. Required.
+    /// The first position kept.
+    /// Required.
     #[must_use]
     pub const fn low(mut self, low: i32) -> Self {
         self.low = Some(low);
         self
     }
 
-    /// The first position. See [`Self::low`].
+    /// The first position.
+    /// See [`Self::low`].
     #[must_use]
     pub const fn set_low(mut self, low: Option<i32>) -> Self {
         self.low = low;
         self
     }
 
-    /// The position after the last one kept. Required.
+    /// The position after the last one kept.
+    /// Required.
     #[must_use]
     pub const fn high(mut self, high: i32) -> Self {
         self.high = Some(high);
         self
     }
 
-    /// The end position. See [`Self::high`].
+    /// The end position.
+    /// See [`Self::high`].
     #[must_use]
     pub const fn set_high(mut self, high: Option<i32>) -> Self {
         self.high = high;
@@ -2173,7 +2268,7 @@ impl GetSegment {
         GetSegmentBuilder::default()
     }
 
-    /// The character the value is split on.
+    /// The character that the value is split on.
     #[must_use]
     pub const fn split(&self) -> char {
         self.split
@@ -2195,28 +2290,32 @@ pub struct GetSegmentBuilder {
 }
 
 impl GetSegmentBuilder {
-    /// The one character the value is split on. Required.
+    /// The one character that the value is split on.
+    /// Required.
     #[must_use]
     pub fn split(mut self, split: impl Into<String>) -> Self {
         self.split = Some(split.into());
         self
     }
 
-    /// The split character. See [`Self::split`].
+    /// The split character.
+    /// See [`Self::split`].
     #[must_use]
     pub fn set_split(mut self, split: Option<String>) -> Self {
         self.split = split;
         self
     }
 
-    /// The position of the segment kept: 0 is before the first split, -1 after the last. Required.
+    /// The position of the segment kept: 0 is before the first split, -1 after the last.
+    /// Required.
     #[must_use]
     pub const fn index(mut self, index: i32) -> Self {
         self.index = Some(index);
         self
     }
 
-    /// The segment's position. See [`Self::index`].
+    /// The segment's position.
+    /// See [`Self::index`].
     #[must_use]
     pub const fn set_index(mut self, index: Option<i32>) -> Self {
         self.index = index;
@@ -2255,7 +2354,7 @@ impl GetSegments {
         GetSegmentsBuilder::default()
     }
 
-    /// The character the value is split on.
+    /// The character that the value is split on.
     #[must_use]
     pub const fn split(&self) -> char {
         self.split
@@ -2284,42 +2383,48 @@ pub struct GetSegmentsBuilder {
 }
 
 impl GetSegmentsBuilder {
-    /// The one character the value is split on. Required.
+    /// The one character that the value is split on.
+    /// Required.
     #[must_use]
     pub fn split(mut self, split: impl Into<String>) -> Self {
         self.split = Some(split.into());
         self
     }
 
-    /// The split character. See [`Self::split`].
+    /// The split character.
+    /// See [`Self::split`].
     #[must_use]
     pub fn set_split(mut self, split: Option<String>) -> Self {
         self.split = split;
         self
     }
 
-    /// The position of the first segment kept. Required.
+    /// The position of the first segment kept.
+    /// Required.
     #[must_use]
     pub const fn low(mut self, low: i32) -> Self {
         self.low = Some(low);
         self
     }
 
-    /// The first position. See [`Self::low`].
+    /// The first position.
+    /// See [`Self::low`].
     #[must_use]
     pub const fn set_low(mut self, low: Option<i32>) -> Self {
         self.low = low;
         self
     }
 
-    /// The position after the last segment kept. Required.
+    /// The position after the last segment kept.
+    /// Required.
     #[must_use]
     pub const fn high(mut self, high: i32) -> Self {
         self.high = Some(high);
         self
     }
 
-    /// The end position. See [`Self::high`].
+    /// The end position.
+    /// See [`Self::high`].
     #[must_use]
     pub const fn set_high(mut self, high: Option<i32>) -> Self {
         self.high = high;

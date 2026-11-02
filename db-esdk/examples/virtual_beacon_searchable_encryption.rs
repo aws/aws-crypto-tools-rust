@@ -1,12 +1,13 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Builds a virtual field from two attributes, beacons it, then queries that beacon.
+//! Builds a virtual field from two attributes, puts a beacon on it, then queries that beacon.
 //!
-//! A virtual field is a transform of one or more attributes. It is not stored; only its beacon
-//! is. Here the field is `state` + prefix(`hasTestResult`, 1), e.g. "CA" + "t" = "CAt". This
-//! lets us query a low-cardinality boolean (`hasTestResult`) combined with `state` without a
-//! standalone beacon on the boolean revealing its distribution.
+//! A virtual field is a transform of one or more attributes.
+//! The client stores only the field's beacon, not the field itself.
+//! Here the field is `state` followed by the first character of `hasTestResult`: "CA" + "t" = "CAt".
+//! A query can then combine `state` with the boolean `hasTestResult`,
+//! with no beacon on the boolean alone that would reveal how its values are distributed.
 //!
 //! Requires AWS credentials, a key store with a provisioned branch key, and a DynamoDB table:
 //! - partition key `customer_id`, type S
@@ -38,9 +39,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let sdk_config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
     let ddb_sdk = aws_sdk_dynamodb::Client::new(&sdk_config);
 
-    // The virtual field is `state` then the length-1 prefix of `hasTestResult`
-    // (so the boolean "true"/"false" becomes "t"/"f"). Transforms treat every value as a string.
-    // Parts are concatenated in order, and the query must use the same order.
+    // Transforms treat every value as a string, so the length-1 prefix turns "true" and "false" into "t" and "f".
+    // The client joins the parts in order, and the query value must use the same order.
     let state_part = VirtualPart::builder().location("state").build()?;
     let has_test_result_part = VirtualPart::builder()
         .location("hasTestResult")
@@ -55,9 +55,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .build()?,
     ];
 
-    // `state` (56 values) combined with the boolean gives ~112 values. The length guidance
-    // bounds the beacon to 3..=6; we pick 5, giving 2^5 = 32 HMAC values and ~3.5 combinations
-    // sharing each beacon. See the basic example for the length trade-off.
+    // `state` has 56 values, so combined with the boolean the field has about 112.
+    // The length guidance puts the beacon between 3 and 6 bits.
+    // 5 bits gives 2^5 = 32 beacon values, with about 3.5 combinations sharing each one.
+    // See `basic_searchable_encryption` for the length trade-off.
     let standard_beacons = vec![
         StandardBeacon::builder()
             .name("stateAndHasTestResult")
@@ -116,7 +117,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .table_encryption_configs(TABLE_NAME, table)
         .build()?;
 
-    // Two items differing only in customer_id and hasTestResult.
+    // Two items that differ only in customer_id and hasTestResult.
     let item_with_test_result = HashMap::from([
         (
             "customer_id".to_string(),
@@ -142,7 +143,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ("hasTestResult".to_string(), AttributeValue::Bool(false)),
     ]);
 
-    // When developing, resolve_attributes shows the virtual field value this config computes.
+    // During development, `resolve_attributes` shows the virtual field value that this config computes.
     let resolved = ddb
         .resolve_attributes()
         .table_name(TABLE_NAME)
@@ -165,8 +166,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .send()
         .await?;
 
-    // Query for state=CA and hasTestResult=true. The query value mirrors the write: the parts
-    // in order (`state` then `hasTestResult`), with the same length-1 prefix transform, so "CAt".
+    // Query for state=CA and hasTestResult=true.
+    // Build the query value the way the client builds the field: `state`, then the first character of `hasTestResult`.
     let values = HashMap::from([(
         ":stateAndHasTestResult".to_string(),
         AttributeValue::S("CAt".into()),
@@ -194,7 +195,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 /// Runs a GSI query until it returns an item, retrying a few times.
-/// GSI reads are eventually consistent, so a just-written item may not appear at once.
+/// GSI reads are eventually consistent, so an item may not appear right after it is written.
 async fn retry_query<F, Fut>(
     query: F,
 ) -> Result<Vec<HashMap<String, AttributeValue>>, Box<dyn std::error::Error>>
@@ -209,7 +210,6 @@ where
         if !items.is_empty() {
             return Ok(items);
         }
-        // The GSI is eventually consistent: give it time to catch up.
         tokio::time::sleep(Duration::from_secs(1)).await;
     }
     Err("query returned no items after 10 tries".into())

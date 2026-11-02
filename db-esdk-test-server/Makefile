@@ -1,6 +1,5 @@
-# Target vocabulary (build-server / start-server / wait-for-server / stop-server)
-# matches the commons TestServer orchestration. Recipes are single shell lines
-# for the 3.81 Make that ships with macOS.
+# The commons TestServer orchestration calls these target names: build-server, start-server, etc.
+# Each recipe is one shell line, for the Make 3.81 that ships with macOS.
 
 SHELL := bash
 
@@ -11,9 +10,8 @@ BIN      := target/release/dbesdk-test-server
 PID_FILE := .server.pid
 LOG_FILE := .server.log
 
-# Bootstrap-then-delegate coordinates for `make test-server`. The commons
-# repository coordinates live in server-config.json next to this
-# Makefile; COMMONS_BRANCH overrides the configured branch at invocation time.
+# Settings for `make test-server`.
+# The commons repo URL and branch come from server-config.json; COMMONS_BRANCH overrides the branch.
 MAKEFILE_DIR := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 REPO_ROOT    := $(abspath $(MAKEFILE_DIR)/..)
 COMMONS_CONFIGURATION := $(MAKEFILE_DIR)/server-config.json
@@ -66,12 +64,12 @@ check-java: ## Verify JAVA_HOME points at a JDK 21+ (the commons orchestrator ne
 		echo "ERROR: JDK 21+ required, JAVA_HOME has major version '$$v'." >&2; exit 1; \
 	fi
 
-# Bootstrap-then-delegate (the single orchestrated entry point): parse the
-# commons coordinates, clone commons at the branch head, and run the
-# commons orchestration in the clone with this working tree as the live Rust
-# library + server source. The core builds and launches every configured
-# Language_Server, runs the full Tests matrix, and tears down; its exit code
-# propagates. Needs AWS credentials and a JDK 21+.
+# The entry point for the full cross-language run.
+# Clones commons at the head of the branch in server-config.json.
+# Runs the commons orchestration there, with this working tree as the source of the Rust library and server.
+# The orchestration builds and starts every configured Language_Server, runs every test, then stops them.
+# Its exit code is this target's exit code.
+# Needs AWS credentials and a JDK 21+.
 test-server: check-java ## Run the complete cross-language TestServer via the commons orchestrator; COMMONS_BRANCH=<b> overrides
 	@set -eo pipefail; \
 	if ! coords=$$(python3 -c 'import json,sys; c=json.load(open(sys.argv[1]))["commonsRepository"]; print(c["url"]); print(c["branch"])' "$(COMMONS_CONFIGURATION)" 2>/dev/null); then \

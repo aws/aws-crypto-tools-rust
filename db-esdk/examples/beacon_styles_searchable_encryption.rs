@@ -3,10 +3,14 @@
 
 //! Shows the beacon styles on standard beacons, then queries each with a scan.
 //!
-//! The scenario stores food records. It builds on the basic example and uses the same table.
-//! Styles shown: a plain beacon (`fruit`), a `SharedSet` set beacon (`basket`, comparable to
-//! `fruit`), a `Shared` beacon (`dessert`, comparable to `fruit`), an `AsSet` set beacon
-//! (`veggies`), and a `PartOnly` beacon (`work_type`, usable only inside a compound beacon).
+//! The scenario stores food records.
+//! It builds on `basic_searchable_encryption` and uses the same table.
+//! The beacons:
+//! - `fruit`: no style
+//! - `basket`: `SharedSet`, a set that can be compared to `fruit`
+//! - `dessert`: `Shared`, a scalar that can be compared to `fruit`
+//! - `veggies`: `AsSet`, a set that is not shared
+//! - `work_type`: `PartOnly`, usable only inside a compound beacon
 //!
 //! Requires AWS credentials, a key store with a provisioned branch key, and a DynamoDB table:
 //! - partition key `work_id`, type S
@@ -37,7 +41,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let sdk_config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
     let ddb_sdk = aws_sdk_dynamodb::Client::new(&sdk_config);
 
-    // See the basic example for how to choose a beacon's bit length. We use 30 throughout.
+    // See `basic_searchable_encryption` for how to choose a beacon's bit length.
+    // Every beacon here uses 30 bits.
     let standard_beacons = vec![
         StandardBeacon::builder().name("fruit").bits(30).build()?,
         // `basket` is a set shared with `fruit`, so set members can be compared to `fruit`.
@@ -58,7 +63,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .bits(30)
             .style(BeaconStyle::as_set())
             .build()?,
-        // `work_type` is only ever used inside `work_unit`, so disable it as a standalone beacon.
+        // `work_type` is used only inside `work_unit`, so it can't be queried on its own.
         StandardBeacon::builder()
             .name("work_type")
             .bits(30)
@@ -66,8 +71,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .build()?,
     ];
 
-    // Build a compound beacon `work_unit` from the signed `work_id` and the PartOnly `work_type`.
-    // The default constructor writes it as the signed part then the encrypted part: `I-...​.T-...`.
+    // The compound beacon `work_unit` joins the signed `work_id` and the PartOnly `work_type`.
+    // With no constructor given, its value puts the signed part first: `I-<work_id>.T-<work_type>`.
     let compound_beacons = vec![
         CompoundBeacon::builder()
             .name("work_unit")
@@ -116,7 +121,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build()
         .await?;
 
-    // Beaconized attributes must be EncryptAndSign; the key attributes are SignOnly.
+    // Attributes with a standard beacon must be EncryptAndSign; the key attributes are SignOnly.
     let table = TableConfig::builder()
         .partition_key_name("work_id")
         .sort_key_name("inspection_date")
@@ -136,7 +141,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .table_encryption_configs(TABLE_NAME, table)
         .build()?;
 
-    // Fresh work_id values per run avoid colliding with stale items.
+    // A new work_id on each run keeps this run's items apart from items that earlier runs left behind.
     let work_id1 = uuid::Uuid::new_v4().to_string();
     let work_id2 = uuid::Uuid::new_v4().to_string();
 
@@ -195,7 +200,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .send()
         .await?;
 
-    // Run the scans, then clean up both items whatever the outcome.
+    // Hold the result so that both items get deleted even if a scan fails.
     let result = run_scan_tests(&ddb, &item1, &item2, &work_id1, &work_id2).await;
 
     let plain_ddb = aws_sdk_dynamodb::Client::new(&sdk_config);
@@ -214,7 +219,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-/// Exercises each beacon style with a scan. The `work_id` filter keeps the scan to this run's items.
+/// Scans once for each beacon style.
+/// The `work_id` filter limits each scan to this run's items.
 async fn run_scan_tests(
     ddb: &aws_db_esdk::Client,
     item1: &HashMap<String, AttributeValue>,

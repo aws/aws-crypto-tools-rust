@@ -30,15 +30,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .wrapping_alg(AesWrappingAlg::AlgAes256GcmIv12Tag16)
         .build()?;
 
-    // Every attribute the application writes needs an action:
+    // Every attribute that the application writes needs an action:
     // - `EncryptAndSign`: encrypted, and covered by the item's signature
     // - `SignOnly`: stored as plaintext, but covered by the signature
     // - `DoNothing`: stored as plaintext, not covered by the signature
     // The partition and sort keys must be `SignOnly`, since DynamoDB must read them.
     //
-    // On read, an attribute that is not signed must be listed as unsigned.
+    // On read, the config must list each attribute that is not signed.
     // Here every unsigned attribute starts with ":", so new ones need no config change.
-    // Never change the prefix once items are written with it.
+    // Never change the prefix once you have written items with it.
     let table = TableConfig::builder()
         .partition_key_name("partition_key")
         .sort_key_name("sort_key")
@@ -51,8 +51,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .keyring(keyring)
         .build()?;
 
-    // The client takes its region and credentials from the default AWS config chain.
-    // Tables without a config pass through unencrypted.
+    // The DynamoDB client takes its region and credentials from the default AWS config chain.
+    // Requests for a table with no config pass through unencrypted.
     let sdk_config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
     let ddb = aws_db_esdk::Client::builder()
         .ddb_client(aws_sdk_dynamodb::Client::new(&sdk_config))

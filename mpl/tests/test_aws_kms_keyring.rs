@@ -3,9 +3,9 @@
 
 //! Tests for [`AwsKmsKeyring`] (Dafny AwsKmsKeyring.dfy).
 //!
-//! The round trips call AWS KMS with the CI test key
-//! `9d989aa2-2f9c-438c-a745-cc57d3ad0126` in account `370957321024`, region `us-west-2`,
-//! like the hierarchical keyring's integration tests. Without credentials they fail.
+//! The round trips call AWS KMS with the CI test key `9d989aa2-2f9c-438c-a745-cc57d3ad0126`
+//! in account `370957321024`, region `us-west-2`.
+//! They fail without credentials for that account.
 
 use aws_config::{BehaviorVersion, Region};
 use aws_crypto_mpl::aws_sdk_kms::Client as KmsClient;

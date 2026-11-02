@@ -1,13 +1,13 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Tests of beaconized expressions, ported from the Dafny DB-ESDK's `FilterExpr.dfy`,
-//! `Beacon.dfy`, `BeaconPartition.dfy` and `DDBSupport.dfy`, with their fixtures
-//! from `BeaconTestFixtures.dfy`.
+//! Tests of beaconized expressions.
+//! Their counterparts are in the Dafny DB-ESDK's `FilterExpr.dfy`, `Beacon.dfy`, `BeaconPartition.dfy` and `DDBSupport.dfy`,
+//! and the fixtures are from `BeaconTestFixtures.dfy`.
 //!
 //! The Dafny tests read HMAC keys from a literal key source holding `[1, 2, 3, 4, 5]`.
-//! Here a fake key store returns that beacon key, which yields the same HMAC keys,
-//! so the Dafny beacon values carry over unchanged.
+//! Here a fake key store returns that beacon key, which yields the same HMAC keys.
+//! So the beacon values in the Dafny tests hold here too.
 
 use std::time::Duration;
 
@@ -123,7 +123,7 @@ impl KeyStore for LiteralKeyStore {
     }
 }
 
-// ---- fixtures (BeaconTestFixtures.dfy) ----
+// Fixtures from BeaconTestFixtures.dfy.
 
 fn std_beacon(name: &str, bits: u8, loc: Option<&str>) -> StandardBeacon {
     StandardBeacon::builder()
@@ -434,7 +434,7 @@ fn keeps(
     }
 }
 
-// ---- FilterExpr.dfy ----
+// FilterExpr.dfy.
 
 #[tokio::test]
 async fn no_beacons_leaves_context_unchanged() {
@@ -1043,7 +1043,7 @@ async fn comparisons() {
     assert_eq!(out.values, Some(values(&[(":val1", s("N_"))])));
 }
 
-// ---- Beacon.dfy ----
+// Beacon.dfy.
 
 #[tokio::test]
 async fn compound_queries() {
@@ -1267,7 +1267,7 @@ async fn beacon_set_query() {
     );
 }
 
-// ---- DDBSupport.dfy: TestMulti ----
+// DDBSupport.dfy: TestMulti.
 
 const KEY_ID: &str = "0ad21413-51aa-42e1-9c3d-6a4b1edf7e10";
 
@@ -1436,7 +1436,7 @@ fn beacon_key_id_sources() {
     );
 }
 
-// ---- BeaconPartition.dfy: GetNumberOfQueries ----
+// BeaconPartition.dfy: GetNumberOfQueries.
 
 fn num_queries(bv: &BeaconVersionInfo, key: &str, vals: &[(&str, AttributeValue)]) -> u8 {
     bv.get_num_queries(Some(key), Some(&values(vals))).unwrap()
@@ -1528,7 +1528,7 @@ fn number_of_queries_edges() {
     );
 }
 
-// ---- partitions in one query ----
+// Several partitions in one query.
 
 #[tokio::test]
 async fn do_beaconize_ors_each_partition() {
@@ -1677,7 +1677,7 @@ fn replace_all_whole_replaces_only_whole_words() {
     assert_eq!(replace_all_whole("aé é", "é", "X"), "aé X");
 }
 
-// ---- rewrite paths and errors ----
+// Rewrite paths and errors.
 
 #[tokio::test]
 async fn beaconize_in_contains_and_prefixed_names() {
@@ -1821,7 +1821,7 @@ async fn beaconize_without_expressions_is_unchanged() {
 #[test]
 fn filter_results_short_circuits() {
     let bv = info(lotsa());
-    // An expression that cannot be beaconized is not even read without items.
+    // With no items, filtering returns before it parses the expression, even one that cannot be beaconized.
     let bad = "std2 between :a and :b";
     assert_eq!(
         bv.filter_results(vec![], None, Some(bad), None, None)
@@ -1864,9 +1864,11 @@ fn filter_results_applies_key_and_filter() {
     assert_eq!(out, vec![simple_item(), other]);
 }
 
-/// `attr_for_value` finds the attribute a value is compared to, in each place a value can
-/// appear: either side of a comparison, `contains` and `begins_with`, both `BETWEEN`
-/// bounds, and every member of an `IN` list.
+/// `attr_for_value` finds the attribute that a value is compared to, in each place a value can appear:
+/// - either side of a comparison
+/// - `contains` and `begins_with`
+/// - both `BETWEEN` bounds
+/// - every member of an `IN` list
 #[test]
 fn attr_for_value_each_shape() {
     let cases: &[(&str, &str, Option<&str>)] = &[

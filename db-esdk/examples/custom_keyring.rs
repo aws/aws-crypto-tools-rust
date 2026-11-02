@@ -20,7 +20,7 @@ use aws_db_esdk::mpl::types::EncryptedDataKey;
 use aws_db_esdk::types::{AesWrappingAlg, CryptoAction};
 use aws_db_esdk::{ItemEncryptor, TableConfig};
 
-/// Wraps another keyring and logs the key providers of the encrypted data keys each call writes or tries.
+/// Wraps another keyring and logs the key providers of the encrypted data keys that each call writes or tries.
 #[derive(Clone)]
 struct AuditKeyring {
     inner: RawAesKeyring,

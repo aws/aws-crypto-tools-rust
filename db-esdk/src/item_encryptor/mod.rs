@@ -1,7 +1,7 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Encrypt and decrypt DynamoDB items directly, with no call to DynamoDB.
+//! Encrypt and decrypt DynamoDB items without calling DynamoDB.
 
 pub(crate) mod config;
 
@@ -22,7 +22,7 @@ use config::Config;
 
 /// Encrypts and decrypts the items of one table, with no call to DynamoDB.
 ///
-/// Use it when you hold an item and make no put or get call,
+/// Use it when you already have an item and are not calling put or get,
 /// for example to decrypt an item from a DynamoDB stream.
 /// Cloning is cheap: clones share the configuration.
 #[derive(Clone, Debug)]
@@ -79,8 +79,9 @@ pub struct ItemEncryptorBuilder {
 impl ItemEncryptorBuilder {
     /// The table whose items this encrypts, and its configuration. Required.
     ///
-    /// `name` is the logical table name bound into every item,
-    /// unless the configuration sets its own.
+    /// `name` is the DynamoDB table name.
+    /// The encryptor binds it into every item as the logical table name,
+    /// unless the configuration sets a logical table name of its own.
     #[must_use]
     pub fn table(mut self, name: impl Into<String>, config: TableConfig) -> Self {
         self.table = Some((name.into(), config));
@@ -158,7 +159,7 @@ impl ParsedHeader {
         &self.encryption_context
     }
 
-    /// The item key a branch key ID supplier sees for this item.
+    /// The item key that a branch key ID supplier sees for this item.
     #[must_use]
     pub const fn selector_context(&self) -> &HashMap<String, AttributeValue> {
         &self.selector_context
@@ -196,7 +197,9 @@ fn parsed_header(
     })
 }
 
-/// The encrypt-item operation. Set the item, then call [`send`](Self::send).
+/// The encrypt-item operation.
+///
+/// Set the item, then call [`send`](Self::send).
 #[derive(Clone, Debug)]
 pub struct EncryptItemFluentBuilder {
     config: Arc<Config>,
@@ -222,8 +225,9 @@ impl EncryptItemFluentBuilder {
     ///
     /// # Errors
     ///
-    /// A `Validation` error when the item lacks a key attribute, has an attribute with no action,
-    /// or has a value that cannot be stored (such as an invalid number).
+    /// A `Validation` error when the item lacks a key attribute,
+    /// has an attribute with no action,
+    /// or has a value that the encryptor cannot serialize, such as an invalid number.
     /// An error from the keyring or CMM keeps its variant.
     pub async fn send(self) -> Result<EncryptItemOutput, Error> {
         //= spec/dynamodb-encryption-client/encrypt-item.md#input
@@ -411,7 +415,9 @@ async fn encrypt_item(config: &Config, item: Item) -> Result<EncryptItemOutput, 
     })
 }
 
-/// The decrypt-item operation. Set the item, then call [`send`](Self::send).
+/// The decrypt-item operation.
+///
+/// Set the item, then call [`send`](Self::send).
 #[derive(Clone, Debug)]
 pub struct DecryptItemFluentBuilder {
     config: Arc<Config>,
@@ -710,7 +716,7 @@ mod tests {
             HashMap::from([
                 ("aws-crypto-table-name", "table"),
                 ("aws-crypto-partition-name", "pk"),
-                // 0x0001 (string) followed by "v"
+                // base64 of the string type 0x0001 followed by "v"
                 ("aws-crypto-attr.pk", "AAF2"),
             ])
         );

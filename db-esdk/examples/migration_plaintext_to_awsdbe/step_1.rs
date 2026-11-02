@@ -1,14 +1,14 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Step 1 — prepare to read encrypted items.
+//! Step 1: prepare every reader for encrypted items.
 //!
 //! Uses `PlaintextOverride::ForcePlaintextWriteAllowPlaintextRead`:
-//!   - Write: forced to plaintext (never encrypted).
-//!   - Read:  plaintext or encrypted, both allowed.
+//!   - Write: always plaintext.
+//!   - Read:  plaintext or encrypted.
 //!
-//! The dataset is still entirely plaintext; this step only makes readers
-//! ready. Deploy Step 1 to every reader before moving to Step 2.
+//! The dataset is still all plaintext; this step only gets the readers ready.
+//! Deploy step 1 to every reader before moving to step 2.
 
 use aws_db_esdk::aws_config;
 use aws_db_esdk::aws_sdk_dynamodb;
@@ -38,7 +38,7 @@ pub async fn run(
         .send()
         .await?;
 
-    // Reads plaintext items as-is and decrypts encrypted items transparently.
+    // Returns a plaintext item as it is, and decrypts an encrypted one.
     let output = ddb
         .get_item()
         .table_name(DDB_TABLE_NAME)

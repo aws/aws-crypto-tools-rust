@@ -4,12 +4,11 @@
 //! Searchable encryption: beacons that let a [`Client`](crate::Client) query encrypted attributes.
 //!
 //! A beacon is a truncated HMAC of an attribute's plaintext, written next to the item.
-//! Items with the same plaintext have the same beacon, so a query can match them
-//! without decrypting. Configure the beacons of a table with a [`SearchConfig`],
+//! Items with the same plaintext have the same beacon, so a query can match them without decrypting.
+//! Configure the beacons of a table with a [`SearchConfig`],
 //! and set it with [`TableConfigBuilder::search`](crate::TableConfigBuilder::search).
 //!
-//! The configuration is checked against the table's attribute actions
-//! when the [`Client`](crate::Client) is built.
+//! Building the [`Client`](crate::Client) checks the configuration against the table's attribute actions.
 
 pub(crate) mod beacon;
 mod config;

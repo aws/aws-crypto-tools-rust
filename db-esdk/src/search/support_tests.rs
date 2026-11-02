@@ -1,8 +1,8 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Tests ported from the reference implementation's `DDBSupport.dfy`
-//! and the partition tests of `BeaconPartition.dfy`.
+//! Counterparts of the tests in the reference implementation's `DDBSupport.dfy`,
+//! and of the partition tests in `BeaconPartition.dfy`.
 
 use std::sync::{Arc, Mutex};
 
@@ -260,9 +260,10 @@ fn extract(info: &SearchInfo, values: Option<Values>) -> Result<(Option<Values>,
 
 #[test]
 fn invalid_partition_on_query() {
-    // Only the first assertion is a ddb-support.md rule. The rest pin adjacent checks:
-    // a partition value on a table without partitions, and the absent-value error that
-    // replaces partition 0 when an encrypted field is queried.
+    // Only the first assertion checks a ddb-support.md rule.
+    // The others check nearby errors:
+    // - a partition value on a table without partitions
+    // - a missing partition value when the query reads an encrypted field, which is an error instead of partition 0
     let info = std2_name_title(Some(5));
 
     //= spec/dynamodb-encryption-client/ddb-support.md#queryinputforbeacons
@@ -475,7 +476,7 @@ async fn query_partition_must_be_below_the_number_of_queries() {
 
 #[tokio::test]
 async fn query_covers_each_beacon_partition() {
-    // std2 has 2 of the table's 5 partitions; a filter on it ORs both of its values.
+    // std2 has 2 of the table's 5 partitions; a filter on it joins both of its values with OR.
     let info = std2_partitions(2, 5);
     let out = info
         .query_input_for_beacons(

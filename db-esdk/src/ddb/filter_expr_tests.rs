@@ -1,8 +1,8 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Tests ported from DynamoDbEncryption/test/FilterExpr.dfy, for the parts of it that do not
-//! need beacons. The beacon cases (`Beaconize`, `BeaconizeParsedExpr`) test `search::filter`.
+//! Tests ported from DynamoDbEncryption/test/FilterExpr.dfy, except the cases that need beacons.
+//! The beacon cases (`Beaconize`, `BeaconizeParsedExpr`) are in the tests of `search::filter`.
 
 use super::*;
 use aws_crypto_mpl::aws_sdk_dynamodb::primitives::Blob;
@@ -56,8 +56,8 @@ fn simple_item() -> Item {
     ])
 }
 
-/// Whether `item` passes `expr`: the pipeline `FilterResults` runs for an expression
-/// that names no beacon.
+/// Whether `item` passes `expr`.
+/// It runs the same steps that `FilterResults` runs for an expression that names no beacon.
 fn filter(
     expr: &str,
     item: &Item,
@@ -84,7 +84,7 @@ fn check(
     }
 }
 
-/// The validation error `expr` fails with.
+/// The validation error that `expr` fails with.
 fn filter_err(expr: &str, item: &Item, values: &Item) -> Error {
     let err = filter(expr, item, None, values).unwrap_err();
     assert!(matches!(err, Error::Validation(..)), "{expr}: {err:?}");
@@ -94,8 +94,8 @@ fn filter_err(expr: &str, item: &Item, values: &Item) -> Error {
 #[test]
 #[allow(clippy::many_single_char_names)] // a..f name the strings in their order
 fn unicode_less() {
-    // A..F are strictly increasing in code point order, though D, E and F are surrogate
-    // pairs in UTF-16 and so sort below C there.
+    // A..F increase strictly in code point order.
+    // In UTF-16, D, E, and F are surrogate pairs, so they sort below C.
     let (a, b, c, d, e, f) = (
         "A",
         "\u{d000}",
@@ -222,7 +222,7 @@ fn between_converts_to_prefix_and_rpn() {
             Token::Between
         ]
     );
-    // An incomplete BETWEEN is left as written.
+    // convert_to_prefix leaves an incomplete BETWEEN as written.
     let parsed = parse_expr("A BETWEEN :x OR B = C");
     assert_eq!(convert_to_prefix(&parsed), parsed);
 }
@@ -284,7 +284,7 @@ fn extract_attributes_cases() {
         ("A < B or C <> D", m, &["A", "B", "C", "D"]),
         ("contains(A, :b)", m, &["A"]),
         ("begins_with(A, :b)", m, &["A"]),
-        // These ignore the underlying value, so they can work on any attribute.
+        // These functions do not read the attribute's value.
         ("attribute_exists(A)", m, none),
         ("attribute_not_exists(A)", m, none),
         ("size(A)", m, none),
@@ -479,7 +479,7 @@ fn filter_complex() {
         &[
             ("one < :four and two < :five", true),
             ("one < :four or two > :five", true),
-            // Not in the reference: each side false.
+            // Not in FilterExpr.dfy: both sides false.
             ("one > :four and two < :five", false),
             ("one > :four or two > :five", false),
         ],
@@ -540,7 +540,7 @@ fn filter_attr_ops() {
             ("attribute_type(std2, :s)", true),
             ("not attribute_exists(Date)", false),
             ("not attribute_exists(Nope)", true),
-            // Not in the reference: the wrong type, and a name placeholder.
+            // Not in FilterExpr.dfy: the wrong type, and a name placeholder.
             ("attribute_type(std2, :m)", false),
             ("attribute_exists(#fecha)", true),
         ],

@@ -28,7 +28,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let ddb_sdk = aws_sdk_dynamodb::Client::new(&sdk_config);
 
     // The AWS Crypto Tools CI test key store.
-    // Replace these with your own key store's table, name, and KMS key ARN.
+    // Replace these with your own key store's table, logical name, and KMS key ARN.
     let key_store = key_store::DynamoDbKeyStore::builder()
         .ddb_table_name("KeyStoreDdbTable")
         .logical_key_store_name("KeyStoreDdbTable")

@@ -3,9 +3,8 @@
 
 //! Sets up a compound beacon over two encrypted attributes, then queries it.
 //!
-//! The scenario is the unit-inspection table from the basic example, with a different GSI
-//! driven by a compound beacon over `inspector_id_last4` and `unit`. A compound beacon
-//! serves several beacons from one index.
+//! The scenario is the unit inspection table from `basic_searchable_encryption`.
+//! Here one GSI covers both `inspector_id_last4` and `unit`, through a compound beacon over the two.
 //!
 //! Requires AWS credentials, a key store with a provisioned branch key, and a DynamoDB table:
 //! - partition key `work_id`, type S
@@ -37,8 +36,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let sdk_config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
     let ddb_sdk = aws_sdk_dynamodb::Client::new(&sdk_config);
 
-    // A compound beacon is built from standard beacons, so the parts must also be standard
-    // beacons on their encrypted fields. See the basic example for choosing bit lengths.
+    // Each encrypted part of a compound beacon must also be a standard beacon.
+    // See `basic_searchable_encryption` for how to choose bit lengths.
     let standard_beacons = vec![
         StandardBeacon::builder()
             .name("inspector_id_last4")
@@ -47,9 +46,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         StandardBeacon::builder().name("unit").bits(30).build()?,
     ];
 
-    // Each encrypted part names a standard beacon and a prefix. Prefixes must be unique and
-    // none may be a prefix of another. The default constructor concatenates the encrypted
-    // parts in order, so these write as `L-<last4>.U-<unit>`.
+    // Each encrypted part names a standard beacon and a prefix.
+    // Prefixes must be unique, and none may be a prefix of another.
+    // With no constructor given, the beacon joins the encrypted parts in order: `L-<last4>.U-<unit>`.
     let compound_beacons = vec![
         CompoundBeacon::builder()
             .name("last4UnitCompound")
@@ -98,8 +97,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build()
         .await?;
 
-    // Only the attributes written in PutItem need a crypto action; the compound beacon
-    // derives from them. Beaconized attributes are EncryptAndSign; key attributes are SignOnly.
+    // Only the attributes in the written item need a crypto action, not the compound beacon.
+    // Attributes with a standard beacon are EncryptAndSign; the key attributes are SignOnly.
     let table = TableConfig::builder()
         .partition_key_name("work_id")
         .sort_key_name("inspection_date")
@@ -132,8 +131,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ("unit".to_string(), AttributeValue::S("011899988199".into())),
     ]);
 
-    // When developing, resolve_attributes shows the beacon values this config would write.
-    // The value stored in the table is the beaconized form, not this plaintext composition.
+    // During development, `resolve_attributes` shows the compound beacon value that this config builds from an item.
+    // The table does not store this value: it stores the beacon, with each encrypted part replaced by its HMAC.
     let resolved = ddb
         .resolve_attributes()
         .table_name(TABLE_NAME)
@@ -154,7 +153,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .send()
         .await?;
 
-    // Query on the compound beacon. The parts follow the encrypted-list order: last4 then unit.
+    // Query the compound beacon with its plaintext value.
+    // The parts go in the order that the encrypted parts are listed: last4, then unit.
     let values = HashMap::from([(
         ":value".to_string(),
         AttributeValue::S("L-5678.U-011899988199".into()),
@@ -185,7 +185,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 /// Runs a GSI query until it returns an item, retrying a few times.
-/// GSI reads are eventually consistent, so a just-written item may not appear at once.
+/// GSI reads are eventually consistent, so an item may not appear right after it is written.
 async fn retry_query<F, Fut>(
     query: F,
 ) -> Result<Vec<HashMap<String, AttributeValue>>, Box<dyn std::error::Error>>
@@ -200,7 +200,6 @@ where
         if !items.is_empty() {
             return Ok(items);
         }
-        // The GSI is eventually consistent: give it time to catch up.
         tokio::time::sleep(Duration::from_secs(1)).await;
     }
     Err("query returned no items after 10 tries".into())

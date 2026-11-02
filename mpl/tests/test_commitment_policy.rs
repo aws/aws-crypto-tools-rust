@@ -206,7 +206,6 @@ fn test_require_encrypt_require_decrypt_decrypt_only_committing_suites() {
     assert!(!policy.allows_for_decrypt(NON_COMMITTING_HKDF));
 }
 
-// DBE.REQUIRE_ENCRYPT_REQUIRE_DECRYPT allows exactly the DBE suites.
 #[test]
 fn dbe_policy_allows_only_dbe_suites() {
     use aws_crypto_mpl::types::{

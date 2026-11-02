@@ -201,7 +201,7 @@ async fn encrypt_parsed_header_describes_the_header() {
             ("sign", CryptoAction::SignOnly),
         ])
     );
-    // Encrypt also reports the item key a branch key ID supplier sees.
+    // The selector context is the item key that a branch key ID supplier sees.
     assert_eq!(header.selector_context(), &item([("bar", s("key"))]));
 }
 

@@ -5,10 +5,12 @@
 //! [`IntermediateKeyWrapping`](crate::types::EdkWrapping::IntermediateKeyWrapping).
 //!
 //! The keyring wraps a fresh intermediate key instead of the plaintext data key.
-//! Two keys are derived from the intermediate key: one encrypts the plaintext data key,
-//! the other is the symmetric signing key that the message is signed with.
-//! The encrypted data key's ciphertext is the encrypted plaintext data key
-//! (ciphertext and tag) followed by the keyring's wrapping of the intermediate key.
+//! HKDF derives two keys from the intermediate key:
+//! - one encrypts the plaintext data key
+//! - the other is the symmetric signing key for the message
+//!
+//! The encrypted data key's ciphertext is the encrypted plaintext data key (ciphertext and tag),
+//! followed by the keyring's wrapping of the intermediate key.
 
 use aws_mpl_primitives::{AesGcm, DigestAlg, aes_decrypt, aes_encrypt, hkdf_no_salt};
 use zeroize::Zeroizing;
@@ -52,7 +54,7 @@ fn aes_gcm(suite: &AlgorithmSuite) -> Result<AesGcm, Error> {
     }
 }
 
-/// Derive the plaintext-data-key encryption key and the symmetric signing key from `ikm`.
+/// Derive the key that encrypts the plaintext data key, and the symmetric signing key, from `ikm`.
 fn derive_keys(suite: &AlgorithmSuite, ikm: &[u8]) -> Result<DerivedKeys, Error> {
     let alg = hkdf_digest(suite)?;
     let len = suite.encryption_key_length();
@@ -112,8 +114,8 @@ pub(crate) fn encrypt_pdk(
     Ok((out, keys.symmetric_signing_key))
 }
 
-/// Split wrapped material into the encrypted plaintext data key and the keyring's
-/// wrapping of the intermediate key.
+/// Split wrapped material into the encrypted plaintext data key
+/// and the keyring's wrapping of the intermediate key.
 pub(crate) fn split<'a>(
     suite: &AlgorithmSuite,
     material: &'a [u8],

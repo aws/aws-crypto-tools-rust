@@ -19,11 +19,11 @@ use crate::error::{Error, val_err};
 use crate::item_encryptor::config::{PARTITION_NAME, SORT_NAME, TABLE_NAME};
 use crate::structured::util::{ATTR_PREFIX, LEGEND, Terminal, utf16_len};
 
-/// The key the logical table name is given in the item key a supplier sees.
+/// Name of the item key attribute that holds the logical table name.
 const SELECTOR_TABLE_NAME: &str = "aws_dbe_table_name";
-/// The key the partition key's name is given in the item key a supplier sees.
+/// Name of the item key attribute that holds the partition key's name.
 const SELECTOR_PARTITION_NAME: &str = "aws_dbe_partition_name";
-/// The key the sort key's name is given in the item key a supplier sees.
+/// Name of the item key attribute that holds the sort key's name.
 const SELECTOR_SORT_NAME: &str = "aws_dbe_sort_name";
 
 const MAX_ATTR_NAME_LEN: usize = 65_535;
@@ -45,9 +45,14 @@ impl GetBranchKeyIdFromItemKeyInput {
     /// The primary key of the item being encrypted or decrypted.
     ///
     /// It holds the partition key and, if the table has one, the sort key.
-    /// When the table's `SIGN_AND_INCLUDE_IN_ENCRYPTION_CONTEXT` attributes are in the
-    /// encryption context, it holds those too, plus `aws_dbe_table_name`,
-    /// `aws_dbe_partition_name`, and (with a sort key) `aws_dbe_sort_name`.
+    /// When the encryption context holds the table's
+    /// [`SignAndIncludeInEncryptionContext`](crate::types::CryptoAction::SignAndIncludeInEncryptionContext)
+    /// attributes, it also holds:
+    /// - those attributes
+    /// - `aws_dbe_table_name`: the logical table name
+    /// - `aws_dbe_partition_name`: the partition key's name
+    /// - `aws_dbe_sort_name`: the sort key's name, if the table has a sort key
+    ///
     /// It never holds an encrypted attribute.
     #[must_use]
     pub const fn item_key(&self) -> &HashMap<String, AttributeValue> {
@@ -68,7 +73,8 @@ pub struct GetBranchKeyIdFromItemKeyInputBuilder {
 }
 
 impl GetBranchKeyIdFromItemKeyInputBuilder {
-    /// Add one attribute of the item key. Call again to add more.
+    /// Add one attribute of the item key.
+    /// Call again to add more.
     #[must_use]
     pub fn item_key(mut self, name: impl Into<String>, value: AttributeValue) -> Self {
         self.item_key
@@ -105,9 +111,9 @@ impl GetBranchKeyIdFromItemKeyInputBuilder {
     }
 }
 
-/// User-supplied callback that maps an item's primary key to a branch key id.
+/// Picks the branch key id for an item from the item's primary key.
 ///
-/// Wrap it in an [`ItemKeyBranchKeySupplier`] and pass that to
+/// Implement it, wrap it in an [`ItemKeyBranchKeySupplier`], and pass that to
 /// [`HierarchicalKeyringBuilder::branch_key_id_supplier`](crate::keyring::HierarchicalKeyringBuilder::branch_key_id_supplier).
 #[aws_crypto_mpl::async_trait]
 pub trait ItemKeySupplier: Send + Sync {
@@ -115,7 +121,7 @@ pub trait ItemKeySupplier: Send + Sync {
     ///
     /// # Errors
     ///
-    /// Any error returned fails the encrypt or decrypt as-is.
+    /// An error that you return fails the encrypt or decrypt.
     //= spec/dynamodb-encryption-client/ddb-encryption-branch-key-id-supplier.md#dynamodbkeybranchkeyidsupplier
     //= type=implication
     //# This operation MUST return a branch key id (string) as output.
@@ -180,7 +186,7 @@ impl BranchKeySupplier for ItemKeyBranchKeySupplier {
     }
 }
 
-/// The item key an encryption context written by this library describes.
+/// The item key that an encryption context from this library describes.
 pub(crate) fn item_key_from_context(
     context: &EncryptionContext,
 ) -> Result<HashMap<String, AttributeValue>, String> {
@@ -258,15 +264,15 @@ pub(crate) fn item_key_from_context(
     Ok(item_key)
 }
 
-/// Every `aws-crypto-attr.` entry of a context that carries a legend,
-/// decoded as its legend character says, in key order.
+/// Decode every `aws-crypto-attr.` entry of a context that has a legend.
+/// The legend has one character per entry, in key order, that gives the entry's type.
 fn v2_attributes(
     context: &EncryptionContext,
     legend: &str,
 ) -> Result<HashMap<String, AttributeValue>, String> {
     let mut legend = legend.chars();
     let mut out = HashMap::new();
-    // The context is ordered by key bytes, the order the legend was written in.
+    // The context iterates in key byte order, which is the order that the legend uses.
     for (key, value) in context.iter() {
         if key.len() <= ATTR_PREFIX.len() || !key.starts_with(ATTR_PREFIX) {
             continue;
@@ -303,7 +309,7 @@ fn legend_value(value: &str, legend_char: char) -> Result<AttributeValue, String
     }
 }
 
-/// The attribute name and value of a base64 terminal context entry.
+/// The attribute name and value of a context entry that holds a base64-encoded terminal.
 fn encoded_attribute(key: &str, encoded: &str) -> Result<(String, AttributeValue), String> {
     let name = attribute_name(key)?;
     let value = terminal_to_attr(&decode_terminal(encoded)?)?;
@@ -319,7 +325,7 @@ fn attribute_name(key: &str) -> Result<String, String> {
     Ok(name.to_owned())
 }
 
-/// A terminal stored in an encryption context: its type id and value, base64-encoded.
+/// Decode a terminal from an encryption context value: its type id, then its value, base64-encoded.
 fn decode_terminal(encoded: &str) -> Result<Terminal, String> {
     use base64::Engine as _;
     let bytes = base64::engine::general_purpose::STANDARD

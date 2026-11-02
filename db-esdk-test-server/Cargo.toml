@@ -1,5 +1,4 @@
-# Lives at the repo top level (not under db-esdk/) so it is not swept into the
-# db-esdk library's coverage-gated CI.
+# This crate sits at the repo top level so that the db-esdk library's CI coverage gate does not include it.
 [package]
 name = "aws-db-esdk-test-server"
 version = "0.1.0"
@@ -13,7 +12,7 @@ name = "dbesdk-test-server"
 path = "src/main.rs"
 
 [dependencies]
-# Real product SDK under test, from this repo's working tree.
+# The library under test, built from this repo's source.
 aws-db-esdk = { path = "../db-esdk" }
 
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal"] }

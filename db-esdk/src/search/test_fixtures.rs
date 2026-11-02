@@ -1,8 +1,8 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Fixtures for the search unit tests: the reference implementation's
-//! `BeaconTestFixtures.dfy`, with an in-memory key store in place of its literal key source.
+//! Fixtures for the search unit tests, from the reference implementation's `BeaconTestFixtures.dfy`.
+//! An in-memory key store takes the place of its literal key source.
 
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
@@ -43,7 +43,7 @@ use crate::search::info::SearchInfo;
 use crate::table_config::TableConfig;
 use crate::types::CryptoAction;
 
-/// The beacon key every fixture key store returns.
+/// The beacon key that every fixture key store returns.
 pub(crate) const BEACON_KEY: [u8; 5] = [1, 2, 3, 4, 5];
 
 // Expected beacon values under `BEACON_KEY`, from the reference fixtures.
@@ -210,8 +210,8 @@ pub(crate) fn hmac_keys(names: &[&str], key: &[u8]) -> BTreeMap<String, Vec<u8>>
         .collect()
 }
 
-/// The beacon of `value` for standard beacon `name` under `BEACON_KEY`, computed directly
-/// from the spec: the rightmost `bits` bits of the first 8 bytes of the HMAC-SHA-384.
+/// The beacon of `value` for standard beacon `name` under `BEACON_KEY`, computed directly from the spec:
+/// the rightmost `bits` bits of the first 8 bytes of the HMAC-SHA-384.
 /// `bits` must be a multiple of 4.
 pub(crate) fn spec_beacon(name: &str, value: &[u8], bits: u8) -> String {
     assert_eq!(bits % 4, 0, "spec_beacon takes whole hex digits");

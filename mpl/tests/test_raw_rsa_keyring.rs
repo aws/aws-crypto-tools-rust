@@ -2,10 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! Raw RSA keyring tests, ported from the Dafny `TestRawRSAKeyring.dfy`:
-//! round trips for every padding scheme, with direct and intermediate key
-//! wrapping, plus the builder validations and the decrypt failures.
+//! - round trips for every padding scheme, with direct and intermediate key wrapping
+//! - the builder validations
+//! - the decrypt failures
 //!
-//! The keys below are throwaway test keys. They protect nothing.
+//! The keys below are throwaway test keys that protect nothing.
 
 use aws_crypto_mpl::keyring::RawRsaKeyring;
 use aws_crypto_mpl::types::PaddingScheme;
@@ -234,7 +235,7 @@ async fn tampered_intermediate_ciphertext_fails() {
             .send()
             .await
             .unwrap_err();
-        // A single failure is reported as itself.
+        // With one failure, `all_failed` returns that error unchanged.
         assert!(err.is_cryptographic(), "{err:?}");
         assert!(err.to_string().contains("did not decrypt"), "{err}");
     }

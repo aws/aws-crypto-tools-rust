@@ -8,7 +8,7 @@
 //! Keyrings that share one cache reuse each other's entries
 //! when they also have the same partition ID, logical key store name, and branch key ID.
 //! Here the two keyrings serve two tables, as one service writing to both would.
-//! Never give two different key store tables the same logical name.
+//! The cache tells key stores apart by logical name, so never give two different key store tables the same logical name.
 //!
 //! A storm-tracking cache also keeps concurrent requests from all refreshing the same entry:
 //! near expiry, one request refreshes the entry while the others keep using the cached value.
@@ -26,7 +26,8 @@ use aws_db_esdk::keyring::HierarchicalKeyring;
 use aws_db_esdk::types::CryptoAction;
 use aws_db_esdk::{TableConfig, aws_config, aws_sdk_dynamodb, aws_sdk_kms, key_store};
 
-// The AWS Crypto Tools CI test tables. Replace these with your own tables.
+// The AWS Crypto Tools CI test tables.
+// Replace these with your own tables.
 const ORDERS_TABLE: &str = "DynamoDbEncryptionInterceptorTestTable";
 const CUSTOMERS_TABLE: &str = "DynamoDbEncryptionInterceptorTestTableCS";
 
@@ -36,7 +37,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let ddb_sdk = aws_sdk_dynamodb::Client::new(&sdk_config);
 
     // The AWS Crypto Tools CI test key store.
-    // Replace these with your own key store's table, name, and KMS key ARN.
+    // Replace these with your own key store's table, logical name, and KMS key ARN.
     let key_store = key_store::DynamoDbKeyStore::builder()
         .ddb_table_name("KeyStoreDdbTable")
         .logical_key_store_name("KeyStoreDdbTable")
@@ -50,14 +51,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Every parameter is optional; each value set here is its default.
     let cache = StormTrackingCmc::builder()
-        // Maximum number of entries the cache holds.
+        // Maximum number of entries that the cache holds.
         .entry_capacity(1000)
-        // Least-recently-used entries checked for expiry on each lookup.
+        // How many of the least recently used entries the cache checks for expiry on each lookup.
         .entry_pruning_tail_size(1)
         // How long before expiry one request starts refreshing an entry.
         // Must be less than the keyring TTL.
         .grace_period(Duration::from_secs(10))
-        // How long other requests wait before another one may try refreshing.
+        // How long the other requests wait before another one may try to refresh the entry.
         .grace_interval(Duration::from_secs(1))
         // Maximum number of entries being refreshed at the same time.
         .fan_out(20)
@@ -67,8 +68,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .sleep(Duration::from_millis(20))
         .build()?;
 
-    // Same cache, partition ID, logical key store name, and branch key ID,
-    // so the keyrings reuse each other's entries.
+    // Both keyrings have the same cache, partition ID, logical key store name, and branch key ID,
+    // so they reuse each other's entries.
     let make_table = async || -> Result<TableConfig, Box<dyn std::error::Error>> {
         let keyring = HierarchicalKeyring::builder()
             .key_store(key_store.clone())

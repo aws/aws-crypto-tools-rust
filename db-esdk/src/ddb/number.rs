@@ -1,7 +1,7 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! DynamoDB number normalization: the canonical form numbers are signed and encrypted in.
+//! Normalize DynamoDB numbers to the canonical form that the client signs and encrypts.
 
 const MAX_PRECISION: usize = 38;
 const MIN_EXPONENT: i128 = -129;
@@ -44,13 +44,13 @@ fn str_to_int_inner(s: &str) -> Result<i128, String> {
                 "The character '{next}' is not a valid decimal digit."
             ));
         };
-        // Saturating keeps the magnitude checks failing as an unbounded integer would.
+        // Saturate on overflow, so a huge exponent still fails the range checks.
         acc = acc.saturating_mul(10).saturating_add(i128::from(d));
     }
     Ok(acc)
 }
 
-/// The integer `s` spells: decimal digits after an optional sign.
+/// The integer that `s` spells: decimal digits after an optional sign.
 pub(crate) fn str_to_int(s: &str) -> Result<i128, String> {
     if s.is_empty() {
         return Err("An empty string is not a valid number.".to_owned());
@@ -218,7 +218,7 @@ mod tests {
 
     #[test]
     fn extremes() {
-        // Only 38 digits of precision are allowed, check that 38 is ok and 39 fails
+        // 38 digits of precision pass and 39 fail.
         check_normal(
             "123456789.01234567890123456789012345678",
             "123456789.01234567890123456789012345678",
@@ -235,7 +235,7 @@ mod tests {
         );
         check_failure(".0000000000000000000000000123456789012345678901234567890123456789");
 
-        // Check vaguely around the highest and lowest allowed exponent
+        // Around the highest and lowest allowed exponents
         check_normal(
             "0000000000000000000000000012345.67e121",
             "123456700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
