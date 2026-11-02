@@ -13,6 +13,7 @@ use aws_mpl_primitives::{
     AesGcm, DigestAlg, aes_decrypt, aes_encrypt, generate_random_bytes, kbkdf_ctr_hmac,
 };
 use uuid::Uuid;
+use zeroize::Zeroizing;
 
 use crate::structures::{BranchKeyMaterials, EncryptionContext};
 
@@ -121,7 +122,7 @@ fn uuid_str_to_16_bytes(s: &str, branch_key_id: &str) -> Result<[u8; VERSION_LEN
 fn derive_branch_key(
     branch_key: &[u8; DERIVED_KEY_LEN],
     salt: &[u8; SALT_LEN],
-) -> Result<[u8; DERIVED_KEY_LEN], Error> {
+) -> Result<Zeroizing<[u8; DERIVED_KEY_LEN]>, Error> {
     // FixedInfo: Label || 0x00 || salt || L_be32 (256-bit output).
     let mut info = Vec::with_capacity(HIERARCHY_LABEL.len() + 1 + SALT_LEN + 4);
     info.extend_from_slice(HIERARCHY_LABEL);
@@ -130,8 +131,9 @@ fn derive_branch_key(
     let output_len_bits: u32 = 256;
     info.extend_from_slice(&output_len_bits.to_be_bytes());
 
-    let mut derived = [0u8; DERIVED_KEY_LEN];
-    kbkdf_ctr_hmac(DigestAlg::Sha256, branch_key, &info, &mut derived).map_err(|e| {
+    // Wiped on drop, so the derived wrapping key does not linger in memory.
+    let mut derived = Zeroizing::new([0u8; DERIVED_KEY_LEN]);
+    kbkdf_ctr_hmac(DigestAlg::Sha256, branch_key, &info, &mut *derived).map_err(|e| {
         Error::with_cause(
             Kind::Cryptographic,
             "KDF in Counter Mode with HMAC SHA256 derivation failed",
@@ -197,7 +199,7 @@ pub fn wrap(
     aes_encrypt(
         AesGcm::Aes256Gcm,
         &iv,
-        &derived_branch_key,
+        &*derived_branch_key,
         plaintext_data_key,
         &aad_bytes,
         &mut output,
@@ -273,7 +275,7 @@ pub fn unwrap(
     let mut plaintext = vec![0u8; encrypted_key.len()];
     aes_decrypt(
         AesGcm::Aes256Gcm,
-        &derived_branch_key,
+        &*derived_branch_key,
         encrypted_key,
         tag,
         &iv_bytes,

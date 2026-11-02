@@ -68,11 +68,6 @@ async fn test_decrypt_output_includes_algorithm_suite() {
     //= spec/client-apis/decrypt.md#output
     //= type=test
     //# - Decrypt operation output MUST include an [algorithm suite](#algorithm-suite) value.
-    //
-    //= spec/client-apis/decrypt.md#algorithm-suite
-    //= type=test
-    //= reason=Output suite matches a supported ESDK suite (AlgAes256GcmHkdfSha512CommitKey)
-    //# This algorithm suite MUST be [supported for the ESDK](../framework/algorithm-suites.md#supported-algorithm-suites-enum).
     assert_eq!(result.algorithm_suite_id(), suite);
 }
 
