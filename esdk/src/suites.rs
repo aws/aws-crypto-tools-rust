@@ -100,6 +100,8 @@ pub(crate) fn kdf_digest(kdf: KeyDerivationAlgorithm) -> Result<DigestAlg, Error
 /// # Errors
 /// Returns an error if the suite has no asymmetric signature algorithm the ESDK supports.
 pub fn get_ecdsa_alg(suite: &AlgorithmSuite) -> Result<EcdsaSignatureAlgorithm, Error> {
+    //= spec/framework/transitive-requirements.md#ecdsa
+    //# If specified to use ECDSA, the AWS Encryption SDK MUST use ECDSA with the following specifics:
     match suite.asymmetric_signature_algorithm() {
         Some(AsymmetricSignatureAlgorithm::EcdsaP256) => Ok(EcdsaSignatureAlgorithm::EcdsaP256),
         Some(AsymmetricSignatureAlgorithm::EcdsaP384) => Ok(EcdsaSignatureAlgorithm::EcdsaP384),
