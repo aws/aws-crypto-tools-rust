@@ -66,6 +66,7 @@ fn the_sdk_traits_answer_from_the_error() {
     assert!(err.is_retryable());
     assert_eq!(err.retryable_error_kind(), Some(ErrorKind::ThrottlingError));
     assert_eq!(ProvideErrorMetadata::code(&err), None);
+    assert_eq!(ProvideErrorMetadata::message(&err), Some("throttled"));
     assert_eq!(RequestId::request_id(&err), None);
     assert_eq!(err.meta().code(), None);
 }

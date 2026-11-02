@@ -170,7 +170,7 @@ impl AppState {
     ) -> Result<EncryptStreamResponse, ServerError> {
         let (esdk, keyring) = self.client(&req.client_id)?;
         let frame_length = req.frame_length.map(frame_length).transpose()?;
-        let data_size = req
+        let plaintext_length_bound = req
             .plaintext_length_bound
             .map(|bound| {
                 u64::try_from(bound).map_err(|_| {
@@ -188,7 +188,7 @@ impl AppState {
             .keyring(keyring)
             .set_algorithm_suite_id(req.algorithm_suite_id.map(map_algorithm_suite))
             .set_frame_length(frame_length)
-            .set_data_size(data_size)
+            .set_plaintext_length_bound(plaintext_length_bound)
             .send()
             .await
             .map_err(|e| ServerError::esdk(e.to_string()))?;

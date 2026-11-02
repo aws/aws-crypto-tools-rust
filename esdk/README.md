@@ -124,7 +124,7 @@ Run one with `cargo run --example <name>`:
 | `set_commitment_policy` | encrypt and decrypt under a non-default commitment policy | no |
 | `configure_client` | set the commitment policy, the encrypted data key limit, the algorithm suite and the frame length | no |
 | `hierarchical_keyring` | encrypt and decrypt with a hierarchical keyring | KMS + DynamoDB |
-| `branch_key_supplier` | pick a branch key per tenant | KMS + DynamoDB |
+| `branch_key_id_supplier` | pick a branch key per tenant | KMS + DynamoDB |
 | `rotate_branch_key` | create a branch key and rotate it | KMS + DynamoDB |
 | `shared_storm_tracking_cache` | share one cache across two hierarchical keyrings | KMS + DynamoDB |
 | `handling_errors` | handle the errors a hierarchical keyring and its key store return | KMS + DynamoDB |

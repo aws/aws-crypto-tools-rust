@@ -1937,7 +1937,7 @@ fn create_encrypt_stream(input: &ffi::EncryptInput) -> Result<Box<EncryptStream>
         )))
         .set_algorithm_suite_id(settings.algorithm_suite_id)
         .set_frame_length(settings.frame_length.map(NonZeroU32::get))
-        .set_data_size(input.plaintext_length_bound.to_option());
+        .set_plaintext_length_bound(input.plaintext_length_bound.to_option());
     Ok(Box::new(EncryptStream {
         state: StreamState::spawn("encrypt_stream", move |mut reader, mut writer| {
             let output = TOKIO_RUNTIME

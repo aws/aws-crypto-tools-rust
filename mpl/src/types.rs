@@ -8,9 +8,9 @@ pub use crate::structures::{
     AesWrappingAlg, AlgorithmSuite, AlgorithmSuiteId, AsymmetricSignatureAlgorithm,
     BeaconKeyMaterials, BranchKeyMaterials, CommitmentPolicy, DecryptionMaterials,
     EncryptedDataKey, EncryptionAlgorithm, EncryptionAlgorithmMode, EncryptionContext,
-    EncryptionMaterials, EsdkAlgorithmSuiteId, EsdkCommitmentPolicy, Format,
-    KeyDerivationAlgorithm, PlaintextDataKey, SigningKey, SymmetricSignatureAlgorithm,
-    SymmetricSigningKey, VerificationKey,
+    EncryptionMaterials, EsdkAlgorithmSuiteId, EsdkCommitmentPolicy, KeyDerivationAlgorithm,
+    PlaintextDataKey, SigningKey, SymmetricSignatureAlgorithm, SymmetricSigningKey,
+    VerificationKey,
 };
 
 pub mod builders {

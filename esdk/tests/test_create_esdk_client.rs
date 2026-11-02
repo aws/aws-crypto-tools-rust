@@ -496,8 +496,7 @@ fn test_esdk_from_conf_takes_built_config() {
         .max_encrypted_data_keys(7)
         .build()
         .unwrap();
-    let esdk = Client::from_conf(config.clone());
-    assert_eq!(esdk.config(), &config);
+    let esdk = Client::from_conf(config);
     assert_eq!(
         esdk.config().commitment_policy(),
         CommitmentPolicy::ForbidEncryptAllowDecrypt
@@ -507,10 +506,21 @@ fn test_esdk_from_conf_takes_built_config() {
 
 #[test]
 fn test_config_builder_defaults_match_client_default() {
-    assert_eq!(Config::builder().build().unwrap(), Config::default());
+    let built = Config::builder().build().unwrap();
+    let default = Config::default();
+    assert_eq!(built.commitment_policy(), default.commitment_policy());
     assert_eq!(
-        Client::builder().build().unwrap().config(),
-        Client::default().config()
+        built.max_encrypted_data_keys(),
+        default.max_encrypted_data_keys()
+    );
+    let client = Client::builder().build().unwrap();
+    assert_eq!(
+        client.config().commitment_policy(),
+        Client::default().config().commitment_policy()
+    );
+    assert_eq!(
+        client.config().max_encrypted_data_keys(),
+        Client::default().config().max_encrypted_data_keys()
     );
 }
 
@@ -521,7 +531,15 @@ fn test_config_to_builder_round_trips_and_overrides_one_field() {
         .max_encrypted_data_keys(3)
         .build()
         .unwrap();
-    assert_eq!(config.to_builder().build().unwrap(), config);
+    let round_tripped = config.to_builder().build().unwrap();
+    assert_eq!(
+        round_tripped.commitment_policy(),
+        config.commitment_policy()
+    );
+    assert_eq!(
+        round_tripped.max_encrypted_data_keys(),
+        config.max_encrypted_data_keys()
+    );
 
     let changed = config
         .to_builder()

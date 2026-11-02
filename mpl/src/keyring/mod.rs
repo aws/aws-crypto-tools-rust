@@ -89,9 +89,9 @@ mod raw_aes_keyring;
 mod types;
 
 pub use crate::aws_kms::hierarchical_keyring::{
-    BranchKeySupplier, GetBranchKeyIdFluentBuilder, GetBranchKeyIdInput,
+    BranchKeyIdSupplier, GetBranchKeyIdFluentBuilder, GetBranchKeyIdInput,
     GetBranchKeyIdInputBuilder, GetBranchKeyIdOutput, GetBranchKeyIdOutputBuilder,
-    HierarchicalKeyring, HierarchicalKeyringBuilder, SharedBranchKeySupplier,
+    HierarchicalKeyring, HierarchicalKeyringBuilder, SharedBranchKeyIdSupplier,
 };
 pub use fluent_builders::{OnDecryptFluentBuilder, OnEncryptFluentBuilder};
 pub use raw_aes_keyring::{RawAesKeyring, RawAesKeyringBuilder};

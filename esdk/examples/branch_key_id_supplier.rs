@@ -1,7 +1,7 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Picks a branch key per tenant with a [`BranchKeySupplier`].
+//! Picks a branch key per tenant with a [`BranchKeyIdSupplier`].
 //!
 //! A multi-tenant application gives each tenant its own branch key,
 //! so one tenant's branch key cannot decrypt another tenant's data.
@@ -19,20 +19,20 @@ use std::time::Duration;
 
 use aws_esdk::key_store::types::KmsConfiguration;
 use aws_esdk::keyring::{
-    BranchKeySupplier, GetBranchKeyIdInput, GetBranchKeyIdOutput, HierarchicalKeyring,
+    BranchKeyIdSupplier, GetBranchKeyIdInput, GetBranchKeyIdOutput, HierarchicalKeyring,
 };
 use aws_esdk::mpl::Error as MplError;
 use aws_esdk::types::EncryptionContext;
 use aws_esdk::{Error, async_trait, aws_config, aws_sdk_dynamodb, aws_sdk_kms, key_store};
 
 /// Maps the `tenant` value in the encryption context to that tenant's branch key ID.
-struct TenantBranchKeySupplier {
+struct TenantBranchKeyIdSupplier {
     tenant_a: String,
     tenant_b: String,
 }
 
 #[async_trait]
-impl BranchKeySupplier for TenantBranchKeySupplier {
+impl BranchKeyIdSupplier for TenantBranchKeyIdSupplier {
     async fn get_branch_key_id(
         &self,
         input: GetBranchKeyIdInput,
@@ -91,7 +91,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let keyring = template
         .clone()
-        .branch_key_id_supplier(TenantBranchKeySupplier {
+        .branch_key_id_supplier(TenantBranchKeyIdSupplier {
             tenant_a: branch_key_a.clone(),
             tenant_b: branch_key_b.clone(),
         })

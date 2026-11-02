@@ -856,7 +856,7 @@ async fn test_step_failure_must_halt_and_indicate_failure() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_plaintext_length_bound_used_for_unknown_length() {
     // A spy CMM records the max_plaintext_length it receives. For an unknown-length
-    // stream with data_size=Some(100), the bound (100) must reach the CMM.
+    // stream with plaintext_length_bound=Some(100), the bound (100) must reach the CMM.
     let keyring = test_keyring().await;
     let inner_cmm = DefaultCmm::new(keyring);
     let observed_len = std::sync::Arc::new(std::sync::Mutex::new(None));
@@ -867,7 +867,7 @@ async fn test_plaintext_length_bound_used_for_unknown_length() {
     };
     //= spec/client-apis/encrypt.md#input
     //= type=test
-    //= reason=data_size sets the optional Plaintext Length Bound; the spy below confirms it reaches the CMM
+    //= reason=plaintext_length_bound sets the optional Plaintext Length Bound; the spy below confirms it reaches the CMM
     //# If the [plaintext](#plaintext) is of unknown length, the caller MAY also input a
     //# [Plaintext Length Bound](#plaintext-length-bound).
 
@@ -877,7 +877,7 @@ async fn test_plaintext_length_bound_used_for_unknown_length() {
     Client::default()
         .encrypt_stream()
         .cmm(cmm_ref)
-        .data_size(100)
+        .plaintext_length_bound(100)
         .plaintext(&mut reader)
         .ciphertext(&mut output)
         .send()
@@ -900,7 +900,7 @@ async fn test_plaintext_length_bound_used_for_unknown_length() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_no_plaintext_length_bound_field_not_included() {
     // A spy CMM records the max_plaintext_length it receives. For an unknown-length
-    // stream with data_size=None, no bound must reach the CMM (the field is omitted).
+    // stream with plaintext_length_bound=None, no bound must reach the CMM (the field is omitted).
     let keyring = test_keyring().await;
     let inner_cmm = DefaultCmm::new(keyring);
     let observed_len = std::sync::Arc::new(std::sync::Mutex::new(None));
@@ -943,7 +943,7 @@ async fn test_streaming_header_released_after_serialization() {
     Client::default()
         .encrypt_stream()
         .keyring(keyring.clone())
-        .data_size(20)
+        .plaintext_length_bound(20)
         .plaintext(&mut reader)
         .ciphertext(&mut output)
         .send()

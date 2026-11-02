@@ -6,7 +6,7 @@
 //! A trait is not a type, so an API cannot store "some keyring" by value.
 //! Each trait has a handle that can be stored: [`SharedKeyring`](crate::keyring::SharedKeyring),
 //! [`SharedCmm`](crate::cmm::SharedCmm), [`SharedCmc`](crate::cmc::SharedCmc), and
-//! [`SharedBranchKeySupplier`](crate::keyring::SharedBranchKeySupplier).
+//! [`SharedBranchKeyIdSupplier`](crate::keyring::SharedBranchKeyIdSupplier).
 //! A [`key_store::SharedKeyStore`](crate::key_store::SharedKeyStore) holds a key store instead.
 //!
 //! A handle is called like an AWS SDK client: each operation returns a fluent builder.

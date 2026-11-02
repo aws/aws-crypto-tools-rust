@@ -47,7 +47,7 @@ macro_rules! check {
 struct Supplier;
 
 #[async_trait]
-impl BranchKeySupplier for Supplier {
+impl BranchKeyIdSupplier for Supplier {
     async fn get_branch_key_id(
         &self,
         _: GetBranchKeyIdInput,
@@ -179,7 +179,7 @@ async fn every_builder_getter_tracks_its_setter() {
         "x"
     );
     check!(
-        SharedBranchKeySupplier::new(Supplier).get_branch_key_id(),
+        SharedBranchKeyIdSupplier::new(Supplier).get_branch_key_id(),
         set_encryption_context,
         set_encryption_context,
         get_encryption_context,

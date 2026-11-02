@@ -309,6 +309,9 @@ impl<'a> EncryptStreamFluentBuilder<'a> {
     );
     stream_member!(
         /// The writer the encrypted message is written to.
+        /// `send` flushes the writer but does not shut it down.
+        /// For a writer that writes its last bytes on shutdown, such as a compressor,
+        /// pass `&mut writer` and call `writer.shutdown()` after `send` returns.
         ciphertext(impl AsyncWrite), set_ciphertext, get_ciphertext -> Writer
     );
     encrypt_members!();
@@ -316,7 +319,7 @@ impl<'a> EncryptStreamFluentBuilder<'a> {
     member!(
         /// An upper bound on the plaintext length, in bytes.
         /// It is passed to the CMM, and encrypt fails if the stream is longer.
-        data_size(u64), set_data_size, get_data_size -> u64
+        plaintext_length_bound(u64), set_plaintext_length_bound, get_plaintext_length_bound -> u64
     );
 
     /// Encrypt the `plaintext` reader into the `ciphertext` writer.
@@ -390,6 +393,9 @@ impl<'a> DecryptStreamFluentBuilder<'a> {
         /// The writer the decrypted data is written to.
         /// It receives plaintext before the whole message is verified:
         /// don't act on it until `send` returns `Ok`.
+        /// `send` flushes the writer but does not shut it down.
+        /// For a writer that writes its last bytes on shutdown, such as a compressor,
+        /// pass `&mut writer` and call `writer.shutdown()` after `send` returns.
         plaintext(impl AsyncWrite), set_plaintext, get_plaintext -> Writer
     );
     decrypt_members!();

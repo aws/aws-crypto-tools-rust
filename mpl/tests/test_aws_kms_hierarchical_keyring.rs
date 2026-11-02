@@ -55,7 +55,7 @@ use aws_crypto_mpl::key_store::types::{Discovery, KmsConfiguration};
 use aws_crypto_mpl::key_store::{DynamoDbKeyStore, KeyStore};
 use aws_crypto_mpl::keyring::SharedKeyring;
 use aws_crypto_mpl::keyring::{
-    BranchKeySupplier, GetBranchKeyIdInput, GetBranchKeyIdOutput, HierarchicalKeyring,
+    BranchKeyIdSupplier, GetBranchKeyIdInput, GetBranchKeyIdOutput, HierarchicalKeyring,
     HierarchicalKeyringBuilder,
 };
 use aws_crypto_mpl::types::{
@@ -85,14 +85,14 @@ const FIXTURE_VERSION: &str = "caf0c508-e64d-4b6c-bffe-381cbc546c02";
 /// Logical key store name of that same fixture key store.
 const LOGICAL_KEY_STORE_NAME: &str = "KeyStoreDdbTable";
 
-/// Reusable [`BranchKeySupplier`] fixture: always answers with the branch key
+/// Reusable [`BranchKeyIdSupplier`] fixture: always answers with the branch key
 /// id it was constructed with, ignoring the encryption context. Enough for any
 /// test that needs a supplier-configured keyring without caring how the
 /// decision is made.
-struct FixedBranchKeySupplier(&'static str);
+struct FixedBranchKeyIdSupplier(&'static str);
 
 #[async_trait]
-impl BranchKeySupplier for FixedBranchKeySupplier {
+impl BranchKeyIdSupplier for FixedBranchKeyIdSupplier {
     async fn get_branch_key_id(
         &self,
         _input: GetBranchKeyIdInput,
@@ -163,7 +163,7 @@ async fn build_with_both_branch_key_id_and_supplier_returns_validation_error() {
         .key_store(key_store_never_consulted())
         .ttl(Duration::from_secs(3600))
         .branch_key_id("branch-key-id")
-        .branch_key_id_supplier(FixedBranchKeySupplier("unused"))
+        .branch_key_id_supplier(FixedBranchKeyIdSupplier("unused"))
         .build()
         .await
     {
@@ -433,7 +433,7 @@ async fn build_with_branch_key_id_supplier_succeeds() {
     // Smoke test that configuring a supplier instead of a static branch key
     // id is usable — construct a no-op supplier, pass it as the
     // branch_key_id_supplier, and confirm the keyring can be built with it.
-    let supplier = FixedBranchKeySupplier("branch-id-from-supplier");
+    let supplier = FixedBranchKeyIdSupplier("branch-id-from-supplier");
     let keyring = HierarchicalKeyring::builder()
         .key_store(key_store_never_consulted())
         .ttl(Duration::from_secs(3600))
@@ -1637,13 +1637,13 @@ mod onencrypt {
     }
 
     #[tokio::test]
-    async fn on_encrypt_uses_branch_key_supplier_when_configured() {
+    async fn on_encrypt_uses_branch_key_id_supplier_when_configured() {
         let key_store = FakeKeyStore::new(fake_branch_key_materials());
         let keyring = SharedKeyring::new(
             HierarchicalKeyring::builder()
                 .key_store(key_store.clone())
                 .ttl(Duration::from_secs(3600))
-                .branch_key_id_supplier(FixedBranchKeySupplier(FAKE_BRANCH_KEY_ID))
+                .branch_key_id_supplier(FixedBranchKeyIdSupplier(FAKE_BRANCH_KEY_ID))
                 .cache(LocalCmc::builder().entry_capacity(1000).build().unwrap())
                 .build()
                 .await
@@ -2158,13 +2158,13 @@ mod ondecrypt {
     }
 
     #[tokio::test]
-    async fn on_decrypt_uses_branch_key_supplier_when_configured() {
+    async fn on_decrypt_uses_branch_key_id_supplier_when_configured() {
         let key_store = FakeKeyStore::new(fake_branch_key_materials());
         let keyring = SharedKeyring::new(
             HierarchicalKeyring::builder()
                 .key_store(key_store.clone())
                 .ttl(Duration::from_secs(3600))
-                .branch_key_id_supplier(FixedBranchKeySupplier(FAKE_BRANCH_KEY_ID))
+                .branch_key_id_supplier(FixedBranchKeyIdSupplier(FAKE_BRANCH_KEY_ID))
                 .cache(LocalCmc::builder().entry_capacity(1000).build().unwrap())
                 .partition_id("partition-id")
                 .build()

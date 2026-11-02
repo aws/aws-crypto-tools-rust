@@ -212,10 +212,3 @@ impl From<aws_mpl_primitives::Error> for Error {
         Self::from_prim("a cryptographic operation failed", item)
     }
 }
-
-impl From<aws_smithy_types::error::operation::BuildError> for Error {
-    #[track_caller]
-    fn from(item: aws_smithy_types::error::operation::BuildError) -> Self {
-        Self::with_cause(Kind::Validation, "could not build the request", item)
-    }
-}

@@ -54,7 +54,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .set_encryption_context(Some(encryption_context.clone()))
         .keyring(keyring.clone())
         .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
-        .data_size(plaintext_size)
+        .plaintext_length_bound(plaintext_size)
         .plaintext(input)
         .ciphertext(output)
         .send()

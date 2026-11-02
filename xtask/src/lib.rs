@@ -1454,6 +1454,16 @@ impl std::error::Error for Error {{
             std::sync::LazyLock::new(ErrorMetadata::default);
         self.data().meta.as_ref().unwrap_or(&EMPTY)
     }
+
+    /// The same value as [`Error::code`].
+    fn code(&self) -> Option<&str> {
+        Self::code(self)
+    }
+
+    /// The same text as [`Error::message`].
+    fn message(&self) -> Option<&str> {
+        Some(Self::message(self))
+    }
 }
 
 impl ProvideErrorKind for Error {

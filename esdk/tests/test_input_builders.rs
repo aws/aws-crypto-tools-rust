@@ -146,7 +146,7 @@ async fn test_encrypt_stream_setters_take_effect() {
         .keyring(keyring.clone())
         .algorithm_suite_id(SUITE)
         .frame_length(frame_length())
-        .data_size(u64::try_from(plaintext.len()).unwrap())
+        .plaintext_length_bound(u64::try_from(plaintext.len()).unwrap())
         .plaintext(plaintext.as_slice())
         .ciphertext(&mut ct)
         .send()
@@ -163,7 +163,7 @@ async fn test_encrypt_stream_setters_take_effect() {
         .set_keyring(Some(keyring.clone()))
         .set_algorithm_suite_id(Some(SUITE))
         .set_frame_length(Some(frame_length()))
-        .set_data_size(Some(u64::try_from(plaintext.len()).unwrap()))
+        .set_plaintext_length_bound(Some(u64::try_from(plaintext.len()).unwrap()))
         .plaintext(plaintext.as_slice())
         .ciphertext(&mut ct)
         .send()
@@ -176,24 +176,24 @@ async fn test_encrypt_stream_setters_take_effect() {
     let err = Client::default()
         .encrypt_stream()
         .keyring(keyring.clone())
-        .data_size(1)
+        .plaintext_length_bound(1)
         .plaintext(plaintext.as_slice())
         .ciphertext(Vec::new())
         .send()
         .await
-        .expect_err("plaintext longer than data_size must fail");
+        .expect_err("plaintext longer than plaintext_length_bound must fail");
     assert!(err.is_validation(), "{:?}", err);
 
     Client::default()
         .encrypt_stream()
         .keyring(keyring.clone())
-        .data_size(1)
-        .set_data_size(None)
+        .plaintext_length_bound(1)
+        .set_plaintext_length_bound(None)
         .plaintext(plaintext.as_slice())
         .ciphertext(Vec::new())
         .send()
         .await
-        .expect("set_data_size(None) must clear the bound");
+        .expect("set_plaintext_length_bound(None) must clear the bound");
 
     let cmm = SharedCmm::new(DefaultCmm::new(keyring.clone()));
     Client::default()
@@ -444,7 +444,7 @@ async fn test_getters_return_set_values() {
 
     let b = esdk.encrypt_stream();
     assert!(b.get_plaintext().is_none() && b.get_ciphertext().is_none());
-    assert!(b.get_encryption_context().is_none() && b.get_data_size().is_none());
+    assert!(b.get_encryption_context().is_none() && b.get_plaintext_length_bound().is_none());
     assert!(b.get_keyring().is_none() && b.get_cmm().is_none());
     assert!(b.get_algorithm_suite_id().is_none() && b.get_frame_length().is_none());
     let b = b
@@ -455,13 +455,13 @@ async fn test_getters_return_set_values() {
         .cmm(cmm.clone())
         .algorithm_suite_id(SUITE)
         .frame_length(frame_length())
-        .data_size(u64::try_from(bytes.len()).unwrap());
+        .plaintext_length_bound(u64::try_from(bytes.len()).unwrap());
     assert_eq!(b.get_encryption_context(), &Some(ec()));
     assert!(b.get_keyring().is_some() && b.get_cmm().is_some());
     assert_eq!(b.get_algorithm_suite_id(), &Some(SUITE));
     assert_eq!(b.get_frame_length(), &Some(frame_length()));
     assert_eq!(
-        b.get_data_size(),
+        b.get_plaintext_length_bound(),
         &Some(u64::try_from(bytes.len()).unwrap())
     );
     assert!(b.get_plaintext().is_some() && b.get_ciphertext().is_some());

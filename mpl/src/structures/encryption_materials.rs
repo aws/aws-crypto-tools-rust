@@ -125,9 +125,10 @@ impl EncryptionMaterials {
     }
 
     /// The symmetric signing keys, for an algorithm suite with symmetric signing.
+    /// Empty for any other suite.
     #[must_use]
-    pub fn symmetric_signing_keys(&self) -> Option<&[SymmetricSigningKey]> {
-        self.symmetric_signing_keys.as_deref()
+    pub fn symmetric_signing_keys(&self) -> &[SymmetricSigningKey] {
+        self.symmetric_signing_keys.as_deref().unwrap_or_default()
     }
 
     /// Validate the aws-crypto-public-key convention for encryption materials.
@@ -412,8 +413,14 @@ impl EncryptionMaterialsBuilder {
         // asserting the raw-scalar length here would reject exactly the keys
         // that can actually be signed with.
 
-        // If no symmetric signing, symmetric signing keys must not be included
-        if !algorithm_suite_id.has_symmetric_signing() && self.symmetric_signing_keys.is_some() {
+        // If no symmetric signing, symmetric signing keys must not be included.
+        // An empty list includes none, matching the getter, which returns an empty slice.
+        if !algorithm_suite_id.has_symmetric_signing()
+            && self
+                .symmetric_signing_keys
+                .as_ref()
+                .is_some_and(|k| !k.is_empty())
+        {
             return Err(Error::new(
                 Kind::InvalidMaterials,
                 "symmetric signing keys must not be present when algorithm suite has no symmetric signing",

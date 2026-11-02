@@ -44,7 +44,7 @@
 //!   below), so these are now portable and left as a follow-up rather than a
 //!   limitation. Meanwhile the supplier and wrong-EC failure paths are covered
 //!   by unit tests in `test_aws_kms_hierarchical_keyring.rs` (the
-//!   `*_uses_branch_key_supplier_when_configured`,
+//!   `*_uses_branch_key_id_supplier_when_configured`,
 //!   `*_skips_edks_with_wrong_branch_key_id`, and `*_collects_per_edk_errors_*`
 //!   tests), which use key store doubles to count calls — something a real
 //!   DynamoDB key store cannot expose.

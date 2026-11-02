@@ -132,7 +132,7 @@ where
     let output = internal_encrypt(
         &mut plaintext,
         &mut ciphertext,
-        input.data_size,
+        input.plaintext_length_bound,
         input.material_source(),
         &input.encryption_context,
         input.algorithm_suite_id,
