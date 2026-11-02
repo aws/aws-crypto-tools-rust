@@ -46,31 +46,46 @@ jobs:
         uses: dorny/paths-filter@v4
         with:
           # The default quantifier ignores '!' patterns; this makes them act as excludes.
+          # An excluded file can't be included back by another pattern, so each
+          # filter lists its own excludes rather than sharing them through a YAML anchor.
+          # ex. '!mpl/test-server/**' in a shared anchor would also hide mpl/test-server from mpl-test-server.
           predicate-quantifier: some-with-excludes
           filters: |
-            prim: &prim
+            prim:
               - 'prim/**'
-            mpl: &mpl
-              - *prim
+              - '!prim/test-server/**'
+            mpl:
+              - 'prim/**'
               - 'mpl/**'
+              - '!prim/test-server/**'
+              - '!mpl/test-server/**'
             esdk:
-              - *mpl
+              - 'prim/**'
+              - 'mpl/**'
               - 'esdk/**'
+              - '!prim/test-server/**'
+              - '!mpl/test-server/**'
               - '!esdk/test-server/**'
               - '!esdk/shims/aws-esdk-cpp/test-server/**'
             prim-test-server:
-              - *prim
-              - 'prim-test-server/**'
+              - 'prim/**'
             mpl-test-server:
-              - *mpl
-              - 'mpl-test-server/**'
+              - 'prim/**'
+              - 'mpl/**'
+              - '!prim/test-server/**'
             esdk-test-server:
-              - *mpl
+              - 'prim/**'
+              - 'mpl/**'
               - 'esdk/**'
+              - '!prim/test-server/**'
+              - '!mpl/test-server/**'
               - '!esdk/shims/aws-esdk-cpp/test-server/**'
             esdk-cpp-test-server:
-              - *mpl
+              - 'prim/**'
+              - 'mpl/**'
               - 'esdk/**'
+              - '!prim/test-server/**'
+              - '!mpl/test-server/**'
             # Any change to CI (workflows, actions, CI config) runs all of CI.
             ci:
               - '.github/**'
@@ -114,8 +129,8 @@ jobs:
               "test-server-builds": [
                 {"when": "esdk-test-server", "name": "esdk-test-server", "server": "esdk/test-server", "runner": "codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}"},
                 {"when": "esdk-cpp-test-server", "name": "esdk-cpp-test-server (ubuntu)", "server": "esdk/shims/aws-esdk-cpp/test-server", "prebuild": "esdk/shims/aws-esdk-cpp", "runner": "codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}"},
-                {"when": "mpl-test-server", "name": "mpl-test-server", "server": "mpl-test-server", "runner": "codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}"},
-                {"when": "prim-test-server", "name": "prim-test-server", "server": "prim-test-server", "runner": "codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}"}
+                {"when": "mpl-test-server", "name": "mpl-test-server", "server": "mpl/test-server", "runner": "codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}"},
+                {"when": "prim-test-server", "name": "prim-test-server", "server": "prim/test-server", "runner": "codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}"}
               ],
               "test-server-builds-macos": [
                 {"when": "esdk-cpp-test-server", "name": "esdk-cpp-test-server (macos)", "server": "esdk/shims/aws-esdk-cpp/test-server", "prebuild": "esdk/shims/aws-esdk-cpp", "runner": "macos-latest"}
@@ -264,11 +279,19 @@ jobs:
     permissions:
       contents: read
       actions: read
+      # The reusable workflow's resolve job reads this pull request's
+      # Test-Server-Override lines.
+      pull-requests: read
+      # Its test job assumes an AWS role for the hierarchical keyring Tests.
+      id-token: write
     uses: aws/aws-crypto-tools-commons/.github/workflows/mpl-test-server-reusable.yml@main
     with:
       runner: *codebuild-linux
       focus: rust
       checkout-languages: rust
+      # This repository's CI role; it already reads the key store fixtures
+      # in the mpl crate's integration tests.
+      aws-role-arn: arn:aws:iam::370957321024:role/GitHub-CI-Public-ESDK-Dafny-Role-us-west-2
     secrets:
       repo-pat: ${{ secrets.COMMONS_REPO_PAT }}
 

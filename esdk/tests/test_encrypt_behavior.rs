@@ -1116,22 +1116,3 @@ async fn test_frame_fields_serialized_per_spec() {
     let decrypted = decrypt_ciphertext(&ct).await.into_plaintext().into_inner();
     assert_eq!(decrypted, pt, "round-trip must recover the plaintext");
 }
-
-// TODO(native-mpl): DBE suites not modeled
-// #[test]
-// fn test_non_esdk_materials_suite_yields_error() {
-//     // The ESDK-support guard that encrypt applies to the retrieved materials suite
-//     // (get_esdk_algorithm_suite_id) must reject a non-ESDK (DBE) algorithm suite.
-//     use aws_esdk::__test_internals::get_esdk_algorithm_suite_id;
-//
-//     let non_esdk = aws_mpl_legacy::suites::AlgorithmSuiteId::Dbe(
-//         aws_mpl_legacy::suites::DbeAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeySymsigHmacSha384,
-//     );
-//     let err = get_esdk_algorithm_suite_id(non_esdk)
-//         .expect_err("non-ESDK materials suite must be rejected");
-//     assert_eq!(
-//         err.kind,
-//         ErrorKind::Internal,
-//         "non-ESDK materials suite must yield an error, got: {err:?}"
-//     );
-// }

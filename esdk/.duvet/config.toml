@@ -34,7 +34,7 @@ source = "spec/client-apis/encrypt.md"
 source = "spec/client-apis/streaming.md"
 
 [[specification]]
-source = "spec/client-apis/key-derivation.md"
+source = "spec/framework/transitive-requirements.md"
 
 [report.html]
 enabled = true

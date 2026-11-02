@@ -7,6 +7,8 @@ use crate::Error;
 use crate::error::{BranchKey, Kind, Resource, Service};
 use std::collections::BTreeMap;
 
+use zeroize::Zeroizing;
+
 use crate::key_store::attributes::{
     ATTR_BRANCH_KEY_ID, ATTR_TYPE, ATTR_VERSION, CUSTOM_EC_PREFIX, TYPE_BRANCH_ACTIVE,
     TYPE_BRANCH_VERSION_PREFIX,
@@ -94,6 +96,8 @@ pub fn branch_key_materials_from_authenticated_encryption_context(
     authenticated_ec: &BTreeMap<String, String>,
     plaintext_branch_key: Vec<u8>,
 ) -> Result<BranchKeyMaterials, Error> {
+    // Wiped on drop, including on the early returns below.
+    let plaintext_branch_key = Zeroizing::new(plaintext_branch_key);
     let type_attr = authenticated_ec.get(ATTR_TYPE).ok_or_else(|| {
         malformed(
             authenticated_ec,
@@ -157,15 +161,19 @@ pub fn branch_key_materials_from_authenticated_encryption_context(
     let encryption_context =
         custom_encryption_context_from_authenticated_encryption_context(authenticated_ec)?;
 
-    let branch_key: [u8; 32] = plaintext_branch_key.try_into().map_err(|v: Vec<u8>| {
-        malformed(
+    let Ok(branch_key) = <[u8; 32]>::try_from(plaintext_branch_key.as_slice()) else {
+        return Err(malformed(
             authenticated_ec,
-            format!("branch key must be 32 bytes, got {}", v.len()),
-        )
-    })?;
+            format!(
+                "branch key must be 32 bytes, got {}",
+                plaintext_branch_key.len()
+            ),
+        ));
+    };
+    let branch_key = Zeroizing::new(branch_key);
 
     BranchKeyMaterials::builder()
-        .branch_key(branch_key)
+        .branch_key(*branch_key)
         .branch_key_id(branch_key_id)
         .branch_key_version(branch_key_version)
         .set_encryption_context(Some(encryption_context))
