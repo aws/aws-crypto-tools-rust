@@ -4,7 +4,7 @@
 //! Cache entry, usage metadata, and the cached-materials enum for the
 //! cryptographic materials cache.
 
-use std::sync::{Mutex, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::SystemTime;
 
 use crate::Error;
@@ -128,24 +128,31 @@ impl UsageMetadataBuilder {
 ///
 /// A CMC stores one `CacheEntry` per cache identifier.
 /// Its fields are the state the CMC spec's `#cache-entry` section lists.
-#[derive(Debug)]
+///
+/// Cloning is cheap and the clone shares state with the original,
+/// including the usage counters.
+#[derive(Clone)]
 #[non_exhaustive]
 pub struct CacheEntry {
+    inner: Arc<CacheEntryInner>,
+}
+
+#[derive(Debug)]
+struct CacheEntryInner {
     materials: CachedMaterials,
     creation_time: SystemTime,
     expiry_time: SystemTime,
     usage_metadata: Mutex<UsageMetadata>,
 }
 
-/// The clone starts with a copy of this entry's usage counters at the time of the clone.
-impl Clone for CacheEntry {
-    fn clone(&self) -> Self {
-        Self {
-            materials: self.materials.clone(),
-            creation_time: self.creation_time,
-            expiry_time: self.expiry_time,
-            usage_metadata: Mutex::new(self.usage_metadata()),
-        }
+impl std::fmt::Debug for CacheEntry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CacheEntry")
+            .field("materials", &self.inner.materials)
+            .field("creation_time", &self.inner.creation_time)
+            .field("expiry_time", &self.inner.expiry_time)
+            .field("usage_metadata", &self.usage_metadata())
+            .finish()
     }
 }
 
@@ -158,27 +165,28 @@ impl CacheEntry {
 
     /// Cached cryptographic materials.
     #[must_use]
-    pub const fn materials(&self) -> &CachedMaterials {
-        &self.materials
+    pub fn materials(&self) -> &CachedMaterials {
+        &self.inner.materials
     }
 
     /// Wall-clock time when this entry was created.
     #[must_use]
-    pub const fn creation_time(&self) -> SystemTime {
-        self.creation_time
+    pub fn creation_time(&self) -> SystemTime {
+        self.inner.creation_time
     }
 
     /// Wall-clock time the entry expires.
     /// A cache MUST NOT return the entry at or after this time.
     #[must_use]
-    pub const fn expiry_time(&self) -> SystemTime {
-        self.expiry_time
+    pub fn expiry_time(&self) -> SystemTime {
+        self.inner.expiry_time
     }
 
     /// Usage counters tracked alongside the cached materials.
     #[must_use]
     pub fn usage_metadata(&self) -> UsageMetadata {
         *self
+            .inner
             .usage_metadata
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -197,6 +205,7 @@ impl CacheEntry {
     #[must_use]
     pub fn record_use(&self, bytes: u64) -> bool {
         let mut usage = self
+            .inner
             .usage_metadata
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
@@ -311,10 +320,12 @@ impl CacheEntryBuilder {
     /// if `materials`, `creation_time`, or `expiry_time` is unset.
     pub fn build(self) -> Result<CacheEntry, Error> {
         Ok(CacheEntry {
-            materials: required(self.materials, "materials")?,
-            creation_time: required(self.creation_time, "creation_time")?,
-            expiry_time: required(self.expiry_time, "expiry_time")?,
-            usage_metadata: Mutex::new(self.usage_metadata.unwrap_or_default()),
+            inner: Arc::new(CacheEntryInner {
+                materials: required(self.materials, "materials")?,
+                creation_time: required(self.creation_time, "creation_time")?,
+                expiry_time: required(self.expiry_time, "expiry_time")?,
+                usage_metadata: Mutex::new(self.usage_metadata.unwrap_or_default()),
+            }),
         })
     }
 }

@@ -163,6 +163,24 @@ async fn shared_cmc_fluent_builders_reach_the_cache() {
     assert!(after_delete.entry().is_none());
 }
 
+#[test]
+fn a_cache_entry_clone_shares_usage_counters() {
+    let now = SystemTime::now();
+    let materials = EncryptionMaterials::builder()
+        .algorithm_suite_id(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
+        .build()
+        .unwrap();
+    let entry = CacheEntry::builder()
+        .materials(CachedMaterials::Encryption(materials))
+        .creation_time(now)
+        .expiry_time(now + Duration::from_secs(3600))
+        .build()
+        .unwrap();
+    assert!(entry.clone().record_use(7));
+    assert_eq!(entry.usage_metadata().messages_used(), 1);
+    assert_eq!(entry.usage_metadata().bytes_used(), 7);
+}
+
 #[tokio::test]
 async fn shared_branch_key_supplier_fluent_builder_reaches_the_supplier() {
     let mut encryption_context = EncryptionContext::new();

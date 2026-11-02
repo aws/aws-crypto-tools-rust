@@ -375,7 +375,7 @@ mod ffi {
         grace_period: OptDuration,
         grace_interval: OptDuration,
         fan_out: OptU32,
-        inflight_ttl: OptDuration,
+        in_flight_ttl: OptDuration,
         sleep: OptDuration,
     }
 
@@ -986,7 +986,10 @@ fn apply_storm_tracking_options(
             options.grace_interval.to_option(),
         )?)
         .set_fan_out(count("fan_out", options.fan_out.to_option())?)
-        .set_inflight_ttl(duration("inflight_ttl", options.inflight_ttl.to_option())?)
+        .set_in_flight_ttl(duration(
+            "in_flight_ttl",
+            options.in_flight_ttl.to_option(),
+        )?)
         .set_sleep(duration("sleep", options.sleep.to_option())?))
 }
 

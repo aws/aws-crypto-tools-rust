@@ -268,7 +268,7 @@ void test_cache_kinds() {
                                                        .with_grace_period(10s)
                                                        .with_grace_interval(1s)
                                                        .with_fan_out(20)
-                                                       .with_inflight_ttl(10s)
+                                                       .with_in_flight_ttl(10s)
                                                        .with_sleep(20ms));
 
     //= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
@@ -315,7 +315,7 @@ void test_hierarchical_keyring_ttl() {
             Aws::Esdk::StormTrackingCmc(Aws::Esdk::StormTrackingCmcOptions()
                                             .with_grace_period(grace_period)
                                             .with_grace_interval(100ms)
-                                            .with_inflight_ttl(100ms)));
+                                            .with_in_flight_ttl(100ms)));
     };
     Aws::Esdk::HierarchicalKeyring(keystore, "branch-key-id", 1500ms, with_grace(1499ms));
     CHECK_THROWS_TYPE(

@@ -64,7 +64,7 @@ pub fn compute_aad(
 ) -> Result<Vec<u8>, Error> {
     let version_bytes = uuid_str_to_16_bytes(branch_key_version, branch_key_id)?;
 
-    let serialized_ec = encryption_context.serialize()?;
+    let serialized_ec = encryption_context.to_bytes()?;
 
     let mut aad = Vec::with_capacity(
         HIERARCHY_LABEL.len() + branch_key_id.len() + VERSION_LEN + serialized_ec.len(),

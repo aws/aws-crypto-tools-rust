@@ -29,7 +29,6 @@
 #![cfg(feature = "test-utils")]
 
 use aws_crypto_mpl::async_trait;
-use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use aws_crypto_mpl::Error;
@@ -52,7 +51,7 @@ trait CmcExt {
         put.send().await.map(|_| ())
     }
 
-    async fn get_entry(&self, id: &[u8]) -> Result<Option<Arc<CacheEntry>>, Error> {
+    async fn get_entry(&self, id: &[u8]) -> Result<Option<CacheEntry>, Error> {
         let get = self.handle().get_cache_entry().identifier(id);
         Ok(get.send().await?.into_entry())
     }

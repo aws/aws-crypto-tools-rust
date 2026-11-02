@@ -249,7 +249,7 @@ async fn build_compares_storm_tracking_grace_period_to_sub_second_ttl() {
             .grace_period(Duration::from_millis(grace_period_ms))
             .grace_interval(Duration::from_millis(100))
             .fan_out(4)
-            .inflight_ttl(Duration::from_millis(100))
+            .in_flight_ttl(Duration::from_millis(100))
             .sleep(Duration::from_millis(10))
             .build()
             .expect("valid StormTrackingCmc");
@@ -537,7 +537,7 @@ async fn build_with_storm_tracking_cache_succeeds() {
         .grace_period(Duration::from_secs(60))
         .grace_interval(Duration::from_secs(1))
         .fan_out(4)
-        .inflight_ttl(Duration::from_secs(30))
+        .in_flight_ttl(Duration::from_secs(30))
         .sleep(Duration::from_millis(10))
         .build()
         .expect("valid StormTrackingCmc");
@@ -559,7 +559,7 @@ async fn build_with_storm_tracking_grace_period_equal_to_ttl_fails() {
         .grace_period(Duration::from_secs(60))
         .grace_interval(Duration::from_secs(1))
         .fan_out(4)
-        .inflight_ttl(Duration::from_secs(30))
+        .in_flight_ttl(Duration::from_secs(30))
         .sleep(Duration::from_millis(10))
         .build()
         .expect("valid StormTrackingCmc");
@@ -585,7 +585,7 @@ async fn build_with_storm_tracking_grace_period_greater_than_ttl_fails() {
         .grace_period(Duration::from_secs(120))
         .grace_interval(Duration::from_secs(1))
         .fan_out(4)
-        .inflight_ttl(Duration::from_secs(30))
+        .in_flight_ttl(Duration::from_secs(30))
         .sleep(Duration::from_millis(10))
         .build()
         .expect("valid StormTrackingCmc");
@@ -606,14 +606,14 @@ async fn build_with_storm_tracking_grace_period_greater_than_ttl_fails() {
 #[tokio::test]
 async fn build_with_storm_tracking_milliseconds_grace_period_under_ttl_succeeds() {
     // grace_period = 5_000 ms = 5 s, less than the 60 s TTL.
-    // inflight_ttl <= grace_period is required by StormTrackingCmc.
+    // in_flight_ttl <= grace_period is required by StormTrackingCmc.
     let cache = StormTrackingCmc::builder()
         .entry_capacity(16)
         .entry_pruning_tail_size(4)
         .grace_period(Duration::from_millis(5_000))
         .grace_interval(Duration::from_millis(100))
         .fan_out(4)
-        .inflight_ttl(Duration::from_millis(1_000))
+        .in_flight_ttl(Duration::from_millis(1_000))
         .sleep(Duration::from_millis(10))
         .build()
         .expect("valid StormTrackingCmc");
@@ -867,7 +867,7 @@ fn compute_aad_appends_serialized_encryption_context() {
 
     let aad = compute_aad(branch_key_id, version, &ec).expect("AAD construction must succeed");
 
-    let serialized_ec = ec.serialize().expect("EC must serialize");
+    let serialized_ec = ec.to_bytes().expect("EC must serialize");
     assert!(
         aad.ends_with(&serialized_ec),
         "AAD must end with the serialized EC bytes"
@@ -885,7 +885,7 @@ fn compute_aad_fails_when_encryption_context_value_too_large() {
     let branch_key_id = "id-too-large";
     let version = "01234567-0123-4123-8123-0123456789ab";
     let mut ec = EncryptionContext::new();
-    // value length > u16::MAX makes EncryptionContext::serialize() fail.
+    // value length > u16::MAX makes EncryptionContext::to_bytes() fail.
     ec.insert("k", "\0".repeat(65_536));
 
     let result = compute_aad(branch_key_id, version, &ec);

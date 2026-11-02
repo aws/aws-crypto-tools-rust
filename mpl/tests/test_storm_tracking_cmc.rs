@@ -33,7 +33,7 @@ trait CmcExt {
         put.send().await.map(|_| ())
     }
 
-    async fn get_entry(&self, id: &[u8]) -> Result<Option<Arc<CacheEntry>>, Error> {
+    async fn get_entry(&self, id: &[u8]) -> Result<Option<CacheEntry>, Error> {
         let get = self.handle().get_cache_entry().identifier(id);
         Ok(get.send().await?.into_entry())
     }
@@ -62,7 +62,7 @@ fn anchor_now() -> SystemTime {
 
 /// Grace period for most tests.
 const GRACE_PERIOD: Duration = Duration::from_secs(10);
-/// Grace interval (must be <= inflight_ttl).
+/// Grace interval (must be <= in_flight_ttl).
 const GRACE_INTERVAL: Duration = Duration::from_secs(2);
 /// Inflight TTL (must be >= grace_interval).
 const INFLIGHT_TTL: Duration = Duration::from_secs(5);
@@ -126,7 +126,7 @@ fn storm_config(
     grace_period: Duration,
     grace_interval: Duration,
     fan_out: usize,
-    inflight_ttl: Duration,
+    in_flight_ttl: Duration,
     sleep: Duration,
 ) -> StormTrackingCmcBuilder {
     StormTrackingCmc::builder()
@@ -135,7 +135,7 @@ fn storm_config(
         .grace_period(grace_period)
         .grace_interval(grace_interval)
         .fan_out(fan_out)
-        .inflight_ttl(inflight_ttl)
+        .in_flight_ttl(in_flight_ttl)
         .sleep(sleep)
 }
 
@@ -203,7 +203,7 @@ async fn test_initialization_requires_storm_tracking_parameters() {
     assert_eq!(cmc.grace_period(), Some(GRACE_PERIOD));
     assert_eq!(cmc.grace_interval(), GRACE_INTERVAL);
     assert_eq!(cmc.fan_out(), FAN_OUT);
-    assert_eq!(cmc.inflight_ttl(), INFLIGHT_TTL);
+    assert_eq!(cmc.in_flight_ttl(), INFLIGHT_TTL);
     assert_eq!(cmc.sleep(), SLEEP);
 }
 
@@ -240,7 +240,7 @@ async fn test_grace_period_is_the_configured_duration() {
     let expiry = anchor + Duration::from_secs(11);
     let now = anchor + Duration::from_secs(1);
 
-    for (grace_period, grace_interval, inflight_ttl, within) in [
+    for (grace_period, grace_interval, in_flight_ttl, within) in [
         (
             Duration::from_secs(10),
             Duration::from_secs(2),
@@ -260,7 +260,7 @@ async fn test_grace_period_is_the_configured_duration() {
             grace_period,
             grace_interval,
             FAN_OUT,
-            inflight_ttl,
+            in_flight_ttl,
             SLEEP,
         )
         .clock(move || now)
@@ -326,7 +326,7 @@ fn test_builder_defaults() {
     assert_eq!(config.grace_period(), Some(Duration::from_secs(10)));
     assert_eq!(config.grace_interval(), Duration::from_secs(1));
     assert_eq!(config.fan_out(), 20);
-    assert_eq!(config.inflight_ttl(), Duration::from_secs(10));
+    assert_eq!(config.in_flight_ttl(), Duration::from_secs(10));
     assert_eq!(config.sleep(), Duration::from_millis(20));
 }
 
@@ -342,7 +342,7 @@ fn test_builder_applies_each_default_when_its_setter_is_omitted() {
     assert_eq!(config.entry_pruning_tail_size(), 1);
     assert_eq!(config.grace_interval(), Duration::from_secs(1));
     assert_eq!(config.fan_out(), 20);
-    assert_eq!(config.inflight_ttl(), Duration::from_secs(10));
+    assert_eq!(config.in_flight_ttl(), Duration::from_secs(10));
     assert_eq!(config.sleep(), Duration::from_millis(20));
 }
 
@@ -367,9 +367,9 @@ fn test_invalid_settings_are_rejected() {
     assert_rejected(
         StormTrackingCmc::builder()
             .grace_interval(Duration::ZERO)
-            .inflight_ttl(Duration::ZERO)
+            .in_flight_ttl(Duration::ZERO)
             .build(),
-        "inflight_ttl = 0",
+        "in_flight_ttl = 0",
     );
     assert_rejected(
         StormTrackingCmc::builder().sleep(Duration::ZERO).build(),
@@ -378,9 +378,9 @@ fn test_invalid_settings_are_rejected() {
     assert_rejected(
         StormTrackingCmc::builder()
             .grace_interval(Duration::from_secs(2))
-            .inflight_ttl(Duration::from_secs(1))
+            .in_flight_ttl(Duration::from_secs(1))
             .build(),
-        "grace_interval > inflight_ttl",
+        "grace_interval > in_flight_ttl",
     );
 }
 
@@ -388,18 +388,18 @@ fn test_invalid_settings_are_rejected() {
 fn test_durations_are_stored_exactly() {
     let grace_period = Duration::ZERO;
     let grace_interval = Duration::from_nanos(1_500);
-    let inflight_ttl = Duration::from_secs(30);
+    let in_flight_ttl = Duration::from_secs(30);
     let sleep = Duration::from_nanos(1);
     let config = StormTrackingCmc::builder()
         .grace_period(grace_period)
         .grace_interval(grace_interval)
-        .inflight_ttl(inflight_ttl)
+        .in_flight_ttl(in_flight_ttl)
         .sleep(sleep)
         .build()
         .expect("valid durations are accepted");
     assert_eq!(config.grace_period(), Some(grace_period));
     assert_eq!(config.grace_interval(), grace_interval);
-    assert_eq!(config.inflight_ttl(), inflight_ttl);
+    assert_eq!(config.in_flight_ttl(), in_flight_ttl);
     assert_eq!(config.sleep(), sleep);
 }
 
@@ -679,7 +679,7 @@ async fn test_get_hit_within_grace_inflight_outside_interval_returns_none_and_up
         .await
         .expect("put");
     // Mark as inflight at a time OUTSIDE the grace interval but WITHIN inflight TTL.
-    // grace_interval=2s, inflight_ttl=5s; set inflight_t 3s ago → outside interval, within TTL.
+    // grace_interval=2s, in_flight_ttl=5s; set inflight_t 3s ago → outside interval, within TTL.
     let inflight_t = now - Duration::from_secs(3);
     cmc.mark_inflight(b"k", inflight_t);
 
@@ -761,7 +761,7 @@ async fn test_get_miss_not_inflight_returns_none_and_marks() {
 async fn test_get_miss_inflight_exceeds_ttl_fails() {
     let now = anchor_now();
     let cmc = make_storm_tracking(now);
-    // Pre-mark inflight longer ago than inflight_ttl.
+    // Pre-mark inflight longer ago than in_flight_ttl.
     let stale_t = now - (INFLIGHT_TTL + Duration::from_secs(1));
     cmc.mark_inflight(b"k", stale_t);
 
@@ -832,7 +832,7 @@ async fn test_get_miss_inflight_outside_interval_returns_none_and_updates() {
     let now = anchor_now();
     let cmc = make_storm_tracking(now);
     // inflight_t outside grace interval but inside inflight TTL:
-    // grace_interval=2s, inflight_ttl=5s → set inflight_t 3s ago.
+    // grace_interval=2s, in_flight_ttl=5s → set inflight_t 3s ago.
     let inflight_t = now - Duration::from_secs(3);
     cmc.mark_inflight(b"k", inflight_t);
 
@@ -849,11 +849,11 @@ async fn test_get_miss_inflight_outside_interval_returns_none_and_updates() {
 }
 
 // What: when a waiter is in `BlockMissInflight` and its per-waiter
-// deadline (`enter_time + inflight_ttl`) elapses without the entry
+// deadline (`enter_time + in_flight_ttl`) elapses without the entry
 // appearing or a leader slot opening, the wait loop must return
 // a retryable `Throttling` error about the cache.
 //
-// Why: the initial classifier's `elapsed > inflight_ttl` check only
+// Why: the initial classifier's `elapsed > in_flight_ttl` check only
 // fires when `get_cache_entry` is called AFTER the map-level TTL has
 // already been exceeded. A waiter that entered while the key was still
 // within its TTL, then got stuck (fan-out saturated, key still inflight
@@ -1004,7 +1004,7 @@ async fn test_all_material_variants_round_trip() {
 
 // ── Group 11 — Bug Reproduction Tests (Copilot PR #33 review) ────────────────
 
-// What: when every inflight entry in the fan-out map exceeds `inflight_ttl`
+// What: when every inflight entry in the fan-out map exceeds `in_flight_ttl`
 // while a thread is blocked in `BlockMissNotInflight`, the block loop must
 // prune the stale entries, observe the freed fan-out slots, and return
 // `NoSuchEntry` after marking its own key inflight at the current time.
@@ -1084,7 +1084,7 @@ async fn test_block_miss_not_inflight_prunes_stale_entries_in_loop() {
 async fn test_block_miss_inflight_keeps_waiting_when_slot_opens_but_key_still_inflight() {
     use std::sync::Mutex as StdMutex;
 
-    // grace_interval and inflight_ttl large so we have room to observe the
+    // grace_interval and in_flight_ttl large so we have room to observe the
     // "waiter should keep waiting when slot opens" behavior without other
     // exit paths firing first.
     const GRACE_INTERVAL: Duration = Duration::from_secs(10);
@@ -1171,7 +1171,7 @@ async fn test_block_miss_inflight_keeps_waiting_when_slot_opens_but_key_still_in
 }
 
 // What: the BlockMissInflight loop's InFlightTTL check must fire based on
-// the WAITER's enter time + inflight_ttl (per-waiter deadline), not the
+// the WAITER's enter time + in_flight_ttl (per-waiter deadline), not the
 // key's map inflight_t. A subsequent refresh of the map inflight_t must
 // NOT extend this waiter's TTL budget.
 //

@@ -23,10 +23,8 @@ use super::{
     UpdateUsageMetadataOutput,
 };
 
-/// Internal storage type — the `lru` crate's `LruCache` keyed by cache id
-/// with `Arc<CacheEntry>` values so `get` can hand out a reference-counted
-/// clone without copying the underlying materials.
-type Inner = LruCache<Vec<u8>, Arc<CacheEntry>>;
+/// Internal storage type: the `lru` crate's `LruCache` keyed by cache id.
+type Inner = LruCache<Vec<u8>, CacheEntry>;
 
 /// Concrete in-memory LRU Cryptographic Materials Cache.
 ///
@@ -130,7 +128,7 @@ impl LocalCmc {
 
     /// Return the entry if it has not expired, evicting it if it has.
     /// Prunes the tail first.
-    pub(crate) fn get_fresh(&self, cache_id: &[u8]) -> Result<Option<Arc<CacheEntry>>, Error> {
+    pub(crate) fn get_fresh(&self, cache_id: &[u8]) -> Result<Option<CacheEntry>, Error> {
         let mut inner = self
             .inner
             .store
@@ -297,7 +295,7 @@ impl Cmc for crate::shared::Builtin<LocalCmc> {
         // `LruCache::put` evicts the LRU entry before insertion when the
         // cache is at capacity, keeping `len <= entry_capacity` at all
         // observation points.
-        cache.put(identifier, Arc::new(entry));
+        cache.put(identifier, entry);
         Ok(PutCacheEntryOutput::default())
     }
 

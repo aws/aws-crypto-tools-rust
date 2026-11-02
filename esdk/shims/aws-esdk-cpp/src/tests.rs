@@ -76,7 +76,7 @@ fn unset_storm_tracking_options() -> ffi::StormTrackingCmcOptions {
         grace_period: unset_duration(),
         grace_interval: unset_duration(),
         fan_out: unset_u32(),
-        inflight_ttl: unset_duration(),
+        in_flight_ttl: unset_duration(),
         sleep: unset_duration(),
     }
 }
@@ -859,7 +859,7 @@ fn storm_tracking_options() -> ffi::StormTrackingCmcOptions {
         grace_period: set_duration(10, 0),
         grace_interval: set_duration(0, 500_000_000),
         fan_out: set_u32(20),
-        inflight_ttl: set_duration(2, 250_000_000),
+        in_flight_ttl: set_duration(2, 250_000_000),
         sleep: set_duration(0, 20_000_000),
     }
 }
@@ -876,7 +876,7 @@ fn create_storm_tracking_cmc_passes_each_option_to_the_core() {
     assert_eq!(cache.grace_period(), Some(Duration::from_secs(10)));
     assert_eq!(cache.grace_interval(), Duration::from_millis(500));
     assert_eq!(cache.fan_out(), 20);
-    assert_eq!(cache.inflight_ttl(), Duration::from_millis(2250));
+    assert_eq!(cache.in_flight_ttl(), Duration::from_millis(2250));
     assert_eq!(cache.sleep(), Duration::from_millis(20));
 }
 

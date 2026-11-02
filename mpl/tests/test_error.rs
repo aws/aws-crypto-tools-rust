@@ -9,9 +9,10 @@ use std::io::Error as IoError;
 use aws_crypto_mpl::Error;
 use aws_crypto_mpl::error::{
     AccessDeniedError, BranchKey, Collection, CryptographicError, KeyringResource, KmsKey,
-    ProvideErrorKind, ProvideErrorMetadata, RequestId, Resource, RetryErrorKind, RetryKind,
-    Service, ServiceError, ValidationError,
+    ProvideErrorKind, ProvideErrorMetadata, RequestId, Resource, RetryKind, Service, ServiceError,
+    ValidationError,
 };
+use aws_smithy_types::retry::ErrorKind;
 
 #[test]
 fn a_struct_converts_into_its_variant() {
@@ -63,10 +64,7 @@ fn the_sdk_traits_answer_from_the_error() {
         .build()
         .into();
     assert!(err.is_retryable());
-    assert_eq!(
-        err.retryable_error_kind(),
-        Some(RetryErrorKind::ThrottlingError)
-    );
+    assert_eq!(err.retryable_error_kind(), Some(ErrorKind::ThrottlingError));
     assert_eq!(ProvideErrorMetadata::code(&err), None);
     assert_eq!(RequestId::request_id(&err), None);
     assert_eq!(err.meta().code(), None);

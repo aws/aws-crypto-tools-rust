@@ -9,7 +9,7 @@ use aws_crypto_mpl::types::EncryptionContext;
 fn test_empty_serializes_to_empty_bytes() {
     let ec = EncryptionContext::new();
 
-    assert!(ec.serialize().unwrap().is_empty());
+    assert!(ec.to_bytes().unwrap().is_empty());
 }
 
 #[test]
@@ -17,8 +17,8 @@ fn test_single_entry_round_trip() {
     let mut ec = EncryptionContext::new();
     ec.insert("key1", "value1");
 
-    let serialized = ec.serialize().unwrap();
-    let deserialized = EncryptionContext::deserialize(&serialized).unwrap();
+    let serialized = ec.to_bytes().unwrap();
+    let deserialized = EncryptionContext::from_bytes(&serialized).unwrap();
     assert_eq!(ec, deserialized);
 }
 
@@ -31,7 +31,7 @@ fn test_multiple_entries_serialized_in_sorted_order() {
     ec.insert("mango", "m");
 
     // Type-system enforcement (implication in source); test exists for regression coverage.
-    let serialized = ec.serialize().unwrap();
+    let serialized = ec.to_bytes().unwrap();
     // Verify count is 3
     let count = u16::from_be_bytes([serialized[0], serialized[1]]);
     assert_eq!(count, 3);
@@ -59,7 +59,7 @@ fn test_duplicate_key_rejected_on_deserialize() {
     bytes.push(b'2');
 
     // Type-system enforcement (implication in source); test exists for regression coverage.
-    let result = EncryptionContext::deserialize(&bytes);
+    let result = EncryptionContext::from_bytes(&bytes);
     assert!(result.is_err());
     assert!(result.unwrap_err().is_validation());
 }
@@ -71,7 +71,7 @@ fn test_out_of_order_keys_rejected_on_deserialize() {
         0x00, 0x01, b'b', 0x00, 0x01, b'2', // b -> 2
         0x00, 0x01, b'a', 0x00, 0x01, b'1', // a -> 1
     ];
-    let err = EncryptionContext::deserialize(bytes).unwrap_err();
+    let err = EncryptionContext::from_bytes(bytes).unwrap_err();
     assert!(err.is_validation(), "{:?}", err);
 }
 
@@ -82,8 +82,8 @@ fn test_round_trip_preserves_all_entries() {
     ec.insert("key2", "value2");
     ec.insert("key3", "value3");
 
-    let serialized = ec.serialize().unwrap();
-    let deserialized = EncryptionContext::deserialize(&serialized).unwrap();
+    let serialized = ec.to_bytes().unwrap();
+    let deserialized = EncryptionContext::from_bytes(&serialized).unwrap();
     assert_eq!(ec, deserialized);
     assert_eq!(deserialized.len(), 3);
 }
@@ -93,7 +93,7 @@ fn test_key_value_pair_count_must_be_greater_than_zero() {
     // Construct bytes with count = 0
     let bytes = 0u16.to_be_bytes();
 
-    let result = EncryptionContext::deserialize(&bytes);
+    let result = EncryptionContext::from_bytes(&bytes);
     assert!(result.is_err());
     assert!(result.unwrap_err().is_validation());
 }
@@ -159,7 +159,7 @@ fn test_debug_format() {
 
 #[test]
 fn test_deserialize_insufficient_bytes_for_count() {
-    let result = EncryptionContext::deserialize(&[0xAB]);
+    let result = EncryptionContext::from_bytes(&[0xAB]);
     assert!(result.is_err());
     assert!(result.unwrap_err().is_validation());
 }
@@ -168,7 +168,7 @@ fn test_deserialize_insufficient_bytes_for_count() {
 fn test_deserialize_insufficient_bytes_for_key_length() {
     // count=1, but no body bytes for key length
     let bytes = 1u16.to_be_bytes();
-    let result = EncryptionContext::deserialize(&bytes);
+    let result = EncryptionContext::from_bytes(&bytes);
     assert!(result.is_err());
     assert!(result.unwrap_err().is_validation());
 }
@@ -181,7 +181,7 @@ fn test_deserialize_insufficient_bytes_for_key() {
     bytes.extend_from_slice(&10u16.to_be_bytes()); // key_len = 10
     bytes.extend_from_slice(&[0x41, 0x42]); // only 2 bytes of key
 
-    let result = EncryptionContext::deserialize(&bytes);
+    let result = EncryptionContext::from_bytes(&bytes);
     assert!(result.is_err());
     assert!(result.unwrap_err().is_validation());
 }
@@ -194,7 +194,7 @@ fn test_deserialize_insufficient_bytes_for_value_length() {
     bytes.extend_from_slice(&1u16.to_be_bytes()); // key_len = 1
     bytes.push(b'a'); // key
 
-    let result = EncryptionContext::deserialize(&bytes);
+    let result = EncryptionContext::from_bytes(&bytes);
     assert!(result.is_err());
     assert!(result.unwrap_err().is_validation());
 }
@@ -209,7 +209,7 @@ fn test_deserialize_insufficient_bytes_for_value() {
     bytes.extend_from_slice(&5u16.to_be_bytes()); // val_len = 5
     bytes.push(0x01); // only 1 byte of value
 
-    let result = EncryptionContext::deserialize(&bytes);
+    let result = EncryptionContext::from_bytes(&bytes);
     assert!(result.is_err());
     assert!(result.unwrap_err().is_validation());
 }
@@ -219,7 +219,7 @@ fn test_serialize_rejects_oversize_key() {
     let mut ec = EncryptionContext::new();
     ec.insert("a".repeat(70_000), "val");
 
-    let result = ec.serialize();
+    let result = ec.to_bytes();
     assert!(result.is_err());
     let err = result.unwrap_err();
     assert!(err.is_validation(), "{:?}", err);
@@ -230,7 +230,7 @@ fn test_serialize_rejects_oversize_value() {
     let mut ec = EncryptionContext::new();
     ec.insert("key", "b".repeat(70_000));
 
-    let result = ec.serialize();
+    let result = ec.to_bytes();
     assert!(result.is_err());
     let err = result.unwrap_err();
     assert!(err.is_validation(), "{:?}", err);
@@ -238,7 +238,7 @@ fn test_serialize_rejects_oversize_value() {
 
 #[test]
 fn test_deserialize_empty_bytes_returns_empty_context() {
-    let ec = EncryptionContext::deserialize(&[]).unwrap();
+    let ec = EncryptionContext::from_bytes(&[]).unwrap();
     assert!(ec.is_empty());
 }
 
@@ -249,7 +249,7 @@ fn test_serialize_rejects_too_many_entries() {
         ec.insert(i.to_string(), "v");
     }
 
-    let result = ec.serialize();
+    let result = ec.to_bytes();
     assert!(result.is_err());
     let err = result.unwrap_err();
     assert!(err.is_validation(), "{:?}", err);
@@ -269,7 +269,7 @@ fn test_default_produces_empty_context() {
     assert!(ec.is_empty());
     assert_eq!(ec.len(), 0);
     // Default should also serialize to empty bytes (matches new()).
-    assert!(ec.serialize().unwrap().is_empty());
+    assert!(ec.to_bytes().unwrap().is_empty());
 }
 
 #[test]
@@ -314,14 +314,14 @@ fn test_serialize_produces_known_bytes() {
         0x00, 0x01, // val_len = 1
         b'1', // value
     ];
-    assert_eq!(ec.serialize().unwrap().as_slice(), expected);
+    assert_eq!(ec.to_bytes().unwrap().as_slice(), expected);
 }
 
 #[test]
 fn test_deserialize_known_bytes_produces_expected_context() {
     // Same wire form as test_serialize_produces_known_bytes, decoded.
     let bytes: &[u8] = &[0x00, 0x01, 0x00, 0x01, b'a', 0x00, 0x01, b'1'];
-    let ec = EncryptionContext::deserialize(bytes).unwrap();
+    let ec = EncryptionContext::from_bytes(bytes).unwrap();
     assert_eq!(ec.len(), 1);
     assert_eq!(ec.get("a"), Some("1"));
 }
@@ -333,8 +333,8 @@ fn test_serialize_accepts_max_u16_key_length() {
     let max_key = "a".repeat(u16::MAX as usize);
     ec.insert(max_key.clone(), "v");
 
-    let serialized = ec.serialize().unwrap();
-    let deserialized = EncryptionContext::deserialize(&serialized).unwrap();
+    let serialized = ec.to_bytes().unwrap();
+    let deserialized = EncryptionContext::from_bytes(&serialized).unwrap();
     assert_eq!(deserialized.get(&max_key), Some("v"));
 }
 
@@ -344,8 +344,8 @@ fn test_serialize_accepts_max_u16_value_length() {
     let max_val = "b".repeat(u16::MAX as usize);
     ec.insert("k", max_val.clone());
 
-    let serialized = ec.serialize().unwrap();
-    let deserialized = EncryptionContext::deserialize(&serialized).unwrap();
+    let serialized = ec.to_bytes().unwrap();
+    let deserialized = EncryptionContext::from_bytes(&serialized).unwrap();
     assert_eq!(deserialized.get("k"), Some(max_val.as_str()));
 }
 
@@ -358,7 +358,7 @@ fn test_serialize_accepts_max_u16_entry_count() {
     }
     assert_eq!(ec.len(), u16::MAX as usize);
 
-    let serialized = ec.serialize().unwrap();
+    let serialized = ec.to_bytes().unwrap();
     // Leading two bytes encode the count.
     assert_eq!(u16::from_be_bytes([serialized[0], serialized[1]]), u16::MAX);
 }
@@ -376,8 +376,8 @@ fn test_round_trip_preserves_multibyte_utf8() {
     ec.insert("日", "中文");
     ec.insert("🦀", "🎉🦀");
 
-    let serialized = ec.serialize().unwrap();
-    let deserialized = EncryptionContext::deserialize(&serialized).unwrap();
+    let serialized = ec.to_bytes().unwrap();
+    let deserialized = EncryptionContext::from_bytes(&serialized).unwrap();
     assert_eq!(ec, deserialized);
 
     // UTF-8 has the property that lexicographic byte order matches Unicode
@@ -402,7 +402,7 @@ fn test_serialize_known_bytes_for_4byte_utf8() {
         0x00, 0x04, // val_len = 4
         0xF0, 0x9F, 0xA6, 0x80, // "🦀" UTF-8
     ];
-    assert_eq!(ec.serialize().unwrap().as_slice(), expected);
+    assert_eq!(ec.to_bytes().unwrap().as_slice(), expected);
 }
 
 #[test]
@@ -411,7 +411,7 @@ fn test_deserialize_rejects_trailing_bytes() {
     let mut bytes: Vec<u8> = vec![0x00, 0x01, 0x00, 0x01, b'a', 0x00, 0x01, b'1'];
     bytes.push(0xFF); // trailing junk
 
-    let result = EncryptionContext::deserialize(&bytes);
+    let result = EncryptionContext::from_bytes(&bytes);
     assert!(result.is_err());
     assert!(result.unwrap_err().is_validation());
 }
@@ -426,7 +426,7 @@ fn test_deserialize_rejects_trailing_bytes_after_multi_entry() {
         0x00, 0x01, b'b', 0x00, 0x01, b'2', // b -> 2
         0xDE, 0xAD, // trailing junk
     ];
-    let result = EncryptionContext::deserialize(&bytes);
+    let result = EncryptionContext::from_bytes(&bytes);
     assert!(result.is_err());
     assert!(result.unwrap_err().is_validation());
 }
@@ -476,7 +476,7 @@ fn test_deserialize_accepts_empty_key_length_currently_unenforced() {
         0x00, 0x01, // val_len = 1
         b'1', // value
     ];
-    let ec = EncryptionContext::deserialize(bytes).unwrap();
+    let ec = EncryptionContext::from_bytes(bytes).unwrap();
     assert_eq!(ec.len(), 1);
     assert_eq!(ec.get(""), Some("1"));
 }
@@ -494,21 +494,21 @@ fn test_serialize_orders_by_utf8_bytes_not_utf16_code_units() {
         0x00, 0x04, 0xF0, 0x9F, 0x98, 0x80, // key U+1F600
         0x00, 0x01, b'b', // value
     ];
-    assert_eq!(ec.serialize().unwrap().as_slice(), expected);
-    assert_eq!(EncryptionContext::deserialize(expected).unwrap(), ec);
+    assert_eq!(ec.to_bytes().unwrap().as_slice(), expected);
+    assert_eq!(EncryptionContext::from_bytes(expected).unwrap(), ec);
 }
 
 #[test]
 fn test_deserialize_rejects_invalid_utf8_key() {
     let bytes: &[u8] = &[0x00, 0x01, 0x00, 0x01, 0xFF, 0x00, 0x01, b'1'];
-    let err = EncryptionContext::deserialize(bytes).unwrap_err();
+    let err = EncryptionContext::from_bytes(bytes).unwrap_err();
     assert!(err.is_validation(), "{:?}", err);
 }
 
 #[test]
 fn test_deserialize_rejects_invalid_utf8_value() {
     let bytes: &[u8] = &[0x00, 0x01, 0x00, 0x01, b'a', 0x00, 0x01, 0xFF];
-    let err = EncryptionContext::deserialize(bytes).unwrap_err();
+    let err = EncryptionContext::from_bytes(bytes).unwrap_err();
     assert!(err.is_validation(), "{:?}", err);
 }
 

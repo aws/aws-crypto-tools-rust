@@ -990,14 +990,8 @@ fn map_ddb_error<E>(operation: &str, table_name: &str, err: SdkError<E, HttpResp
 where
     E: ProvideErrorMetadata + std::error::Error + Send + Sync + 'static,
 {
-    Error::from_sdk(
-        Service::DynamoDb,
-        &format!("DynamoDB {operation}"),
-        Some(Resource::DynamoDbTable(DynamoDbTable::new(
-            table_name.to_owned(),
-        ))),
-        err,
-    )
+    Error::from_sdk(Service::DynamoDb, &format!("DynamoDB {operation}"), err)
+        .with_resource(DynamoDbTable::new(table_name.to_owned()))
 }
 
 /// Classify a failed `TransactWriteItems` that writes branch key `branch_key_id`.

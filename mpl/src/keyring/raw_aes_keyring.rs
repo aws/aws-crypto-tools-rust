@@ -366,7 +366,7 @@ impl RawAesKeyringBuilder {
             ));
         }
 
-        let expected_key_len = usize::from(wrapping_alg.primitive().key_len());
+        let expected_key_len = wrapping_alg.key_length();
         if wrapping_key.len() != expected_key_len {
             return Err(Error::new(
                 Kind::Validation,
@@ -402,7 +402,7 @@ impl Keyring for crate::shared::Builtin<RawAesKeyring> {
         // encryption context fails the operation rather than producing an EDK.
         let aad = materials
             .encryption_context()
-            .serialize()
+            .to_bytes()
             .map_err(|e| Error::wrap("failed to serialize the encryption context", e))?;
 
         let materials = match materials.plaintext_data_key() {
@@ -435,7 +435,7 @@ impl Keyring for crate::shared::Builtin<RawAesKeyring> {
         // context fails the operation even when no EDK matches this keyring.
         let aad = materials
             .encryption_context()
-            .serialize()
+            .to_bytes()
             .map_err(|e| Error::wrap("failed to serialize the encryption context", e))?;
 
         let expected_dk_len = materials.algorithm_suite().encryption_key_length();

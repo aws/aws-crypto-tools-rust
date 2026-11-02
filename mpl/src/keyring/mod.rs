@@ -49,7 +49,7 @@
 //! use aws_crypto_mpl::Error;
 //! use aws_crypto_mpl::aws_sdk_kms::Client;
 //! use aws_crypto_mpl::aws_sdk_kms::primitives::Blob;
-//! use aws_crypto_mpl::error::{KmsKey, Resource, Service};
+//! use aws_crypto_mpl::error::{KmsKey, Service};
 //!
 //! async fn kms_decrypt(kms: &Client, key_arn: &str, ciphertext: &[u8]) -> Result<Option<Blob>, Error> {
 //!     let response = kms
@@ -58,9 +58,7 @@
 //!         .ciphertext_blob(Blob::new(ciphertext))
 //!         .send()
 //!         .await
-//!         .map_err(|e| {
-//!             Error::from_sdk(Service::Kms, "AWS KMS Decrypt", Some(Resource::KmsKey(KmsKey::new(key_arn))), e)
-//!         })?;
+//!         .map_err(|e| Error::from_sdk(Service::Kms, "AWS KMS Decrypt", e).with_resource(KmsKey::new(key_arn)))?;
 //!     Ok(response.plaintext)
 //! }
 //! ```

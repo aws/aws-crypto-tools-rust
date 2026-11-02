@@ -212,12 +212,8 @@ fn map_kms_error<E>(operation: &str, key_arn: &str, err: SdkError<E, HttpRespons
 where
     E: ProvideErrorMetadata + std::error::Error + Send + Sync + 'static,
 {
-    Error::from_sdk(
-        Service::Kms,
-        &format!("AWS KMS {operation}"),
-        Some(Resource::KmsKey(KmsKey::new(key_arn.to_owned()))),
-        err,
-    )
+    Error::from_sdk(Service::Kms, &format!("AWS KMS {operation}"), err)
+        .with_resource(KmsKey::new(key_arn.to_owned()))
 }
 
 /// Generate a fresh 32-byte data key wrapped under `key_arn`, bound to

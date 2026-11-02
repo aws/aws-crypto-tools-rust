@@ -139,8 +139,8 @@ impl DecryptionMaterialsBuilder {
     /// Set the algorithm suite.
     /// Required.
     #[must_use]
-    pub const fn algorithm_suite_id(mut self, algorithm_suite_id: AlgorithmSuiteId) -> Self {
-        self.algorithm_suite_id = Some(algorithm_suite_id);
+    pub fn algorithm_suite_id(mut self, algorithm_suite_id: impl Into<AlgorithmSuiteId>) -> Self {
+        self.algorithm_suite_id = Some(algorithm_suite_id.into());
         self
     }
 

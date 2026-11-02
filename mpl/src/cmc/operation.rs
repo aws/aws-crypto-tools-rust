@@ -4,8 +4,6 @@
 //! Inputs and outputs of the [`Cmc`](super::Cmc) operations.
 //! Names follow the Smithy model of the Dafny MPL.
 
-use std::sync::Arc;
-
 use super::CacheEntry;
 use crate::Error;
 use crate::builder::required;
@@ -205,7 +203,7 @@ impl GetCacheEntryInputBuilder {
 #[derive(Debug, Clone, Default)]
 #[non_exhaustive]
 pub struct GetCacheEntryOutput {
-    entry: Option<Arc<CacheEntry>>,
+    entry: Option<CacheEntry>,
 }
 
 impl GetCacheEntryOutput {
@@ -217,13 +215,13 @@ impl GetCacheEntryOutput {
 
     /// The cached entry, or `None` on a cache miss.
     #[must_use]
-    pub const fn entry(&self) -> Option<&Arc<CacheEntry>> {
+    pub const fn entry(&self) -> Option<&CacheEntry> {
         self.entry.as_ref()
     }
 
     /// Consume the output, yielding the cached entry, or `None` on a cache miss.
     #[must_use]
-    pub fn into_entry(self) -> Option<Arc<CacheEntry>> {
+    pub fn into_entry(self) -> Option<CacheEntry> {
         self.entry
     }
 }
@@ -231,27 +229,27 @@ impl GetCacheEntryOutput {
 /// Builder for [`GetCacheEntryOutput`], returned by [`GetCacheEntryOutput::builder`].
 #[derive(Debug, Clone, Default)]
 pub struct GetCacheEntryOutputBuilder {
-    entry: Option<Arc<CacheEntry>>,
+    entry: Option<CacheEntry>,
 }
 
 impl GetCacheEntryOutputBuilder {
     /// Set the cached entry. Leave unset for a cache miss.
     #[must_use]
-    pub fn entry(mut self, entry: impl Into<Arc<CacheEntry>>) -> Self {
+    pub fn entry(mut self, entry: impl Into<CacheEntry>) -> Self {
         self.entry = Some(entry.into());
         self
     }
 
     /// Set or clear the cached entry. `None` is a cache miss.
     #[must_use]
-    pub fn set_entry(mut self, entry: Option<Arc<CacheEntry>>) -> Self {
+    pub fn set_entry(mut self, entry: Option<CacheEntry>) -> Self {
         self.entry = entry;
         self
     }
 
     /// The entry, if set.
     #[must_use]
-    pub const fn get_entry(&self) -> &Option<Arc<CacheEntry>> {
+    pub const fn get_entry(&self) -> &Option<CacheEntry> {
         &self.entry
     }
 

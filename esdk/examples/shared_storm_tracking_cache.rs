@@ -59,7 +59,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Maximum number of entries being refreshed at the same time.
         .fan_out(20)
         // How long a refresh may run before another request may retry it.
-        .inflight_ttl(Duration::from_secs(10))
+        .in_flight_ttl(Duration::from_secs(10))
         // How long a waiting request sleeps before checking the cache again.
         .sleep(Duration::from_millis(20))
         .build()?;

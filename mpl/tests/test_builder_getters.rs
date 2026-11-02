@@ -4,7 +4,6 @@
 //! Each builder getter returns what its setter set, and `set_x(None)` clears it.
 
 use std::collections::BTreeMap;
-use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use aws_crypto_mpl::aws_sdk_dynamodb::Client as DynamoDbClient;
@@ -359,7 +358,7 @@ async fn every_builder_getter_tracks_its_setter() {
         entry,
         set_entry,
         get_entry,
-        Arc::new(entry())
+        entry()
     );
     check!(
         DeleteCacheEntryInput::builder(),
@@ -419,9 +418,9 @@ async fn every_builder_getter_tracks_its_setter() {
     );
     check!(
         StormTrackingCmc::builder(),
-        inflight_ttl,
-        set_inflight_ttl,
-        get_inflight_ttl,
+        in_flight_ttl,
+        set_in_flight_ttl,
+        get_in_flight_ttl,
         Duration::from_secs(1)
     );
     check!(
