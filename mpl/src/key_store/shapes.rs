@@ -948,7 +948,7 @@ impl GetBeaconKeyInputBuilder {
 }
 
 /// Output of [`KeyStore::get_beacon_key`](super::KeyStore::get_beacon_key).
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct GetBeaconKeyOutput {
     pub(crate) beacon_key_materials: BeaconKeyMaterials,
