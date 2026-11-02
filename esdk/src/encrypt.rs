@@ -25,8 +25,8 @@ use crate::suites::{algorithm_suite_id_from_bytes, get_ecdsa_alg, get_esdk_algor
 use aws_crypto_mpl::types::AlgorithmSuite;
 use aws_crypto_mpl::types::EncryptedDataKey;
 use aws_crypto_mpl::types::EncryptionMaterials;
+use aws_crypto_mpl::types::RequiredEncryptionContextKeys;
 use aws_mpl_primitives::{aes_encrypt, ecdsa_sign_digest};
-use std::collections::BTreeSet;
 
 /// AES-GCM IV length in bytes (used for body frames; header IV length varies by suite).
 const IV_LEN: usize = 12;
@@ -420,7 +420,7 @@ async fn step_get_encryption_materials(
 async fn step_construct_header(
     mat_result: &EncryptionMaterialsResult,
     encryption_context: &EncryptionContext,
-    required_encryption_context_keys: &BTreeSet<String>,
+    required_encryption_context_keys: &RequiredEncryptionContextKeys,
     encrypted_data_keys: &[EncryptedDataKey],
     frame_length: NonZeroU32,
     ciphertext: &mut dyn Sink,
@@ -583,7 +583,7 @@ fn build_header_for_encrypt(
     message_id: &MessageId,
     suite: &AlgorithmSuite,
     encryption_context: &EncryptionContext,
-    required_encryption_context_keys: &BTreeSet<String>,
+    required_encryption_context_keys: &RequiredEncryptionContextKeys,
     encrypted_data_keys: &[EncryptedDataKey],
     frame_length: u32,
     derived_data_keys: &key_derivation::ExpandedKeyMaterial,

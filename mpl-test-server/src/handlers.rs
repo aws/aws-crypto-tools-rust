@@ -3,7 +3,7 @@
 
 //! Operation handlers and multi-type object registry.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -24,7 +24,10 @@ use aws_crypto_mpl::types::{
     EncryptedDataKey, EncryptionContext, EncryptionMaterials,
     EsdkAlgorithmSuiteId as MplAlgorithmSuiteId, EsdkCommitmentPolicy,
 };
-use aws_crypto_mpl::types::{PlaintextDataKey, SigningKey, SymmetricSigningKey, VerificationKey};
+use aws_crypto_mpl::types::{
+    PlaintextDataKey, RequiredEncryptionContextKeys, SigningKey, SymmetricSigningKey,
+    VerificationKey,
+};
 use aws_crypto_mpl::{aws_sdk_dynamodb, aws_sdk_kms};
 
 use crate::error::ServerError;
@@ -463,8 +466,8 @@ fn edks_to_shapes(edks: &[EncryptedDataKey]) -> Vec<EncryptedDataKeyShape> {
         .collect()
 }
 
-fn required_keys_to_wire(keys: &BTreeSet<String>) -> Vec<String> {
-    keys.iter().cloned().collect()
+fn required_keys_to_wire(keys: &RequiredEncryptionContextKeys) -> Vec<String> {
+    keys.to_vec()
 }
 
 /// Materials a client sends must satisfy the MPL's own invariants; a rejection
