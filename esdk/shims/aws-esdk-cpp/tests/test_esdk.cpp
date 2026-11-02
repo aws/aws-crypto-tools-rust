@@ -434,7 +434,7 @@ void test_client_configuration_applies_to_every_operation() {
     //
     // Evidence config is applied: forbid_sdk alg suite is default for ForbidEncryptAllowDecrypt
     ESDK_CHECK(encrypted.algorithm_suite_id ==
-               Aws::Esdk::AlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf);
+               Aws::Esdk::AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384);
     // Evidence config is applied: forbid_sdk decrypts non-comitting suite
     ESDK_CHECK(forbid_sdk.decrypt(encrypted.ciphertext, keyring).plaintext == to_bytes("client config"));
     // Evidence config is applied: require_sdk rejects decrypting non-committing suite
