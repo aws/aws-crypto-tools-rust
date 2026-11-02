@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! Tests for spec/client-apis/encrypt.md#get-the-encryption-materials
-//! and spec/client-apis/key-derivation.md.
+//! and spec/framework/transitive-requirements.md.
 
 #[allow(clippy::duplicate_mod)]
 mod fixtures;
@@ -141,31 +141,30 @@ fn test_hkdf_derivation_process() {
     //= type=test
     //= reason=Derived key matches an independent OpenSSL HKDF-SHA256 computation over the same salt, ikm, and info
     //# - If the key derivation algorithm is [HKDF](../framework/algorithm-suites.md#hkdf),
-    //# the derivation process used MUST be the process described in [HKDF Encryption Key](../transitive-requirements.md#hkdf-encryption-key).
+    //# the derivation process used MUST be the process described in [HKDF Encryption Key](../framework/transitive-requirements.md#hkdf-encryption-key).
     //
-    //= spec/client-apis/key-derivation.md#hkdf-encryption-key
+    //= spec/framework/transitive-requirements.md#hkdf-encryption-key
     //= type=test
     //= reason=The expected vector was computed with HKDF-SHA-256; no other hash would produce these bytes, proving the hash is taken from the suite
-    //# - The hash function MUST be specified by the [algorithm suite key derivation settings](#algorithm-suites-encryption-key-derivation-settings).
+    //# - The hash function MUST be the hash function specified by the algorithm suite's encryption key derivation settings.
     //
-    //= spec/client-apis/key-derivation.md#hkdf-encryption-key
+    //= spec/framework/transitive-requirements.md#hkdf-encryption-key
     //= type=test
     //= reason=The expected vector was computed with all-zero salt of hash length, no other salt would produce these bytes
-    //# - If there is no salt length defined for the [algorithm suite encryption key derivation commitment setting](#algorithm-suites-encryption-key-derivation-settings),
-    //# the the salt MUST be a byte sequence of 0 as long as the hash length in bytes.
+    //# - If the algorithm suite's encryption key derivation settings specify a salt length of 0,
+    //# the salt MUST be all 0x00 bytes, with a length equal to the hash function's output length in bytes.
     //
-    //= spec/client-apis/key-derivation.md#hkdf-encryption-key
+    //= spec/framework/transitive-requirements.md#hkdf-encryption-key
     //= type=test
     //= reason=The expected vector was computed with info = 0x0178 || 0x01*16 (binary_id || message_id); no other info would produce these bytes
-    //# - If [key commitment](#key-commitment) for the [algorithm suite encryption key derivation setting](#algorithm-suites-encryption-key-derivation-settings) is False,
-    //# the the input info MUST be a concatenation of the [algorithm suite ID](#algorithm-suite-id)
-    //# followed by the [message ID](../data-format/message-header.md#message-id).
+    //# - If the algorithm suite is not key committing,
+    //# the info MUST be the algorithm suite ID followed by the message ID.
     assert_eq!(a1.data_key.as_slice(), &EXPECTED_HKDF_SHA256_DERIVED_KEY);
 
-    //= spec/client-apis/key-derivation.md#hkdf-encryption-key
+    //= spec/framework/transitive-requirements.md#hkdf-encryption-key
     //= type=test
-    //# - The length of the output keying material MUST equal the [encryption key length](#encryption-key-length)
-    //# specified by the [algorithm suite encryption settings](#algorithm-suites-encryption-settings).
+    //# - The length of the output keying material MUST equal the encryption key length
+    //# specified by the algorithm suite's encryption settings.
     assert_eq!(a1.data_key.len(), AES_256_KEY_LEN);
 
     // Supporting regression checks: derivation is deterministic, is bound to the
@@ -205,11 +204,11 @@ fn test_v2_hkdf_derivation_process() {
     let mut expected_encrypt_key = vec![0u8; AES_256_KEY_LEN];
     hkdf_expand(&prk, &info, &mut expected_encrypt_key).expect("hkdf_expand");
 
-    //= spec/client-apis/key-derivation.md#hkdf-encryption-key
+    //= spec/framework/transitive-requirements.md#hkdf-encryption-key
     //= type=test
     //= reason=Re-running HKDF-Extract+Expand with salt=message_id and info=binary_id||DERIVEKEY produces the same encryption key, proving the V2 path follows the spec
-    //# If an algorithm suite uses HKDF to derive the encryption key
-    //# the AWS Encryption SDK MUST use HKDF with the following specifics:
+    //# If an algorithm suite uses HKDF to derive the encryption key,
+    //# the AWS Encryption SDK MUST use HKDF as follows.
     assert_eq!(derived.data_key.as_slice(), expected_encrypt_key.as_slice());
 
     let other_message_id = [0x99u8; V2_MESSAGE_ID_LEN];
@@ -225,17 +224,18 @@ fn test_v2_hkdf_derivation_process() {
     let wrong_info = [&suite_id[..], b"WRONGLABEL"];
     let mut wrong_info_key = vec![0u8; AES_256_KEY_LEN];
     hkdf_expand(&prk, &wrong_info, &mut wrong_info_key).expect("hkdf_expand");
-    //= spec/client-apis/key-derivation.md#hkdf-encryption-key
+    //= spec/framework/transitive-requirements.md#hkdf-encryption-key
     //= type=test
     //= reason=The preceding assert_eq! pins info=binary_id||DERIVEKEY against a recomputation with the underlying HKDF primitive; this assert_ne! falsifies any other info label
-    //# - If [key commitment](#key-commitment) for the [algorithm suite encryption key derivation setting](#algorithm-suites-encryption-key-derivation-settings) is True,
-    //# then the input info MUST be a concatenation of the [algorithm suite ID](#algorithm-suite-id) followed by the string `DERIVEKEY` as UTF8 encoded bytes.
+    //# - If the algorithm suite is key committing,
+    //# the info MUST be the [algorithm suite ID](./algorithm-suites.md#algorithm-suite-id)
+    //# followed by the string `DERIVEKEY` as UTF-8 encoded bytes.
     assert_ne!(derived.data_key.as_slice(), wrong_info_key.as_slice());
 
-    //= spec/client-apis/key-derivation.md#hkdf-encryption-key
+    //= spec/framework/transitive-requirements.md#hkdf-encryption-key
     //= type=test
-    //# - The length of the output keying material MUST equal the [encryption key length](#encryption-key-length)
-    //# specified by the [algorithm suite encryption settings](#algorithm-suites-encryption-settings).
+    //# - The length of the output keying material MUST equal the encryption key length
+    //# specified by the algorithm suite's encryption settings.
     assert_eq!(derived.data_key.len(), AES_256_KEY_LEN);
 }
 
@@ -260,25 +260,25 @@ fn test_v2_hkdf_commit_key_derivation_process() {
     let mut expected_commit_key = vec![0u8; AES_256_KEY_LEN];
     hkdf_expand(&prk, &[COMMIT_LABEL], &mut expected_commit_key).expect("hkdf_expand");
 
-    //= spec/client-apis/key-derivation.md#hkdf-commit-key
+    //= spec/framework/transitive-requirements.md#hkdf-commit-key
     //= type=test
     //= reason=Re-running HKDF-Extract+Expand with salt=message_id and info=COMMITKEY produces the same commit key, proving the commit derivation follows the spec
-    //# If an algorithm suite uses HKDF to derive the commitment key
-    //# the AWS Encryption SDK MUST use HKDF with the following specifics:
+    //# If an algorithm suite uses HKDF to derive the commit key,
+    //# the AWS Encryption SDK MUST use HKDF as follows.
     assert_eq!(commit_key.as_slice(), expected_commit_key.as_slice());
 
     let mut wrong_info_commit_key = vec![0u8; AES_256_KEY_LEN];
     hkdf_expand(&prk, &[b"WRONGLABEL"], &mut wrong_info_commit_key).expect("hkdf_expand");
-    //= spec/client-apis/key-derivation.md#hkdf-commit-key
+    //= spec/framework/transitive-requirements.md#hkdf-commit-key
     //= type=test
     //= reason=The preceding assert_eq! pins info=COMMITKEY against a recomputation with the underlying HKDF primitive; this assert_ne! falsifies any other commit-key info label
-    //# - The input info MUST the string `COMMITKEY` as UTF8 encoded bytes by the algorithm suite commitment settings.
+    //# - The info MUST be the string `COMMITKEY` as UTF-8 encoded bytes.
     assert_ne!(commit_key.as_slice(), wrong_info_commit_key.as_slice());
 
-    //= spec/client-apis/key-derivation.md#hkdf-commit-key
+    //= spec/framework/transitive-requirements.md#hkdf-commit-key
     //= type=test
-    //# - The length of the output keying material MUST equal the [algorithm suite data length](#algorithm-suite-data-length)
-    //# specified by the [supported algorithm suites](#supported-algorithm-suites).
+    //# - The length of the output keying material MUST equal the key derivation output length
+    //# specified by the algorithm suite's commit key derivation settings.
     assert_eq!(commit_key.len(), AES_256_KEY_LEN);
 }
 
@@ -296,15 +296,15 @@ fn test_kdf_input_length_validation() {
     let too_short_pdk = vec![0u8; AES_256_KEY_LEN - 1];
     let result = derive_key_v2(&message_id, &too_short_pdk, &alg_suite);
 
-    //= spec/client-apis/key-derivation.md#hkdf-encryption-key
+    //= spec/framework/transitive-requirements.md#hkdf-encryption-key
     //= type=test
-    //# - The length of the input keying material MUST equal the [key derivation input length](#key-derivation-input-length)
-    //# specified by the [algorithm suite encryption key derivation settings](#algorithm-suites-encryption-key-derivation-settings).
+    //# - The length of the input keying material MUST equal the key derivation input length
+    //# specified by the algorithm suite's encryption key derivation settings.
     //
-    //= spec/client-apis/key-derivation.md#hkdf-commit-key
+    //= spec/framework/transitive-requirements.md#hkdf-commit-key
     //= type=test
-    //# - The length of the input keying material MUST equal the [key derivation input length](#key-derivation-input-length)
-    //# specified by the algorithm suite commit key derivation setting.
+    //# - The length of the input keying material MUST equal the key derivation input length
+    //# specified by the algorithm suite's commit key derivation settings.
     let err = result.expect_err("wrong-length PDK must be rejected");
     assert!(
         err.is_invalid_materials(),
@@ -346,16 +346,17 @@ fn test_v2_message_id_length_validation() {
     let short_message_id = [0x42u8; V2_MESSAGE_ID_LEN - 1];
     let result = derive_key_v2(&short_message_id, &pdk, &alg_suite);
 
-    //= spec/client-apis/key-derivation.md#hkdf-encryption-key
+    //= spec/framework/transitive-requirements.md#hkdf-encryption-key
     //= type=test
     //= reason=A message ID that is not the suite salt length is rejected, enforcing the salt-length requirement
-    //# - If salt length is defined for the [algorithm suite encryption key derivation commitment setting](#algorithm-suites-encryption-key-derivation-settings),
-    //# the salt MUST be the [message ID](../data-format/message-header.md#message-id) with a length equal to the salt length.
+    //# - If the algorithm suite's encryption key derivation settings specify a nonzero salt length,
+    //# the salt MUST be the [message ID](../data-format/message-header.md#message-id), with a length equal to that salt length.
     //
-    //= spec/client-apis/key-derivation.md#hkdf-commit-key
+    //= spec/framework/transitive-requirements.md#hkdf-commit-key
     //= type=test
     //= reason=A message ID that is not 256 bits is rejected, enforcing the commit-key salt length
-    //# - The salt MUST be the [message ID](../data-format/message-header.md#message-id) with a length of 256 bits.
+    //# - The salt MUST be the [message ID](../data-format/message-header.md#message-id),
+    //# with a length equal to the salt length specified by the algorithm suite's commit key derivation settings.
     let err = result.expect_err("wrong-length V2 message ID must be rejected");
     assert!(
         err.is_internal(),
@@ -377,19 +378,20 @@ fn test_message_id_binds_derived_keys_v2() {
     let a = derive_keys(&message_id_a, &pdk, &alg_suite).unwrap();
     let b = derive_keys(&message_id_b, &pdk, &alg_suite).unwrap();
 
-    //= spec/client-apis/key-derivation.md#hkdf-encryption-key
+    //= spec/framework/transitive-requirements.md#hkdf-encryption-key
     //= type=test
     //= reason=Swapping only the message ID changes the encryption key — proves the message ID is an input to derivation (its salt role is shown by the recomputation test above)
-    //# - If salt length is defined for the [algorithm suite encryption key derivation commitment setting](#algorithm-suites-encryption-key-derivation-settings),
-    //# the salt MUST be the [message ID](../data-format/message-header.md#message-id) with a length equal to the salt length.
+    //# - If the algorithm suite's encryption key derivation settings specify a nonzero salt length,
+    //# the salt MUST be the [message ID](../data-format/message-header.md#message-id), with a length equal to that salt length.
     assert_ne!(a.data_key.as_slice(), b.data_key.as_slice());
 
     let a_commit = a.commitment_key.as_ref().unwrap();
     let b_commit = b.commitment_key.as_ref().unwrap();
-    //= spec/client-apis/key-derivation.md#hkdf-commit-key
+    //= spec/framework/transitive-requirements.md#hkdf-commit-key
     //= type=test
     //= reason=Swapping only the 32-byte message ID changes the commit key — proves the message ID is an input to commit derivation
-    //# - The salt MUST be the [message ID](../data-format/message-header.md#message-id) with a length of 256 bits.
+    //# - The salt MUST be the [message ID](../data-format/message-header.md#message-id),
+    //# with a length equal to the salt length specified by the algorithm suite's commit key derivation settings.
     assert_ne!(a_commit.as_slice(), b_commit.as_slice());
 }
 

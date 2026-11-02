@@ -251,7 +251,7 @@ fn alg_id_target_to_core_rejects_unknown() {
 }
 
 // Catches if ESDK Rust adds a suite but C++ doesn't.
-// The new id falls through to the error arm of `alg_id_core_to_target`.
+// The new id falls through to the error arm of `alg_id_bytes_to_target`.
 #[test]
 fn alg_id_core_to_target_maps_every_core_variant() {
     for &core in super::EsdkAlgorithmSuiteId::ALL {
@@ -263,6 +263,19 @@ fn alg_id_core_to_target_maps_every_core_variant() {
             .unwrap_or_else(|e| panic!("{core:?} has no C++ mapping: {e}"));
         assert_eq!(target.repr, u16::from_be_bytes(core.id_bytes()));
     }
+}
+
+#[test]
+fn alg_id_bytes_to_target_rejects_an_id_the_shim_does_not_define() {
+    //= spec/shim/esdk-shim.md#algorithm-suite-identifier
+    //= type=test
+    //# - The shim MUST return an error when the core ESDK produces an algorithm suite
+    //# the shim does not define.
+    let err = expect_err(alg_id_bytes_to_target([0xFF, 0xFF]));
+    assert!(
+        err.starts_with(&err_prefix(ffi::ShimErrorKind::Internal, "")),
+        "unexpected error: {err}"
+    );
 }
 
 #[test]
@@ -699,6 +712,24 @@ fn shim_err_is_not_retryable() {
 // - unset/unknown enum reprs (the facade's factories only produce valid values)
 
 #[test]
+fn require_handle_rejects_null_and_borrows_non_null() {
+    //= spec/shim/shim.md#handles-and-lifetimes
+    //= type=test
+    //# - Before dereferencing a target-supplied resource handle, the shim MUST check it
+    //# and MUST return an error when a required handle is absent.
+    let err = expect_err(require_handle(std::ptr::null::<u32>(), "handle", "op"));
+    assert!(
+        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, "")),
+        "unexpected error: {err}"
+    );
+    assert!(err.contains("handle is null"), "unexpected error: {err}");
+
+    let value = 7u32;
+    let borrowed = require_handle(&value as *const u32, "handle", "op").expect("non-null handle");
+    assert!(std::ptr::eq(borrowed, &value));
+}
+
+#[test]
 fn encrypt_rejects_null_keyring() {
     //= spec/shim/esdk-shim.md#materials-source
     //= type=test
@@ -814,23 +845,59 @@ fn create_hierarchical_keyring_passes_ttl_nanos_to_the_core() {
 }
 
 #[test]
+fn create_hierarchical_keyring_defers_to_the_default_cache() {
+    let kms = create_kms_client(&unset_client_config()).expect("kms client");
+    let ddb = create_ddb_client(&unset_client_config()).expect("ddb client");
+    let key_store = create_keystore(&keystore_config_with_clients(&kms, &ddb)).expect("key store");
+
+    // Indirect assertion that not supplying a cache means the HKeyring gets a default cache.
+    // No cache is supplied when creating this HKeyring, so it should get the ESDK Rust default cache.
+    // The default cache is a storm tracking cache with a 10s grace period.
+    // The HKeyring's TTL == 5s is less than 10s. This is an invalid configuration for the storm tracking cache and should result in an error.
+    // If an error about storm tracking config was raised,
+    // then the default cache is probably a storm tracking cache.
+    // So not supplying a cache created the default cache.
+    let err = expect_err(create_hierarchical_keyring(
+        &hierarchical_keyring_input_with_ttl(&key_store, ffi::Duration { secs: 5, nanos: 0 }),
+    ));
+    assert!(
+        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, "")),
+        "unexpected error: {err}"
+    );
+    //= spec/shim/esdk-shim.md#create-hierarchical-keyring
+    //= type=test
+    //= reason=ESDK Rust rejects the TTL against a storm-tracking cache with a 10 s grace period, which is its default cache
+    //# - When no cache is supplied, creating a hierarchical keyring MUST defer to the
+    //# core ESDK's default cache.
+    assert!(
+        err.contains("storm-tracking grace period (10s)"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn create_hierarchical_keyring_uses_the_supplied_cache() {
     let kms = create_kms_client(&unset_client_config()).expect("kms client");
     let ddb = create_ddb_client(&unset_client_config()).expect("ddb client");
     let key_store = create_keystore(&keystore_config_with_clients(&kms, &ddb)).expect("key store");
 
-    // A 5 s TTL fails with the default cache (10 s grace period)
-    // and succeeds with a local cache (no grace period).
+    // Inverse of create_hierarchical_keyring_defers_to_the_default_cache's indirect testing logic.
+    // Indirect assertion that supplying a cache means the HKeyring uses that cache instead of the default.
+    // A local cache is supplied when creating this HKeyring. A local cache has no grace period.
+    // The HKeyring's TTL == 5s would be rejected by the default storm tracking cache (10s grace period),
+    // but is a valid configuration for the local cache.
+    // If no error was raised,
+    // then the HKeyring is probably not using the default cache.
+    // So supplying a cache made the HKeyring use the supplied cache.
     let mut input =
         hierarchical_keyring_input_with_ttl(&key_store, ffi::Duration { secs: 5, nanos: 0 });
-    let err = expect_err(create_hierarchical_keyring(&input));
-    assert!(
-        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, "")),
-        "unexpected error: {err}"
-    );
-
     let cache = create_local_cmc(10).expect("local cache should build");
     input.cache = &*cache as *const CryptographicMaterialsCache;
+    //= spec/shim/esdk-shim.md#create-hierarchical-keyring
+    //= type=test
+    //= reason=The 5 s TTL is accepted only if the keyring uses the supplied cache
+    //# - When a cache is supplied, creating a hierarchical keyring MUST reference that
+    //# exact cache, so several keyrings given the same cache share it.
     create_hierarchical_keyring(&input).expect("a local cache has no grace period");
 }
 
@@ -866,6 +933,10 @@ fn storm_tracking_options() -> ffi::StormTrackingCmcOptions {
 
 #[test]
 fn create_storm_tracking_cmc_passes_each_option_to_the_core() {
+    //= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
+    //= type=test
+    //# - Creating a cryptographic materials cache MUST provide the target-supplied
+    //# cache type, with its values, to the core ESDK.
     let cache =
         apply_storm_tracking_options(StormTrackingCmc::builder(), &storm_tracking_options())
             .expect("options convert")
@@ -971,8 +1042,8 @@ fn create_keystore_forwards_id_and_grant_tokens() {
 fn create_raw_aes_keyring_rejects_unsupported_wrapping_alg() {
     //= spec/shim/esdk-shim.md#aes-wrapping-algorithm
     //= type=test
-    //# - The shim MUST return an error when the target wrapping algorithm is not a
-    //# supported value.
+    //# - The shim MUST return an error when the target wrapping algorithm configuration is not
+    //# supported.
     let unset = expect_err(create_raw_aes_keyring(&ffi::RawAesKeyringInput {
         key_namespace: "test-ns".to_string(),
         key_name: "test-key".to_string(),
@@ -994,6 +1065,155 @@ fn create_raw_aes_keyring_rejects_unsupported_wrapping_alg() {
         unknown.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, "")),
         "unexpected error: {unknown}"
     );
+}
+
+// Raw AES pass-through: encrypt with the shim's keyring, decrypt with an ESDK Rust keyring.
+
+fn shim_raw_aes(namespace: &str, name: &str, key: &[u8], alg: ffi::AesWrappingAlg) -> Box<Keyring> {
+    create_raw_aes_keyring(&ffi::RawAesKeyringInput {
+        key_namespace: namespace.to_string(),
+        key_name: name.to_string(),
+        wrapping_key: key,
+        wrapping_alg: alg,
+    })
+    .expect("shim keyring")
+}
+
+fn rust_raw_aes(
+    namespace: &str,
+    name: &str,
+    key: &[u8],
+    alg: aws_crypto_mpl::types::AesWrappingAlg,
+) -> Keyring {
+    Keyring {
+        inner: SharedKeyring::new(
+            RawAesKeyring::builder()
+                .key_namespace(namespace)
+                .key_name(name)
+                .wrapping_key(key.to_vec())
+                .wrapping_alg(alg)
+                .build()
+                .expect("ESDK Rust keyring"),
+        ),
+    }
+}
+
+fn encrypt_with(keyring: &Keyring) -> Vec<u8> {
+    let mut input = unset_encrypt_input();
+    input.plaintext = b"raw aes inputs";
+    input.keyring = keyring as *const Keyring;
+    encrypt(&input).expect("encrypt").ciphertext
+}
+
+fn decrypt_with(ciphertext: &[u8], keyring: &Keyring) -> Result<Vec<u8>, String> {
+    let mut input = unset_decrypt_input();
+    input.ciphertext = ciphertext;
+    input.keyring = keyring as *const Keyring;
+    decrypt(&input).map(|out| out.plaintext)
+}
+
+const AES_256: ffi::AesWrappingAlg = ffi::AesWrappingAlg::AlgAes256GcmIv12Tag16;
+const RUST_AES_256: aws_crypto_mpl::types::AesWrappingAlg =
+    aws_crypto_mpl::types::AesWrappingAlg::AlgAes256GcmIv12Tag16;
+
+#[test]
+fn create_raw_aes_keyring_passes_namespace_and_name_to_the_core() {
+    let key = [0x2A; 32];
+    let ciphertext = encrypt_with(&shim_raw_aes("test-ns", "test-key", &key, AES_256));
+
+    //= spec/shim/esdk-shim.md#create-raw-aes-keyring
+    //= type=test
+    //= reason=Only an ESDK Rust keyring with the same namespace and name decrypts the shim keyring's message
+    //# - Creating a raw AES keyring MUST provide the target-supplied key namespace and
+    //# key name to the core ESDK.
+    assert!(
+        decrypt_with(
+            &ciphertext,
+            &rust_raw_aes("test-ns", "test-key", &key, RUST_AES_256)
+        )
+        .is_ok()
+    );
+    assert!(
+        decrypt_with(
+            &ciphertext,
+            &rust_raw_aes("other-ns", "test-key", &key, RUST_AES_256)
+        )
+        .is_err()
+    );
+    assert!(
+        decrypt_with(
+            &ciphertext,
+            &rust_raw_aes("test-ns", "other-key", &key, RUST_AES_256)
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn create_raw_aes_keyring_passes_the_wrapping_key_unmodified() {
+    let key: Vec<u8> = (0..32).collect();
+    let ciphertext = encrypt_with(&shim_raw_aes("test-ns", "test-key", &key, AES_256));
+    let mut other_key = key.clone();
+    other_key[31] ^= 1;
+
+    //= spec/shim/esdk-shim.md#create-raw-aes-keyring
+    //= type=test
+    //= reason=Only an ESDK Rust keyring with the identical key bytes decrypts the shim keyring's message
+    //# - Creating a raw AES keyring MUST pass the target-supplied wrapping key to the
+    //# core ESDK unmodified.
+    assert!(
+        decrypt_with(
+            &ciphertext,
+            &rust_raw_aes("test-ns", "test-key", &key, RUST_AES_256)
+        )
+        .is_ok()
+    );
+    assert!(
+        decrypt_with(
+            &ciphertext,
+            &rust_raw_aes("test-ns", "test-key", &other_key, RUST_AES_256)
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn create_raw_aes_keyring_converts_the_wrapping_algorithm() {
+    use aws_crypto_mpl::types::AesWrappingAlg as Core;
+    let cases = [
+        (
+            ffi::AesWrappingAlg::AlgAes128GcmIv12Tag16,
+            Core::AlgAes128GcmIv12Tag16,
+            16,
+        ),
+        (
+            ffi::AesWrappingAlg::AlgAes192GcmIv12Tag16,
+            Core::AlgAes192GcmIv12Tag16,
+            24,
+        ),
+        (
+            ffi::AesWrappingAlg::AlgAes256GcmIv12Tag16,
+            Core::AlgAes256GcmIv12Tag16,
+            32,
+        ),
+    ];
+    for (target_alg, core_alg, key_len) in cases {
+        let key = vec![0x2A; key_len];
+        let ciphertext = encrypt_with(&shim_raw_aes("test-ns", "test-key", &key, target_alg));
+        //= spec/shim/esdk-shim.md#create-raw-aes-keyring
+        //= type=test
+        //= reason=An ESDK Rust keyring with the matching ESDK Rust algorithm decrypts the shim keyring's message
+        //# - Creating a raw AES keyring MUST provide the target-supplied wrapping algorithm
+        //# to the core ESDK, converted as defined in
+        //# [AES wrapping algorithm](#aes-wrapping-algorithm).
+        assert!(
+            decrypt_with(
+                &ciphertext,
+                &rust_raw_aes("test-ns", "test-key", &key, core_alg)
+            )
+            .is_ok()
+        );
+    }
 }
 
 // Options forwarding
