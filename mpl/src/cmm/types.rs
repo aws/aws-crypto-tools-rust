@@ -3,7 +3,7 @@
 
 //! Inputs and outputs of the [`Cmm`](super::Cmm) operations.
 
-use std::collections::BTreeSet;
+use crate::structures::RequiredEncryptionContextKeys;
 
 use crate::Error;
 use crate::builder::required;
@@ -19,7 +19,7 @@ pub struct GetEncryptionMaterialsInput {
     pub(crate) encryption_context: EncryptionContext,
     pub(crate) commitment_policy: CommitmentPolicy,
     pub(crate) algorithm_suite_id: Option<AlgorithmSuiteId>,
-    pub(crate) required_encryption_context_keys: Option<BTreeSet<String>>,
+    pub(crate) required_encryption_context_keys: Option<RequiredEncryptionContextKeys>,
     pub(crate) max_plaintext_length: Option<u64>,
 }
 
@@ -53,8 +53,8 @@ impl GetEncryptionMaterialsInput {
     /// The encryption context keys that must be supplied again at decrypt time.
     /// Empty when unset.
     #[must_use]
-    pub fn required_encryption_context_keys(&self) -> &BTreeSet<String> {
-        static EMPTY: BTreeSet<String> = BTreeSet::new();
+    pub fn required_encryption_context_keys(&self) -> &RequiredEncryptionContextKeys {
+        static EMPTY: RequiredEncryptionContextKeys = RequiredEncryptionContextKeys::new();
         self.required_encryption_context_keys
             .as_ref()
             .unwrap_or(&EMPTY)
@@ -74,7 +74,7 @@ pub struct GetEncryptionMaterialsInputBuilder {
     encryption_context: Option<EncryptionContext>,
     commitment_policy: Option<CommitmentPolicy>,
     algorithm_suite_id: Option<AlgorithmSuiteId>,
-    required_encryption_context_keys: Option<BTreeSet<String>>,
+    required_encryption_context_keys: Option<RequiredEncryptionContextKeys>,
     max_plaintext_length: Option<u64>,
 }
 
@@ -165,7 +165,7 @@ impl GetEncryptionMaterialsInputBuilder {
     #[must_use]
     pub fn set_required_encryption_context_keys(
         mut self,
-        required_encryption_context_keys: Option<BTreeSet<String>>,
+        required_encryption_context_keys: Option<RequiredEncryptionContextKeys>,
     ) -> Self {
         self.required_encryption_context_keys = required_encryption_context_keys;
         self
@@ -173,7 +173,7 @@ impl GetEncryptionMaterialsInputBuilder {
 
     /// The required encryption context keys, if set.
     #[must_use]
-    pub fn get_required_encryption_context_keys(&self) -> &Option<BTreeSet<String>> {
+    pub fn get_required_encryption_context_keys(&self) -> &Option<RequiredEncryptionContextKeys> {
         &self.required_encryption_context_keys
     }
 

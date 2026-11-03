@@ -3,7 +3,7 @@
 
 //! Fluent builders for the [`SharedCmm`] operations.
 
-use std::collections::BTreeSet;
+use crate::structures::RequiredEncryptionContextKeys;
 
 use super::{
     Cmm, DecryptMaterialsInput, DecryptMaterialsInputBuilder, DecryptMaterialsOutput,
@@ -120,7 +120,7 @@ impl GetEncryptionMaterialsFluentBuilder {
     /// To add one entry, use [`Self::required_encryption_context_keys`].
     pub fn set_required_encryption_context_keys(
         mut self,
-        required_encryption_context_keys: Option<BTreeSet<String>>,
+        required_encryption_context_keys: Option<RequiredEncryptionContextKeys>,
     ) -> Self {
         self.inner = self
             .inner
@@ -130,7 +130,7 @@ impl GetEncryptionMaterialsFluentBuilder {
 
     /// The required encryption context keys, if set.
     #[must_use]
-    pub fn get_required_encryption_context_keys(&self) -> &Option<BTreeSet<String>> {
+    pub fn get_required_encryption_context_keys(&self) -> &Option<RequiredEncryptionContextKeys> {
         self.inner.get_required_encryption_context_keys()
     }
 

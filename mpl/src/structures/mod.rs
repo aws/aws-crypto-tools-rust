@@ -12,6 +12,7 @@ pub mod decryption_materials;
 pub mod encrypted_data_key;
 pub mod encryption_context;
 pub mod encryption_materials;
+pub mod required_encryption_context_keys;
 
 pub use aes_wrapping_alg::AesWrappingAlg;
 pub use algorithm_suite::{
@@ -26,3 +27,4 @@ pub use decryption_materials::{DecryptionMaterials, DecryptionMaterialsBuilder};
 pub use encrypted_data_key::{EncryptedDataKey, EncryptedDataKeyBuilder};
 pub use encryption_context::EncryptionContext;
 pub use encryption_materials::{EncryptionMaterials, EncryptionMaterialsBuilder};
+pub use required_encryption_context_keys::RequiredEncryptionContextKeys;
