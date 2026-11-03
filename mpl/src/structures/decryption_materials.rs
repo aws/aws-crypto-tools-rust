@@ -6,7 +6,7 @@
 use crate::Error;
 use crate::builder::required;
 use crate::error::Kind;
-use std::collections::BTreeSet;
+use crate::structures::RequiredEncryptionContextKeys;
 
 use super::algorithm_suite::{
     AlgorithmSuite, AlgorithmSuiteId, PlaintextDataKey, SymmetricSigningKey, VerificationKey,
@@ -19,7 +19,7 @@ use super::encryption_context::EncryptionContext;
 pub struct DecryptionMaterials {
     algorithm_suite_id: AlgorithmSuiteId,
     encryption_context: EncryptionContext,
-    required_encryption_context_keys: BTreeSet<String>,
+    required_encryption_context_keys: RequiredEncryptionContextKeys,
     plaintext_data_key: Option<PlaintextDataKey>,
     verification_key: Option<VerificationKey>,
     symmetric_signing_key: Option<SymmetricSigningKey>,
@@ -122,7 +122,7 @@ impl DecryptionMaterials {
 
     /// The encryption context keys the caller had to supply again.
     #[must_use]
-    pub const fn required_encryption_context_keys(&self) -> &BTreeSet<String> {
+    pub const fn required_encryption_context_keys(&self) -> &RequiredEncryptionContextKeys {
         &self.required_encryption_context_keys
     }
 
@@ -173,7 +173,7 @@ impl DecryptionMaterials {
 pub struct DecryptionMaterialsBuilder {
     algorithm_suite_id: Option<AlgorithmSuiteId>,
     encryption_context: Option<EncryptionContext>,
-    required_encryption_context_keys: Option<BTreeSet<String>>,
+    required_encryption_context_keys: Option<RequiredEncryptionContextKeys>,
     plaintext_data_key: Option<PlaintextDataKey>,
     verification_key: Option<VerificationKey>,
     symmetric_signing_key: Option<SymmetricSigningKey>,
@@ -239,7 +239,7 @@ impl DecryptionMaterialsBuilder {
     #[must_use]
     pub fn required_encryption_context_keys(mut self, input: impl Into<String>) -> Self {
         self.required_encryption_context_keys
-            .get_or_insert_with(BTreeSet::new)
+            .get_or_insert_with(RequiredEncryptionContextKeys::new)
             .insert(input.into());
         self
     }
@@ -249,7 +249,7 @@ impl DecryptionMaterialsBuilder {
     #[must_use]
     pub fn set_required_encryption_context_keys(
         mut self,
-        required_encryption_context_keys: Option<BTreeSet<String>>,
+        required_encryption_context_keys: Option<RequiredEncryptionContextKeys>,
     ) -> Self {
         self.required_encryption_context_keys = required_encryption_context_keys;
         self
@@ -258,7 +258,9 @@ impl DecryptionMaterialsBuilder {
     /// The required encryption context keys set so far.
     #[must_use]
     #[allow(clippy::ref_option)] // AWS SDK for Rust getter shape
-    pub const fn get_required_encryption_context_keys(&self) -> &Option<BTreeSet<String>> {
+    pub const fn get_required_encryption_context_keys(
+        &self,
+    ) -> &Option<RequiredEncryptionContextKeys> {
         &self.required_encryption_context_keys
     }
 

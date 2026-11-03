@@ -13,6 +13,7 @@ pub mod encrypted_data_key;
 pub mod encryption_context;
 pub mod encryption_materials;
 mod padding_scheme;
+pub mod required_encryption_context_keys;
 
 pub use aes_wrapping_alg::AesWrappingAlg;
 pub use algorithm_suite::{
@@ -29,3 +30,4 @@ pub use encrypted_data_key::{EncryptedDataKey, EncryptedDataKeyBuilder};
 pub use encryption_context::EncryptionContext;
 pub use encryption_materials::{EncryptionMaterials, EncryptionMaterialsBuilder};
 pub use padding_scheme::PaddingScheme;
+pub use required_encryption_context_keys::RequiredEncryptionContextKeys;

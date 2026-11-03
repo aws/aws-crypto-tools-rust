@@ -760,7 +760,7 @@ async fn get_encryption_materials_is_called_once_with_the_spec_inputs() {
     assert_eq!(
         (
             input.encryption_context(),
-            input.required_encryption_context_keys()
+            input.required_encryption_context_keys().as_set()
         ),
         (&context(&[("some", "value")]), &BTreeSet::new())
     );
@@ -835,7 +835,7 @@ async fn sign_and_include_wraps_the_cmm_in_a_required_context_cmm() {
     //# Then, this operation MUST create a [Required Encryption Context CMM](https://github.com/awslabs/private-aws-encryption-sdk-specification-staging/blob/dafny-verified/framework/required-encryption-context-cmm.md)
     //# with the following inputs:
     assert_eq!(
-        input.required_encryption_context_keys(),
+        input.required_encryption_context_keys().as_set(),
         &BTreeSet::from([
             "aws-crypto-attr.pk.x".to_owned(),
             "aws-crypto-legend".to_owned(),

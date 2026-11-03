@@ -223,7 +223,7 @@ async fn encrypt_wraps_the_cmm_in_a_required_context_cmm() {
     //= type=test
     //= reason=The configured CMM sees these keys only when reached through the required-context CMM
     //# - The CMM MUST be the CMM created above.
-    assert_eq!(input.required_encryption_context_keys(), &expected);
+    assert_eq!(input.required_encryption_context_keys().as_set(), &expected);
 }
 
 #[tokio::test]

@@ -10,8 +10,8 @@ pub use crate::structures::{
     DbeCommitmentPolicy, DecryptionMaterials, EdkWrapping, EncryptedDataKey, EncryptionAlgorithm,
     EncryptionAlgorithmMode, EncryptionContext, EncryptionMaterials, EsdkAlgorithmSuiteId,
     EsdkCommitmentPolicy, Format, IntermediateKeyWrapping, KeyDerivationAlgorithm, PaddingScheme,
-    PlaintextDataKey, SigningKey, SymmetricSignatureAlgorithm, SymmetricSigningKey,
-    VerificationKey,
+    PlaintextDataKey, RequiredEncryptionContextKeys, SigningKey, SymmetricSignatureAlgorithm,
+    SymmetricSigningKey, VerificationKey,
 };
 
 pub mod builders {
