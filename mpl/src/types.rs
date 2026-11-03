@@ -6,11 +6,12 @@
 pub use crate::cmc::entry::{BytesUsage, CacheEntry, CachedMaterials, MessageUsage, UsageMetadata};
 pub use crate::structures::{
     AesWrappingAlg, AlgorithmSuite, AlgorithmSuiteId, AsymmetricSignatureAlgorithm,
-    BeaconKeyMaterials, BranchKeyMaterials, CommitmentPolicy, DecryptionMaterials,
-    EncryptedDataKey, EncryptionAlgorithm, EncryptionAlgorithmMode, EncryptionContext,
-    EncryptionMaterials, EsdkAlgorithmSuiteId, EsdkCommitmentPolicy, Format,
-    KeyDerivationAlgorithm, PlaintextDataKey, RequiredEncryptionContextKeys, SigningKey,
-    SymmetricSignatureAlgorithm, SymmetricSigningKey, VerificationKey,
+    BeaconKeyMaterials, BranchKeyMaterials, CommitmentPolicy, DbeAlgorithmSuiteId,
+    DbeCommitmentPolicy, DecryptionMaterials, EdkWrapping, EncryptedDataKey, EncryptionAlgorithm,
+    EncryptionAlgorithmMode, EncryptionContext, EncryptionMaterials, EsdkAlgorithmSuiteId,
+    EsdkCommitmentPolicy, Format, IntermediateKeyWrapping, KeyDerivationAlgorithm, PaddingScheme,
+    PlaintextDataKey, RequiredEncryptionContextKeys, SigningKey, SymmetricSignatureAlgorithm,
+    SymmetricSigningKey, VerificationKey,
 };
 
 pub mod builders {

@@ -12,20 +12,22 @@ pub mod decryption_materials;
 pub mod encrypted_data_key;
 pub mod encryption_context;
 pub mod encryption_materials;
+mod padding_scheme;
 pub mod required_encryption_context_keys;
 
 pub use aes_wrapping_alg::AesWrappingAlg;
 pub use algorithm_suite::{
-    AlgorithmSuite, AlgorithmSuiteId, AsymmetricSignatureAlgorithm, EncryptionAlgorithm,
-    EncryptionAlgorithmMode, EsdkAlgorithmSuiteId, Format, KeyDerivationAlgorithm,
-    PlaintextDataKey, SigningKey, SymmetricSignatureAlgorithm, SymmetricSigningKey,
-    VerificationKey,
+    AlgorithmSuite, AlgorithmSuiteId, AsymmetricSignatureAlgorithm, DbeAlgorithmSuiteId,
+    EdkWrapping, EncryptionAlgorithm, EncryptionAlgorithmMode, EsdkAlgorithmSuiteId, Format,
+    IntermediateKeyWrapping, KeyDerivationAlgorithm, PlaintextDataKey, SigningKey,
+    SymmetricSignatureAlgorithm, SymmetricSigningKey, VerificationKey,
 };
 pub use beacon_key_materials::{BeaconKeyMaterials, BeaconKeyMaterialsBuilder};
 pub use branch_key_materials::{BranchKeyMaterials, BranchKeyMaterialsBuilder};
-pub use commitment_policy::{CommitmentPolicy, EsdkCommitmentPolicy};
+pub use commitment_policy::{CommitmentPolicy, DbeCommitmentPolicy, EsdkCommitmentPolicy};
 pub use decryption_materials::{DecryptionMaterials, DecryptionMaterialsBuilder};
 pub use encrypted_data_key::{EncryptedDataKey, EncryptedDataKeyBuilder};
 pub use encryption_context::EncryptionContext;
 pub use encryption_materials::{EncryptionMaterials, EncryptionMaterialsBuilder};
+pub use padding_scheme::PaddingScheme;
 pub use required_encryption_context_keys::RequiredEncryptionContextKeys;

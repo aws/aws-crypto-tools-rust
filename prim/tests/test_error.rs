@@ -12,8 +12,9 @@ use aws_mpl_primitives::error::{
 use aws_mpl_primitives::{DigestAlg, Error, hkdf};
 
 fn make_error() -> Error {
-    // A known-bad HKDF request, which fails the same way every time.
-    let mut okm = [0u8; 20];
+    // A known-bad HKDF request, which fails the same way every time:
+    // HKDF-SHA-256 cannot produce more than 255 * 32 bytes.
+    let mut okm = vec![0u8; 255 * 32 + 1];
     hkdf(DigestAlg::Sha256, &[], &[0u8; 16], &[&[]], &mut okm).unwrap_err()
 }
 

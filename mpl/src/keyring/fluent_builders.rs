@@ -174,5 +174,16 @@ macro_rules! fluent_keyring {
 
 fluent_keyring!(
     super::RawAesKeyring,
+    super::RawRsaKeyring,
+    super::MultiKeyring,
     crate::aws_kms::hierarchical_keyring::HierarchicalKeyring
+);
+
+#[cfg(feature = "kms")]
+fluent_keyring!(
+    crate::aws_kms::aws_kms_keyring::AwsKmsKeyring,
+    crate::aws_kms::discovery_keyring::AwsKmsDiscoveryKeyring,
+    crate::aws_kms::mrk_keyring::AwsKmsMrkKeyring,
+    crate::aws_kms::kms_rsa_keyring::AwsKmsRsaKeyring,
+    crate::aws_kms::mrk_discovery_keyring::AwsKmsMrkDiscoveryKeyring
 );

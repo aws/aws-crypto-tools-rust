@@ -40,16 +40,53 @@ impl EncryptionMaterials {
 
     /// Add a plaintext data key and the encrypted data key that wraps it.
     ///
+    /// For a suite with a symmetric signature algorithm, use
+    /// [`add_data_key_with_symmetric_signing_key`](Self::add_data_key_with_symmetric_signing_key).
+    ///
     /// # Errors
     ///
     /// - [`InvalidMaterials`](crate::Error::InvalidMaterials): these materials already have a plaintext data key,
-    ///   or `plaintext_data_key` is not the algorithm suite's encryption key length.
+    ///   `plaintext_data_key` is not the algorithm suite's encryption key length,
+    ///   or the algorithm suite needs a symmetric signing key for each encrypted data key.
     pub fn add_data_key(
-        mut self,
+        self,
         plaintext_data_key: impl Into<PlaintextDataKey>,
         encrypted_data_key: EncryptedDataKey,
     ) -> Result<Self, Error> {
-        let plaintext_data_key = plaintext_data_key.into();
+        self.check_no_symmetric_signing()?;
+        self.add_data_key_inner(plaintext_data_key.into(), encrypted_data_key, None)
+    }
+
+    /// Add a plaintext data key, the encrypted data key that wraps it,
+    /// and the symmetric signing key that the keyring derived with that encrypted data key.
+    ///
+    /// Keyrings use this for suites with intermediate key wrapping, such as the DBE suites.
+    ///
+    /// # Errors
+    ///
+    /// - [`InvalidMaterials`](crate::Error::InvalidMaterials): these materials already have a plaintext data key,
+    ///   `plaintext_data_key` is not the algorithm suite's encryption key length,
+    ///   or the algorithm suite has no symmetric signature algorithm.
+    pub fn add_data_key_with_symmetric_signing_key(
+        self,
+        plaintext_data_key: impl Into<PlaintextDataKey>,
+        encrypted_data_key: EncryptedDataKey,
+        symmetric_signing_key: impl Into<SymmetricSigningKey>,
+    ) -> Result<Self, Error> {
+        self.check_symmetric_signing()?;
+        self.add_data_key_inner(
+            plaintext_data_key.into(),
+            encrypted_data_key,
+            Some(symmetric_signing_key.into()),
+        )
+    }
+
+    fn add_data_key_inner(
+        mut self,
+        plaintext_data_key: PlaintextDataKey,
+        encrypted_data_key: EncryptedDataKey,
+        symmetric_signing_key: Option<SymmetricSigningKey>,
+    ) -> Result<Self, Error> {
         if self.plaintext_data_key.is_some() {
             return Err(Error::new(
                 Kind::InvalidMaterials,
@@ -58,18 +95,47 @@ impl EncryptionMaterials {
         }
         check_data_key_length(&self.algorithm_suite(), &plaintext_data_key)?;
         self.plaintext_data_key = Some(plaintext_data_key);
-        self.encrypted_data_keys.push(encrypted_data_key);
+        self.push_encrypted_data_key(encrypted_data_key, symmetric_signing_key);
         Ok(self)
     }
 
     /// Add an encrypted data key that wraps the existing plaintext data key.
     ///
+    /// For a suite with a symmetric signature algorithm, use
+    /// [`add_encrypted_data_key_with_symmetric_signing_key`](Self::add_encrypted_data_key_with_symmetric_signing_key).
+    ///
     /// # Errors
     ///
-    /// - [`InvalidMaterials`](crate::Error::InvalidMaterials): these materials have no plaintext data key.
+    /// - [`InvalidMaterials`](crate::Error::InvalidMaterials): these materials have no plaintext data key,
+    ///   or the algorithm suite needs a symmetric signing key for each encrypted data key.
     pub fn add_encrypted_data_key(
+        self,
+        encrypted_data_key: EncryptedDataKey,
+    ) -> Result<Self, Error> {
+        self.check_no_symmetric_signing()?;
+        self.add_encrypted_data_key_inner(encrypted_data_key, None)
+    }
+
+    /// Add an encrypted data key that wraps the existing plaintext data key,
+    /// and the symmetric signing key that the keyring derived with it.
+    ///
+    /// # Errors
+    ///
+    /// - [`InvalidMaterials`](crate::Error::InvalidMaterials): these materials have no plaintext data key,
+    ///   or the algorithm suite has no symmetric signature algorithm.
+    pub fn add_encrypted_data_key_with_symmetric_signing_key(
+        self,
+        encrypted_data_key: EncryptedDataKey,
+        symmetric_signing_key: impl Into<SymmetricSigningKey>,
+    ) -> Result<Self, Error> {
+        self.check_symmetric_signing()?;
+        self.add_encrypted_data_key_inner(encrypted_data_key, Some(symmetric_signing_key.into()))
+    }
+
+    fn add_encrypted_data_key_inner(
         mut self,
         encrypted_data_key: EncryptedDataKey,
+        symmetric_signing_key: Option<SymmetricSigningKey>,
     ) -> Result<Self, Error> {
         if self.plaintext_data_key.is_none() {
             return Err(Error::new(
@@ -77,8 +143,41 @@ impl EncryptionMaterials {
                 "the materials have no plaintext data key",
             ));
         }
-        self.encrypted_data_keys.push(encrypted_data_key);
+        self.push_encrypted_data_key(encrypted_data_key, symmetric_signing_key);
         Ok(self)
+    }
+
+    fn push_encrypted_data_key(
+        &mut self,
+        encrypted_data_key: EncryptedDataKey,
+        symmetric_signing_key: Option<SymmetricSigningKey>,
+    ) {
+        self.encrypted_data_keys.push(encrypted_data_key);
+        if let Some(key) = symmetric_signing_key {
+            self.symmetric_signing_keys
+                .get_or_insert_with(Vec::new)
+                .push(key);
+        }
+    }
+
+    fn check_no_symmetric_signing(&self) -> Result<(), Error> {
+        if self.algorithm_suite_id.has_symmetric_signing() {
+            return Err(Error::new(
+                Kind::InvalidMaterials,
+                "the algorithm suite needs a symmetric signing key for each encrypted data key",
+            ));
+        }
+        Ok(())
+    }
+
+    fn check_symmetric_signing(&self) -> Result<(), Error> {
+        if !self.algorithm_suite_id.has_symmetric_signing() {
+            return Err(Error::new(
+                Kind::InvalidMaterials,
+                "the algorithm suite has no symmetric signature algorithm",
+            ));
+        }
+        Ok(())
     }
 
     /// The algorithm suite.
@@ -421,6 +520,19 @@ impl EncryptionMaterialsBuilder {
             ));
         }
 
+        let symmetric_signing_keys = if algorithm_suite_id.has_symmetric_signing() {
+            let keys = self.symmetric_signing_keys.unwrap_or_default();
+            if keys.len() != self.encrypted_data_keys.as_ref().map_or(0, Vec::len) {
+                return Err(Error::new(
+                    Kind::InvalidMaterials,
+                    "the algorithm suite needs one symmetric signing key per encrypted data key",
+                ));
+            }
+            Some(keys)
+        } else {
+            None
+        };
+
         Ok(EncryptionMaterials {
             algorithm_suite_id,
             encrypted_data_keys: self.encrypted_data_keys.unwrap_or_default(),
@@ -428,7 +540,7 @@ impl EncryptionMaterialsBuilder {
             required_encryption_context_keys,
             plaintext_data_key: self.plaintext_data_key,
             signing_key: self.signing_key,
-            symmetric_signing_keys: self.symmetric_signing_keys,
+            symmetric_signing_keys,
         })
     }
 }
