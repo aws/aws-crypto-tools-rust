@@ -383,7 +383,6 @@ async fn test_streaming_round_trip_through_pending_partial_io() {
 // On a single-threaded runtime, another task should run when the encrypt/decrypt task yields.
 #[tokio::test(flavor = "current_thread")]
 async fn test_large_message_yields_to_other_tasks() {
-    use std::num::NonZeroU32;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -409,7 +408,7 @@ async fn test_large_message_yields_to_other_tasks() {
             .plaintext(&plaintext)
             .keyring(keyring.clone())
             .algorithm_suite_id(aws_esdk::types::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
-            .frame_length(NonZeroU32::new(frame_length).unwrap())
+            .frame_length(frame_length)
             .send()
             .await
             .unwrap()

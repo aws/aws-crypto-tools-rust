@@ -19,7 +19,7 @@ use super::{
     GetEncryptionMaterialsOutput, SharedCmm,
 };
 use crate::Error;
-use crate::cmc::entry::{BytesUsage, MessageUsage, UsageMetadata};
+use crate::cmc::entry::UsageMetadata;
 use crate::cmc::{CacheEntry, CachedMaterials, SharedCmc};
 use crate::error::Kind;
 use crate::keyring::SharedKeyring;
@@ -384,7 +384,7 @@ impl Inner {
                 buf.extend_from_slice(&id.id_bytes());
             }
         }
-        buf.extend_from_slice(&sha512(&ec.serialize()?));
+        buf.extend_from_slice(&sha512(&ec.to_bytes()?));
         Ok(sha512(&buf).to_vec())
     }
 
@@ -407,7 +407,7 @@ impl Inner {
             buf.extend_from_slice(hash);
         }
         buf.extend_from_slice(&[0u8; SHA512_LEN]);
-        buf.extend_from_slice(&sha512(&input.encryption_context().serialize()?));
+        buf.extend_from_slice(&sha512(&input.encryption_context().to_bytes()?));
         Ok(sha512(&buf).to_vec())
     }
 
@@ -417,8 +417,8 @@ impl Inner {
             .duration_since(entry.creation_time())
             .unwrap_or_default();
         age > self.ttl
-            || usage.messages_used().get() > self.limit_messages
-            || usage.bytes_used().get() > self.limit_bytes
+            || usage.messages_used() > self.limit_messages
+            || usage.bytes_used() > self.limit_bytes
     }
 
     async fn put(
@@ -586,8 +586,8 @@ impl Cmm for crate::shared::Builtin<CachingCmm> {
         //# When the caching CMM stores encryption materials into the cryptographic materials cache,
         //# the caching CMM MUST set the initial usage stats for the cache entry.
         let usage = UsageMetadata::builder()
-            .messages_used(MessageUsage::new(1))
-            .bytes_used(BytesUsage::new(bytes))
+            .messages_used(1)
+            .bytes_used(bytes)
             .build()?;
         //= spec/framework/caching-cmm.md#get-encryption-materials
         //# If the [algorithm suite](algorithm-suites.md) requested does not contain an [Identity KDF](algorithm-suites.md#identity-kdf),

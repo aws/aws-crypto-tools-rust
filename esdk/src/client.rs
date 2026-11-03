@@ -22,7 +22,6 @@ use crate::operation::decrypt_stream::builders::DecryptStreamFluentBuilder;
 use crate::operation::encrypt::builders::EncryptFluentBuilder;
 use crate::operation::encrypt_stream::builders::EncryptStreamFluentBuilder;
 use crate::shapes::CommitmentPolicy;
-use std::num::NonZeroUsize;
 
 /// The AWS Encryption SDK client.
 /// Applies one [`Config`] to every operation.
@@ -67,7 +66,7 @@ pub struct Client {
 impl Client {
     /// Construct a `Client` from a [`Config`].
     #[must_use]
-    pub const fn from_conf(config: Config) -> Self {
+    pub fn from_conf(config: Config) -> Self {
         Self { config }
     }
 
@@ -79,7 +78,7 @@ impl Client {
 
     /// Borrow this client's configuration.
     #[must_use]
-    pub const fn config(&self) -> &Config {
+    pub fn config(&self) -> &Config {
         &self.config
     }
 
@@ -92,7 +91,7 @@ impl Client {
     ///   - [`plaintext(&[u8])`](EncryptFluentBuilder::plaintext) / [`set_plaintext(Option<&[u8]>)`](EncryptFluentBuilder::set_plaintext):<br>required: **true**<br>The data to encrypt.<br>
     ///   - [`encryption_context(impl Into<String>, impl Into<String>)`](EncryptFluentBuilder::encryption_context) / [`set_encryption_context(Option<EncryptionContext>)`](EncryptFluentBuilder::set_encryption_context):<br>required: **false**<br>Key-value pairs bound to the message. They are authenticated, not encrypted, so never put secrets in them.<br>
     ///   - [`algorithm_suite_id(AlgorithmSuiteId)`](EncryptFluentBuilder::algorithm_suite_id) / [`set_algorithm_suite_id(Option<AlgorithmSuiteId>)`](EncryptFluentBuilder::set_algorithm_suite_id):<br>required: **false**<br>The algorithm suite to encrypt with. Unset uses the default suite for the client's commitment policy.<br>
-    ///   - [`frame_length(NonZeroU32)`](EncryptFluentBuilder::frame_length) / [`set_frame_length(Option<NonZeroU32>)`](EncryptFluentBuilder::set_frame_length):<br>required: **false**<br>Bytes of plaintext per frame. Default is 4096.<br>
+    ///   - [`frame_length(u32)`](EncryptFluentBuilder::frame_length) / [`set_frame_length(Option<u32>)`](EncryptFluentBuilder::set_frame_length):<br>required: **false**<br>Bytes of plaintext per frame. Default is 4096.<br>
     ///   - [`keyring(impl Keyring)`](EncryptFluentBuilder::keyring) / [`set_keyring(Option<SharedKeyring>)`](EncryptFluentBuilder::set_keyring):<br>required: **one of keyring or cmm**<br>The keyring that protects the message's data key. Set exactly one of a keyring or a CMM.<br>
     ///   - [`cmm(impl Cmm)`](EncryptFluentBuilder::cmm) / [`set_cmm(Option<SharedCmm>)`](EncryptFluentBuilder::set_cmm):<br>required: **one of keyring or cmm**<br>The cryptographic materials manager (CMM) that supplies the message's data key. Set exactly one of a keyring or a CMM.<br>
     /// - On success, responds with [`EncryptOutput`](crate::operation::encrypt::EncryptOutput) with field(s):
@@ -139,10 +138,10 @@ impl Client {
     ///   - [`ciphertext(impl AsyncWrite)`](EncryptStreamFluentBuilder::ciphertext) / [`set_ciphertext(Option<Box<dyn AsyncWrite>>)`](EncryptStreamFluentBuilder::set_ciphertext):<br>required: **true**<br>The writer the encrypted message is written to.<br>
     ///   - [`encryption_context(impl Into<String>, impl Into<String>)`](EncryptStreamFluentBuilder::encryption_context) / [`set_encryption_context(Option<EncryptionContext>)`](EncryptStreamFluentBuilder::set_encryption_context):<br>required: **false**<br>Key-value pairs bound to the message. They are authenticated, not encrypted, so never put secrets in them.<br>
     ///   - [`algorithm_suite_id(AlgorithmSuiteId)`](EncryptStreamFluentBuilder::algorithm_suite_id) / [`set_algorithm_suite_id(Option<AlgorithmSuiteId>)`](EncryptStreamFluentBuilder::set_algorithm_suite_id):<br>required: **false**<br>The algorithm suite to encrypt with. Unset uses the default suite for the client's commitment policy.<br>
-    ///   - [`frame_length(NonZeroU32)`](EncryptStreamFluentBuilder::frame_length) / [`set_frame_length(Option<NonZeroU32>)`](EncryptStreamFluentBuilder::set_frame_length):<br>required: **false**<br>Bytes of plaintext per frame. Default is 4096.<br>
+    ///   - [`frame_length(u32)`](EncryptStreamFluentBuilder::frame_length) / [`set_frame_length(Option<u32>)`](EncryptStreamFluentBuilder::set_frame_length):<br>required: **false**<br>Bytes of plaintext per frame. Default is 4096.<br>
     ///   - [`keyring(impl Keyring)`](EncryptStreamFluentBuilder::keyring) / [`set_keyring(Option<SharedKeyring>)`](EncryptStreamFluentBuilder::set_keyring):<br>required: **one of keyring or cmm**<br>The keyring that protects the message's data key. Set exactly one of a keyring or a CMM.<br>
     ///   - [`cmm(impl Cmm)`](EncryptStreamFluentBuilder::cmm) / [`set_cmm(Option<SharedCmm>)`](EncryptStreamFluentBuilder::set_cmm):<br>required: **one of keyring or cmm**<br>The cryptographic materials manager (CMM) that supplies the message's data key. Set exactly one of a keyring or a CMM.<br>
-    ///   - [`data_size(usize)`](EncryptStreamFluentBuilder::data_size) / [`set_data_size(Option<usize>)`](EncryptStreamFluentBuilder::set_data_size):<br>required: **false**<br>An upper bound on the plaintext length, in bytes. It is passed to the CMM, and encrypt fails if the stream is longer.<br>
+    ///   - [`plaintext_length_bound(u64)`](EncryptStreamFluentBuilder::plaintext_length_bound) / [`set_plaintext_length_bound(Option<u64>)`](EncryptStreamFluentBuilder::set_plaintext_length_bound):<br>required: **false**<br>An upper bound on the plaintext length, in bytes. It is passed to the CMM, and encrypt fails if the stream is longer.<br>
     /// - On success, responds with [`EncryptStreamOutput`](crate::operation::encrypt_stream::EncryptStreamOutput) with field(s):
     ///   - [`encryption_context(&EncryptionContext)`](crate::operation::encrypt_stream::EncryptStreamOutput::encryption_context): The encryption context bound to the message, including any pairs the CMM added.
     ///   - [`algorithm_suite_id(AlgorithmSuiteId)`](crate::operation::encrypt_stream::EncryptStreamOutput::algorithm_suite_id): The algorithm suite the message uses.
@@ -183,13 +182,13 @@ impl Builder {
     //# - On client initialization,
     //# the caller MUST have the option to provide a [commitment policy](#commitment-policy).
     #[must_use]
-    pub const fn commitment_policy(mut self, p: CommitmentPolicy) -> Self {
+    pub fn commitment_policy(mut self, p: CommitmentPolicy) -> Self {
         self.config = self.config.commitment_policy(p);
         self
     }
 
     /// Set or clear the commitment policy from an `Option`.
-    pub const fn set_commitment_policy(
+    pub fn set_commitment_policy(
         &mut self,
         commitment_policy: Option<CommitmentPolicy>,
     ) -> &mut Self {
@@ -202,15 +201,15 @@ impl Builder {
     //# - On client initialization,
     //# the caller MUST have the option to provide a [maximum number of encrypted data keys](#maximum-number-of-encrypted-data-keys).
     #[must_use]
-    pub const fn max_encrypted_data_keys(mut self, n: NonZeroUsize) -> Self {
+    pub fn max_encrypted_data_keys(mut self, n: usize) -> Self {
         self.config = self.config.max_encrypted_data_keys(n);
         self
     }
 
     /// Set or clear the maximum number of encrypted data keys from an `Option`.
-    pub const fn set_max_encrypted_data_keys(
+    pub fn set_max_encrypted_data_keys(
         &mut self,
-        max_encrypted_data_keys: Option<NonZeroUsize>,
+        max_encrypted_data_keys: Option<usize>,
     ) -> &mut Self {
         self.config
             .set_max_encrypted_data_keys(max_encrypted_data_keys);
@@ -220,14 +219,14 @@ impl Builder {
     /// The commitment policy set so far.
     #[must_use]
     #[allow(clippy::ref_option)] // AWS SDK for Rust getter shape
-    pub const fn get_commitment_policy(&self) -> &Option<CommitmentPolicy> {
+    pub fn get_commitment_policy(&self) -> &Option<CommitmentPolicy> {
         self.config.get_commitment_policy()
     }
 
     /// The maximum number of encrypted data keys set so far.
     #[must_use]
     #[allow(clippy::ref_option)] // AWS SDK for Rust getter shape
-    pub const fn get_max_encrypted_data_keys(&self) -> &Option<NonZeroUsize> {
+    pub fn get_max_encrypted_data_keys(&self) -> &Option<usize> {
         self.config.get_max_encrypted_data_keys()
     }
 
@@ -236,8 +235,7 @@ impl Builder {
     ///
     /// # Errors
     ///
-    /// Currently never fails. Returns a `Result` so that a future validated
-    /// setting is not a breaking change.
+    /// - [`Validation`](crate::Error::Validation): `max_encrypted_data_keys` is 0.
     pub fn build(self) -> Result<Client, Error> {
         Ok(Client::from_conf(self.config.build()?))
     }

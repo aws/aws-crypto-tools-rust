@@ -329,7 +329,7 @@ pub(crate) fn add_encrypted_data_key(
         (EdkWrapping::IntermediateKeyWrapping(_), existing) => {
             let aad = materials
                 .encryption_context()
-                .serialize()
+                .to_bytes()
                 .map_err(|e| Error::wrap("failed to serialize the encryption context", e))?;
             let (pdk, generated) = match existing {
                 Some(key) => (key.clone(), false),
@@ -375,7 +375,7 @@ pub(crate) fn decrypt_encrypted_data_key(
                 .map_err(|e| Error::wrap("Invalid material for Intermediate Unwrapping", e))?;
             let aad = materials
                 .encryption_context()
-                .serialize()
+                .to_bytes()
                 .map_err(|e| Error::wrap("failed to serialize the encryption context", e))?;
             let ikm = unwrap(shared_secret, fixed_info, wrapped_ikm, key_len)?;
             let (pdk, signing_key) = edk_wrapping::decrypt_pdk(&suite, &ikm, &aad, encrypted_pdk)?;

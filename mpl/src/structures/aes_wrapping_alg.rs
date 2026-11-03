@@ -21,8 +21,8 @@ pub enum AesWrappingAlg {
 impl AesWrappingAlg {
     /// The wrapping key length this algorithm needs, in bytes.
     #[must_use]
-    pub const fn key_len(self) -> u8 {
-        self.primitive().key_len()
+    pub fn key_length(self) -> usize {
+        self.primitive().key_length()
     }
 
     /// The primitive that implements this algorithm.

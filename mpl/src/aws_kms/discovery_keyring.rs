@@ -332,7 +332,7 @@ impl Keyring for crate::shared::Builtin<AwsKmsDiscoveryKeyring> {
         let ec = kms_encryption_context(materials.encryption_context());
         let aad = materials
             .encryption_context()
-            .serialize()
+            .to_bytes()
             .map_err(|e| Error::wrap("failed to serialize the encryption context", e))?;
         let mut errors = Vec::new();
         for (key_arn, edk) in to_attempt {

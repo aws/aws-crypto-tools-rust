@@ -365,7 +365,7 @@ impl Keyring for crate::shared::Builtin<RawRsaKeyring> {
                 // Keys derived from it encrypt the plaintext data key and sign the message.
                 let aad = materials
                     .encryption_context()
-                    .serialize()
+                    .to_bytes()
                     .map_err(|e| Error::wrap("failed to serialize the encryption context", e))?;
                 let (plaintext_dk, generated) = match existing {
                     Some(key) => (key.clone(), false),
@@ -427,7 +427,7 @@ impl Keyring for crate::shared::Builtin<RawRsaKeyring> {
             Some(
                 materials
                     .encryption_context()
-                    .serialize()
+                    .to_bytes()
                     .map_err(|e| Error::wrap("failed to serialize the encryption context", e))?,
             )
         } else {

@@ -25,7 +25,7 @@ use crate::aws_kms::aws_kms_keyring::{
 use crate::aws_kms::mrk_match::aws_kms_mrk_match_for_decrypt;
 use crate::aws_kms::user_agent::user_agent_override;
 use crate::builder::required;
-use crate::error::{DataKeyInfo, Kind, KmsKey, Resource, Service};
+use crate::error::{DataKeyInfo, Kind, KmsKey, Service};
 use crate::keyring::edk_wrapping;
 use crate::keyring::{Keyring, OnDecryptInput, OnDecryptOutput, OnEncryptInput, OnEncryptOutput};
 use crate::structures::{
@@ -159,7 +159,7 @@ impl AwsKmsRsaKeyring {
         if !valid_ciphertext(wrapped) {
             return Err(Error::new(Kind::Cryptographic, "Ciphertext length invalid"));
         }
-        let resource = Some(Resource::KmsKey(KmsKey::new(key_id.to_owned())));
+        let resource = KmsKey::new(key_id.to_owned());
         // AWS KMS RSA keys take no encryption context, so this request sends none.
         // The digest at the start of the plaintext binds the encryption context.
         let response = client
@@ -172,7 +172,9 @@ impl AwsKmsRsaKeyring {
             .config_override(user_agent_override())
             .send()
             .await
-            .map_err(|e| Error::from_sdk(Service::Kms, "AWS KMS Decrypt", resource, e))?;
+            .map_err(|e| {
+                Error::from_sdk(Service::Kms, "AWS KMS Decrypt", e).with_resource(resource)
+            })?;
         if response.key_id.as_deref() != Some(key_id) {
             return Err(service_err(key_id, "Invalid response from KMS Decrypt"));
         }
@@ -248,7 +250,7 @@ impl AwsKmsRsaKeyring {
 /// The SHA-384 digest of the canonical serialization of `ec`.
 fn encryption_context_digest(ec: &EncryptionContext) -> Result<Vec<u8>, Error> {
     let canonical = ec
-        .serialize()
+        .to_bytes()
         .map_err(|e| Error::wrap("failed to serialize the encryption context", e))?;
     let mut out = vec![0u8; DigestAlg::Sha384.output_len()];
     digest(DigestAlg::Sha384, &canonical, &mut out).map_err(|e| {
@@ -500,7 +502,7 @@ impl Keyring for crate::shared::Builtin<AwsKmsRsaKeyring> {
                 // Wrap a fresh intermediate key.
                 // Keys derived from it encrypt the plaintext data key and sign the message.
                 let aad = ec
-                    .serialize()
+                    .to_bytes()
                     .map_err(|e| Error::wrap("failed to serialize the encryption context", e))?;
                 let (pdk, generated) = match existing {
                     Some(key) => (key.clone(), false),
@@ -574,7 +576,7 @@ impl Keyring for crate::shared::Builtin<AwsKmsRsaKeyring> {
         let ec_digest = encryption_context_digest(materials.encryption_context())?;
         let aad = materials
             .encryption_context()
-            .serialize()
+            .to_bytes()
             .map_err(|e| Error::wrap("failed to serialize the encryption context", e))?;
         let mut errors = Vec::new();
         for edk in to_attempt {

@@ -156,8 +156,8 @@ impl AwsKmsKeyring {
         &self.inner.grant_tokens
     }
 
-    fn resource(&self) -> Option<Resource> {
-        Some(Resource::KmsKey(KmsKey::new(self.inner.kms_key_id.clone())))
+    fn resource(&self) -> KmsKey {
+        KmsKey::new(self.inner.kms_key_id.clone())
     }
 
     fn service_err(&self, message: impl Into<String>) -> Error {
@@ -186,7 +186,8 @@ impl AwsKmsKeyring {
             .send()
             .await
             .map_err(|e| {
-                Error::from_sdk(Service::Kms, "AWS KMS GenerateDataKey", self.resource(), e)
+                Error::from_sdk(Service::Kms, "AWS KMS GenerateDataKey", e)
+                    .with_resource(self.resource())
             })?;
         let key_id = response
             .key_id
@@ -243,7 +244,9 @@ impl AwsKmsKeyring {
             .config_override(user_agent_override())
             .send()
             .await
-            .map_err(|e| Error::from_sdk(Service::Kms, "AWS KMS Encrypt", self.resource(), e))?;
+            .map_err(|e| {
+                Error::from_sdk(Service::Kms, "AWS KMS Encrypt", e).with_resource(self.resource())
+            })?;
         let key_id = response
             .key_id
             .filter(|id| parse_kms_identifier(id).is_ok())
@@ -270,7 +273,7 @@ impl AwsKmsKeyring {
         Ok(
             match (suite.edk_wrapping(), materials.plaintext_data_key()) {
                 (EdkWrapping::IntermediateKeyWrapping(_), existing) => {
-                    let aad = materials.encryption_context().serialize().map_err(|e| {
+                    let aad = materials.encryption_context().to_bytes().map_err(|e| {
                         Error::wrap("failed to serialize the encryption context", e)
                     })?;
                     let (pdk, generated) = match existing {
@@ -357,7 +360,7 @@ impl AwsKmsKeyring {
         let ec = kms_encryption_context(materials.encryption_context());
         let aad = materials
             .encryption_context()
-            .serialize()
+            .to_bytes()
             .map_err(|e| Error::wrap("failed to serialize the encryption context", e))?;
         let mut errors = Vec::new();
         for edk in to_attempt {
@@ -425,7 +428,7 @@ async fn kms_decrypt(
     if !valid_ciphertext(ciphertext) {
         return Err(Error::new(Kind::Cryptographic, "Ciphertext length invalid"));
     }
-    let resource = Some(Resource::KmsKey(KmsKey::new(key_id.to_owned())));
+    let resource = KmsKey::new(key_id.to_owned());
     let response = client
         .decrypt()
         .key_id(key_id)
@@ -436,7 +439,7 @@ async fn kms_decrypt(
         .config_override(user_agent_override())
         .send()
         .await
-        .map_err(|e| Error::from_sdk(Service::Kms, "AWS KMS Decrypt", resource, e))?;
+        .map_err(|e| Error::from_sdk(Service::Kms, "AWS KMS Decrypt", e).with_resource(resource))?;
     if response.key_id.as_deref() != Some(key_id) {
         return Err(service_err(key_id, "Invalid response from KMS Decrypt"));
     }

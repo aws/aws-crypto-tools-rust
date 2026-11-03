@@ -29,7 +29,7 @@ impl SharedKeyring {
 }
 
 /// Fluent builder for [`SharedKeyring::on_encrypt`].
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[must_use = "does nothing until `send` is called"]
 pub struct OnEncryptFluentBuilder {
     handle: SharedKeyring,
@@ -39,7 +39,7 @@ pub struct OnEncryptFluentBuilder {
 impl OnEncryptFluentBuilder {
     /// The input set so far.
     #[must_use]
-    pub const fn as_input(&self) -> &OnEncryptInputBuilder {
+    pub fn as_input(&self) -> &OnEncryptInputBuilder {
         &self.inner
     }
 
@@ -59,7 +59,7 @@ impl OnEncryptFluentBuilder {
 
     /// The materials, if set.
     #[must_use]
-    pub const fn get_materials(&self) -> &Option<EncryptionMaterials> {
+    pub fn get_materials(&self) -> &Option<EncryptionMaterials> {
         self.inner.get_materials()
     }
 
@@ -77,7 +77,7 @@ impl OnEncryptFluentBuilder {
 }
 
 /// Fluent builder for [`SharedKeyring::on_decrypt`].
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[must_use = "does nothing until `send` is called"]
 pub struct OnDecryptFluentBuilder {
     handle: SharedKeyring,
@@ -87,7 +87,7 @@ pub struct OnDecryptFluentBuilder {
 impl OnDecryptFluentBuilder {
     /// The input set so far.
     #[must_use]
-    pub const fn as_input(&self) -> &OnDecryptInputBuilder {
+    pub fn as_input(&self) -> &OnDecryptInputBuilder {
         &self.inner
     }
 
@@ -107,7 +107,7 @@ impl OnDecryptFluentBuilder {
 
     /// The materials, if set.
     #[must_use]
-    pub const fn get_materials(&self) -> &Option<DecryptionMaterials> {
+    pub fn get_materials(&self) -> &Option<DecryptionMaterials> {
         self.inner.get_materials()
     }
 
@@ -132,7 +132,7 @@ impl OnDecryptFluentBuilder {
 
     /// The encrypted data keys, if set.
     #[must_use]
-    pub const fn get_encrypted_data_keys(&self) -> &Option<Vec<EncryptedDataKey>> {
+    pub fn get_encrypted_data_keys(&self) -> &Option<Vec<EncryptedDataKey>> {
         self.inner.get_encrypted_data_keys()
     }
 

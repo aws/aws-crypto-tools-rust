@@ -684,7 +684,7 @@ class StormTrackingCmcOptions {
     std::optional<std::chrono::nanoseconds> grace_period_;
     std::optional<std::chrono::nanoseconds> grace_interval_;
     std::optional<std::uint32_t> fan_out_;
-    std::optional<std::chrono::nanoseconds> inflight_ttl_;
+    std::optional<std::chrono::nanoseconds> in_flight_ttl_;
     std::optional<std::chrono::nanoseconds> sleep_;
     friend class StormTrackingCmc;
 
@@ -710,8 +710,8 @@ public:
     StormTrackingCmcOptions& with_fan_out(std::uint32_t n) { fan_out_ = n; return *this; }
     /// Time a request waits for another request's refresh before failing. Defaults to 10 seconds.
     template <class Rep, class Period>
-    StormTrackingCmcOptions& with_inflight_ttl(std::chrono::duration<Rep, Period> d) {
-        inflight_ttl_ = detail::to_nanoseconds(d);
+    StormTrackingCmcOptions& with_in_flight_ttl(std::chrono::duration<Rep, Period> d) {
+        in_flight_ttl_ = detail::to_nanoseconds(d);
         return *this;
     }
     /// Time a waiting request sleeps before checking the cache again. Defaults to 20 milliseconds.

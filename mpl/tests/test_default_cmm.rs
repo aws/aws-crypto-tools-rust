@@ -874,7 +874,7 @@ async fn dbe_suite_round_trips_with_signing_keys() {
         enc.encryption_context()
             .contains_key("aws-crypto-public-key")
     );
-    assert_eq!(enc.symmetric_signing_keys().unwrap().len(), 1);
+    assert_eq!(enc.symmetric_signing_keys().len(), 1);
 
     // The stored context leaves out the required key; the reproduced context supplies it.
     let mut stored = enc.encryption_context().clone();
@@ -900,7 +900,7 @@ async fn dbe_suite_round_trips_with_signing_keys() {
     assert!(
         dec.symmetric_signing_key()
             .unwrap()
-            .ct_eq(&enc.symmetric_signing_keys().unwrap()[0])
+            .ct_eq(&enc.symmetric_signing_keys()[0])
     );
     assert!(dec.verification_key().is_some());
     assert_eq!(dec.encryption_context(), enc.encryption_context());

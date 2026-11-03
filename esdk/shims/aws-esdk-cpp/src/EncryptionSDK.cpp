@@ -520,7 +520,7 @@ StormTrackingCmc::StormTrackingCmc(const StormTrackingCmcOptions& options)
               o.grace_period = detail::to_opt(options.grace_period_, "grace_period");
               o.grace_interval = detail::to_opt(options.grace_interval_, "grace_interval");
               o.fan_out = detail::to_opt(options.fan_out_);
-              o.inflight_ttl = detail::to_opt(options.inflight_ttl_, "inflight_ttl");
+              o.in_flight_ttl = detail::to_opt(options.in_flight_ttl_, "in_flight_ttl");
               o.sleep = detail::to_opt(options.sleep_, "sleep");
               return ::ffi::create_storm_tracking_cmc(o);
           }))) {}

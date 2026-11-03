@@ -111,8 +111,8 @@ impl DynamoDbKeyStore {
     /// have no single ARN to wrap under and are rejected.
     fn configured_kms_key_arn(&self) -> Result<&str, Error> {
         match &self.inner.kms_configuration {
-            KmsConfiguration::KmsKeyArn(arn) => Ok(arn.as_str()),
-            KmsConfiguration::KmsMrKeyArn(arn) => Ok(arn.as_str()),
+            KmsConfiguration::KmsKeyArn(arn) => Ok(arn.arn()),
+            KmsConfiguration::KmsMrKeyArn(arn) => Ok(arn.arn()),
             KmsConfiguration::Discovery(_) | KmsConfiguration::MrDiscovery(_) => Err(Error::new(
                 Kind::Validation,
                 "operation requires a single-key KMS configuration (KmsKeyArn or \
@@ -220,7 +220,7 @@ impl DynamoDbKeyStoreBuilder {
 
     /// The DynamoDB table name, if set.
     #[must_use]
-    pub const fn get_ddb_table_name(&self) -> &Option<String> {
+    pub fn get_ddb_table_name(&self) -> &Option<String> {
         &self.ddb_table_name
     }
 
@@ -242,7 +242,7 @@ impl DynamoDbKeyStoreBuilder {
 
     /// The logical key store name, if set.
     #[must_use]
-    pub const fn get_logical_key_store_name(&self) -> &Option<String> {
+    pub fn get_logical_key_store_name(&self) -> &Option<String> {
         &self.logical_key_store_name
     }
 
@@ -264,7 +264,7 @@ impl DynamoDbKeyStoreBuilder {
 
     /// The KMS configuration, if set.
     #[must_use]
-    pub const fn get_kms_configuration(&self) -> &Option<KmsConfiguration> {
+    pub fn get_kms_configuration(&self) -> &Option<KmsConfiguration> {
         &self.kms_configuration
     }
 
@@ -286,7 +286,7 @@ impl DynamoDbKeyStoreBuilder {
 
     /// The ID, if set.
     #[must_use]
-    pub const fn get_id(&self) -> &Option<String> {
+    pub fn get_id(&self) -> &Option<String> {
         &self.id
     }
 
@@ -311,7 +311,7 @@ impl DynamoDbKeyStoreBuilder {
 
     /// The grant tokens, if set.
     #[must_use]
-    pub const fn get_grant_tokens(&self) -> &Option<Vec<String>> {
+    pub fn get_grant_tokens(&self) -> &Option<Vec<String>> {
         &self.grant_tokens
     }
 
@@ -334,7 +334,7 @@ impl DynamoDbKeyStoreBuilder {
 
     /// The KMS client, if set.
     #[must_use]
-    pub const fn get_kms_client(&self) -> &Option<KmsClient> {
+    pub fn get_kms_client(&self) -> &Option<KmsClient> {
         &self.kms_client
     }
 
@@ -357,7 +357,7 @@ impl DynamoDbKeyStoreBuilder {
 
     /// The DynamoDB client, if set.
     #[must_use]
-    pub const fn get_ddb_client(&self) -> &Option<DynamoDbClient> {
+    pub fn get_ddb_client(&self) -> &Option<DynamoDbClient> {
         &self.ddb_client
     }
 
@@ -990,14 +990,8 @@ fn map_ddb_error<E>(operation: &str, table_name: &str, err: SdkError<E, HttpResp
 where
     E: ProvideErrorMetadata + std::error::Error + Send + Sync + 'static,
 {
-    Error::from_sdk(
-        Service::DynamoDb,
-        &format!("DynamoDB {operation}"),
-        Some(Resource::DynamoDbTable(DynamoDbTable::new(
-            table_name.to_owned(),
-        ))),
-        err,
-    )
+    Error::from_sdk(Service::DynamoDb, &format!("DynamoDB {operation}"), err)
+        .with_resource(DynamoDbTable::new(table_name.to_owned()))
 }
 
 /// Classify a failed `TransactWriteItems` that writes branch key `branch_key_id`.
@@ -1119,10 +1113,8 @@ fn item_from_ec_and_enc(
 #[cfg(feature = "default-aws-sdk-clients")]
 fn region_from_kms_config(config: &KmsConfiguration) -> Option<String> {
     match config {
-        KmsConfiguration::KmsKeyArn(arn) => parse_arn(arn.as_str()).ok().map(|parts| parts.region),
-        KmsConfiguration::KmsMrKeyArn(arn) => {
-            parse_arn(arn.as_str()).ok().map(|parts| parts.region)
-        }
+        KmsConfiguration::KmsKeyArn(arn) => parse_arn(arn.arn()).ok().map(|parts| parts.region),
+        KmsConfiguration::KmsMrKeyArn(arn) => parse_arn(arn.arn()).ok().map(|parts| parts.region),
         KmsConfiguration::MrDiscovery(mr_discovery) => Some(mr_discovery.region().to_string()),
         KmsConfiguration::Discovery(_) => None,
     }

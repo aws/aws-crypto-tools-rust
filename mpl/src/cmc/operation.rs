@@ -4,14 +4,12 @@
 //! Inputs and outputs of the [`Cmc`](super::Cmc) operations.
 //! Names follow the Smithy model of the Dafny MPL.
 
-use std::sync::Arc;
-
 use super::CacheEntry;
 use crate::Error;
 use crate::builder::required;
 
 /// Input for [`Cmc::put_cache_entry`](super::Cmc::put_cache_entry).
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct PutCacheEntryInput {
     identifier: Vec<u8>,
@@ -33,7 +31,7 @@ impl PutCacheEntryInput {
 
     /// The entry to store.
     #[must_use]
-    pub const fn entry(&self) -> &CacheEntry {
+    pub fn entry(&self) -> &CacheEntry {
         &self.entry
     }
 
@@ -45,7 +43,7 @@ impl PutCacheEntryInput {
 }
 
 /// Builder for [`PutCacheEntryInput`], returned by [`PutCacheEntryInput::builder`].
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct PutCacheEntryInputBuilder {
     identifier: Option<Vec<u8>>,
     entry: Option<CacheEntry>,
@@ -68,7 +66,7 @@ impl PutCacheEntryInputBuilder {
 
     /// The identifier, if set.
     #[must_use]
-    pub const fn get_identifier(&self) -> &Option<Vec<u8>> {
+    pub fn get_identifier(&self) -> &Option<Vec<u8>> {
         &self.identifier
     }
 
@@ -88,7 +86,7 @@ impl PutCacheEntryInputBuilder {
 
     /// The entry, if set.
     #[must_use]
-    pub const fn get_entry(&self) -> &Option<CacheEntry> {
+    pub fn get_entry(&self) -> &Option<CacheEntry> {
         &self.entry
     }
 
@@ -129,7 +127,7 @@ impl PutCacheEntryOutputBuilder {
     /// # Errors
     ///
     /// Never returns an error.
-    pub const fn build(self) -> Result<PutCacheEntryOutput, Error> {
+    pub fn build(self) -> Result<PutCacheEntryOutput, Error> {
         Ok(PutCacheEntryOutput {})
     }
 }
@@ -184,7 +182,7 @@ impl GetCacheEntryInputBuilder {
 
     /// The identifier, if set.
     #[must_use]
-    pub const fn get_identifier(&self) -> &Option<Vec<u8>> {
+    pub fn get_identifier(&self) -> &Option<Vec<u8>> {
         &self.identifier
     }
 
@@ -205,7 +203,7 @@ impl GetCacheEntryInputBuilder {
 #[derive(Debug, Clone, Default)]
 #[non_exhaustive]
 pub struct GetCacheEntryOutput {
-    entry: Option<Arc<CacheEntry>>,
+    entry: Option<CacheEntry>,
 }
 
 impl GetCacheEntryOutput {
@@ -217,13 +215,13 @@ impl GetCacheEntryOutput {
 
     /// The cached entry, or `None` on a cache miss.
     #[must_use]
-    pub const fn entry(&self) -> Option<&Arc<CacheEntry>> {
+    pub fn entry(&self) -> Option<&CacheEntry> {
         self.entry.as_ref()
     }
 
     /// Consume the output, yielding the cached entry, or `None` on a cache miss.
     #[must_use]
-    pub fn into_entry(self) -> Option<Arc<CacheEntry>> {
+    pub fn into_entry(self) -> Option<CacheEntry> {
         self.entry
     }
 }
@@ -231,27 +229,27 @@ impl GetCacheEntryOutput {
 /// Builder for [`GetCacheEntryOutput`], returned by [`GetCacheEntryOutput::builder`].
 #[derive(Debug, Clone, Default)]
 pub struct GetCacheEntryOutputBuilder {
-    entry: Option<Arc<CacheEntry>>,
+    entry: Option<CacheEntry>,
 }
 
 impl GetCacheEntryOutputBuilder {
     /// Set the cached entry. Leave unset for a cache miss.
     #[must_use]
-    pub fn entry(mut self, entry: impl Into<Arc<CacheEntry>>) -> Self {
+    pub fn entry(mut self, entry: impl Into<CacheEntry>) -> Self {
         self.entry = Some(entry.into());
         self
     }
 
     /// Set or clear the cached entry. `None` is a cache miss.
     #[must_use]
-    pub fn set_entry(mut self, entry: Option<Arc<CacheEntry>>) -> Self {
+    pub fn set_entry(mut self, entry: Option<CacheEntry>) -> Self {
         self.entry = entry;
         self
     }
 
     /// The entry, if set.
     #[must_use]
-    pub const fn get_entry(&self) -> &Option<Arc<CacheEntry>> {
+    pub fn get_entry(&self) -> &Option<CacheEntry> {
         &self.entry
     }
 
@@ -315,7 +313,7 @@ impl DeleteCacheEntryInputBuilder {
 
     /// The identifier, if set.
     #[must_use]
-    pub const fn get_identifier(&self) -> &Option<Vec<u8>> {
+    pub fn get_identifier(&self) -> &Option<Vec<u8>> {
         &self.identifier
     }
 
@@ -355,7 +353,7 @@ impl DeleteCacheEntryOutputBuilder {
     /// # Errors
     ///
     /// Never returns an error.
-    pub const fn build(self) -> Result<DeleteCacheEntryOutput, Error> {
+    pub fn build(self) -> Result<DeleteCacheEntryOutput, Error> {
         Ok(DeleteCacheEntryOutput {})
     }
 }
@@ -383,7 +381,7 @@ impl UpdateUsageMetadataInput {
 
     /// The plaintext bytes of the one message being counted against the entry.
     #[must_use]
-    pub const fn bytes_used(&self) -> u64 {
+    pub fn bytes_used(&self) -> u64 {
         self.bytes_used
     }
 }
@@ -412,27 +410,27 @@ impl UpdateUsageMetadataInputBuilder {
 
     /// The identifier, if set.
     #[must_use]
-    pub const fn get_identifier(&self) -> &Option<Vec<u8>> {
+    pub fn get_identifier(&self) -> &Option<Vec<u8>> {
         &self.identifier
     }
 
     /// Set the plaintext bytes of the message. Required.
     #[must_use]
-    pub const fn bytes_used(mut self, bytes_used: u64) -> Self {
+    pub fn bytes_used(mut self, bytes_used: u64) -> Self {
         self.bytes_used = Some(bytes_used);
         self
     }
 
     /// Set or clear the plaintext bytes, for forwarding an existing `Option`.
     #[must_use]
-    pub const fn set_bytes_used(mut self, bytes_used: Option<u64>) -> Self {
+    pub fn set_bytes_used(mut self, bytes_used: Option<u64>) -> Self {
         self.bytes_used = bytes_used;
         self
     }
 
     /// The bytes used, if set.
     #[must_use]
-    pub const fn get_bytes_used(&self) -> &Option<u64> {
+    pub fn get_bytes_used(&self) -> &Option<u64> {
         &self.bytes_used
     }
 
@@ -473,7 +471,7 @@ impl UpdateUsageMetadataOutputBuilder {
     /// # Errors
     ///
     /// Never returns an error.
-    pub const fn build(self) -> Result<UpdateUsageMetadataOutput, Error> {
+    pub fn build(self) -> Result<UpdateUsageMetadataOutput, Error> {
         Ok(UpdateUsageMetadataOutput {})
     }
 }
