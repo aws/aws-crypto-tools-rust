@@ -86,10 +86,12 @@ use std::borrow::Cow;
 
 use async_trait::async_trait;
 
+pub(crate) mod ecdh_wrapping;
 pub(crate) mod edk_wrapping;
 mod fluent_builders;
 mod multi_keyring;
 mod raw_aes_keyring;
+mod raw_ecdh_keyring;
 mod raw_rsa_keyring;
 mod types;
 
@@ -103,6 +105,12 @@ pub use crate::aws_kms::hierarchical_keyring::{
     BranchKeySupplier, GetBranchKeyIdFluentBuilder, GetBranchKeyIdInput,
     GetBranchKeyIdInputBuilder, GetBranchKeyIdOutput, GetBranchKeyIdOutputBuilder,
     HierarchicalKeyring, HierarchicalKeyringBuilder, SharedBranchKeySupplier,
+};
+#[cfg(feature = "kms")]
+pub use crate::aws_kms::kms_ecdh_keyring::{
+    AwsKmsEcdhKeyring, AwsKmsEcdhKeyringBuilder, KmsEcdhStaticConfigurations,
+    KmsPrivateKeyToStaticPublicKeyInput, KmsPrivateKeyToStaticPublicKeyInputBuilder,
+    KmsPublicKeyDiscoveryInput, KmsPublicKeyDiscoveryInputBuilder,
 };
 #[cfg(feature = "kms")]
 pub use crate::aws_kms::kms_rsa_keyring::{AwsKmsRsaKeyring, AwsKmsRsaKeyringBuilder};
@@ -120,6 +128,12 @@ pub use crate::aws_kms::multi_keyrings::{
 pub use fluent_builders::{OnDecryptFluentBuilder, OnEncryptFluentBuilder};
 pub use multi_keyring::{MultiKeyring, MultiKeyringBuilder};
 pub use raw_aes_keyring::{RawAesKeyring, RawAesKeyringBuilder};
+pub use raw_ecdh_keyring::{
+    EphemeralPrivateKeyToStaticPublicKeyInput, EphemeralPrivateKeyToStaticPublicKeyInputBuilder,
+    PublicKeyDiscoveryInput, PublicKeyDiscoveryInputBuilder, RawEcdhKeyring, RawEcdhKeyringBuilder,
+    RawEcdhStaticConfigurations, RawPrivateKeyToStaticPublicKeyInput,
+    RawPrivateKeyToStaticPublicKeyInputBuilder,
+};
 pub use raw_rsa_keyring::{RawRsaKeyring, RawRsaKeyringBuilder};
 pub use types::{
     OnDecryptInput, OnDecryptInputBuilder, OnDecryptOutput, OnDecryptOutputBuilder, OnEncryptInput,

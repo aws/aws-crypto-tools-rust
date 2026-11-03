@@ -153,7 +153,7 @@ impl RawRsaKeyring {
 }
 
 /// Builder for [`RawRsaKeyring`].
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct RawRsaKeyringBuilder {
     key_namespace: Option<String>,
     key_name: Option<String>,

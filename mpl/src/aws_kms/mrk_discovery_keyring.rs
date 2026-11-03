@@ -138,7 +138,7 @@ impl AwsKmsMrkDiscoveryKeyring {
 }
 
 /// Builder for [`AwsKmsMrkDiscoveryKeyring`].
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 #[non_exhaustive]
 pub struct AwsKmsMrkDiscoveryKeyringBuilder {
     kms_client: Option<KmsClient>,

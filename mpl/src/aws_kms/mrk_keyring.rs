@@ -75,7 +75,7 @@ impl AwsKmsMrkKeyring {
 }
 
 /// Builder for [`AwsKmsMrkKeyring`].
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 #[non_exhaustive]
 pub struct AwsKmsMrkKeyringBuilder {
     kms_key_id: Option<String>,

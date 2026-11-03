@@ -335,4 +335,8 @@ macro_rules! fluent_cmm {
     )+};
 }
 
-fluent_cmm!(super::DefaultCmm, super::RequiredEncryptionContextCmm);
+fluent_cmm!(
+    super::CachingCmm,
+    super::DefaultCmm,
+    super::RequiredEncryptionContextCmm
+);

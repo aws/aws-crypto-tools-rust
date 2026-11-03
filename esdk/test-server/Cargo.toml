@@ -22,7 +22,9 @@ axum = "0.8"
 ciborium = "0.2"
 serde = { version = "1", features = ["derive"] }
 serde_bytes = "0.11"
+base64 = "0.23"
 uuid = { version = "1", features = ["v4"] }
 
 [dev-dependencies]
+aws-mpl-primitives = { path = "../../prim" }
 tower = { version = "0.5", features = ["util"] }

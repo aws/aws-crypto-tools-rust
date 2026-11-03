@@ -286,7 +286,7 @@ fn random_key(suite: &AlgorithmSuite) -> Result<PlaintextDataKey, Error> {
 }
 
 /// Builder for [`AwsKmsRsaKeyring`].
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 #[non_exhaustive]
 pub struct AwsKmsRsaKeyringBuilder {
     kms_key_id: Option<String>,

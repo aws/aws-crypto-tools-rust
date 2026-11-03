@@ -52,7 +52,7 @@ impl DiscoveryFilter {
 }
 
 /// Builder for [`DiscoveryFilter`].
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 #[non_exhaustive]
 pub struct DiscoveryFilterBuilder {
     partition: Option<String>,
@@ -222,7 +222,7 @@ impl AwsKmsDiscoveryKeyring {
 }
 
 /// Builder for [`AwsKmsDiscoveryKeyring`].
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 #[non_exhaustive]
 pub struct AwsKmsDiscoveryKeyringBuilder {
     kms_client: Option<KmsClient>,

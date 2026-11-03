@@ -116,7 +116,9 @@ version = "0.1.0"
 dependencies = [
  "aws-crypto-mpl",
  "aws-esdk",
+ "aws-mpl-primitives",
  "axum",
+ "base64",
  "ciborium",
  "serde",
  "serde_bytes",

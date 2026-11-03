@@ -241,6 +241,12 @@ pub struct CachingCmmConfig {
         skip_serializing_if = "Option::is_none"
     )]
     pub limit_messages: Option<i64>,
+    #[serde(
+        rename = "sharedCacheName",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub shared_cache_name: Option<String>,
 }
 
 // Keyrings (tagged union via optional members)
@@ -258,17 +264,37 @@ pub struct Keyring {
     )]
     pub aws_kms_multi: Option<AwsKmsMultiKeyringConfig>,
     #[serde(
+        rename = "AwsKmsMrkMultiKeyring",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub aws_kms_mrk_multi: Option<AwsKmsMrkMultiKeyringConfig>,
+    #[serde(
         rename = "AwsKmsDiscovery",
         default,
         skip_serializing_if = "Option::is_none"
     )]
     pub aws_kms_discovery: Option<AwsKmsDiscoveryKeyringConfig>,
+    #[serde(
+        rename = "AwsKmsMrkDiscovery",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub aws_kms_mrk_discovery: Option<AwsKmsMrkDiscoveryKeyringConfig>,
     #[serde(rename = "AwsKmsRsa", default, skip_serializing_if = "Option::is_none")]
     pub aws_kms_rsa: Option<AwsKmsRsaKeyringConfig>,
+    #[serde(
+        rename = "AwsKmsEcdh",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub aws_kms_ecdh: Option<AwsKmsEcdhKeyringConfig>,
     #[serde(rename = "RawAes", default, skip_serializing_if = "Option::is_none")]
     pub raw_aes: Option<RawAesKeyringConfig>,
     #[serde(rename = "RawRsa", default, skip_serializing_if = "Option::is_none")]
     pub raw_rsa: Option<RawRsaKeyringConfig>,
+    #[serde(rename = "RawEcdh", default, skip_serializing_if = "Option::is_none")]
+    pub raw_ecdh: Option<RawEcdhKeyringConfig>,
     #[serde(
         rename = "AwsKmsHierarchical",
         default,
@@ -378,7 +404,38 @@ pub struct AwsKmsMultiKeyringConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AwsKmsMrkMultiKeyringConfig {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub generator: Option<String>,
+    #[serde(rename = "kmsKeyIds", default, skip_serializing_if = "Option::is_none")]
+    pub kms_key_ids: Option<Vec<String>>,
+    #[serde(
+        rename = "grantTokens",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub grant_tokens: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AwsKmsDiscoveryKeyringConfig {
+    #[serde(
+        rename = "discoveryFilter",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub discovery_filter: Option<DiscoveryFilter>,
+    #[serde(
+        rename = "grantTokens",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub grant_tokens: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AwsKmsMrkDiscoveryKeyringConfig {
+    pub region: String,
     #[serde(
         rename = "discoveryFilter",
         default,
@@ -433,6 +490,122 @@ pub enum KmsRsaEncryptionAlgorithm {
     OaepSha256,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AwsKmsEcdhKeyringConfig {
+    #[serde(rename = "keyAgreementScheme")]
+    pub key_agreement_scheme: KmsEcdhKeyAgreementScheme,
+    #[serde(rename = "curveSpec")]
+    pub curve_spec: EcdhCurveSpec,
+    #[serde(
+        rename = "grantTokens",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub grant_tokens: Option<Vec<String>>,
+}
+
+/// Tagged union via optional members; exactly one is set.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct KmsEcdhKeyAgreementScheme {
+    #[serde(
+        rename = "KmsPrivateKeyToStaticPublicKey",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub kms_private_key_to_static_public_key: Option<KmsPrivateKeyToStaticPublicKeyConfig>,
+    #[serde(
+        rename = "KmsPublicKeyDiscovery",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub kms_public_key_discovery: Option<KmsPublicKeyDiscoveryConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KmsPrivateKeyToStaticPublicKeyConfig {
+    #[serde(rename = "senderKmsIdentifier")]
+    pub sender_kms_identifier: String,
+    #[serde(
+        rename = "senderPublicKey",
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "serde_bytes_opt"
+    )]
+    pub sender_public_key: Option<Vec<u8>>,
+    #[serde(rename = "recipientPublicKey", with = "serde_bytes")]
+    pub recipient_public_key: Vec<u8>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KmsPublicKeyDiscoveryConfig {
+    #[serde(rename = "recipientKmsIdentifier")]
+    pub recipient_kms_identifier: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RawEcdhKeyringConfig {
+    #[serde(rename = "keyAgreementScheme")]
+    pub key_agreement_scheme: RawEcdhKeyAgreementScheme,
+    #[serde(rename = "curveSpec")]
+    pub curve_spec: EcdhCurveSpec,
+}
+
+/// Tagged union via optional members; exactly one is set.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct RawEcdhKeyAgreementScheme {
+    #[serde(
+        rename = "RawPrivateKeyToStaticPublicKey",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub raw_private_key_to_static_public_key: Option<RawPrivateKeyToStaticPublicKeyConfig>,
+    #[serde(
+        rename = "EphemeralPrivateKeyToStaticPublicKey",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub ephemeral_private_key_to_static_public_key:
+        Option<EphemeralPrivateKeyToStaticPublicKeyConfig>,
+    #[serde(
+        rename = "PublicKeyDiscovery",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub public_key_discovery: Option<PublicKeyDiscoveryConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RawPrivateKeyToStaticPublicKeyConfig {
+    #[serde(rename = "senderStaticPrivateKey", with = "serde_bytes")]
+    pub sender_static_private_key: Vec<u8>,
+    #[serde(rename = "recipientPublicKey", with = "serde_bytes")]
+    pub recipient_public_key: Vec<u8>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EphemeralPrivateKeyToStaticPublicKeyConfig {
+    #[serde(rename = "recipientPublicKey", with = "serde_bytes")]
+    pub recipient_public_key: Vec<u8>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PublicKeyDiscoveryConfig {
+    #[serde(rename = "recipientStaticPrivateKey", with = "serde_bytes")]
+    pub recipient_static_private_key: Vec<u8>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub enum EcdhCurveSpec {
+    #[serde(rename = "ECC_NIST_P256")]
+    EccNistP256,
+    #[serde(rename = "ECC_NIST_P384")]
+    EccNistP384,
+    #[serde(rename = "ECC_NIST_P521")]
+    EccNistP521,
+    #[serde(rename = "SM2")]
+    Sm2,
+}
+
 /// Hierarchical keyring config: branch keys live in a DynamoDB key store and are
 /// wrapped by a KMS key. Built over the MPL branch key store.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -446,7 +619,7 @@ pub struct AwsKmsHierarchicalKeyringConfig {
     #[serde(rename = "kmsKeyArn")]
     pub kms_key_arn: String,
     #[serde(rename = "ttlSeconds")]
-    pub ttl_seconds: i64,
+    pub ttl_seconds: i32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -175,6 +175,7 @@ macro_rules! fluent_keyring {
 fluent_keyring!(
     super::RawAesKeyring,
     super::RawRsaKeyring,
+    super::RawEcdhKeyring,
     super::MultiKeyring,
     crate::aws_kms::hierarchical_keyring::HierarchicalKeyring
 );
@@ -185,5 +186,6 @@ fluent_keyring!(
     crate::aws_kms::discovery_keyring::AwsKmsDiscoveryKeyring,
     crate::aws_kms::mrk_keyring::AwsKmsMrkKeyring,
     crate::aws_kms::kms_rsa_keyring::AwsKmsRsaKeyring,
+    crate::aws_kms::kms_ecdh_keyring::AwsKmsEcdhKeyring,
     crate::aws_kms::mrk_discovery_keyring::AwsKmsMrkDiscoveryKeyring
 );
