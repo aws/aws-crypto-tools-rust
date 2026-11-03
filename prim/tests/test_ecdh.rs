@@ -128,6 +128,27 @@ fn public_key_from_fixed_private_key() {
     }
 }
 
+// Java's `PrivateKey.getEncoded()` omits the optional public key from the
+// PKCS #8 encoding, and the commons test suite sends ECDH keys in that form.
+#[test]
+fn public_key_from_private_key_without_embedded_public_key() {
+    const PRIVATE_WITHOUT_PUBLIC: &str = "-----BEGIN PRIVATE KEY-----\n\
+MEECAQAwEwYHKoZIzj0CAQYIKoZIzj0DAQcEJzAlAgEBBCCxLMhEGZBosAPhAkiG\n\
+Rx4823RiApCmg87Cp0gjkWYPGQ==\n\
+-----END PRIVATE KEY-----";
+    const PUBLIC: &str = "3059301306072a8648ce3d020106082a8648ce3d030107034200046966416b471f24dd\
+66ac2fd2f9204e30bb1d3ad43bc0d5fcd15b0517eacf9e7dea2209a5e5bd3431fb3fc3a70922bbba466e54e4ee9655\
+f09b8ac6b5df5c0aa6";
+    assert_eq!(
+        ecdh_public_key_from_private_key(
+            EcdhCurveSpec::EccNistP256,
+            PRIVATE_WITHOUT_PUBLIC.as_bytes()
+        )
+        .unwrap(),
+        hex(PUBLIC)
+    );
+}
+
 #[test]
 fn public_key_from_private_key_on_wrong_curve_fails() {
     ecdh_public_key_from_private_key(EcdhCurveSpec::EccNistP384, P256_PRIVATE.as_bytes())
