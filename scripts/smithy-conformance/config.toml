@@ -894,20 +894,27 @@ justification = "It works around one .NET release; it means nothing in Rust."
 later = "not breaking"
 later_why = "A new setter only adds API."
 [[deviation]]
+id = "lint.const_fn:aws_crypto_mpl::types::RequiredEncryptionContextKeys::new"
+reason = "The empty set is a fixed value: a getter returns a static empty one when the input has none."
+what_differs = "A public const fn on a struct."
+justification = "The static needs a const constructor; an empty set stays const-constructible whatever the type holds inside."
+later = "breaking"
+later_why = "Dropping const breaks callers that build one in a const or static."
+
+[[deviation]]
 id = "*_type:materialProviders#*$requiredEncryptionContextKeys*"
 example_strict = '''
 let keys: &[String] = materials.required_encryption_context_keys();
 builder.set_required_encryption_context_keys(Some(vec!["a".into()]))'''
 example_ours = '''
-let keys: &BTreeSet<String> = materials.required_encryption_context_keys();
-builder.set_required_encryption_context_keys(Some(BTreeSet::from(["a".into()])))
+let keys: &RequiredEncryptionContextKeys = materials.required_encryption_context_keys();
+builder.set_required_encryption_context_keys(Some(RequiredEncryptionContextKeys::from(["a"])))
 // adding one key is the same: .required_encryption_context_keys("a")'''
-reason = "A sorted set of keys, like the sorted encryption context."
-what_differs = "The model uses a list of keys."
-justification = "A set can't hold a key twice and is sorted like the encryption context."
+reason = "Its own type: a sorted set of keys, like the sorted encryption context."
+what_differs = "The model uses a list of keys; Rust has a RequiredEncryptionContextKeys type."
+justification = "The type can't hold a key twice, keeps keys sorted like the encryption context, and can change inside without breaking callers."
 later = "breaking"
-later_why = "Changing BTreeSet to a list changes the setter and getter."
-status = "rejected"
+later_why = "Changing the type to a list changes the setter and getter."
 
 [[deviation]]
 id = "lint.renamed_reexport:aws_esdk::types::*"
