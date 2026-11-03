@@ -221,7 +221,7 @@ impl RawAesKeyring {
 }
 
 /// Builder for [`RawAesKeyring`].
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct RawAesKeyringBuilder {
     key_namespace: Option<String>,
     key_name: Option<String>,

@@ -110,7 +110,7 @@ fn region_of(kms_key_id: &str) -> Option<String> {
 /// # Ok(())
 /// # }
 /// ```
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 #[non_exhaustive]
 pub struct AwsKmsMultiKeyringBuilder {
     generator: Option<String>,
@@ -245,7 +245,7 @@ impl AwsKmsMultiKeyringBuilder {
 /// # Ok(())
 /// # }
 /// ```
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 #[non_exhaustive]
 pub struct AwsKmsDiscoveryMultiKeyringBuilder {
     regions: Option<Vec<String>>,
@@ -403,7 +403,7 @@ fn mrks_are_unique<'a>(kms_key_ids: impl Iterator<Item = &'a String> + Clone) ->
 /// # Ok(())
 /// # }
 /// ```
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 #[non_exhaustive]
 pub struct AwsKmsMrkMultiKeyringBuilder {
     generator: Option<String>,
@@ -541,7 +541,7 @@ impl AwsKmsMrkMultiKeyringBuilder {
 /// # Ok(())
 /// # }
 /// ```
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 #[non_exhaustive]
 pub struct AwsKmsMrkDiscoveryMultiKeyringBuilder {
     regions: Option<Vec<String>>,

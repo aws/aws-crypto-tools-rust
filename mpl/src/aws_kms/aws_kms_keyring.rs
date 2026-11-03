@@ -537,7 +537,7 @@ fn kms_edk(key_id: String, ciphertext: Vec<u8>) -> Result<EncryptedDataKey, Erro
 }
 
 /// Builder for [`AwsKmsKeyring`].
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 #[non_exhaustive]
 pub struct AwsKmsKeyringBuilder {
     kms_key_id: Option<String>,

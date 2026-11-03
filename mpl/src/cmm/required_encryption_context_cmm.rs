@@ -69,7 +69,7 @@ impl RequiredEncryptionContextCmm {
 }
 
 /// Builder for [`RequiredEncryptionContextCmm`].
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 #[non_exhaustive]
 pub struct RequiredEncryptionContextCmmBuilder {
     underlying_cmm: Option<SharedCmm>,

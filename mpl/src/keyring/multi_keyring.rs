@@ -116,7 +116,7 @@ impl MultiKeyring {
 }
 
 /// Builder for [`MultiKeyring`].
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 #[non_exhaustive]
 pub struct MultiKeyringBuilder {
     generator: Option<SharedKeyring>,

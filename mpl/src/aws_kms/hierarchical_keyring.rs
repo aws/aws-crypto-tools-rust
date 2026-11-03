@@ -356,7 +356,7 @@ const DEFAULT_CACHE_ENTRY_CAPACITY: usize = 1000;
 
 /// Builder for [`HierarchicalKeyring`], returned by
 /// [`HierarchicalKeyring::builder`].
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct HierarchicalKeyringBuilder {
     key_store: Option<key_store::SharedKeyStore>,
     ttl: Option<Duration>,
