@@ -117,6 +117,7 @@ dependencies = [
  "aws-crypto-mpl",
  "aws-esdk",
  "axum",
+ "base64",
  "ciborium",
  "serde",
  "serde_bytes",
