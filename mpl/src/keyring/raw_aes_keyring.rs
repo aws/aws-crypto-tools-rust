@@ -220,7 +220,9 @@ impl RawAesKeyring {
 }
 
 /// Builder for [`RawAesKeyring`].
-#[derive(Default)]
+///
+/// Each clone holds its own copy of the wrapping key, zeroized when that clone drops.
+#[derive(Clone, Default)]
 pub struct RawAesKeyringBuilder {
     key_namespace: Option<String>,
     key_name: Option<String>,
@@ -265,7 +267,7 @@ impl RawAesKeyringBuilder {
 
     /// The key namespace, if set.
     #[must_use]
-    pub const fn get_key_namespace(&self) -> &Option<String> {
+    pub fn get_key_namespace(&self) -> &Option<String> {
         &self.key_namespace
     }
 
@@ -287,7 +289,7 @@ impl RawAesKeyringBuilder {
 
     /// The key name, if set.
     #[must_use]
-    pub const fn get_key_name(&self) -> &Option<String> {
+    pub fn get_key_name(&self) -> &Option<String> {
         &self.key_name
     }
 
@@ -312,14 +314,14 @@ impl RawAesKeyringBuilder {
 
     /// The wrapping key, if set.
     #[must_use]
-    pub const fn get_wrapping_key(&self) -> &Option<Vec<u8>> {
+    pub fn get_wrapping_key(&self) -> &Option<Vec<u8>> {
         &self.wrapping_key
     }
 
     /// Set the wrapping algorithm.
     /// Required.
     #[must_use]
-    pub const fn wrapping_alg(mut self, wrapping_alg: AesWrappingAlg) -> Self {
+    pub fn wrapping_alg(mut self, wrapping_alg: AesWrappingAlg) -> Self {
         self.wrapping_alg = Some(wrapping_alg);
         self
     }
@@ -327,14 +329,14 @@ impl RawAesKeyringBuilder {
     /// Set or clear the wrapping algorithm from an `Option`.
     /// To set a value, use [`Self::wrapping_alg`].
     #[must_use]
-    pub const fn set_wrapping_alg(mut self, wrapping_alg: Option<AesWrappingAlg>) -> Self {
+    pub fn set_wrapping_alg(mut self, wrapping_alg: Option<AesWrappingAlg>) -> Self {
         self.wrapping_alg = wrapping_alg;
         self
     }
 
     /// The wrapping algorithm, if set.
     #[must_use]
-    pub const fn get_wrapping_alg(&self) -> &Option<AesWrappingAlg> {
+    pub fn get_wrapping_alg(&self) -> &Option<AesWrappingAlg> {
         &self.wrapping_alg
     }
 
@@ -364,7 +366,7 @@ impl RawAesKeyringBuilder {
             ));
         }
 
-        let expected_key_len = usize::from(wrapping_alg.primitive().key_len());
+        let expected_key_len = wrapping_alg.key_length();
         if wrapping_key.len() != expected_key_len {
             return Err(Error::new(
                 Kind::Validation,
@@ -400,7 +402,7 @@ impl Keyring for crate::shared::Builtin<RawAesKeyring> {
         // encryption context fails the operation rather than producing an EDK.
         let aad = materials
             .encryption_context()
-            .serialize()
+            .to_bytes()
             .map_err(|e| Error::wrap("failed to serialize the encryption context", e))?;
 
         let materials = match materials.plaintext_data_key() {
@@ -433,7 +435,7 @@ impl Keyring for crate::shared::Builtin<RawAesKeyring> {
         // context fails the operation even when no EDK matches this keyring.
         let aad = materials
             .encryption_context()
-            .serialize()
+            .to_bytes()
             .map_err(|e| Error::wrap("failed to serialize the encryption context", e))?;
 
         let expected_dk_len = materials.algorithm_suite().encryption_key_length();

@@ -131,7 +131,7 @@ impl FakeAws {
         DynamoDbKeyStore::builder()
             .ddb_table_name(TABLE)
             .logical_key_store_name(TABLE)
-            .kms_configuration(KmsConfiguration::KmsKeyArn(KEY_ARN.into()))
+            .kms_configuration(KmsConfiguration::kms_key_arn(KEY_ARN))
             .kms_client(self.kms_client())
             .ddb_client(self.ddb_client())
             .build()

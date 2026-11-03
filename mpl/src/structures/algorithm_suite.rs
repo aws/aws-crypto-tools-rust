@@ -340,6 +340,7 @@ impl EsdkAlgorithmSuiteId {
 /// This struct is opaque: there is no public constructor. Construct one by
 /// calling [`AlgorithmSuiteId::specification`] on a chosen suite.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct AlgorithmSuite {
     id: [u8; 2],
     encryption_algorithm: EncryptionAlgorithm,
@@ -494,33 +495,6 @@ pub enum AsymmetricSignatureAlgorithm {
 #[non_exhaustive]
 pub enum SymmetricSignatureAlgorithm {
     HmacSha384,
-}
-
-// ============================================================================
-// Cryptographic format identifier (ESDK only)
-// ============================================================================
-
-/// Cryptographic format identifier. Only the ESDK format is implemented in this
-/// MPL — uniqueness of short and long name is trivial (single variant).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[non_exhaustive]
-pub enum Format {
-    /// AWS Encryption SDK Message Format / "ESDK".
-    Esdk,
-}
-
-impl Format {
-    pub const fn long_name(self) -> &'static str {
-        match self {
-            Self::Esdk => "AWS Encryption SDK Message Format",
-        }
-    }
-
-    pub const fn short_name(self) -> &'static str {
-        match self {
-            Self::Esdk => "ESDK",
-        }
-    }
 }
 
 // ============================================================================

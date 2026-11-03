@@ -291,7 +291,7 @@ fn test_field_getters_return_constructed_values() {
     assert_eq!(*mat.encryption_context(), ec);
     assert_eq!(*mat.required_encryption_context_keys(), reck);
     assert_eq!(mat.signing_key().unwrap().len(), 48);
-    assert!(mat.symmetric_signing_keys().is_none());
+    assert!(mat.symmetric_signing_keys().is_empty());
 }
 
 #[test]
@@ -308,7 +308,7 @@ fn test_field_getters_return_none_for_omitted_optional_fields() {
 
     assert!(mat.plaintext_data_key().is_none());
     assert!(mat.signing_key().is_none());
-    assert!(mat.symmetric_signing_keys().is_none());
+    assert!(mat.symmetric_signing_keys().is_empty());
 }
 
 #[test]

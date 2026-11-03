@@ -111,7 +111,7 @@ impl EsdkBenchmark {
             .ddb_client(aws_sdk_dynamodb::Client::new(&sdk_config))
             .ddb_table_name(BRANCH_KEY_STORE_NAME)
             .logical_key_store_name(LOGICAL_KEY_STORE_NAME)
-            .kms_configuration(KmsConfiguration::KmsKeyArn(HIERARCHY_KEY_ARN.into()))
+            .kms_configuration(KmsConfiguration::kms_key_arn(HIERARCHY_KEY_ARN))
             .build()
             .await
             .map_err(|e| anyhow::anyhow!("failed to build the key store: {e}"))?;

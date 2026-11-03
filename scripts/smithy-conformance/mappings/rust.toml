@@ -1,0 +1,29 @@
+# Smithy -> Rust spellings the conformance checker accepts.
+# smithy-codegen-rust describes the same mapping in prose; keep the two in step.
+# check.py reads this file. A shape the model names (not a smithy.api prelude
+# shape) may also map to a Rust type of the same name.
+
+[scalar]
+boolean = ["bool"]
+byte = ["i8"]
+short = ["i16"]
+integer = ["i32"]
+long = ["i64"]
+float = ["f32"]
+double = ["f64"]
+string = ["String"]
+blob = ["Vec<u8>"]
+timestamp = ["DateTime", "SystemTime"]
+
+[collection]
+# {T} is the member; {K}/{V} the map key and value. Borrowed forms (&T, &str,
+# &[T]) are derived from these owned forms.
+list = ["Vec<{T}>"]
+map = ["HashMap<{K}, {V}>", "BTreeMap<{K}, {V}>", "IndexMap<{K}, {V}>"]
+
+[naming]
+# A localService is a `Client`; a resource is a trait plus a `Shared<Trait>` handle.
+client = "Client"
+config = "Config"
+handle_prefix = "Shared"
+fluent_builder_suffix = "FluentBuilder"

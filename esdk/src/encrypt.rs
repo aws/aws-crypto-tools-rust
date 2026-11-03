@@ -63,10 +63,13 @@ pub(crate) async fn encrypt(input: &EncryptInput<'_>) -> Result<EncryptOutput, E
 
     let total_size = estimated_ciphertext_capacity(input.plaintext.len(), input.frame_length);
     let mut ciphertext: Vec<u8> = Vec::with_capacity(total_size);
+    let Ok(plaintext_len) = u64::try_from(input.plaintext.len()) else {
+        return Err(val_err("plaintext too large"));
+    };
     let out = internal_encrypt(
         &mut cursor,
         &mut ciphertext,
-        Some(input.plaintext.len()),
+        Some(plaintext_len),
         input.material_source(),
         &input.encryption_context,
         input.algorithm_suite_id,
@@ -129,7 +132,7 @@ where
     let output = internal_encrypt(
         &mut plaintext,
         &mut ciphertext,
-        input.data_size,
+        input.plaintext_length_bound,
         input.material_source(),
         &input.encryption_context,
         input.algorithm_suite_id,
@@ -147,7 +150,7 @@ async fn internal_encrypt(
     plaintext: &mut dyn Source,
     // ciphertext is the output buffer for this function
     ciphertext: &mut dyn Sink,
-    plaintext_len: Option<usize>,
+    plaintext_len: Option<u64>,
     input_source: Option<MaterialSource>,
     encryption_context: &EncryptionContext,
     algorithm_suite_id: Option<AlgorithmSuiteId>,
@@ -176,7 +179,7 @@ async fn internal_encrypt(
 async fn encrypt_steps(
     plaintext: &mut dyn Source,
     ciphertext: &mut dyn Sink,
-    plaintext_len: Option<usize>,
+    plaintext_len: Option<u64>,
     input_source: Option<MaterialSource>,
     encryption_context: &EncryptionContext,
     algorithm_suite_id: Option<AlgorithmSuiteId>,
@@ -310,7 +313,7 @@ async fn encrypt_steps(
 /// Validates the input algorithm suite against the commitment policy, obtains encryption
 /// materials from the CMM, validates EDK count, generates a message ID, and derives keys.
 async fn step_get_encryption_materials(
-    plaintext_len: Option<usize>,
+    plaintext_len: Option<u64>,
     input_source: Option<MaterialSource>,
     encryption_context: &EncryptionContext,
     algorithm_suite_id: Option<AlgorithmSuiteId>,
@@ -466,7 +469,7 @@ async fn step_construct_body(
     data_key: &[u8],
     ciphertext: &mut dyn Sink,
     sig_digest: &mut DigestWriter,
-    max_plaintext_length: Option<usize>,
+    max_plaintext_length: Option<u64>,
 ) -> Result<(), Error> {
     //= spec/client-apis/encrypt.md#construct-the-body
     //# The encrypted message output by the Encrypt operation MUST have a message body equal

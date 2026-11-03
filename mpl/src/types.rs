@@ -3,14 +3,14 @@
 
 //! The data shapes the keyrings, CMMs, caches, and key store take and return.
 
-pub use crate::cmc::entry::{BytesUsage, CacheEntry, CachedMaterials, MessageUsage, UsageMetadata};
+pub use crate::cmc::entry::{CacheEntry, CachedMaterials, UsageMetadata};
 pub use crate::structures::{
     AesWrappingAlg, AlgorithmSuite, AlgorithmSuiteId, AsymmetricSignatureAlgorithm,
     BeaconKeyMaterials, BranchKeyMaterials, CommitmentPolicy, DecryptionMaterials,
     EncryptedDataKey, EncryptionAlgorithm, EncryptionAlgorithmMode, EncryptionContext,
-    EncryptionMaterials, EsdkAlgorithmSuiteId, EsdkCommitmentPolicy, Format,
-    KeyDerivationAlgorithm, PlaintextDataKey, RequiredEncryptionContextKeys, SigningKey,
-    SymmetricSignatureAlgorithm, SymmetricSigningKey, VerificationKey,
+    EncryptionMaterials, EsdkAlgorithmSuiteId, EsdkCommitmentPolicy, KeyDerivationAlgorithm,
+    PlaintextDataKey, RequiredEncryptionContextKeys, SigningKey, SymmetricSignatureAlgorithm,
+    SymmetricSigningKey, VerificationKey,
 };
 
 pub mod builders {

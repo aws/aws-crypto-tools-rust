@@ -381,7 +381,7 @@ mod ffi {
         grace_period: OptDuration,
         grace_interval: OptDuration,
         fan_out: OptU32,
-        inflight_ttl: OptDuration,
+        in_flight_ttl: OptDuration,
         sleep: OptDuration,
     }
 
@@ -875,8 +875,8 @@ fn encryption_context_core_to_target(
 //# The shim MUST translate zero
 //# to the core ESDK's "no limit" representation, and a positive value `n` to a
 //# limit of `n`.
-fn max_edks_target_to_core(n: u32) -> Option<std::num::NonZeroUsize> {
-    std::num::NonZeroUsize::new(usize::try_from(n).unwrap_or(usize::MAX))
+fn max_edks_target_to_core(n: u32) -> Option<usize> {
+    (n != 0).then(|| usize::try_from(n).unwrap_or(usize::MAX))
 }
 
 // C++ to Rust for Frame Length
@@ -908,10 +908,10 @@ fn make_kms_config(
         )),
         //= spec/shim/esdk-shim.md#kms-configuration
         //# - The shim MUST translate a KMS key ARN configuration.
-        ffi::KmsConfigurationType::KmsKeyArn => Ok(KmsConfiguration::KmsKeyArn(value.into())),
+        ffi::KmsConfigurationType::KmsKeyArn => Ok(KmsConfiguration::kms_key_arn(value)),
         //= spec/shim/esdk-shim.md#kms-configuration
         //# - The shim MUST translate a KMS multi-Region-key ARN configuration.
-        ffi::KmsConfigurationType::KmsMrKeyArn => Ok(KmsConfiguration::KmsMrKeyArn(value.into())),
+        ffi::KmsConfigurationType::KmsMrKeyArn => Ok(KmsConfiguration::kms_mr_key_arn(value)),
         //= spec/shim/esdk-shim.md#kms-configuration
         //# - The shim MUST translate a discovery configuration.
         ffi::KmsConfigurationType::Discovery => Ok(KmsConfiguration::Discovery(
@@ -990,7 +990,10 @@ fn apply_storm_tracking_options(
             options.grace_interval.to_option(),
         )?)
         .set_fan_out(count("fan_out", options.fan_out.to_option())?)
-        .set_inflight_ttl(duration("inflight_ttl", options.inflight_ttl.to_option())?)
+        .set_in_flight_ttl(duration(
+            "in_flight_ttl",
+            options.in_flight_ttl.to_option(),
+        )?)
         .set_sleep(duration("sleep", options.sleep.to_option())?))
 }
 
@@ -1303,7 +1306,7 @@ fn encrypt(input: &ffi::EncryptInput) -> Result<ffi::EncryptOutput, String> {
         //# source (see [Resources](#resources)).
         .keyring(keyring.inner.clone())
         .set_algorithm_suite_id(settings.algorithm_suite_id)
-        .set_frame_length(settings.frame_length)
+        .set_frame_length(settings.frame_length.map(NonZeroU32::get))
         .send();
     let output = TOKIO_RUNTIME.block_on(output).map_err(core_err)?;
     Ok(ffi::EncryptOutput {
@@ -1940,22 +1943,8 @@ fn create_encrypt_stream(input: &ffi::EncryptInput) -> Result<Box<EncryptStream>
             &input.encryption_context,
         )))
         .set_algorithm_suite_id(settings.algorithm_suite_id)
-        .set_frame_length(settings.frame_length)
-        .set_data_size(
-            input
-                .plaintext_length_bound
-                .to_option()
-                .map(|bound| {
-                    usize::try_from(bound).map_err(|e| {
-                        shim_err(
-                            ffi::ShimErrorKind::Validation,
-                            "plaintext length bound translation",
-                            e,
-                        )
-                    })
-                })
-                .transpose()?,
-        );
+        .set_frame_length(settings.frame_length.map(NonZeroU32::get))
+        .set_plaintext_length_bound(input.plaintext_length_bound.to_option());
     Ok(Box::new(EncryptStream {
         state: StreamState::spawn("encrypt_stream", move |mut reader, mut writer| {
             let output = TOKIO_RUNTIME
