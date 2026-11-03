@@ -1,7 +1,7 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! The checks `SharedKeyring` and `SharedCmm` run on the materials a keyring or CMM returns.
+//! The checks that `SharedKeyring` and `SharedCmm` run on the materials that a keyring or CMM returns.
 
 use std::borrow::Cow;
 
@@ -222,8 +222,6 @@ fn cmm_resource() -> Resource {
     Resource::Cmm(CmmResource::new(CMM))
 }
 
-// ===== Keyring on_encrypt =====
-
 #[tokio::test]
 async fn on_encrypt_accepts_an_added_data_key() {
     for suite in [non_signing(), signing()] {
@@ -337,7 +335,8 @@ async fn on_encrypt_rejects_a_replaced_plaintext_data_key() {
 
 #[tokio::test]
 async fn on_encrypt_rejects_a_removed_encrypted_data_key() {
-    // Repeats count: two copies of "a" do not survive as one copy of "a" plus "b".
+    // The input has "a" twice.
+    // The keyring returns "a" and "b", so it removed one "a".
     let keyring = FnKeyring::on_encrypt(|m| {
         rebuild(&m)
             .set_encrypted_data_keys(Some(vec![edk("a"), edk("b")]))
@@ -376,8 +375,6 @@ async fn on_encrypt_rejects_a_non_signing_suite_with_the_public_key_in_the_conte
     let result = on_encrypt(keyring, start).await;
     assert_invalid(result, keyring_resource(), "has 'aws-crypto-public-key'");
 }
-
-// ===== Keyring on_decrypt =====
 
 #[tokio::test]
 async fn on_decrypt_accepts_an_added_data_key() {
@@ -441,8 +438,6 @@ async fn on_decrypt_rejects_a_signing_suite_without_a_verification_key() {
     let result = on_decrypt(keyring, start).await;
     assert_invalid(result, keyring_resource(), "no verification key");
 }
-
-// ===== CMM =====
 
 fn fixed_cmm(
     encryption: EncryptionMaterialsBuilder,
