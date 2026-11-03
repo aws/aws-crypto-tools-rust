@@ -127,6 +127,22 @@ def assign_services(model, surfaces):
     return [{"crate": crate, "services": svc} for crate, svc in services.items()]
 
 
+def owners(text, libs, surfaces):
+    """The crates a finding id or deviation id is about.
+
+    A model id names its namespace (`materialProviders#...`), owned by the crate
+    implementing a service in it; a lint id names a Rust path (`aws_esdk::...`).
+    An id naming neither (such as a bare `*` glob) belongs to every crate.
+    """
+    hits = set()
+    for lib in libs:
+        lib_name = surfaces[lib["crate"]]["crate"]
+        namespaces = {sid.split("#", 1)[0].rsplit(".", 1)[-1] for sid in lib["services"]}
+        if f"{lib_name}::" in text or any(f"{ns}#" in text for ns in namespaces):
+            hits.add(lib["crate"])
+    return hits or {lib["crate"] for lib in libs}
+
+
 def surfaces_for(cfg, repo, out, reuse):
     surfaces = {}
     for lib in cfg["library"]:
@@ -215,7 +231,7 @@ def report(findings, stale, reviews, unmatched, proposed_scope, out):
     lines += ["", "## Public types with no model shape (confirm each is meant to be public)", ""]
     lines += [f"- `{p}`" for p in unmatched]
     open(os.path.join(out, "report.md"), "w").write("\n".join(lines) + "\n")
-    json.dump([dict(vars(f), id=f.id) for f in findings], open(os.path.join(out, "findings.json"), "w"),
+    json.dump([dict(vars(f), id=f.id, crates=sorted(getattr(f, "crates", ()))) for f in findings], open(os.path.join(out, "findings.json"), "w"),
               indent=1)
     return ok
 
@@ -226,10 +242,18 @@ def main():
     ap.add_argument("--repo", help="repo root (default: the git repo this script is in)")
     ap.add_argument("--out", default=os.path.join(CACHE, "run"))
     ap.add_argument("--reuse", action="store_true", help="reuse surface JSON already in --out")
+    ap.add_argument("--crate", help="report and fail only on this crate (its path from the repo root); "
+                                    "every crate is still built, to match model services to crates")
+    ap.add_argument("--list", action="store_true", help="print the checked crates as a JSON list and exit")
     a = ap.parse_args()
     cfg = tomllib.load(open(a.config, "rb"))
     repo = a.repo or subprocess.run(["git", "-C", HERE, "rev-parse", "--show-toplevel"], capture_output=True,
                                     text=True, check=True).stdout.strip()
+    if a.list:
+        print(json.dumps(discover_crates(repo)))
+        return
+    if a.crate and a.crate not in discover_crates(repo):
+        sys.exit(f"{a.crate} is not a published library crate in {repo}: {discover_crates(repo)}")
     os.makedirs(a.out, exist_ok=True)
     for d in cfg.get("rename", []) + cfg.get("out_of_scope", []) + cfg.get("deviation", []):
         if not d.get("reason"):
@@ -251,13 +275,17 @@ def main():
     for lib in cfg["library"]:
         c = Checker(model, cfg, surfaces, lib["crate"], lib.get("services", []))
         c.run()
+        for f in c.findings:
+            f.crates = {lib["crate"]}
         findings += c.findings
-        reviews += c.reviews
+        reviews += [r for r in c.reviews if not a.crate or lib["crate"] == a.crate]
         located |= set(c.located.values())
-    findings += lint(surfaces, cfg.get("lint"))
-    unmatched = sorted(p for s in surfaces.values() for p, t in s["types"].items()
+    for f in lint(surfaces, cfg.get("lint")):
+        f.crates = owners(f.id, cfg["library"], surfaces)
+        findings.append(f)
+    unmatched = sorted(p for crate, s in surfaces.items() for p, t in s["types"].items()
                        if p not in located and not t["name"].endswith("Builder")
-                       and "::error::" not in p)
+                       and "::error::" not in p and (not a.crate or crate == a.crate))
 
     stale = apply_deviations(findings, cfg.get("deviation", []))
     proposed_scope = [dict(o, kind=k) for k in ("rename", "out_of_scope") for o in cfg.get(k, [])
@@ -267,6 +295,12 @@ def main():
             base = o["shape"].split("$", 1)[0]
             if base not in model.shapes:
                 stale.append({"id": f"{k}:{o['shape']}", "reason": "shape is not in the model"})
+    if a.crate:
+        # Deviations are matched against every crate's findings first, so an entry
+        # only another crate uses is not reported stale here.
+        findings = [f for f in findings if a.crate in f.crates]
+        stale = [d for d in stale if a.crate in owners(d["id"], cfg["library"], surfaces)]
+        proposed_scope = [o for o in proposed_scope if a.crate in owners(o["shape"], cfg["library"], surfaces)]
     ok = report(findings, stale, reviews, unmatched, proposed_scope, a.out)
     subprocess.run([sys.executable, os.path.join(HERE, "review_html.py"), a.config,
                     os.path.join(a.out, "findings.json"), os.path.join(a.out, "review.html")], check=True)

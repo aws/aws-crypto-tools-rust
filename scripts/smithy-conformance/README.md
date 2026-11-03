@@ -17,6 +17,10 @@ reason. It writes `report.md`, `findings.json`, and `review.html`, a page to rev
 difference, to `~/.cache/smithy-conformance/run` (`--out` to change). `--reuse` skips
 rebuilding what is already there.
 
+`--crate esdk` reports and fails only on one crate (every crate is still built, to match
+model services to crates). CI runs one such job per crate; `--list` prints the crates.
+Each job's summary shows its result, and its artifact holds the report and review page.
+
 To accept a difference, add a `[[deviation]]` with its finding id and reason; see
 `config-format.md`. To record decisions made on `review.html`, export them and run
 `apply_decisions.py config.toml <decisions.json>`.
