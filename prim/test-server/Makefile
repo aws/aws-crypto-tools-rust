@@ -14,7 +14,7 @@ LOG_FILE := .server.log
 # repository coordinates live in server-config.json next to this
 # Makefile; COMMONS_BRANCH overrides the configured branch at invocation time.
 MAKEFILE_DIR := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
-REPO_ROOT    := $(abspath $(MAKEFILE_DIR)/..)
+REPO_ROOT    := $(abspath $(MAKEFILE_DIR)/../..)
 COMMONS_CONFIGURATION := $(MAKEFILE_DIR)/server-config.json
 COMMONS_BRANCH ?=
 CLONE_DIR      ?= $(MAKEFILE_DIR)/.commons-clone
