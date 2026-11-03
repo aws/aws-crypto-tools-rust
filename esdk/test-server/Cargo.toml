@@ -26,4 +26,5 @@ base64 = "0.23"
 uuid = { version = "1", features = ["v4"] }
 
 [dev-dependencies]
+aws-mpl-primitives = { path = "../../prim" }
 tower = { version = "0.5", features = ["util"] }
