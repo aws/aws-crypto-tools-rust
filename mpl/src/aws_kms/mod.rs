@@ -24,6 +24,9 @@ pub mod multi_keyrings;
 pub mod mrk_keyring;
 
 #[cfg(feature = "kms")]
+pub mod kms_ecdh_keyring;
+
+#[cfg(feature = "kms")]
 pub mod kms_rsa_keyring;
 
 #[cfg(feature = "kms")]

@@ -61,6 +61,11 @@ rt-tokio = [
 test-utils = ["kms", "ddb", "rt-tokio"]
 
 [dev-dependencies]
+# Used only to stand in for AWS KMS in the AWS KMS ECDH keyring tests.
+aws-smithy-http-client = { version = "1.5.0", features = ["test-util"] }
+aws-smithy-types = "1.8.1"
+http = "1.4.2"
+serde_json = "1.0.140"
 # Used only to construct AWS SDK errors for the classifier unit tests.
 aws-smithy-runtime-api = { version = "1.19.0", features = ["http-1x"] }
 # Used only by tests, as an implementation-independent digest oracle for the
