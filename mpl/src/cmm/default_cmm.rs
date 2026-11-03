@@ -6,8 +6,8 @@
 
 use crate::Error;
 use crate::error::Kind;
+use crate::structures::RequiredEncryptionContextKeys;
 use std::borrow::Cow;
-use std::collections::BTreeSet;
 
 use async_trait::async_trait;
 use aws_mpl_primitives::{
@@ -273,9 +273,9 @@ impl Cmm for crate::shared::Builtin<DefaultCmm> {
 fn merge_reproduced_encryption_context(
     message_ec: &EncryptionContext,
     reproduced_ec: Option<&EncryptionContext>,
-) -> Result<(EncryptionContext, BTreeSet<String>), Error> {
+) -> Result<(EncryptionContext, RequiredEncryptionContextKeys), Error> {
     let mut ec = message_ec.clone();
-    let mut required_keys = BTreeSet::new();
+    let mut required_keys = RequiredEncryptionContextKeys::new();
 
     let Some(reproduced_ec) = reproduced_ec else {
         return Ok((ec, required_keys));
