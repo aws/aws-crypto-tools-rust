@@ -261,6 +261,9 @@ jobs:
     permissions:
       contents: read
       actions: read
+      # The reusable workflow's resolve job reads this pull request's
+      # Test-Server-Override lines.
+      pull-requests: read
       id-token: write
     uses: aws/aws-crypto-tools-commons/.github/workflows/esdk-test-server-reusable.yml@main
     with:
