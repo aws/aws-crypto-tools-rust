@@ -61,6 +61,8 @@
 
 pub mod error;
 
+mod ecdh;
+pub use ecdh::*;
 mod ecdsa;
 pub use ecdsa::*;
 mod hkdf;
