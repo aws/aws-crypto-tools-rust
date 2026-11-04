@@ -13,7 +13,7 @@ use aws_db_esdk::async_trait;
 use aws_db_esdk::aws_sdk_dynamodb::primitives::Blob;
 use aws_db_esdk::aws_sdk_dynamodb::types::AttributeValue;
 use aws_db_esdk::keyring::{
-    BranchKeySupplier, GetBranchKeyIdFromItemKeyInput, GetBranchKeyIdInput, GetBranchKeyIdOutput,
+    BranchKeyIdSupplier, GetBranchKeyIdFromItemKeyInput, GetBranchKeyIdInput, GetBranchKeyIdOutput,
     ItemKeyBranchKeySupplier, ItemKeySupplier,
 };
 use aws_db_esdk::mpl::Error as MplError;

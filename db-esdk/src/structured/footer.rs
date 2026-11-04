@@ -148,9 +148,12 @@ impl Footer {
         header: &[u8],
     ) -> Result<Self, Error> {
         let hash = canon_hash(data, header, mat.encryption_context())?;
-        let keys = mat
-            .symmetric_signing_keys()
-            .ok_or_else(|| materials_err("Encryption materials have no symmetric signing keys"))?;
+        let keys = mat.symmetric_signing_keys();
+        if keys.is_empty() {
+            return Err(materials_err(
+                "Encryption materials have no symmetric signing keys",
+            ));
+        }
         if keys.len() != mat.encrypted_data_keys().len() {
             //= spec/structured-encryption/footer.md#recipient-tags
             //# There MUST be one Recipient Tag for each Encrypted Data Key in the [header](./header.md#encrypted-data-keys)

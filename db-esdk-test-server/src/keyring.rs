@@ -182,7 +182,7 @@ pub async fn key_store_for(
     key_store::DynamoDbKeyStore::builder()
         .ddb_table_name(table_name)
         .logical_key_store_name(logical_key_store_name)
-        .kms_configuration(KmsConfiguration::KmsKeyArn(kms_key_arn.to_owned()))
+        .kms_configuration(KmsConfiguration::kms_key_arn(kms_key_arn))
         .kms_client(aws_sdk_kms::Client::new(&sdk_config))
         .ddb_client(aws_sdk_dynamodb::Client::new(&sdk_config))
         .build()
@@ -197,6 +197,7 @@ async fn build_aws_kms(config: &AwsKmsKeyringConfig) -> Result<SharedKeyring, Se
         .kms_client(aws_sdk_kms::Client::new(&sdk_config))
         .set_grant_tokens(config.grant_tokens.clone())
         .build()
+        .await
         .map_err(|e| ServerError::client(e.to_string()))?;
     Ok(SharedKeyring::new(keyring))
 }
@@ -241,6 +242,7 @@ async fn build_aws_kms_rsa(config: &AwsKmsRsaKeyringConfig) -> Result<SharedKeyr
         .kms_client(kms_client)
         .set_grant_tokens(config.grant_tokens.clone())
         .build()
+        .await
         .map_err(|e| ServerError::client(e.to_string()))?;
     Ok(SharedKeyring::new(keyring))
 }
@@ -271,6 +273,7 @@ async fn build_aws_kms_discovery(
         .set_discovery_filter(discovery_filter)
         .set_grant_tokens(config.grant_tokens.clone())
         .build()
+        .await
         .map_err(|e| ServerError::client(e.to_string()))?;
     Ok(SharedKeyring::new(keyring))
 }
@@ -298,6 +301,7 @@ async fn build_aws_kms_mrk(config: &AwsKmsKeyringConfig) -> Result<SharedKeyring
         .kms_client(aws_sdk_kms::Client::new(&sdk_config))
         .set_grant_tokens(config.grant_tokens.clone())
         .build()
+        .await
         .map_err(|e| ServerError::client(e.to_string()))?;
     Ok(SharedKeyring::new(keyring))
 }
@@ -317,6 +321,7 @@ async fn build_aws_kms_mrk_discovery(
         .set_discovery_filter(discovery_filter)
         .set_grant_tokens(config.grant_tokens.clone())
         .build()
+        .await
         .map_err(|e| ServerError::client(e.to_string()))?;
     Ok(SharedKeyring::new(keyring))
 }

@@ -3,7 +3,7 @@
 
 //! Picking a hierarchical keyring's branch key from an item's primary key.
 //!
-//! The MPL's [`BranchKeySupplier`] sees only an encryption context.
+//! The MPL's [`BranchKeyIdSupplier`] sees only an encryption context.
 //! [`ItemKeyBranchKeySupplier`] rebuilds the item's primary key from that context
 //! and hands it to an [`ItemKeySupplier`], so the supplier works with DynamoDB attributes.
 
@@ -11,7 +11,7 @@ use std::collections::HashMap;
 
 use aws_crypto_mpl::Error as MplError;
 use aws_crypto_mpl::aws_sdk_dynamodb::types::AttributeValue;
-use aws_crypto_mpl::keyring::{BranchKeySupplier, GetBranchKeyIdInput, GetBranchKeyIdOutput};
+use aws_crypto_mpl::keyring::{BranchKeyIdSupplier, GetBranchKeyIdInput, GetBranchKeyIdOutput};
 use aws_crypto_mpl::types::EncryptionContext;
 
 use crate::ddb::terminal_to_attr;
@@ -131,7 +131,7 @@ pub trait ItemKeySupplier: Send + Sync {
     ) -> Result<GetBranchKeyIdOutput, MplError>;
 }
 
-/// A [`BranchKeySupplier`] that asks an [`ItemKeySupplier`] for each item's branch key.
+/// A [`BranchKeyIdSupplier`] that asks an [`ItemKeySupplier`] for each item's branch key.
 pub struct ItemKeyBranchKeySupplier {
     inner: Box<dyn ItemKeySupplier>,
 }
@@ -151,7 +151,7 @@ impl ItemKeyBranchKeySupplier {
     //
     //= spec/dynamodb-encryption-client/ddb-encryption-branch-key-id-supplier.md#output
     //= type=implication
-    //= reason=Self implements the MPL BranchKeySupplier the hierarchical keyring takes
+    //= reason=Self implements the MPL BranchKeyIdSupplier the hierarchical keyring takes
     //# This operation MUST output a BranchKeyIdSupplierReference.
     pub fn new(supplier: impl ItemKeySupplier + 'static) -> Self {
         Self {
@@ -161,7 +161,7 @@ impl ItemKeyBranchKeySupplier {
 }
 
 #[aws_crypto_mpl::async_trait]
-impl BranchKeySupplier for ItemKeyBranchKeySupplier {
+impl BranchKeyIdSupplier for ItemKeyBranchKeySupplier {
     async fn get_branch_key_id(
         &self,
         input: GetBranchKeyIdInput,

@@ -146,12 +146,16 @@ impl Error {
             }
             return error;
         }
-        Self::from_mpl_parts(&aws_crypto_mpl::Error::from_sdk(
+        let error = aws_crypto_mpl::Error::from_sdk(
             Service::DynamoDb,
             &format!("DynamoDB {operation}"),
-            resource,
             err,
-        ))
+        );
+        let error = match resource {
+            Some(resource) => error.with_resource(resource),
+            None => error,
+        };
+        Self::from_mpl_parts(&error)
     }
 
     /// DynamoDB's own error, when this error comes from a failed DynamoDB call.

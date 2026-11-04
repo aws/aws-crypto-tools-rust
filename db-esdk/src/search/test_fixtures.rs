@@ -127,8 +127,8 @@ impl KeyStore for FakeKeyStore {
             .key_store_name("KeyStoreDdbTable")
             .logical_key_store_name(self.logical_name.clone())
             .set_grant_tokens(Some(Vec::new()))
-            .kms_configuration(KmsConfiguration::KmsKeyArn(
-                "arn:aws:kms:us-west-2:111122223333:key/test".to_owned(),
+            .kms_configuration(KmsConfiguration::kms_key_arn(
+                "arn:aws:kms:us-west-2:111122223333:key/test",
             ))
             .build()
     }

@@ -36,7 +36,7 @@ pub async fn encrypted_client(
     let key_store = key_store::DynamoDbKeyStore::builder()
         .ddb_table_name(KEY_STORE_TABLE_NAME)
         .logical_key_store_name(KEY_STORE_LOGICAL_NAME)
-        .kms_configuration(KmsConfiguration::KmsKeyArn(KMS_KEY_ARN.into()))
+        .kms_configuration(KmsConfiguration::kms_key_arn(KMS_KEY_ARN))
         .kms_client(kms)
         .ddb_client(ddb_sdk.clone())
         .build()
