@@ -81,7 +81,7 @@ impl Keyring for KnownDataKey {
             ))
             .plaintext_data_key(PlaintextDataKey::new(vec![KEY_BYTE; 32]))
             .set_signing_key(m.signing_key().cloned())
-            .set_symmetric_signing_keys(m.symmetric_signing_keys().map(<[_]>::to_vec))
+            .set_symmetric_signing_keys(Some(m.symmetric_signing_keys().to_vec()))
             .build()?;
         self.0.on_encrypt().materials(m).send().await
     }

@@ -99,6 +99,15 @@ jobs:
               - 'esdk/**'
               - '!prim/test-server/**'
               - '!mpl/test-server/**'
+            smithy-conformance:
+              - 'prim/**'
+              - 'mpl/**'
+              - 'esdk/**'
+              - 'scripts/smithy-conformance/**'
+              - '!prim/test-server/**'
+              - '!mpl/test-server/**'
+              - '!esdk/test-server/**'
+              - '!esdk/shims/aws-esdk-cpp/test-server/**'
             # Any change to CI (workflows, actions, CI config) runs all of CI.
             ci:
               - '.github/**'
@@ -170,6 +179,9 @@ jobs:
               ],
               "benchmarks-cpp": [
                 {"when": "esdk"}
+              ],
+              "smithy-conformance": [
+                {"when": "smithy-conformance"}
               ]
             }
         run: |
@@ -247,6 +259,15 @@ jobs:
     uses: ./.github/workflows/duvet.yml
     with:
       projects: ${{ toJSON(fromJSON(needs.detect.outputs.jobs)['duvet']) }}
+
+  # One job per published crate; the reusable workflow finds the crates.
+  smithy-conformance:
+    name: Smithy conformance
+    needs: detect
+    if: fromJSON(needs.detect.outputs.jobs)['smithy-conformance'] != null
+    permissions:
+      contents: read
+    uses: ./.github/workflows/smithy_conformance.yml
 
   test-server-builds:
     name: TestServer builds
@@ -419,6 +440,7 @@ jobs:
       - supply-chain
       - cpp-shim
       - duvet
+      - smithy-conformance
       - test-server-builds
       - esdk-test-server
       - mpl-test-server

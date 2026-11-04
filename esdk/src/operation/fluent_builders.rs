@@ -15,7 +15,6 @@ use aws_crypto_mpl::cmm::SharedCmm;
 use aws_crypto_mpl::keyring::SharedKeyring;
 use aws_crypto_mpl::shared::IntoShared;
 use std::fmt;
-use std::num::NonZeroU32;
 use tokio::io::{AsyncRead, AsyncWrite};
 
 /// A stream reader held by a streaming fluent builder.
@@ -49,7 +48,7 @@ macro_rules! member {
         $(#[doc = $doc])+
         #[must_use]
         #[allow(clippy::ref_option, clippy::ref_option_ref)] // AWS SDK for Rust getter shape
-        pub const fn $get(&self) -> &Option<$ty> {
+        pub fn $get(&self) -> &Option<$ty> {
             self.inner.$get()
         }
     };
@@ -72,7 +71,7 @@ macro_rules! member {
         $(#[doc = $doc])+
         #[must_use]
         #[allow(clippy::ref_option, clippy::ref_option_ref)] // AWS SDK for Rust getter shape
-        pub const fn $get(&self) -> &Option<$ty> {
+        pub fn $get(&self) -> &Option<$ty> {
             self.inner.$get()
         }
     };
@@ -100,7 +99,7 @@ macro_rules! stream_member {
         $(#[doc = $doc])+
         #[must_use]
         #[allow(clippy::ref_option)] // AWS SDK for Rust getter shape
-        pub const fn $get(&self) -> &Option<$ty<'a>> {
+        pub fn $get(&self) -> &Option<$ty<'a>> {
             &self.$name
         }
     };
@@ -141,8 +140,8 @@ macro_rules! encrypt_members {
             get_algorithm_suite_id -> AlgorithmSuiteId
         );
         member!(
-            /// Bytes of plaintext per frame. Default is 4096.
-            frame_length(NonZeroU32), set_frame_length, get_frame_length -> NonZeroU32
+            /// Bytes of plaintext per frame. Must be greater than 0. Default is 4096.
+            frame_length(u32), set_frame_length, get_frame_length -> u32
         );
     };
 }
@@ -310,6 +309,9 @@ impl<'a> EncryptStreamFluentBuilder<'a> {
     );
     stream_member!(
         /// The writer the encrypted message is written to.
+        /// `send` flushes the writer but does not shut it down.
+        /// For a writer that writes its last bytes on shutdown, such as a compressor,
+        /// pass `&mut writer` and call `writer.shutdown()` after `send` returns.
         ciphertext(impl AsyncWrite), set_ciphertext, get_ciphertext -> Writer
     );
     encrypt_members!();
@@ -317,7 +319,7 @@ impl<'a> EncryptStreamFluentBuilder<'a> {
     member!(
         /// An upper bound on the plaintext length, in bytes.
         /// It is passed to the CMM, and encrypt fails if the stream is longer.
-        data_size(usize), set_data_size, get_data_size -> usize
+        plaintext_length_bound(u64), set_plaintext_length_bound, get_plaintext_length_bound -> u64
     );
 
     /// Encrypt the `plaintext` reader into the `ciphertext` writer.
@@ -391,6 +393,9 @@ impl<'a> DecryptStreamFluentBuilder<'a> {
         /// The writer the decrypted data is written to.
         /// It receives plaintext before the whole message is verified:
         /// don't act on it until `send` returns `Ok`.
+        /// `send` flushes the writer but does not shut it down.
+        /// For a writer that writes its last bytes on shutdown, such as a compressor,
+        /// pass `&mut writer` and call `writer.shutdown()` after `send` returns.
         plaintext(impl AsyncWrite), set_plaintext, get_plaintext -> Writer
     );
     decrypt_members!();

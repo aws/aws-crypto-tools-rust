@@ -473,7 +473,7 @@ async fn test_round_trip_every_wrapping_algorithm() {
             RawAesKeyring::builder()
                 .key_namespace(namespace)
                 .key_name(name)
-                .wrapping_key(vec![0x2A; usize::from(alg.key_len())])
+                .wrapping_key(vec![0x2A; alg.key_length()])
                 .wrapping_alg(alg)
                 .build()
                 .unwrap_or_else(|e| panic!("constructing a keyring for {alg:?}: {e}")),
@@ -751,7 +751,7 @@ fn test_build_accepts_every_wrapping_key_length() {
         (AesWrappingAlg::AlgAes256GcmIv12Tag16, 32),
     ] {
         assert_eq!(
-            usize::from(alg.key_len()),
+            alg.key_length(),
             expected_len,
             "{alg:?} key length in bytes"
         );
@@ -975,7 +975,7 @@ async fn intermediate_key_wrapping_round_trips_and_yields_one_signing_key_per_ed
         edks.iter()
             .all(|e| e.ciphertext().len() == 32 + 16 + 32 + 16)
     );
-    let signing_keys = encrypted.symmetric_signing_keys().unwrap();
+    let signing_keys = encrypted.symmetric_signing_keys();
     assert_eq!(signing_keys.len(), 2);
     // Each EDK has its own intermediate key, so it has its own signing key.
     assert!(!signing_keys[0].ct_eq(&signing_keys[1]));

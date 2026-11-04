@@ -336,6 +336,7 @@ async fn build_aws_kms(config: &AwsKmsKeyringConfig) -> Result<SharedKeyring, Se
         .kms_client(kms_client_for(&config.kms_key_id).await)
         .set_grant_tokens(config.grant_tokens.clone())
         .build()
+        .await
         .map_err(generic)?;
     Ok(SharedKeyring::new(keyring))
 }
@@ -346,6 +347,7 @@ async fn build_aws_kms_mrk(config: &AwsKmsMrkKeyringConfig) -> Result<SharedKeyr
         .kms_client(kms_client_for(&config.kms_key_id).await)
         .set_grant_tokens(config.grant_tokens.clone())
         .build()
+        .await
         .map_err(generic)?;
     Ok(SharedKeyring::new(keyring))
 }
@@ -404,6 +406,7 @@ async fn build_aws_kms_discovery(
         .set_discovery_filter(discovery_filter(config.discovery_filter.as_ref())?)
         .set_grant_tokens(config.grant_tokens.clone())
         .build()
+        .await
         .map_err(generic)?;
     Ok(SharedKeyring::new(keyring))
 }
@@ -422,6 +425,7 @@ async fn build_aws_kms_mrk_discovery(
         .set_discovery_filter(discovery_filter(config.discovery_filter.as_ref())?)
         .set_grant_tokens(config.grant_tokens.clone())
         .build()
+        .await
         .map_err(generic)?;
     Ok(SharedKeyring::new(keyring))
 }
@@ -466,6 +470,7 @@ async fn build_aws_kms_rsa(config: &AwsKmsRsaKeyringConfig) -> Result<SharedKeyr
         .kms_client(kms_client)
         .set_grant_tokens(config.grant_tokens.clone())
         .build()
+        .await
         .map_err(generic)?;
     Ok(SharedKeyring::new(keyring))
 }
@@ -544,7 +549,7 @@ async fn build_hierarchical(
     let key_store = DynamoDbKeyStore::builder()
         .ddb_table_name(config.key_store_table_name.clone())
         .logical_key_store_name(config.logical_key_store_name.clone())
-        .kms_configuration(KmsConfiguration::KmsKeyArn(config.kms_key_arn.clone()))
+        .kms_configuration(KmsConfiguration::kms_key_arn(config.kms_key_arn.clone()))
         .build()
         .await
         .map_err(generic)?;

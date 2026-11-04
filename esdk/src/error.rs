@@ -172,7 +172,7 @@ pub use aws_mpl_primitives::error::{
 };
 pub use aws_smithy_types::error::display::DisplayErrorContext;
 pub use aws_smithy_types::error::metadata::{ErrorMetadata, ProvideErrorMetadata};
-pub use aws_smithy_types::retry::{ErrorKind as RetryErrorKind, ProvideErrorKind};
+pub use aws_smithy_types::retry::ProvideErrorKind;
 pub use aws_types::request_id::RequestId;
 
 #[track_caller]
@@ -210,12 +210,5 @@ impl From<aws_mpl_primitives::Error> for Error {
     #[track_caller]
     fn from(item: aws_mpl_primitives::Error) -> Self {
         Self::from_prim("a cryptographic operation failed", item)
-    }
-}
-
-impl From<aws_smithy_types::error::operation::BuildError> for Error {
-    #[track_caller]
-    fn from(item: aws_smithy_types::error::operation::BuildError) -> Self {
-        Self::with_cause(Kind::Validation, "could not build the request", item)
     }
 }

@@ -454,7 +454,7 @@ async fn cache_identifiers_follow_the_appendix_a_formulas() {
         .build()
         .unwrap();
     let context = ec(&[("a", "b")]);
-    let ec_hash = sha512(&[&context.serialize().unwrap()]);
+    let ec_hash = sha512(&[&context.to_bytes().unwrap()]);
     let partition_hash = sha512(&[b"partition"]);
 
     encrypt(&cmm, context.clone(), None, Some(1)).await;

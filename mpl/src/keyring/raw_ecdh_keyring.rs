@@ -411,7 +411,7 @@ impl RawEcdhKeyring {
         );
         let canonical_ec = materials
             .encryption_context()
-            .serialize()
+            .to_bytes()
             .map_err(|e| Error::wrap("failed to serialize the encryption context", e))?;
         let fixed_info = ecdh_wrapping::fixed_info(
             self.inner.curve_spec,
@@ -585,7 +585,7 @@ impl Keyring for crate::shared::Builtin<RawEcdhKeyring> {
         );
         let canonical_ec = materials
             .encryption_context()
-            .serialize()
+            .to_bytes()
             .map_err(|e| Error::wrap("failed to serialize the encryption context", e))?;
         let fixed_info = ecdh_wrapping::fixed_info(
             self.inner.curve_spec,

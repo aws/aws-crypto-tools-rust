@@ -42,7 +42,7 @@ pub struct GetEncryptionMaterialsFluentBuilder {
 impl GetEncryptionMaterialsFluentBuilder {
     /// The input set so far.
     #[must_use]
-    pub const fn as_input(&self) -> &GetEncryptionMaterialsInputBuilder {
+    pub fn as_input(&self) -> &GetEncryptionMaterialsInputBuilder {
         &self.inner
     }
 
@@ -64,7 +64,7 @@ impl GetEncryptionMaterialsFluentBuilder {
 
     /// The encryption context, if set.
     #[must_use]
-    pub const fn get_encryption_context(&self) -> &Option<EncryptionContext> {
+    pub fn get_encryption_context(&self) -> &Option<EncryptionContext> {
         self.inner.get_encryption_context()
     }
 
@@ -84,7 +84,7 @@ impl GetEncryptionMaterialsFluentBuilder {
 
     /// The commitment policy, if set.
     #[must_use]
-    pub const fn get_commitment_policy(&self) -> &Option<CommitmentPolicy> {
+    pub fn get_commitment_policy(&self) -> &Option<CommitmentPolicy> {
         self.inner.get_commitment_policy()
     }
 
@@ -104,7 +104,7 @@ impl GetEncryptionMaterialsFluentBuilder {
 
     /// The algorithm suite ID, if set.
     #[must_use]
-    pub const fn get_algorithm_suite_id(&self) -> &Option<AlgorithmSuiteId> {
+    pub fn get_algorithm_suite_id(&self) -> &Option<AlgorithmSuiteId> {
         self.inner.get_algorithm_suite_id()
     }
 
@@ -130,15 +130,13 @@ impl GetEncryptionMaterialsFluentBuilder {
 
     /// The required encryption context keys, if set.
     #[must_use]
-    pub const fn get_required_encryption_context_keys(
-        &self,
-    ) -> &Option<RequiredEncryptionContextKeys> {
+    pub fn get_required_encryption_context_keys(&self) -> &Option<RequiredEncryptionContextKeys> {
         self.inner.get_required_encryption_context_keys()
     }
 
     /// Set the maximum plaintext length the materials are for.
     /// When unset, there is no bound.
-    pub fn max_plaintext_length(mut self, max_plaintext_length: impl Into<u64>) -> Self {
+    pub fn max_plaintext_length(mut self, max_plaintext_length: u64) -> Self {
         self.inner = self.inner.max_plaintext_length(max_plaintext_length);
         self
     }
@@ -152,7 +150,7 @@ impl GetEncryptionMaterialsFluentBuilder {
 
     /// The max plaintext length, if set.
     #[must_use]
-    pub const fn get_max_plaintext_length(&self) -> &Option<u64> {
+    pub fn get_max_plaintext_length(&self) -> &Option<u64> {
         self.inner.get_max_plaintext_length()
     }
 
@@ -180,7 +178,7 @@ pub struct DecryptMaterialsFluentBuilder {
 impl DecryptMaterialsFluentBuilder {
     /// The input set so far.
     #[must_use]
-    pub const fn as_input(&self) -> &DecryptMaterialsInputBuilder {
+    pub fn as_input(&self) -> &DecryptMaterialsInputBuilder {
         &self.inner
     }
 
@@ -200,7 +198,7 @@ impl DecryptMaterialsFluentBuilder {
 
     /// The algorithm suite ID, if set.
     #[must_use]
-    pub const fn get_algorithm_suite_id(&self) -> &Option<AlgorithmSuiteId> {
+    pub fn get_algorithm_suite_id(&self) -> &Option<AlgorithmSuiteId> {
         self.inner.get_algorithm_suite_id()
     }
 
@@ -220,7 +218,7 @@ impl DecryptMaterialsFluentBuilder {
 
     /// The commitment policy, if set.
     #[must_use]
-    pub const fn get_commitment_policy(&self) -> &Option<CommitmentPolicy> {
+    pub fn get_commitment_policy(&self) -> &Option<CommitmentPolicy> {
         self.inner.get_commitment_policy()
     }
 
@@ -245,7 +243,7 @@ impl DecryptMaterialsFluentBuilder {
 
     /// The encrypted data keys, if set.
     #[must_use]
-    pub const fn get_encrypted_data_keys(&self) -> &Option<Vec<EncryptedDataKey>> {
+    pub fn get_encrypted_data_keys(&self) -> &Option<Vec<EncryptedDataKey>> {
         self.inner.get_encrypted_data_keys()
     }
 
@@ -267,7 +265,7 @@ impl DecryptMaterialsFluentBuilder {
 
     /// The encryption context, if set.
     #[must_use]
-    pub const fn get_encryption_context(&self) -> &Option<EncryptionContext> {
+    pub fn get_encryption_context(&self) -> &Option<EncryptionContext> {
         self.inner.get_encryption_context()
     }
 
@@ -295,7 +293,7 @@ impl DecryptMaterialsFluentBuilder {
 
     /// The reproduced encryption context, if set.
     #[must_use]
-    pub const fn get_reproduced_encryption_context(&self) -> &Option<EncryptionContext> {
+    pub fn get_reproduced_encryption_context(&self) -> &Option<EncryptionContext> {
         self.inner.get_reproduced_encryption_context()
     }
 

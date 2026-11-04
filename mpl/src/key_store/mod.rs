@@ -12,8 +12,8 @@
 //! let key_store = key_store::DynamoDbKeyStore::builder()
 //!     .ddb_table_name("my-table")
 //!     .logical_key_store_name("my-table")
-//!     .kms_configuration(KmsConfiguration::KmsKeyArn(
-//!         "arn:aws:kms:us-west-2:111122223333:key/my-key".into(),
+//!     .kms_configuration(KmsConfiguration::kms_key_arn(
+//!         "arn:aws:kms:us-west-2:111122223333:key/my-key",
 //!     ))
 //!     .build()
 //!     .await?;
@@ -48,12 +48,14 @@ pub use client_impl::SharedKeyStore;
 pub mod types {
     //! The types a key store's configuration takes.
 
-    pub use super::config::{Discovery, KmsConfiguration, MrDiscovery};
+    pub use super::config::{Discovery, KmsConfiguration, KmsKeyArn, KmsMrKeyArn, MrDiscovery};
 
     pub mod builders {
         //! Builders for the types in [`key_store::types`](crate::key_store::types).
 
-        pub use crate::key_store::config::{DiscoveryBuilder, MrDiscoveryBuilder};
+        pub use crate::key_store::config::{
+            DiscoveryBuilder, KmsKeyArnBuilder, KmsMrKeyArnBuilder, MrDiscoveryBuilder,
+        };
     }
 }
 pub(crate) use shapes::*;

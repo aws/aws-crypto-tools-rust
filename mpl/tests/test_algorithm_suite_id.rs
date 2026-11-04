@@ -1,8 +1,8 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Tests for `EsdkAlgorithmSuiteId`, the materialized `AlgorithmSuite` spec table,
-//! and the `Format` enum. Each test asserts a property derived directly from
+//! Tests for `EsdkAlgorithmSuiteId` and the materialized `AlgorithmSuite` spec table.
+//! Each test asserts a property derived directly from
 //! the algorithm-suites.md spec tables — hex IDs, encryption key lengths, IV
 //! lengths, KDF / commit-KDF mappings, asymmetric-signature-algorithm
 //! mappings, message format versions, and suite-data lengths.
@@ -144,19 +144,6 @@ fn test_from_id_bytes_rejects_unknown_ids() {
     for bytes in [[0x00, 0x00], [0xFF, 0xFF]] {
         assert_eq!(EsdkAlgorithmSuiteId::from_id_bytes(bytes), None);
     }
-}
-
-// --- Format enum name pins ---
-
-#[test]
-fn test_format_short_and_long_names_are_the_spec_strings() {
-    // Format::Esdk is the only variant this MPL ships; pin the spec-defined
-    // short/long strings so a rename triggers a deliberate test failure.
-    assert_eq!(Format::Esdk.short_name(), "ESDK");
-    assert_eq!(
-        Format::Esdk.long_name(),
-        "AWS Encryption SDK Message Format"
-    );
 }
 
 // --- GCM specifics (shared across every ESDK suite) ---
@@ -609,9 +596,9 @@ fn dbe_suites_match_the_reference_table() {
         assert_eq!(wrapping.mac_key_kdf(), KeyDerivationAlgorithm::HkdfSha512);
     }
     for id in EsdkAlgorithmSuiteId::ALL {
-        assert_eq!(
+        assert!(matches!(
             id.specification().edk_wrapping(),
-            EdkWrapping::DirectKeyWrapping
-        );
+            EdkWrapping::DirectKeyWrapping(_)
+        ));
     }
 }

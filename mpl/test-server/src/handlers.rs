@@ -16,8 +16,8 @@ use aws_crypto_mpl::key_store::types::{
 };
 use aws_crypto_mpl::key_store::{DynamoDbKeyStore, SharedKeyStore};
 use aws_crypto_mpl::keyring::{
-    BranchKeySupplier, GetBranchKeyIdInput, GetBranchKeyIdOutput, HierarchicalKeyring,
-    SharedBranchKeySupplier, SharedKeyring,
+    BranchKeyIdSupplier, GetBranchKeyIdInput, GetBranchKeyIdOutput, HierarchicalKeyring,
+    SharedBranchKeyIdSupplier, SharedKeyring,
 };
 use aws_crypto_mpl::types::{
     AlgorithmSuiteId as MplSuiteId, CommitmentPolicy as MplCommitmentPolicy, DecryptionMaterials,
@@ -94,8 +94,8 @@ impl AppState {
         req: CreateKeyStoreClientRequest,
     ) -> Result<CreateKeyStoreClientResponse, ServerError> {
         let kms_configuration = match req.kms_configuration {
-            KmsConfiguration::KmsKeyArn(arn) => MplKmsConfiguration::KmsKeyArn(arn),
-            KmsConfiguration::KmsMrKeyArn(arn) => MplKmsConfiguration::KmsMrKeyArn(arn),
+            KmsConfiguration::KmsKeyArn(arn) => MplKmsConfiguration::kms_key_arn(arn),
+            KmsConfiguration::KmsMrKeyArn(arn) => MplKmsConfiguration::kms_mr_key_arn(arn),
             KmsConfiguration::Discovery(Discovery {}) => MplKmsConfiguration::Discovery(
                 MplDiscovery::builder()
                     .build()
@@ -173,7 +173,7 @@ impl AppState {
             )));
         };
         let supplier = req.branch_key_id_supplier.map(|supplier| {
-            SharedBranchKeySupplier::new(StaticBranchKeyIdSupplierImpl {
+            SharedBranchKeyIdSupplier::new(StaticBranchKeyIdSupplierImpl {
                 encryption_context_key: supplier.encryption_context_key,
                 branch_key_ids: supplier.branch_key_ids,
             })
@@ -293,11 +293,7 @@ impl AppState {
         let ec_out = encryption_context_to_map(materials.encryption_context());
 
         let signing_key = materials.signing_key().map(|sk| sk.as_bytes().to_vec());
-        let symmetric_signing_keys = materials.symmetric_signing_keys().map(|keys| {
-            keys.iter()
-                .map(|k| serde_bytes::ByteBuf::from(k.as_bytes().to_vec()))
-                .collect()
-        });
+        let symmetric_signing_keys = symmetric_signing_keys_to_shapes(materials);
 
         Ok(GetEncryptionMaterialsResponse {
             algorithm_suite_id: reverse_map_algorithm_suite_id(materials.algorithm_suite_id())?,
@@ -420,7 +416,7 @@ struct StaticBranchKeyIdSupplierImpl {
 }
 
 #[aws_crypto_mpl::async_trait]
-impl BranchKeySupplier for StaticBranchKeyIdSupplierImpl {
+impl BranchKeyIdSupplier for StaticBranchKeyIdSupplierImpl {
     async fn get_branch_key_id(
         &self,
         input: GetBranchKeyIdInput,
@@ -454,6 +450,18 @@ fn map_edks(edks: Vec<EncryptedDataKeyShape>) -> Result<Vec<EncryptedDataKey>, S
                 .map_err(|e| ServerError::mpl(e.to_string()))
         })
         .collect()
+}
+
+/// The materials' symmetric signing keys, or `None` when there are none.
+fn symmetric_signing_keys_to_shapes(
+    materials: &EncryptionMaterials,
+) -> Option<Vec<serde_bytes::ByteBuf>> {
+    let keys = materials.symmetric_signing_keys();
+    (!keys.is_empty()).then(|| {
+        keys.iter()
+            .map(|k| serde_bytes::ByteBuf::from(k.as_bytes().to_vec()))
+            .collect()
+    })
 }
 
 fn edks_to_shapes(edks: &[EncryptedDataKey]) -> Vec<EncryptedDataKeyShape> {
@@ -523,11 +531,7 @@ fn encryption_materials_to_shape(
             .plaintext_data_key()
             .map(|k| k.as_bytes().to_vec()),
         signing_key: materials.signing_key().map(|k| k.as_bytes().to_vec()),
-        symmetric_signing_keys: materials.symmetric_signing_keys().map(|keys| {
-            keys.iter()
-                .map(|k| serde_bytes::ByteBuf::from(k.as_bytes().to_vec()))
-                .collect()
-        }),
+        symmetric_signing_keys: symmetric_signing_keys_to_shapes(materials),
     })
 }
 

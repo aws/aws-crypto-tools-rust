@@ -50,21 +50,21 @@ pub struct DefaultCmcBuilder {
 impl DefaultCmcBuilder {
     /// Set the maximum number of entries. Required.
     #[must_use]
-    pub const fn entry_capacity(mut self, n: usize) -> Self {
+    pub fn entry_capacity(mut self, n: usize) -> Self {
         self.entry_capacity = Some(n);
         self
     }
 
     /// Set or clear the maximum number of entries, for forwarding an existing `Option`.
     #[must_use]
-    pub const fn set_entry_capacity(mut self, n: Option<usize>) -> Self {
+    pub fn set_entry_capacity(mut self, n: Option<usize>) -> Self {
         self.entry_capacity = n;
         self
     }
 
     /// The entry capacity, if set.
     #[must_use]
-    pub const fn get_entry_capacity(&self) -> &Option<usize> {
+    pub fn get_entry_capacity(&self) -> &Option<usize> {
         &self.entry_capacity
     }
 

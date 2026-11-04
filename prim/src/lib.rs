@@ -58,6 +58,7 @@
     clippy::string_lit_chars_any,
     clippy::tests_outside_test_module,
 )]
+#![allow(clippy::missing_const_for_fn)] // a public const fn can't drop const later without breaking callers
 
 pub mod error;
 
@@ -147,8 +148,8 @@ pub enum AesGcm {
 
 impl AesGcm {
     #[must_use]
-    /// Return key length associated with the algorithm
-    pub const fn key_len(&self) -> u8 {
+    /// The key length, in bytes, for this algorithm.
+    pub const fn key_length(&self) -> usize {
         match self {
             Self::Aes128Gcm => 16,
             Self::Aes192Gcm => 24,
@@ -173,7 +174,7 @@ const fn get_aes_alg(alg: AesGcm) -> &'static aws_lc_rs::aead::Algorithm {
 /// # Errors
 ///
 /// Returns an [`Error`] if `key` is not the length required by `alg` (see
-/// [`AesGcm::key_len`]), if `iv` is not a valid GCM nonce, or if the
+/// [`AesGcm::key_length`]), if `iv` is not a valid GCM nonce, or if the
 /// underlying seal operation fails.
 pub fn aes_encrypt(
     alg: AesGcm,
@@ -204,7 +205,7 @@ pub fn aes_encrypt(
 /// # Errors
 ///
 /// Returns an [`Error`] if `plain_text` is shorter than `cipher_text`, if
-/// `key` is not the length required by `alg` (see [`AesGcm::key_len`]), if
+/// `key` is not the length required by `alg` (see [`AesGcm::key_length`]), if
 /// `iv` is not a valid GCM nonce, or if `auth_tag` fails to verify.
 pub fn aes_decrypt(
     alg: AesGcm,

@@ -25,7 +25,7 @@ use crate::aws_kms::aws_kms_keyring::{
 use crate::aws_kms::mrk_match::aws_kms_mrk_match_for_decrypt;
 use crate::aws_kms::user_agent::user_agent_override;
 use crate::builder::required;
-use crate::error::{DataKeyInfo, Kind, KmsKey, Resource, Service};
+use crate::error::{DataKeyInfo, Kind, KmsKey, Service};
 use crate::keyring::edk_wrapping;
 use crate::keyring::{Keyring, OnDecryptInput, OnDecryptOutput, OnEncryptInput, OnEncryptOutput};
 use crate::structures::{
@@ -159,7 +159,7 @@ impl AwsKmsRsaKeyring {
         if !valid_ciphertext(wrapped) {
             return Err(Error::new(Kind::Cryptographic, "Ciphertext length invalid"));
         }
-        let resource = Some(Resource::KmsKey(KmsKey::new(key_id.to_owned())));
+        let resource = KmsKey::new(key_id.to_owned());
         // AWS KMS RSA keys take no encryption context, so this request sends none.
         // The digest at the start of the plaintext binds the encryption context.
         let response = client
@@ -172,7 +172,9 @@ impl AwsKmsRsaKeyring {
             .config_override(user_agent_override())
             .send()
             .await
-            .map_err(|e| Error::from_sdk(Service::Kms, "AWS KMS Decrypt", resource, e))?;
+            .map_err(|e| {
+                Error::from_sdk(Service::Kms, "AWS KMS Decrypt", e).with_resource(resource)
+            })?;
         if response.key_id.as_deref() != Some(key_id) {
             return Err(service_err(key_id, "Invalid response from KMS Decrypt"));
         }
@@ -248,7 +250,7 @@ impl AwsKmsRsaKeyring {
 /// The SHA-384 digest of the canonical serialization of `ec`.
 fn encryption_context_digest(ec: &EncryptionContext) -> Result<Vec<u8>, Error> {
     let canonical = ec
-        .serialize()
+        .to_bytes()
         .map_err(|e| Error::wrap("failed to serialize the encryption context", e))?;
     let mut out = vec![0u8; DigestAlg::Sha384.output_len()];
     digest(DigestAlg::Sha384, &canonical, &mut out).map_err(|e| {
@@ -314,7 +316,7 @@ impl AwsKmsRsaKeyringBuilder {
 
     /// The key ARN, if set.
     #[must_use]
-    pub const fn get_kms_key_id(&self) -> &Option<String> {
+    pub fn get_kms_key_id(&self) -> &Option<String> {
         &self.kms_key_id
     }
 
@@ -337,7 +339,7 @@ impl AwsKmsRsaKeyringBuilder {
 
     /// The public key, if set.
     #[must_use]
-    pub const fn get_public_key(&self) -> &Option<Vec<u8>> {
+    pub fn get_public_key(&self) -> &Option<Vec<u8>> {
         &self.public_key
     }
 
@@ -361,7 +363,7 @@ impl AwsKmsRsaKeyringBuilder {
 
     /// The RSA encryption algorithm, if set.
     #[must_use]
-    pub const fn get_encryption_algorithm(&self) -> &Option<EncryptionAlgorithmSpec> {
+    pub fn get_encryption_algorithm(&self) -> &Option<EncryptionAlgorithmSpec> {
         &self.encryption_algorithm
     }
 
@@ -369,8 +371,8 @@ impl AwsKmsRsaKeyringBuilder {
     /// Needed to decrypt.
     /// Set this, the public key, or both.
     #[must_use]
-    pub fn kms_client(mut self, kms_client: KmsClient) -> Self {
-        self.kms_client = Some(kms_client);
+    pub fn kms_client(mut self, kms_client: impl Into<KmsClient>) -> Self {
+        self.kms_client = Some(kms_client.into());
         self
     }
 
@@ -383,7 +385,7 @@ impl AwsKmsRsaKeyringBuilder {
 
     /// The AWS KMS client, if set.
     #[must_use]
-    pub const fn get_kms_client(&self) -> &Option<KmsClient> {
+    pub fn get_kms_client(&self) -> &Option<KmsClient> {
         &self.kms_client
     }
 
@@ -405,7 +407,7 @@ impl AwsKmsRsaKeyringBuilder {
 
     /// The grant tokens, if set.
     #[must_use]
-    pub const fn get_grant_tokens(&self) -> &Option<Vec<String>> {
+    pub fn get_grant_tokens(&self) -> &Option<Vec<String>> {
         &self.grant_tokens
     }
 
@@ -419,7 +421,7 @@ impl AwsKmsRsaKeyringBuilder {
     ///   a key identifier that is not an AWS KMS key ARN,
     ///   a public key that is not a PEM RSA public key of at least 2048 bits,
     ///   or invalid grant tokens.
-    pub fn build(self) -> Result<AwsKmsRsaKeyring, Error> {
+    pub async fn build(self) -> Result<AwsKmsRsaKeyring, Error> {
         let kms_key_id = required(self.kms_key_id, "kms_key_id")?;
         let encryption_algorithm = required(self.encryption_algorithm, "encryption_algorithm")?;
         // Treat an empty public key as unset.
@@ -500,7 +502,7 @@ impl Keyring for crate::shared::Builtin<AwsKmsRsaKeyring> {
                 // Wrap a fresh intermediate key.
                 // Keys derived from it encrypt the plaintext data key and sign the message.
                 let aad = ec
-                    .serialize()
+                    .to_bytes()
                     .map_err(|e| Error::wrap("failed to serialize the encryption context", e))?;
                 let (pdk, generated) = match existing {
                     Some(key) => (key.clone(), false),
@@ -574,7 +576,7 @@ impl Keyring for crate::shared::Builtin<AwsKmsRsaKeyring> {
         let ec_digest = encryption_context_digest(materials.encryption_context())?;
         let aad = materials
             .encryption_context()
-            .serialize()
+            .to_bytes()
             .map_err(|e| Error::wrap("failed to serialize the encryption context", e))?;
         let mut errors = Vec::new();
         for edk in to_attempt {

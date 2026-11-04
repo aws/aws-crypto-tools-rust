@@ -26,7 +26,7 @@ use crate::aws_kms::aws_kms_keyring::{
 };
 use crate::aws_kms::user_agent::user_agent_override;
 use crate::builder::required;
-use crate::error::{DataKeyInfo, Kind, KmsKey, Resource, Service};
+use crate::error::{DataKeyInfo, Kind, KmsKey, Service};
 use crate::keyring::ecdh_wrapping::{self, KMS_ECDH_PROVIDER_ID};
 use crate::keyring::{Keyring, OnDecryptInput, OnDecryptOutput, OnEncryptInput, OnEncryptOutput};
 use crate::structures::{DecryptionMaterials, EcdhCurveSpec, EncryptedDataKey};
@@ -408,7 +408,7 @@ impl AwsKmsEcdhKeyring {
         .await?;
         let canonical_ec = materials
             .encryption_context()
-            .serialize()
+            .to_bytes()
             .map_err(|e| Error::wrap("failed to serialize the encryption context", e))?;
         let fixed_info = ecdh_wrapping::fixed_info(
             self.inner.curve_spec,
@@ -434,7 +434,7 @@ async fn derive_shared_secret(
     public_key: &[u8],
     grant_tokens: &[String],
 ) -> Result<Zeroizing<Vec<u8>>, Error> {
-    let resource = Some(Resource::KmsKey(KmsKey::new(key_id.to_owned())));
+    let resource = KmsKey::new(key_id.to_owned());
     let response = client
         .derive_shared_secret()
         .key_id(key_id)
@@ -445,7 +445,9 @@ async fn derive_shared_secret(
         .config_override(user_agent_override())
         .send()
         .await
-        .map_err(|e| Error::from_sdk(Service::Kms, "AWS KMS DeriveSharedSecret", resource, e))?;
+        .map_err(|e| {
+            Error::from_sdk(Service::Kms, "AWS KMS DeriveSharedSecret", e).with_resource(resource)
+        })?;
     if response.key_id.as_deref() != Some(key_id)
         || response.key_agreement_algorithm != Some(KeyAgreementAlgorithmSpec::Ecdh)
     {
@@ -465,7 +467,7 @@ async fn derive_shared_secret(
 ///
 /// Fails unless the response names `key_id` and key usage `KEY_AGREEMENT` and has a public key.
 async fn get_ecdh_public_key(client: &KmsClient, key_id: &str) -> Result<Vec<u8>, Error> {
-    let resource = Some(Resource::KmsKey(KmsKey::new(key_id.to_owned())));
+    let resource = KmsKey::new(key_id.to_owned());
     let response = client
         .get_public_key()
         .key_id(key_id)
@@ -473,7 +475,9 @@ async fn get_ecdh_public_key(client: &KmsClient, key_id: &str) -> Result<Vec<u8>
         .config_override(user_agent_override())
         .send()
         .await
-        .map_err(|e| Error::from_sdk(Service::Kms, "AWS KMS GetPublicKey", resource, e))?;
+        .map_err(|e| {
+            Error::from_sdk(Service::Kms, "AWS KMS GetPublicKey", e).with_resource(resource)
+        })?;
     if response.key_id.as_deref() != Some(key_id)
         || response.key_usage != Some(KeyUsageType::KeyAgreement)
     {
@@ -544,8 +548,8 @@ impl AwsKmsEcdhKeyringBuilder {
     /// The AWS KMS client, in the AWS KMS key's region.
     /// Required.
     #[must_use]
-    pub fn kms_client(mut self, kms_client: KmsClient) -> Self {
-        self.kms_client = Some(kms_client);
+    pub fn kms_client(mut self, kms_client: impl Into<KmsClient>) -> Self {
+        self.kms_client = Some(kms_client.into());
         self
     }
 
@@ -685,7 +689,7 @@ impl Keyring for crate::shared::Builtin<AwsKmsEcdhKeyring> {
         .await?;
         let canonical_ec = materials
             .encryption_context()
-            .serialize()
+            .to_bytes()
             .map_err(|e| Error::wrap("failed to serialize the encryption context", e))?;
         let fixed_info = ecdh_wrapping::fixed_info(
             self.inner.curve_spec,

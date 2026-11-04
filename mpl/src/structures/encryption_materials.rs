@@ -17,6 +17,7 @@ use super::encryption_context::EncryptionContext;
 
 /// Materials needed for encryption.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct EncryptionMaterials {
     algorithm_suite_id: AlgorithmSuiteId,
     encrypted_data_keys: Vec<EncryptedDataKey>,
@@ -182,7 +183,7 @@ impl EncryptionMaterials {
 
     /// The algorithm suite.
     #[must_use]
-    pub const fn algorithm_suite_id(&self) -> AlgorithmSuiteId {
+    pub fn algorithm_suite_id(&self) -> AlgorithmSuiteId {
         self.algorithm_suite_id
     }
 
@@ -200,32 +201,33 @@ impl EncryptionMaterials {
 
     /// The encryption context.
     #[must_use]
-    pub const fn encryption_context(&self) -> &EncryptionContext {
+    pub fn encryption_context(&self) -> &EncryptionContext {
         &self.encryption_context
     }
 
     /// The encryption context keys that must be supplied again at decrypt time.
     #[must_use]
-    pub const fn required_encryption_context_keys(&self) -> &RequiredEncryptionContextKeys {
+    pub fn required_encryption_context_keys(&self) -> &RequiredEncryptionContextKeys {
         &self.required_encryption_context_keys
     }
 
     /// The plaintext data key, once a keyring has added one.
     #[must_use]
-    pub const fn plaintext_data_key(&self) -> Option<&PlaintextDataKey> {
+    pub fn plaintext_data_key(&self) -> Option<&PlaintextDataKey> {
         self.plaintext_data_key.as_ref()
     }
 
     /// The signing key, for an algorithm suite with asymmetric signing.
     #[must_use]
-    pub const fn signing_key(&self) -> Option<&SigningKey> {
+    pub fn signing_key(&self) -> Option<&SigningKey> {
         self.signing_key.as_ref()
     }
 
     /// The symmetric signing keys, for an algorithm suite with symmetric signing.
+    /// Empty for any other suite.
     #[must_use]
-    pub fn symmetric_signing_keys(&self) -> Option<&[SymmetricSigningKey]> {
-        self.symmetric_signing_keys.as_deref()
+    pub fn symmetric_signing_keys(&self) -> &[SymmetricSigningKey] {
+        self.symmetric_signing_keys.as_deref().unwrap_or_default()
     }
 
     /// Validate the aws-crypto-public-key convention for encryption materials.
@@ -253,7 +255,7 @@ impl EncryptionMaterials {
 ///
 /// `algorithm_suite_id` is required.
 /// The encryption context, required encryption context keys, and encrypted data keys default to empty.
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct EncryptionMaterialsBuilder {
     algorithm_suite_id: Option<AlgorithmSuiteId>,
     encrypted_data_keys: Option<Vec<EncryptedDataKey>>,
@@ -268,25 +270,22 @@ impl EncryptionMaterialsBuilder {
     /// Set the algorithm suite.
     /// Required.
     #[must_use]
-    pub const fn algorithm_suite_id(mut self, algorithm_suite_id: AlgorithmSuiteId) -> Self {
-        self.algorithm_suite_id = Some(algorithm_suite_id);
+    pub fn algorithm_suite_id(mut self, algorithm_suite_id: impl Into<AlgorithmSuiteId>) -> Self {
+        self.algorithm_suite_id = Some(algorithm_suite_id.into());
         self
     }
 
     /// Set or clear the algorithm suite from an `Option`.
     /// To set a value, use [`Self::algorithm_suite_id`].
     #[must_use]
-    pub const fn set_algorithm_suite_id(
-        mut self,
-        algorithm_suite_id: Option<AlgorithmSuiteId>,
-    ) -> Self {
+    pub fn set_algorithm_suite_id(mut self, algorithm_suite_id: Option<AlgorithmSuiteId>) -> Self {
         self.algorithm_suite_id = algorithm_suite_id;
         self
     }
 
     /// The algorithm suite ID, if set.
     #[must_use]
-    pub const fn get_algorithm_suite_id(&self) -> &Option<AlgorithmSuiteId> {
+    pub fn get_algorithm_suite_id(&self) -> &Option<AlgorithmSuiteId> {
         &self.algorithm_suite_id
     }
 
@@ -315,7 +314,7 @@ impl EncryptionMaterialsBuilder {
 
     /// The encrypted data keys set so far.
     #[must_use]
-    pub const fn get_encrypted_data_keys(&self) -> &Option<Vec<EncryptedDataKey>> {
+    pub fn get_encrypted_data_keys(&self) -> &Option<Vec<EncryptedDataKey>> {
         &self.encrypted_data_keys
     }
 
@@ -342,7 +341,7 @@ impl EncryptionMaterialsBuilder {
     /// The encryption context set so far.
     #[must_use]
     #[allow(clippy::ref_option)] // AWS SDK for Rust getter shape
-    pub const fn get_encryption_context(&self) -> &Option<EncryptionContext> {
+    pub fn get_encryption_context(&self) -> &Option<EncryptionContext> {
         &self.encryption_context
     }
 
@@ -372,9 +371,7 @@ impl EncryptionMaterialsBuilder {
     /// The required encryption context keys set so far.
     #[must_use]
     #[allow(clippy::ref_option)] // AWS SDK for Rust getter shape
-    pub const fn get_required_encryption_context_keys(
-        &self,
-    ) -> &Option<RequiredEncryptionContextKeys> {
+    pub fn get_required_encryption_context_keys(&self) -> &Option<RequiredEncryptionContextKeys> {
         &self.required_encryption_context_keys
     }
 
@@ -395,7 +392,7 @@ impl EncryptionMaterialsBuilder {
 
     /// The plaintext data key, if set.
     #[must_use]
-    pub const fn get_plaintext_data_key(&self) -> &Option<PlaintextDataKey> {
+    pub fn get_plaintext_data_key(&self) -> &Option<PlaintextDataKey> {
         &self.plaintext_data_key
     }
 
@@ -416,7 +413,7 @@ impl EncryptionMaterialsBuilder {
 
     /// The signing key, if set.
     #[must_use]
-    pub const fn get_signing_key(&self) -> &Option<SigningKey> {
+    pub fn get_signing_key(&self) -> &Option<SigningKey> {
         &self.signing_key
     }
 
@@ -444,7 +441,7 @@ impl EncryptionMaterialsBuilder {
 
     /// The symmetric signing keys, if set.
     #[must_use]
-    pub const fn get_symmetric_signing_keys(&self) -> &Option<Vec<SymmetricSigningKey>> {
+    pub fn get_symmetric_signing_keys(&self) -> &Option<Vec<SymmetricSigningKey>> {
         &self.symmetric_signing_keys
     }
 
@@ -512,8 +509,14 @@ impl EncryptionMaterialsBuilder {
         // asserting the raw-scalar length here would reject exactly the keys
         // that can actually be signed with.
 
-        // If no symmetric signing, symmetric signing keys must not be included
-        if !algorithm_suite_id.has_symmetric_signing() && self.symmetric_signing_keys.is_some() {
+        // If no symmetric signing, symmetric signing keys must not be included.
+        // An empty list includes none, matching the getter, which returns an empty slice.
+        if !algorithm_suite_id.has_symmetric_signing()
+            && self
+                .symmetric_signing_keys
+                .as_ref()
+                .is_some_and(|k| !k.is_empty())
+        {
             return Err(Error::new(
                 Kind::InvalidMaterials,
                 "symmetric signing keys must not be present when algorithm suite has no symmetric signing",

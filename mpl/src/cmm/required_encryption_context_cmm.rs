@@ -63,7 +63,7 @@ impl RequiredEncryptionContextCmm {
 
     /// The encryption context keys that every call must supply.
     #[must_use]
-    pub const fn required_encryption_context_keys(&self) -> &BTreeSet<String> {
+    pub fn required_encryption_context_keys(&self) -> &BTreeSet<String> {
         &self.required_encryption_context_keys
     }
 }
