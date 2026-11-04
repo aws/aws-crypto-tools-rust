@@ -15,7 +15,7 @@ use aws_sdk_dynamodb::error::ProvideErrorMetadata;
 /// Use this to recover a concrete AWS SDK error from an MPL error:
 ///
 /// ```no_run
-/// use aws_crypto_mpl::error_chain::find_in_error_chain;
+/// use aws_crypto_mpl::__test_internals::error_chain::find_in_error_chain;
 /// use aws_sdk_kms::error::SdkError;
 /// use aws_sdk_kms::operation::decrypt::DecryptError;
 /// # fn example(err: &aws_crypto_mpl::Error) {
