@@ -2,6 +2,7 @@
   "supportedFeatures": [
     "hierarchical",
     "raw-aes",
+    "default-cmm-reproduced-encryption-context",
     "streaming"
   ],
   "unsupportedFeatures": [
