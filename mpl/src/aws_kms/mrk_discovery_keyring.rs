@@ -151,8 +151,8 @@ impl AwsKmsMrkDiscoveryKeyringBuilder {
     /// The AWS KMS client, in [`Self::region`].
     /// Required.
     #[must_use]
-    pub fn kms_client(mut self, kms_client: KmsClient) -> Self {
-        self.kms_client = Some(kms_client);
+    pub fn kms_client(mut self, kms_client: impl Into<KmsClient>) -> Self {
+        self.kms_client = Some(kms_client.into());
         self
     }
 
@@ -217,7 +217,7 @@ impl AwsKmsMrkDiscoveryKeyringBuilder {
     ///   a client whose region is not the keyring's region,
     ///   more than 10 grant tokens,
     ///   or a grant token of the wrong length.
-    pub fn build(self) -> Result<AwsKmsMrkDiscoveryKeyring, Error> {
+    pub async fn build(self) -> Result<AwsKmsMrkDiscoveryKeyring, Error> {
         let client = required(self.kms_client, "kms_client")?;
         let region = required(self.region, "region")?;
         if client

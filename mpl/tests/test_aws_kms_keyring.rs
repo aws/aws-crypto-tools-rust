@@ -39,33 +39,37 @@ fn ec() -> EncryptionContext {
     ec
 }
 
-#[test]
-fn build_validates_the_key_id_and_grant_tokens() {
-    let build = |id: &str| {
+#[tokio::test]
+async fn build_validates_the_key_id_and_grant_tokens() {
+    async fn build(id: &str) -> Result<AwsKmsKeyring, aws_crypto_mpl::Error> {
         AwsKmsKeyring::builder()
             .kms_key_id(id)
             .kms_client(offline_client())
             .build()
-    };
-    assert!(build(KEY_ARN).is_ok());
-    assert!(build("alias/my-key").is_ok());
-    assert!(build("9d989aa2-2f9c-438c-a745-cc57d3ad0126").is_ok());
+            .await
+    }
+    assert!(build(KEY_ARN).await.is_ok());
+    assert!(build("alias/my-key").await.is_ok());
+    assert!(build("9d989aa2-2f9c-438c-a745-cc57d3ad0126").await.is_ok());
     assert!(
         build("arn:aws:kms:us-west-2:370957321024:key")
+            .await
             .unwrap_err()
             .is_validation()
     );
     assert!(
         build("arn:aws:s3:us-west-2:370957321024:key/x")
+            .await
             .unwrap_err()
             .is_validation()
     );
-    assert!(build("key/abc").unwrap_err().is_validation());
-    assert!(build("").unwrap_err().is_validation());
+    assert!(build("key/abc").await.unwrap_err().is_validation());
+    assert!(build("").await.unwrap_err().is_validation());
     assert!(
         AwsKmsKeyring::builder()
             .kms_key_id(KEY_ARN)
             .build()
+            .await
             .unwrap_err()
             .is_validation()
     );
@@ -75,6 +79,7 @@ fn build_validates_the_key_id_and_grant_tokens() {
             .kms_client(offline_client())
             .set_grant_tokens(Some(vec!["t".to_owned(); 11]))
             .build()
+            .await
             .unwrap_err()
             .is_validation()
     );
@@ -93,6 +98,7 @@ async fn decrypt_needs_a_key_arn_and_skips_other_providers() {
         .kms_key_id("alias/my-key")
         .kms_client(offline_client())
         .build()
+        .await
         .unwrap();
     let err = alias
         .on_decrypt()
@@ -107,6 +113,7 @@ async fn decrypt_needs_a_key_arn_and_skips_other_providers() {
         .kms_key_id(KEY_ARN)
         .kms_client(offline_client())
         .build()
+        .await
         .unwrap();
     let other = EncryptedDataKey::builder()
         .key_provider_id("other")
@@ -129,6 +136,7 @@ async fn round_trip(suite: AlgorithmSuiteId) {
         .kms_key_id(KEY_ARN)
         .kms_client(client().await)
         .build()
+        .await
         .unwrap();
     let materials = EncryptionMaterials::builder()
         .algorithm_suite_id(suite)

@@ -569,8 +569,8 @@ impl AwsKmsKeyringBuilder {
     /// The AWS KMS client, in the key's region.
     /// Required.
     #[must_use]
-    pub fn kms_client(mut self, kms_client: KmsClient) -> Self {
-        self.kms_client = Some(kms_client);
+    pub fn kms_client(mut self, kms_client: impl Into<KmsClient>) -> Self {
+        self.kms_client = Some(kms_client.into());
         self
     }
 
@@ -605,7 +605,7 @@ impl AwsKmsKeyringBuilder {
     ///   a malformed key identifier,
     ///   more than 10 grant tokens,
     ///   or a grant token of the wrong length.
-    pub fn build(self) -> Result<AwsKmsKeyring, Error> {
+    pub async fn build(self) -> Result<AwsKmsKeyring, Error> {
         let kms_key_id = required(self.kms_key_id, "kms_key_id")?;
         let client = required(self.kms_client, "kms_client")?;
         let parsed =

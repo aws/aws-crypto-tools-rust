@@ -596,9 +596,9 @@ fn dbe_suites_match_the_reference_table() {
         assert_eq!(wrapping.mac_key_kdf(), KeyDerivationAlgorithm::HkdfSha512);
     }
     for id in EsdkAlgorithmSuiteId::ALL {
-        assert_eq!(
+        assert!(matches!(
             id.specification().edk_wrapping(),
-            EdkWrapping::DirectKeyWrapping
-        );
+            EdkWrapping::DirectKeyWrapping(_)
+        ));
     }
 }

@@ -201,7 +201,7 @@ impl RawRsaKeyringBuilder {
 
     /// The key namespace, if set.
     #[must_use]
-    pub const fn get_key_namespace(&self) -> &Option<String> {
+    pub fn get_key_namespace(&self) -> &Option<String> {
         &self.key_namespace
     }
 
@@ -223,14 +223,14 @@ impl RawRsaKeyringBuilder {
 
     /// The key name, if set.
     #[must_use]
-    pub const fn get_key_name(&self) -> &Option<String> {
+    pub fn get_key_name(&self) -> &Option<String> {
         &self.key_name
     }
 
     /// Set the padding scheme.
     /// Required.
     #[must_use]
-    pub const fn padding_scheme(mut self, padding_scheme: PaddingScheme) -> Self {
+    pub fn padding_scheme(mut self, padding_scheme: PaddingScheme) -> Self {
         self.padding_scheme = Some(padding_scheme);
         self
     }
@@ -238,14 +238,14 @@ impl RawRsaKeyringBuilder {
     /// Set or clear the padding scheme from an `Option`.
     /// To set a value, use [`Self::padding_scheme`].
     #[must_use]
-    pub const fn set_padding_scheme(mut self, padding_scheme: Option<PaddingScheme>) -> Self {
+    pub fn set_padding_scheme(mut self, padding_scheme: Option<PaddingScheme>) -> Self {
         self.padding_scheme = padding_scheme;
         self
     }
 
     /// The padding scheme, if set.
     #[must_use]
-    pub const fn get_padding_scheme(&self) -> &Option<PaddingScheme> {
+    pub fn get_padding_scheme(&self) -> &Option<PaddingScheme> {
         &self.padding_scheme
     }
 
@@ -267,7 +267,7 @@ impl RawRsaKeyringBuilder {
 
     /// The public key, if set.
     #[must_use]
-    pub const fn get_public_key(&self) -> &Option<Vec<u8>> {
+    pub fn get_public_key(&self) -> &Option<Vec<u8>> {
         &self.public_key
     }
 
@@ -289,7 +289,7 @@ impl RawRsaKeyringBuilder {
 
     /// The private key, if set.
     #[must_use]
-    pub const fn get_private_key(&self) -> &Option<Vec<u8>> {
+    pub fn get_private_key(&self) -> &Option<Vec<u8>> {
         &self.private_key
     }
 

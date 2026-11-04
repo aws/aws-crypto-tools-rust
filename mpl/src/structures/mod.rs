@@ -19,9 +19,10 @@ pub mod required_encryption_context_keys;
 pub use aes_wrapping_alg::AesWrappingAlg;
 pub use algorithm_suite::{
     AlgorithmSuite, AlgorithmSuiteId, AsymmetricSignatureAlgorithm, DbeAlgorithmSuiteId,
-    EdkWrapping, EncryptionAlgorithm, EncryptionAlgorithmMode, EsdkAlgorithmSuiteId, Format,
-    IntermediateKeyWrapping, KeyDerivationAlgorithm, PlaintextDataKey, SigningKey,
-    SymmetricSignatureAlgorithm, SymmetricSigningKey, VerificationKey,
+    DirectKeyWrapping, EdkWrapping, EncryptionAlgorithm, EncryptionAlgorithmMode,
+    EsdkAlgorithmSuiteId, Format, IntermediateKeyWrapping, KeyDerivationAlgorithm,
+    PlaintextDataKey, SigningKey, SymmetricSignatureAlgorithm, SymmetricSigningKey,
+    VerificationKey,
 };
 pub use beacon_key_materials::{BeaconKeyMaterials, BeaconKeyMaterialsBuilder};
 pub use branch_key_materials::{BranchKeyMaterials, BranchKeyMaterialsBuilder};

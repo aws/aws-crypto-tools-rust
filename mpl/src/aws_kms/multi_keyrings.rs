@@ -84,6 +84,34 @@ impl RegionalClients {
 }
 
 /// The region of an AWS KMS key ARN; `None` for a key ID or alias name.
+async fn aws_kms_keyring(
+    kms_key_id: String,
+    kms_client: KmsClient,
+    grant_tokens: &[String],
+) -> Result<SharedKeyring, Error> {
+    let keyring = AwsKmsKeyring::builder()
+        .kms_key_id(kms_key_id)
+        .kms_client(kms_client)
+        .set_grant_tokens(Some(grant_tokens.to_vec()))
+        .build()
+        .await?;
+    Ok(SharedKeyring::new(keyring))
+}
+
+async fn aws_kms_mrk_keyring(
+    kms_key_id: String,
+    kms_client: KmsClient,
+    grant_tokens: &[String],
+) -> Result<SharedKeyring, Error> {
+    let keyring = AwsKmsMrkKeyring::builder()
+        .kms_key_id(kms_key_id)
+        .kms_client(kms_client)
+        .set_grant_tokens(Some(grant_tokens.to_vec()))
+        .build()
+        .await?;
+    Ok(SharedKeyring::new(keyring))
+}
+
 fn region_of(kms_key_id: &str) -> Option<String> {
     let parts: Vec<&str> = kms_key_id.split(':').collect();
     match parts.as_slice() {
@@ -198,20 +226,16 @@ impl AwsKmsMultiKeyringBuilder {
             parse_kms_identifier(kms_key_id).map_err(Error::validation)?;
         }
         let mut clients = RegionalClients::new(self.sdk_config).await?;
-        let mut keyring = |kms_key_id: String| -> Result<SharedKeyring, Error> {
+        let mut generator = None;
+        if let Some(kms_key_id) = self.generator {
             let client = clients.client(region_of(&kms_key_id));
-            let keyring = AwsKmsKeyring::builder()
-                .kms_key_id(kms_key_id)
-                .kms_client(client)
-                .set_grant_tokens(Some(grant_tokens.clone()))
-                .build()?;
-            Ok(SharedKeyring::new(keyring))
-        };
-        let generator = self.generator.map(&mut keyring).transpose()?;
-        let child_keyrings = kms_key_ids
-            .into_iter()
-            .map(&mut keyring)
-            .collect::<Result<Vec<_>, _>>()?;
+            generator = Some(aws_kms_keyring(kms_key_id, client, &grant_tokens).await?);
+        }
+        let mut child_keyrings = Vec::with_capacity(kms_key_ids.len());
+        for kms_key_id in kms_key_ids {
+            let client = clients.client(region_of(&kms_key_id));
+            child_keyrings.push(aws_kms_keyring(kms_key_id, client, &grant_tokens).await?);
+        }
         if generator.is_none() && child_keyrings.is_empty() {
             return Err(Error::validation(
                 "generatorKeyring or child Keryings needed to create a multi keyring",
@@ -337,17 +361,16 @@ impl AwsKmsDiscoveryMultiKeyringBuilder {
             return Err(Error::validation("Empty string is not a valid region."));
         }
         let mut clients = RegionalClients::new(self.sdk_config).await?;
-        let child_keyrings = regions
-            .into_iter()
-            .map(|region| {
-                let keyring = AwsKmsDiscoveryKeyring::builder()
-                    .kms_client(clients.client(Some(region)))
-                    .set_discovery_filter(self.discovery_filter.clone())
-                    .set_grant_tokens(Some(grant_tokens.clone()))
-                    .build()?;
-                Ok(SharedKeyring::new(keyring))
-            })
-            .collect::<Result<Vec<_>, Error>>()?;
+        let mut child_keyrings = Vec::with_capacity(regions.len());
+        for region in regions {
+            let keyring = AwsKmsDiscoveryKeyring::builder()
+                .kms_client(clients.client(Some(region)))
+                .set_discovery_filter(self.discovery_filter.clone())
+                .set_grant_tokens(Some(grant_tokens.clone()))
+                .build()
+                .await?;
+            child_keyrings.push(SharedKeyring::new(keyring));
+        }
         MultiKeyring::from_parts(None, child_keyrings)
     }
 }
@@ -493,20 +516,16 @@ impl AwsKmsMrkMultiKeyringBuilder {
         }
         mrks_are_unique(self.generator.iter().chain(&kms_key_ids))?;
         let mut clients = RegionalClients::new(self.sdk_config).await?;
-        let mut keyring = |kms_key_id: String| -> Result<SharedKeyring, Error> {
+        let mut generator = None;
+        if let Some(kms_key_id) = self.generator {
             let client = clients.client(region_of(&kms_key_id));
-            let keyring = AwsKmsMrkKeyring::builder()
-                .kms_key_id(kms_key_id)
-                .kms_client(client)
-                .set_grant_tokens(Some(grant_tokens.clone()))
-                .build()?;
-            Ok(SharedKeyring::new(keyring))
-        };
-        let generator = self.generator.map(&mut keyring).transpose()?;
-        let child_keyrings = kms_key_ids
-            .into_iter()
-            .map(&mut keyring)
-            .collect::<Result<Vec<_>, _>>()?;
+            generator = Some(aws_kms_mrk_keyring(kms_key_id, client, &grant_tokens).await?);
+        }
+        let mut child_keyrings = Vec::with_capacity(kms_key_ids.len());
+        for kms_key_id in kms_key_ids {
+            let client = clients.client(region_of(&kms_key_id));
+            child_keyrings.push(aws_kms_mrk_keyring(kms_key_id, client, &grant_tokens).await?);
+        }
         if generator.is_none() && child_keyrings.is_empty() {
             return Err(Error::validation(
                 "generatorKeyring or child Keyrings needed to create a multi keyring",
@@ -633,18 +652,17 @@ impl AwsKmsMrkDiscoveryMultiKeyringBuilder {
             return Err(Error::validation("Empty string is not a valid region."));
         }
         let mut clients = RegionalClients::new(self.sdk_config).await?;
-        let child_keyrings = regions
-            .into_iter()
-            .map(|region| {
-                let keyring = AwsKmsMrkDiscoveryKeyring::builder()
-                    .kms_client(clients.client(Some(region.clone())))
-                    .region(region)
-                    .set_discovery_filter(self.discovery_filter.clone())
-                    .set_grant_tokens(Some(grant_tokens.clone()))
-                    .build()?;
-                Ok(SharedKeyring::new(keyring))
-            })
-            .collect::<Result<Vec<_>, Error>>()?;
+        let mut child_keyrings = Vec::with_capacity(regions.len());
+        for region in regions {
+            let keyring = AwsKmsMrkDiscoveryKeyring::builder()
+                .kms_client(clients.client(Some(region.clone())))
+                .region(region)
+                .set_discovery_filter(self.discovery_filter.clone())
+                .set_grant_tokens(Some(grant_tokens.clone()))
+                .build()
+                .await?;
+            child_keyrings.push(SharedKeyring::new(keyring));
+        }
         MultiKeyring::from_parts(None, child_keyrings)
     }
 }

@@ -277,7 +277,7 @@ impl EsdkAlgorithmSuiteId {
                 symmetric_signature_algorithm: None,
                 message_format_version: 0x01,
                 algorithm_suite_data_length: 0,
-                edk_wrapping: EdkWrapping::DirectKeyWrapping,
+                edk_wrapping: EdkWrapping::DirectKeyWrapping(DirectKeyWrapping {}),
             },
             Self::AlgAes192GcmIv12Tag16NoKdf => AlgorithmSuite {
                 id: [0x00, 0x46],
@@ -292,7 +292,7 @@ impl EsdkAlgorithmSuiteId {
                 symmetric_signature_algorithm: None,
                 message_format_version: 0x01,
                 algorithm_suite_data_length: 0,
-                edk_wrapping: EdkWrapping::DirectKeyWrapping,
+                edk_wrapping: EdkWrapping::DirectKeyWrapping(DirectKeyWrapping {}),
             },
             Self::AlgAes256GcmIv12Tag16NoKdf => AlgorithmSuite {
                 id: [0x00, 0x78],
@@ -307,7 +307,7 @@ impl EsdkAlgorithmSuiteId {
                 symmetric_signature_algorithm: None,
                 message_format_version: 0x01,
                 algorithm_suite_data_length: 0,
-                edk_wrapping: EdkWrapping::DirectKeyWrapping,
+                edk_wrapping: EdkWrapping::DirectKeyWrapping(DirectKeyWrapping {}),
             },
             Self::AlgAes128GcmIv12Tag16HkdfSha256 => AlgorithmSuite {
                 id: [0x01, 0x14],
@@ -322,7 +322,7 @@ impl EsdkAlgorithmSuiteId {
                 symmetric_signature_algorithm: None,
                 message_format_version: 0x01,
                 algorithm_suite_data_length: 0,
-                edk_wrapping: EdkWrapping::DirectKeyWrapping,
+                edk_wrapping: EdkWrapping::DirectKeyWrapping(DirectKeyWrapping {}),
             },
             Self::AlgAes192GcmIv12Tag16HkdfSha256 => AlgorithmSuite {
                 id: [0x01, 0x46],
@@ -337,7 +337,7 @@ impl EsdkAlgorithmSuiteId {
                 symmetric_signature_algorithm: None,
                 message_format_version: 0x01,
                 algorithm_suite_data_length: 0,
-                edk_wrapping: EdkWrapping::DirectKeyWrapping,
+                edk_wrapping: EdkWrapping::DirectKeyWrapping(DirectKeyWrapping {}),
             },
             Self::AlgAes256GcmIv12Tag16HkdfSha256 => AlgorithmSuite {
                 id: [0x01, 0x78],
@@ -352,7 +352,7 @@ impl EsdkAlgorithmSuiteId {
                 symmetric_signature_algorithm: None,
                 message_format_version: 0x01,
                 algorithm_suite_data_length: 0,
-                edk_wrapping: EdkWrapping::DirectKeyWrapping,
+                edk_wrapping: EdkWrapping::DirectKeyWrapping(DirectKeyWrapping {}),
             },
             Self::AlgAes128GcmIv12Tag16HkdfSha256EcdsaP256 => AlgorithmSuite {
                 id: [0x02, 0x14],
@@ -368,7 +368,7 @@ impl EsdkAlgorithmSuiteId {
                 symmetric_signature_algorithm: None,
                 message_format_version: 0x01,
                 algorithm_suite_data_length: 0,
-                edk_wrapping: EdkWrapping::DirectKeyWrapping,
+                edk_wrapping: EdkWrapping::DirectKeyWrapping(DirectKeyWrapping {}),
             },
             Self::AlgAes192GcmIv12Tag16HkdfSha384EcdsaP384 => AlgorithmSuite {
                 id: [0x03, 0x46],
@@ -383,7 +383,7 @@ impl EsdkAlgorithmSuiteId {
                 symmetric_signature_algorithm: None,
                 message_format_version: 0x01,
                 algorithm_suite_data_length: 0,
-                edk_wrapping: EdkWrapping::DirectKeyWrapping,
+                edk_wrapping: EdkWrapping::DirectKeyWrapping(DirectKeyWrapping {}),
             },
             Self::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384 => AlgorithmSuite {
                 id: [0x03, 0x78],
@@ -398,7 +398,7 @@ impl EsdkAlgorithmSuiteId {
                 symmetric_signature_algorithm: None,
                 message_format_version: 0x01,
                 algorithm_suite_data_length: 0,
-                edk_wrapping: EdkWrapping::DirectKeyWrapping,
+                edk_wrapping: EdkWrapping::DirectKeyWrapping(DirectKeyWrapping {}),
             },
             Self::AlgAes256GcmHkdfSha512CommitKey => AlgorithmSuite {
                 id: [0x04, 0x78],
@@ -413,7 +413,7 @@ impl EsdkAlgorithmSuiteId {
                 symmetric_signature_algorithm: None,
                 message_format_version: 0x02,
                 algorithm_suite_data_length: 32,
-                edk_wrapping: EdkWrapping::DirectKeyWrapping,
+                edk_wrapping: EdkWrapping::DirectKeyWrapping(DirectKeyWrapping {}),
             },
             Self::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384 => AlgorithmSuite {
                 id: [0x05, 0x78],
@@ -428,7 +428,7 @@ impl EsdkAlgorithmSuiteId {
                 symmetric_signature_algorithm: None,
                 message_format_version: 0x02,
                 algorithm_suite_data_length: 32,
-                edk_wrapping: EdkWrapping::DirectKeyWrapping,
+                edk_wrapping: EdkWrapping::DirectKeyWrapping(DirectKeyWrapping {}),
             },
         }
     }
@@ -642,11 +642,16 @@ pub enum SymmetricSignatureAlgorithm {
 #[non_exhaustive]
 pub enum EdkWrapping {
     /// The keyring encrypts the plaintext data key itself.
-    DirectKeyWrapping,
+    DirectKeyWrapping(DirectKeyWrapping),
     /// The keyring encrypts a fresh intermediate key.
     /// Keys derived from it encrypt the plaintext data key and sign the message.
     IntermediateKeyWrapping(IntermediateKeyWrapping),
 }
+
+/// The settings of [`EdkWrapping::DirectKeyWrapping`], which has none.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub struct DirectKeyWrapping {}
 
 /// The key derivations of [`EdkWrapping::IntermediateKeyWrapping`].
 ///
@@ -661,13 +666,13 @@ pub struct IntermediateKeyWrapping {
 impl IntermediateKeyWrapping {
     /// The KDF that derives the key that encrypts the plaintext data key.
     #[must_use]
-    pub const fn key_encryption_key_kdf(&self) -> KeyDerivationAlgorithm {
+    pub fn key_encryption_key_kdf(&self) -> KeyDerivationAlgorithm {
         self.key_encryption_key_kdf
     }
 
     /// The KDF that derives the symmetric signing (MAC) key.
     #[must_use]
-    pub const fn mac_key_kdf(&self) -> KeyDerivationAlgorithm {
+    pub fn mac_key_kdf(&self) -> KeyDerivationAlgorithm {
         self.mac_key_kdf
     }
 }

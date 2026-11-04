@@ -234,8 +234,8 @@ impl AwsKmsDiscoveryKeyringBuilder {
     /// The AWS KMS client.
     /// Required.
     #[must_use]
-    pub fn kms_client(mut self, kms_client: KmsClient) -> Self {
-        self.kms_client = Some(kms_client);
+    pub fn kms_client(mut self, kms_client: impl Into<KmsClient>) -> Self {
+        self.kms_client = Some(kms_client.into());
         self
     }
 
@@ -284,7 +284,7 @@ impl AwsKmsDiscoveryKeyringBuilder {
     /// - [`Validation`](crate::Error::Validation): no client,
     ///   more than 10 grant tokens,
     ///   or a grant token of the wrong length.
-    pub fn build(self) -> Result<AwsKmsDiscoveryKeyring, Error> {
+    pub async fn build(self) -> Result<AwsKmsDiscoveryKeyring, Error> {
         let client = required(self.kms_client, "kms_client")?;
         let grant_tokens = valid_grant_tokens(self.grant_tokens)?;
         Ok(AwsKmsDiscoveryKeyring {

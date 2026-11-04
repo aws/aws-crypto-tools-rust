@@ -316,7 +316,7 @@ impl AwsKmsRsaKeyringBuilder {
 
     /// The key ARN, if set.
     #[must_use]
-    pub const fn get_kms_key_id(&self) -> &Option<String> {
+    pub fn get_kms_key_id(&self) -> &Option<String> {
         &self.kms_key_id
     }
 
@@ -339,7 +339,7 @@ impl AwsKmsRsaKeyringBuilder {
 
     /// The public key, if set.
     #[must_use]
-    pub const fn get_public_key(&self) -> &Option<Vec<u8>> {
+    pub fn get_public_key(&self) -> &Option<Vec<u8>> {
         &self.public_key
     }
 
@@ -363,7 +363,7 @@ impl AwsKmsRsaKeyringBuilder {
 
     /// The RSA encryption algorithm, if set.
     #[must_use]
-    pub const fn get_encryption_algorithm(&self) -> &Option<EncryptionAlgorithmSpec> {
+    pub fn get_encryption_algorithm(&self) -> &Option<EncryptionAlgorithmSpec> {
         &self.encryption_algorithm
     }
 
@@ -371,8 +371,8 @@ impl AwsKmsRsaKeyringBuilder {
     /// Needed to decrypt.
     /// Set this, the public key, or both.
     #[must_use]
-    pub fn kms_client(mut self, kms_client: KmsClient) -> Self {
-        self.kms_client = Some(kms_client);
+    pub fn kms_client(mut self, kms_client: impl Into<KmsClient>) -> Self {
+        self.kms_client = Some(kms_client.into());
         self
     }
 
@@ -385,7 +385,7 @@ impl AwsKmsRsaKeyringBuilder {
 
     /// The AWS KMS client, if set.
     #[must_use]
-    pub const fn get_kms_client(&self) -> &Option<KmsClient> {
+    pub fn get_kms_client(&self) -> &Option<KmsClient> {
         &self.kms_client
     }
 
@@ -407,7 +407,7 @@ impl AwsKmsRsaKeyringBuilder {
 
     /// The grant tokens, if set.
     #[must_use]
-    pub const fn get_grant_tokens(&self) -> &Option<Vec<String>> {
+    pub fn get_grant_tokens(&self) -> &Option<Vec<String>> {
         &self.grant_tokens
     }
 
@@ -421,7 +421,7 @@ impl AwsKmsRsaKeyringBuilder {
     ///   a key identifier that is not an AWS KMS key ARN,
     ///   a public key that is not a PEM RSA public key of at least 2048 bits,
     ///   or invalid grant tokens.
-    pub fn build(self) -> Result<AwsKmsRsaKeyring, Error> {
+    pub async fn build(self) -> Result<AwsKmsRsaKeyring, Error> {
         let kms_key_id = required(self.kms_key_id, "kms_key_id")?;
         let encryption_algorithm = required(self.encryption_algorithm, "encryption_algorithm")?;
         // Treat an empty public key as unset.

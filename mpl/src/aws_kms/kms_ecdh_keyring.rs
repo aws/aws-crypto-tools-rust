@@ -548,8 +548,8 @@ impl AwsKmsEcdhKeyringBuilder {
     /// The AWS KMS client, in the AWS KMS key's region.
     /// Required.
     #[must_use]
-    pub fn kms_client(mut self, kms_client: KmsClient) -> Self {
-        self.kms_client = Some(kms_client);
+    pub fn kms_client(mut self, kms_client: impl Into<KmsClient>) -> Self {
+        self.kms_client = Some(kms_client.into());
         self
     }
 
