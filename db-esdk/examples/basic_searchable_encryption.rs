@@ -113,7 +113,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let ddb = aws_db_esdk::Client::builder()
         .ddb_client(ddb_sdk)
         .table_encryption_configs(TABLE_NAME, table)
-        .build()?;
+        .build()
+        .await?;
 
     // On write the client adds the beacon attributes `aws_dbe_b_inspector_id_last4`
     // and `aws_dbe_b_unit`, each a truncated HMAC of the plaintext.

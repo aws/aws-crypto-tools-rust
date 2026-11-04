@@ -116,7 +116,8 @@ async fn handle_request(
     let ddb = aws_db_esdk::Client::builder()
         .ddb_client(ddb_sdk.clone())
         .table_encryption_configs(TABLE_NAME, table)
-        .build()?;
+        .build()
+        .await?;
 
     let item = HashMap::from([
         (

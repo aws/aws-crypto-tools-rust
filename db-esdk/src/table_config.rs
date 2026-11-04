@@ -109,7 +109,7 @@ impl TableConfig {
 
     /// The action taken on each attribute when encrypting.
     #[must_use]
-    pub const fn attribute_actions_on_encrypt(&self) -> &HashMap<String, CryptoAction> {
+    pub fn attribute_actions_on_encrypt(&self) -> &HashMap<String, CryptoAction> {
         &self.attribute_actions_on_encrypt
     }
 
@@ -129,7 +129,7 @@ impl TableConfig {
 
     /// The algorithm suite new items are written with, if set.
     #[must_use]
-    pub const fn algorithm_suite_id(&self) -> Option<AlgorithmSuiteId> {
+    pub fn algorithm_suite_id(&self) -> Option<AlgorithmSuiteId> {
         self.algorithm_suite_id
     }
 
@@ -141,7 +141,7 @@ impl TableConfig {
 
     /// The searchable-encryption configuration, if set.
     #[must_use]
-    pub const fn search(&self) -> Option<&SearchConfig> {
+    pub fn search(&self) -> Option<&SearchConfig> {
         self.search.as_ref()
     }
 }
@@ -344,7 +344,7 @@ impl TableConfigBuilder {
     /// Optional: the default signs with ECDSA P-384 and HMAC-SHA-384.
     /// Reads take the suite from each item.
     #[must_use]
-    pub const fn algorithm_suite_id(mut self, id: AlgorithmSuiteId) -> Self {
+    pub fn algorithm_suite_id(mut self, id: AlgorithmSuiteId) -> Self {
         self.algorithm_suite_id = Some(id);
         self
     }
@@ -352,7 +352,7 @@ impl TableConfigBuilder {
     /// The algorithm suite new items are written with.
     /// See [`Self::algorithm_suite_id`].
     #[must_use]
-    pub const fn set_algorithm_suite_id(mut self, id: Option<AlgorithmSuiteId>) -> Self {
+    pub fn set_algorithm_suite_id(mut self, id: Option<AlgorithmSuiteId>) -> Self {
         self.algorithm_suite_id = id;
         self
     }
@@ -391,7 +391,7 @@ impl TableConfigBuilder {
 
     /// Whether plaintext items are written and read, while migrating a plaintext table.
     #[must_use]
-    pub const fn plaintext_override(mut self, policy: PlaintextOverride) -> Self {
+    pub fn plaintext_override(mut self, policy: PlaintextOverride) -> Self {
         self.plaintext_override = Some(policy);
         self
     }
@@ -399,7 +399,7 @@ impl TableConfigBuilder {
     /// Whether plaintext items are written and read.
     /// See [`Self::plaintext_override`].
     #[must_use]
-    pub const fn set_plaintext_override(mut self, policy: Option<PlaintextOverride>) -> Self {
+    pub fn set_plaintext_override(mut self, policy: Option<PlaintextOverride>) -> Self {
         self.plaintext_override = policy;
         self
     }

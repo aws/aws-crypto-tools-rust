@@ -11,35 +11,38 @@ use aws_db_esdk::aws_sdk_dynamodb::types::{AttributeValue, ReturnValue};
 use aws_db_esdk::{Client, Error};
 use client_support::{PLAIN_TABLE, TABLE, fake, full_item, key, s, table_config};
 
-#[test]
-fn build_requires_a_dynamodb_client() {
+#[tokio::test]
+async fn build_requires_a_dynamodb_client() {
     let err = Client::builder()
         .table_encryption_configs(TABLE, table_config())
         .build()
+        .await
         .unwrap_err();
 
     assert!(matches!(err, Error::Validation(_)), "{err:?}");
     assert_eq!(err.message(), "ddb_client is required");
 }
 
-#[test]
-fn set_ddb_client_none_clears_the_client() {
+#[tokio::test]
+async fn set_ddb_client_none_clears_the_client() {
     let err = Client::builder()
         .ddb_client(fake().client())
         .set_ddb_client(None)
         .build()
+        .await
         .unwrap_err();
 
     assert!(matches!(err, Error::Validation(_)), "{err:?}");
 }
 
-#[test]
-fn build_rejects_two_tables_with_one_logical_name() {
+#[tokio::test]
+async fn build_rejects_two_tables_with_one_logical_name() {
     let err = Client::builder()
         .ddb_client(fake().client())
         .table_encryption_configs("physical1", table_config())
         .table_encryption_configs("physical2", table_config())
         .build()
+        .await
         .unwrap_err();
 
     assert!(matches!(err, Error::Validation(_)), "{err:?}");
@@ -86,7 +89,7 @@ async fn set_table_encryption_configs_replaces_every_configuration() {
     let builder = builder
         .set_table_encryption_configs(Some(HashMap::from([(TABLE.to_owned(), table_config())])));
 
-    let encrypted = builder.build().unwrap();
+    let encrypted = builder.build().await.unwrap();
 
     //= spec/dynamodb-encryption-client/ddb-sdk-integration.md#overview
     //= type=test
@@ -132,6 +135,7 @@ async fn set_table_encryption_configs_none_leaves_every_table_plaintext() {
         .table_encryption_configs(TABLE, table_config())
         .set_table_encryption_configs(None)
         .build()
+        .await
         .unwrap();
 
     assert_eq!(
@@ -140,9 +144,9 @@ async fn set_table_encryption_configs_none_leaves_every_table_plaintext() {
     );
 }
 
-#[test]
-fn fluent_builders_keep_what_is_set() {
-    let client = client_support::setup().1;
+#[tokio::test]
+async fn fluent_builders_keep_what_is_set() {
+    let client = client_support::setup().await.1;
 
     let put = client
         .put_item()
@@ -179,7 +183,7 @@ fn fluent_builders_keep_what_is_set() {
 
 #[tokio::test]
 async fn resolve_attributes_of_a_table_without_search_is_empty() {
-    let client = client_support::setup().1;
+    let client = client_support::setup().await.1;
 
     for table in [TABLE, "unconfigured"] {
         let out = client
@@ -197,7 +201,7 @@ async fn resolve_attributes_of_a_table_without_search_is_empty() {
 
 #[tokio::test]
 async fn resolve_attributes_requires_a_table_name_and_an_item() {
-    let client = client_support::setup().1;
+    let client = client_support::setup().await.1;
     let item: HashMap<String, AttributeValue> = full_item("a", "1");
 
     let builder = client

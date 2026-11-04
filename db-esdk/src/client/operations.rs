@@ -50,6 +50,27 @@ macro_rules! setter {
             self.inner.$get()
         }
     };
+    (number $field:ident, $set:ident, $get:ident: $ty:ty) => {
+        #[doc = concat!("Set `", stringify!($field), "`, as on the AWS SDK's fluent builder.")]
+        #[must_use]
+        pub fn $field(mut self, input: $ty) -> Self {
+            self.inner = self.inner.$field(input);
+            self
+        }
+
+        #[doc = concat!("Set or clear `", stringify!($field), "`.")]
+        #[must_use]
+        pub fn $set(mut self, input: Option<$ty>) -> Self {
+            self.inner = self.inner.$set(input);
+            self
+        }
+
+        #[doc = concat!("The `", stringify!($field), "` set so far.")]
+        #[must_use]
+        pub fn $get(&self) -> &Option<$ty> {
+            self.inner.$get()
+        }
+    };
     (map $field:ident, $set:ident, $get:ident: $ty:ty) => {
         #[doc = concat!("Add one entry to `", stringify!($field), "`, as on the AWS SDK's fluent builder.")]
         #[must_use]
@@ -393,7 +414,7 @@ fluent_builder! {
         value index_name, set_index_name, get_index_name: String;
         value select, set_select, get_select: Select;
         list attributes_to_get, set_attributes_to_get, get_attributes_to_get: String;
-        value limit, set_limit, get_limit: i32;
+        number limit, set_limit, get_limit: i32;
         value consistent_read, set_consistent_read, get_consistent_read: bool;
         map key_conditions, set_key_conditions, get_key_conditions: Condition;
         map query_filter, set_query_filter, get_query_filter: Condition;
@@ -435,14 +456,14 @@ fluent_builder! {
         value table_name, set_table_name, get_table_name: String;
         value index_name, set_index_name, get_index_name: String;
         list attributes_to_get, set_attributes_to_get, get_attributes_to_get: String;
-        value limit, set_limit, get_limit: i32;
+        number limit, set_limit, get_limit: i32;
         value select, set_select, get_select: Select;
         map scan_filter, set_scan_filter, get_scan_filter: Condition;
         value conditional_operator, set_conditional_operator, get_conditional_operator: ConditionalOperator;
         map exclusive_start_key, set_exclusive_start_key, get_exclusive_start_key: AttributeValue;
         value return_consumed_capacity, set_return_consumed_capacity, get_return_consumed_capacity: ReturnConsumedCapacity;
-        value total_segments, set_total_segments, get_total_segments: i32;
-        value segment, set_segment, get_segment: i32;
+        number total_segments, set_total_segments, get_total_segments: i32;
+        number segment, set_segment, get_segment: i32;
         value projection_expression, set_projection_expression, get_projection_expression: String;
         value filter_expression, set_filter_expression, get_filter_expression: String;
         map expression_attribute_names, set_expression_attribute_names, get_expression_attribute_names: String;
@@ -537,7 +558,7 @@ fluent_builder! {
         value consistent_read, set_consistent_read, get_consistent_read: bool;
         value next_token, set_next_token, get_next_token: String;
         value return_consumed_capacity, set_return_consumed_capacity, get_return_consumed_capacity: ReturnConsumedCapacity;
-        value limit, set_limit, get_limit: i32;
+        number limit, set_limit, get_limit: i32;
         value return_values_on_condition_check_failure, set_return_values_on_condition_check_failure, get_return_values_on_condition_check_failure: ReturnValuesOnConditionCheckFailure;
     }
 }
@@ -666,7 +687,7 @@ impl ResolveAttributesFluentBuilder {
 
     /// The table name set so far.
     #[must_use]
-    pub const fn get_table_name(&self) -> &Option<String> {
+    pub fn get_table_name(&self) -> &Option<String> {
         self.inner.get_table_name()
     }
 
@@ -686,7 +707,7 @@ impl ResolveAttributesFluentBuilder {
 
     /// The item set so far.
     #[must_use]
-    pub const fn get_item(&self) -> &Option<HashMap<String, AttributeValue>> {
+    pub fn get_item(&self) -> &Option<HashMap<String, AttributeValue>> {
         self.inner.get_item()
     }
 

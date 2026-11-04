@@ -6,6 +6,37 @@
 use super::*;
 use crate::search::test_fixtures::{item, n, s};
 
+fn substring_transform(low: i32, high: i32) -> VirtualTransform {
+    VirtualTransform::Substring(
+        crate::search::GetSubstring::builder()
+            .low(low)
+            .high(high)
+            .build()
+            .unwrap(),
+    )
+}
+
+fn segment_transform(split: char, index: i32) -> VirtualTransform {
+    VirtualTransform::Segment(
+        crate::search::GetSegment::builder()
+            .split(split)
+            .index(index)
+            .build()
+            .unwrap(),
+    )
+}
+
+fn segments_transform(split: char, low: i32, high: i32) -> VirtualTransform {
+    VirtualTransform::Segments(
+        crate::search::GetSegments::builder()
+            .split(split)
+            .low(low)
+            .high(high)
+            .build()
+            .unwrap(),
+    )
+}
+
 const MIXED: &str = "aBcD\u{f1}\u{d1}eF";
 
 fn t(transform: &VirtualTransform, input: &str) -> String {
@@ -122,7 +153,7 @@ fn lengths_count_utf16_code_units() {
     let face = "\u{1F600}abc";
     assert_eq!(t(&VirtualTransform::prefix(2), face), "\u{1F600}");
     assert_eq!(t(&VirtualTransform::suffix(-2), face), "abc");
-    assert_eq!(t(&VirtualTransform::substring(2, 4), face), "ab");
+    assert_eq!(t(&substring_transform(2, 4), face), "ab");
 }
 
 #[test]
@@ -139,25 +170,22 @@ fn substring() {
         //# The GetSubstring transform MUST return the range of characters
         //# from low (inclusive) to high (exclusive)
         assert_eq!(
-            t(&VirtualTransform::substring(low, high), "abcdef"),
+            t(&substring_transform(low, high), "abcdef"),
             want,
             "{low}..{high}"
         );
     }
     // Positions are clamped into the string: past the end is the last character.
-    assert_eq!(
-        t(&VirtualTransform::substring(-100, 100), "abcdef"),
-        "abcde"
-    );
+    assert_eq!(t(&substring_transform(-100, 100), "abcdef"), "abcde");
     // High at or below low is empty.
     for (low, high) in [(4, 2), (0, 0)] {
         assert_eq!(
-            t(&VirtualTransform::substring(low, high), "abcdef"),
+            t(&substring_transform(low, high), "abcdef"),
             "",
             "{low}..{high}"
         );
     }
-    assert_eq!(t(&VirtualTransform::substring(0, 3), ""), "");
+    assert_eq!(t(&substring_transform(0, 3), ""), "");
 }
 
 /// The counterpart of `GetPosTest` in the reference implementation's `Virtual.dfy`.
@@ -202,33 +230,21 @@ fn segment() {
         //= type=test
         //# The GetSegment transform MUST split the input string on the given character,
         //# and return the item in the resulting list the corresponds to the given position.
-        assert_eq!(
-            t(&VirtualTransform::segment('.', index), input),
-            want,
-            "{index}"
-        );
+        assert_eq!(t(&segment_transform('.', index), input), want, "{index}");
     }
     // There are four segments, so index 4 is the first one past the end.
     for index in [4, 5] {
         //= spec/searchable-encryption/virtual.md#getsegment-transform-initialization
         //= type=test
         //# If index is greater than the number of items in the list, an empty string MUST be returned.
-        assert_eq!(
-            t(&VirtualTransform::segment('.', index), input),
-            "",
-            "{index}"
-        );
+        assert_eq!(t(&segment_transform('.', index), input), "", "{index}");
     }
     // Past the end from the back is also empty.
     for index in [-5, -6] {
-        assert_eq!(
-            t(&VirtualTransform::segment('.', index), input),
-            "",
-            "{index}"
-        );
+        assert_eq!(t(&segment_transform('.', index), input), "", "{index}");
     }
     // Without the split character, the whole string is the only segment.
-    assert_eq!(t(&VirtualTransform::segment('.', 0), "abc"), "abc");
+    assert_eq!(t(&segment_transform('.', 0), "abc"), "abc");
 }
 
 #[test]
@@ -250,7 +266,7 @@ fn segments() {
         //# GetSegments MUST return the range of parts from low (inclusive) to high (exclusive),
         //# joined on the `split` character.
         assert_eq!(
-            t(&VirtualTransform::segments('.', low, high), input),
+            t(&segments_transform('.', low, high), input),
             want,
             "{low}..{high}"
         );
@@ -261,7 +277,7 @@ fn segments() {
         //= type=test
         //# If high is less than or equal to low, an empty string MUST be returned.
         assert_eq!(
-            t(&VirtualTransform::segments('.', low, high), input),
+            t(&segments_transform('.', low, high), input),
             "",
             "{low}..{high}"
         );

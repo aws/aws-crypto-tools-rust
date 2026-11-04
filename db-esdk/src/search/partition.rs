@@ -34,13 +34,13 @@ impl GetPartitionNumberInput {
 
     /// The plaintext item being written.
     #[must_use]
-    pub const fn item(&self) -> &Item {
+    pub fn item(&self) -> &Item {
         &self.item
     }
 
     /// The number of partitions of the beacon version: the partition returned must be less.
     #[must_use]
-    pub const fn number_of_partitions(&self) -> u8 {
+    pub fn number_of_partitions(&self) -> u8 {
         self.number_of_partitions
     }
 
@@ -81,14 +81,14 @@ impl GetPartitionNumberInputBuilder {
 
     /// The number of partitions (required).
     #[must_use]
-    pub const fn number_of_partitions(mut self, count: u8) -> Self {
+    pub fn number_of_partitions(mut self, count: u8) -> Self {
         self.number_of_partitions = Some(count);
         self
     }
 
     /// The number of partitions; see [`Self::number_of_partitions`].
     #[must_use]
-    pub const fn set_number_of_partitions(mut self, count: Option<u8>) -> Self {
+    pub fn set_number_of_partitions(mut self, count: Option<u8>) -> Self {
         self.number_of_partitions = count;
         self
     }
@@ -141,7 +141,7 @@ impl GetPartitionNumberOutput {
 
     /// The partition that the item is written in.
     #[must_use]
-    pub const fn partition_number(&self) -> u8 {
+    pub fn partition_number(&self) -> u8 {
         self.partition_number
     }
 }
@@ -157,14 +157,14 @@ impl GetPartitionNumberOutputBuilder {
     /// The partition that the item is written in.
     /// Required, and less than the number of partitions.
     #[must_use]
-    pub const fn partition_number(mut self, partition: u8) -> Self {
+    pub fn partition_number(mut self, partition: u8) -> Self {
         self.partition_number = Some(partition);
         self
     }
 
     /// The partition; see [`Self::partition_number`].
     #[must_use]
-    pub const fn set_partition_number(mut self, partition: Option<u8>) -> Self {
+    pub fn set_partition_number(mut self, partition: Option<u8>) -> Self {
         self.partition_number = partition;
         self
     }

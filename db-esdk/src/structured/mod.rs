@@ -70,7 +70,7 @@ pub struct ParsedHeader {
 impl ParsedHeader {
     /// The algorithm suite the structure was encrypted with.
     #[must_use]
-    pub const fn algorithm_suite_id(&self) -> AlgorithmSuiteId {
+    pub fn algorithm_suite_id(&self) -> AlgorithmSuiteId {
         self.algorithm_suite_id
     }
 
@@ -82,13 +82,13 @@ impl ParsedHeader {
 
     /// The encryption context stored in the header.
     #[must_use]
-    pub const fn stored_encryption_context(&self) -> &EncryptionContext {
+    pub fn stored_encryption_context(&self) -> &EncryptionContext {
         &self.stored_encryption_context
     }
 
     /// The full encryption context of the materials, stored and not stored.
     #[must_use]
-    pub const fn encryption_context(&self) -> &EncryptionContext {
+    pub fn encryption_context(&self) -> &EncryptionContext {
         &self.encryption_context
     }
 }

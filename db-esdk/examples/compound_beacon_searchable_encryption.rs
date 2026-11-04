@@ -113,7 +113,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let ddb = aws_db_esdk::Client::builder()
         .ddb_client(ddb_sdk)
         .table_encryption_configs(TABLE_NAME, table)
-        .build()?;
+        .build()
+        .await?;
 
     let item = HashMap::from([
         (

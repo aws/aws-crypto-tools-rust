@@ -27,7 +27,7 @@ async fn put(client: &Client, table: &str, i: Item) {
 
 /// A fake and a client, with items `a/1`, `a/2`, and `b/1` in [`TABLE`] and `a/1` in [`PLAIN_TABLE`].
 async fn populated() -> (client_support::FakeDdb, Client) {
-    let (fake, client) = setup();
+    let (fake, client) = setup().await;
     for (bar, sign) in [("a", "1"), ("a", "2"), ("b", "1")] {
         put(&client, TABLE, full_item(bar, sign)).await;
     }
@@ -49,7 +49,7 @@ fn get(table: &str, k: Item) -> TransactGetItem {
 
 #[tokio::test]
 async fn get_item_of_a_missing_item_returns_none() {
-    let (fake, client) = setup();
+    let (fake, client) = setup().await;
 
     let out = client
         .get_item()
@@ -66,7 +66,7 @@ async fn get_item_of_a_missing_item_returns_none() {
 
 #[tokio::test]
 async fn get_item_rejects_a_plaintext_item_in_a_configured_table() {
-    let (fake, client) = setup();
+    let (fake, client) = setup().await;
     fake.set_item(TABLE, &full_item("a", "1"));
 
     let err = client
@@ -139,7 +139,7 @@ async fn query_rejects_a_filter_on_an_encrypted_attribute() {
 
 #[tokio::test]
 async fn query_rejects_the_legacy_key_conditions_parameter() {
-    let (fake, client) = setup();
+    let (fake, client) = setup().await;
 
     let err = client
         .query()
@@ -214,7 +214,7 @@ async fn scan_fails_when_any_item_fails_verification() {
 
 #[tokio::test]
 async fn scan_rejects_a_filter_on_an_encrypted_attribute() {
-    let (fake, client) = setup();
+    let (fake, client) = setup().await;
 
     let err = client
         .scan()
@@ -231,7 +231,7 @@ async fn scan_rejects_a_filter_on_an_encrypted_attribute() {
 
 #[tokio::test]
 async fn scan_rejects_the_legacy_attributes_to_get_parameter() {
-    let (fake, client) = setup();
+    let (fake, client) = setup().await;
 
     let err = client
         .scan()
@@ -302,7 +302,7 @@ async fn transact_get_items_decrypts_each_item_in_request_order() {
 
 #[tokio::test]
 async fn transact_get_items_rejects_a_response_with_the_wrong_number_of_items() {
-    let (fake, client) = setup();
+    let (fake, client) = setup().await;
     fake.reply_next("TransactGetItems", 200, r#"{"Responses":[{}]}"#);
 
     let err = client
@@ -365,6 +365,7 @@ async fn every_attribute_type_round_trips_encrypted() {
         .ddb_client(fake.client())
         .table_encryption_configs(TABLE, config.build().unwrap())
         .build()
+        .await
         .unwrap();
 
     put(&client, TABLE, plaintext.clone()).await;

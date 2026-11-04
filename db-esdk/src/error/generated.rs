@@ -1201,6 +1201,16 @@ impl ProvideErrorMetadata for Error {
             std::sync::LazyLock::new(ErrorMetadata::default);
         self.data().meta.as_ref().unwrap_or(&EMPTY)
     }
+
+    /// The same value as [`Error::code`].
+    fn code(&self) -> Option<&str> {
+        Self::code(self)
+    }
+
+    /// The same text as [`Error::message`].
+    fn message(&self) -> Option<&str> {
+        Some(Self::message(self))
+    }
 }
 
 impl ProvideErrorKind for Error {
@@ -2775,7 +2785,7 @@ pub mod builders {
     use super::{Resource, Service};
 
     /// Builds a [`ValidationError`](super::ValidationError).
-    #[derive(Debug, Default)]
+    #[derive(Debug, Clone, Default)]
     #[must_use]
     pub struct ValidationErrorBuilder {
         message: String,
@@ -2822,7 +2832,7 @@ pub mod builders {
     }
 
     /// Builds a [`InvalidMaterialsError`](super::InvalidMaterialsError).
-    #[derive(Debug, Default)]
+    #[derive(Debug, Clone, Default)]
     #[must_use]
     pub struct InvalidMaterialsErrorBuilder {
         message: String,
@@ -2894,7 +2904,7 @@ pub mod builders {
     }
 
     /// Builds a [`EncryptionContextMismatchError`](super::EncryptionContextMismatchError).
-    #[derive(Debug, Default)]
+    #[derive(Debug, Clone, Default)]
     #[must_use]
     pub struct EncryptionContextMismatchErrorBuilder {
         message: String,
@@ -2941,7 +2951,7 @@ pub mod builders {
     }
 
     /// Builds a [`NoMatchingDataKeyError`](super::NoMatchingDataKeyError).
-    #[derive(Debug, Default)]
+    #[derive(Debug, Clone, Default)]
     #[must_use]
     pub struct NoMatchingDataKeyErrorBuilder {
         message: String,
@@ -3021,7 +3031,7 @@ pub mod builders {
     }
 
     /// Builds a [`CryptographicError`](super::CryptographicError).
-    #[derive(Debug, Default)]
+    #[derive(Debug, Clone, Default)]
     #[must_use]
     pub struct CryptographicErrorBuilder {
         message: String,
@@ -3068,7 +3078,7 @@ pub mod builders {
     }
 
     /// Builds a [`AccessDeniedError`](super::AccessDeniedError).
-    #[derive(Debug, Default)]
+    #[derive(Debug, Clone, Default)]
     #[must_use]
     pub struct AccessDeniedErrorBuilder {
         message: String,
@@ -3140,7 +3150,7 @@ pub mod builders {
     }
 
     /// Builds a [`ResourceNotFoundError`](super::ResourceNotFoundError).
-    #[derive(Debug, Default)]
+    #[derive(Debug, Clone, Default)]
     #[must_use]
     pub struct ResourceNotFoundErrorBuilder {
         message: String,
@@ -3212,7 +3222,7 @@ pub mod builders {
     }
 
     /// Builds a [`ThrottlingError`](super::ThrottlingError).
-    #[derive(Debug, Default)]
+    #[derive(Debug, Clone, Default)]
     #[must_use]
     pub struct ThrottlingErrorBuilder {
         message: String,
@@ -3284,7 +3294,7 @@ pub mod builders {
     }
 
     /// Builds a [`ConflictError`](super::ConflictError).
-    #[derive(Debug, Default)]
+    #[derive(Debug, Clone, Default)]
     #[must_use]
     pub struct ConflictErrorBuilder {
         message: String,
@@ -3364,7 +3374,7 @@ pub mod builders {
     }
 
     /// Builds a [`ServiceError`](super::ServiceError).
-    #[derive(Debug, Default)]
+    #[derive(Debug, Clone, Default)]
     #[must_use]
     pub struct ServiceErrorBuilder {
         message: String,
@@ -3436,7 +3446,7 @@ pub mod builders {
     }
 
     /// Builds a [`DispatchError`](super::DispatchError).
-    #[derive(Debug, Default)]
+    #[derive(Debug, Clone, Default)]
     #[must_use]
     pub struct DispatchErrorBuilder {
         message: String,
@@ -3508,7 +3518,7 @@ pub mod builders {
     }
 
     /// Builds a [`SerializationError`](super::SerializationError).
-    #[derive(Debug, Default)]
+    #[derive(Debug, Clone, Default)]
     #[must_use]
     pub struct SerializationErrorBuilder {
         message: String,
@@ -3555,7 +3565,7 @@ pub mod builders {
     }
 
     /// Builds a [`InternalError`](super::InternalError).
-    #[derive(Debug, Default)]
+    #[derive(Debug, Clone, Default)]
     #[must_use]
     pub struct InternalErrorBuilder {
         message: String,

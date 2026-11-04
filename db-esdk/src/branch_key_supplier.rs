@@ -55,7 +55,7 @@ impl GetBranchKeyIdFromItemKeyInput {
     ///
     /// It never holds an encrypted attribute.
     #[must_use]
-    pub const fn item_key(&self) -> &HashMap<String, AttributeValue> {
+    pub fn item_key(&self) -> &HashMap<String, AttributeValue> {
         &self.item_key
     }
 
@@ -93,7 +93,7 @@ impl GetBranchKeyIdFromItemKeyInputBuilder {
 
     /// The item key, if set.
     #[must_use]
-    pub const fn get_item_key(&self) -> &Option<HashMap<String, AttributeValue>> {
+    pub fn get_item_key(&self) -> &Option<HashMap<String, AttributeValue>> {
         &self.item_key
     }
 
@@ -132,8 +132,9 @@ pub trait ItemKeySupplier: Send + Sync {
 }
 
 /// A [`BranchKeyIdSupplier`] that asks an [`ItemKeySupplier`] for each item's branch key.
+#[derive(Clone)]
 pub struct ItemKeyBranchKeySupplier {
-    inner: Box<dyn ItemKeySupplier>,
+    inner: std::sync::Arc<dyn ItemKeySupplier>,
 }
 
 impl std::fmt::Debug for ItemKeyBranchKeySupplier {
@@ -155,7 +156,7 @@ impl ItemKeyBranchKeySupplier {
     //# This operation MUST output a BranchKeyIdSupplierReference.
     pub fn new(supplier: impl ItemKeySupplier + 'static) -> Self {
         Self {
-            inner: Box::new(supplier),
+            inner: std::sync::Arc::new(supplier),
         }
     }
 }

@@ -55,7 +55,8 @@ pub use operations::{
 /// let ddb = aws_db_esdk::Client::builder()
 ///     .ddb_client(aws_sdk_dynamodb::Client::new(&sdk_config))
 ///     .table_encryption_configs("my-table", table)
-///     .build()?;
+///     .build()
+///     .await?;
 /// # Ok(())
 /// # }
 /// ```
@@ -223,8 +224,8 @@ pub struct ClientBuilder {
 impl ClientBuilder {
     /// The DynamoDB client that sends each request. Required.
     #[must_use]
-    pub fn ddb_client(mut self, client: aws_sdk_dynamodb::Client) -> Self {
-        self.ddb_client = Some(client);
+    pub fn ddb_client(mut self, client: impl Into<aws_sdk_dynamodb::Client>) -> Self {
+        self.ddb_client = Some(client.into());
         self
     }
 
@@ -268,7 +269,8 @@ impl ClientBuilder {
     ///
     /// A `Validation` error when no DynamoDB client is set, a table configuration is invalid,
     /// or two tables have the same logical table name.
-    pub fn build(self) -> Result<Client, Error> {
+    #[allow(clippy::unused_async, clippy::unused_async_trait_impl)] // async on every builder that holds an AWS client
+    pub async fn build(self) -> Result<Client, Error> {
         let ddb = self
             .ddb_client
             .ok_or_else(|| val_err("ddb_client is required"))?;

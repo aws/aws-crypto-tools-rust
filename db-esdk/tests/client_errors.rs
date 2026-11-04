@@ -36,13 +36,14 @@ fn assert_not_found(err: &Error, table: Option<&str>) {
     assert_eq!(err.resource(), expected.as_ref());
 }
 
-fn client() -> Client {
-    setup().1
+async fn client() -> Client {
+    setup().await.1
 }
 
 #[tokio::test]
 async fn put_item() {
     let err = client()
+        .await
         .put_item()
         .table_name(MISSING)
         .set_item(Some(full_item("a", "1")))
@@ -59,6 +60,7 @@ async fn put_item() {
 #[tokio::test]
 async fn get_item() {
     let err = client()
+        .await
         .get_item()
         .table_name(MISSING)
         .set_key(Some(key("a", "1")))
@@ -79,6 +81,7 @@ async fn get_item() {
 #[tokio::test]
 async fn update_item() {
     let err = client()
+        .await
         .update_item()
         .table_name(MISSING)
         .set_key(Some(key("a", "1")))
@@ -97,6 +100,7 @@ async fn update_item() {
 #[tokio::test]
 async fn delete_item() {
     let err = client()
+        .await
         .delete_item()
         .table_name(MISSING)
         .set_key(Some(key("a", "1")))
@@ -113,6 +117,7 @@ async fn delete_item() {
 #[tokio::test]
 async fn query() {
     let err = client()
+        .await
         .query()
         .table_name(MISSING)
         .key_condition_expression("bar = :b")
@@ -130,6 +135,7 @@ async fn query() {
 #[tokio::test]
 async fn scan() {
     let err = client()
+        .await
         .scan()
         .table_name(MISSING)
         .send()
@@ -153,6 +159,7 @@ async fn batch_write_item() {
         )
         .build();
     let err = client()
+        .await
         .batch_write_item()
         .request_items(MISSING, vec![put])
         .send()
@@ -172,6 +179,7 @@ async fn batch_get_item() {
         .build()
         .unwrap();
     let err = client()
+        .await
         .batch_get_item()
         .request_items(MISSING, keys)
         .send()
@@ -192,6 +200,7 @@ async fn transact_write_items() {
         .build()
         .unwrap();
     let err = client()
+        .await
         .transact_write_items()
         .transact_items(TransactWriteItem::builder().put(put).build())
         .send()
@@ -212,6 +221,7 @@ async fn transact_get_items() {
         .build()
         .unwrap();
     let err = client()
+        .await
         .transact_get_items()
         .transact_items(TransactGetItem::builder().get(get).build())
         .send()
@@ -227,6 +237,7 @@ async fn transact_get_items() {
 #[tokio::test]
 async fn execute_statement() {
     let err = client()
+        .await
         .execute_statement()
         .statement(format!("SELECT * FROM \"{MISSING}\""))
         .send()
@@ -246,6 +257,7 @@ async fn execute_transaction() {
         .build()
         .unwrap();
     let err = client()
+        .await
         .execute_transaction()
         .transact_statements(statement)
         .send()
@@ -260,7 +272,7 @@ async fn execute_transaction() {
 
 #[tokio::test]
 async fn batch_execute_statement_internal_server_error_is_retryable() {
-    let (fake, client) = setup();
+    let (fake, client) = setup().await;
     fake.fail_next("BatchExecuteStatement", 500, "InternalServerError");
     let statement = BatchStatementRequest::builder()
         .statement(format!("SELECT * FROM \"{MISSING}\""))
@@ -284,7 +296,7 @@ async fn batch_execute_statement_internal_server_error_is_retryable() {
 
 #[tokio::test]
 async fn throttling_is_retryable() {
-    let (fake, client) = setup();
+    let (fake, client) = setup().await;
     fake.fail_next("GetItem", 400, "ProvisionedThroughputExceededException");
 
     let err = client

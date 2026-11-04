@@ -94,7 +94,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .ddb_client(ddb_sdk)
         .table_encryption_configs(ORDERS_TABLE, make_table().await?)
         .table_encryption_configs(CUSTOMERS_TABLE, make_table().await?)
-        .build()?;
+        .build()
+        .await?;
 
     // The first put fetches the branch key from KMS; the second reuses the cached entry.
     for table in [ORDERS_TABLE, CUSTOMERS_TABLE] {

@@ -156,7 +156,7 @@ fn one_client_shared_by_tasks_puts_and_gets_every_item() {
             .build()
             .unwrap();
         rt.block_on(async {
-            let (fake, client) = client_support::setup();
+            let (fake, client) = client_support::setup().await;
             let mut set = tokio::task::JoinSet::new();
             for t in 0..THREADS {
                 let client = client.clone();

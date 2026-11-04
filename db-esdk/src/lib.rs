@@ -80,6 +80,7 @@
 #![allow(clippy::option_if_let_else)] // disagree: `if let` is often clearer
 #![allow(clippy::redundant_pub_crate)] // false positive: conflicts with unreachable_pub
 #![allow(clippy::too_many_lines)] // disagree: arbitrary line-count threshold
+#![allow(clippy::missing_const_for_fn)] // getters and setters stay non-const, so they can change without breaking callers
 #![allow(unused_crate_dependencies)] // false positives across workspace dev-deps
 
 //! # AWS Database Encryption SDK for DynamoDB in Rust

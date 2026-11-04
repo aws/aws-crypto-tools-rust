@@ -95,7 +95,7 @@ fn assert_encrypted(stored: &Item, plaintext: &Item) {
 
 #[tokio::test]
 async fn put_item_stores_the_item_encrypted_and_get_item_decrypts_it() {
-    let (fake, client) = setup();
+    let (fake, client) = setup().await;
     let plaintext = full_item("a", "1");
 
     put(&client, TABLE, plaintext.clone()).await;
@@ -125,7 +125,7 @@ async fn put_item_stores_the_item_encrypted_and_get_item_decrypts_it() {
 
 #[tokio::test]
 async fn an_item_moved_to_another_key_fails_verification() {
-    let (fake, client) = setup();
+    let (fake, client) = setup().await;
     put(&client, TABLE, full_item("a", "1")).await;
     let mut moved = fake.item(TABLE, &key("a", "1")).unwrap();
     moved.insert("sign".to_owned(), s("2"));
@@ -138,7 +138,7 @@ async fn an_item_moved_to_another_key_fails_verification() {
 
 #[tokio::test]
 async fn a_modified_ciphertext_fails_verification() {
-    let (fake, client) = setup();
+    let (fake, client) = setup().await;
     put(&client, TABLE, full_item("a", "1")).await;
     let mut stored = fake.item(TABLE, &key("a", "1")).unwrap();
     let AttributeValue::B(ct) = &stored["encrypt"] else {
@@ -157,7 +157,7 @@ async fn a_modified_ciphertext_fails_verification() {
 
 #[tokio::test]
 async fn an_unsigned_attribute_can_change_in_the_table() {
-    let (fake, client) = setup();
+    let (fake, client) = setup().await;
     put(&client, TABLE, full_item("a", "1")).await;
     let mut stored = fake.item(TABLE, &key("a", "1")).unwrap();
     stored.insert("plain".to_owned(), s("changed"));
@@ -172,7 +172,7 @@ async fn an_unsigned_attribute_can_change_in_the_table() {
 
 #[tokio::test]
 async fn an_item_of_an_unconfigured_table_passes_through() {
-    let (fake, client) = setup();
+    let (fake, client) = setup().await;
     let plaintext = full_item("a", "1");
 
     put(&client, PLAIN_TABLE, plaintext.clone()).await;
@@ -204,6 +204,7 @@ async fn force_plaintext_write_stores_the_item_unencrypted() {
         .ddb_client(fake.client())
         .table_encryption_configs(TABLE, config)
         .build()
+        .await
         .unwrap();
     let plaintext = full_item("a", "1");
 
@@ -218,7 +219,7 @@ async fn force_plaintext_write_stores_the_item_unencrypted() {
 
 #[tokio::test]
 async fn put_item_returns_the_replaced_item_decrypted() {
-    let (_fake, client) = setup();
+    let (_fake, client) = setup().await;
     put(&client, TABLE, full_item("a", "1")).await;
     let mut replacement = full_item("a", "1");
     replacement.insert("encrypt".to_owned(), s("new secret"));
@@ -237,7 +238,7 @@ async fn put_item_returns_the_replaced_item_decrypted() {
 
 #[tokio::test]
 async fn put_item_rejects_reserved_attributes_before_calling_dynamodb() {
-    let (fake, client) = setup();
+    let (fake, client) = setup().await;
     let mut bad = full_item("a", "1");
     bad.insert("aws_dbe_head".to_owned(), s("mine"));
 
@@ -267,7 +268,7 @@ async fn put_item_rejects_reserved_attributes_before_calling_dynamodb() {
 // That test carries the encrypt-before-putitem citation for ConditionExpression.
 #[tokio::test]
 async fn put_item_rejects_a_condition_on_an_encrypted_attribute() {
-    let (fake, client) = setup();
+    let (fake, client) = setup().await;
 
     let err = client
         .put_item()
@@ -291,7 +292,7 @@ async fn put_item_rejects_a_condition_on_an_encrypted_attribute() {
 // That test carries the encrypt-before-putitem citation for legacy parameters.
 #[tokio::test]
 async fn put_item_rejects_the_legacy_expected_parameter() {
-    let (fake, client) = setup();
+    let (fake, client) = setup().await;
 
     let err = client
         .put_item()
@@ -311,7 +312,7 @@ async fn put_item_rejects_the_legacy_expected_parameter() {
 
 #[tokio::test]
 async fn a_failed_condition_is_a_conflict_with_dynamodbs_error() {
-    let (_fake, client) = setup();
+    let (_fake, client) = setup().await;
     put(&client, TABLE, full_item("a", "1")).await;
     let mut second = full_item("a", "1");
     second.insert("encrypt".to_owned(), s("other"));
@@ -341,7 +342,7 @@ async fn a_failed_condition_is_a_conflict_with_dynamodbs_error() {
 
 #[tokio::test]
 async fn update_item_of_an_unsigned_attribute_keeps_the_item_verifiable() {
-    let (fake, client) = setup();
+    let (fake, client) = setup().await;
     put(&client, TABLE, full_item("a", "1")).await;
 
     let out = client
@@ -370,7 +371,7 @@ async fn update_item_of_an_unsigned_attribute_keeps_the_item_verifiable() {
 
 #[tokio::test]
 async fn update_item_returns_the_updated_unsigned_attributes() {
-    let (_fake, client) = setup();
+    let (_fake, client) = setup().await;
     put(&client, TABLE, full_item("a", "1")).await;
 
     let out = client
@@ -390,7 +391,7 @@ async fn update_item_returns_the_updated_unsigned_attributes() {
 
 #[tokio::test]
 async fn update_item_rejects_a_partial_response_with_a_signed_attribute() {
-    let (fake, client) = setup();
+    let (fake, client) = setup().await;
     fake.reply_next(
         "UpdateItem",
         200,
@@ -414,7 +415,7 @@ async fn update_item_rejects_a_partial_response_with_a_signed_attribute() {
 // TestUpdateItemInputUpdateExpressionSigned and TestUpdateItemInputUpdateExpressionEncrypted.
 #[tokio::test]
 async fn update_item_rejects_an_update_of_a_signed_attribute() {
-    let (fake, client) = setup();
+    let (fake, client) = setup().await;
     for attr in ["sign", "encrypt"] {
         let err = client
             .update_item()
@@ -440,7 +441,7 @@ async fn update_item_rejects_an_update_of_a_signed_attribute() {
 
 #[tokio::test]
 async fn update_item_rejects_the_legacy_attribute_updates_parameter() {
-    let (fake, client) = setup();
+    let (fake, client) = setup().await;
 
     let err = client
         .update_item()
@@ -465,7 +466,7 @@ async fn update_item_rejects_the_legacy_attribute_updates_parameter() {
 // TestUpdateItemInputPassthrough: on an unconfigured table, an update can set `encrypt` like any attribute.
 #[tokio::test]
 async fn update_item_of_an_unconfigured_table_passes_through() {
-    let (fake, client) = setup();
+    let (fake, client) = setup().await;
     put(&client, PLAIN_TABLE, full_item("a", "1")).await;
 
     let out = client
@@ -487,7 +488,7 @@ async fn update_item_of_an_unconfigured_table_passes_through() {
 
 #[tokio::test]
 async fn delete_item_returns_the_deleted_item_decrypted() {
-    let (fake, client) = setup();
+    let (fake, client) = setup().await;
     put(&client, TABLE, full_item("a", "1")).await;
 
     let out = client
@@ -506,7 +507,7 @@ async fn delete_item_returns_the_deleted_item_decrypted() {
 
 #[tokio::test]
 async fn delete_item_rejects_a_condition_on_an_encrypted_attribute() {
-    let (fake, client) = setup();
+    let (fake, client) = setup().await;
     put(&client, TABLE, full_item("a", "1")).await;
 
     let err = client
@@ -530,7 +531,7 @@ async fn delete_item_rejects_a_condition_on_an_encrypted_attribute() {
 
 #[tokio::test]
 async fn batch_write_item_encrypts_puts_of_configured_tables_only() {
-    let (fake, client) = setup();
+    let (fake, client) = setup().await;
     put(&client, TABLE, dafny_item(9, 9)).await;
 
     let out = client
@@ -579,7 +580,7 @@ async fn batch_write_item_encrypts_puts_of_configured_tables_only() {
 // with each put holding its original plaintext item.
 #[tokio::test]
 async fn batch_write_item_returns_unprocessed_puts_as_plaintext() {
-    let (fake, client) = setup();
+    let (fake, client) = setup().await;
     fake.leave_unprocessed(TABLE, 2);
     fake.leave_unprocessed(PLAIN_TABLE, 2);
     let requests = HashMap::from([
@@ -608,7 +609,7 @@ async fn batch_write_item_returns_unprocessed_puts_as_plaintext() {
 // only the first request of each table comes back unprocessed.
 #[tokio::test]
 async fn batch_write_item_returns_some_unprocessed_puts_as_plaintext() {
-    let (fake, client) = setup();
+    let (fake, client) = setup().await;
     fake.leave_unprocessed(TABLE, 1);
     fake.leave_unprocessed(PLAIN_TABLE, 1);
 
@@ -639,7 +640,7 @@ async fn batch_write_item_returns_some_unprocessed_puts_as_plaintext() {
 
 #[tokio::test]
 async fn batch_write_item_rejects_reserved_attributes() {
-    let (fake, client) = setup();
+    let (fake, client) = setup().await;
     let mut bad = dafny_item(1, 1);
     bad.insert("aws_dbe_foot".to_owned(), s("mine"));
 
@@ -662,7 +663,7 @@ async fn batch_write_item_rejects_reserved_attributes() {
 
 #[tokio::test]
 async fn transact_write_items_encrypts_puts_and_runs_every_action() {
-    let (fake, client) = setup();
+    let (fake, client) = setup().await;
     put(&client, TABLE, full_item("a", "1")).await;
     put(&client, PLAIN_TABLE, full_item("b", "1")).await;
 
@@ -740,7 +741,7 @@ async fn transact_write_items_encrypts_puts_and_runs_every_action() {
 // That test carries the encrypt-before-transactwriteitems citation for the fifth field.
 #[tokio::test]
 async fn transact_write_items_rejects_an_action_with_no_operation() {
-    let (fake, client) = setup();
+    let (fake, client) = setup().await;
 
     let err = client
         .transact_write_items()
@@ -759,7 +760,7 @@ async fn transact_write_items_rejects_an_action_with_no_operation() {
 
 #[tokio::test]
 async fn transact_write_items_rejects_a_reserved_attribute_in_a_put() {
-    let (fake, client) = setup();
+    let (fake, client) = setup().await;
     let mut bad = full_item("a", "1");
     bad.insert("aws_dbe_head".to_owned(), s("mine"));
 
@@ -798,7 +799,7 @@ async fn transact_write_items_rejects_a_reserved_attribute_in_a_put() {
 // That test carries the encrypt-before-transactwriteitems citation for UpdateExpression.
 #[tokio::test]
 async fn transact_write_items_rejects_an_update_of_a_signed_attribute() {
-    let (fake, client) = setup();
+    let (fake, client) = setup().await;
 
     let err = client
         .transact_write_items()
@@ -825,7 +826,7 @@ async fn transact_write_items_rejects_an_update_of_a_signed_attribute() {
 
 #[tokio::test]
 async fn a_transaction_conflict_is_a_concurrent_modification() {
-    let (fake, client) = setup();
+    let (fake, client) = setup().await;
     fake.fail_next("PutItem", 400, "TransactionConflictException");
 
     let err = client
@@ -852,7 +853,7 @@ async fn a_transaction_conflict_is_a_concurrent_modification() {
 
 #[tokio::test]
 async fn a_canceled_transaction_keeps_dynamodbs_error() {
-    let (fake, client) = setup();
+    let (fake, client) = setup().await;
 
     let err = client
         .transact_write_items()

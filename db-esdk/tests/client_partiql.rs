@@ -28,7 +28,7 @@ fn parameterized(statement: &str) -> ParameterizedStatement {
 
 /// A fake and a client, with item `a/1` stored in [`PLAIN_TABLE`].
 async fn populated() -> (client_support::FakeDdb, aws_db_esdk::Client) {
-    let (fake, client) = setup();
+    let (fake, client) = setup().await;
     client
         .put_item()
         .table_name(PLAIN_TABLE)
@@ -41,7 +41,7 @@ async fn populated() -> (client_support::FakeDdb, aws_db_esdk::Client) {
 
 #[tokio::test]
 async fn execute_statement_rejects_a_configured_table() {
-    let (fake, client) = setup();
+    let (fake, client) = setup().await;
 
     let err = client
         .execute_statement()
@@ -68,7 +68,7 @@ async fn execute_statement_rejects_a_configured_table() {
 
 #[tokio::test]
 async fn execute_statement_rejects_a_statement_with_no_table() {
-    let (fake, client) = setup();
+    let (fake, client) = setup().await;
 
     let err = client
         .execute_statement()
@@ -101,7 +101,7 @@ async fn execute_statement_on_an_unconfigured_table_passes_through() {
 
 #[tokio::test]
 async fn batch_execute_statement_rejects_any_configured_table() {
-    let (fake, client) = setup();
+    let (fake, client) = setup().await;
 
     let err = client
         .batch_execute_statement()
@@ -147,7 +147,7 @@ async fn batch_execute_statement_on_unconfigured_tables_passes_through() {
 
 #[tokio::test]
 async fn execute_transaction_rejects_any_configured_table() {
-    let (fake, client) = setup();
+    let (fake, client) = setup().await;
 
     let err = client
         .execute_transaction()

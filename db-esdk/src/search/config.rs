@@ -86,7 +86,7 @@ impl SearchConfig {
     /// The beacon version that new items are written with.
     /// Must be 1.
     #[must_use]
-    pub const fn write_version(&self) -> u32 {
+    pub fn write_version(&self) -> u32 {
         self.write_version
     }
 }
@@ -119,7 +119,7 @@ impl SearchConfigBuilder {
     /// The beacon version that new items are written with.
     /// Required; must be 1.
     #[must_use]
-    pub const fn write_version(mut self, version: u32) -> Self {
+    pub fn write_version(mut self, version: u32) -> Self {
         self.write_version = Some(version);
         self
     }
@@ -127,7 +127,7 @@ impl SearchConfigBuilder {
     /// The beacon version that new items are written with.
     /// See [`Self::write_version`].
     #[must_use]
-    pub const fn set_write_version(mut self, version: Option<u32>) -> Self {
+    pub fn set_write_version(mut self, version: Option<u32>) -> Self {
         self.write_version = version;
         self
     }
@@ -181,19 +181,19 @@ impl BeaconVersion {
     /// The version number.
     /// Must be 1.
     #[must_use]
-    pub const fn version(&self) -> u32 {
+    pub fn version(&self) -> u32 {
         self.version
     }
 
     /// The key store that holds the beacon keys.
     #[must_use]
-    pub const fn key_store(&self) -> &key_store::SharedKeyStore {
+    pub fn key_store(&self) -> &key_store::SharedKeyStore {
         &self.key_store
     }
 
     /// Which beacon keys are used.
     #[must_use]
-    pub const fn key_source(&self) -> &BeaconKeySource {
+    pub fn key_source(&self) -> &BeaconKeySource {
         &self.key_source
     }
 
@@ -229,19 +229,19 @@ impl BeaconVersion {
 
     /// The most partitions any beacon is divided across, if set.
     #[must_use]
-    pub const fn maximum_number_of_partitions(&self) -> Option<u8> {
+    pub fn maximum_number_of_partitions(&self) -> Option<u8> {
         self.maximum_number_of_partitions
     }
 
     /// The partitions of a beacon that sets none of its own, if set.
     #[must_use]
-    pub const fn default_number_of_partitions(&self) -> Option<u8> {
+    pub fn default_number_of_partitions(&self) -> Option<u8> {
         self.default_number_of_partitions
     }
 
     /// What picks the partition that an item is written in, if set.
     #[must_use]
-    pub const fn partition_selector(&self) -> Option<&SharedPartitionSelector> {
+    pub fn partition_selector(&self) -> Option<&SharedPartitionSelector> {
         self.partition_selector.as_ref()
     }
 }
@@ -267,7 +267,7 @@ impl BeaconVersionBuilder {
     /// The version number.
     /// Required; must be 1.
     #[must_use]
-    pub const fn version(mut self, version: u32) -> Self {
+    pub fn version(mut self, version: u32) -> Self {
         self.version = Some(version);
         self
     }
@@ -275,7 +275,7 @@ impl BeaconVersionBuilder {
     /// The version number.
     /// See [`Self::version`].
     #[must_use]
-    pub const fn set_version(mut self, version: Option<u32>) -> Self {
+    pub fn set_version(mut self, version: Option<u32>) -> Self {
         self.version = version;
         self
     }
@@ -402,7 +402,7 @@ impl BeaconVersionBuilder {
     /// The most partitions any beacon is divided across.
     /// Optional: the default is 1.
     #[must_use]
-    pub const fn maximum_number_of_partitions(mut self, count: u8) -> Self {
+    pub fn maximum_number_of_partitions(mut self, count: u8) -> Self {
         self.maximum_number_of_partitions = Some(count);
         self
     }
@@ -410,7 +410,7 @@ impl BeaconVersionBuilder {
     /// The most partitions.
     /// See [`Self::maximum_number_of_partitions`].
     #[must_use]
-    pub const fn set_maximum_number_of_partitions(mut self, count: Option<u8>) -> Self {
+    pub fn set_maximum_number_of_partitions(mut self, count: Option<u8>) -> Self {
         self.maximum_number_of_partitions = count;
         self
     }
@@ -419,7 +419,7 @@ impl BeaconVersionBuilder {
     /// Optional: the default is the maximum.
     /// Must be less than the maximum.
     #[must_use]
-    pub const fn default_number_of_partitions(mut self, count: u8) -> Self {
+    pub fn default_number_of_partitions(mut self, count: u8) -> Self {
         self.default_number_of_partitions = Some(count);
         self
     }
@@ -427,7 +427,7 @@ impl BeaconVersionBuilder {
     /// The default partitions.
     /// See [`Self::default_number_of_partitions`].
     #[must_use]
-    pub const fn set_default_number_of_partitions(mut self, count: Option<u8>) -> Self {
+    pub fn set_default_number_of_partitions(mut self, count: Option<u8>) -> Self {
         self.default_number_of_partitions = count;
         self
     }
@@ -536,13 +536,13 @@ impl SingleKeyStore {
 
     /// How long the beacon key is cached before it is fetched again.
     #[must_use]
-    pub const fn cache_ttl(&self) -> Duration {
+    pub fn cache_ttl(&self) -> Duration {
         self.cache_ttl
     }
 
     /// The cache for the beacon key, if set.
     #[must_use]
-    pub const fn cache(&self) -> Option<&SharedCmc> {
+    pub fn cache(&self) -> Option<&SharedCmc> {
         self.cache.as_ref()
     }
 
@@ -583,7 +583,7 @@ impl SingleKeyStoreBuilder {
     /// How long the beacon key is cached before it is fetched again.
     /// Required; not zero.
     #[must_use]
-    pub const fn cache_ttl(mut self, ttl: Duration) -> Self {
+    pub fn cache_ttl(mut self, ttl: Duration) -> Self {
         self.cache_ttl = Some(ttl);
         self
     }
@@ -591,7 +591,7 @@ impl SingleKeyStoreBuilder {
     /// How long the beacon key is cached.
     /// See [`Self::cache_ttl`].
     #[must_use]
-    pub const fn set_cache_ttl(mut self, ttl: Option<Duration>) -> Self {
+    pub fn set_cache_ttl(mut self, ttl: Option<Duration>) -> Self {
         self.cache_ttl = ttl;
         self
     }
@@ -672,13 +672,13 @@ impl MultiKeyStore {
 
     /// How long a beacon key is cached before it is fetched again.
     #[must_use]
-    pub const fn cache_ttl(&self) -> Duration {
+    pub fn cache_ttl(&self) -> Duration {
         self.cache_ttl
     }
 
     /// The cache for the beacon keys, if set.
     #[must_use]
-    pub const fn cache(&self) -> Option<&SharedCmc> {
+    pub fn cache(&self) -> Option<&SharedCmc> {
         self.cache.as_ref()
     }
 
@@ -719,7 +719,7 @@ impl MultiKeyStoreBuilder {
     /// How long a beacon key is cached before it is fetched again.
     /// Required; not zero.
     #[must_use]
-    pub const fn cache_ttl(mut self, ttl: Duration) -> Self {
+    pub fn cache_ttl(mut self, ttl: Duration) -> Self {
         self.cache_ttl = Some(ttl);
         self
     }
@@ -727,7 +727,7 @@ impl MultiKeyStoreBuilder {
     /// How long a beacon key is cached.
     /// See [`Self::cache_ttl`].
     #[must_use]
-    pub const fn set_cache_ttl(mut self, ttl: Option<Duration>) -> Self {
+    pub fn set_cache_ttl(mut self, ttl: Option<Duration>) -> Self {
         self.cache_ttl = ttl;
         self
     }
@@ -811,7 +811,7 @@ impl StandardBeacon {
 
     /// The number of bits of the beacon value.
     #[must_use]
-    pub const fn bits(&self) -> u8 {
+    pub fn bits(&self) -> u8 {
         self.bits
     }
 
@@ -823,13 +823,13 @@ impl StandardBeacon {
 
     /// The beacon's style, if set.
     #[must_use]
-    pub const fn style(&self) -> Option<&BeaconStyle> {
+    pub fn style(&self) -> Option<&BeaconStyle> {
         self.style.as_ref()
     }
 
     /// The partitions this beacon is divided across, if set.
     #[must_use]
-    pub const fn number_of_partitions(&self) -> Option<u8> {
+    pub fn number_of_partitions(&self) -> Option<u8> {
         self.number_of_partitions
     }
 }
@@ -868,7 +868,7 @@ impl StandardBeaconBuilder {
     /// With fewer bits, more values share a beacon value.
     /// That reveals less about each value, and a query returns more false matches.
     #[must_use]
-    pub const fn bits(mut self, bits: u8) -> Self {
+    pub fn bits(mut self, bits: u8) -> Self {
         self.bits = Some(bits);
         self
     }
@@ -876,7 +876,7 @@ impl StandardBeaconBuilder {
     /// The number of bits.
     /// See [`Self::bits`].
     #[must_use]
-    pub const fn set_bits(mut self, bits: Option<u8>) -> Self {
+    pub fn set_bits(mut self, bits: Option<u8>) -> Self {
         self.bits = bits;
         self
     }
@@ -915,7 +915,7 @@ impl StandardBeaconBuilder {
     /// The partitions this beacon is divided across, less than the version's maximum.
     /// Do not change it after items are written.
     #[must_use]
-    pub const fn number_of_partitions(mut self, count: u8) -> Self {
+    pub fn number_of_partitions(mut self, count: u8) -> Self {
         self.number_of_partitions = Some(count);
         self
     }
@@ -923,7 +923,7 @@ impl StandardBeaconBuilder {
     /// The partitions.
     /// See [`Self::number_of_partitions`].
     #[must_use]
-    pub const fn set_number_of_partitions(mut self, count: Option<u8>) -> Self {
+    pub fn set_number_of_partitions(mut self, count: Option<u8>) -> Self {
         self.number_of_partitions = count;
         self
     }
@@ -983,7 +983,7 @@ impl BeaconStyle {
     /// A [`PartOnly`](Self::PartOnly) style.
     #[must_use]
     pub const fn part_only() -> Self {
-        Self::PartOnly(PartOnly::new())
+        Self::PartOnly(PartOnly {})
     }
 
     /// A [`Shared`](Self::Shared) style, computing values as beacon `other` does.
@@ -997,7 +997,7 @@ impl BeaconStyle {
     /// An [`AsSet`](Self::AsSet) style.
     #[must_use]
     pub const fn as_set() -> Self {
-        Self::AsSet(AsSet::new())
+        Self::AsSet(AsSet {})
     }
 
     /// A [`SharedSet`](Self::SharedSet) style, computing element values as beacon `other` does.
@@ -1022,7 +1022,7 @@ pub struct PartOnly {}
 impl PartOnly {
     /// The part-only style.
     #[must_use]
-    pub const fn new() -> Self {
+    pub fn new() -> Self {
         Self {}
     }
 }
@@ -1040,7 +1040,7 @@ pub struct AsSet {}
 impl AsSet {
     /// The as-set style.
     #[must_use]
-    pub const fn new() -> Self {
+    pub fn new() -> Self {
         Self {}
     }
 }
@@ -1191,7 +1191,7 @@ impl CompoundBeacon {
 
     /// The character that joins the parts.
     #[must_use]
-    pub const fn split(&self) -> char {
+    pub fn split(&self) -> char {
         self.split
     }
 
@@ -1632,7 +1632,7 @@ impl ConstructorPart {
 
     /// Whether the item must have the part for the constructor to be used.
     #[must_use]
-    pub const fn is_required(&self) -> bool {
+    pub fn is_required(&self) -> bool {
         self.required
     }
 }
@@ -1665,7 +1665,7 @@ impl ConstructorPartBuilder {
     /// Whether the item must have the part for the constructor to be used.
     /// Required.
     #[must_use]
-    pub const fn required(mut self, required: bool) -> Self {
+    pub fn required(mut self, required: bool) -> Self {
         self.required = Some(required);
         self
     }
@@ -1673,7 +1673,7 @@ impl ConstructorPartBuilder {
     /// Whether the part is required.
     /// See [`Self::required`].
     #[must_use]
-    pub const fn set_required(mut self, required: Option<bool>) -> Self {
+    pub fn set_required(mut self, required: Option<bool>) -> Self {
         self.required = required;
         self
     }
@@ -1903,13 +1903,13 @@ impl VirtualTransform {
     /// An [`Upper`](Self::Upper) transform.
     #[must_use]
     pub const fn upper() -> Self {
-        Self::Upper(Upper::new())
+        Self::Upper(Upper {})
     }
 
     /// A [`Lower`](Self::Lower) transform.
     #[must_use]
     pub const fn lower() -> Self {
-        Self::Lower(Lower::new())
+        Self::Lower(Lower {})
     }
 
     /// An [`Insert`](Self::Insert) transform appending `literal`.
@@ -1933,25 +1933,6 @@ impl VirtualTransform {
     pub const fn suffix(length: i32) -> Self {
         Self::Suffix(GetSuffix { length })
     }
-
-    /// A [`Substring`](Self::Substring) transform keeping positions `low` up to, not including, `high`.
-    #[must_use]
-    pub const fn substring(low: i32, high: i32) -> Self {
-        Self::Substring(GetSubstring { low, high })
-    }
-
-    /// A [`Segment`](Self::Segment) transform: split on `split`, keep segment `index`.
-    #[must_use]
-    pub const fn segment(split: char, index: i32) -> Self {
-        Self::Segment(GetSegment { split, index })
-    }
-
-    /// A [`Segments`](Self::Segments) transform: split on `split`,
-    /// keep segments `low` up to, not including, `high`.
-    #[must_use]
-    pub const fn segments(split: char, low: i32, high: i32) -> Self {
-        Self::Segments(GetSegments { split, low, high })
-    }
 }
 
 /// The [`VirtualTransform::Upper`] transform.
@@ -1967,7 +1948,7 @@ pub struct Upper {}
 impl Upper {
     /// The upper-case transform.
     #[must_use]
-    pub const fn new() -> Self {
+    pub fn new() -> Self {
         Self {}
     }
 }
@@ -1985,7 +1966,7 @@ pub struct Lower {}
 impl Lower {
     /// The lower-case transform.
     #[must_use]
-    pub const fn new() -> Self {
+    pub fn new() -> Self {
         Self {}
     }
 }
@@ -2065,7 +2046,7 @@ impl GetPrefix {
 
     /// How many characters are kept, or dropped from the end when negative.
     #[must_use]
-    pub const fn length(&self) -> i32 {
+    pub fn length(&self) -> i32 {
         self.length
     }
 }
@@ -2082,7 +2063,7 @@ impl GetPrefixBuilder {
     /// Required.
     /// When negative, how many to drop from the end: `-1` keeps all but the last.
     #[must_use]
-    pub const fn length(mut self, length: i32) -> Self {
+    pub fn length(mut self, length: i32) -> Self {
         self.length = Some(length);
         self
     }
@@ -2090,7 +2071,7 @@ impl GetPrefixBuilder {
     /// The length.
     /// See [`Self::length`].
     #[must_use]
-    pub const fn set_length(mut self, length: Option<i32>) -> Self {
+    pub fn set_length(mut self, length: Option<i32>) -> Self {
         self.length = length;
         self
     }
@@ -2125,7 +2106,7 @@ impl GetSuffix {
 
     /// How many characters are kept, or dropped from the front when negative.
     #[must_use]
-    pub const fn length(&self) -> i32 {
+    pub fn length(&self) -> i32 {
         self.length
     }
 }
@@ -2142,7 +2123,7 @@ impl GetSuffixBuilder {
     /// Required.
     /// When negative, how many to drop from the front: `-1` keeps all but the first.
     #[must_use]
-    pub const fn length(mut self, length: i32) -> Self {
+    pub fn length(mut self, length: i32) -> Self {
         self.length = Some(length);
         self
     }
@@ -2150,7 +2131,7 @@ impl GetSuffixBuilder {
     /// The length.
     /// See [`Self::length`].
     #[must_use]
-    pub const fn set_length(mut self, length: Option<i32>) -> Self {
+    pub fn set_length(mut self, length: Option<i32>) -> Self {
         self.length = length;
         self
     }
@@ -2186,13 +2167,13 @@ impl GetSubstring {
 
     /// The first position kept.
     #[must_use]
-    pub const fn low(&self) -> i32 {
+    pub fn low(&self) -> i32 {
         self.low
     }
 
     /// The position after the last one kept.
     #[must_use]
-    pub const fn high(&self) -> i32 {
+    pub fn high(&self) -> i32 {
         self.high
     }
 }
@@ -2209,7 +2190,7 @@ impl GetSubstringBuilder {
     /// The first position kept.
     /// Required.
     #[must_use]
-    pub const fn low(mut self, low: i32) -> Self {
+    pub fn low(mut self, low: i32) -> Self {
         self.low = Some(low);
         self
     }
@@ -2217,7 +2198,7 @@ impl GetSubstringBuilder {
     /// The first position.
     /// See [`Self::low`].
     #[must_use]
-    pub const fn set_low(mut self, low: Option<i32>) -> Self {
+    pub fn set_low(mut self, low: Option<i32>) -> Self {
         self.low = low;
         self
     }
@@ -2225,7 +2206,7 @@ impl GetSubstringBuilder {
     /// The position after the last one kept.
     /// Required.
     #[must_use]
-    pub const fn high(mut self, high: i32) -> Self {
+    pub fn high(mut self, high: i32) -> Self {
         self.high = Some(high);
         self
     }
@@ -2233,7 +2214,7 @@ impl GetSubstringBuilder {
     /// The end position.
     /// See [`Self::high`].
     #[must_use]
-    pub const fn set_high(mut self, high: Option<i32>) -> Self {
+    pub fn set_high(mut self, high: Option<i32>) -> Self {
         self.high = high;
         self
     }
@@ -2270,13 +2251,13 @@ impl GetSegment {
 
     /// The character that the value is split on.
     #[must_use]
-    pub const fn split(&self) -> char {
+    pub fn split(&self) -> char {
         self.split
     }
 
     /// The position of the segment kept.
     #[must_use]
-    pub const fn index(&self) -> i32 {
+    pub fn index(&self) -> i32 {
         self.index
     }
 }
@@ -2309,7 +2290,7 @@ impl GetSegmentBuilder {
     /// The position of the segment kept: 0 is before the first split, -1 after the last.
     /// Required.
     #[must_use]
-    pub const fn index(mut self, index: i32) -> Self {
+    pub fn index(mut self, index: i32) -> Self {
         self.index = Some(index);
         self
     }
@@ -2317,7 +2298,7 @@ impl GetSegmentBuilder {
     /// The segment's position.
     /// See [`Self::index`].
     #[must_use]
-    pub const fn set_index(mut self, index: Option<i32>) -> Self {
+    pub fn set_index(mut self, index: Option<i32>) -> Self {
         self.index = index;
         self
     }
@@ -2356,19 +2337,19 @@ impl GetSegments {
 
     /// The character that the value is split on.
     #[must_use]
-    pub const fn split(&self) -> char {
+    pub fn split(&self) -> char {
         self.split
     }
 
     /// The position of the first segment kept.
     #[must_use]
-    pub const fn low(&self) -> i32 {
+    pub fn low(&self) -> i32 {
         self.low
     }
 
     /// The position after the last segment kept.
     #[must_use]
-    pub const fn high(&self) -> i32 {
+    pub fn high(&self) -> i32 {
         self.high
     }
 }
@@ -2402,7 +2383,7 @@ impl GetSegmentsBuilder {
     /// The position of the first segment kept.
     /// Required.
     #[must_use]
-    pub const fn low(mut self, low: i32) -> Self {
+    pub fn low(mut self, low: i32) -> Self {
         self.low = Some(low);
         self
     }
@@ -2410,7 +2391,7 @@ impl GetSegmentsBuilder {
     /// The first position.
     /// See [`Self::low`].
     #[must_use]
-    pub const fn set_low(mut self, low: Option<i32>) -> Self {
+    pub fn set_low(mut self, low: Option<i32>) -> Self {
         self.low = low;
         self
     }
@@ -2418,7 +2399,7 @@ impl GetSegmentsBuilder {
     /// The position after the last segment kept.
     /// Required.
     #[must_use]
-    pub const fn high(mut self, high: i32) -> Self {
+    pub fn high(mut self, high: i32) -> Self {
         self.high = Some(high);
         self
     }
@@ -2426,7 +2407,7 @@ impl GetSegmentsBuilder {
     /// The end position.
     /// See [`Self::high`].
     #[must_use]
-    pub const fn set_high(mut self, high: Option<i32>) -> Self {
+    pub fn set_high(mut self, high: Option<i32>) -> Self {
         self.high = high;
         self
     }

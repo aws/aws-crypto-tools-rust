@@ -139,7 +139,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let ddb = aws_db_esdk::Client::builder()
         .ddb_client(ddb_sdk)
         .table_encryption_configs(TABLE_NAME, table)
-        .build()?;
+        .build()
+        .await?;
 
     // A new work_id on each run keeps this run's items apart from items that earlier runs left behind.
     let work_id1 = uuid::Uuid::new_v4().to_string();

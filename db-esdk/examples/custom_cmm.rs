@@ -136,7 +136,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let ddb = aws_db_esdk::Client::builder()
         .ddb_client(ddb_sdk.clone())
         .table_encryption_configs(TABLE_NAME, table_config(cmm.clone(), None)?)
-        .build()?;
+        .build()
+        .await?;
     ddb.put_item()
         .table_name(TABLE_NAME)
         .set_item(Some(item.clone()))
@@ -153,7 +154,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Some(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeySymsigHmacSha384),
             )?,
         )
-        .build()?;
+        .build()
+        .await?;
     let result = ddb
         .put_item()
         .table_name(TABLE_NAME)

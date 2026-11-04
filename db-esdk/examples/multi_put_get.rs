@@ -70,7 +70,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let ddb = aws_db_esdk::Client::builder()
         .ddb_client(aws_sdk_dynamodb::Client::new(&sdk_config))
         .table_encryption_configs(TABLE_NAME, table)
-        .build()?;
+        .build()
+        .await?;
 
     // Write one item in a batch and one in a transaction.
     let put_request = PutRequest::builder().set_item(Some(item("1"))).build()?;

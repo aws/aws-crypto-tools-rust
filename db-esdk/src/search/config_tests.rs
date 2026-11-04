@@ -40,6 +40,31 @@ use crate::search::term_loc::TermLoc;
 use crate::table_config::TableConfig;
 use crate::types::{AesWrappingAlg, CryptoAction};
 
+fn substring_transform(low: i32, high: i32) -> VirtualTransform {
+    VirtualTransform::Substring(GetSubstring::builder().low(low).high(high).build().unwrap())
+}
+
+fn segment_transform(split: char, index: i32) -> VirtualTransform {
+    VirtualTransform::Segment(
+        GetSegment::builder()
+            .split(split)
+            .index(index)
+            .build()
+            .unwrap(),
+    )
+}
+
+fn segments_transform(split: char, low: i32, high: i32) -> VirtualTransform {
+    VirtualTransform::Segments(
+        GetSegments::builder()
+            .split(split)
+            .low(low)
+            .high(high)
+            .build()
+            .unwrap(),
+    )
+}
+
 // Fixtures, ported from BeaconTestFixtures.dfy.
 
 /// The beacon key that every [`FakeKeyStore`] returns: `GetLiteralSource([1,2,3,4,5], ...)`.
@@ -1194,15 +1219,15 @@ fn transform_builders() {
         matches!(VirtualTransform::suffix(-3), VirtualTransform::Suffix(p) if p.length() == -3)
     );
     assert!(matches!(
-        VirtualTransform::substring(1, 4),
+        substring_transform(1, 4),
         VirtualTransform::Substring(s) if (s.low(), s.high()) == (1, 4)
     ));
     assert!(matches!(
-        VirtualTransform::segment('.', 2),
+        segment_transform('.', 2),
         VirtualTransform::Segment(s) if (s.split(), s.index()) == ('.', 2)
     ));
     assert!(matches!(
-        VirtualTransform::segments('.', 0, 2),
+        segments_transform('.', 0, 2),
         VirtualTransform::Segments(s) if (s.split(), s.low(), s.high()) == ('.', 0, 2)
     ));
 }

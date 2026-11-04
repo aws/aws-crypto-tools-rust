@@ -57,7 +57,8 @@ async fn main() -> Result<(), BoxError> {
     let ddb = aws_db_esdk::Client::builder()
         .ddb_client(ddb_sdk)
         .table_encryption_configs(TABLE_NAME, table)
-        .build()?;
+        .build()
+        .await?;
 
     put_requests::put_all_items_to_table(&ddb).await?;
     query_requests::run_queries(&ddb).await?;

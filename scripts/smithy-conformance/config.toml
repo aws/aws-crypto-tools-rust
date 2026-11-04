@@ -947,3 +947,27 @@ justification = "ESDK callers only ever see ESDK suites and policies, so the sho
 later = "breaking"
 later_why = "Removing the AlgorithmSuiteId name breaks callers; adding EsdkAlgorithmSuiteId next to it would not."
 
+[[deviation]]
+id = "lint.build_async:aws_db_esdk::search::BeaconVersionBuilder"
+status = "deferred"
+reason = "A beacon version is a config value; waits for review when the slop DB-ESDK is split into reviewed PRs."
+what_differs = "The lint wants build() to be async because the builder holds a key store."
+justification = "build() only checks the config and keeps the key store for later lookups, so it does no I/O."
+later = "breaking"
+later_why = "Making build() async later breaks every caller that does not await it."
+[[deviation]]
+id = "lint.length_type:aws_db_esdk::search::Get*fix::length"
+status = "deferred"
+reason = "A negative length is valid: it drops that many characters from the end; waits for review when the slop DB-ESDK is split into reviewed PRs."
+what_differs = "The lint wants a length to be usize."
+justification = "The DB-ESDK spec defines a negative prefix or suffix length, so the type must be signed."
+later = "breaking"
+later_why = "Changing i32 to usize changes the setter and getter, and drops negative lengths."
+[[deviation]]
+id = "lint.renamed_reexport:aws_db_esdk::types::AlgorithmSuiteId"
+status = "deferred"
+reason = "DB-ESDK callers write AlgorithmSuiteId; it is the MPL's DbeAlgorithmSuiteId. Waits for review when the slop DB-ESDK is split into reviewed PRs."
+what_differs = "The DB-ESDK re-exports DbeAlgorithmSuiteId as AlgorithmSuiteId."
+justification = "DB-ESDK callers only ever see DB-ESDK suites, as with the accepted aws_esdk::types::AlgorithmSuiteId."
+later = "breaking"
+later_why = "Removing the AlgorithmSuiteId name breaks callers; adding DbeAlgorithmSuiteId next to it would not."

@@ -131,13 +131,13 @@ pub struct ParsedHeader {
 impl ParsedHeader {
     /// The action of each signed attribute.
     #[must_use]
-    pub const fn attribute_actions_on_encrypt(&self) -> &HashMap<String, CryptoAction> {
+    pub fn attribute_actions_on_encrypt(&self) -> &HashMap<String, CryptoAction> {
         &self.attribute_actions_on_encrypt
     }
 
     /// The algorithm suite that encrypted the item.
     #[must_use]
-    pub const fn algorithm_suite_id(&self) -> AlgorithmSuiteId {
+    pub fn algorithm_suite_id(&self) -> AlgorithmSuiteId {
         self.algorithm_suite_id
     }
 
@@ -149,19 +149,19 @@ impl ParsedHeader {
 
     /// The encryption context stored in the header.
     #[must_use]
-    pub const fn stored_encryption_context(&self) -> &EncryptionContext {
+    pub fn stored_encryption_context(&self) -> &EncryptionContext {
         &self.stored_encryption_context
     }
 
     /// The full encryption context the item is bound to.
     #[must_use]
-    pub const fn encryption_context(&self) -> &EncryptionContext {
+    pub fn encryption_context(&self) -> &EncryptionContext {
         &self.encryption_context
     }
 
     /// The item key that a branch key ID supplier sees for this item.
     #[must_use]
-    pub const fn selector_context(&self) -> &HashMap<String, AttributeValue> {
+    pub fn selector_context(&self) -> &HashMap<String, AttributeValue> {
         &self.selector_context
     }
 }
@@ -251,7 +251,7 @@ pub struct EncryptItemOutput {
 impl EncryptItemOutput {
     /// The encrypted item.
     #[must_use]
-    pub const fn encrypted_item(&self) -> &HashMap<String, AttributeValue> {
+    pub fn encrypted_item(&self) -> &HashMap<String, AttributeValue> {
         &self.encrypted_item
     }
 
@@ -266,13 +266,13 @@ impl EncryptItemOutput {
     /// When [`PlaintextOverride::ForcePlaintextWriteAllowPlaintextRead`] writes the item
     /// as plaintext, this is the suite the table would have encrypted it with.
     #[must_use]
-    pub const fn algorithm_suite_id(&self) -> AlgorithmSuiteId {
+    pub fn algorithm_suite_id(&self) -> AlgorithmSuiteId {
         self.algorithm_suite_id
     }
 
     /// The header of the encrypted item; `None` when the item was written as plaintext.
     #[must_use]
-    pub const fn parsed_header(&self) -> Option<&ParsedHeader> {
+    pub fn parsed_header(&self) -> Option<&ParsedHeader> {
         self.parsed_header.as_ref()
     }
 }
@@ -467,7 +467,7 @@ pub struct DecryptItemOutput {
 impl DecryptItemOutput {
     /// The decrypted item.
     #[must_use]
-    pub const fn plaintext_item(&self) -> &HashMap<String, AttributeValue> {
+    pub fn plaintext_item(&self) -> &HashMap<String, AttributeValue> {
         &self.plaintext_item
     }
 
@@ -479,7 +479,7 @@ impl DecryptItemOutput {
 
     /// The header of the item; `None` when a plaintext item was read.
     #[must_use]
-    pub const fn parsed_header(&self) -> Option<&ParsedHeader> {
+    pub fn parsed_header(&self) -> Option<&ParsedHeader> {
         self.parsed_header.as_ref()
     }
 }

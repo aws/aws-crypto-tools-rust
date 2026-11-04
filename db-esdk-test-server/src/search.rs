@@ -387,7 +387,12 @@ fn virtual_transform(t: VirtualTransform) -> Result<search::VirtualTransform, Se
     } else if let Some(s) = t.suffix {
         T::suffix(s.length)
     } else if let Some(r) = t.substring {
-        T::substring(r.low, r.high)
+        T::Substring(
+            search::GetSubstring::builder()
+                .low(r.low)
+                .high(r.high)
+                .build()?,
+        )
     } else if let Some(s) = t.segment {
         T::Segment(
             search::GetSegment::builder()

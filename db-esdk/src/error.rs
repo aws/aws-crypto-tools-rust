@@ -77,7 +77,7 @@ pub use aws_mpl_primitives::error::{
 };
 pub use aws_smithy_types::error::display::DisplayErrorContext;
 pub use aws_smithy_types::error::metadata::{ErrorMetadata, ProvideErrorMetadata};
-pub use aws_smithy_types::retry::{ErrorKind as RetryErrorKind, ProvideErrorKind};
+pub use aws_smithy_types::retry::{ErrorKind, ProvideErrorKind};
 pub use aws_types::request_id::RequestId;
 
 /// A `Validation` error: the configuration or input is invalid.

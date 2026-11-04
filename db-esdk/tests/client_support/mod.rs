@@ -56,12 +56,13 @@ pub fn fake() -> FakeDdb {
 }
 
 /// A fake, and a client that encrypts [`TABLE`] and sends its requests to the fake.
-pub fn setup() -> (FakeDdb, Client) {
+pub async fn setup() -> (FakeDdb, Client) {
     let fake = fake();
     let client = Client::builder()
         .ddb_client(fake.client())
         .table_encryption_configs(TABLE, table_config())
         .build()
+        .await
         .expect("a valid client configuration");
     (fake, client)
 }

@@ -133,7 +133,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let ddb = aws_db_esdk::Client::builder()
         .ddb_client(ddb_sdk.clone())
         .table_encryption_configs(TABLE_NAME, table_config(keyring)?)
-        .build()?;
+        .build()
+        .await?;
 
     for tenant in ["TenantA", "TenantB"] {
         ddb.put_item()
@@ -153,7 +154,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let ddb_a = aws_db_esdk::Client::builder()
         .ddb_client(ddb_sdk)
         .table_encryption_configs(TABLE_NAME, table_config(keyring_a)?)
-        .build()?;
+        .build()
+        .await?;
     let output = ddb_a
         .get_item()
         .table_name(TABLE_NAME)

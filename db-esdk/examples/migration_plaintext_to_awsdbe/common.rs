@@ -75,6 +75,7 @@ pub async fn encrypted_client(
     let ddb = aws_db_esdk::Client::builder()
         .ddb_client(ddb_sdk)
         .table_encryption_configs(DDB_TABLE_NAME, table)
-        .build()?;
+        .build()
+        .await?;
     Ok(ddb)
 }
