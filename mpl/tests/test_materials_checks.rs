@@ -419,6 +419,35 @@ async fn on_decrypt_rejects_a_changed_encryption_context() {
 }
 
 #[tokio::test]
+async fn on_decrypt_rejects_a_changed_algorithm_suite() {
+    let other = AlgorithmSuiteId::Esdk(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256);
+    let keyring = FnKeyring::on_decrypt(move |m| {
+        rebuild_decryption(&m)
+            .algorithm_suite_id(other)
+            .plaintext_data_key(pdk(other, 7))
+            .build()
+    });
+    let result = on_decrypt(keyring, decryption_materials(non_signing())).await;
+    assert_invalid(result, keyring_resource(), "algorithm suite");
+}
+
+#[tokio::test]
+async fn on_decrypt_rejects_changed_required_encryption_context_keys() {
+    let keyring = FnKeyring::on_decrypt(|m| {
+        rebuild_decryption(&m)
+            .set_required_encryption_context_keys(None)
+            .plaintext_data_key(pdk(non_signing(), 7))
+            .build()
+    });
+    let result = on_decrypt(keyring, decryption_materials(non_signing())).await;
+    assert_invalid(
+        result,
+        keyring_resource(),
+        "required encryption context keys",
+    );
+}
+
+#[tokio::test]
 async fn on_decrypt_rejects_a_changed_verification_key() {
     let keyring = FnKeyring::on_decrypt(|m| {
         let key_length = m.algorithm_suite().verification_key_length().unwrap();

@@ -161,8 +161,8 @@ impl GetEncryptionMaterialsFluentBuilder {
     /// # Errors
     ///
     /// - [`Validation`](crate::Error::Validation): `encryption_context` or `commitment_policy` is unset.
-    /// - [`InvalidMaterials`](crate::Error::InvalidMaterials), naming the CMM:
-    ///   the returned materials are invalid, or have no plaintext data key or no encrypted data keys.
+    /// - [`InvalidMaterials`](crate::Error::InvalidMaterials): the returned materials are invalid,
+    ///   or have no plaintext data key or no encrypted data keys.
     ///
     /// Otherwise, the errors [`Cmm::get_encryption_materials`] documents.
     pub async fn send(self) -> Result<GetEncryptionMaterialsOutput, Error> {
@@ -309,8 +309,8 @@ impl DecryptMaterialsFluentBuilder {
     /// # Errors
     ///
     /// - [`Validation`](crate::Error::Validation): `algorithm_suite_id`, `commitment_policy`, `encrypted_data_keys` or `encryption_context` is unset.
-    /// - [`InvalidMaterials`](crate::Error::InvalidMaterials), naming the CMM:
-    ///   the returned materials are invalid or have no plaintext data key.
+    /// - [`InvalidMaterials`](crate::Error::InvalidMaterials): the returned materials are invalid,
+    ///   or have no plaintext data key.
     ///
     /// Otherwise, the errors [`Cmm::decrypt_materials`] documents.
     pub async fn send(self) -> Result<DecryptMaterialsOutput, Error> {

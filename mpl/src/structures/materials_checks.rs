@@ -2,19 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! Checks that keyrings and CMMs return valid materials.
-//! Ported from `Materials.dfy` in the Dafny MPL.
-//!
-//! The materials builders and `add_data_key` already reject:
-//! - a plaintext data key of the wrong length
-//! - a required encryption context key that the encryption context lacks
-//! - encrypted data keys without a plaintext data key
-//! - a key that the algorithm suite does not use
-//!
-//! These checks cover the rest:
-//! rules that span several fields, and the fields that a keyring must not change.
-//!
-//! No implemented algorithm suite uses symmetric signing.
-//! So the builders already enforce the Dafny rules on symmetric signing keys by rejecting any such key.
+//! Ported from `Materials.dfy` in the Dafny MPL as the spec is weak here.
 
 use crate::Error;
 
@@ -23,8 +11,10 @@ use super::{DecryptionMaterials, EncryptedDataKey, EncryptionMaterials};
 /// The encryption context key that holds the verification key for a signing algorithm suite.
 const PUBLIC_KEY_CONTEXT_KEY: &str = "aws-crypto-public-key";
 
-/// `ValidEncryptionMaterials`: a signing suite has a signing key,
-/// and the encryption context holds the verification key exactly when the suite signs.
+/// Like Dafny `ValidEncryptionMaterials`.
+/// Checks:
+/// - a signing suite has a signing key
+/// - the encryption context holds the verification key exactly when the suite signs
 pub(crate) fn check_encryption_materials(materials: &EncryptionMaterials) -> Result<(), Error> {
     let signs = materials.algorithm_suite_id().has_asymmetric_signing();
     if signs && materials.signing_key().is_none() {
@@ -40,8 +30,10 @@ pub(crate) fn check_encryption_materials(materials: &EncryptionMaterials) -> Res
     )
 }
 
-/// `ValidDecryptionMaterials`: a signing suite has a verification key,
-/// and the encryption context holds the verification key exactly when the suite signs.
+/// Like Dafny `ValidDecryptionMaterials`.
+/// Checks:
+/// - a signing suite has a verification key
+/// - the encryption context holds the verification key exactly when the suite signs
 pub(crate) fn check_decryption_materials(materials: &DecryptionMaterials) -> Result<(), Error> {
     let signs = materials.algorithm_suite_id().has_asymmetric_signing();
     if signs && materials.verification_key().is_none() {
@@ -69,8 +61,10 @@ fn check_public_key_context(signs: bool, has_public_key: bool) -> Result<(), Err
     }
 }
 
-/// `ValidEncryptionMaterialsTransition`: checks `new`, the materials that a keyring's `on_encrypt` returned,
-/// against `old`, the materials that it got.
+/// Like Dafny `ValidEncryptionMaterialsTransition`.
+/// Checks `new` against `old`:
+/// - `new`: the materials that a keyring's `on_encrypt` returned
+/// - `old`: the materials a keyring's `on_encrypt` was provided
 ///
 /// The keyring may only:
 /// - add a plaintext data key, if `old` has none
@@ -113,10 +107,13 @@ pub(crate) fn check_encryption_transition(
     Ok(())
 }
 
-/// `DecryptionMaterialsTransitionIsValid`: checks `new`, the materials that a keyring's `on_decrypt` returned,
-/// against `old`, the materials that it got.
+/// Like Dafny `DecryptionMaterialsTransitionIsValid`.
+/// Checks `new` against `old`:
+/// - `new`: the materials that a keyring's `on_decrypt` returned
+/// - `old`: the materials a keyring's `on_decrypt` was provided
 ///
-/// The keyring may only add a plaintext data key, and `old` must not have one yet.
+/// The keyring may only:
+/// - add a plaintext data key, and `old` must have none
 pub(crate) fn check_decryption_transition(
     old: &DecryptionMaterials,
     new: &DecryptionMaterials,
@@ -152,7 +149,11 @@ pub(crate) fn check_decryption_transition(
     Ok(())
 }
 
-/// `EncryptionMaterialsHasPlaintextDataKey`: checks the materials that a CMM returns from `get_encryption_materials`.
+/// Like Dafny `EncryptionMaterialsHasPlaintextDataKey`.
+/// Checks the materials that a CMM's `get_encryption_materials` returned:
+/// - they have a plaintext data key
+/// - they have at least one encrypted data key
+/// - they pass `check_encryption_materials`
 pub(crate) fn check_encryption_materials_complete(
     materials: &EncryptionMaterials,
 ) -> Result<(), Error> {
@@ -169,7 +170,10 @@ pub(crate) fn check_encryption_materials_complete(
     check_encryption_materials(materials)
 }
 
-/// `DecryptionMaterialsWithPlaintextDataKey`: checks the materials that a CMM returns from `decrypt_materials`.
+/// Like Dafny `DecryptionMaterialsWithPlaintextDataKey`.
+/// Checks the materials that a CMM's `decrypt_materials` returned:
+/// - they have a plaintext data key
+/// - they pass `check_decryption_materials`
 pub(crate) fn check_decryption_materials_complete(
     materials: &DecryptionMaterials,
 ) -> Result<(), Error> {
