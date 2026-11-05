@@ -711,11 +711,11 @@ async fn step_verify_signature(
 // in the decryption material's required encryption context keys.
 fn build_encryption_context_to_only_authenticate(
     encryption_context: &EncryptionContext,
-    required_encryption_context_keys: &std::collections::BTreeSet<String>,
+    required_encryption_context_keys: &aws_crypto_mpl::types::RequiredEncryptionContextKeys,
 ) -> EncryptionContext {
     encryption_context
         .iter()
-        .filter(|(key, _)| required_encryption_context_keys.contains(*key))
+        .filter(|(key, _)| required_encryption_context_keys.contains(key))
         .collect()
 }
 
