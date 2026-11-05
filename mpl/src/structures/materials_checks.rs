@@ -13,8 +13,8 @@
 //! These checks cover the rest:
 //! rules that span several fields, and the fields that a keyring must not change.
 //!
-//! No implemented algorithm suite uses symmetric signing.
-//! So the builders already enforce the Dafny rules on symmetric signing keys by rejecting any such key.
+//! There are no checks on symmetric signing keys.
+//! No implemented algorithm suite uses symmetric signing, so the builders reject any symmetric signing key.
 
 use crate::Error;
 
