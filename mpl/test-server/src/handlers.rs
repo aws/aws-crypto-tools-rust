@@ -3,26 +3,44 @@
 
 //! Operation handlers and multi-type object registry.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Mutex;
+use std::time::Duration;
 
+use aws_crypto_mpl::aws_config::{self, BehaviorVersion, Region};
+use aws_crypto_mpl::cmc::{DefaultCmc, SharedCmc};
 use aws_crypto_mpl::cmm::{DefaultCmm, SharedCmm};
-use aws_crypto_mpl::keyring::SharedKeyring;
+use aws_crypto_mpl::key_store::types::{
+    Discovery as MplDiscovery, KmsConfiguration as MplKmsConfiguration,
+    MrDiscovery as MplMrDiscovery,
+};
+use aws_crypto_mpl::key_store::{DynamoDbKeyStore, SharedKeyStore};
+use aws_crypto_mpl::keyring::{
+    BranchKeyIdSupplier, GetBranchKeyIdInput, GetBranchKeyIdOutput, HierarchicalKeyring,
+    SharedBranchKeyIdSupplier, SharedKeyring,
+};
 use aws_crypto_mpl::types::{
     AlgorithmSuiteId as MplSuiteId, CommitmentPolicy as MplCommitmentPolicy, DecryptionMaterials,
     EncryptedDataKey, EncryptionContext, EncryptionMaterials,
     EsdkAlgorithmSuiteId as MplAlgorithmSuiteId, EsdkCommitmentPolicy,
 };
-use aws_crypto_mpl::types::{PlaintextDataKey, SigningKey, SymmetricSigningKey, VerificationKey};
+use aws_crypto_mpl::types::{
+    PlaintextDataKey, RequiredEncryptionContextKeys, SigningKey, SymmetricSigningKey,
+    VerificationKey,
+};
+use aws_crypto_mpl::{aws_sdk_dynamodb, aws_sdk_kms};
 
 use crate::error::ServerError;
 use crate::model::*;
 
-/// Shared server state: multi-type registry for keyrings and CMMs.
+/// Shared server state: multi-type registry for keyrings, CMMs, key stores,
+/// and materials caches.
 #[derive(Default)]
 pub struct AppState {
     keyrings: Mutex<HashMap<String, SharedKeyring>>,
     cmms: Mutex<HashMap<String, SharedCmm>>,
+    key_stores: Mutex<HashMap<String, SharedKeyStore>>,
+    caches: Mutex<HashMap<String, SharedCmc>>,
 }
 
 impl AppState {
@@ -69,6 +87,115 @@ impl AppState {
             .expect("cmms mutex")
             .insert(id.clone(), SharedCmm::new(cmm));
         Ok(CreateDefaultCmmResponse { cmm_id: id })
+    }
+
+    pub async fn create_key_store_client(
+        &self,
+        req: CreateKeyStoreClientRequest,
+    ) -> Result<CreateKeyStoreClientResponse, ServerError> {
+        let kms_configuration = match req.kms_configuration {
+            KmsConfiguration::KmsKeyArn(arn) => MplKmsConfiguration::kms_key_arn(arn),
+            KmsConfiguration::KmsMrKeyArn(arn) => MplKmsConfiguration::kms_mr_key_arn(arn),
+            KmsConfiguration::Discovery(Discovery {}) => MplKmsConfiguration::Discovery(
+                MplDiscovery::builder()
+                    .build()
+                    .map_err(|e| ServerError::mpl(e.to_string()))?,
+            ),
+            KmsConfiguration::MrDiscovery(MrDiscovery { region }) => {
+                MplKmsConfiguration::MrDiscovery(
+                    MplMrDiscovery::builder()
+                        .region(region)
+                        .build()
+                        .map_err(|e| ServerError::mpl(e.to_string()))?,
+                )
+            }
+        };
+
+        let kms = aws_sdk_kms::Client::new(&sdk_config(req.kms_client_region).await);
+        let ddb = aws_sdk_dynamodb::Client::new(&sdk_config(req.ddb_client_region).await);
+        let key_store = DynamoDbKeyStore::builder()
+            .ddb_table_name(req.ddb_table_name)
+            .logical_key_store_name(req.logical_key_store_name)
+            .kms_configuration(kms_configuration)
+            .kms_client(kms)
+            .ddb_client(ddb)
+            .build()
+            .await
+            .map_err(|e| ServerError::mpl(e.to_string()))?;
+
+        let id = uuid::Uuid::new_v4().to_string();
+        self.key_stores
+            .lock()
+            .expect("key stores mutex")
+            .insert(id.clone(), SharedKeyStore::new(key_store));
+        Ok(CreateKeyStoreClientResponse { key_store_id: id })
+    }
+
+    pub fn create_cryptographic_materials_cache(
+        &self,
+        req: CreateCryptographicMaterialsCacheRequest,
+    ) -> Result<CreateCryptographicMaterialsCacheResponse, ServerError> {
+        let Ok(entry_capacity) = usize::try_from(req.entry_capacity) else {
+            return Err(ServerError::mpl(format!(
+                "entryCapacity must not be negative: {}",
+                req.entry_capacity
+            )));
+        };
+        let cache = DefaultCmc::builder()
+            .entry_capacity(entry_capacity)
+            .build()
+            .map_err(|e| ServerError::mpl(e.to_string()))?;
+
+        let id = uuid::Uuid::new_v4().to_string();
+        self.caches
+            .lock()
+            .expect("caches mutex")
+            .insert(id.clone(), SharedCmc::new(cache));
+        Ok(CreateCryptographicMaterialsCacheResponse { cache_id: id })
+    }
+
+    pub async fn create_aws_kms_hierarchical_keyring(
+        &self,
+        req: CreateAwsKmsHierarchicalKeyringRequest,
+    ) -> Result<CreateAwsKmsHierarchicalKeyringResponse, ServerError> {
+        let key_store = self.get_key_store(&req.key_store_id)?;
+        let cache = req
+            .cache_id
+            .as_deref()
+            .map(|id| self.get_cache(id))
+            .transpose()?;
+        // The MPL takes a Duration, which cannot be negative; the Dafny MPLs
+        // reject a non-positive TTL themselves, so this is the MPL's error too.
+        let Ok(ttl_seconds) = u64::try_from(req.ttl_seconds) else {
+            return Err(ServerError::mpl(format!(
+                "ttlSeconds must not be negative: {}",
+                req.ttl_seconds
+            )));
+        };
+        let supplier = req.branch_key_id_supplier.map(|supplier| {
+            SharedBranchKeyIdSupplier::new(StaticBranchKeyIdSupplierImpl {
+                encryption_context_key: supplier.encryption_context_key,
+                branch_key_ids: supplier.branch_key_ids,
+            })
+        });
+
+        let keyring = HierarchicalKeyring::builder()
+            .key_store(key_store)
+            .ttl(Duration::from_secs(ttl_seconds))
+            .set_branch_key_id(req.branch_key_id)
+            .set_branch_key_id_supplier(supplier)
+            .set_cache(cache)
+            .set_partition_id(req.partition_id)
+            .build()
+            .await
+            .map_err(|e| ServerError::mpl(e.to_string()))?;
+
+        let id = uuid::Uuid::new_v4().to_string();
+        self.keyrings
+            .lock()
+            .expect("keyrings mutex")
+            .insert(id.clone(), SharedKeyring::new(keyring));
+        Ok(CreateAwsKmsHierarchicalKeyringResponse { keyring_id: id })
     }
 
     pub fn initialize_encryption_materials(
@@ -166,11 +293,7 @@ impl AppState {
         let ec_out = encryption_context_to_map(materials.encryption_context());
 
         let signing_key = materials.signing_key().map(|sk| sk.as_bytes().to_vec());
-        let symmetric_signing_keys = materials.symmetric_signing_keys().map(|keys| {
-            keys.iter()
-                .map(|k| serde_bytes::ByteBuf::from(k.as_bytes().to_vec()))
-                .collect()
-        });
+        let symmetric_signing_keys = symmetric_signing_keys_to_shapes(materials);
 
         Ok(GetEncryptionMaterialsResponse {
             algorithm_suite_id: reverse_map_algorithm_suite_id(materials.algorithm_suite_id())?,
@@ -249,6 +372,69 @@ impl AppState {
             .cloned()
             .ok_or_else(|| ServerError::generic(format!("unknown keyringId: {keyring_id}")))
     }
+
+    fn get_key_store(&self, key_store_id: &str) -> Result<SharedKeyStore, ServerError> {
+        if key_store_id.is_empty() {
+            return Err(ServerError::generic("keyStoreId must be non-empty"));
+        }
+        self.key_stores
+            .lock()
+            .expect("key stores mutex")
+            .get(key_store_id)
+            .cloned()
+            .ok_or_else(|| ServerError::generic(format!("unknown keyStoreId: {key_store_id}")))
+    }
+
+    fn get_cache(&self, cache_id: &str) -> Result<SharedCmc, ServerError> {
+        if cache_id.is_empty() {
+            return Err(ServerError::generic("cacheId must be non-empty"));
+        }
+        self.caches
+            .lock()
+            .expect("caches mutex")
+            .get(cache_id)
+            .cloned()
+            .ok_or_else(|| ServerError::generic(format!("unknown cacheId: {cache_id}")))
+    }
+}
+
+/// An AWS SDK configuration for `region`, with credentials from the ambient
+/// provider chain.
+async fn sdk_config(region: String) -> aws_config::SdkConfig {
+    aws_config::defaults(BehaviorVersion::latest())
+        .region(Region::new(region))
+        .load()
+        .await
+}
+
+/// The model's `StaticBranchKeyIdSupplier`: look up the encryption context
+/// value under `encryption_context_key` and return the branch key id mapped to
+/// it, or fail.
+struct StaticBranchKeyIdSupplierImpl {
+    encryption_context_key: String,
+    branch_key_ids: BTreeMap<String, String>,
+}
+
+#[aws_crypto_mpl::async_trait]
+impl BranchKeyIdSupplier for StaticBranchKeyIdSupplierImpl {
+    async fn get_branch_key_id(
+        &self,
+        input: GetBranchKeyIdInput,
+    ) -> Result<GetBranchKeyIdOutput, aws_crypto_mpl::Error> {
+        let branch_key_id = input
+            .encryption_context()
+            .get(&self.encryption_context_key)
+            .and_then(|value| self.branch_key_ids.get(value));
+        let Some(branch_key_id) = branch_key_id else {
+            return Err(aws_crypto_mpl::Error::validation(format!(
+                "no branch key id for encryption context key {}",
+                self.encryption_context_key
+            )));
+        };
+        GetBranchKeyIdOutput::builder()
+            .branch_key_id(branch_key_id.clone())
+            .build()
+    }
 }
 
 // ─── Mapping helpers ────────────────────────────────────────────────────────
@@ -266,6 +452,18 @@ fn map_edks(edks: Vec<EncryptedDataKeyShape>) -> Result<Vec<EncryptedDataKey>, S
         .collect()
 }
 
+/// The materials' symmetric signing keys, or `None` when there are none.
+fn symmetric_signing_keys_to_shapes(
+    materials: &EncryptionMaterials,
+) -> Option<Vec<serde_bytes::ByteBuf>> {
+    let keys = materials.symmetric_signing_keys();
+    (!keys.is_empty()).then(|| {
+        keys.iter()
+            .map(|k| serde_bytes::ByteBuf::from(k.as_bytes().to_vec()))
+            .collect()
+    })
+}
+
 fn edks_to_shapes(edks: &[EncryptedDataKey]) -> Vec<EncryptedDataKeyShape> {
     edks.iter()
         .map(|edk| EncryptedDataKeyShape {
@@ -276,8 +474,8 @@ fn edks_to_shapes(edks: &[EncryptedDataKey]) -> Vec<EncryptedDataKeyShape> {
         .collect()
 }
 
-fn required_keys_to_wire(keys: &BTreeSet<String>) -> Vec<String> {
-    keys.iter().cloned().collect()
+fn required_keys_to_wire(keys: &RequiredEncryptionContextKeys) -> Vec<String> {
+    keys.to_vec()
 }
 
 /// Materials a client sends must satisfy the MPL's own invariants; a rejection
@@ -333,11 +531,7 @@ fn encryption_materials_to_shape(
             .plaintext_data_key()
             .map(|k| k.as_bytes().to_vec()),
         signing_key: materials.signing_key().map(|k| k.as_bytes().to_vec()),
-        symmetric_signing_keys: materials.symmetric_signing_keys().map(|keys| {
-            keys.iter()
-                .map(|k| serde_bytes::ByteBuf::from(k.as_bytes().to_vec()))
-                .collect()
-        }),
+        symmetric_signing_keys: symmetric_signing_keys_to_shapes(materials),
     })
 }
 

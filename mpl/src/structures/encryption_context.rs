@@ -9,9 +9,10 @@ use std::collections::{BTreeMap, HashMap};
 
 /// A key-value mapping of arbitrary, non-secret, UTF-8 encoded strings used as AAD.
 ///
-/// Iteration and [`serialize`](Self::serialize) visit keys in ascending UTF-8 byte order,
+/// Iteration and [`to_bytes`](Self::to_bytes) visit keys in ascending UTF-8 byte order,
 /// the order the message format requires.
 #[derive(Clone, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct EncryptionContext(BTreeMap<String, String>);
 
 impl std::fmt::Debug for EncryptionContext {
@@ -87,7 +88,7 @@ impl EncryptionContext {
 
     /// Serialize the encryption context to bytes.
     ///
-    pub fn serialize(&self) -> Result<Vec<u8>, Error> {
+    pub fn to_bytes(&self) -> Result<Vec<u8>, Error> {
         if self.0.is_empty() {
             return Ok(Vec::new());
         }
@@ -141,7 +142,7 @@ impl EncryptionContext {
     /// Returns a `Validation` error if the bytes are malformed,
     /// list keys out of ascending order or repeat one,
     /// or hold a key or value that is not valid UTF-8.
-    pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, Error> {
         if bytes.is_empty() {
             return Ok(Self::new());
         }

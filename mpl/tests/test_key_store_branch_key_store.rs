@@ -53,7 +53,7 @@ const KMS_KEY_ARN: &str =
 fn required_only() -> DynamoDbKeyStoreBuilder {
     DynamoDbKeyStore::builder()
         .ddb_table_name("test-table")
-        .kms_configuration(KmsConfiguration::KmsKeyArn(KMS_KEY_ARN.into()))
+        .kms_configuration(KmsConfiguration::kms_key_arn(KMS_KEY_ARN))
         .logical_key_store_name("test-logical")
 }
 
@@ -81,7 +81,7 @@ async fn build_err(builder: DynamoDbKeyStoreBuilder) -> aws_crypto_mpl::Error {
 async fn build_without_ddb_table_name_returns_configuration_error() {
     let (kms, ddb) = dummy_clients();
     let builder = DynamoDbKeyStore::builder()
-        .kms_configuration(KmsConfiguration::KmsKeyArn(KMS_KEY_ARN.into()))
+        .kms_configuration(KmsConfiguration::kms_key_arn(KMS_KEY_ARN))
         .logical_key_store_name("test-logical")
         .kms_client(kms)
         .ddb_client(ddb);
@@ -94,7 +94,7 @@ async fn build_without_logical_key_store_name_returns_configuration_error() {
     let (kms, ddb) = dummy_clients();
     let builder = DynamoDbKeyStore::builder()
         .ddb_table_name("test-table")
-        .kms_configuration(KmsConfiguration::KmsKeyArn(KMS_KEY_ARN.into()))
+        .kms_configuration(KmsConfiguration::kms_key_arn(KMS_KEY_ARN))
         .kms_client(kms)
         .ddb_client(ddb);
     let err = build_err(builder).await;
@@ -211,7 +211,7 @@ async fn new_without_key_store_id_two_calls_produce_distinct_uuids() {
 #[tokio::test]
 async fn new_with_malformed_kms_arn_returns_configuration_error() {
     let cfg = fixture_config_with_id("caller-id")
-        .kms_configuration(KmsConfiguration::KmsKeyArn("not-an-arn".into()));
+        .kms_configuration(KmsConfiguration::kms_key_arn("not-an-arn"));
     let err = match cfg.build().await {
         Ok(_) => panic!("construction with malformed ARN must fail"),
         Err(e) => e,
@@ -221,8 +221,8 @@ async fn new_with_malformed_kms_arn_returns_configuration_error() {
 
 #[tokio::test]
 async fn new_with_alias_kms_arn_returns_configuration_error() {
-    let cfg = fixture_config_with_id("caller-id").kms_configuration(KmsConfiguration::KmsKeyArn(
-        "arn:aws:kms:us-west-2:111122223333:alias/my-alias".into(),
+    let cfg = fixture_config_with_id("caller-id").kms_configuration(KmsConfiguration::kms_key_arn(
+        "arn:aws:kms:us-west-2:111122223333:alias/my-alias",
     ));
     let err = match cfg.build().await {
         Ok(_) => panic!("construction with alias ARN must fail"),
@@ -256,7 +256,7 @@ async fn get_key_store_info_returns_configured_values() {
     let (kms, ddb) = dummy_clients();
     let cfg = DynamoDbKeyStore::builder()
         .ddb_table_name("my-table")
-        .kms_configuration(KmsConfiguration::KmsKeyArn(KMS_KEY_ARN.into()))
+        .kms_configuration(KmsConfiguration::kms_key_arn(KMS_KEY_ARN))
         .logical_key_store_name("my-logical")
         .id("my-id")
         .set_grant_tokens(Some(["grant-1", "grant-2"].map(String::from).into()))

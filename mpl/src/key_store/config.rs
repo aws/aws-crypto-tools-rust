@@ -11,9 +11,9 @@ use crate::builder::required;
 #[non_exhaustive]
 pub enum KmsConfiguration {
     /// Single-region KMS Key ARN compatibility. ARN may be MRK or non-MRK.
-    KmsKeyArn(String),
+    KmsKeyArn(KmsKeyArn),
     /// MRK ARN compatibility. ARN may be MRK or non-MRK.
-    KmsMrKeyArn(String),
+    KmsMrKeyArn(KmsMrKeyArn),
     /// Discovery configuration; KMS Key ARN is read from each DDB record.
     Discovery(Discovery),
     /// MRDiscovery configuration; KMS Key ARN is read from each DDB record.
@@ -22,12 +22,24 @@ pub enum KmsConfiguration {
 }
 
 impl KmsConfiguration {
-    /// The ARN if this is [`KmsKeyArn`](Self::KmsKeyArn), otherwise `Err(self)`.
+    /// A [`KmsKeyArn`](Self::KmsKeyArn) configuration for `arn`.
+    #[must_use]
+    pub fn kms_key_arn(arn: impl Into<String>) -> Self {
+        Self::KmsKeyArn(KmsKeyArn { arn: arn.into() })
+    }
+
+    /// A [`KmsMrKeyArn`](Self::KmsMrKeyArn) configuration for `arn`.
+    #[must_use]
+    pub fn kms_mr_key_arn(arn: impl Into<String>) -> Self {
+        Self::KmsMrKeyArn(KmsMrKeyArn { arn: arn.into() })
+    }
+
+    /// The settings if this is [`KmsKeyArn`](Self::KmsKeyArn), otherwise `Err(self)`.
     ///
     /// # Errors
     ///
     /// Returns `self` when it is another variant.
-    pub const fn as_kms_key_arn(&self) -> Result<&String, &Self> {
+    pub const fn as_kms_key_arn(&self) -> Result<&KmsKeyArn, &Self> {
         if let Self::KmsKeyArn(v) = self {
             Ok(v)
         } else {
@@ -41,12 +53,12 @@ impl KmsConfiguration {
         matches!(self, Self::KmsKeyArn(_))
     }
 
-    /// The ARN if this is [`KmsMrKeyArn`](Self::KmsMrKeyArn), otherwise `Err(self)`.
+    /// The settings if this is [`KmsMrKeyArn`](Self::KmsMrKeyArn), otherwise `Err(self)`.
     ///
     /// # Errors
     ///
     /// Returns `self` when it is another variant.
-    pub const fn as_kms_mr_key_arn(&self) -> Result<&String, &Self> {
+    pub const fn as_kms_mr_key_arn(&self) -> Result<&KmsMrKeyArn, &Self> {
         if let Self::KmsMrKeyArn(v) = self {
             Ok(v)
         } else {
@@ -99,6 +111,135 @@ impl KmsConfiguration {
     }
 }
 
+/// Settings for [`KmsConfiguration::KmsKeyArn`].
+///
+/// [`KmsConfiguration::kms_key_arn`] builds the whole configuration in one call.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct KmsKeyArn {
+    arn: String,
+}
+
+impl KmsKeyArn {
+    /// Start a builder for `KmsKeyArn`.
+    #[must_use]
+    pub fn builder() -> KmsKeyArnBuilder {
+        KmsKeyArnBuilder::default()
+    }
+
+    /// The KMS key ARN that wraps every branch key.
+    #[must_use]
+    pub fn arn(&self) -> &str {
+        &self.arn
+    }
+}
+
+/// Builder for [`KmsKeyArn`].
+#[derive(Debug, Clone, Default)]
+#[non_exhaustive]
+pub struct KmsKeyArnBuilder {
+    arn: Option<String>,
+}
+
+impl KmsKeyArnBuilder {
+    /// Set the KMS key ARN that wraps every branch key. Required.
+    #[must_use]
+    pub fn arn(mut self, arn: impl Into<String>) -> Self {
+        self.arn = Some(arn.into());
+        self
+    }
+
+    /// Set or clear the KMS key ARN from an `Option`.
+    #[must_use]
+    pub fn set_arn(mut self, arn: Option<String>) -> Self {
+        self.arn = arn;
+        self
+    }
+
+    /// The KMS key ARN set on this builder, if any.
+    #[must_use]
+    #[allow(clippy::ref_option)] // AWS SDK for Rust getter shape
+    pub fn get_arn(&self) -> &Option<String> {
+        &self.arn
+    }
+
+    /// Build the `KmsKeyArn`.
+    ///
+    /// # Errors
+    ///
+    /// - [`Validation`](crate::Error::Validation): no ARN was set.
+    pub fn build(self) -> Result<KmsKeyArn, Error> {
+        Ok(KmsKeyArn {
+            arn: required(self.arn, "arn")?,
+        })
+    }
+}
+
+/// Settings for [`KmsConfiguration::KmsMrKeyArn`].
+///
+/// [`KmsConfiguration::kms_mr_key_arn`] builds the whole configuration in one call.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct KmsMrKeyArn {
+    arn: String,
+}
+
+impl KmsMrKeyArn {
+    /// Start a builder for `KmsMrKeyArn`.
+    #[must_use]
+    pub fn builder() -> KmsMrKeyArnBuilder {
+        KmsMrKeyArnBuilder::default()
+    }
+
+    /// The KMS key ARN that wraps every branch key.
+    /// A multi-Region key matches its replicas in other regions.
+    #[must_use]
+    pub fn arn(&self) -> &str {
+        &self.arn
+    }
+}
+
+/// Builder for [`KmsMrKeyArn`].
+#[derive(Debug, Clone, Default)]
+#[non_exhaustive]
+pub struct KmsMrKeyArnBuilder {
+    arn: Option<String>,
+}
+
+impl KmsMrKeyArnBuilder {
+    /// Set the KMS key ARN that wraps every branch key. Required.
+    #[must_use]
+    pub fn arn(mut self, arn: impl Into<String>) -> Self {
+        self.arn = Some(arn.into());
+        self
+    }
+
+    /// Set or clear the KMS key ARN from an `Option`.
+    #[must_use]
+    pub fn set_arn(mut self, arn: Option<String>) -> Self {
+        self.arn = arn;
+        self
+    }
+
+    /// The KMS key ARN set on this builder, if any.
+    #[must_use]
+    #[allow(clippy::ref_option)] // AWS SDK for Rust getter shape
+    pub fn get_arn(&self) -> &Option<String> {
+        &self.arn
+    }
+
+    /// Build the `KmsMrKeyArn`.
+    ///
+    /// # Errors
+    ///
+    /// - [`Validation`](crate::Error::Validation): no ARN was set.
+    pub fn build(self) -> Result<KmsMrKeyArn, Error> {
+        Ok(KmsMrKeyArn {
+            arn: required(self.arn, "arn")?,
+        })
+    }
+}
+
 /// Settings for [`KmsConfiguration::Discovery`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -123,7 +264,7 @@ impl DiscoveryBuilder {
     /// # Errors
     ///
     /// Never returns an error.
-    pub const fn build(self) -> Result<Discovery, Error> {
+    pub fn build(self) -> Result<Discovery, Error> {
         Ok(Discovery {})
     }
 }
@@ -174,7 +315,7 @@ impl MrDiscoveryBuilder {
     /// The region set on this builder, if any.
     #[must_use]
     #[allow(clippy::ref_option)] // AWS SDK for Rust getter shape
-    pub const fn get_region(&self) -> &Option<String> {
+    pub fn get_region(&self) -> &Option<String> {
         &self.region
     }
 

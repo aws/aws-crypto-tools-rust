@@ -4,7 +4,6 @@
 //! Each builder getter returns what its setter set, and `set_x(None)` clears it.
 
 use std::collections::BTreeMap;
-use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use aws_crypto_mpl::aws_sdk_dynamodb::Client as DynamoDbClient;
@@ -48,7 +47,7 @@ macro_rules! check {
 struct Supplier;
 
 #[async_trait]
-impl BranchKeySupplier for Supplier {
+impl BranchKeyIdSupplier for Supplier {
     async fn get_branch_key_id(
         &self,
         _: GetBranchKeyIdInput,
@@ -153,8 +152,8 @@ async fn key_store() -> DynamoDbKeyStore {
     DynamoDbKeyStore::builder()
         .ddb_table_name("table")
         .logical_key_store_name("table")
-        .kms_configuration(KmsConfiguration::KmsKeyArn(
-            "arn:aws:kms:us-west-2:111122223333:key/k".into(),
+        .kms_configuration(KmsConfiguration::kms_key_arn(
+            "arn:aws:kms:us-west-2:111122223333:key/k",
         ))
         .kms_client(kms())
         .ddb_client(ddb())
@@ -180,7 +179,7 @@ async fn every_builder_getter_tracks_its_setter() {
         "x"
     );
     check!(
-        SharedBranchKeySupplier::new(Supplier).get_branch_key_id(),
+        SharedBranchKeyIdSupplier::new(Supplier).get_branch_key_id(),
         set_encryption_context,
         set_encryption_context,
         get_encryption_context,
@@ -240,14 +239,14 @@ async fn every_builder_getter_tracks_its_setter() {
         messages_used,
         set_messages_used,
         get_messages_used,
-        MessageUsage::new(1)
+        1
     );
     check!(
         UsageMetadata::builder(),
         bytes_used,
         set_bytes_used,
         get_bytes_used,
-        BytesUsage::new(1)
+        1
     );
     check!(
         CacheEntry::builder(),
@@ -359,7 +358,7 @@ async fn every_builder_getter_tracks_its_setter() {
         entry,
         set_entry,
         get_entry,
-        Arc::new(entry())
+        entry()
     );
     check!(
         DeleteCacheEntryInput::builder(),
@@ -419,9 +418,9 @@ async fn every_builder_getter_tracks_its_setter() {
     );
     check!(
         StormTrackingCmc::builder(),
-        inflight_ttl,
-        set_inflight_ttl,
-        get_inflight_ttl,
+        in_flight_ttl,
+        set_in_flight_ttl,
+        get_in_flight_ttl,
         Duration::from_secs(1)
     );
     check!(
@@ -604,7 +603,7 @@ async fn every_builder_getter_tracks_its_setter() {
         kms_configuration,
         set_kms_configuration,
         get_kms_configuration,
-        KmsConfiguration::KmsKeyArn("arn".into())
+        KmsConfiguration::kms_key_arn("arn")
     );
     check!(DynamoDbKeyStore::builder(), id, set_id, get_id, "x");
     check!(
@@ -662,7 +661,7 @@ async fn every_builder_getter_tracks_its_setter() {
         kms_configuration,
         set_kms_configuration,
         get_kms_configuration,
-        KmsConfiguration::KmsKeyArn("arn".into())
+        KmsConfiguration::kms_key_arn("arn")
     );
     check!(
         CreateKeyStoreOutput::builder(),

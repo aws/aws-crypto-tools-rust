@@ -155,7 +155,7 @@ pub(crate) async fn get_encryption_materials(
     cmm: SharedCmm,
     algorithm_suite_id: Option<AlgorithmSuiteId>,
     encryption_context: EncryptionContext,
-    max_plaintext_length: Option<usize>,
+    max_plaintext_length: Option<u64>,
     commitment_policy: CommitmentPolicy,
 ) -> Result<EncryptionMaterials, Error> {
     let policy = MplCommitmentPolicy::Esdk(commitment_policy);
@@ -195,7 +195,7 @@ pub(crate) async fn get_encryption_materials(
     //= reason=max_plaintext_length is Option; None means the field is not set on the request
     //# If no Plaintext Length Bound is provided, this field MUST NOT be included.
     if let Some(len) = max_plaintext_length {
-        request = request.max_plaintext_length(len as u64);
+        request = request.max_plaintext_length(len);
     }
 
     let materials = request

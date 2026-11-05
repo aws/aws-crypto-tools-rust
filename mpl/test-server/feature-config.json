@@ -1,6 +1,7 @@
 {
   "supportedFeatures": [
     "raw-aes",
+    "hierarchical",
     "default-cmm"
   ],
   "unsupportedFeatures": []

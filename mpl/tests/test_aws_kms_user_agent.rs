@@ -112,7 +112,7 @@ async fn key_store(capture: &Capture, framework: Option<FrameworkMetadata>) -> D
     DynamoDbKeyStore::builder()
         .ddb_table_name(TABLE)
         .logical_key_store_name(TABLE)
-        .kms_configuration(KmsConfiguration::KmsKeyArn(KEY_ARN.into()))
+        .kms_configuration(KmsConfiguration::kms_key_arn(KEY_ARN))
         .kms_client(kms_client(capture, framework))
         .ddb_client(ddb_client(capture))
         .build()

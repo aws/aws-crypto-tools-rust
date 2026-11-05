@@ -9,7 +9,6 @@ mod test_helpers;
 
 use aws_esdk::types::*;
 use aws_esdk::*;
-use std::num::NonZeroU32;
 use test_helpers::*;
 
 #[tokio::test(flavor = "multi_thread")]
@@ -26,7 +25,7 @@ async fn test_construct_frame_aead_inputs_authenticated() {
         .encrypt()
         .plaintext(&pt)
         .keyring(keyring.clone())
-        .frame_length(NonZeroU32::new(50).unwrap())
+        .frame_length(50)
         .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
         .send()
         .await
@@ -239,7 +238,7 @@ async fn test_construct_frame_plaintext_subsequence_consumed_in_order() {
         .encrypt()
         .plaintext(&pt)
         .keyring(keyring.clone())
-        .frame_length(NonZeroU32::new(50).unwrap())
+        .frame_length(50)
         .send()
         .await
         .unwrap()
@@ -368,7 +367,7 @@ async fn test_construct_frame_streaming_frame_released() {
     Client::default()
         .encrypt_stream()
         .keyring(keyring.clone())
-        .frame_length(NonZeroU32::new(10).unwrap())
+        .frame_length(10)
         .plaintext(&mut reader)
         .ciphertext(&mut output)
         .send()

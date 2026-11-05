@@ -240,7 +240,7 @@ async fn the_materials_cache_timing_out_is_throttling_about_the_cache() {
         .unwrap();
     // Another caller started fetching this branch key and never finished.
     let id = build_cache_identifier(SCOPE_ID_ENCRYPT, b"p", TABLE, BRANCH_KEY_ID, None);
-    cache.mark_inflight(&id, now - cache.inflight_ttl() - Duration::from_secs(1));
+    cache.mark_inflight(&id, now - cache.in_flight_ttl() - Duration::from_secs(1));
     let keyring = HierarchicalKeyring::builder()
         .key_store(FakeAws::ok().key_store().await)
         .branch_key_id(BRANCH_KEY_ID)
