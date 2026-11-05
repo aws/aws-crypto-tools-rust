@@ -2,19 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! Checks that keyrings and CMMs return valid materials.
-//! Ported from `Materials.dfy` in the Dafny MPL.
-//!
-//! The materials builders and `add_data_key` already reject:
-//! - a plaintext data key of the wrong length
-//! - a required encryption context key that the encryption context lacks
-//! - encrypted data keys without a plaintext data key
-//! - a key that the algorithm suite does not use
-//!
-//! These checks cover the rest:
-//! rules that span several fields, and the fields that a keyring must not change.
-//!
-//! There are no checks on symmetric signing keys.
-//! No implemented algorithm suite uses symmetric signing, so the builders reject any symmetric signing key.
+//! Ported from `Materials.dfy` in the Dafny MPL as the spec is weak here.
 
 use crate::Error;
 
@@ -23,8 +11,9 @@ use super::{DecryptionMaterials, EncryptedDataKey, EncryptionMaterials};
 /// The encryption context key that holds the verification key for a signing algorithm suite.
 const PUBLIC_KEY_CONTEXT_KEY: &str = "aws-crypto-public-key";
 
-/// `ValidEncryptionMaterials`: a signing suite has a signing key,
-/// and the encryption context holds the verification key exactly when the suite signs.
+/// Like Dafny `ValidEncryptionMaterials`. Checks:
+/// - a signing suite has a signing key,
+/// - the encryption context holds the verification key exactly when the suite signs.
 pub(crate) fn check_encryption_materials(materials: &EncryptionMaterials) -> Result<(), Error> {
     let signs = materials.algorithm_suite_id().has_asymmetric_signing();
     if signs && materials.signing_key().is_none() {
@@ -40,8 +29,9 @@ pub(crate) fn check_encryption_materials(materials: &EncryptionMaterials) -> Res
     )
 }
 
-/// `ValidDecryptionMaterials`: a signing suite has a verification key,
-/// and the encryption context holds the verification key exactly when the suite signs.
+/// Like Dafny `ValidDecryptionMaterials`. Checks:
+/// - a signing suite has a verification key,
+/// - the encryption context holds the verification key exactly when the suite signs.
 pub(crate) fn check_decryption_materials(materials: &DecryptionMaterials) -> Result<(), Error> {
     let signs = materials.algorithm_suite_id().has_asymmetric_signing();
     if signs && materials.verification_key().is_none() {
@@ -70,9 +60,15 @@ fn check_public_key_context(signs: bool, has_public_key: bool) -> Result<(), Err
 }
 
 /// Like Dafny `ValidEncryptionMaterialsTransition`.
+<<<<<<< HEAD
 /// Checks `new` against `old` before returning `new`.
 /// - `old`: the materials a keyring's `on_encrypt` was provided
 /// - `new`: the materials that a keyring's `on_encrypt` is about to return
+=======
+/// Checks `new` against `old`:
+/// - `new`: the materials that a keyring's `on_encrypt` returned
+/// - `old`: the materials a keyring's `on_encrypt` was provided
+>>>>>>> d4f1cd9c (m)
 ///
 /// The keyring may only:
 /// - add a plaintext data key, if `old` has none
