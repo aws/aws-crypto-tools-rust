@@ -129,6 +129,11 @@ async fn test_frame_length_accepts_max_u32() {
     //= type=test
     //= reason=encrypt accepts a frame length of u32::MAX and writes it to the header, proving the implementation accepts the maximum allowed value
     //# - The total bytes allowed in a single frame MUST be less than or equal to `2^32 - 1`.
+    //
+    //= spec/client-apis/encrypt.md#frame-length
+    //= type=test
+    //= reason=The setter takes a u32, so no value above 2^32 - 1 can be passed; this test sends the largest one.
+    //# This value MUST be greater than 0 and MUST NOT exceed the value 2^32 - 1.
     let out = Client::default()
         .encrypt()
         .plaintext(b"pt")

@@ -1,18 +1,20 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Checks that keyrings and CMMs return valid materials,
-//! ported from `Materials.dfy` in the Dafny MPL.
+//! Checks that keyrings and CMMs return valid materials.
+//! Ported from `Materials.dfy` in the Dafny MPL.
 //!
-//! The materials builders and `add_data_key` already reject a plaintext data key of the wrong length,
-//! a required encryption context key missing from the encryption context,
-//! encrypted data keys without a plaintext data key,
-//! and a key the algorithm suite does not use.
-//! These checks cover the rest: rules that span several fields,
-//! and the fields a keyring must not change.
+//! The materials builders and `add_data_key` already reject:
+//! - a plaintext data key of the wrong length
+//! - a required encryption context key that the encryption context lacks
+//! - encrypted data keys without a plaintext data key
+//! - a key that the algorithm suite does not use
 //!
-//! Every implemented algorithm suite lacks symmetric signing,
-//! so the Dafny rules about symmetric signing keys reduce to the builders' "none allowed" check.
+//! These checks cover the rest:
+//! rules that span several fields, and the fields that a keyring must not change.
+//!
+//! No implemented algorithm suite uses symmetric signing.
+//! So the builders already enforce the Dafny rules on symmetric signing keys by rejecting any such key.
 
 use crate::Error;
 
@@ -67,9 +69,12 @@ fn check_public_key_context(signs: bool, has_public_key: bool) -> Result<(), Err
     }
 }
 
-/// `ValidEncryptionMaterialsTransition`: `new` is `old` after a keyring's `on_encrypt`.
+/// `ValidEncryptionMaterialsTransition`: checks `new`, the materials that a keyring's `on_encrypt` returned,
+/// against `old`, the materials that it got.
 ///
-/// The keyring may only add a plaintext data key, if `old` has none, and add encrypted data keys.
+/// The keyring may only:
+/// - add a plaintext data key, if `old` has none
+/// - add encrypted data keys
 pub(crate) fn check_encryption_transition(
     old: &EncryptionMaterials,
     new: &EncryptionMaterials,
@@ -108,7 +113,8 @@ pub(crate) fn check_encryption_transition(
     Ok(())
 }
 
-/// `DecryptionMaterialsTransitionIsValid`: `new` is `old` after a keyring's `on_decrypt`.
+/// `DecryptionMaterialsTransitionIsValid`: checks `new`, the materials that a keyring's `on_decrypt` returned,
+/// against `old`, the materials that it got.
 ///
 /// The keyring may only add a plaintext data key, and `old` must not have one yet.
 pub(crate) fn check_decryption_transition(
@@ -146,7 +152,7 @@ pub(crate) fn check_decryption_transition(
     Ok(())
 }
 
-/// `EncryptionMaterialsHasPlaintextDataKey`: the materials a CMM returns from `get_encryption_materials`.
+/// `EncryptionMaterialsHasPlaintextDataKey`: checks the materials that a CMM returns from `get_encryption_materials`.
 pub(crate) fn check_encryption_materials_complete(
     materials: &EncryptionMaterials,
 ) -> Result<(), Error> {
@@ -163,7 +169,7 @@ pub(crate) fn check_encryption_materials_complete(
     check_encryption_materials(materials)
 }
 
-/// `DecryptionMaterialsWithPlaintextDataKey`: the materials a CMM returns from `decrypt_materials`.
+/// `DecryptionMaterialsWithPlaintextDataKey`: checks the materials that a CMM returns from `decrypt_materials`.
 pub(crate) fn check_decryption_materials_complete(
     materials: &DecryptionMaterials,
 ) -> Result<(), Error> {
@@ -193,7 +199,7 @@ fn option_eq<T>(a: Option<&T>, b: Option<&T>, eq: impl Fn(&T, &T) -> bool) -> bo
     }
 }
 
-/// Whether `haystack` holds every key in `needles`, counting repeats (multiset inclusion).
+/// Whether `haystack` holds every key in `needles`, counting repeats.
 fn contains_all(haystack: &[EncryptedDataKey], needles: &[EncryptedDataKey]) -> bool {
     let mut used = vec![false; haystack.len()];
     needles.iter().all(|needle| {
