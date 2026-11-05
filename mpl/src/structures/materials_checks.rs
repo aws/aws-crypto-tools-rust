@@ -11,9 +11,10 @@ use super::{DecryptionMaterials, EncryptedDataKey, EncryptionMaterials};
 /// The encryption context key that holds the verification key for a signing algorithm suite.
 const PUBLIC_KEY_CONTEXT_KEY: &str = "aws-crypto-public-key";
 
-/// Like Dafny `ValidEncryptionMaterials`. Checks:
-/// - a signing suite has a signing key,
-/// - the encryption context holds the verification key exactly when the suite signs.
+/// Like Dafny `ValidEncryptionMaterials`.
+/// Checks:
+/// - a signing suite has a signing key
+/// - the encryption context holds the verification key exactly when the suite signs
 pub(crate) fn check_encryption_materials(materials: &EncryptionMaterials) -> Result<(), Error> {
     let signs = materials.algorithm_suite_id().has_asymmetric_signing();
     if signs && materials.signing_key().is_none() {
@@ -29,9 +30,10 @@ pub(crate) fn check_encryption_materials(materials: &EncryptionMaterials) -> Res
     )
 }
 
-/// Like Dafny `ValidDecryptionMaterials`. Checks:
-/// - a signing suite has a verification key,
-/// - the encryption context holds the verification key exactly when the suite signs.
+/// Like Dafny `ValidDecryptionMaterials`.
+/// Checks:
+/// - a signing suite has a verification key
+/// - the encryption context holds the verification key exactly when the suite signs
 pub(crate) fn check_decryption_materials(materials: &DecryptionMaterials) -> Result<(), Error> {
     let signs = materials.algorithm_suite_id().has_asymmetric_signing();
     if signs && materials.verification_key().is_none() {
@@ -60,15 +62,9 @@ fn check_public_key_context(signs: bool, has_public_key: bool) -> Result<(), Err
 }
 
 /// Like Dafny `ValidEncryptionMaterialsTransition`.
-<<<<<<< HEAD
-/// Checks `new` against `old` before returning `new`.
-/// - `old`: the materials a keyring's `on_encrypt` was provided
-/// - `new`: the materials that a keyring's `on_encrypt` is about to return
-=======
 /// Checks `new` against `old`:
 /// - `new`: the materials that a keyring's `on_encrypt` returned
 /// - `old`: the materials a keyring's `on_encrypt` was provided
->>>>>>> d4f1cd9c (m)
 ///
 /// The keyring may only:
 /// - add a plaintext data key, if `old` has none
@@ -112,11 +108,12 @@ pub(crate) fn check_encryption_transition(
 }
 
 /// Like Dafny `DecryptionMaterialsTransitionIsValid`.
-/// Checks `new` against `old` before returning `new`.
+/// Checks `new` against `old`:
+/// - `new`: the materials that a keyring's `on_decrypt` returned
 /// - `old`: the materials a keyring's `on_decrypt` was provided
-/// - `new`: the materials that a keyring's `on_decrypt` is about to return
 ///
-/// The keyring may only add a plaintext data key, and `old` must not have one yet.
+/// The keyring may only:
+/// - add a plaintext data key, and `old` must have none
 pub(crate) fn check_decryption_transition(
     old: &DecryptionMaterials,
     new: &DecryptionMaterials,
@@ -152,7 +149,11 @@ pub(crate) fn check_decryption_transition(
     Ok(())
 }
 
-/// `EncryptionMaterialsHasPlaintextDataKey`: checks the materials that a CMM returns from `get_encryption_materials`.
+/// Like Dafny `EncryptionMaterialsHasPlaintextDataKey`.
+/// Checks the materials that a CMM's `get_encryption_materials` returned:
+/// - they have a plaintext data key
+/// - they have at least one encrypted data key
+/// - they pass `check_encryption_materials`
 pub(crate) fn check_encryption_materials_complete(
     materials: &EncryptionMaterials,
 ) -> Result<(), Error> {
@@ -169,7 +170,10 @@ pub(crate) fn check_encryption_materials_complete(
     check_encryption_materials(materials)
 }
 
-/// `DecryptionMaterialsWithPlaintextDataKey`: checks the materials that a CMM returns from `decrypt_materials`.
+/// Like Dafny `DecryptionMaterialsWithPlaintextDataKey`.
+/// Checks the materials that a CMM's `decrypt_materials` returned:
+/// - they have a plaintext data key
+/// - they pass `check_decryption_materials`
 pub(crate) fn check_decryption_materials_complete(
     materials: &DecryptionMaterials,
 ) -> Result<(), Error> {

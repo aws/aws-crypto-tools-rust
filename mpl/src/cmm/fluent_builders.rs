@@ -310,7 +310,7 @@ impl DecryptMaterialsFluentBuilder {
     ///
     /// - [`Validation`](crate::Error::Validation): `algorithm_suite_id`, `commitment_policy`, `encrypted_data_keys` or `encryption_context` is unset.
     /// - [`InvalidMaterials`](crate::Error::InvalidMaterials): the returned materials are invalid,
-    ///   or have no plaintext data key or no encrypted data keys.
+    ///   or have no plaintext data key.
     ///
     /// Otherwise, the errors [`Cmm::decrypt_materials`] documents.
     pub async fn send(self) -> Result<DecryptMaterialsOutput, Error> {

@@ -151,8 +151,9 @@ impl OnDecryptFluentBuilder {
     ///
     /// - [`Validation`](crate::Error::Validation): `materials` or `encrypted_data_keys` is unset.
     /// - [`InvalidMaterials`](crate::Error::InvalidMaterials): the input or returned materials are invalid,
+    ///   the input materials already have a plaintext data key,
     ///   the returned materials have no plaintext data key,
-    ///   or the keyring changed anything other than adding a plaintext data key and encrypted data keys.
+    ///   or the keyring changed anything other than adding a plaintext data key.
     ///
     /// Otherwise, the errors [`Keyring::on_decrypt`] documents.
     pub async fn send(self) -> Result<OnDecryptOutput, Error> {
