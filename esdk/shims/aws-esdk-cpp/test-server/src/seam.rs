@@ -55,6 +55,9 @@ extern "C" {
         ec_len: usize,
         out_buf: *mut *mut u8,
         out_len: *mut usize,
+        out_suite: *mut u16,
+        out_ec: *mut *mut u8,
+        out_ec_len: *mut usize,
         out_err: *mut *mut c_char,
     ) -> c_int;
 
@@ -87,6 +90,9 @@ extern "C" {
         ec_len: usize,
         out_buf: *mut *mut u8,
         out_len: *mut usize,
+        out_suite: *mut u16,
+        out_ec: *mut *mut u8,
+        out_ec_len: *mut usize,
         out_err: *mut *mut c_char,
     ) -> c_int;
 
@@ -157,6 +163,50 @@ unsafe fn take_buf(buf: *mut u8, len: usize) -> Vec<u8> {
     let out = std::slice::from_raw_parts(buf, len).to_vec();
     esdk_cpp_free_buf(buf);
     out
+}
+
+/// What a decrypt returns through the seam.
+pub struct Decrypted {
+    pub plaintext: Vec<u8>,
+    /// The C++ shim's AlgorithmSuiteId value, which is the on-wire suite ID.
+    pub algorithm_suite_id: u16,
+    pub encryption_context: Vec<(String, String)>,
+}
+
+/// Unpacks the buffer `put_ec` in seam.cpp writes: for each pair, a
+/// native-endian u32 key length, the key, a u32 value length, the value.
+fn unpack_encryption_context(mut buf: &[u8]) -> Result<Vec<(String, String)>, String> {
+    fn take(buf: &mut &[u8]) -> Result<String, String> {
+        let bad = || "malformed encryption context from the C++ seam".to_string();
+        let (len, rest) = buf.split_first_chunk::<4>().ok_or_else(bad)?;
+        let len = usize::try_from(u32::from_ne_bytes(*len)).map_err(|_| bad())?;
+        let (s, rest) = rest.split_at_checked(len).ok_or_else(bad)?;
+        *buf = rest;
+        String::from_utf8(s.to_vec()).map_err(|_| bad())
+    }
+    let mut out = Vec::new();
+    while !buf.is_empty() {
+        let key = take(&mut buf)?;
+        out.push((key, take(&mut buf)?));
+    }
+    Ok(out)
+}
+
+/// SAFETY: as `take_buf`, for the plaintext and the packed encryption context.
+unsafe fn take_decrypted(
+    buf: *mut u8,
+    len: usize,
+    suite: u16,
+    ec: *mut u8,
+    ec_len: usize,
+) -> Result<Decrypted, String> {
+    let plaintext = take_buf(buf, len);
+    let packed = take_buf(ec, ec_len);
+    Ok(Decrypted {
+        plaintext,
+        algorithm_suite_id: suite,
+        encryption_context: unpack_encryption_context(&packed)?,
+    })
 }
 
 pub fn create_hierarchical_client(
@@ -278,10 +328,13 @@ pub fn decrypt(
     commitment_policy: u8,
     max_encrypted_data_keys: u32,
     encryption_context: &[(String, String)],
-) -> Result<Vec<u8>, String> {
+) -> Result<Decrypted, String> {
     let ec = to_c_encryption_context(encryption_context)?;
     let mut buf: *mut u8 = ptr::null_mut();
     let mut len: usize = 0;
+    let mut suite: u16 = 0;
+    let mut out_ec: *mut u8 = ptr::null_mut();
+    let mut out_ec_len: usize = 0;
     let mut err: *mut c_char = ptr::null_mut();
     // SAFETY: as in `encrypt`.
     let rc = unsafe {
@@ -296,11 +349,14 @@ pub fn decrypt(
             ec.key_ptrs.len(),
             &mut buf,
             &mut len,
+            &mut suite,
+            &mut out_ec,
+            &mut out_ec_len,
             &mut err,
         )
     };
     if rc == 0 {
-        Ok(unsafe { take_buf(buf, len) })
+        unsafe { take_decrypted(buf, len, suite, out_ec, out_ec_len) }
     } else {
         Err(unsafe { take_err(err) })
     }
@@ -354,10 +410,13 @@ pub fn decrypt_stream(
     commitment_policy: u8,
     max_encrypted_data_keys: u32,
     encryption_context: &[(String, String)],
-) -> Result<Vec<u8>, String> {
+) -> Result<Decrypted, String> {
     let ec = to_c_encryption_context(encryption_context)?;
     let mut buf: *mut u8 = ptr::null_mut();
     let mut len: usize = 0;
+    let mut suite: u16 = 0;
+    let mut out_ec: *mut u8 = ptr::null_mut();
+    let mut out_ec_len: usize = 0;
     let mut err: *mut c_char = ptr::null_mut();
     // SAFETY: as in `encrypt`.
     let rc = unsafe {
@@ -372,11 +431,14 @@ pub fn decrypt_stream(
             ec.key_ptrs.len(),
             &mut buf,
             &mut len,
+            &mut suite,
+            &mut out_ec,
+            &mut out_ec_len,
             &mut err,
         )
     };
     if rc == 0 {
-        Ok(unsafe { take_buf(buf, len) })
+        unsafe { take_decrypted(buf, len, suite, out_ec, out_ec_len) }
     } else {
         Err(unsafe { take_err(err) })
     }
