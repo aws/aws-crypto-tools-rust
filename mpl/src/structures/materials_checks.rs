@@ -69,8 +69,10 @@ fn check_public_key_context(signs: bool, has_public_key: bool) -> Result<(), Err
     }
 }
 
-/// `ValidEncryptionMaterialsTransition`: checks `new`, the materials that a keyring's `on_encrypt` returned,
-/// against `old`, the materials that it got.
+/// Like Dafny `ValidEncryptionMaterialsTransition`.
+/// Checks `new` against `old`:
+/// - `old`: the materials in the input to a keyring's `on_encrypt`
+/// - `new`: the materials in its output
 ///
 /// The keyring may only:
 /// - add a plaintext data key, if `old` has none
@@ -113,8 +115,10 @@ pub(crate) fn check_encryption_transition(
     Ok(())
 }
 
-/// `DecryptionMaterialsTransitionIsValid`: checks `new`, the materials that a keyring's `on_decrypt` returned,
-/// against `old`, the materials that it got.
+/// Like Dafny `DecryptionMaterialsTransitionIsValid`.
+/// Checks `new` against `old`:
+/// - `old`: the materials in the input to a keyring's `on_decrypt`
+/// - `new`: the materials in its output
 ///
 /// The keyring may only add a plaintext data key, and `old` must not have one yet.
 pub(crate) fn check_decryption_transition(
