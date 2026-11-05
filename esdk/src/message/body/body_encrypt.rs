@@ -287,7 +287,6 @@ pub(crate) async fn encrypt_and_serialize_body(
     sig_digest: &mut DigestWriter,
     max_plaintext_length: Option<u64>,
 ) -> Result<(), Error> {
-    // A bound above usize::MAX can never be exceeded, so saturating keeps it.
     let max_plaintext_length =
         max_plaintext_length.map(|len| usize::try_from(len).unwrap_or(usize::MAX));
     let mut total_data_size: usize = 0;
