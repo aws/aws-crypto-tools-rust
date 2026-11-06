@@ -80,6 +80,25 @@ std::map<std::string, std::string> to_map(const char* const* keys,
     return out;
 }
 
+// The decrypted encryption context as one buffer for the Rust side to unpack:
+// for each pair, a native-endian uint32 key length, the key bytes, a uint32
+// value length, then the value bytes.
+void put_ec(const std::map<std::string, std::string>& ec, uint8_t** out_ec, size_t* out_ec_len) {
+    std::vector<uint8_t> packed;
+    auto put = [&packed](const std::string& s) {
+        uint32_t n = static_cast<uint32_t>(s.size());
+        const auto* len = reinterpret_cast<const uint8_t*>(&n);
+        packed.insert(packed.end(), len, len + sizeof n);
+        packed.insert(packed.end(), s.begin(), s.end());
+    };
+    for (const auto& [key, value] : ec) {
+        put(key);
+        put(value);
+    }
+    *out_ec = dup_bytes(packed);
+    *out_ec_len = packed.size();
+}
+
 }  // namespace
 
 extern "C" {
@@ -193,6 +212,9 @@ int esdk_cpp_decrypt(void* client,
                      size_t ec_len,
                      uint8_t** out_buf,
                      size_t* out_len,
+                     uint16_t* out_suite,
+                     uint8_t** out_ec,
+                     size_t* out_ec_len,
                      char** out_err) {
     try {
         auto* keyring = reinterpret_cast<Aws::Esdk::Keyring*>(client);
@@ -204,6 +226,8 @@ int esdk_cpp_decrypt(void* client,
         DecryptResult result = sdk.decrypt(input, *keyring, options);
         *out_buf = dup_bytes(result.plaintext);
         *out_len = result.plaintext.size();
+        *out_suite = static_cast<uint16_t>(result.algorithm_suite_id);
+        put_ec(result.encryption_context, out_ec, out_ec_len);
         return 0;
     } catch (const std::exception& e) {
         *out_err = dup_message(e.what());
@@ -280,6 +304,9 @@ int esdk_cpp_decrypt_stream(void* client,
                             size_t ec_len,
                             uint8_t** out_buf,
                             size_t* out_len,
+                            uint16_t* out_suite,
+                            uint8_t** out_ec,
+                            size_t* out_ec_len,
                             char** out_err) {
     try {
         auto* keyring = reinterpret_cast<Aws::Esdk::Keyring*>(client);
@@ -302,6 +329,8 @@ int esdk_cpp_decrypt_stream(void* client,
                          result.trailing_output.data() + result.trailing_output.size());
         *out_buf = dup_bytes(plaintext);
         *out_len = plaintext.size();
+        *out_suite = static_cast<uint16_t>(result.algorithm_suite_id);
+        put_ec(result.encryption_context, out_ec, out_ec_len);
         return 0;
     } catch (const std::exception& e) {
         *out_err = dup_message(e.what());
