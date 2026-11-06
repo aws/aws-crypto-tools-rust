@@ -182,7 +182,37 @@ impl DynamoDbKeyStore {
             )
         })?;
 
-        record_from_ddb_item(item, branch_key_id)
+        let record = record_from_ddb_item(item, branch_key_id)?;
+
+        // The KMS-authenticated encryption context binds a record to its own
+        // self-described attributes, not to the identity that was requested, so
+        // an authentic record relocated into another key's slot would otherwise
+        // decrypt and be accepted. The Dafny reference guards against this by
+        // requiring the returned item's `branch-key-id` (and, for a version
+        // item, its `type`) to equal the request; mirror that here so both
+        // `get_active_branch_key` and `get_branch_key_version` reject a
+        // mismatched record before it reaches KMS.
+        if record
+            .attributes
+            .get(ATTR_BRANCH_KEY_ID)
+            .map(String::as_str)
+            != Some(branch_key_id)
+        {
+            return Err(malformed_record(
+                branch_key_id,
+                format!(
+                    "record branch-key-id does not match the requested branch-key-id={branch_key_id}"
+                ),
+            ));
+        }
+        if record.attributes.get(ATTR_TYPE).map(String::as_str) != Some(sort_key) {
+            return Err(malformed_record(
+                branch_key_id,
+                format!("record type does not match the requested type={sort_key}"),
+            ));
+        }
+
+        Ok(record)
     }
 }
 
