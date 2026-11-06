@@ -231,16 +231,20 @@ async fn the_materials_cache_timing_out_is_throttling_about_the_cache() {
     use aws_crypto_mpl::__test_internals::aws_kms::{SCOPE_ID_ENCRYPT, build_cache_identifier};
     use aws_crypto_mpl::cmc::{SharedCmc, StormTrackingCmc};
     use aws_crypto_mpl::keyring::HierarchicalKeyring;
+    use std::sync::{Arc, Mutex};
     use std::time::{Duration, SystemTime};
 
-    let now = SystemTime::now();
+    let start = SystemTime::now();
+    let clock = Arc::new(Mutex::new(start));
+    let clock_reader = Arc::clone(&clock);
     let cache = StormTrackingCmc::builder()
-        .clock(move || now)
+        .clock(move || *clock_reader.lock().unwrap())
         .build()
         .unwrap();
-    // Another caller started fetching this branch key and never finished.
+    // Another caller is fetching this branch key, so encrypt waits for it.
     let id = build_cache_identifier(SCOPE_ID_ENCRYPT, b"p", TABLE, BRANCH_KEY_ID, None);
-    cache.mark_inflight(&id, now - cache.in_flight_ttl() - Duration::from_secs(1));
+    cache.mark_inflight(&id, start);
+    let in_flight_ttl = cache.in_flight_ttl();
     let keyring = HierarchicalKeyring::builder()
         .key_store(FakeAws::ok().key_store().await)
         .branch_key_id(BRANCH_KEY_ID)
@@ -250,13 +254,18 @@ async fn the_materials_cache_timing_out_is_throttling_about_the_cache() {
         .build()
         .await
         .unwrap();
-    let err = Client::default()
-        .encrypt()
-        .plaintext(b"hello")
-        .keyring(keyring)
-        .send()
-        .await
-        .unwrap_err();
+    let encrypt = tokio::spawn(async move {
+        Client::default()
+            .encrypt()
+            .plaintext(b"hello")
+            .keyring(keyring)
+            .send()
+            .await
+    });
+    // Let encrypt start waiting, then move the clock past its deadline.
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    *clock.lock().unwrap() = start + in_flight_ttl + Duration::from_secs(1);
+    let err = encrypt.await.unwrap().unwrap_err();
     let Error::Throttling(e) = &err else {
         panic!("expected Throttling, got {err:?}");
     };
