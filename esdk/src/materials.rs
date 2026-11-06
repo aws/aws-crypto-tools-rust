@@ -134,14 +134,6 @@ pub(crate) async fn get_decryption_materials(
         ));
     }
 
-    // The materials builders reject a plaintext data key of the wrong length.
-    if materials.plaintext_data_key().is_none() {
-        return Err(err(
-            Kind::InvalidMaterials,
-            "decryption materials are missing a plaintext data key",
-        ));
-    }
-
     if !is_esdk_encryption_context(materials.encryption_context()) {
         return Err(err(
             Kind::InvalidMaterials,
@@ -211,14 +203,6 @@ pub(crate) async fn get_encryption_materials(
         return Err(err(
             Kind::InvalidMaterials,
             "algorithm suite is not supported by the configured commitment policy for encryption",
-        ));
-    }
-
-    // The materials builders reject a plaintext data key of the wrong length.
-    if materials.plaintext_data_key().is_none() {
-        return Err(err(
-            Kind::InvalidMaterials,
-            "encryption materials are missing a plaintext data key",
         ));
     }
 
