@@ -82,10 +82,17 @@ async fn expect_error<Req: serde::Serialize>(
     );
 }
 
+fn kms_client() -> KmsClientConfig {
+    KmsClientConfig {
+        region: REGION.to_owned(),
+        endpoint: None,
+    }
+}
+
 fn keyring_request(kms_key_id: &str) -> CreateAwsKmsKeyringRequest {
     CreateAwsKmsKeyringRequest {
-        kms_key_id: kms_key_id.to_owned(),
-        kms_client_region: REGION.to_owned(),
+        kms_key_id: Some(kms_key_id.to_owned()),
+        kms_client: Some(kms_client()),
         grant_tokens: None,
     }
 }
@@ -137,6 +144,41 @@ async fn malformed_key_identifier_is_an_mpl_error() {
             "MPLClientError",
         )
         .await;
+    }
+}
+
+#[tokio::test]
+async fn create_keyring_with_a_kms_endpoint() {
+    let router = app(Arc::new(AppState::new()));
+    let resp: CreateAwsKmsKeyringResponse = call(
+        &router,
+        "CreateAwsKmsKeyring",
+        &CreateAwsKmsKeyringRequest {
+            kms_client: Some(KmsClientConfig {
+                endpoint: Some("http://127.0.0.1:1".to_owned()),
+                ..kms_client()
+            }),
+            ..keyring_request(KMS_KEY_ARN)
+        },
+    )
+    .await;
+    assert!(!resp.keyring_id.is_empty());
+}
+
+#[tokio::test]
+async fn missing_key_id_or_client_is_an_mpl_error() {
+    let router = app(Arc::new(AppState::new()));
+    for req in [
+        CreateAwsKmsKeyringRequest {
+            kms_key_id: None,
+            ..keyring_request(KMS_KEY_ARN)
+        },
+        CreateAwsKmsKeyringRequest {
+            kms_client: None,
+            ..keyring_request(KMS_KEY_ARN)
+        },
+    ] {
+        expect_error(&router, "CreateAwsKmsKeyring", &req, "MPLClientError").await;
     }
 }
 
