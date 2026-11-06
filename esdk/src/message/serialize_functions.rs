@@ -100,6 +100,26 @@ pub(crate) async fn read_bytes(
     write_bytes(raw, buf)
 }
 
+/// Replace `data` with exactly `length` bytes read from `r`. The buffer grows
+/// as bytes arrive, so a length taken from untrusted input cannot reserve
+/// more memory than the input actually holds.
+pub(crate) async fn read_into_vec(
+    r: &mut dyn Source,
+    length: usize,
+    data: &mut Vec<u8>,
+    raw: &mut Tee,
+) -> Result<(), Error> {
+    const CHUNK: usize = 1 << 20;
+    data.clear();
+    while data.len() < length {
+        let start = data.len();
+        let end = start + CHUNK.min(length - start);
+        data.resize(end, 0);
+        read_bytes(r, &mut data[start..end], raw).await?;
+    }
+    Ok(())
+}
+
 /// Read exactly `length` bytes into a fresh Vec.
 pub(crate) async fn read_vec(
     r: &mut dyn Source,
@@ -169,8 +189,7 @@ pub(crate) async fn read_seq_u32_bounded(
     let Ok(len_usize) = usize::try_from(len) else {
         return ser_err("length too large for platform");
     };
-    data.resize(len_usize, 0);
-    read_bytes(r, &mut data[..], raw).await
+    read_into_vec(r, len_usize, data, raw).await
 }
 
 /// Read a `UInt64` length prefix followed by that many bytes, rejecting lengths
@@ -188,7 +207,9 @@ pub(crate) async fn read_seq_u64_bounded(
     let Ok(len_usize) = usize::try_from(len) else {
         return ser_err("length too large for platform");
     };
-    read_vec(r, len_usize, raw).await
+    let mut data = Vec::new();
+    read_into_vec(r, len_usize, &mut data, raw).await?;
+    Ok(data)
 }
 
 /// Read a UInt16-prefixed UTF-8 string.
