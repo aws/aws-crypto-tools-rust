@@ -63,6 +63,12 @@ async fn dispatch(
         "CreateStaticKeyring" => dispatch_op::<CreateStaticKeyringRequest, _>(&body, |req| {
             state.create_static_keyring(req)
         }),
+        "CreateAwsKmsKeyring" => {
+            dispatch_op_async::<CreateAwsKmsKeyringRequest, _, _>(&body, |req| {
+                state.create_aws_kms_keyring(req)
+            })
+            .await
+        }
         "CreateDefaultCmm" => {
             dispatch_op::<CreateDefaultCmmRequest, _>(&body, |req| state.create_default_cmm(req))
         }
