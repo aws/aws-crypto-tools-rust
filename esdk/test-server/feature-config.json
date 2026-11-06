@@ -8,7 +8,6 @@
     "multi"
   ],
   "unsupportedFeatures": [
-    "MPL",
     "raw-rsa",
     "raw-ecdh",
     "aws-kms-multi",
