@@ -100,9 +100,9 @@ pub(crate) async fn read_bytes(
     write_bytes(raw, buf)
 }
 
-/// Replace `data` with exactly `length` bytes read from `r`. The buffer grows
-/// as bytes arrive, so a length taken from untrusted input cannot reserve
-/// more memory than the input actually holds.
+/// Replace `data` with the next `length` bytes of `r`.
+/// `data` grows as bytes arrive,
+/// so a length read from a message can't make decrypt allocate more than the message holds.
 pub(crate) async fn read_into_vec(
     r: &mut dyn Source,
     length: usize,
