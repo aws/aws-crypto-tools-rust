@@ -12,14 +12,14 @@ use aws_sdk_dynamodb::error::ProvideErrorMetadata;
 
 /// Search `err` and its `source()` chain for an error of type `E`.
 ///
-/// Use this to recover a concrete AWS SDK error from an MPL error:
+/// Callers recover a concrete AWS SDK error from an MPL error with
+/// [`Error::find_source`](crate::Error::find_source):
 ///
 /// ```no_run
-/// use aws_crypto_mpl::error_chain::find_in_error_chain;
-/// use aws_sdk_kms::error::SdkError;
-/// use aws_sdk_kms::operation::decrypt::DecryptError;
+/// use aws_crypto_mpl::aws_sdk_kms::error::SdkError;
+/// use aws_crypto_mpl::aws_sdk_kms::operation::decrypt::DecryptError;
 /// # fn example(err: &aws_crypto_mpl::Error) {
-/// if let Some(sdk) = find_in_error_chain::<SdkError<DecryptError>>(err) {
+/// if let Some(sdk) = err.find_source::<SdkError<DecryptError>>() {
 ///     if sdk.as_service_error().is_some_and(DecryptError::is_incorrect_key_exception) {
 ///         // the branch key's ciphertext was encrypted under a different KMS key
 ///     }

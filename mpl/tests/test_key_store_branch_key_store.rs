@@ -19,7 +19,6 @@ use aws_sdk_dynamodb::operation::describe_table::DescribeTableError;
 use aws_sdk_dynamodb::operation::get_item::GetItemError;
 use aws_sdk_kms::Client as KmsClient;
 
-use aws_crypto_mpl::__test_internals::error_chain::{aws_service_error_code, find_in_error_chain};
 use aws_crypto_mpl::key_store::DynamoDbKeyStore;
 use aws_crypto_mpl::key_store::DynamoDbKeyStoreBuilder;
 use aws_crypto_mpl::key_store::types::KmsConfiguration;
@@ -500,7 +499,7 @@ async fn the_message_does_not_render_the_sdk_errors_display() {
 }
 
 #[tokio::test]
-async fn find_in_error_chain_recovers_the_sdk_error_by_type() {
+async fn find_source_recovers_the_sdk_error_by_type() {
     let store = fixture_config_with_id("id-x").build().await.unwrap();
     let err = match store
         .get_active_branch_key()
@@ -513,11 +512,11 @@ async fn find_in_error_chain_recovers_the_sdk_error_by_type() {
     };
 
     assert!(
-        find_in_error_chain::<SdkError<GetItemError>>(&err).is_some(),
-        "find_in_error_chain must recover the concrete GetItem SdkError from the chain"
+        err.find_source::<SdkError<GetItemError>>().is_some(),
+        "find_source must recover the concrete GetItem SdkError from the chain"
     );
     assert!(
-        find_in_error_chain::<SdkError<DescribeTableError>>(&err).is_none(),
+        err.find_source::<SdkError<DescribeTableError>>().is_none(),
         "a different operation's SdkError is a different type and must not match"
     );
 }
@@ -540,14 +539,15 @@ async fn a_dispatch_failure_has_no_service_error_code() {
         Err(e) => e,
     };
 
-    let sdk = find_in_error_chain::<SdkError<GetItemError>>(&err)
+    let sdk = err
+        .find_source::<SdkError<GetItemError>>()
         .expect("precondition: the SDK error is in the chain");
     assert!(
         sdk.as_service_error().is_none(),
         "precondition: with no AWS configured this is a dispatch failure, not a service error"
     );
     assert!(
-        aws_service_error_code(&err).is_none(),
+        err.code().is_none(),
         "a dispatch failure carries no service metadata, so it has no code"
     );
 }
