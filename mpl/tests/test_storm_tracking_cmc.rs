@@ -758,26 +758,20 @@ async fn test_get_miss_not_inflight_returns_none_and_marks() {
 }
 
 #[tokio::test]
-async fn test_get_miss_inflight_exceeds_ttl_fails() {
+async fn test_get_miss_inflight_past_ttl_leads_new_fetch() {
     let now = anchor_now();
     let cmc = make_storm_tracking(now);
-    // Pre-mark inflight longer ago than in_flight_ttl.
+    // A leader marked the key longer ago than in_flight_ttl and never put an entry.
     let stale_t = now - (INFLIGHT_TTL + Duration::from_secs(1));
     cmc.mark_inflight(b"k", stale_t);
 
-    let result = cmc.get_entry(b"k").await;
-    assert!(
-        result.is_err(),
-        "inflight TTL exceeded MUST return an error"
+    let got = cmc.get_entry(b"k").await.expect("get succeeds");
+    assert!(got.is_none(), "the caller must lead a new fetch");
+    assert_eq!(
+        cmc.peek_inflight(b"k"),
+        Some(now),
+        "key must be marked inflight at `now`"
     );
-    let err = result.expect_err("error");
-    let Error::Throttling(e) = &err else {
-        panic!("expected Throttling, got {err:?}");
-    };
-    assert_eq!(e.retry_kind(), Some(RetryKind::Throttling));
-    assert_eq!(e.service(), None);
-    assert_eq!(e.resource(), Some(&Resource::Cache(Cache::new())));
-    assert!(err.is_retryable());
 }
 
 #[tokio::test]
