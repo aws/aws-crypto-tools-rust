@@ -3,7 +3,8 @@
     "hierarchical",
     "raw-aes",
     "default-cmm-reproduced-encryption-context",
-    "streaming"
+    "streaming",
+    "caching"
   ],
   "unsupportedFeatures": [
     "MPL",
@@ -18,7 +19,6 @@
     "aws-kms-mrk-discovery",
     "aws-kms-rsa",
     "aws-kms-ecdh",
-    "required-encryption-context",
-    "caching"
+    "required-encryption-context"
   ]
 }

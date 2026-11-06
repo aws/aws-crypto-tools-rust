@@ -1,52 +1,133 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Translate the modeled CMM/Keyring configuration into an `aws-esdk`
-//! [`SharedKeyring`](aws_esdk::keyring::SharedKeyring).
+//! Translate the modeled `CryptographicMaterialsManager` and `Keyring` into MPL
+//! ([`aws_crypto_mpl`]) CMMs and keyrings.
 //!
-//! Both keyrings are built from the MPL ([`aws_crypto_mpl`]):
+//! The CMMs are the [`DefaultCmm`] and the [`CachingCmm`]. The keyrings are:
 //! - Raw AES via [`RawAesKeyring`].
 //! - AWS KMS Hierarchical via [`HierarchicalKeyring`] over the key store [`DynamoDbKeyStore::builder`](aws_crypto_mpl::key_store::DynamoDbKeyStore::builder) builds.
 //!
 //! Enforces the "exactly one variant member set" invariant that the Smithy
 //! tagged-union-via-optional-members shapes cannot express in the type system.
+//! Errors here are `GenericServerError`: the commons suite treats them as
+//! CreateClient rejections.
 
+use std::collections::HashMap;
+use std::sync::Mutex;
 use std::time::Duration;
 
 use crate::error::ServerError;
 use crate::model::{
-    AwsKmsHierarchicalKeyringConfig, CryptographicMaterialsManager, Keyring, RawAesKeyringConfig,
+    AwsKmsHierarchicalKeyringConfig, CachingCmmConfig, CryptographicMaterialsManager, Keyring,
+    RawAesKeyringConfig,
 };
+use aws_crypto_mpl::cmc::{DefaultCmc, SharedCmc};
+use aws_crypto_mpl::cmm::{CachingCmm, DefaultCmm, SharedCmm};
 use aws_crypto_mpl::key_store::types::KmsConfiguration;
 use aws_crypto_mpl::key_store::DynamoDbKeyStore;
 use aws_crypto_mpl::keyring::{HierarchicalKeyring, RawAesKeyring};
 use aws_esdk::keyring::SharedKeyring;
 
-/// Resolve a CMM configuration to the keyring the ESDK client will use.
-/// Errors here are `GenericServerError`: the commons suite treats them as CreateClient rejections.
-pub async fn keyring_for_cmm(
+/// How many entries each Caching CMM's materials cache holds.
+const CACHE_ENTRY_CAPACITY: usize = 100;
+
+/// The materials caches that Caching CMM configs name by `sharedCacheName`.
+///
+/// Clients whose configs name the same cache share it, so they reuse each other's cached materials.
+#[derive(Default)]
+pub struct SharedCaches(Mutex<HashMap<String, SharedCmc>>);
+
+impl SharedCaches {
+    /// The cache named `name`, created on first use.
+    fn get_or_create(&self, name: &str) -> Result<SharedCmc, ServerError> {
+        let mut caches = self.0.lock().expect("shared cache mutex");
+        if let Some(cache) = caches.get(name) {
+            return Ok(cache.clone());
+        }
+        let cache = new_cache()?;
+        caches.insert(name.to_owned(), cache.clone());
+        Ok(cache)
+    }
+}
+
+fn new_cache() -> Result<SharedCmc, ServerError> {
+    let cache = DefaultCmc::builder()
+        .entry_capacity(CACHE_ENTRY_CAPACITY)
+        .build()
+        .map_err(generic)?;
+    Ok(SharedCmc::new(cache))
+}
+
+fn generic(e: impl std::fmt::Display) -> ServerError {
+    ServerError::generic(e.to_string())
+}
+
+/// Build the CMM a modeled `CryptographicMaterialsManager` names; exactly one variant must be set.
+pub async fn cmm_for_config(
     cmm: &CryptographicMaterialsManager,
-) -> Result<SharedKeyring, ServerError> {
-    let set = [
-        cmm.default_cmm.is_some(),
-        cmm.required_encryption_context.is_some(),
-        cmm.caching.is_some(),
-    ]
-    .iter()
-    .filter(|present| **present)
-    .count();
+    caches: &SharedCaches,
+) -> Result<SharedCmm, ServerError> {
+    let set = usize::from(cmm.default_cmm.is_some())
+        + usize::from(cmm.required_encryption_context.is_some())
+        + usize::from(cmm.caching.is_some());
     if set != 1 {
         return Err(ServerError::generic(format!(
             "CryptographicMaterialsManager must set exactly one variant, found {set}"
         )));
     }
-
     if let Some(default_cmm) = &cmm.default_cmm {
-        return keyring_for_config(&default_cmm.keyring).await;
+        let keyring = keyring_for_config(&default_cmm.keyring).await?;
+        return Ok(SharedCmm::new(DefaultCmm::new(keyring)));
+    }
+    if let Some(caching) = &cmm.caching {
+        return build_caching(caching, caches).await;
     }
     Err(ServerError::generic(
-        "only the Default CMM is wired in the Rust language server",
+        "only the Default and Caching CMMs are wired in the Rust language server",
     ))
+}
+
+/// A Caching CMM over the modeled underlying CMM.
+///
+/// With a `sharedCacheName`, the cache is the server-wide one of that name;
+/// otherwise the CMM gets a cache of its own.
+async fn build_caching(
+    config: &CachingCmmConfig,
+    caches: &SharedCaches,
+) -> Result<SharedCmm, ServerError> {
+    let underlying = Box::pin(cmm_for_config(&config.underlying_cmm, caches)).await?;
+    let cache = match &config.shared_cache_name {
+        Some(name) => caches.get_or_create(name)?,
+        None => new_cache()?,
+    };
+    let ttl_seconds = non_negative(
+        "cacheLimitTtlSeconds",
+        config.cache_limit_ttl_seconds.into(),
+    )?;
+    let limit_bytes = config
+        .limit_bytes
+        .map(|v| non_negative("limitBytes", v))
+        .transpose()?;
+    let limit_messages = config
+        .limit_messages
+        .map(|v| non_negative("limitMessages", v))
+        .transpose()?;
+    let cmm = CachingCmm::builder()
+        .underlying_cmm(underlying)
+        .cache(cache)
+        .cache_limit_ttl(Duration::from_secs(ttl_seconds))
+        .set_partition_id(config.partition_id.clone())
+        .set_limit_bytes(limit_bytes)
+        .set_limit_messages(limit_messages)
+        .build()
+        .map_err(generic)?;
+    Ok(SharedCmm::new(cmm))
+}
+
+fn non_negative(name: &str, value: i64) -> Result<u64, ServerError> {
+    u64::try_from(value)
+        .map_err(|_| ServerError::generic(format!("{name} must be non-negative, got {value}")))
 }
 
 /// Build an `aws-esdk` [`SharedKeyring`](aws_esdk::keyring::SharedKeyring) from a modeled `Keyring`.
