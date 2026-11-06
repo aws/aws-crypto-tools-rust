@@ -144,7 +144,7 @@ impl DynamoDbKeyStore {
     /// Errors:
     /// - the variant `map_ddb_error` picks: GetItem fails.
     /// - `ResourceNotFound`, naming the branch key: GetItem returns no item.
-    /// - `InvalidMaterials`, naming the branch key: the item is missing a required attribute, has an unexpected shape, or has a `branch-key-id` or `type` other than the requested one.
+    /// - `InvalidMaterials`, naming the branch key: the item is missing a required attribute or has an unexpected shape.
     async fn fetch_record(
         &self,
         branch_key_id: &str,
