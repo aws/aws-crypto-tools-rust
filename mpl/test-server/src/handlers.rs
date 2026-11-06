@@ -65,7 +65,7 @@ impl AppState {
             .wrapping_key(req.wrapping_key)
             .wrapping_alg(alg)
             .build()
-            .map_err(|e| ServerError::mpl(e.to_string()))?;
+            .map_err(ServerError::from_mpl)?;
 
         let id = uuid::Uuid::new_v4().to_string();
         self.keyrings
@@ -101,14 +101,17 @@ impl AppState {
         &self,
         req: CreateAwsKmsKeyringRequest,
     ) -> Result<CreateAwsKmsKeyringResponse, ServerError> {
-        let kms = aws_sdk_kms::Client::new(&sdk_config(req.kms_client_region).await);
+        let kms = match req.kms_client {
+            Some(config) => Some(kms_client(config).await),
+            None => None,
+        };
         let keyring = AwsKmsKeyring::builder()
-            .kms_key_id(req.kms_key_id)
-            .kms_client(kms)
+            .set_kms_key_id(req.kms_key_id)
+            .set_kms_client(kms)
             .set_grant_tokens(req.grant_tokens)
             .build()
             .await
-            .map_err(|e| ServerError::mpl(e.to_string()))?;
+            .map_err(ServerError::from_mpl)?;
 
         let id = uuid::Uuid::new_v4().to_string();
         self.keyrings
@@ -143,14 +146,14 @@ impl AppState {
             KmsConfiguration::Discovery(Discovery {}) => MplKmsConfiguration::Discovery(
                 MplDiscovery::builder()
                     .build()
-                    .map_err(|e| ServerError::mpl(e.to_string()))?,
+                    .map_err(ServerError::from_mpl)?,
             ),
             KmsConfiguration::MrDiscovery(MrDiscovery { region }) => {
                 MplKmsConfiguration::MrDiscovery(
                     MplMrDiscovery::builder()
                         .region(region)
                         .build()
-                        .map_err(|e| ServerError::mpl(e.to_string()))?,
+                        .map_err(ServerError::from_mpl)?,
                 )
             }
         };
@@ -165,7 +168,7 @@ impl AppState {
             .ddb_client(ddb)
             .build()
             .await
-            .map_err(|e| ServerError::mpl(e.to_string()))?;
+            .map_err(ServerError::from_mpl)?;
 
         let id = uuid::Uuid::new_v4().to_string();
         self.key_stores
@@ -188,7 +191,7 @@ impl AppState {
         let cache = DefaultCmc::builder()
             .entry_capacity(entry_capacity)
             .build()
-            .map_err(|e| ServerError::mpl(e.to_string()))?;
+            .map_err(ServerError::from_mpl)?;
 
         let id = uuid::Uuid::new_v4().to_string();
         self.caches
@@ -232,7 +235,7 @@ impl AppState {
             .set_partition_id(req.partition_id)
             .build()
             .await
-            .map_err(|e| ServerError::mpl(e.to_string()))?;
+            .map_err(ServerError::from_mpl)?;
 
         let id = uuid::Uuid::new_v4().to_string();
         self.keyrings
@@ -253,7 +256,7 @@ impl AppState {
                 req.required_encryption_context_keys.into_iter().collect(),
             ))
             .build()
-            .map_err(|e| ServerError::mpl(e.to_string()))?;
+            .map_err(ServerError::from_mpl)?;
         Ok(InitializeEncryptionMaterialsResponse {
             materials: encryption_materials_to_shape(&materials)?,
         })
@@ -270,7 +273,7 @@ impl AppState {
                 req.required_encryption_context_keys.into_iter().collect(),
             ))
             .build()
-            .map_err(|e| ServerError::mpl(e.to_string()))?;
+            .map_err(ServerError::from_mpl)?;
         Ok(InitializeDecryptionMaterialsResponse {
             materials: decryption_materials_to_shape(&materials)?,
         })
@@ -286,7 +289,7 @@ impl AppState {
             .materials(shape_to_encryption_materials(req.materials)?)
             .send()
             .await
-            .map_err(|e| ServerError::mpl(e.to_string()))?;
+            .map_err(ServerError::from_mpl)?;
         Ok(OnEncryptResponse {
             materials: encryption_materials_to_shape(output.materials())?,
         })
@@ -303,7 +306,7 @@ impl AppState {
             .set_encrypted_data_keys(Some(map_edks(req.encrypted_data_keys)?))
             .send()
             .await
-            .map_err(|e| ServerError::mpl(e.to_string()))?;
+            .map_err(ServerError::from_mpl)?;
         Ok(OnDecryptResponse {
             materials: decryption_materials_to_shape(output.materials())?,
         })
@@ -323,7 +326,7 @@ impl AppState {
             .set_max_plaintext_length(req.max_plaintext_length)
             .send()
             .await
-            .map_err(|e| ServerError::mpl(e.to_string()))?;
+            .map_err(ServerError::from_mpl)?;
         let materials = output.encryption_materials();
 
         let pdk = materials
@@ -368,7 +371,7 @@ impl AppState {
             )
             .send()
             .await
-            .map_err(|e| ServerError::mpl(e.to_string()))?;
+            .map_err(ServerError::from_mpl)?;
         let materials = output.decryption_materials();
 
         let pdk = materials
@@ -451,6 +454,15 @@ async fn sdk_config(region: String) -> aws_config::SdkConfig {
         .await
 }
 
+/// A KMS client for the model's `KmsClientConfig`.
+async fn kms_client(config: KmsClientConfig) -> aws_sdk_kms::Client {
+    let mut builder = aws_sdk_kms::config::Builder::from(&sdk_config(config.region).await);
+    if let Some(endpoint) = config.endpoint {
+        builder = builder.endpoint_url(endpoint);
+    }
+    aws_sdk_kms::Client::from_conf(builder.build())
+}
+
 /// The model's `StaticBranchKeyIdSupplier`: look up the encryption context
 /// value under `encryption_context_key` and return the branch key id mapped to
 /// it, or fail.
@@ -523,7 +535,7 @@ fn map_edks(edks: Vec<EncryptedDataKeyShape>) -> Result<Vec<EncryptedDataKey>, S
                 .key_provider_info(edk.key_provider_info)
                 .ciphertext(edk.ciphertext)
                 .build()
-                .map_err(|e| ServerError::mpl(e.to_string()))
+                .map_err(ServerError::from_mpl)
         })
         .collect()
 }
@@ -574,7 +586,7 @@ fn shape_to_encryption_materials(
                 .collect()
         }))
         .build()
-        .map_err(|e| ServerError::mpl(e.to_string()))
+        .map_err(ServerError::from_mpl)
 }
 
 fn shape_to_decryption_materials(
@@ -590,7 +602,7 @@ fn shape_to_decryption_materials(
         .set_verification_key(shape.verification_key.map(VerificationKey::new))
         .set_symmetric_signing_key(shape.symmetric_signing_key.map(SymmetricSigningKey::new))
         .build()
-        .map_err(|e| ServerError::mpl(e.to_string()))
+        .map_err(ServerError::from_mpl)
 }
 
 fn encryption_materials_to_shape(

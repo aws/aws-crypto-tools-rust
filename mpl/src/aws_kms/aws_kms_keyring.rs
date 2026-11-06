@@ -171,18 +171,35 @@ impl AwsKmsKeyring {
     ) -> Result<(PlaintextDataKey, Vec<u8>, String), Error> {
         let number_of_bytes = i32::try_from(len)
             .map_err(|_| Error::new(Kind::InvalidMaterials, "data key length too large"))?;
+        //= spec/framework/aws-kms/aws-kms-keyring.md#onencrypt
+        //# The keyring MUST call AWS KMS GenerateDataKeys with a request constructed as follows:
         let response = self
             .inner
+            //= spec/framework/aws-kms/aws-kms-keyring.md#onencrypt
+            //# If the keyring calls AWS KMS GenerateDataKeys, it MUST use the configured AWS KMS client to make the call.
             .client
             .generate_data_key()
+            //= spec/framework/aws-kms/aws-kms-keyring.md#onencrypt
+            //# - `KeyId` MUST be the keyring's KMS key identifier.
             .key_id(&self.inner.kms_key_id)
+            //= spec/framework/aws-kms/aws-kms-keyring.md#onencrypt
+            //# - `NumberOfBytes` MUST be the [key derivation input length](../algorithm-suites.md#key-derivation-input-length)
+            //# specified by the [algorithm suite](../algorithm-suites.md) included in the input [encryption materials](../structures.md#encryption-materials).
             .number_of_bytes(number_of_bytes)
+            //= spec/framework/aws-kms/aws-kms-keyring.md#onencrypt
+            //# - `EncryptionContext` MUST be the [encryption context](../structures.md#encryption-context)
+            //# included in the input [encryption materials](../structures.md#encryption-materials).
             .set_encryption_context(Some(ec.clone()))
+            //= spec/framework/aws-kms/aws-kms-keyring.md#onencrypt
+            //# - `GrantTokens` MUST be this keyring's [grant tokens](https://docs.aws.amazon.com/kms/latest/developerguide/concepts.html#grant_token).
             .set_grant_tokens(Some(self.inner.grant_tokens.clone()))
             .customize()
             .config_override(user_agent_override())
             .send()
             .await
+            //= spec/framework/aws-kms/aws-kms-keyring.md#onencrypt
+            //# If the call to [AWS KMS GenerateDataKey](https://docs.aws.amazon.com/kms/latest/APIReference/API_GenerateDataKey.html) does not succeed,
+            //# OnEncrypt MUST NOT modify the [encryption materials](../structures.md#encryption-materials) and MUST fail.
             .map_err(|e| {
                 Error::from_sdk(Service::Kms, "AWS KMS GenerateDataKey", e)
                     .with_resource(self.resource())
@@ -196,6 +213,9 @@ impl AwsKmsKeyring {
         let plaintext = response
             .plaintext
             .map(Blob::into_inner)
+            //= spec/framework/aws-kms/aws-kms-keyring.md#onencrypt
+            //# If the Generate Data Key call succeeds, OnEncrypt MUST verify that the response `Plaintext` length matches
+            //# the specification of the [algorithm suite](../algorithm-suites.md)'s Key Derivation Input Length field.
             .filter(|p| p.len() == len)
             .ok_or_else(|| {
                 self.service_err("Invalid response from AWS KMS GenerateDataKey: Invalid data key")
@@ -230,18 +250,33 @@ impl AwsKmsKeyring {
                 "Invalid Plaintext on KMS Encrypt",
             ));
         }
+        //= spec/framework/aws-kms/aws-kms-keyring.md#onencrypt
+        //# The keyring MUST AWS KMS Encrypt call with a request constructed as follows:
         let response = self
             .inner
+            //= spec/framework/aws-kms/aws-kms-keyring.md#onencrypt
+            //# The keyring MUST call [AWS KMS Encrypt](https://docs.aws.amazon.com/kms/latest/APIReference/API_Encrypt.html) using the configured AWS KMS client.
             .client
             .encrypt()
+            //= spec/framework/aws-kms/aws-kms-keyring.md#onencrypt
+            //# - `KeyId` MUST be the configured AWS KMS key identifier.
             .key_id(&self.inner.kms_key_id)
+            //= spec/framework/aws-kms/aws-kms-keyring.md#onencrypt
+            //# - `PlaintextDataKey` MUST be the plaintext data key in the [encryption materials](../structures.md#encryption-materials).
             .plaintext(Blob::new(plaintext))
+            //= spec/framework/aws-kms/aws-kms-keyring.md#onencrypt
+            //# - `EncryptionContext` MUST be the [encryption context](../structures.md#encryption-context)
+            //# included in the input [encryption materials](../structures.md#encryption-materials).
             .set_encryption_context(Some(ec.clone()))
+            //= spec/framework/aws-kms/aws-kms-keyring.md#onencrypt
+            //# - `GrantTokens` MUST be this keyring's [grant tokens](https://docs.aws.amazon.com/kms/latest/developerguide/concepts.html#grant_token).
             .set_grant_tokens(Some(self.inner.grant_tokens.clone()))
             .customize()
             .config_override(user_agent_override())
             .send()
             .await
+            //= spec/framework/aws-kms/aws-kms-keyring.md#onencrypt
+            //# If the call to [AWS KMS Encrypt](https://docs.aws.amazon.com/kms/latest/APIReference/API_Encrypt.html) does not succeed, OnEncrypt MUST fail.
             .map_err(|e| {
                 Error::from_sdk(Service::Kms, "AWS KMS Encrypt", e).with_resource(self.resource())
             })?;
@@ -269,14 +304,28 @@ impl AwsKmsKeyring {
         let ec = kms_encryption_context(materials.encryption_context());
         Ok(match materials.plaintext_data_key() {
             Some(pdk) => {
+                //= spec/framework/aws-kms/aws-kms-keyring.md#onencrypt
+                //# If the input [encryption materials](../structures.md#encryption-materials) do contain a plaintext data key,
+                //# OnEncrypt MUST attempt to encrypt the plaintext data key using the configured AWS KMS key identifier.
                 let (ciphertext, key_id) = self.encrypt(&ec, pdk.as_bytes()).await?;
                 let edk = kms_edk(key_id, ciphertext)?;
+                //= spec/framework/aws-kms/aws-kms-keyring.md#onencrypt
+                //# If verified, OnEncrypt MUST append a new [encrypted data key](../structures.md#encrypted-data-key) to the encrypted data key list in the [encryption materials](../structures.md#encryption-materials), constructed as follows:
                 materials.add_encrypted_data_key(edk)?
             }
             None => {
                 let len = materials.algorithm_suite().encryption_key_length();
+                //= spec/framework/aws-kms/aws-kms-keyring.md#onencrypt
+                //# If the input [encryption materials](../structures.md#encryption-materials) do not contain a plaintext data key
+                //# OnEncrypt MUST attempt to generate a new plaintext data key
+                //# by calling [AWS KMS GenerateDataKey](https://docs.aws.amazon.com/kms/latest/APIReference/API_GenerateDataKey.html).
                 let (pdk, ciphertext, key_id) = self.generate_data_key(&ec, len).await?;
                 let edk = kms_edk(key_id, ciphertext)?;
+                //= spec/framework/aws-kms/aws-kms-keyring.md#onencrypt
+                //# - MUST set the plaintext data key on the [encryption materials](../structures.md#encryption-materials) as the response `Plaintext`.
+                //
+                //= spec/framework/aws-kms/aws-kms-keyring.md#onencrypt
+                //# - MUST append a new [encrypted data key](../structures.md#encrypted-data-key) to the encrypted data key list in the [encryption materials](../structures.md#encryption-materials), constructed as follows:
                 materials.add_data_key(pdk, edk)?
             }
         })
@@ -286,6 +335,9 @@ impl AwsKmsKeyring {
     /// and return the first one that AWS KMS `Decrypt` unwraps.
     async fn unwrap_materials(&self, input: OnDecryptInput) -> Result<OnDecryptOutput, Error> {
         let (materials, encrypted_data_keys) = input.into_parts();
+        //= spec/framework/aws-kms/aws-kms-keyring.md#ondecrypt
+        //# If the [decryption materials](../structures.md#decryption-materials) already contained a valid plaintext data key
+        //# OnDecrypt MUST return an error.
         if materials.plaintext_data_key().is_some() {
             return Err(Error::new(
                 Kind::InvalidMaterials,
@@ -311,6 +363,8 @@ impl AwsKmsKeyring {
             ));
         }
         let mut to_attempt = Vec::new();
+        //= spec/framework/aws-kms/aws-kms-keyring.md#ondecrypt
+        //# The set of encrypted data keys MUST first be filtered to match this keyring’s configuration.
         for edk in &encrypted_data_keys {
             if self.wrote(edk)? {
                 to_attempt.push(edk);
@@ -325,6 +379,8 @@ impl AwsKmsKeyring {
         }
         let ec = kms_encryption_context(materials.encryption_context());
         let mut errors = Vec::new();
+        //= spec/framework/aws-kms/aws-kms-keyring.md#ondecrypt
+        //# For each encrypted data key in the filtered set, one at a time, the OnDecrypt MUST attempt to decrypt the data key.
         for edk in to_attempt {
             match decrypt_edk(
                 &self.inner.client,
@@ -336,10 +392,21 @@ impl AwsKmsKeyring {
             )
             .await
             {
+                //= spec/framework/aws-kms/aws-kms-keyring.md#ondecrypt
+                //# - MUST immediately return the modified [decryption materials](../structures.md#decryption-materials).
                 Ok(materials) => return OnDecryptOutput::builder().materials(materials).build(),
+                //= spec/framework/aws-kms/aws-kms-keyring.md#ondecrypt
+                //# If this attempt results in an error, then these errors MUST be collected.
+                //
+                //= spec/framework/aws-kms/aws-kms-keyring.md#ondecrypt
+                //# If the response does not satisfies these requirements then an error MUST be collected
+                //# and the next encrypted data key in the filtered set MUST be attempted.
                 Err(e) => errors.push(e),
             }
         }
+        //= spec/framework/aws-kms/aws-kms-keyring.md#ondecrypt
+        //# If OnDecrypt fails to successfully decrypt any [encrypted data key](../structures.md#encrypted-data-key),
+        //# then it MUST yield an error that includes all the collected errors.
         Err(Error::all_failed(
             "No Configured KMS Key was able to decrypt the Data Key.",
             errors,
@@ -348,6 +415,8 @@ impl AwsKmsKeyring {
 
     /// Whether `edk` names this keyring's AWS KMS key.
     fn wrote(&self, edk: &EncryptedDataKey) -> Result<bool, Error> {
+        //= spec/framework/aws-kms/aws-kms-keyring.md#ondecrypt
+        //# - Its provider ID MUST exactly match the value “aws-kms”.
         if edk.key_provider_id() != PROVIDER_ID {
             return Ok(false);
         }
@@ -358,6 +427,8 @@ impl AwsKmsKeyring {
             )
         })?;
         parse_kms_arn(key_id).map_err(|e| Error::new(Kind::Cryptographic, e))?;
+        //= spec/framework/aws-kms/aws-kms-keyring.md#ondecrypt
+        //# - The provider info MUST match the configured AWS KMS key identifier.
         Ok(self.inner.kms_key_id == key_id)
     }
 }
@@ -386,23 +457,42 @@ async fn kms_decrypt(
         return Err(Error::new(Kind::Cryptographic, "Ciphertext length invalid"));
     }
     let resource = KmsKey::new(key_id.to_owned());
+    //= spec/framework/aws-kms/aws-kms-keyring.md#ondecrypt
+    //# To attempt to decrypt a particular [encrypted data key](../structures.md#encrypted-data-key),
+    //# OnDecrypt MUST call [AWS KMS Decrypt](https://docs.aws.amazon.com/kms/latest/APIReference/API_Decrypt.html) with the configured AWS KMS client.
+    //
+    //= spec/framework/aws-kms/aws-kms-keyring.md#ondecrypt
+    //# When calling [AWS KMS Decrypt](https://docs.aws.amazon.com/kms/latest/APIReference/API_Decrypt.html), the keyring MUST call with a request constructed as follows:
     let response = client
         .decrypt()
+        //= spec/framework/aws-kms/aws-kms-keyring.md#ondecrypt
+        //# - `KeyId` MUST be the configured AWS KMS key identifier.
         .key_id(key_id)
+        //= spec/framework/aws-kms/aws-kms-keyring.md#ondecrypt
+        //# - `CiphertextBlob` MUST be the [encrypted data key ciphertext](../structures.md#ciphertext).
         .ciphertext_blob(Blob::new(ciphertext))
+        //= spec/framework/aws-kms/aws-kms-keyring.md#ondecrypt
+        //# - `EncryptionContext` MUST be the [encryption context](../structures.md#encryption-context) included in the input [decryption materials](../structures.md#decryption-materials).
         .set_encryption_context(Some(ec.clone()))
+        //= spec/framework/aws-kms/aws-kms-keyring.md#ondecrypt
+        //# - `GrantTokens` MUST be this keyring's [grant tokens](https://docs.aws.amazon.com/kms/latest/developerguide/concepts.html#grant_token).
         .set_grant_tokens(Some(grant_tokens.to_vec()))
         .customize()
         .config_override(user_agent_override())
         .send()
         .await
         .map_err(|e| Error::from_sdk(Service::Kms, "AWS KMS Decrypt", e).with_resource(resource))?;
+    //= spec/framework/aws-kms/aws-kms-keyring.md#ondecrypt
+    //# - The `KeyId` field in the response MUST equal the configured AWS KMS key identifier.
     if response.key_id.as_deref() != Some(key_id) {
         return Err(service_err(key_id, "Invalid response from KMS Decrypt"));
     }
     response
         .plaintext
         .map(Blob::into_inner)
+        //= spec/framework/aws-kms/aws-kms-keyring.md#ondecrypt
+        //# - The length of the response’s `Plaintext` MUST equal the [key derivation input length](../algorithm-suites.md#key-derivation-input-length)
+        //# specified by the [algorithm suite](../algorithm-suites.md) included in the input [decryption materials](../structures.md#decryption-materials).
         .filter(|p| p.len() == len)
         .ok_or_else(|| service_err(key_id, "Invalid response from KMS Decrypt"))
 }
@@ -419,6 +509,8 @@ async fn decrypt_edk(
 ) -> Result<DecryptionMaterials, Error> {
     let len = materials.algorithm_suite().encryption_key_length();
     let pdk = kms_decrypt(client, key_id, grant_tokens, ec, edk.ciphertext(), len).await?;
+    //= spec/framework/aws-kms/aws-kms-keyring.md#ondecrypt
+    //# - MUST set the plaintext data key on the [decryption materials](../structures.md#decryption-materials) as the response `Plaintext`.
     materials.clone().add_data_key(PlaintextDataKey::new(pdk))
 }
 
@@ -462,8 +554,23 @@ fn kms_edk(key_id: String, ciphertext: Vec<u8>) -> Result<EncryptedDataKey, Erro
         ));
     }
     EncryptedDataKey::builder()
+        //= spec/framework/aws-kms/aws-kms-keyring.md#onencrypt
+        //# - the [key provider id](../structures.md#key-provider-id) MUST be "aws-kms".
+        //
+        //= spec/framework/aws-kms/aws-kms-keyring.md#onencrypt
+        //# - The [key provider id](../structures.md#key-provider-id) MUST be "aws-kms".
         .key_provider_id(PROVIDER_ID)
+        //= spec/framework/aws-kms/aws-kms-keyring.md#onencrypt
+        //# - the [key provider information](../structures.md#key-provider-information) MUST be the response `KeyId`.
+        //
+        //= spec/framework/aws-kms/aws-kms-keyring.md#onencrypt
+        //# - The [key provider information](../structures.md#key-provider-information) MUST be the response `KeyId`.
         .key_provider_info(key_id.into_bytes())
+        //= spec/framework/aws-kms/aws-kms-keyring.md#onencrypt
+        //# - the [ciphertext](../structures.md#ciphertext) MUST be the response `CiphertextBlob`.
+        //
+        //= spec/framework/aws-kms/aws-kms-keyring.md#onencrypt
+        //# - The [ciphertext](../structures.md#ciphertext) MUST be the response `CiphertextBlob`.
         .ciphertext(ciphertext)
         .build()
 }
@@ -535,16 +642,29 @@ impl AwsKmsKeyringBuilder {
     ///   more than 10 grant tokens,
     ///   or a grant token of the wrong length.
     pub async fn build(self) -> Result<AwsKmsKeyring, Error> {
+        //= spec/framework/aws-kms/aws-kms-keyring.md#initialization
+        //# - MUST provide an AWS KMS key identifier
         let kms_key_id = required(self.kms_key_id, "kms_key_id")?;
+        //= spec/framework/aws-kms/aws-kms-keyring.md#initialization
+        //# - MUST provide an AWS KMS SDK client
+        //
+        //= spec/framework/aws-kms/aws-kms-keyring.md#initialization
+        //# The AWS KMS SDK client MUST NOT be null.
         let client = required(self.kms_client, "kms_client")?;
+        //= spec/framework/aws-kms/aws-kms-keyring.md#initialization
+        //# The AWS KMS key identifier MUST be [a valid identifier](aws-kms-key-arn.md#a-valid-aws-kms-identifier).
         let parsed =
             parse_kms_identifier(&kms_key_id).map_err(|e| Error::new(Kind::Validation, e))?;
         if !kms_key_id.is_ascii() {
             return Err(Error::new(Kind::Validation, "Key identifier is not ASCII"));
         }
+        //= spec/framework/aws-kms/aws-kms-keyring.md#initialization
+        //# The AWS KMS key identifier MUST NOT be null or empty.
         if kms_key_id.is_empty() || kms_key_id.len() > MAX_AWS_KMS_IDENTIFIER_LENGTH {
             return Err(Error::new(Kind::Validation, "Key identifier is too long"));
         }
+        //= spec/framework/aws-kms/aws-kms-keyring.md#initialization
+        //# - MAY provide a list of Grant Tokens
         let grant_tokens = valid_grant_tokens(self.grant_tokens)?;
         Ok(AwsKmsKeyring {
             inner: Arc::new(AwsKmsKeyringInner {
@@ -558,17 +678,32 @@ impl AwsKmsKeyringBuilder {
     }
 }
 
+//= spec/framework/aws-kms/aws-kms-keyring.md#interface
+//= type=implication
+//# MUST implement the [AWS Encryption SDK Keyring interface](../keyring-interface.md#interface)
 #[async_trait]
 impl Keyring for crate::shared::Builtin<AwsKmsKeyring> {
     fn name(&self) -> Cow<'_, str> {
         self.0.name()
     }
 
+    //= spec/framework/aws-kms/aws-kms-keyring.md#onencrypt
+    //= type=implication
+    //# OnEncrypt MUST take [encryption materials](../structures.md#encryption-materials) as input.
     async fn on_encrypt(&self, input: OnEncryptInput) -> Result<OnEncryptOutput, Error> {
         let materials = self.0.wrap_materials(input.into_materials()).await?;
+        //= spec/framework/aws-kms/aws-kms-keyring.md#onencrypt
+        //# - MUST output the modified [encryption materials](../structures.md#encryption-materials)
+        //
+        //= spec/framework/aws-kms/aws-kms-keyring.md#onencrypt
+        //# If all Encrypt calls succeed, OnEncrypt MUST output the modified [encryption materials](../structures.md#encryption-materials).
         OnEncryptOutput::builder().materials(materials).build()
     }
 
+    //= spec/framework/aws-kms/aws-kms-keyring.md#ondecrypt
+    //= type=implication
+    //# OnDecrypt MUST take [decryption materials](../structures.md#decryption-materials) and
+    //# a list of [encrypted data keys](../structures.md#encrypted-data-key) as input.
     async fn on_decrypt(&self, input: OnDecryptInput) -> Result<OnDecryptOutput, Error> {
         self.0.unwrap_materials(input).await
     }
