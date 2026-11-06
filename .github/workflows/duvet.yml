@@ -1,8 +1,10 @@
 # Reusable workflow: run duvet for each project and upload its HTML compliance report.
-# `projects` is a JSON array of {name, project, artifact}:
+# `projects` is a JSON array of {name, project, artifact, test-server-duvet?}:
 #   name      job name
 #   project   directory, e.g. esdk/shims/aws-esdk-cpp; needs a .duvet/config.toml and a `make duvet` target
 #   artifact  artifact name; GitHub rejects slashes, so it can't be the directory
+#   test-server-duvet  optional artifact from the commons test-server-duvet-reusable.yml
+#             workflow, downloaded into <project>/build/test-server-duvet/
 name: Duvet Report
 
 on:
@@ -37,6 +39,13 @@ jobs:
       # prebuilt binary, so it builds from source.
       - name: Install duvet
         run: cargo +stable install duvet
+
+      - name: Download the shared TestServer Tests' duvet annotations
+        if: matrix.test-server-duvet
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.test-server-duvet }}
+          path: ${{ matrix.project }}/build/test-server-duvet
 
       - name: Run duvet
         run: make duvet

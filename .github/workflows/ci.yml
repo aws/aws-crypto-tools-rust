@@ -132,7 +132,7 @@ jobs:
                 {"when": "esdk"}
               ],
               "duvet": [
-                {"when": "esdk", "name": "esdk", "project": "esdk", "artifact": "esdk-duvet-report"},
+                {"when": "esdk", "name": "esdk", "project": "esdk", "artifact": "esdk-duvet-report", "test-server-duvet": "esdk-test-server-duvet"},
                 {"when": "esdk", "name": "aws-esdk-cpp", "project": "esdk/shims/aws-esdk-cpp", "artifact": "aws-esdk-cpp-duvet-report"}
               ],
               "test-server-builds": [
@@ -230,9 +230,32 @@ jobs:
     with:
       platforms: '[{"os": "macos", "runner": "macos-latest"}]'
 
+  # The duvet test annotations of the shared commons Tests that run for Rust.
+  test-server-duvet:
+    name: TestServer duvet annotations
+    needs: detect
+    if: fromJSON(needs.detect.outputs.jobs)['duvet'] != null
+    permissions:
+      contents: read
+      # The reusable workflow's resolve job reads this pull request's
+      # Test-Server-Override lines.
+      pull-requests: read
+    uses: aws/aws-crypto-tools-commons/.github/workflows/test-server-duvet-reusable.yml@lucmcdon/test-server-duvet
+    with:
+      runner: *codebuild-linux
+      commons-ref: main
+      product: esdk
+      language: rust
+      config-path: esdk/test-server
+      spec-command: scripts/resolve-spec.sh
+      spec-root: .
+      artifact-name: esdk-test-server-duvet
+    secrets:
+      repo-pat: ${{ secrets.COMMONS_REPO_PAT }}
+
   duvet:
     name: Duvet
-    needs: detect
+    needs: [detect, test-server-duvet]
     if: fromJSON(needs.detect.outputs.jobs)['duvet'] != null
     permissions:
       contents: read
@@ -403,6 +426,7 @@ jobs:
       - rust-tests
       - supply-chain
       - cpp-shim
+      - test-server-duvet
       - duvet
       - smithy-conformance
       - test-server-builds
