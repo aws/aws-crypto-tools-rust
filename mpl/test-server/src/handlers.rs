@@ -16,9 +16,9 @@ use aws_crypto_mpl::key_store::types::{
 };
 use aws_crypto_mpl::key_store::{DynamoDbKeyStore, SharedKeyStore};
 use aws_crypto_mpl::keyring::{
-    BranchKeyIdSupplier, GetBranchKeyIdInput, GetBranchKeyIdOutput, HierarchicalKeyring, Keyring,
-    OnDecryptInput, OnDecryptOutput, OnEncryptInput, OnEncryptOutput, SharedBranchKeyIdSupplier,
-    SharedKeyring,
+    AwsKmsKeyring, BranchKeyIdSupplier, GetBranchKeyIdInput, GetBranchKeyIdOutput,
+    HierarchicalKeyring, Keyring, OnDecryptInput, OnDecryptOutput, OnEncryptInput, OnEncryptOutput,
+    SharedBranchKeyIdSupplier, SharedKeyring,
 };
 use aws_crypto_mpl::types::{
     AlgorithmSuiteId as MplSuiteId, CommitmentPolicy as MplCommitmentPolicy, DecryptionMaterials,
@@ -95,6 +95,27 @@ impl AppState {
             .expect("keyrings mutex")
             .insert(id.clone(), SharedKeyring::new(keyring));
         Ok(CreateStaticKeyringResponse { keyring_id: id })
+    }
+
+    pub async fn create_aws_kms_keyring(
+        &self,
+        req: CreateAwsKmsKeyringRequest,
+    ) -> Result<CreateAwsKmsKeyringResponse, ServerError> {
+        let kms = aws_sdk_kms::Client::new(&sdk_config(req.kms_client_region).await);
+        let keyring = AwsKmsKeyring::builder()
+            .kms_key_id(req.kms_key_id)
+            .kms_client(kms)
+            .set_grant_tokens(req.grant_tokens)
+            .build()
+            .await
+            .map_err(|e| ServerError::mpl(e.to_string()))?;
+
+        let id = uuid::Uuid::new_v4().to_string();
+        self.keyrings
+            .lock()
+            .expect("keyrings mutex")
+            .insert(id.clone(), SharedKeyring::new(keyring));
+        Ok(CreateAwsKmsKeyringResponse { keyring_id: id })
     }
 
     pub fn create_default_cmm(
