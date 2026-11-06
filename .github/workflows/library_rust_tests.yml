@@ -128,6 +128,28 @@ jobs:
           RUSTFLAGS: "-C debuginfo=0"
         run: cargo llvm-cov --workspace --fail-under-lines 80 --verbose
 
+      # The test server dashboard merges this report, line by line, with the
+      # coverage the cross-language test server gives the same commit. Paths
+      # are made relative to the repository so the two reports line up.
+      - name: Write the line coverage report
+        if: runner.os == 'Linux'
+        env:
+          RUSTFLAGS: "-C debuginfo=0"
+        run: |
+          cargo llvm-cov report --lcov --output-path "$RUNNER_TEMP/lcov.info"
+          mkdir -p "$RUNNER_TEMP/local-coverage"
+          awk -v root="$GITHUB_WORKSPACE/" '
+            /^SF:/ { keep = index($0, "SF:" root) == 1; if (keep) $0 = "SF:" substr($0, length(root) + 4) }
+            keep' "$RUNNER_TEMP/lcov.info" > "$RUNNER_TEMP/local-coverage/${{ matrix.project }}.lcov"
+
+      - name: Upload the line coverage report
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v7
+        with:
+          name: local-coverage-${{ matrix.project }}
+          path: ${{ runner.temp }}/local-coverage/${{ matrix.project }}.lcov
+          if-no-files-found: error
+
       # FIPS parity check for `prim`. `--no-default-features` is required to get
       # a FIPS-only build: `--features fips` alone leaves `default` enabled, so
       # both `aws-lc-sys` and `aws-lc-fips-sys` get compiled and only the latter
