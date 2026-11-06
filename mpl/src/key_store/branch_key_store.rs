@@ -144,7 +144,7 @@ impl DynamoDbKeyStore {
     /// Errors:
     /// - the variant `map_ddb_error` picks: GetItem fails.
     /// - `ResourceNotFound`, naming the branch key: GetItem returns no item.
-    /// - `InvalidMaterials`, naming the branch key: the item is missing a required attribute or has an unexpected shape.
+    /// - `InvalidMaterials`, naming the branch key: the item is missing a required attribute, has an unexpected shape, or has a `branch-key-id` or `type` other than the requested one.
     async fn fetch_record(
         &self,
         branch_key_id: &str,
@@ -182,7 +182,22 @@ impl DynamoDbKeyStore {
             )
         })?;
 
-        record_from_ddb_item(item, branch_key_id)
+        let record = record_from_ddb_item(item, branch_key_id)?;
+        // KMS checks the record against its own attributes, not against the
+        // request, so a DynamoDB client that returns the wrong item would
+        // otherwise hand back another key's materials.
+        let matches = |attr: &str, expected: &str| {
+            record.attributes.get(attr).map(String::as_str) == Some(expected)
+        };
+        if !matches(ATTR_BRANCH_KEY_ID, branch_key_id) || !matches(ATTR_TYPE, sort_key) {
+            return Err(malformed_record(
+                branch_key_id,
+                format!(
+                    "record's '{ATTR_BRANCH_KEY_ID}' and '{ATTR_TYPE}' do not match the requested key"
+                ),
+            ));
+        }
+        Ok(record)
     }
 }
 
