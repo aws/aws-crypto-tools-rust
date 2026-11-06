@@ -3,3 +3,5 @@
 .duvet/reports/
 .duvet/requirements/
 .duvet/snapshot.txt
+# Written by `make -C test-server test-server-duvet` for duvet.
+/build/test-server-duvet/
