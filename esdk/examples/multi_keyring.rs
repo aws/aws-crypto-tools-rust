@@ -5,7 +5,7 @@
 //!
 //! Requires AWS credentials and access to the AWS KMS key below.
 
-use aws_esdk::keyring::{AwsKmsKeyring, MultiKeyring, RawAesKeyring, SharedKeyring};
+use aws_esdk::keyring::{AwsKmsKeyring, MultiKeyring, RawAesKeyring};
 use aws_esdk::types::{AesWrappingAlg, EncryptionContext};
 use aws_esdk::{aws_config, aws_sdk_kms};
 
@@ -64,26 +64,46 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // On decrypt, the multi-keyring tries the generator, then each child in order,
     // and stops at the first keyring that unwraps a data key.
+    let decrypted = esdk
+        .decrypt()
+        .ciphertext(encrypted.ciphertext())
+        .set_encryption_context(Some(encryption_context.clone()))
+        .keyring(multi_keyring)
+        .send()
+        .await?;
+    assert_eq!(
+        decrypted.plaintext(),
+        plaintext,
+        "Decryption failed: plaintext mismatch"
+    );
+
     // Any one keyring alone can decrypt the message too.
+    let decrypted = esdk
+        .decrypt()
+        .ciphertext(encrypted.ciphertext())
+        .set_encryption_context(Some(encryption_context.clone()))
+        .keyring(kms_keyring)
+        .send()
+        .await?;
+    assert_eq!(
+        decrypted.plaintext(),
+        plaintext,
+        "Decryption failed: plaintext mismatch"
+    );
+
     // The raw AES keyring needs no call to AWS KMS.
-    for keyring in [
-        SharedKeyring::new(multi_keyring),
-        SharedKeyring::new(kms_keyring),
-        SharedKeyring::new(raw_aes_keyring),
-    ] {
-        let decrypted = esdk
-            .decrypt()
-            .ciphertext(encrypted.ciphertext())
-            .set_encryption_context(Some(encryption_context.clone()))
-            .keyring(keyring)
-            .send()
-            .await?;
-        assert_eq!(
-            decrypted.plaintext(),
-            plaintext,
-            "Decryption failed: plaintext mismatch"
-        );
-    }
+    let decrypted = esdk
+        .decrypt()
+        .ciphertext(encrypted.ciphertext())
+        .set_encryption_context(Some(encryption_context))
+        .keyring(raw_aes_keyring)
+        .send()
+        .await?;
+    assert_eq!(
+        decrypted.plaintext(),
+        plaintext,
+        "Decryption failed: plaintext mismatch"
+    );
 
     println!(
         "Success! The multi-keyring, the AWS KMS keyring, and the raw AES keyring each decrypted the message."
