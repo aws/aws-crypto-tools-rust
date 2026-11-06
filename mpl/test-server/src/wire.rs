@@ -60,6 +60,9 @@ async fn dispatch(
         "CreateRawAesKeyring" => dispatch_op::<CreateRawAesKeyringRequest, _>(&body, |req| {
             state.create_raw_aes_keyring(req)
         }),
+        "CreateStaticKeyring" => dispatch_op::<CreateStaticKeyringRequest, _>(&body, |req| {
+            state.create_static_keyring(req)
+        }),
         "CreateDefaultCmm" => {
             dispatch_op::<CreateDefaultCmmRequest, _>(&body, |req| state.create_default_cmm(req))
         }
