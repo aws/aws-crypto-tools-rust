@@ -13,7 +13,7 @@ on:
 jobs:
   patchCoverage:
     name: ${{ inputs.project }} patch coverage
-    runs-on: ubuntu-latest
+    runs-on: codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}
     permissions:
       id-token: write
       contents: read
@@ -23,16 +23,10 @@ jobs:
           submodules: 'true'
           fetch-depth: 0
 
-      # aws-ls-fips-sys needs Go to build
-      - name: Install Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: 'stable'
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/setup-rust
         with:
           components: llvm-tools-preview
+          workspaces: ${{ inputs.project }}
 
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
@@ -47,11 +41,6 @@ jobs:
           role-to-assume: arn:aws:iam::370957321024:role/GitHub-CI-Public-ESDK-Dafny-Role-us-west-2
           role-session-name: RustCoverage
           special-characters-workaround: "true"
-
-      - name: Cache cargo build artifacts
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: ${{ inputs.project }}
 
       # build `prim` without `all-features`; otherwise it tests with FIPS.
       # FIPS adds nothing for line coverage and is heavier to build.

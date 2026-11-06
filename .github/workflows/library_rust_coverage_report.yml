@@ -18,7 +18,7 @@ jobs:
   # New projects are picked up automatically.
   detect-projects:
     name: List projects
-    runs-on: ubuntu-22.04
+    runs-on: codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}
     outputs:
       projects: ${{ steps.set.outputs.projects }}
     steps:
@@ -44,7 +44,7 @@ jobs:
     needs: detect-projects
     if: needs.detect-projects.outputs.projects != '[]'
     name: ${{ matrix.project }} line coverage
-    runs-on: ubuntu-latest
+    runs-on: codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}
     permissions:
       id-token: write
       contents: read
@@ -59,16 +59,10 @@ jobs:
           submodules: 'true'
           fetch-depth: 0
 
-      # esdk's --all-features builds aws-lc-fips-sys, which needs Go
-      - name: Install Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: 'stable'
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/setup-rust
         with:
           components: llvm-tools-preview
+          workspaces: ${{ matrix.project }}
 
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
@@ -80,11 +74,6 @@ jobs:
           role-to-assume: arn:aws:iam::370957321024:role/GitHub-CI-Public-ESDK-Dafny-Role-us-west-2
           role-session-name: RustCoverageReport
           special-characters-workaround: "true"
-
-      - name: Cache cargo build artifacts
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: ${{ matrix.project }}
 
       # build `prim` without `all-features`; otherwise it tests with FIPS.
       # FIPS adds nothing for line coverage and is heavier to build.
