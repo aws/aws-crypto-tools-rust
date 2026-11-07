@@ -9,7 +9,7 @@ use aws_crypto_mpl::async_trait;
 use aws_crypto_mpl::cmc::{LocalCmc, SharedCmc};
 use aws_crypto_mpl::cmm::{DefaultCmm, SharedCmm};
 use aws_crypto_mpl::keyring::{
-    BranchKeyIdSupplier, RawAesKeyring, SharedBranchKeyIdSupplier, SharedKeyring,
+    BranchKeyIdSupplier, MultiKeyring, RawAesKeyring, SharedBranchKeyIdSupplier, SharedKeyring,
 };
 use aws_crypto_mpl::keyring::{GetBranchKeyIdInput, GetBranchKeyIdOutput};
 use aws_crypto_mpl::shared::IntoShared;
@@ -99,6 +99,13 @@ fn a_handle_keeps_the_built_in_name() {
     let raw = keyring();
     let name = raw.name().into_owned();
     assert_eq!(SharedKeyring::new(raw).name(), name);
+
+    let multi = MultiKeyring::builder()
+        .generator(keyring())
+        .build()
+        .unwrap();
+    let name = multi.name().into_owned();
+    assert_eq!(SharedKeyring::new(multi).name(), name);
 
     let cmm = DefaultCmm::new(keyring());
     let name = cmm.name().into_owned();
