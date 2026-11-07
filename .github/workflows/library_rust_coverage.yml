@@ -106,6 +106,9 @@ jobs:
           path: ${{ runner.temp }}/test-server-report
 
       # diff-cover counts a line as covered when any report covers it.
+      # The TestServer report also measures the test servers' own source,
+      # which is not library code (ci.yml's library filters skip it too),
+      # so the gate leaves test-server files out.
       - name: Enforce 100% patch coverage
         run: |
           set -euo pipefail
@@ -114,4 +117,4 @@ jobs:
             while IFS= read -r f; do reports+=("$f"); done < <(find "$RUNNER_TEMP/test-server-report" -path '*/coverage/rust.lcov')
           fi
           echo "Coverage reports: ${reports[*]}"
-          diff-cover "${reports[@]}" --compare-branch 'origin/${{ github.base_ref }}' --fail-under 100
+          diff-cover "${reports[@]}" --exclude '*/test-server/*' --compare-branch 'origin/${{ github.base_ref }}' --fail-under 100
