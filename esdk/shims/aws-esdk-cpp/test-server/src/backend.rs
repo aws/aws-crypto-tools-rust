@@ -56,6 +56,25 @@ fn suite_id(id: EsdkAlgorithmSuiteId) -> u16 {
     }
 }
 
+// The reverse of `suite_id`. The model has no member for a suite added to the
+// ESDK later, so the decrypt response leaves algorithmSuiteId unset for one.
+fn model_suite(code: u16) -> Option<EsdkAlgorithmSuiteId> {
+    Some(match code {
+        0x0014 => EsdkAlgorithmSuiteId::Alg128GcmNoKdf,
+        0x0046 => EsdkAlgorithmSuiteId::Alg192GcmNoKdf,
+        0x0078 => EsdkAlgorithmSuiteId::Alg256GcmNoKdf,
+        0x0114 => EsdkAlgorithmSuiteId::Alg128GcmHkdf,
+        0x0146 => EsdkAlgorithmSuiteId::Alg192GcmHkdf,
+        0x0178 => EsdkAlgorithmSuiteId::Alg256GcmHkdf,
+        0x0214 => EsdkAlgorithmSuiteId::Alg128GcmHkdfEcdsa,
+        0x0346 => EsdkAlgorithmSuiteId::Alg192GcmHkdfEcdsa,
+        0x0378 => EsdkAlgorithmSuiteId::Alg256GcmHkdfEcdsa,
+        0x0478 => EsdkAlgorithmSuiteId::Alg256GcmCommit,
+        0x0578 => EsdkAlgorithmSuiteId::Alg256GcmCommitEcdsa,
+        _ => return None,
+    })
+}
+
 // 0 encodes "unset" over the FFI, so a configured value must be positive.
 fn max_edks_code(config: &EsdkClientConfig) -> Result<u32, ServerError> {
     let Some(value) = config.max_encrypted_data_keys else {
@@ -226,7 +245,7 @@ impl CppBackend {
         let max = materials.max_encrypted_data_keys;
         let client = materials.client;
 
-        let plaintext = tokio::task::spawn_blocking(move || {
+        let out = tokio::task::spawn_blocking(move || {
             let client = client.lock().expect("client mutex");
             seam::decrypt(&client, &ciphertext, commitment_policy, max, &ec)
         })
@@ -234,7 +253,11 @@ impl CppBackend {
         .map_err(|e| ServerError::generic(format!("decrypt task failed: {e}")))?
         .map_err(ServerError::esdk)?;
 
-        Ok(DecryptResponse { plaintext })
+        Ok(DecryptResponse {
+            plaintext: out.plaintext,
+            encryption_context: Some(out.encryption_context.into_iter().collect()),
+            algorithm_suite_id: model_suite(out.algorithm_suite_id),
+        })
     }
 
     pub async fn encrypt_stream(
@@ -289,7 +312,7 @@ impl CppBackend {
         let max = materials.max_encrypted_data_keys;
         let client = materials.client;
 
-        let plaintext = tokio::task::spawn_blocking(move || {
+        let out = tokio::task::spawn_blocking(move || {
             let client = client.lock().expect("client mutex");
             seam::decrypt_stream(&client, &ciphertext, commitment_policy, max, &ec)
         })
@@ -297,7 +320,11 @@ impl CppBackend {
         .map_err(|e| ServerError::generic(format!("decrypt_stream task failed: {e}")))?
         .map_err(ServerError::esdk)?;
 
-        Ok(DecryptStreamResponse { plaintext })
+        Ok(DecryptStreamResponse {
+            plaintext: out.plaintext,
+            encryption_context: Some(out.encryption_context.into_iter().collect()),
+            algorithm_suite_id: model_suite(out.algorithm_suite_id),
+        })
     }
 
     fn materials(&self, client_id: &str) -> Result<Materials, ServerError> {
