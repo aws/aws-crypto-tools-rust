@@ -204,6 +204,8 @@ impl AwsKmsKeyring {
                 Error::from_sdk(Service::Kms, "AWS KMS GenerateDataKey", e)
                     .with_resource(self.resource())
             })?;
+        //= spec/framework/aws-kms/aws-kms-keyring.md#onencrypt
+        //# The Generate Data Key response’s `KeyId` MUST be [a valid AWS KMS key ARN](aws-kms-key-arn.md#a-valid-aws-kms-arn).
         let key_id = response
             .key_id
             .filter(|id| parse_kms_identifier(id).is_ok())
@@ -244,12 +246,6 @@ impl AwsKmsKeyring {
         ec: &HashMap<String, String>,
         plaintext: &[u8],
     ) -> Result<(Vec<u8>, String), Error> {
-        if plaintext.is_empty() || plaintext.len() > 4096 {
-            return Err(Error::new(
-                Kind::InvalidMaterials,
-                "Invalid Plaintext on KMS Encrypt",
-            ));
-        }
         //= spec/framework/aws-kms/aws-kms-keyring.md#onencrypt
         //# The keyring MUST AWS KMS Encrypt call with a request constructed as follows:
         let response = self
@@ -280,6 +276,8 @@ impl AwsKmsKeyring {
             .map_err(|e| {
                 Error::from_sdk(Service::Kms, "AWS KMS Encrypt", e).with_resource(self.resource())
             })?;
+        //= spec/framework/aws-kms/aws-kms-keyring.md#onencrypt
+        //# If the Encrypt call succeeds the response’s `KeyId` MUST be [A valid AWS KMS key ARN](aws-kms-key-arn.md#a-valid-aws-kms-arn).
         let key_id = response
             .key_id
             .filter(|id| parse_kms_identifier(id).is_ok())
@@ -426,6 +424,8 @@ impl AwsKmsKeyring {
                 "Invalid AWS KMS encoding, provider info is not UTF8.",
             )
         })?;
+        //= spec/framework/aws-kms/aws-kms-keyring.md#ondecrypt
+        //# - The provider info MUST be a [valid AWS KMS ARN](aws-kms-key-arn.md#a-valid-aws-kms-arn) with a resource type of `key` or OnDecrypt MUST fail.
         parse_kms_arn(key_id).map_err(|e| Error::new(Kind::Cryptographic, e))?;
         //= spec/framework/aws-kms/aws-kms-keyring.md#ondecrypt
         //# - The provider info MUST match the configured AWS KMS key identifier.
