@@ -128,7 +128,15 @@ jobs:
                 {"when": "mpl", "project": "mpl"},
                 {"when": "prim", "project": "prim"}
               ],
+              "coverage": [
+                {"when": "esdk", "project": "esdk"},
+                {"when": "mpl", "project": "mpl"},
+                {"when": "prim", "project": "prim"}
+              ],
               "cpp-shim": [
+                {"when": "esdk"}
+              ],
+              "cpp-coverage": [
                 {"when": "esdk"}
               ],
               "duvet": [
@@ -252,6 +260,32 @@ jobs:
       artifact-name: esdk-test-server-duvet
     secrets:
       repo-pat: ${{ secrets.COMMONS_REPO_PAT }}
+
+  # 100% of new lines must be covered by tests.
+  # Coverage is measured against the PR's base branch, so it only runs on PRs.
+  coverage:
+    name: Patch coverage (${{ matrix.project }})
+    needs: detect
+    if: github.event_name == 'pull_request' && fromJSON(needs.detect.outputs.jobs)['coverage'] != null
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.detect.outputs.jobs)['coverage'] }}
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/library_rust_coverage.yml
+    with:
+      project: ${{ matrix.project }}
+
+  cpp-coverage:
+    name: C++ shim patch coverage
+    needs: detect
+    if: github.event_name == 'pull_request' && fromJSON(needs.detect.outputs.jobs)['cpp-coverage'] != null
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/library_cpp_coverage.yml
 
   duvet:
     name: Duvet
@@ -425,8 +459,10 @@ jobs:
       - detect
       - rust-tests
       - supply-chain
+      - coverage
       - cpp-shim
       - test-server-duvet
+      - cpp-coverage
       - duvet
       - smithy-conformance
       - test-server-builds
