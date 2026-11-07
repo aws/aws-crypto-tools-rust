@@ -130,7 +130,7 @@ jobs:
               ],
               "coverage": [
                 {"when": "esdk", "project": "esdk"},
-                {"when": "mpl", "project": "mpl"},
+                {"when": "mpl", "project": "mpl", "test-server-report": "mpl-test-server-reports"},
                 {"when": "prim", "project": "prim"}
               ],
               "cpp-shim": [
@@ -288,8 +288,10 @@ jobs:
   # Coverage is measured against the PR's base branch, so it only runs on PRs.
   coverage:
     name: Patch coverage (${{ matrix.project }})
-    needs: detect
-    if: github.event_name == 'pull_request' && fromJSON(needs.detect.outputs.jobs)['coverage'] != null
+    # The MPL TestServer's line coverage of the Rust server counts toward the mpl gate.
+    # always(): run even when that job is skipped or fails.
+    needs: [detect, mpl-test-server]
+    if: always() && github.event_name == 'pull_request' && fromJSON(needs.detect.outputs.jobs)['coverage'] != null
     strategy:
       fail-fast: false
       matrix:
@@ -300,6 +302,7 @@ jobs:
     uses: ./.github/workflows/library_rust_coverage.yml
     with:
       project: ${{ matrix.project }}
+      test-server-report: ${{ matrix.test-server-report }}
 
   cpp-coverage:
     name: C++ shim patch coverage
@@ -388,7 +391,9 @@ jobs:
       pull-requests: read
       # Its test job assumes an AWS role for the hierarchical keyring Tests.
       id-token: write
-    uses: aws/aws-crypto-tools-commons/.github/workflows/mpl-test-server-reusable.yml@main
+    # aws/aws-crypto-tools-commons#73's branch writes the line coverage report;
+    # the ref moves to @main when #73 merges.
+    uses: aws/aws-crypto-tools-commons/.github/workflows/mpl-test-server-reusable.yml@lucmcdon/test-server-coverage
     with:
       runner: *codebuild-linux
       focus: rust
