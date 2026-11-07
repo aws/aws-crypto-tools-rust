@@ -1,6 +1,11 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
+//! Decrypt must allocate memory for the bytes that a message holds, not for the lengths that it declares.
+//! Each test decrypts a short message that declares a much larger length.
+//! While decrypt runs, the allocator below refuses any allocation over `LIMIT`.
+//! If decrypt allocates the declared length, the test binary aborts with "memory allocation of N bytes failed".
+
 #[allow(clippy::duplicate_mod)]
 mod fixtures;
 mod test_helpers;
@@ -23,9 +28,7 @@ thread_local! {
 
 // A huge zeroed allocation usually succeeds:
 // the OS maps its pages only when something writes to them.
-// So a decrypt that allocates the length that the message declares could still pass these tests.
-// While decrypt runs, this allocator refuses anything over LIMIT.
-// Such a decrypt then aborts with "memory allocation of N bytes failed".
+// So without this allocator, a decrypt that allocates the declared length could still pass these tests.
 struct LimitedAllocator;
 
 unsafe impl GlobalAlloc for LimitedAllocator {
