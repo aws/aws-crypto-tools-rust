@@ -1,0 +1,15 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.17s
+     Running tests/zz_bugrepro_03_ec_unsorted.rs (target/debug/deps/zz_bugrepro_03_ec_unsorted-85e0debba1dd53bc)
+
+running 2 tests
+REPRO BUG-03 (related) deserialize(non-UTF-8 key) is_ok = true
+REPRO BUG-03 deserialize(unsorted) is_ok = true
+REPRO BUG-03 deserialize(unsorted) == deserialize(sorted): true
+REPRO BUG-03 input     = [00, 02, 00, 01, 62, 00, 01, 31, 00, 01, 61, 00, 01, 32]
+REPRO BUG-03 serialize = [00, 02, 00, 01, 61, 00, 01, 32, 00, 01, 62, 00, 01, 31]
+REPRO BUG-03 serialize(deserialize(b)) == b: false
+test related_deserialize_accepts_non_utf8 ... ok
+test deserialize_accepts_unsorted_entries ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

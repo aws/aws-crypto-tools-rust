@@ -1,0 +1,36 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.40s
+     Running tests/zz_bugrepro_01_ttl_overflow.rs (target/debug/deps/zz_bugrepro_01_ttl_overflow-7d7b447da11f2179)
+
+running 5 tests
+REPRO BUG-01 now+u64::MAX s checked_add = None
+REPRO BUG-01 now+i64::MAX s checked_add = None
+REPRO BUG-01 now+1e15 s checked_add is_some = true
+test std_systemtime_add_limits ... ok
+REPRO BUG-01b StormTrackingCmc::new(grace_interval = u64::MAX s) is_ok = true
+REPRO BUG-01b first get (miss, marks inflight) = Ok(false)
+REPRO BUG-01c StormTrackingCmc::new(inflight_ttl = u64::MAX s) is_ok = true
+REPRO BUG-01a HierarchicalKeyring::new(ttl_seconds = u64::MAX) is_ok = true
+
+thread 'storm_tracking_huge_inflight_ttl_accepted_then_waiter_deadline_panics' (5934199) panicked at /rustc/59807616e1fa2540724bfbac14d7976d7e4a3860/library/std/src/time.rs:746:31:
+overflow when adding duration to instant
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+thread 'storm_tracking_huge_grace_interval_accepted_then_second_get_panics' (5934198) panicked at /rustc/59807616e1fa2540724bfbac14d7976d7e4a3860/library/std/src/time.rs:746:31:
+overflow when adding duration to instant
+REPRO BUG-01c second get PANICKED: overflow when adding duration to instant
+REPRO BUG-01b second get PANICKED: overflow when adding duration to instant
+test storm_tracking_huge_inflight_ttl_accepted_then_waiter_deadline_panics ... ok
+test storm_tracking_huge_grace_interval_accepted_then_second_get_panics ... ok
+
+thread 'hierarchical_ttl_u64_max_accepted_then_on_encrypt_panics' (5934195) panicked at /rustc/59807616e1fa2540724bfbac14d7976d7e4a3860/library/std/src/time.rs:746:31:
+overflow when adding duration to instant
+
+thread 'hierarchical_ttl_u64_max_on_decrypt_panics' (5934196) panicked at /rustc/59807616e1fa2540724bfbac14d7976d7e4a3860/library/std/src/time.rs:746:31:
+overflow when adding duration to instant
+REPRO BUG-01a on_encrypt PANICKED: overflow when adding duration to instant
+REPRO BUG-01d on_decrypt PANICKED: overflow when adding duration to instant
+test hierarchical_ttl_u64_max_accepted_then_on_encrypt_panics ... ok
+test hierarchical_ttl_u64_max_on_decrypt_panics ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+

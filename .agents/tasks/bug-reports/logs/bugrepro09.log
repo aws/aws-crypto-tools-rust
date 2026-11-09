@@ -1,0 +1,16 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.16s
+     Running tests/zz_bugrepro_09_ttl_truncation.rs (target/debug/deps/zz_bugrepro_09_ttl_truncation-4bc55ff47a139796)
+
+running 2 tests
+REPRO BUG-09 after ttl=100 keyring populates shared LocalCmc: keystore calls = 1
+REPRO BUG-09 ttl_seconds=1, entry age=900 ms -> cache entry USED (keystore calls=0)
+REPRO BUG-09 ttl_seconds=1, entry age=1500 ms -> cache entry USED (keystore calls=0)
+REPRO BUG-09 ttl_seconds=1, entry age=1950 ms -> cache entry USED (keystore calls=0)
+REPRO BUG-09 ttl_seconds=1, entry age=2050 ms -> treated as expired (keystore calls=1)
+test backdated_entry_older_than_ttl_is_used ... ok
+REPRO BUG-09 ttl=1 keyring at ~1.5 s: keystore calls = 1 (1 = cache entry used)
+REPRO BUG-09 ttl=1 keyring at ~2.2 s: keystore calls = 2 (2 = treated as expired)
+test shared_local_cmc_two_keyrings_different_ttls ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.23s
+
