@@ -3,10 +3,10 @@
 
 //! A message can list up to 65,535 encrypted data keys, and none of them has to be for this keyring.
 //! So the raw AES keyring's decrypt must use memory in proportion to that count.
-//! A copy of the whole list for each key would grow with the square of the count instead.
+//! A copy of the whole list for each key would make memory grow with the square of the count.
 //!
 //! This file replaces Rust's default allocator with one that counts the bytes in use.
-//! The test decrypts 2,048 keys for another keyring and checks how far that count rises.
+//! The test decrypts 2,048 keys for another keyring and checks how much the bytes in use grow.
 //! Each file in `tests/` builds into its own program, so this allocator affects only this test.
 
 use aws_crypto_mpl::Error;
@@ -45,7 +45,7 @@ static ALLOCATOR: CountingAllocator = CountingAllocator;
 
 const EDK_COUNT: usize = 2048;
 
-// A copy of the whole list for each of the 2,048 keys takes about 300 MB.
+// A copy of the whole list for each of the 2,048 keys takes about 270 MB.
 const MAX_GROWTH: usize = 32 << 20;
 
 #[tokio::test]
