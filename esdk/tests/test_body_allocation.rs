@@ -1,17 +1,18 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Decrypt must allocate memory for the bytes that a message holds, not for the lengths that it declares.
-//! Each test decrypts a short message that declares a much larger length.
+//! A message gives lengths for its body: a frame length in the header, or a content length for a nonframed body.
+//! These lengths can be far bigger than the message itself.
+//! Decrypt must not make a buffer of that length before it reads the bytes.
+//! Each test below decrypts a short message that gives a much bigger length.
 //!
-//! `#[global_allocator]` makes `CappedAllocator` handle every allocation in this file's test binary,
-//! including the ones that decrypt makes inside `aws_esdk`.
-//! `CappedAllocator` refuses any allocation over `ALLOCATION_CAP`.
-//! So if decrypt allocates a declared length, Rust prints "memory allocation of N bytes failed"
-//! and aborts the test binary, which fails the test run.
+//! Checking what decrypt returns isn't enough.
+//! A request for a huge buffer often succeeds, because the OS supplies memory only when a program writes to it.
+//! So decrypt could make the huge buffer and still return the right result.
 //!
-//! The default allocator would not catch this:
-//! a huge `vec![0; n]` usually succeeds, because the OS supplies the memory only when something writes to it.
+//! This file replaces Rust's default allocator with one that refuses anything over 4 MiB (`ALLOCATION_CAP`).
+//! If decrypt asks for a huge buffer, the tests stop with "memory allocation of N bytes failed".
+//! Each file in `tests/` builds into its own program, so this allocator affects only these tests.
 
 #[allow(clippy::duplicate_mod)]
 mod fixtures;
