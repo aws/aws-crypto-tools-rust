@@ -2,15 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! A message can list up to 65,535 encrypted data keys, and none of them has to be for the keyring that decrypts it.
-//! So a keyring's decrypt must use memory in step with the number of keys.
-//! Each test decrypts 512 keys and then 2,048 keys, all for another keyring.
-//! Memory in step with the number of keys rises about 4x between the two.
-//! Memory that grows with the square of the number of keys rises about 16x.
-//! The tests fail above 8x.
-//!
+//! Each test checks that a keyring's decrypt uses memory in step with the number of keys.
 //! This file replaces Rust's default allocator with one that counts each thread's bytes in use.
-//! `#[tokio::test]` runs a test on one thread, so each test counts only its own allocations,
-//! and the tests can run at the same time.
 
 use aws_crypto_mpl::Error;
 use aws_crypto_mpl::keyring::{OnDecryptFluentBuilder, RawAesKeyring};
@@ -21,6 +14,8 @@ use aws_crypto_mpl::types::{
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 
+// `#[tokio::test]` runs each test on one thread.
+// So with one count per thread, each test counts only its own allocations, and the tests can run at the same time.
 thread_local! {
     static IN_USE: Cell<usize> = const { Cell::new(0) };
     static PEAK: Cell<usize> = const { Cell::new(0) };
@@ -55,6 +50,8 @@ static ALLOCATOR: CountingAllocator = CountingAllocator;
 async fn assert_memory_grows_with_the_edk_count(on_decrypt: impl Fn() -> OnDecryptFluentBuilder) {
     let small = growth(on_decrypt(), 512).await;
     let large = growth(on_decrypt(), 2048).await;
+    // 2,048 keys is 4x 512 keys, so memory in step with the number of keys rises about 4x.
+    // A Vec can hold up to 2x the memory it needs, so the limit is 8x.
     assert!(
         large < 8 * small,
         "512 keys used {small} bytes, but 2,048 keys used {large}"
@@ -91,7 +88,7 @@ async fn growth(on_decrypt: OnDecryptFluentBuilder, edk_count: usize) -> usize {
         .expect_err("no key is for this keyring");
     let growth = PEAK.get() - before;
 
-    // The returned error still lists every key.
+    // The returned error lists every key.
     let Error::NoMatchingDataKey(e) = &err else {
         panic!("{err:?}");
     };
