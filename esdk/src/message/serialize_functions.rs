@@ -109,6 +109,8 @@ pub(crate) async fn read_into_vec(
     data: &mut Vec<u8>,
     raw: &mut Tee,
 ) -> Result<(), Error> {
+    // 1 MiB matches serde's (Rust serialization library's) up-front allocation.
+    // But this value is arbitrary and we can change it at any time.
     const CHUNK: usize = 1 << 20;
     data.clear();
     while data.len() < length {
