@@ -15,39 +15,63 @@
 mod fixtures;
 mod test_helpers;
 
-use aws_crypto_mpl::cmm::{Cmm, DecryptMaterialsRequest, DefaultCmm, EncryptionMaterialsRequest};
-use aws_crypto_mpl::structures::{DecryptionMaterials, EncryptionMaterials, MaterialsError};
+use aws_crypto_mpl::Error as MplError;
+use aws_crypto_mpl::async_trait;
+use aws_crypto_mpl::cmm::{Cmm, DefaultCmm};
+use aws_crypto_mpl::cmm::{
+    DecryptMaterialsInput, DecryptMaterialsOutput, GetEncryptionMaterialsInput,
+    GetEncryptionMaterialsOutput,
+};
 use aws_esdk::*;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Caller-implemented CMM. Forwards materials requests to an inner default
 /// CMM and records that each trait method was invoked.
+#[derive(Clone)]
 struct RecordingCmm {
     inner: DefaultCmm,
     saw_get_encryption_materials: Arc<AtomicBool>,
     saw_decrypt_materials: Arc<AtomicBool>,
 }
 
-#[async_trait::async_trait]
+#[async_trait]
 impl Cmm for RecordingCmm {
     async fn get_encryption_materials(
         &self,
-        request: EncryptionMaterialsRequest,
-    ) -> Result<EncryptionMaterials, MaterialsError> {
+        request: GetEncryptionMaterialsInput,
+    ) -> Result<GetEncryptionMaterialsOutput, MplError> {
         self.saw_get_encryption_materials
             .store(true, Ordering::Relaxed);
         // Forward the request unchanged to the wrapped default CMM.
-        self.inner.get_encryption_materials(request).await
+        self.inner
+            .get_encryption_materials()
+            .set_encryption_context(Some(request.encryption_context().clone()))
+            .commitment_policy(request.commitment_policy())
+            .set_algorithm_suite_id(request.algorithm_suite_id())
+            .set_required_encryption_context_keys(Some(
+                request.required_encryption_context_keys().clone(),
+            ))
+            .set_max_plaintext_length(request.max_plaintext_length())
+            .send()
+            .await
     }
 
     async fn decrypt_materials(
         &self,
-        request: DecryptMaterialsRequest,
-    ) -> Result<DecryptionMaterials, MaterialsError> {
+        request: DecryptMaterialsInput,
+    ) -> Result<DecryptMaterialsOutput, MplError> {
         self.saw_decrypt_materials.store(true, Ordering::Relaxed);
         // Forward the request unchanged to the wrapped default CMM.
-        self.inner.decrypt_materials(request).await
+        self.inner
+            .decrypt_materials()
+            .algorithm_suite_id(request.algorithm_suite_id())
+            .commitment_policy(request.commitment_policy())
+            .set_encrypted_data_keys(Some(request.encrypted_data_keys().to_vec()))
+            .set_encryption_context(Some(request.encryption_context().clone()))
+            .set_reproduced_encryption_context(request.reproduced_encryption_context().cloned())
+            .send()
+            .await
     }
 }
 
@@ -57,29 +81,30 @@ async fn custom_cmm_round_trips_via_public_api() {
     let saw_decrypt_materials = Arc::new(AtomicBool::new(false));
 
     // Custom CMM over a default CMM backed by a local raw AES keyring.
-    let cmm: Arc<dyn Cmm> = Arc::new(RecordingCmm {
+    let cmm = RecordingCmm {
         inner: DefaultCmm::new(test_helpers::test_keyring().await),
         saw_get_encryption_materials: Arc::clone(&saw_get_encryption_materials),
         saw_decrypt_materials: Arc::clone(&saw_decrypt_materials),
-    });
+    };
     let plaintext = b"custom cmm round trip";
 
     // Encrypt and decrypt entirely through the custom CMM.
-    let out = encrypt(&EncryptInput::with_cmm(
-        plaintext,
-        EncryptionContext::new(),
-        cmm.clone(),
-    ))
-    .await
-    .unwrap();
-    let dec = decrypt(&DecryptInput::with_cmm(
-        &out.ciphertext,
-        EncryptionContext::new(),
-        cmm,
-    ))
-    .await
-    .unwrap();
-    assert_eq!(dec.plaintext, plaintext);
+    let esdk = Client::default();
+    let out = esdk
+        .encrypt()
+        .plaintext(plaintext)
+        .cmm(cmm.clone())
+        .send()
+        .await
+        .unwrap();
+    let dec = esdk
+        .decrypt()
+        .ciphertext(out.ciphertext())
+        .cmm(cmm)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(dec.plaintext(), plaintext);
 
     // Both trait methods must have been driven by the ESDK.
     assert!(

@@ -51,6 +51,10 @@ target_link_libraries(my_app PRIVATE AWS::esdk)
 
 See [`CMakeLists.txt`](CMakeLists.txt) for how the target is assembled.
 
+Build the library from source together with your application, as `add_subdirectory` does.
+Releases keep source compatibility, not binary compatibility:
+after upgrading, rebuild everything that includes `EncryptionSDK.h`.
+
 ## Quick example
 
 A one-shot encrypt/decrypt round trip with a Raw AES keyring:
@@ -74,7 +78,7 @@ int main() {
     // the message.
     std::map<std::string, std::string> encryption_context = {{"purpose", "readme-example"}};
 
-    Aws::Esdk::EncryptionSDK esdk;
+    Aws::Esdk::Client esdk;
 
     auto enc = esdk.encrypt(
         std::string_view("the quick brown fox"), keyring,
@@ -88,9 +92,12 @@ int main() {
 }
 ```
 
-`encrypt`/`decrypt` accept the payload as a `std::vector`, a `std::string_view`, a
-`std::span` (when available), or a raw pointer and length, so you can pass a
-buffer (for example an mmap'd file) without copying it first.
+`encrypt` and `decrypt` accept the payload as a `std::vector`, a `std::string_view`, a
+`std::span` (when available), or a raw pointer and length; `decrypt` also accepts
+`Aws::Esdk::Ciphertext`. You can pass a buffer (for example an mmap'd file) without
+copying it first. The streams' `write()` takes the same forms except `std::span`:
+a `std::vector`, a `std::string_view`, or a raw pointer and length, and the decrypt
+stream also takes `Aws::Esdk::Ciphertext`.
 
 ## Streaming
 

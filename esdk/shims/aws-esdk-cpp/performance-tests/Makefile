@@ -1,5 +1,5 @@
-# Builds the C++ hierarchical-keyring performance benchmark against the
-# aws-esdk-cpp static library from the parent directory. Compiled as C++17.
+# Builds the C++ performance benchmark against the aws-esdk-cpp static
+# library from the parent directory. Compiled as C++17.
 
 SHIM_DIR := ..
 TARGET_DIR := $(SHIM_DIR)/target
@@ -31,8 +31,9 @@ benchmark: benchmark.cpp benchmark_support.h $(STATICLIB)
 $(STATICLIB):
 	cd $(SHIM_DIR) && cargo build $(CARGO_FLAGS)
 
-# Run needs live AWS resources / ESDK_TEST_* env vars; it skips cleanly without
-# them. Pass flags through ARGS, e.g. `make run ARGS="--quick"`.
+# The hierarchical keyring needs live AWS resources / ESDK_TEST_* env vars and
+# skips cleanly without them; the raw AES keyring needs neither. Pass flags
+# through ARGS, e.g. `make run ARGS="--quick --keyring raw-aes"`.
 run: benchmark
 	LD_LIBRARY_PATH="$(TARGET_DIR)/$(PROFILE)" ./benchmark $(ARGS)
 

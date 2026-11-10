@@ -1,3 +1,6 @@
+// Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 use crate::DigestAlg;
 use crate::Error;
 use crate::err;
@@ -80,7 +83,7 @@ impl DigestContext {
         let want_len = self.output_len();
         if out.len() != want_len {
             return err(format!(
-                "DigestContext::finish : output buffer length of {} does not match the {want_len} byte digest.",
+                "output buffer of {} bytes does not match the {want_len} byte digest",
                 out.len()
             ));
         }
@@ -187,7 +190,7 @@ fn sign_fixed_len(
         }
     }
     err(format!(
-        "ecdsa_sign : no {want_len} byte DER signature produced in {MAX_SIGN_ATTEMPTS} attempts."
+        "no {want_len} byte DER signature produced in {MAX_SIGN_ATTEMPTS} attempts"
     ))
 }
 
@@ -197,7 +200,7 @@ fn sign_fixed_len(
 fn check_sig_len(alg: EcdsaSignatureAlgorithm, signature: &[u8]) -> Result<(), Error> {
     if signature.len() != signature_len(alg) {
         return err(format!(
-            "ecdsa_sign : signature buffer length of {} does not match the {} byte {:?} DER signature.",
+            "signature buffer of {} bytes does not match the {} byte {:?} DER signature",
             signature.len(),
             signature_len(alg),
             alg
@@ -217,7 +220,7 @@ fn check_sig_len(alg: EcdsaSignatureAlgorithm, signature: &[u8]) -> Result<(), E
 /// Returns an [`Error`] if `signature` is not [`signature_len`] bytes for
 /// `alg`, if `key` is not a valid DER-encoded private key for `alg`, if the
 /// signing operation fails, or if no canonical-length signature is produced
-/// within [`MAX_SIGN_ATTEMPTS`].
+/// within 128 attempts.
 pub fn ecdsa_sign(
     alg: EcdsaSignatureAlgorithm,
     key: &[u8],
@@ -226,12 +229,12 @@ pub fn ecdsa_sign(
 ) -> Result<(), Error> {
     check_sig_len(alg, signature)?;
     let private_key: EcdsaKeyPair = EcdsaKeyPair::from_private_key_der(get_sign_alg(alg), key)
-        .map_err(|e| serr(format!("{e:?}")))?;
+        .map_err(|_| serr("invalid ECDSA private key".to_owned()))?;
     let rng = SystemRandom::new();
     sign_fixed_len(signature, || {
         private_key
             .sign(&rng, msg)
-            .map_err(|e| serr(format!("{e:?}")))
+            .map_err(|_| serr("ECDSA signing failed".to_owned()))
     })
 }
 
@@ -246,7 +249,7 @@ pub fn ecdsa_sign(
 /// Returns an [`Error`] if `signature` is not [`signature_len`] bytes for
 /// `alg`, if `key` is not a valid DER-encoded private key for `alg`, if the
 /// signing operation fails, or if no canonical-length signature is produced
-/// within [`MAX_SIGN_ATTEMPTS`].
+/// within 128 attempts.
 pub fn ecdsa_sign_digest(
     alg: EcdsaSignatureAlgorithm,
     key: &[u8],
@@ -255,12 +258,12 @@ pub fn ecdsa_sign_digest(
 ) -> Result<(), Error> {
     check_sig_len(alg, signature)?;
     let private_key: EcdsaKeyPair = EcdsaKeyPair::from_private_key_der(get_sign_alg(alg), key)
-        .map_err(|e| serr(format!("{e:?}")))?;
+        .map_err(|_| serr("invalid ECDSA private key".to_owned()))?;
     let digest = context.digest();
     sign_fixed_len(signature, || {
         private_key
             .sign_digest(&digest)
-            .map_err(|e| serr(format!("{e:?}")))
+            .map_err(|_| serr("ECDSA signing failed".to_owned()))
     })
 }
 
@@ -369,25 +372,25 @@ pub const fn field_size(alg: EcdsaSignatureAlgorithm) -> usize {
 /// bytes long.
 pub fn ecdsa_generate_keypair(alg: EcdsaSignatureAlgorithm) -> Result<SignatureKeyPair, Error> {
     let key_pair = EcdsaKeyPair::generate(get_sign_alg(alg))
-        .map_err(|e| serr(format!("ECDSA keygen {e:?}")))?;
+        .map_err(|_| serr("ECDSA key generation failed".to_owned()))?;
 
     let compressed: EcPublicKeyCompressedBin<'static> = key_pair
         .public_key()
         .as_be_bytes()
-        .map_err(|e| serr(format!("ECDSA public-key compression {e:?}")))?;
+        .map_err(|_| serr("ECDSA public-key compression failed".to_owned()))?;
     let verification_key = compressed.as_ref().to_vec();
 
     let der: EcPrivateKeyRfc5915Der<'static> = key_pair
         .private_key()
         .as_der()
-        .map_err(|e| serr(format!("ECDSA private-key DER encoding {e:?}")))?;
+        .map_err(|_| serr("ECDSA private-key DER encoding failed".to_owned()))?;
     let signing_key = der.as_ref().to_vec();
 
     // Mirrors the `KeyGen` postcondition in the Dafny MPL, which rejects a
     // verification key whose length is not `FieldSize`.
     if verification_key.len() != field_size(alg) {
         return err(format!(
-            "ecdsa_generate_keypair : verification key is {} bytes, expected {}.",
+            "verification key is {} bytes, expected {}",
             verification_key.len(),
             field_size(alg)
         ));

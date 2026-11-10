@@ -7,7 +7,7 @@
 mod fixtures;
 mod test_helpers;
 
-use aws_esdk::ErrorKind;
+use aws_esdk::Client;
 use test_helpers::*;
 
 #[tokio::test(flavor = "multi_thread")]
@@ -26,7 +26,7 @@ async fn test_signing_suite_produces_footer() {
         "signing suite must produce a footer with a P-384 DER signature (64..=104 bytes), got: {sig_len}"
     );
     // Verify the ciphertext actually decrypts — proves the footer is valid, not just present.
-    let pt = decrypt_ciphertext(&ct).await.plaintext;
+    let pt = decrypt_ciphertext(&ct).await.into_plaintext().into_inner();
     assert_eq!(pt, b"signature presence test");
 }
 
@@ -37,6 +37,10 @@ async fn test_signature_uses_signing_algorithm() {
     //= reason=Verify succeeds with P-384, fails with P-256; proves correct algorithm was used
     //# To calculate a signature, this operation MUST use the [signature algorithm](../framework/algorithm-suites.md#signature-algorithm)
     //# specified by the [algorithm suite](../framework/algorithm-suites.md), with the following input:
+    //
+    //= spec/framework/transitive-requirements.md#ecdsa
+    //= type=test
+    //# If specified to use ECDSA, the AWS Encryption SDK MUST use ECDSA with the following specifics:
 
     // Strategy: encrypt with a P-384 signing suite, extract the footer signature,
     // and verify it succeeds with EcdsaP384 but fails with EcdsaP256. This proves
@@ -44,18 +48,21 @@ async fn test_signature_uses_signing_algorithm() {
     use aws_mpl_primitives::{DigestContext, EcdsaSignatureAlgorithm, ecdsa_verify_context};
 
     let keyring = test_keyring().await;
-    let mut enc_input = aws_esdk::EncryptInput::with_keyring(
-        b"algorithm choice test",
-        aws_esdk::EncryptionContext::new(),
-        keyring,
-    );
-    enc_input.algorithm_suite_id =
-        Some(aws_esdk::EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384);
-    let output = aws_esdk::encrypt(&enc_input).await.unwrap();
-    let ct = &output.ciphertext;
+    let output = Client::default()
+        .encrypt()
+        .plaintext(b"algorithm choice test")
+        .set_encryption_context(Some(aws_esdk::types::EncryptionContext::new()))
+        .keyring(keyring)
+        .algorithm_suite_id(
+            aws_esdk::types::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,
+        )
+        .send()
+        .await
+        .unwrap();
+    let ct = &output.ciphertext();
 
     let pub_key_b64 = output
-        .encryption_context
+        .encryption_context()
         .get("aws-crypto-public-key")
         .unwrap();
     let verification_key = aws_smithy_types::base64::decode(pub_key_b64).unwrap();
@@ -109,19 +116,22 @@ async fn test_signature_key_is_signing_key() {
     use aws_mpl_primitives::{DigestContext, EcdsaSignatureAlgorithm, ecdsa_verify_context};
 
     let keyring = test_keyring().await;
-    let mut enc_input = aws_esdk::EncryptInput::with_keyring(
-        b"signing key direct test",
-        aws_esdk::EncryptionContext::new(),
-        keyring,
-    );
-    enc_input.algorithm_suite_id =
-        Some(aws_esdk::EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384);
-    let output = aws_esdk::encrypt(&enc_input).await.unwrap();
-    let ct = &output.ciphertext;
+    let output = Client::default()
+        .encrypt()
+        .plaintext(b"signing key direct test")
+        .set_encryption_context(Some(aws_esdk::types::EncryptionContext::new()))
+        .keyring(keyring)
+        .algorithm_suite_id(
+            aws_esdk::types::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,
+        )
+        .send()
+        .await
+        .unwrap();
+    let ct = &output.ciphertext();
 
     // Extract verification key from output encryption context.
     let pub_key_b64 = output
-        .encryption_context
+        .encryption_context()
         .get("aws-crypto-public-key")
         .expect("signing suite must produce aws-crypto-public-key in EC");
     let verification_key =
@@ -190,18 +200,17 @@ async fn test_signature_input_is_header_plus_body() {
         "header tamper must change the byte"
     );
 
-    // Valid ct decrypts; tampered header → ValidationError (header auth tag mismatch).
+    // Valid ct decrypts; a tampered header fails decrypt with a Cryptographic error.
     assert!(
         decrypt_ciphertext_result(&valid_ct).await.is_ok(),
         "valid ct must decrypt"
     );
-    assert_eq!(
+    assert!(
         decrypt_ciphertext_result(&tampered_header)
             .await
             .unwrap_err()
-            .kind,
-        ErrorKind::ValidationError,
-        "tampered header body byte must produce ValidationError"
+            .is_cryptographic(),
+        "tampered header body byte must produce Cryptographic error"
     );
 
     // Tamper body (first byte of the first frame's encrypted content).
@@ -214,14 +223,13 @@ async fn test_signature_input_is_header_plus_body() {
         "body tamper must change the byte"
     );
 
-    // Valid ct decrypts; tampered body → CryptographicError (AES-GCM auth failure).
-    assert_eq!(
+    // Valid ct decrypts; a tampered body fails AES-GCM authentication with a Cryptographic error.
+    assert!(
         decrypt_ciphertext_result(&tampered_body)
             .await
             .unwrap_err()
-            .kind,
-        ErrorKind::CryptographicError,
-        "tampered body must produce CryptographicError"
+            .is_cryptographic(),
+        "tampered body must produce Cryptographic error"
     );
 }
 
@@ -299,18 +307,21 @@ async fn test_footer_equals_calculated() {
     use aws_mpl_primitives::{DigestContext, EcdsaSignatureAlgorithm, ecdsa_verify_context};
 
     let keyring = test_keyring().await;
-    let mut enc_input = aws_esdk::EncryptInput::with_keyring(
-        b"footer equals calculated test",
-        aws_esdk::EncryptionContext::new(),
-        keyring.clone(),
-    );
-    enc_input.algorithm_suite_id =
-        Some(aws_esdk::EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384);
-    let output = aws_esdk::encrypt(&enc_input).await.unwrap();
-    let ct = &output.ciphertext;
+    let output = Client::default()
+        .encrypt()
+        .plaintext(b"footer equals calculated test")
+        .set_encryption_context(Some(aws_esdk::types::EncryptionContext::new()))
+        .keyring(keyring.clone())
+        .algorithm_suite_id(
+            aws_esdk::types::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,
+        )
+        .send()
+        .await
+        .unwrap();
+    let ct = &output.ciphertext();
 
     let pub_key_b64 = output
-        .encryption_context
+        .encryption_context()
         .get("aws-crypto-public-key")
         .unwrap();
     let verification_key = aws_smithy_types::base64::decode(pub_key_b64).unwrap();
@@ -333,9 +344,16 @@ async fn test_footer_equals_calculated() {
     );
 
     // Round-trip corroboration.
-    let dec_input =
-        aws_esdk::DecryptInput::with_keyring(ct, aws_esdk::EncryptionContext::new(), keyring);
-    let pt = aws_esdk::decrypt(&dec_input).await.unwrap().plaintext;
+    let pt = Client::default()
+        .decrypt()
+        .ciphertext(ct)
+        .set_encryption_context(Some(aws_esdk::types::EncryptionContext::new()))
+        .keyring(keyring)
+        .send()
+        .await
+        .unwrap()
+        .into_plaintext()
+        .into_inner();
     assert_eq!(pt, b"footer equals calculated test");
 }
 
@@ -347,15 +365,13 @@ async fn test_no_signature_without_signing_suite() {
     //# the Encrypt operation MUST NOT construct a signature.
 
     // Encrypt with a non-signing suite, then verify on the wire that no footer is
-    // present and that the plaintext round-trips. `has_footer` looks for a 2-byte
-    // length prefix at the tail whose value falls in the ECDSA P-384 DER signature
-    // range and equals the remaining byte count.
+    // present and that the plaintext round-trips.
     let ct = encrypt_without_signing_suite(b"no signature test").await;
     assert!(
         !has_footer(&ct),
         "non-signing suite must NOT produce a trailing footer"
     );
-    let pt = decrypt_ciphertext(&ct).await.plaintext;
+    let pt = decrypt_ciphertext(&ct).await.into_plaintext().into_inner();
     assert_eq!(
         pt, b"no signature test",
         "round-trip with non-signing suite must succeed"
@@ -366,14 +382,19 @@ async fn test_no_signature_without_signing_suite() {
 async fn test_footer_serialized_releases_all_bytes() {
     // Signing suite output ends exactly at the footer; proves all bytes released atomically.
     let keyring = test_keyring().await;
-    let mut enc_input = aws_esdk::EncryptInput::with_keyring(
-        b"release all bytes test",
-        aws_esdk::EncryptionContext::new(),
-        keyring.clone(),
-    );
-    enc_input.algorithm_suite_id =
-        Some(aws_esdk::EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384);
-    let ct = aws_esdk::encrypt(&enc_input).await.unwrap().ciphertext;
+    let ct = Client::default()
+        .encrypt()
+        .plaintext(b"release all bytes test")
+        .set_encryption_context(Some(aws_esdk::types::EncryptionContext::new()))
+        .keyring(keyring.clone())
+        .algorithm_suite_id(
+            aws_esdk::types::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,
+        )
+        .send()
+        .await
+        .unwrap()
+        .into_ciphertext()
+        .into_inner();
 
     let (footer_offset, sig_len) = find_footer_offset(&ct);
     assert!(sig_len > 0, "footer must contain a signature");

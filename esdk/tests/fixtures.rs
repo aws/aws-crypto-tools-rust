@@ -1,7 +1,7 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 #![allow(dead_code)]
-use aws_esdk::*;
+use aws_esdk::types::*;
 
 // The following are test resources that exist in tests accounts:
 
@@ -30,15 +30,23 @@ pub enum SmallEncryptionContextVariation {
     CD,
 }
 
+pub fn ec_of(pairs: &[(&str, &str)]) -> EncryptionContext {
+    let mut ec = EncryptionContext::new();
+    for &(k, v) in pairs {
+        ec.insert(k, v);
+    }
+    ec
+}
+
 pub fn small_encryption_context(v: SmallEncryptionContextVariation) -> EncryptionContext {
-    let key_a = "keyA".to_string();
-    let val_a = "valA".to_string();
-    let key_b = "keyB".to_string();
-    let val_b = "valB".to_string();
-    let key_c = "keyC".to_string();
-    let val_c = "valC".to_string();
-    let key_d = "keyD".to_string();
-    let val_d = "valD".to_string();
+    let key_a = "keyA";
+    let val_a = "valA";
+    let key_b = "keyB";
+    let val_b = "valB";
+    let key_c = "keyC";
+    let val_c = "valC";
+    let key_d = "keyD";
+    let val_d = "valD";
 
     let mut h = EncryptionContext::new();
     match v {
@@ -70,10 +78,7 @@ pub fn small_encryption_context(v: SmallEncryptionContextVariation) -> Encryptio
 
 pub fn get_reserved_ec_map() -> EncryptionContext {
     let mut h = EncryptionContext::new();
-    h.insert(
-        "aws-crypto-public-key".to_string(),
-        "not a real public key".to_string(),
-    );
+    h.insert("aws-crypto-public-key", "not a real public key");
     h
 }
 
@@ -110,14 +115,14 @@ pub fn small_encryption_context_keys(v: SmallEncryptionContextVariation) -> Vec<
 pub fn small_mismatched_encryption_context(
     v: SmallEncryptionContextVariation,
 ) -> EncryptionContext {
-    let key_a = "keyA".to_string();
-    let val_a = "valA".to_string();
-    let key_b = "keyB".to_string();
-    let val_b = "valB".to_string();
-    let key_c = "keyC".to_string();
-    let val_c = "valC".to_string();
-    let key_d = "keyD".to_string();
-    let val_d = "valD".to_string();
+    let key_a = "keyA";
+    let val_a = "valA";
+    let key_b = "keyB";
+    let val_b = "valB";
+    let key_c = "keyC";
+    let val_c = "valC";
+    let key_d = "keyD";
+    let val_d = "valD";
 
     let mut h: EncryptionContext = EncryptionContext::new();
     match v {

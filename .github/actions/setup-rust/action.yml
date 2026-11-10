@@ -1,0 +1,68 @@
+name: Set up Rust
+description: >
+  Install Go and the stable Rust toolchain, check or update each workspace's
+  Cargo.lock, and restore the cargo build cache.
+  aws-lc-sys and aws-lc-fips-sys need Go to build their native code.
+
+inputs:
+  components:
+    description: "Comma-separated rustup components (e.g. \"clippy, rustfmt\")."
+    required: false
+    default: ""
+  workspaces:
+    description: "Newline-separated cargo workspace directories."
+    required: true
+  lockfile:
+    description: >
+      `check` fails when a committed Cargo.lock is out of date with its Cargo.toml.
+      `auto` does the same, except scheduled runs update each Cargo.lock to the latest compatible versions.
+    required: false
+    default: auto
+  free-disk-space:
+    description: "Remove large preinstalled Linux toolchains before building."
+    required: false
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    # The statically linked aws-lc and AWS SDKs fill the runner's disk without this.
+    - name: Free disk space
+      if: runner.os == 'Linux' && inputs.free-disk-space == 'true'
+      shell: bash
+      run: |
+        sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc \
+          /usr/local/share/boost /opt/hostedtoolcache/CodeQL
+        df -h /
+
+    - name: Install Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: "stable"
+
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        components: ${{ inputs.components }}
+
+    # Workspaces without a committed Cargo.lock (e.g. the C++ shim) resolve fresh on every build.
+    - name: ${{ inputs.lockfile == 'auto' && github.event_name == 'schedule' && 'Update' || 'Check' }} Cargo.lock
+      shell: bash
+      env:
+        WORKSPACES: ${{ inputs.workspaces }}
+        UPDATE: ${{ inputs.lockfile == 'auto' && github.event_name == 'schedule' }}
+      run: |
+        set -euo pipefail
+        while read -r ws; do
+          [[ -n "$ws" && -f "$ws/Cargo.lock" ]] || continue
+          if [[ "$UPDATE" == "true" ]]; then
+            (cd "$ws" && cargo update)
+          else
+            (cd "$ws" && cargo metadata --locked --format-version 1 > /dev/null)
+          fi
+        done <<< "$WORKSPACES"
+
+    - name: Cache cargo build artifacts
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: ${{ inputs.workspaces }}

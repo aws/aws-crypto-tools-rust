@@ -1,0 +1,100 @@
+# Reusable workflow: check each published crate's public API against the Smithy
+# models it implements, one job per crate. The crates come from
+# `scripts/smithy-conformance/conform.py --list`, so a new crate is checked
+# without editing this file. Each job uploads its report and review page.
+name: Smithy Conformance
+
+on:
+  workflow_call:
+
+jobs:
+  list:
+    name: List crates
+    runs-on: codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}
+    permissions:
+      contents: read
+    outputs:
+      matrix: ${{ steps.list.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: List crates
+        id: list
+        run: |
+          crates=$(python3 scripts/smithy-conformance/conform.py --list)
+          # GitHub rejects slashes in artifact names, so each crate gets a slash-free one.
+          matrix=$(jq -c 'map({crate: ., artifact: ("smithy-conformance-" + gsub("/"; "-"))})' <<< "$crates")
+          echo "matrix=$matrix" | tee -a "$GITHUB_OUTPUT"
+
+  check:
+    name: ${{ matrix.crate }}
+    needs: list
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.list.outputs.matrix) }}
+    runs-on: codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Every crate is documented, not just this job's, so each model service
+      # can be matched to the crate that implements it.
+      - name: List cargo workspaces
+        id: workspaces
+        run: |
+          {
+            echo "dirs<<EOF"
+            python3 scripts/smithy-conformance/conform.py --list | jq -r '.[]'
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: ./.github/actions/setup-rust
+        with:
+          workspaces: ${{ steps.workspaces.outputs.dirs }}
+
+      # rustdoc JSON is a nightly-only output.
+      - name: Install nightly Rust
+        run: rustup toolchain install nightly --profile minimal
+
+      # The Smithy CLI and the model repos, both pinned in config.toml.
+      - name: Cache the Smithy CLI and models
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/smithy-conformance/smithy-cli-*
+            ~/.cache/smithy-conformance/models
+          key: smithy-conformance-${{ hashFiles('scripts/smithy-conformance/config.toml') }}
+
+      - name: Check ${{ matrix.crate }}
+        run: python3 scripts/smithy-conformance/conform.py --crate "${{ matrix.crate }}" --out "$RUNNER_TEMP/conformance"
+
+      - name: Write the job summary
+        if: always()
+        run: |
+          [[ -f "$RUNNER_TEMP/conformance/report.md" ]] || exit 0
+          sed '/^## Open findings by check/,$d' "$RUNNER_TEMP/conformance/report.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the report and review page
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.artifact }}
+          if-no-files-found: ignore
+          path: |
+            ${{ runner.temp }}/conformance/report.md
+            ${{ runner.temp }}/conformance/findings.json
+            ${{ runner.temp }}/conformance/review.html

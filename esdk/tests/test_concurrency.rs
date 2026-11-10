@@ -15,9 +15,10 @@
 mod fixtures;
 mod test_helpers;
 
-use aws_esdk::*;
+use aws_esdk::types::*;
 use std::collections::HashSet;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, mpsc};
+use std::time::Duration;
 
 const THREADS: usize = 8;
 const ITERS_PER_THREAD: usize = 24;
@@ -37,8 +38,8 @@ fn v1_message_id(ct: &[u8]) -> Vec<u8> {
 /// Run `THREADS` OS threads, each doing `ITERS_PER_THREAD` encrypt + decrypt
 /// round trips. Returns every message ID produced across all threads.
 fn concurrent_round_trips(
-    suite: Option<EsdkAlgorithmSuiteId>,
-    policy: EsdkCommitmentPolicy,
+    suite: Option<AlgorithmSuiteId>,
+    policy: CommitmentPolicy,
     extract_id: fn(&[u8]) -> Vec<u8>,
 ) -> Vec<Vec<u8>> {
     let ids: Arc<Mutex<Vec<Vec<u8>>>> = Arc::new(Mutex::new(Vec::new()));
@@ -58,26 +59,28 @@ fn concurrent_round_trips(
                     for i in 0..ITERS_PER_THREAD {
                         // Encrypt and record the message ID from the header.
                         let plaintext = format!("thread {t} message {i}").into_bytes();
-                        let mut enc_input = EncryptInput::with_keyring(
-                            &plaintext,
-                            EncryptionContext::new(),
-                            keyring.clone(),
-                        );
-                        enc_input.algorithm_suite_id = suite;
-                        enc_input.commitment_policy = policy;
-                        let out = encrypt(&enc_input).await.unwrap();
-                        ids.lock().unwrap().push(extract_id(&out.ciphertext));
+                        let esdk = test_helpers::esdk_with(policy);
+                        let out = esdk
+                            .encrypt()
+                            .plaintext(&plaintext)
+                            .keyring(keyring.clone())
+                            .set_algorithm_suite_id(suite)
+                            .send()
+                            .await
+                            .unwrap();
+                        ids.lock().unwrap().push(extract_id(out.ciphertext()));
 
                         // Decrypt and verify the round trip.
-                        let mut dec_input = DecryptInput::with_keyring(
-                            &out.ciphertext,
-                            EncryptionContext::new(),
-                            keyring.clone(),
-                        );
-                        dec_input.commitment_policy = policy;
-                        let dec = decrypt(&dec_input).await.unwrap();
+                        let dec = esdk
+                            .decrypt()
+                            .ciphertext(out.ciphertext())
+                            .keyring(keyring.clone())
+                            .send()
+                            .await
+                            .unwrap();
                         assert_eq!(
-                            dec.plaintext, plaintext,
+                            dec.plaintext(),
+                            &plaintext,
                             "round trip must return the plaintext"
                         );
                     }
@@ -98,7 +101,7 @@ fn concurrent_v2_round_trips_and_unique_message_ids() {
     // Default committing suite produces V2 messages.
     let ids = concurrent_round_trips(
         None,
-        EsdkCommitmentPolicy::RequireEncryptRequireDecrypt,
+        CommitmentPolicy::RequireEncryptRequireDecrypt,
         v2_message_id,
     );
 
@@ -118,8 +121,8 @@ fn concurrent_v2_round_trips_and_unique_message_ids() {
 fn concurrent_v1_round_trips_and_unique_message_ids() {
     // A non-committing suite produces V1 messages.
     let ids = concurrent_round_trips(
-        Some(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256),
-        EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt,
+        Some(AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256),
+        CommitmentPolicy::ForbidEncryptAllowDecrypt,
         v1_message_id,
     );
 
@@ -133,4 +136,72 @@ fn concurrent_v1_round_trips_and_unique_message_ids() {
         ids.len(),
         "message IDs must be unique across concurrent encrypts"
     );
+}
+
+/// Run function `f` on its own thread and fail if it does not finish within `secs`.
+fn assert_completes_within(secs: u64, f: impl FnOnce() + Send + 'static) {
+    let (tx, rx) = mpsc::channel();
+    let worker = std::thread::spawn(move || {
+        f();
+        let _ = tx.send(());
+    });
+    if rx.recv_timeout(Duration::from_secs(secs)) == Err(mpsc::RecvTimeoutError::Timeout) {
+        panic!("concurrent operations did not finish within {secs}s: likely deadlock");
+    }
+    // On worker panic, recv returns Disconnected and this join re-raises the panic.
+    worker.join().unwrap();
+}
+
+/// Spawn number of `tasks` concurrent tasks on `rt` and wait for all of them to finish.
+/// Each task runs `iters` encrypt/decrypt round trips against one shared keyring.
+fn oversubscribed_round_trips(rt: tokio::runtime::Runtime, tasks: usize, iters: usize) {
+    rt.block_on(async {
+        let keyring = test_helpers::test_keyring().await;
+        let mut set = tokio::task::JoinSet::new();
+        for t in 0..tasks {
+            let keyring = keyring.clone();
+            set.spawn(async move {
+                for i in 0..iters {
+                    let plaintext = format!("task {t} message {i}").into_bytes();
+                    let esdk = aws_esdk::Client::default();
+                    let out = esdk
+                        .encrypt()
+                        .plaintext(&plaintext)
+                        .keyring(keyring.clone())
+                        .send()
+                        .await
+                        .unwrap();
+
+                    let dec = esdk
+                        .decrypt()
+                        .ciphertext(out.ciphertext())
+                        .keyring(keyring.clone())
+                        .send()
+                        .await
+                        .unwrap();
+                    assert_eq!(
+                        dec.plaintext(),
+                        &plaintext,
+                        "round trip must return the plaintext"
+                    );
+                }
+            });
+        }
+        while let Some(res) = set.join_next().await {
+            res.expect("task must not panic");
+        }
+    });
+}
+
+/// Run round-trip above with # tasks > # worker threads.
+#[test]
+fn more_tasks_than_worker_threads_completes() {
+    assert_completes_within(120, || {
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .unwrap();
+        oversubscribed_round_trips(rt, 64, 4);
+    });
 }

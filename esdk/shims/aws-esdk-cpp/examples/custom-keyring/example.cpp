@@ -1,7 +1,10 @@
+// Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 // Your C++ code using the custom keyring.
 
 #include <iostream>
-#include <vector>
+#include <string>
 #include <aws/esdk/EncryptionSDK.h>
 
 // Declare the extern "C" constructor your Rust crate exports.
@@ -19,14 +22,15 @@ int main() {
 
         // From here on, nothing is special about your keyring.
         // Use it like any other keyring.
-        Aws::Esdk::EncryptionSDK sdk;
+        Aws::Esdk::Client esdk;
 
-        std::vector<uint8_t> plaintext = {'H', 'e', 'l', 'l', 'o', ' ', 'W', 'o', 'r', 'l', 'd'};
-        auto encrypted = sdk.encrypt(plaintext, keyring);
+        const std::string plaintext = "Hello World";
+        // This uses the string API; the bytes APIs take a std::vector, a pointer and length, or a std::span (C++20).
+        auto encrypted = esdk.encrypt(plaintext, keyring);
 
-        auto decrypted = sdk.decrypt(encrypted.ciphertext, keyring);
+        auto decrypted = esdk.decrypt(encrypted.ciphertext, keyring);
 
-        if (plaintext != decrypted.plaintext) {
+        if (decrypted.plaintext.as_string_view() != plaintext) {
             std::cerr << "Decryption failed: plaintext mismatch\n";
             return 1;
         }

@@ -7,12 +7,15 @@
 //! `aws-mpl-primitives`, with no cache or KMS dependency. Used by the
 //! `Keyring` impl in [`super::hierarchical_keyring`].
 
+use crate::Error;
+use crate::error::{BranchKey, Kind, Resource, Service};
 use aws_mpl_primitives::{
     AesGcm, DigestAlg, aes_decrypt, aes_encrypt, generate_random_bytes, kbkdf_ctr_hmac,
 };
 use uuid::Uuid;
+use zeroize::Zeroizing;
 
-use crate::structures::{BranchKeyMaterials, EncryptionContext, MaterialsError};
+use crate::structures::{BranchKeyMaterials, EncryptionContext};
 
 /// Length of the random salt used as the KDF context: 16 bytes.
 const SALT_LEN: usize = 16;
@@ -52,17 +55,17 @@ const FIXED_OVERHEAD_LEN: usize = SALT_LEN + IV_LEN + VERSION_LEN + TAG_LEN;
 ///    canonical hyphenated UUID form).
 /// 4. The serialized `EncryptionContext`.
 ///
-/// Returns `MaterialsError` if the encryption context fails to serialize
+/// Returns `Error` if the encryption context fails to serialize
 /// (entry count or key/value length exceeds `u16::MAX`) or if the
 /// `branch_key_version` cannot be parsed as a 16-byte UUID.
 pub fn compute_aad(
     branch_key_id: &str,
     branch_key_version: &str,
     encryption_context: &EncryptionContext,
-) -> Result<Vec<u8>, MaterialsError> {
-    let version_bytes = uuid_str_to_16_bytes(branch_key_version)?;
+) -> Result<Vec<u8>, Error> {
+    let version_bytes = uuid_str_to_16_bytes(branch_key_version, branch_key_id)?;
 
-    let serialized_ec = encryption_context.serialize()?;
+    let serialized_ec = encryption_context.to_bytes()?;
 
     let mut aad = Vec::with_capacity(
         HIERARCHY_LABEL.len() + branch_key_id.len() + VERSION_LEN + serialized_ec.len(),
@@ -80,21 +83,28 @@ pub fn compute_aad(
 /// bytes.
 ///
 /// This parse is the validation gate on the branch-key-version string.
-/// Returns `MaterialsError` rather than panicking so a caller that hands us a
-/// malformed string (e.g. a corrupted keystore record or a fuzzer) gets a
-/// clean error instead of a process abort.
+/// A malformed string, such as one from a corrupted key store record,
+/// returns an `InvalidMaterials` error naming the branch key.
 ///
 /// The explicit length check keeps the gate strict: `Uuid::parse_str` also
 /// accepts the 32-character simple form as well as braced and URN forms,
 /// and only the canonical hyphenated form is 36 characters.
-fn uuid_str_to_16_bytes(s: &str) -> Result<[u8; VERSION_LEN], MaterialsError> {
+fn uuid_str_to_16_bytes(s: &str, branch_key_id: &str) -> Result<[u8; VERSION_LEN], Error> {
+    let malformed = |message: String| {
+        Error::new(Kind::InvalidMaterials, message).about(
+            Some(Service::DynamoDb),
+            Some(Resource::BranchKey(BranchKey::new(
+                branch_key_id.to_owned(),
+            ))),
+        )
+    };
     if s.len() != 36 {
-        return Err(MaterialsError::new(format!(
-            "Branch key version is not a valid 36-char UUID: {s}",
+        return Err(malformed(format!(
+            "branch key version is not a valid 36-char UUID: {s}"
         )));
     }
     let uuid = Uuid::parse_str(s).map_err(|e| {
-        MaterialsError::new(format!("Branch key version is not a valid UUID: {s}: {e}"))
+        malformed(format!("branch key version is not a valid UUID: {s}")).with_source(e)
     })?;
     Ok(*uuid.as_bytes())
 }
@@ -112,7 +122,7 @@ fn uuid_str_to_16_bytes(s: &str) -> Result<[u8; VERSION_LEN], MaterialsError> {
 fn derive_branch_key(
     branch_key: &[u8; DERIVED_KEY_LEN],
     salt: &[u8; SALT_LEN],
-) -> Result<[u8; DERIVED_KEY_LEN], MaterialsError> {
+) -> Result<Zeroizing<[u8; DERIVED_KEY_LEN]>, Error> {
     // FixedInfo: Label || 0x00 || salt || L_be32 (256-bit output).
     let mut info = Vec::with_capacity(HIERARCHY_LABEL.len() + 1 + SALT_LEN + 4);
     info.extend_from_slice(HIERARCHY_LABEL);
@@ -121,10 +131,12 @@ fn derive_branch_key(
     let output_len_bits: u32 = 256;
     info.extend_from_slice(&output_len_bits.to_be_bytes());
 
-    let mut derived = [0u8; DERIVED_KEY_LEN];
-    kbkdf_ctr_hmac(DigestAlg::Sha256, branch_key, &info, &mut derived).map_err(|e| {
-        MaterialsError::keyring_failed_with_cause(
-            "Branch key wrap: KDF in Counter Mode with HMAC SHA256 derivation failed",
+    // Wiped on drop, so the derived wrapping key does not linger in memory.
+    let mut derived = Zeroizing::new([0u8; DERIVED_KEY_LEN]);
+    kbkdf_ctr_hmac(DigestAlg::Sha256, branch_key, &info, &mut *derived).map_err(|e| {
+        Error::with_cause(
+            Kind::Cryptographic,
+            "KDF in Counter Mode with HMAC SHA256 derivation failed",
             e,
         )
     })?;
@@ -146,23 +158,17 @@ pub fn wrap(
     materials: &BranchKeyMaterials,
     encryption_context: &EncryptionContext,
     plaintext_data_key: &[u8],
-) -> Result<Vec<u8>, MaterialsError> {
+) -> Result<Vec<u8>, Error> {
     // 1. Generate a 16-byte random salt.
     let mut salt = [0u8; SALT_LEN];
     generate_random_bytes(&mut salt).map_err(|e| {
-        MaterialsError::keyring_failed_with_cause(
-            "Branch key wrap: failed to obtain entropy for salt",
-            e,
-        )
+        Error::with_cause(Kind::Cryptographic, "failed to obtain entropy for salt", e)
     })?;
 
     // 2. Generate a 12-byte random IV.
     let mut iv = [0u8; IV_LEN];
     generate_random_bytes(&mut iv).map_err(|e| {
-        MaterialsError::keyring_failed_with_cause(
-            "Branch key wrap: failed to obtain entropy for IV",
-            e,
-        )
+        Error::with_cause(Kind::Cryptographic, "failed to obtain entropy for IV", e)
     })?;
 
     // 3. Derive the AES-256-GCM cipher key.
@@ -175,7 +181,8 @@ pub fn wrap(
         encryption_context,
     )?;
 
-    let version_bytes = uuid_str_to_16_bytes(materials.branch_key_version())?;
+    let version_bytes =
+        uuid_str_to_16_bytes(materials.branch_key_version(), materials.branch_key_id())?;
 
     // 5. Assemble the on-wire layout and AES-256-GCM encrypt directly into it.
     //
@@ -192,14 +199,12 @@ pub fn wrap(
     aes_encrypt(
         AesGcm::Aes256Gcm,
         &iv,
-        &derived_branch_key,
+        &*derived_branch_key,
         plaintext_data_key,
         &aad_bytes,
         &mut output,
     )
-    .map_err(|e| {
-        MaterialsError::keyring_failed_with_cause("Branch key wrap: AES-256-GCM encrypt failed", e)
-    })?;
+    .map_err(|e| Error::with_cause(Kind::Cryptographic, "AES-256-GCM encrypt failed", e))?;
 
     debug_assert_eq!(
         output.len() - pre_encrypt_len,
@@ -226,13 +231,16 @@ pub fn unwrap(
     materials: &BranchKeyMaterials,
     encryption_context: &EncryptionContext,
     ciphertext: &[u8],
-) -> Result<Vec<u8>, MaterialsError> {
+) -> Result<Vec<u8>, Error> {
     // Validate ciphertext is at least the fixed overhead so the slicing below is in-bounds.
     if ciphertext.len() < FIXED_OVERHEAD_LEN {
-        return Err(MaterialsError::keyring_failed(format!(
-            "Branch key unwrap: ciphertext too short: {} < {FIXED_OVERHEAD_LEN}",
-            ciphertext.len(),
-        )));
+        return Err(Error::new(
+            Kind::Cryptographic,
+            format!(
+                "ciphertext too short: {} < {FIXED_OVERHEAD_LEN}",
+                ciphertext.len(),
+            ),
+        ));
     }
 
     // Deserialize the layout.
@@ -267,19 +275,14 @@ pub fn unwrap(
     let mut plaintext = vec![0u8; encrypted_key.len()];
     aes_decrypt(
         AesGcm::Aes256Gcm,
-        &derived_branch_key,
+        &*derived_branch_key,
         encrypted_key,
         tag,
         &iv_bytes,
         &aad_bytes,
         &mut plaintext,
     )
-    .map_err(|e| {
-        MaterialsError::keyring_failed_with_cause(
-            "Branch key unwrap: AES-256-GCM decrypt failed",
-            e,
-        )
-    })?;
+    .map_err(|e| Error::with_cause(Kind::Cryptographic, "AES-256-GCM decrypt failed", e))?;
 
     // Each fallible step (deserialization, KDF, AAD construction, AES decrypt)
     // uses `?` to propagate; reaching this Ok requires every step to have

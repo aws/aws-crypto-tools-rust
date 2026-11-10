@@ -2,24 +2,23 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! Tests for spec/client-apis/decrypt.md#get-the-decryption-materials
-// The spy CMM below implements the native `aws_crypto_mpl::cmm::Cmm` trait
-// whose signatures return `MaterialsError` by value; keep the large-Err allow
-// so the delegating spy's `Result` doesn't trip clippy::result_large_err.
-#![allow(clippy::result_large_err)]
 
 #[allow(clippy::duplicate_mod)]
 mod fixtures;
 mod test_helpers;
 
+use aws_crypto_mpl::Error as MplError;
+use aws_crypto_mpl::async_trait;
+use aws_crypto_mpl::cmm::DecryptMaterialsInput;
+use aws_crypto_mpl::cmm::{self, DefaultCmm};
 use aws_crypto_mpl::cmm::{
-    Cmm as MplCmm, DecryptMaterialsRequest, DefaultCmm, EncryptionMaterialsRequest,
+    DecryptMaterialsOutput, GetEncryptionMaterialsInput, GetEncryptionMaterialsOutput,
 };
 use aws_crypto_mpl::keyring::RawAesKeyring;
-use aws_crypto_mpl::structures::{
-    DecryptionMaterials, EncryptionMaterials, KeyDerivationAlgorithm, MaterialsError,
-};
+use aws_crypto_mpl::types::AesWrappingAlg;
+use aws_crypto_mpl::types::KeyDerivationAlgorithm;
+use aws_esdk::types::*;
 use aws_esdk::*;
-use aws_mpl_primitives::AesGcm;
 use fixtures::*;
 use std::sync::{Arc, Mutex};
 use test_helpers::*;
@@ -28,19 +27,26 @@ use test_helpers::*;
 async fn test_decrypt_fails_with_wrong_keyring() {
     let keyring = test_keyring().await;
     let pt = b"negative test";
-    let enc_input = EncryptInput::with_keyring(pt, EncryptionContext::new(), keyring.clone());
-    let ct = encrypt(&enc_input).await.unwrap().ciphertext;
+    let ct = Client::default()
+        .encrypt()
+        .plaintext(pt)
+        .keyring(keyring.clone())
+        .send()
+        .await
+        .unwrap()
+        .into_ciphertext()
+        .into_inner();
 
     // A different keyring (different namespace, different wrapping key) — its
     // default CMM cannot unwrap the EDK encrypted by `keyring`.
     let (ns, name) = namespace_and_name(1);
-    let wrong_keyring: Arc<dyn aws_crypto_mpl::keyring::Keyring> = Arc::new(
-        RawAesKeyring::new(ns, name, vec![1u8; 32], AesGcm::Aes256Gcm)
-            .expect("raw AES keyring construction must succeed for test key material"),
-    );
-
-    let valid_input = DecryptInput::with_keyring(&ct, EncryptionContext::new(), keyring);
-    let invalid_input = DecryptInput::with_keyring(&ct, EncryptionContext::new(), wrong_keyring);
+    let wrong_keyring = RawAesKeyring::builder()
+        .key_namespace(ns)
+        .key_name(name)
+        .wrapping_key(vec![1u8; 32])
+        .wrapping_alg(AesWrappingAlg::AlgAes256GcmIv12Tag16)
+        .build()
+        .expect("raw AES keyring construction must succeed for test key material");
 
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
     //= type=test
@@ -48,20 +54,26 @@ async fn test_decrypt_fails_with_wrong_keyring() {
     //# If a CMM is not supplied as the input, the decrypt operation MUST construct a [default CMM](../framework/default-cmm.md)
     //# from the input [keyring](../framework/keyring-interface.md).
     assert!(
-        decrypt(&valid_input).await.is_ok(),
+        Client::default()
+            .decrypt()
+            .ciphertext(&ct)
+            .keyring(keyring)
+            .send()
+            .await
+            .is_ok(),
         "right keyring must decrypt"
     );
-    let err = decrypt(&invalid_input)
+    let err = Client::default()
+        .decrypt()
+        .ciphertext(&ct)
+        .keyring(wrong_keyring)
+        .send()
         .await
         .expect_err("wrong keyring must fail to obtain materials");
-    // Natively, the wrapped keyring's on_decrypt returns a MaterialsError that
-    // the ESDK surfaces as ErrorKind::MplError (the analogue of the legacy
-    // default-CMM CollectionOfErrors).
-    assert_eq!(
-        err.kind,
-        ErrorKind::MplError,
-        "expected MPL materials error from the wrong keyring's default CMM, got: {:?}",
-        err.kind
+    assert!(
+        err.is_no_matching_data_key(),
+        "expected the wrong keyring's default CMM to find no matching data key, got: {:?}",
+        err
     );
 }
 
@@ -72,47 +84,48 @@ async fn test_pre_cmm_commitment_policy_check() {
     // Encrypt with a non-committing suite (allowed by ForbidEncryptAllowDecrypt).
     let ct = encrypt_with_suite(
         pt,
-        EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256,
-        EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt,
+        AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256,
+        CommitmentPolicy::ForbidEncryptAllowDecrypt,
         &keyring,
     )
     .await;
 
-    // Two decrypt inputs differing only in commitment_policy: the allowing
+    // Two clients differing only in commitment_policy: the allowing
     // policy accepts the parsed non-committing suite; the requiring policy
     // rejects it pre-CMM.
-    let mut valid_input =
-        DecryptInput::with_keyring(&ct, EncryptionContext::new(), keyring.clone());
-    valid_input.commitment_policy = EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
-    let mut invalid_input = DecryptInput::with_keyring(&ct, EncryptionContext::new(), keyring);
-    invalid_input.commitment_policy = EsdkCommitmentPolicy::RequireEncryptRequireDecrypt;
-
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
     //= type=test
-    //= reason=Policy that allows the parsed suite → Ok; policy that doesn't → pre-CMM ValidationError
+    //= reason=Policy that allows the parsed suite → Ok; policy that doesn't → Validation error
     //# If the parsed [algorithm suite ID](../data-format/message-header.md#algorithm-suite-id)
     //# is not supported by the [commitment policy](client.md#commitment-policy)
     //# configured in the [client](client.md) decrypt MUST yield an error.
     //
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
     //= type=test
-    //= reason=Test sets commitment_policy on input directly; only the chosen policy reaches the pre-CMM check
+    //= reason=Test sets commitment_policy on the client directly; only the chosen policy reaches the pre-CMM check
     //# - Commitment Policy: This MUST be the commitment policy configured on the client.
     assert!(
-        decrypt(&valid_input).await.is_ok(),
+        esdk_v1()
+            .decrypt()
+            .ciphertext(&ct)
+            .keyring(keyring.clone())
+            .send()
+            .await
+            .is_ok(),
         "policy that allows non-committing suite must decrypt"
     );
-    let err = decrypt(&invalid_input)
+    let err = esdk_with(CommitmentPolicy::RequireEncryptRequireDecrypt)
+        .decrypt()
+        .ciphertext(&ct)
+        .keyring(keyring)
+        .send()
         .await
         .expect_err("policy that requires committing must reject non-committing suite");
-    // The parsed-suite-vs-commitment-policy check runs pre-CMM in decrypt.rs and
-    // yields a ValidationError (the native analogue of the legacy
-    // InvalidAlgorithmSuiteInfoOnDecrypt).
-    assert_eq!(
-        err.kind,
-        ErrorKind::ValidationError,
-        "expected pre-CMM ValidationError, got: {:?}",
-        err.kind
+    // Decrypt rejects the parsed suite before calling the CMM, with a Validation error.
+    assert!(
+        err.is_validation(),
+        "expected pre-CMM Validation error, got: {:?}",
+        err
     );
 }
 
@@ -127,8 +140,8 @@ async fn test_algorithm_suite_from_decryption_materials() {
     let pt = b"test algorithm suite from materials";
     let ct = encrypt_with_suite(
         pt,
-        EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256,
-        EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt,
+        AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256,
+        CommitmentPolicy::ForbidEncryptAllowDecrypt,
         &keyring,
     )
     .await;
@@ -136,13 +149,17 @@ async fn test_algorithm_suite_from_decryption_materials() {
     // Parse the header directly to read the algorithm suite from the wire
     let mut cursor = std::io::Cursor::new(ct.as_slice());
     let mut raw = Vec::new();
-    let header_body = read_header_body(&mut cursor, None, &mut raw).unwrap();
+    let header_body = read_header_body(&mut cursor, None, &mut raw).await.unwrap();
     let wire_suite_bytes = header_body.algorithm_suite().id();
 
     // Decrypt and verify the output suite matches what the header contained
-    let mut dec_input = DecryptInput::with_keyring(&ct, EncryptionContext::new(), keyring);
-    dec_input.commitment_policy = EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
-    let result = decrypt(&dec_input).await.unwrap();
+    let result = esdk_v1()
+        .decrypt()
+        .ciphertext(&ct)
+        .keyring(keyring)
+        .send()
+        .await
+        .unwrap();
 
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
     //= type=test
@@ -150,7 +167,7 @@ async fn test_algorithm_suite_from_decryption_materials() {
     //# The algorithm suite used as input for all decryption described below MUST be the algorithm suite
     //# included in the [decryption materials](../framework/structures.md#decryption-materials).
     assert_eq!(
-        result.algorithm_suite_id.id_bytes(),
+        result.algorithm_suite_id().id_bytes(),
         wire_suite_bytes,
         "output suite must match header's parsed suite"
     );
@@ -163,8 +180,8 @@ async fn test_commit_key_derived_and_validated() {
     // Use committing suite
     let valid_ct = encrypt_with_suite(
         pt,
-        EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey,
-        EsdkCommitmentPolicy::RequireEncryptRequireDecrypt,
+        AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey,
+        CommitmentPolicy::RequireEncryptRequireDecrypt,
         &keyring,
     )
     .await;
@@ -183,30 +200,37 @@ async fn test_commit_key_derived_and_validated() {
         "tamper must change the byte"
     );
 
-    let valid_input =
-        DecryptInput::with_keyring(&valid_ct, EncryptionContext::new(), keyring.clone());
-    let tampered_input =
-        DecryptInput::with_keyring(&tampered_ct, EncryptionContext::new(), keyring);
-
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
     //= type=test
-    //= reason=Untampered commit key → Ok; tampered commit key in header → ValidationError, proving the equality check runs
+    //= reason=Untampered commit key → Ok; tampered commit key in header → Cryptographic error, proving the equality check runs
     //# If the [algorithm suite](../framework/algorithm-suites.md#algorithm-suites-encryption-key-derivation-settings) supports [key commitment](../framework/algorithm-suites.md#key-commitment)
     //# then the [commit key](../framework/algorithm-suites.md#commit-key) MUST be derived from the plaintext data key
     //# using the [commit key derivation](../framework/algorithm-suites.md#algorithm-suites-commit-key-derivation-settings).
     //
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
     //= type=test
-    //= reason=Header commit key must equal derived commit key; tampering breaks equality → ValidationError
+    //= reason=Header commit key must equal derived commit key; tampering breaks equality → Cryptographic error
     //# The derived commit key MUST equal the commit key stored in the message header.
     assert!(
-        decrypt(&valid_input).await.is_ok(),
+        Client::default()
+            .decrypt()
+            .ciphertext(&valid_ct)
+            .keyring(keyring.clone())
+            .send()
+            .await
+            .is_ok(),
         "valid commit key must decrypt"
     );
-    assert_eq!(
-        decrypt(&tampered_input).await.unwrap_err().kind,
-        ErrorKind::ValidationError,
-        "tampered commit key must produce ValidationError"
+    assert!(
+        Client::default()
+            .decrypt()
+            .ciphertext(&tampered_ct)
+            .keyring(keyring)
+            .send()
+            .await
+            .unwrap_err()
+            .is_cryptographic(),
+        "tampered commit key must produce Cryptographic error"
     );
 }
 
@@ -220,8 +244,8 @@ async fn test_kdf_algorithm_from_materials_suite() {
     let pt = b"test kdf algorithm from materials";
     let ct = encrypt_with_suite(
         pt,
-        EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256,
-        EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt,
+        AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256,
+        CommitmentPolicy::ForbidEncryptAllowDecrypt,
         &keyring,
     )
     .await;
@@ -229,7 +253,7 @@ async fn test_kdf_algorithm_from_materials_suite() {
     // Parse header and verify the suite's KDF is HKDF (not Identity)
     let mut cursor = std::io::Cursor::new(ct.as_slice());
     let mut raw = Vec::new();
-    let header_body = read_header_body(&mut cursor, None, &mut raw).unwrap();
+    let header_body = read_header_body(&mut cursor, None, &mut raw).await.unwrap();
     let suite = header_body.algorithm_suite();
     // Sanity check: the suite parsed from the header declares HKDF derivation.
     assert!(
@@ -243,8 +267,6 @@ async fn test_kdf_algorithm_from_materials_suite() {
         suite.encryption_kdf()
     );
 
-    let mut dec_input = DecryptInput::with_keyring(&ct, EncryptionContext::new(), keyring);
-    dec_input.commitment_policy = EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
     //= type=test
     //= reason=KDF is an invisible AEAD input; a wrong KDF derives a wrong key → AES-GCM tag fails, so decrypt success proves the suite's HKDF was used
@@ -252,9 +274,16 @@ async fn test_kdf_algorithm_from_materials_suite() {
     //# the [key derivation algorithm](../framework/algorithm-suites.md#key-derivation-algorithm) included in the
     //# [algorithm suite](../framework/algorithm-suites.md) associated with
     //# the returned decryption materials.
-    let result = decrypt(&dec_input).await.unwrap();
+    let result = esdk_v1()
+        .decrypt()
+        .ciphertext(&ct)
+        .keyring(keyring)
+        .send()
+        .await
+        .unwrap();
     assert_eq!(
-        result.plaintext, pt,
+        result.plaintext(),
+        pt,
         "HKDF-derived key must decrypt the body"
     );
 }
@@ -264,8 +293,15 @@ async fn test_unsupported_esdk_algorithm_suite_yields_error() {
     let keyring = aes_keyring(0).await;
     let pt = b"unsupported esdk suite test";
 
-    let enc_input = EncryptInput::with_keyring(pt, EncryptionContext::new(), keyring.clone());
-    let valid_ct = encrypt(&enc_input).await.unwrap().ciphertext;
+    let valid_ct = Client::default()
+        .encrypt()
+        .plaintext(pt)
+        .keyring(keyring.clone())
+        .send()
+        .await
+        .unwrap()
+        .into_ciphertext()
+        .into_inner();
 
     // Tamper the algorithm suite ID bytes in the header to an invalid value.
     // V2 header: byte 0 = version (0x02), bytes 1-2 = algorithm suite ID.
@@ -273,14 +309,9 @@ async fn test_unsupported_esdk_algorithm_suite_yields_error() {
     tampered_ct[1] = 0xFF;
     tampered_ct[2] = 0xFF;
 
-    let valid_input =
-        DecryptInput::with_keyring(&valid_ct, EncryptionContext::new(), keyring.clone());
-    let tampered_input =
-        DecryptInput::with_keyring(&tampered_ct, EncryptionContext::new(), keyring);
-
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
     //= type=test
-    //= reason=Supported ESDK suite ID → Ok; tampered to non-ESDK 0xFFFF → ValidationError
+    //= reason=Supported ESDK suite ID → Ok; tampered to non-ESDK 0xFFFF → Serialization error
     //# If this algorithm suite is not [supported for the ESDK](../framework/algorithm-suites.md#supported-algorithm-suites-enum)
     //# decrypt MUST yield an error.
     //
@@ -291,13 +322,25 @@ async fn test_unsupported_esdk_algorithm_suite_yields_error() {
     //# [algorithm suite ID](../data-format/message-header.md#algorithm-suite-id)
     //# from the message header.
     assert!(
-        decrypt(&valid_input).await.is_ok(),
+        Client::default()
+            .decrypt()
+            .ciphertext(&valid_ct)
+            .keyring(keyring.clone())
+            .send()
+            .await
+            .is_ok(),
         "valid suite ID must decrypt"
     );
-    assert_eq!(
-        decrypt(&tampered_input).await.unwrap_err().kind,
-        ErrorKind::ValidationError,
-        "non-ESDK suite ID must produce ValidationError"
+    assert!(
+        Client::default()
+            .decrypt()
+            .ciphertext(&tampered_ct)
+            .keyring(keyring)
+            .send()
+            .await
+            .unwrap_err()
+            .is_serialization(),
+        "non-ESDK suite ID must produce Serialization error"
     );
 }
 
@@ -305,34 +348,52 @@ async fn test_unsupported_esdk_algorithm_suite_yields_error() {
 /// then delegates to an inner (real) default CMM so the returned materials are
 /// the genuine ones the ESDK uses to complete the round-trip.
 struct DecryptSpyCmm {
-    inner: Arc<dyn MplCmm>,
+    inner: DefaultCmm,
     observed_edk_count: Arc<Mutex<Option<usize>>>,
     observed_ec_keys: Arc<Mutex<Option<Vec<String>>>>,
 }
 
-#[async_trait::async_trait]
-impl MplCmm for DecryptSpyCmm {
+#[async_trait]
+impl cmm::Cmm for DecryptSpyCmm {
     async fn get_encryption_materials(
         &self,
-        request: EncryptionMaterialsRequest,
-    ) -> Result<EncryptionMaterials, MaterialsError> {
-        self.inner.get_encryption_materials(request).await
+        request: GetEncryptionMaterialsInput,
+    ) -> Result<GetEncryptionMaterialsOutput, MplError> {
+        self.inner
+            .get_encryption_materials()
+            .set_encryption_context(Some(request.encryption_context().clone()))
+            .commitment_policy(request.commitment_policy())
+            .set_algorithm_suite_id(request.algorithm_suite_id())
+            .set_required_encryption_context_keys(Some(
+                request.required_encryption_context_keys().clone(),
+            ))
+            .set_max_plaintext_length(request.max_plaintext_length())
+            .send()
+            .await
     }
 
     async fn decrypt_materials(
         &self,
-        request: DecryptMaterialsRequest,
-    ) -> Result<DecryptionMaterials, MaterialsError> {
+        request: DecryptMaterialsInput,
+    ) -> Result<DecryptMaterialsOutput, MplError> {
         // Record observations from the request the ESDK constructed.
         *self.observed_edk_count.lock().unwrap() = Some(request.encrypted_data_keys().len());
         let keys: Vec<String> = request
             .encryption_context()
             .iter()
-            .map(|(k, _)| String::from_utf8_lossy(k).into_owned())
+            .map(|(k, _)| k.to_owned())
             .collect();
         *self.observed_ec_keys.lock().unwrap() = Some(keys);
         // Delegate to the inner default CMM so real materials are returned.
-        self.inner.decrypt_materials(request).await
+        self.inner
+            .decrypt_materials()
+            .algorithm_suite_id(request.algorithm_suite_id())
+            .commitment_policy(request.commitment_policy())
+            .set_encrypted_data_keys(Some(request.encrypted_data_keys().to_vec()))
+            .set_encryption_context(Some(request.encryption_context().clone()))
+            .set_reproduced_encryption_context(request.reproduced_encryption_context().cloned())
+            .send()
+            .await
     }
 }
 
@@ -340,22 +401,35 @@ impl MplCmm for DecryptSpyCmm {
 async fn test_cmm_decrypt_call_receives_header_edks_and_ec() {
     let keyring = test_keyring().await;
     let mut ec = EncryptionContext::new();
-    ec.insert("spy-key".to_string(), "spy-val".to_string());
+    ec.insert("spy-key", "spy-val");
     let pt = b"spy cmm decrypt test";
-    let enc_input = EncryptInput::with_keyring(pt, ec, keyring.clone());
-    let ct = encrypt(&enc_input).await.unwrap().ciphertext;
+    let ct = Client::default()
+        .encrypt()
+        .plaintext(pt)
+        .set_encryption_context(Some(ec))
+        .keyring(keyring.clone())
+        .send()
+        .await
+        .unwrap()
+        .into_ciphertext()
+        .into_inner();
 
-    let inner_cmm: Arc<dyn MplCmm> = Arc::new(DefaultCmm::new(keyring));
+    let inner_cmm = DefaultCmm::new(keyring);
     let observed_edk_count = Arc::new(Mutex::new(None));
     let observed_ec_keys = Arc::new(Mutex::new(None));
-    let spy_cmm: Arc<dyn MplCmm> = Arc::new(DecryptSpyCmm {
+    let spy_cmm = DecryptSpyCmm {
         inner: inner_cmm,
         observed_edk_count: observed_edk_count.clone(),
         observed_ec_keys: observed_ec_keys.clone(),
-    });
+    };
 
-    let dec_input = DecryptInput::with_cmm(&ct, EncryptionContext::new(), spy_cmm);
-    let result = decrypt(&dec_input).await.unwrap();
+    let result = Client::default()
+        .decrypt()
+        .ciphertext(&ct)
+        .cmm(spy_cmm)
+        .send()
+        .await
+        .unwrap();
     //= spec/client-apis/decrypt.md#cryptographic-materials-manager
     //= type=test
     //= reason=the spy CMM wraps a real CMM and was invoked during decrypt; its returned materials were used (spy call observed below)
@@ -371,7 +445,7 @@ async fn test_cmm_decrypt_call_receives_header_edks_and_ec() {
     //= type=test
     //= reason=We passed spy_cmm as the input CMM; the spy observing the call proves the input CMM was used
     //# The CMM used MUST be the input CMM, if supplied.
-    assert_eq!(result.plaintext, pt);
+    assert_eq!(result.plaintext(), pt);
 
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
     //= type=test

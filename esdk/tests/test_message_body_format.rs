@@ -140,12 +140,11 @@ async fn test_nonframed_encrypted_content_length_max_value() {
     let err = try_decrypt_external_nonframed(Version::V2, &tampered)
         .await
         .expect_err("decrypt must reject content length > 2^36 - 32");
-    assert_eq!(
-        err.kind,
-        ErrorKind::SerializationError,
-        "expected SerializationError for over-bound content length, got: {} ({:?})",
-        err.message,
-        err.kind
+    assert!(
+        err.is_serialization(),
+        "expected Serialization error for over-bound content length, got: {} ({:?})",
+        err.message(),
+        err
     );
 }
 
@@ -220,7 +219,7 @@ async fn test_framed_data_max_frame_count() {
     // With frame_length=4 and 20 bytes, we get 4 regular + 1 final = 5 frames.
     //= spec/data-format/message-body.md#framed-data
     //= type=test
-    //= reason=The 2^32-1 boundary is unreachable in a unit test (would require ~4B frames). The implementation enforces it at body_encrypt.rs by checking sequence_number == ENDFRAME_SEQUENCE_NUMBER (0xFFFFFFFF) before writing each regular frame and returning ValidationError("Too many frames"). This test exercises a small frame count to confirm the multi-frame path works; the upper bound itself is enforced by source-side citation.
+    //= reason=The 2^32-1 boundary is unreachable in a unit test (would require ~4B frames). The implementation enforces it at body_encrypt.rs by checking sequence_number == ENDFRAME_SEQUENCE_NUMBER (0xFFFFFFFF) before writing each regular frame and returning Validation error("Too many frames"). This test exercises a small frame count to confirm the multi-frame path works; the upper bound itself is enforced by source-side citation.
     //# - The number of frames in a single message MUST be less than or equal to `2^32 - 1`.
     let pt = vec![0xBBu8; 20];
     let keyring = test_keyring().await;
@@ -887,12 +886,11 @@ async fn test_final_frame_content_length_matches_serialized_content() {
 
         //= spec/data-format/message-body.md#final-frame-encrypted-content
         //= type=test
-        //= reason=Untampered ct decrypts; content truncated below the declared Encrypted Content Length → SerializationError
+        //= reason=Untampered ct decrypts; content truncated below the declared Encrypted Content Length → Serialization error
         //# The length of the serialized encrypted content field MUST be equal to the value of the [Encrypted Content Length](#final-frame-encrypted-content-length) field.
         assert!(valid.is_ok(), "{version:?}: valid ct must decrypt");
-        assert_eq!(
-            tampered_result.unwrap_err().kind,
-            ErrorKind::SerializationError,
+        assert!(
+            tampered_result.unwrap_err().is_serialization(),
             "{version:?}: content shorter than the declared Encrypted Content Length must be rejected"
         );
     }
@@ -931,15 +929,18 @@ async fn test_final_frame_auth_tag_authenticates_final_frame() {
     let mut tampered = ct.clone();
     tampered[final_frame.tag_offset] ^= 0xFF;
 
-    let dec_input = DecryptInput::with_keyring(&tampered, EncryptionContext::new(), keyring);
-    let err = decrypt(&dec_input)
+    let err = Client::default()
+        .decrypt()
+        .ciphertext(&tampered)
+        .keyring(keyring)
+        .send()
         .await
         .expect_err("tampered final frame auth tag must cause decryption failure");
     assert!(
-        matches!(err.kind, ErrorKind::CryptographicError),
-        "expected CryptographicError, got: {} ({:?})",
-        err.message,
-        err.kind
+        err.is_cryptographic(),
+        "expected Cryptographic error, got: {} ({:?})",
+        err.message(),
+        err
     );
 }
 
@@ -959,8 +960,11 @@ async fn test_regular_frame_auth_tag_authenticates_regular_frame() {
     let mut tampered = ct.clone();
     tampered[regular.tag_offset] ^= 0xFF;
 
-    let dec_input = DecryptInput::with_keyring(&tampered, EncryptionContext::new(), keyring);
-    let err = decrypt(&dec_input)
+    let err = Client::default()
+        .decrypt()
+        .ciphertext(&tampered)
+        .keyring(keyring)
+        .send()
         .await
         .expect_err("tampered regular frame auth tag must cause decryption failure");
     //= spec/client-apis/decrypt.md#decrypt-the-message-body
@@ -968,10 +972,10 @@ async fn test_regular_frame_auth_tag_authenticates_regular_frame() {
     //= reason=tampering a regular frame's auth tag → AEAD failure, proving the deserialized tag authenticates the frame
     //# - The tag MUST be the authentication tag deserialized from the frame or body.
     assert!(
-        matches!(err.kind, ErrorKind::CryptographicError),
-        "expected CryptographicError, got: {} ({:?})",
-        err.message,
-        err.kind
+        err.is_cryptographic(),
+        "expected Cryptographic error, got: {} ({:?})",
+        err.message(),
+        err
     );
 }
 
@@ -980,9 +984,8 @@ async fn test_regular_frame_seq_num_out_of_order_rejected() {
     //= spec/data-format/message-body.md#regular-frame-sequence-number
     //= type=test
     //# Subsequent frames MUST be in order and MUST contain an increment of 1 from the previous frame.
-    // Tamper the second regular frame's seq num so it's NOT (previous + 1). Decrypt must
-    // reject this with SerializationError ("Sequence number out of order"), per the
-    // body_decrypt.rs check `if seq_num != expected_frame { return ser_err(...) }`.
+    // Tamper the second regular frame's seq num so it is not previous + 1.
+    // Decrypt must reject it with a Serialization error.
     // Use 25 bytes / frame_length=10 → 2 regular + 1 final, so we have a frame[1] to tamper.
     let pt = vec![0xDDu8; 25];
     let keyring = test_keyring().await;
@@ -1009,16 +1012,18 @@ async fn test_regular_frame_seq_num_out_of_order_rejected() {
     tampered[frame1.seq_num_offset..frame1.seq_num_offset + 4]
         .copy_from_slice(&tampered_seq.to_be_bytes());
 
-    let dec_input = DecryptInput::with_keyring(&tampered, EncryptionContext::new(), keyring);
-    let err = decrypt(&dec_input)
+    let err = Client::default()
+        .decrypt()
+        .ciphertext(&tampered)
+        .keyring(keyring)
+        .send()
         .await
         .expect_err("out-of-order seq num must be rejected");
-    assert_eq!(
-        err.kind,
-        ErrorKind::SerializationError,
-        "expected SerializationError for out-of-order seq num, got: {} ({:?})",
-        err.message,
-        err.kind
+    assert!(
+        err.is_serialization(),
+        "expected Serialization error for out-of-order seq num, got: {} ({:?})",
+        err.message(),
+        err
     );
 }
 

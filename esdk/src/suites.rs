@@ -3,40 +3,25 @@
 
 //! Algorithm-suite helpers shared by the encrypt, decrypt, and message layers.
 //!
-//! The Material Providers Library (`aws_crypto_mpl`) exposes an
-//! [`AlgorithmSuiteId`](aws_crypto_mpl::structures::AlgorithmSuiteId) enum and an
-//! opaque [`AlgorithmSuite`](aws_crypto_mpl::structures::AlgorithmSuite)
-//! specification (fields private, read via accessor methods). The MPL only
-//! provides the forward `id -> specification` mapping; the ESDK message format
-//! carries the 2-byte suite id on the wire, so this module supplies the reverse
-//! `bytes -> id` lookup and small accessors that adapt the MPL suite shape to the
-//! values the ESDK serialization and key-derivation code needs.
+//! The Material Providers Library (`aws_crypto_mpl`) exposes the ESDK suites as
+//! [`EsdkAlgorithmSuiteId`](aws_crypto_mpl::types::EsdkAlgorithmSuiteId),
+//! which the ESDK re-exports as [`AlgorithmSuiteId`].
+//! Materials carry the MPL's format-generic
+//! [`AlgorithmSuiteId`](aws_crypto_mpl::types::AlgorithmSuiteId) union instead.
+//! Each suite's parameters come from an opaque
+//! [`AlgorithmSuite`](aws_crypto_mpl::types::AlgorithmSuite) specification.
+//! This module wraps the MPL's `bytes -> id` lookup in the ESDK error type.
+//! Its other helpers map MPL suite fields to the types the ESDK needs.
 
-use crate::error::{Error, esdk_err, val_err};
-use aws_crypto_mpl::structures::{
-    AlgorithmSuite, AlgorithmSuiteId, AsymmetricSignatureAlgorithm, KeyDerivationAlgorithm,
+use crate::error::{Error, Kind, err};
+use crate::shapes::AlgorithmSuiteId;
+use aws_crypto_mpl::types::{
+    AlgorithmSuite, AlgorithmSuiteId as MplAlgorithmSuiteId, AsymmetricSignatureAlgorithm,
+    KeyDerivationAlgorithm,
 };
 use aws_mpl_primitives::{DigestAlg, EcdsaSignatureAlgorithm};
 
-/// Every ESDK algorithm suite id, used to build the reverse `[u8; 2] -> id` lookup.
-const ALL_SUITES: [AlgorithmSuiteId; 11] = [
-    AlgorithmSuiteId::AlgAes128GcmIv12Tag16NoKdf,
-    AlgorithmSuiteId::AlgAes192GcmIv12Tag16NoKdf,
-    AlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf,
-    AlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256,
-    AlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha256,
-    AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256,
-    AlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256EcdsaP256,
-    AlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha384EcdsaP384,
-    AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384,
-    AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey,
-    AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,
-];
-
 /// Resolve a 2-byte on-wire algorithm suite id to its [`AlgorithmSuiteId`].
-///
-/// The MPL exposes only the forward `id -> [u8; 2]` direction, so the ESDK
-/// scans the supported-suites table to invert it.
 ///
 /// # Errors
 /// Returns an error if `bytes` is not a supported ESDK algorithm suite id.
@@ -47,15 +32,38 @@ pub fn algorithm_suite_id_from_bytes(bytes: [u8; 2]) -> Result<AlgorithmSuiteId,
     //
     //= spec/data-format/message-header.md#algorithm-suite-id
     //# This algorithm suite MUST be [supported for the ESDK](../framework/algorithm-suites.md#supported-algorithm-suites-enum).
-    ALL_SUITES
-        .into_iter()
-        .find(|id| id.id_bytes() == bytes)
-        .ok_or_else(|| {
-            esdk_err(format!(
-                "Unrecognized or unsupported algorithm suite ID: 0x{:02X}{:02X}",
+    AlgorithmSuiteId::from_id_bytes(bytes).ok_or_else(|| {
+        err(
+            Kind::Serialization,
+            format!(
+                "unrecognized or unsupported algorithm suite ID: 0x{:02X}{:02X}",
                 bytes[0], bytes[1]
-            ))
-        })
+            ),
+        )
+    })
+}
+
+/// Extracts the ESDK algorithm suite id from a generic MPL algorithm suite id.
+///
+/// # Errors
+/// Returns an error if `id` is not an ESDK algorithm suite.
+pub fn get_esdk_algorithm_suite_id(id: MplAlgorithmSuiteId) -> Result<AlgorithmSuiteId, Error> {
+    match id {
+        MplAlgorithmSuiteId::Esdk(id) => Ok(id),
+        //= spec/client-apis/encrypt.md#get-the-encryption-materials
+        //= type=implication
+        //= reason=Esdk is the only AlgorithmSuiteId variant, so encryption materials always carry an ESDK suite
+        //# If this algorithm suite is not [supported for the ESDK](../framework/algorithm-suites.md#supported-algorithm-suites-enum)
+        //# encrypt MUST yield an error.
+        //
+        //= spec/client-apis/decrypt.md#get-the-decryption-materials
+        //# If this algorithm suite is not [supported for the ESDK](../framework/algorithm-suites.md#supported-algorithm-suites-enum)
+        //# decrypt MUST yield an error.
+        other => Err(err(
+            Kind::InvalidMaterials,
+            format!("unsupported algorithm suite: {other:?}"),
+        )),
+    }
 }
 
 /// Resolve a 2-byte on-wire algorithm suite id to its [`AlgorithmSuite`] specification.
@@ -70,13 +78,19 @@ pub fn algorithm_suite_from_bytes(bytes: [u8; 2]) -> Result<AlgorithmSuite, Erro
 /// drives its HKDF, or an error if the KDF is the identity KDF (no hash).
 ///
 /// # Errors
-/// Returns an error if `kdf` is the identity KDF.
+/// Returns an error if `kdf` is the identity KDF or a KDF the ESDK does not support.
 pub(crate) fn kdf_digest(kdf: KeyDerivationAlgorithm) -> Result<DigestAlg, Error> {
     match kdf {
         KeyDerivationAlgorithm::HkdfSha256 => Ok(DigestAlg::Sha256),
         KeyDerivationAlgorithm::HkdfSha384 => Ok(DigestAlg::Sha384),
         KeyDerivationAlgorithm::HkdfSha512 => Ok(DigestAlg::Sha512),
-        KeyDerivationAlgorithm::IdentityKdf => Err(val_err("Identity KDF has no hash function")),
+        KeyDerivationAlgorithm::IdentityKdf => {
+            Err(err(Kind::Internal, "identity KDF has no hash function"))
+        }
+        other => Err(err(
+            Kind::Internal,
+            format!("unsupported key derivation algorithm: {other:?}"),
+        )),
     }
 }
 
@@ -84,11 +98,20 @@ pub(crate) fn kdf_digest(kdf: KeyDerivationAlgorithm) -> Result<DigestAlg, Error
 /// [`AsymmetricSignatureAlgorithm`] to the primitives [`EcdsaSignatureAlgorithm`].
 ///
 /// # Errors
-/// Returns an error if the suite has no asymmetric signature algorithm.
+/// Returns an error if the suite has no asymmetric signature algorithm the ESDK supports.
 pub fn get_ecdsa_alg(suite: &AlgorithmSuite) -> Result<EcdsaSignatureAlgorithm, Error> {
+    //= spec/framework/transitive-requirements.md#ecdsa
+    //# If specified to use ECDSA, the AWS Encryption SDK MUST use ECDSA with the following specifics:
     match suite.asymmetric_signature_algorithm() {
         Some(AsymmetricSignatureAlgorithm::EcdsaP256) => Ok(EcdsaSignatureAlgorithm::EcdsaP256),
         Some(AsymmetricSignatureAlgorithm::EcdsaP384) => Ok(EcdsaSignatureAlgorithm::EcdsaP384),
-        None => Err(val_err("Algorithm suite has no ECDSA signature algorithm")),
+        None => Err(err(
+            Kind::Internal,
+            "algorithm suite has no ECDSA signature algorithm",
+        )),
+        Some(other) => Err(err(
+            Kind::Internal,
+            format!("unsupported asymmetric signature algorithm: {other:?}"),
+        )),
     }
 }
