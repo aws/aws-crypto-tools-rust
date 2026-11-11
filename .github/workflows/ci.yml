@@ -393,7 +393,7 @@ jobs:
       id-token: write
     # aws/aws-crypto-tools-commons#73's branch writes the line coverage report;
     # the ref moves to @main when #73 merges.
-    uses: aws/aws-crypto-tools-commons/.github/workflows/mpl-test-server-reusable.yml@lucmcdon/test-server-coverage
+    uses: aws/aws-crypto-tools-commons/.github/workflows/mpl-test-server-reusable.yml@lucmcdon/test-server-duvet
     with:
       runner: *codebuild-linux
       focus: rust
