@@ -1,46 +1,61 @@
 # BUG-02: Plaintext data key length is not enforced (hierarchical OnDecrypt and materials constructors)
 
-Summary: `HierarchicalKeyring::on_decrypt` returns whatever length the AES-GCM unwrap produces (0, 5, 64 bytes, and so on). Separately, `EncryptionMaterials::new` and `DecryptionMaterials::new` accept a plaintext data key (PDK) of any length. The spec requires the PDK length to equal the algorithm suite's key length.
+Status: Fixed on main in `e9bde48` (#98). See "Status on main (620771c)" below.
+
+Summary (as found at `a1e23d7`): `HierarchicalKeyring::on_decrypt` returned whatever length the AES-GCM unwrap produced (0, 5, 64 bytes, and so on). Separately, `EncryptionMaterials::new` and `DecryptionMaterials::new` accepted a plaintext data key (PDK) of any length. The spec requires the PDK length to equal the algorithm suite's key length.
 
 - Confidence: Confirmed by test
 - Spec conflict: yes
 - Severity: Medium. This is a spec MUST deviation and a divergence from the Dafny MPL, which checks length in both places. Producing a wrong-length EDK needs the branch key, or a custom CMM/keyring supplying the PDK. Downstream ESDK checks catch it for identity-KDF and V2 (committing) suites, but by code reading not for V1 HKDF suites in release builds.
 - Related IDs: VR-2026-C04 (C04-F1 = keyring OnDecrypt, C04-F2 = materials constructors); cap:cat1 (1a)
 
+## Status on main (620771c)
+
+- Status: Fixed on main (both C04-F1 and C04-F2).
+- Re-checked: 2026-11-10, against `c256243` on `MPL-Verus` (code identical to `main` `620771c`). Details: [RECHECK-main-620771c.md](RECHECK-main-620771c.md), section BUG-02.
+- Evidence: with the reproducer adapted for API changes only, F1 now prints `on_decrypt Err: InvalidMaterials: plaintext data key is N bytes, expected 32 for the algorithm suite` for N = 5, 0 and 64. In F2, both materials builders return that `Err`, so the test fails at its own `em.unwrap()` (`.agents/tasks/bug-recheck/logs/recheck02.log`).
+- Fixing commit: `e9bde48` "feat(esdk): retarget the ESDK and C++ shim onto the native Rust MPL (#98)". It introduced `check_data_key_length` and moved the hierarchical OnDecrypt onto `add_data_key`. A later commit, `9646828` (#167, "check keyring and CMM materials by default"), adds further transition checks.
+- Where the fix lives: `mpl/src/structures/algorithm_suite.rs:547` (`check_data_key_length`). It is called from the builders (`encryption_materials.rs:365`, `decryption_materials.rs:303`) and from `add_data_key` (`encryption_materials.rs:60`, `decryption_materials.rs:56`). The hierarchical keyring's OnDecrypt now calls `materials.add_data_key(..)` (`mpl/src/aws_kms/hierarchical_keyring.rs:767`).
+
+The sections after Location are the original analysis at `a1e23d7`, kept as history. Their line numbers refer to `a1e23d7`.
+
 ## Location
 
-Verified against `HEAD a1e23d7`.
-
-C04-F1, `mpl/src/aws_kms/hierarchical_keyring.rs:414-423`. The unwrapped bytes go straight into the materials:
+Current code (`main` `620771c`), where the length is now enforced:
 
 ```rust
-414            match self.try_decrypt_edk(&materials, edk, &branch_key_id).await {
-415                Ok(plaintext_dk_bytes) => {
-416                    return DecryptionMaterials::new(
-417                        materials.algorithm_suite_id(),
-418                        materials.encryption_context().clone(),
-419                        materials.required_encryption_context_keys().clone(),
-420                        Some(PlaintextDataKey::new(plaintext_dk_bytes)),
+547 pub(crate) fn check_data_key_length(
+548     suite: &AlgorithmSuite,
+549     key: &PlaintextDataKey,
+550 ) -> Result<(), Error> {
+551     let expected_len = suite.encryption_key_length();
+552     if key.len() != expected_len {
+553         return Err(Error::new(
+554             Kind::InvalidMaterials,
 ```
 
-`try_decrypt_edk` ends with `branch_key_wrap::unwrap(..)` (line 601). `unwrap` (`mpl/src/aws_kms/branch_key_wrap.rs:225-236`) only requires `ciphertext.len() >= 60` (`FIXED_OVERHEAD_LEN`), and the encrypted-key slice is whatever lies between offset 44 and the tag.
-
-C04-F2: neither constructor checks the PDK length.
-
-- `mpl/src/structures/encryption_materials.rs:30-89`: its checks cover required-EC keys, EDKs present only with a PDK, signing-key presence, and symmetric-signing-key presence.
-- `mpl/src/structures/decryption_materials.rs:28-81`: its checks cover required-EC keys, verification-key presence and length, and symmetric-signing-key presence.
-
-As a result, `HierarchicalKeyring::on_encrypt` and `RawAesKeyring::on_encrypt` wrap a caller-supplied PDK of any length.
-
-Control: `RawAesKeyring::on_decrypt` does enforce the length (`mpl/src/keyring/raw_aes_keyring.rs:282, 326-330`):
+(`mpl/src/structures/algorithm_suite.rs:547-562`)
 
 ```rust
-326            if plaintext_dk.len() != expected_dk_len {
-327                collected_errors.push(MaterialsError::keyring_failed(format!(
-328                    "EncryptedDataKey {index}: decrypted data key is {} bytes, expected {expected_dk_len} for the algorithm suite",
+764             match self.try_decrypt_edk(&materials, edk, &branch_key_id).await {
+765                 Ok(plaintext_dk_bytes) => {
+766                     let materials =
+767                         materials.add_data_key(PlaintextDataKey::new(plaintext_dk_bytes))?;
 ```
 
-## Expected behavior
+(`mpl/src/aws_kms/hierarchical_keyring.rs:764-767`)
+
+Originally reported at `a1e23d7`:
+
+- C04-F1: `hierarchical_keyring.rs:414-423`. OnDecrypt built `DecryptionMaterials::new(.., Some(PlaintextDataKey::new(plaintext_dk_bytes)), ..)` with no length check. `branch_key_wrap::unwrap` (`branch_key_wrap.rs:225-236`) only required `ciphertext.len() >= 60`.
+- C04-F2: `EncryptionMaterials::new` (`encryption_materials.rs:30-89`) and `DecryptionMaterials::new` (`decryption_materials.rs:28-81`) did not check the PDK length.
+- Control: `RawAesKeyring::on_decrypt` enforced the length (`raw_aes_keyring.rs:282, 326-330`).
+
+## Original analysis at a1e23d7 (history)
+
+The rest of this report describes the behavior at `a1e23d7`, before the fix.
+
+### Expected behavior
 
 - `spec/framework/structures.md#plaintext-data-key` (encryption materials): "The plaintext data key MUST: - Fit the specification for the [key derivation algorithm](algorithm-suites.md#key-derivation-algorithm) included in this decryption material's [algorithm suite]".
 - `spec/framework/structures.md#plaintext-data-key-1` (decryption materials): "The plaintext data key MUST: - Fit the specification for the [encryption algorithm](algorithm-suites.md#encryption-algorithm) included in this decryption material's [algorithm suite]".
@@ -52,7 +67,7 @@ The Dafny MPL enforces this in three places (read on GitHub `main` while writing
 - `Materials.dfy`: `ValidEncryptionMaterials` / `ValidDecryptionMaterials` require `GetEncryptKeyLength(suite) == |plaintextDataKey|`. `EncryptionMaterialAddDataKey` / `DecryptionMaterialsAddDataKey` fail with "plaintextDataKey does not match Algorithm Suite specification." ([source](https://github.com/aws/aws-cryptographic-material-providers-library/blob/main/AwsCryptographicMaterialProviders/dafny/AwsCryptographicMaterialProviders/src/Materials.dfy))
 - `AwsKmsHierarchicalKeyring.dfy` `KmsHierarchyUnwrapKeyMaterial.Invoke`: requires `|wrappedMaterial| == EXPECTED_EDK_CIPHERTEXT_OVERHEAD + KeyLength`, otherwise "Received EDK Ciphertext of incorrect length2." ([source](https://github.com/aws/aws-cryptographic-material-providers-library/blob/main/AwsCryptographicMaterialProviders/dafny/AwsCryptographicMaterialProviders/src/Keyrings/AwsKms/AwsKmsHierarchicalKeyring.dfy))
 
-## Actual behavior
+### Actual behavior
 
 C04-F1:
 
@@ -67,7 +82,7 @@ C04-F2:
 2. `HierarchicalKeyring::on_encrypt` wraps the 5-byte PDK (65-byte EDK) and returns `Ok`. So does `RawAesKeyring::on_encrypt`.
 3. `RawAesKeyring::on_decrypt` then rejects it, which shows the two keyrings behave inconsistently.
 
-## Impact
+### Impact
 
 How a wrong-length PDK can arise:
 
@@ -84,7 +99,7 @@ So in a release build, a V1 HKDF message can be encrypted or decrypted with a sh
 
 Realistic exploitability is low: it needs either branch-key possession or a buggy or malicious custom component in the caller's own configuration.
 
-## Reproduction / evidence
+### Reproduction / evidence
 
 Reproducer: `mpl/tests/zz_bugrepro_02_pdk_length.rs` (a temporary untracked test, removed from the tree after the run; full source below, copy in `.agents/tasks/bug-reports/reproducers/`). Command: `cd mpl && cargo test --test zz_bugrepro_02_pdk_length -- --nocapture`.
 
@@ -199,24 +214,34 @@ test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 The V1 HKDF release-build path in the ESDK (Impact section) was not exercised by any test; that part is code reading only.
 
-## Fix options
+### Re-check on main (620771c)
 
-1. Enforce in the materials constructors. In `EncryptionMaterials::new` and `DecryptionMaterials::new`, return `Err` when `pdk.len() != suite.encryption_key_length()`.
-   - Pros: matches Dafny `ValidEncryptionMaterials` / `ValidDecryptionMaterials`, and every keyring, CMM and custom component benefits automatically.
-   - Cons: a behavior change for any external code that currently builds materials with a non-standard PDK length (possibly test code). The `Err` surfaces from a constructor rather than from a keyring, so error kinds and messages change.
-2. Enforce at the keyring boundary.
-   - In `try_decrypt_edk` / `unwrap`, require `ciphertext.len() == 60 + suite.encryption_key_length()` before decrypting. This is the Dafny check and also avoids an AES-GCM call on a wrong-length EDK.
-   - In `on_encrypt` of both keyrings, reject a supplied PDK of the wrong length.
-   - Pros: a localized change, and the error reported per EDK matches what the raw AES keyring already does.
-   - Cons: leaves the materials types able to hold invalid state for other producers, such as custom keyrings.
-3. Do both. Constructors are the invariant; the keyring pre-check gives a clearer per-EDK error and rejects before the AES call.
-   - Cons: two checks for one rule, which is minor.
+The reproducer was adapted for API changes only. The suite is now `AlgorithmSuiteId::Esdk(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf)` and the raw AES wrapping algorithm is `AesWrappingAlg::AlgAes256GcmIv12Tag16`. The test uses builders instead of positional constructors, and prints the constructor `Err` text before the original `unwrap()`. The inputs are the same 5-, 0- and 64-byte keys under a 32-byte suite. Adapted reproducer: [`zz_bugrepro_02_pdk_length.rs`](../../.agents/tasks/bug-recheck/reproducers/zz_bugrepro_02_pdk_length.rs). Same command as above.
 
-Recommendation: option 3, or at minimum option 1 plus the exact-length EDK check from option 2. Also consider replacing the `debug_assert_eq!` in `esdk/src/key_derivation.rs:286` with a real check, so V1 HKDF suites don't depend on debug builds.
+Observed output on `main` (`.agents/tasks/bug-recheck/logs/recheck02.log`, trimmed):
 
-## Questions for the engineers
+```text
+REPRO BUG-02 F1 suite Esdk(AlgAes256GcmIv12Tag16NoKdf) encryption_key_length = 32
+REPRO BUG-02 F2 EncryptionMaterials::new(5-byte PDK, suite needs 32) is_ok = false
+REPRO BUG-02 F2 EncryptionMaterials::new Err = InvalidMaterials: plaintext data key is 5 bytes, expected 32 for the algorithm suite
+REPRO BUG-02 F2 DecryptionMaterials::new(5-byte PDK, suite needs 32) is_ok = false
+REPRO BUG-02 F2 DecryptionMaterials::new Err = InvalidMaterials: plaintext data key is 5 bytes, expected 32 for the algorithm suite
+...
+REPRO BUG-02 F1 edk_ciphertext_len=65 -> on_decrypt Err: InvalidMaterials: plaintext data key is 5 bytes, expected 32 for the algorithm suite
+REPRO BUG-02 F1 edk_ciphertext_len=60 -> on_decrypt Err: InvalidMaterials: plaintext data key is 0 bytes, expected 32 for the algorithm suite
+REPRO BUG-02 F1 edk_ciphertext_len=124 -> on_decrypt Err: InvalidMaterials: plaintext data key is 64 bytes, expected 32 for the algorithm suite
+...
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+```
 
-1. Is there any intended use of `EncryptionMaterials` / `DecryptionMaterials` with a PDK whose length differs from `encryption_key_length()` (for example a test helper or a migration path) that a constructor check would break?
-2. Should the hierarchical keyring reject wrong-length EDKs before the AES-GCM open (the Dafny behavior), or after (the raw AES keyring behavior)? This affects error messages only.
-3. Is the `debug_assert_eq!` in `derive_keys` meant as the sole guard for V1 HKDF suites, or was a real check intended there?
-4. Are there cross-runtime test vectors with wrong-length hierarchical EDKs that should be added, so all runtimes agree on rejection?
+F1 "passes" only because it prints instead of asserting. Its output is the fixed behavior. F2 fails at the original test's own `em.unwrap()`, because the builder now rejects the 5-byte key. The rest of F2 (hierarchical and raw AES `on_encrypt` pass-through) cannot be reached that way any more.
+
+## Resolved
+
+Fixed on `main` in `e9bde48` (#98), as described in the Status section. Both sub-findings are covered. Materials can no longer be built with a wrong-length PDK, and `add_data_key` rejects one, so a keyring has no path left to hand back a wrong-length key. This matches fix option 3 from the original report in effect, with the check on the materials. The original fix options are no longer needed and were removed from this report. They remain in the git history of this file.
+
+Questions that may still be relevant:
+
+1. The ESDK V1 HKDF path in `esdk/src/key_derivation.rs` was guarded only by a `debug_assert_eq!` at `a1e23d7`. That ESDK path was not re-checked on `main`. With the MPL now rejecting wrong-length keys, is a separate ESDK check still wanted as defense-in-depth?
+2. The hierarchical keyring now rejects a wrong-length key after the AES-GCM open (at `add_data_key`). The Dafny MPL rejects a wrong-length EDK before the open. Should the exact-length EDK check also be added before the open? This affects error messages and ordering only.
+3. Are there cross-runtime test vectors with wrong-length hierarchical EDKs, so all runtimes agree on rejection?

@@ -1,0 +1,322 @@
+=== [1/2] ORIGINAL reproducer (.agents/tasks/bug-reports/reproducers/zz_bugrepro_01_ttl_overflow.rs) copied unchanged into mpl/tests; cargo test --test zz_bugrepro_01_ttl_overflow -- --nocapture ===
+    Updating crates.io index
+ Downloading crates ...
+  Downloaded futures-core v0.3.34
+  Downloaded potential_utf v0.1.6
+  Downloaded ctutils v0.4.3
+  Downloaded zeroize v1.9.1
+  Downloaded zeroize_derive v1.5.0
+  Downloaded zerofrom-derive v0.1.8
+  Downloaded zerovec-derive v0.11.6
+  Downloaded synstructure v0.14.0
+  Downloaded powerfmt v0.2.1
+  Downloaded pin-utils v0.1.1
+  Downloaded mio v1.2.4
+  Downloaded uuid v1.27.0
+  Downloaded unicode-ident v1.0.26
+  Downloaded futures-task v0.3.34
+  Downloaded aws-config v1.12.0
+  Downloaded tokio-rustls v0.26.6
+  Downloaded tinystr v0.8.4
+  Downloaded smallvec v1.16.2
+  Downloaded proc-macro2 v1.0.107
+  Downloaded hyper-rustls v0.27.10
+  Downloaded find-msvc-tools v0.1.14
+  Downloaded num-integer v0.1.47
+  Downloaded writeable v0.6.4
+  Downloaded lru v0.18.5
+  Downloaded either v1.19.0
+  Downloaded http-body-util v0.1.5
+  Downloaded quote v1.0.47
+  Downloaded aws-smithy-types v1.8.1
+  Downloaded zerovec v0.11.8
+  Downloaded aws-smithy-query v0.62.1
+  Downloaded aws-smithy-xml v0.62.1
+  Downloaded want v0.3.2
+  Downloaded tokio-macros v2.7.2
+  Downloaded futures-sink v0.3.34
+  Downloaded aws-smithy-json v0.63.1
+  Downloaded zerotrie v0.2.5
+  Downloaded aws-sigv4 v1.6.0
+  Downloaded indexmap v2.14.2
+  Downloaded litemap v0.8.3
+  Downloaded icu_provider v2.3.1
+  Downloaded aws-smithy-schema v0.2.1
+  Downloaded aws-runtime v1.10.0
+  Downloaded aws-sdk-sso v1.114.0
+  Downloaded icu_locale_core v2.3.0
+  Downloaded hybrid-array v0.4.15
+  Downloaded aws-smithy-http v0.64.1
+  Downloaded icu_normalizer_data v2.3.0
+  Downloaded hyper-util v0.1.21
+  Downloaded icu_collections v2.3.0
+  Downloaded base64 v0.23.1
+  Downloaded aws-sdk-ssooidc v1.116.0
+  Downloaded futures-util v0.3.34
+  Downloaded cfg-if v1.0.5
+  Downloaded bitflags v2.13.2
+  Downloaded icu_properties_data v2.3.0
+  Downloaded syn v2.0.119
+  Downloaded hyper v1.12.0
+  Downloaded aws-smithy-runtime v1.16.0
+  Downloaded aws-sdk-sts v1.119.0
+  Downloaded h2 v0.4.20
+  Downloaded aws-smithy-runtime-api v1.19.0
+  Downloaded async-trait v0.1.92
+  Downloaded futures-channel v0.3.34
+  Downloaded aws-lc-rs v1.18.1
+  Downloaded aws-types v1.6.0
+  Downloaded cpufeatures v0.3.1
+  Downloaded ipnet v2.12.2
+  Downloaded cc v1.6.0
+  Downloaded icu_properties v2.3.0
+  Downloaded rustls-webpki v0.103.15
+  Downloaded yoke-derive v0.8.4
+  Downloaded aws-smithy-http-client v1.5.0
+  Downloaded time v0.3.55
+  Downloaded syn v3.0.6
+  Downloaded rustls v0.23.45
+  Downloaded icu_normalizer v2.3.0
+  Downloaded aws-sdk-kms v1.123.0
+  Downloaded libc v0.2.190
+  Downloaded aws-sdk-dynamodb v1.130.0
+  Downloaded tokio v1.53.2
+  Downloaded aws-lc-sys v0.45.0
+   Compiling proc-macro2 v1.0.107
+   Compiling unicode-ident v1.0.26
+   Compiling quote v1.0.47
+   Compiling libc v0.2.190
+   Compiling futures-core v0.3.34
+   Compiling futures-sink v0.3.34
+   Compiling futures-task v0.3.34
+   Compiling find-msvc-tools v0.1.14
+   Compiling either v1.19.0
+   Compiling powerfmt v0.2.1
+   Compiling num-integer v0.1.47
+   Compiling pin-utils v0.1.1
+   Compiling pkg-config v0.3.34
+   Compiling aws-lc-rs v1.18.1
+   Compiling smallvec v1.16.2
+   Compiling bytes-utils v0.1.4
+   Compiling futures-util v0.3.34
+   Compiling http-body-util v0.1.5
+   Compiling time v0.3.55
+   Compiling hashbrown v0.17.1
+   Compiling hybrid-array v0.4.15
+   Compiling rustls v0.23.45
+   Compiling want v0.3.2
+   Compiling futures-channel v0.3.34
+   Compiling cfg-if v1.0.5
+   Compiling bitflags v2.13.2
+   Compiling ctutils v0.4.3
+   Compiling ipnet v2.12.2
+   Compiling base64 v0.23.1
+   Compiling indexmap v2.14.2
+   Compiling block-buffer v0.12.1
+   Compiling crypto-common v0.2.2
+   Compiling aws-types v1.6.0
+   Compiling litemap v0.8.3
+   Compiling writeable v0.6.4
+   Compiling icu_normalizer_data v2.3.0
+   Compiling icu_properties_data v2.3.0
+   Compiling lru v0.18.5
+   Compiling digest v0.11.3
+   Compiling hmac v0.13.0
+   Compiling syn v3.0.6
+   Compiling syn v2.0.119
+   Compiling errno v0.3.14
+   Compiling mio v1.2.4
+   Compiling socket2 v0.6.5
+   Compiling jobserver v0.1.35
+   Compiling core-foundation v0.10.1
+   Compiling security-framework-sys v2.17.0
+   Compiling cpufeatures v0.3.1
+   Compiling getrandom v0.4.3
+   Compiling cpufeatures v0.2.17
+   Compiling sha1 v0.10.7
+   Compiling sha2 v0.11.0
+   Compiling signal-hook-registry v1.4.8
+   Compiling uuid v1.27.0
+   Compiling cc v1.6.0
+   Compiling security-framework v3.7.0
+   Compiling cmake v0.1.58
+   Compiling aws-lc-sys v0.45.0
+   Compiling synstructure v0.14.0
+   Compiling zeroize_derive v1.5.0
+   Compiling tracing-attributes v0.1.31
+   Compiling aws-smithy-runtime-api-macros v1.1.0
+   Compiling tokio-macros v2.7.2
+   Compiling zerovec-derive v0.11.6
+   Compiling displaydoc v0.2.7
+   Compiling async-trait v0.1.92
+   Compiling zerofrom-derive v0.1.8
+   Compiling yoke-derive v0.8.4
+   Compiling zeroize v1.9.1
+   Compiling tracing v0.1.44
+   Compiling tokio v1.53.2
+   Compiling rustls-pki-types v1.15.1
+   Compiling zerofrom v0.1.8
+   Compiling rustls-native-certs v0.8.4
+   Compiling yoke v0.8.3
+   Compiling zerovec v0.11.8
+   Compiling zerotrie v0.2.5
+   Compiling tinystr v0.8.4
+   Compiling potential_utf v0.1.6
+   Compiling icu_collections v2.3.0
+   Compiling icu_locale_core v2.3.0
+   Compiling icu_provider v2.3.1
+   Compiling icu_properties v2.3.0
+   Compiling icu_normalizer v2.3.0
+   Compiling tokio-util v0.7.19
+   Compiling aws-smithy-async v1.3.0
+   Compiling aws-smithy-types v1.8.1
+   Compiling h2 v0.4.20
+   Compiling idna_adapter v1.2.2
+   Compiling idna v1.1.0
+   Compiling aws-smithy-runtime-api v1.19.0
+   Compiling url v2.5.8
+   Compiling aws-smithy-schema v0.2.1
+   Compiling aws-smithy-http v0.64.1
+   Compiling hyper v1.12.0
+   Compiling aws-credential-types v1.3.0
+   Compiling aws-smithy-observability v0.3.0
+   Compiling aws-smithy-json v0.63.1
+   Compiling aws-sigv4 v1.6.0
+   Compiling aws-smithy-xml v0.62.1
+   Compiling aws-smithy-query v0.62.1
+   Compiling hyper-util v0.1.21
+   Compiling rustls-webpki v0.103.15
+   Compiling aws-mpl-primitives v0.1.0 (/Users/mahnush/Desktop/ESDK-Rust-Verus/MPL/esdk-native-mpl/prim)
+   Compiling tokio-rustls v0.26.6
+   Compiling hyper-rustls v0.27.10
+   Compiling aws-smithy-http-client v1.5.0
+   Compiling aws-smithy-runtime v1.16.0
+   Compiling aws-runtime v1.10.0
+   Compiling aws-sdk-sso v1.114.0
+   Compiling aws-sdk-sts v1.119.0
+   Compiling aws-sdk-ssooidc v1.116.0
+   Compiling aws-sdk-dynamodb v1.130.0
+   Compiling aws-sdk-kms v1.123.0
+   Compiling aws-config v1.12.0
+   Compiling aws-crypto-mpl v0.1.0 (/Users/mahnush/Desktop/ESDK-Rust-Verus/MPL/esdk-native-mpl/mpl)
+error[E0432]: unresolved import `aws_crypto_mpl::keystore`
+ --> tests/zz_bugrepro_01_ttl_overflow.rs:6:21
+  |
+6 | ...ws_crypto_mpl::keystore::{KeyStoreInfo, Keys...
+  |                   ^^^^^^^^ could not find `keystore` in `aws_crypto_mpl`
+
+error[E0432]: unresolved imports `aws_crypto_mpl::Cmc`, `aws_crypto_mpl::HierarchicalKeyring`, `aws_crypto_mpl::Keyring`, `aws_crypto_mpl::StormTrackingCmc`
+  --> tests/zz_bugrepro_01_ttl_overflow.rs:11:22
+   |
+11 | ...::{Cmc, HierarchicalKeyring, Keyring, StormTrackingCmc};
+   |       ^^^  ^^^^^^^^^^^^^^^^^^^  ^^^^^^^  ^^^^^^^^^^^^^^^^ no `StormTrackingCmc` in the root
+   |       |    |                    |
+   |       |    |                    no `Keyring` in the root
+   |       |    no `HierarchicalKeyring` in the root
+   |       no `Cmc` in the root
+   |
+help: a similar name exists in the module (notice the capitalization)
+   |
+11 - use aws_crypto_mpl::{Cmc, HierarchicalKeyring, Keyring, StormTrackingCmc};
+11 + use aws_crypto_mpl::{cmc, HierarchicalKeyring, Keyring, StormTrackingCmc};
+   |
+help: a similar name exists in the module (notice the capitalization)
+   |
+11 - use aws_crypto_mpl::{Cmc, HierarchicalKeyring, Keyring, StormTrackingCmc};
+11 + use aws_crypto_mpl::{Cmc, HierarchicalKeyring, keyring, StormTrackingCmc};
+   |
+
+error[E0603]: module `structures` is private
+  --> tests/zz_bugrepro_01_ttl_overflow.rs:7:21
+   |
+ 7 | use aws_crypto_mpl::structures::{
+   |                     ^^^^^^^^^^ private module
+ 8 |     AlgorithmSuiteId, BeaconKeyMaterials, Bran...
+   |     ---------------- enum `AlgorithmSuiteId` is not publicly re-exported
+   |
+note: the module `structures` is defined here
+  --> src/lib.rs:14:1
+   |
+14 | mod structures;
+   | ^^^^^^^^^^^^^^
+
+error[E0603]: module `structures` is private
+  --> tests/zz_bugrepro_01_ttl_overflow.rs:7:21
+   |
+ 7 | use aws_crypto_mpl::structures::{
+   |                     ^^^^^^^^^^ private module
+   |
+note: the module `structures` is defined here
+  --> src/lib.rs:14:1
+   |
+14 | mod structures;
+   | ^^^^^^^^^^^^^^
+
+error[E0603]: module `aws_kms` is private
+  --> tests/zz_bugrepro_01_ttl_overflow.rs:72:25
+   |
+72 | ...o_mpl::aws_kms::__test_internals::wrap;
+   |           ^^^^^^^  ---------------- module `__test_internals` is not publicly re-exported
+   |           |
+   |           private module
+   |
+note: the module `aws_kms` is defined here
+  --> src/lib.rs:4:1
+   |
+ 4 | mod aws_kms;
+   | ^^^^^^^^^^^
+
+error[E0603]: module `structures` is private
+  --> tests/zz_bugrepro_01_ttl_overflow.rs:73:25
+   |
+73 | ...pto_mpl::structures::{DecryptionMaterials, ...
+   |             ^^^^^^^^^^ private module
+   |
+note: the module `structures` is defined here
+  --> src/lib.rs:14:1
+   |
+14 | mod structures;
+   | ^^^^^^^^^^^^^^
+
+Some errors have detailed explanations: E0432, E0603.
+For more information about an error, try `rustc --explain E0432`.
+error: could not compile `aws-crypto-mpl` (test "zz_bugrepro_01_ttl_overflow") due to 6 previous errors
+
+=== [2/2] ADAPTED reproducer (.agents/tasks/bug-recheck/reproducers/zz_bugrepro_01_ttl_overflow.rs); same command ===
+   Compiling aws-crypto-mpl v0.1.0 (/Users/mahnush/Desktop/ESDK-Rust-Verus/MPL/esdk-native-mpl/mpl)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.86s
+     Running tests/zz_bugrepro_01_ttl_overflow.rs (target/debug/deps/zz_bugrepro_01_ttl_overflow-a90fe98cd1ecd03c)
+
+running 5 tests
+REPRO BUG-01 now+u64::MAX s checked_add = None
+REPRO BUG-01 now+i64::MAX s checked_add = None
+REPRO BUG-01 now+1e15 s checked_add is_some = true
+test std_systemtime_add_limits ... ok
+REPRO BUG-01c StormTrackingCmc::new(inflight_ttl = u64::MAX s) is_ok = true
+REPRO BUG-01b StormTrackingCmc::new(grace_interval = u64::MAX s) is_ok = true
+REPRO BUG-01a HierarchicalKeyring::new(ttl_seconds = u64::MAX) is_ok = true
+REPRO BUG-01b first get (miss, marks inflight) = Ok(false)
+
+thread 'storm_tracking_huge_inflight_ttl_accepted_then_waiter_deadline_panics' (6397751) panicked at /rustc/59807616e1fa2540724bfbac14d7976d7e4a3860/library/std/src/time.rs:746:31:
+overflow when adding duration to instant
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+thread 'storm_tracking_huge_grace_interval_accepted_then_second_get_panics' (6397750) panicked at /rustc/59807616e1fa2540724bfbac14d7976d7e4a3860/library/std/src/time.rs:746:31:
+overflow when adding duration to instant
+REPRO BUG-01c second get PANICKED: overflow when adding duration to instant
+REPRO BUG-01b second get PANICKED: overflow when adding duration to instant
+test storm_tracking_huge_inflight_ttl_accepted_then_waiter_deadline_panics ... ok
+test storm_tracking_huge_grace_interval_accepted_then_second_get_panics ... ok
+
+thread 'hierarchical_ttl_u64_max_accepted_then_on_encrypt_panics' (6397747) panicked at /rustc/59807616e1fa2540724bfbac14d7976d7e4a3860/library/std/src/time.rs:746:31:
+overflow when adding duration to instant
+
+thread 'hierarchical_ttl_u64_max_on_decrypt_panics' (6397748) panicked at /rustc/59807616e1fa2540724bfbac14d7976d7e4a3860/library/std/src/time.rs:746:31:
+overflow when adding duration to instant
+REPRO BUG-01a on_encrypt PANICKED: overflow when adding duration to instant
+REPRO BUG-01d on_decrypt PANICKED: overflow when adding duration to instant
+test hierarchical_ttl_u64_max_accepted_then_on_encrypt_panics ... ok
+test hierarchical_ttl_u64_max_on_decrypt_panics ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+

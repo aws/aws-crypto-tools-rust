@@ -7,32 +7,46 @@ Summary: `build_cache_identifier` joins the partition ID, logical key store name
 - Severity: Low. Exploiting this needs a `Shared` cache plus the ability to pick NUL-containing configuration values (partition ID, logical key store name, or branch key ID). If those preconditions hold, the impact is cross-keyring use of branch key materials.
 - Related IDs: VR-2026-T13; TM-MPL-009, TM-MPL-010
 
+## Status on main (620771c)
+
+- Status: Still present.
+- Re-checked: 2026-11-10, against `c256243` on `MPL-Verus` (code identical to `main` `620771c`). Details: [RECHECK-main-620771c.md](RECHECK-main-620771c.md), section BUG-06.
+- Evidence: the test, adapted for API changes only, gives 2 passed. Both identifier collisions are `true` and the no-NUL control is `false`. End to end, with one shared `LocalCmc`, keyring B was served keystore A's branch key: keystore B was never called, and B's EDK unwraps with A's branch key but not with B's own (`.agents/tasks/bug-recheck/logs/recheck06.log`).
+- `cache_entry_identifier.rs` has no commits since `a1e23d7` (`git diff a1e23d7 HEAD` on the file is empty). `HierarchicalKeyringBuilder::build` still accepts a partition ID containing NUL and uses the key store's logical name as returned.
+
+Severity review suggested: the severity stays Low here, because the re-check does not by itself support a change. The end-to-end result on `main` is the same as the original run at `a1e23d7`, which already showed keyring B using keystore A's branch key, and the Low rating was set with that result known. Reviewers may still want to revisit the rating, for two reasons. First, the re-check confirms on current code that the partition boundary in the spec can be crossed, which lets one tenant's data be wrapped under another tenant's branch key. Second, BUG-02 is now fixed, so this is the open finding with the most direct confidentiality impact. The preconditions are unchanged: a `Shared` cache, plus NUL-containing configuration values chosen to line up.
+
+Line numbers outside the Status and Location sections refer to `a1e23d7`, where the bug was first found, and are kept as history.
+
 ## Location
 
-Verified against `HEAD a1e23d7`. `mpl/src/aws_kms/cache_entry_identifier.rs:35-66` (`build_cache_identifier`):
+Current code (`main` `620771c`): `mpl/src/aws_kms/cache_entry_identifier.rs:35-66` (`build_cache_identifier`). The file is unchanged since `a1e23d7`, so the line numbers are the same:
 
 ```rust
-42    let mut buf: Vec<u8> = vec![
-43        RESOURCE_ID_HIERARCHICAL_KEYRING,
-44        NULL_BYTE,
-45        scope_id,
-46        NULL_BYTE,
-47    ];
-49    buf.extend_from_slice(partition_id);
-50    buf.push(NULL_BYTE);
-52    buf.extend_from_slice(logical_key_store_name.as_bytes());
-53    buf.push(NULL_BYTE);
-55    buf.extend_from_slice(branch_key_id.as_bytes());
-57    if let Some(version) = branch_key_version {
-58        buf.push(NULL_BYTE);
-59        buf.extend_from_slice(version.as_bytes());
-60    }
+42     let mut buf: Vec<u8> = vec![
+43         RESOURCE_ID_HIERARCHICAL_KEYRING,
+44         NULL_BYTE,
+45         scope_id,
+46         NULL_BYTE,
+47     ];
+49     buf.extend_from_slice(partition_id);
+50     buf.push(NULL_BYTE);
+52     buf.extend_from_slice(logical_key_store_name.as_bytes());
+53     buf.push(NULL_BYTE);
+55     buf.extend_from_slice(branch_key_id.as_bytes());
+57     if let Some(version) = branch_key_version {
+58         buf.push(NULL_BYTE);
+59         buf.extend_from_slice(version.as_bytes());
+60     }
 ```
 
-The call sites are `hierarchical_keyring.rs:306` (OnEncrypt) and `:550` (OnDecrypt). The inputs aren't checked for NUL anywhere:
-- The partition ID is `s.into_bytes()` of the caller's string (`hierarchical_keyring.rs:196`), or 16 random bytes (`generate_partition_id`, `:269`), which can contain `0x00`.
-- The logical key store name is a plain `String` in `mpl/src/keystore/config.rs`. I found no NUL validation by code reading.
-- The branch key ID comes from the keyring configuration or a branch key ID supplier (`resolve_branch_key_id`, called at `:299` and `:398`). The version is a 36-character hyphenated UUID string, so it can't contain NUL.
+The call sites are `mpl/src/aws_kms/hierarchical_keyring.rs:665` (OnEncrypt) and `:908` (OnDecrypt). The inputs still aren't checked for NUL anywhere:
+
+- The partition ID is `s.into_bytes()` of the caller's string (`hierarchical_keyring.rs:596`), or the 16-byte form of a random v4 UUID (`generate_partition_id`, `:626`), which can contain `0x00`.
+- The logical key store name is read from the key store's `get_key_store_info` output and used as returned (`hierarchical_keyring.rs:600-605`).
+- The branch key ID comes from the keyring configuration or a branch key ID supplier. The version is a 36-character hyphenated UUID string, so it can't contain NUL.
+
+Originally reported at `a1e23d7`: the same `cache_entry_identifier.rs:35-66`; call sites `hierarchical_keyring.rs:306` and `:550`; partition ID at `:196` and `:269`; logical name in `mpl/src/keystore/config.rs`; branch key ID resolved at `:299` and `:398`.
 
 ## Expected behavior
 
@@ -70,92 +84,22 @@ The "CANNOT share" guarantee holds only when the fields contain no `0x00`. The s
 
 ## Reproduction / evidence
 
-Reproducer: `mpl/tests/zz_bugrepro_06_cache_id_nul.rs` (a temporary untracked test, removed from the tree after the run; full source below, copy in `.agents/tasks/bug-reports/reproducers/`). Command: `cd mpl && cargo test --test zz_bugrepro_06_cache_id_nul -- --nocapture`.
+Re-check on `main` `620771c` (2026-11-10). The original reproducer no longer compiles against the current API (7 compile errors, kept at the top of the log). It was adapted for API changes only:
 
-```rust
-// TEMPORARY reproducer for BUG-06 (T13). Delete after running.
-use std::sync::{Arc, Mutex};
-use async_trait::async_trait;
-use aws_crypto_mpl::aws_kms::__test_internals::{build_cache_identifier, unwrap};
-use aws_crypto_mpl::aws_kms::hierarchical_keyring::{SCOPE_ID_DECRYPT, SCOPE_ID_ENCRYPT};
-use aws_crypto_mpl::cmc::cache_config::CacheType;
-use aws_crypto_mpl::keystore::{KeyStoreInfo, Keystore, KeystoreError, KmsConfiguration};
-use aws_crypto_mpl::structures::{
-    AlgorithmSuiteId, BeaconKeyMaterials, BranchKeyMaterials, EncryptionContext,
-    EncryptionMaterials,
-};
-use aws_crypto_mpl::{Cmc, HierarchicalKeyring, Keyring, LocalCmc};
-const BKID: &str = "bk";
-const VERSION: &str = "11111111-2222-4333-8444-555555555555";
-struct NamedKeystore {
-    logical: &'static str,
-    key_byte: u8,
-    active_calls: Mutex<u32>,
-}
-impl NamedKeystore {
-    fn materials(&self) -> BranchKeyMaterials {
-        BranchKeyMaterials::new([self.key_byte; 32], BKID.into(), VERSION.into(), EncryptionContext::new()).unwrap()
-    }
-}
-#[async_trait]
-impl Keystore for NamedKeystore {
-    fn get_key_store_info(&self) -> Result<KeyStoreInfo, KeystoreError> {
-        Ok(KeyStoreInfo {
-            keystore_id: "id".into(),
-            keystore_name: "t".into(),
-            logical_keystore_name: self.logical.into(),
-            grant_tokens: vec![],
-            kms_configuration: KmsConfiguration::Discovery,
-        })
-    }
-    async fn create_key_store(&self) -> Result<String, KeystoreError> { unimplemented!() }
-    async fn create_key(&self, _: Option<String>, _: Option<EncryptionContext>) -> Result<String, KeystoreError> { unimplemented!() }
-    async fn version_key(&self, _: String) -> Result<(), KeystoreError> { unimplemented!() }
-    async fn get_active_branch_key(&self, _: String) -> Result<BranchKeyMaterials, KeystoreError> {
-        *self.active_calls.lock().unwrap() += 1;
-        Ok(self.materials())
-    }
-    async fn get_branch_key_version(&self, _: String, _: String) -> Result<BranchKeyMaterials, KeystoreError> { Ok(self.materials()) }
-    async fn get_beacon_key(&self, _: String) -> Result<BeaconKeyMaterials, KeystoreError> { unimplemented!() }
-}
-#[test]
-fn identifier_collides_when_fields_contain_nul() {
-    let a_enc = build_cache_identifier(SCOPE_ID_ENCRYPT, b"tenant\0x", "L", BKID, None);
-    let b_enc = build_cache_identifier(SCOPE_ID_ENCRYPT, b"tenant", "x\0L", BKID, None);
-    println!("REPRO BUG-06 encrypt-scope ids equal for (p=\"tenant\\0x\", n=\"L\") vs (p=\"tenant\", n=\"x\\0L\"): {}", a_enc == b_enc);
-    let a_dec = build_cache_identifier(SCOPE_ID_DECRYPT, b"p", "L", "bk\0x", Some(VERSION));
-    let b_dec = build_cache_identifier(SCOPE_ID_DECRYPT, b"p", "L\0bk", "x", Some(VERSION));
-    println!("REPRO BUG-06 decrypt-scope ids equal for (n=\"L\", bkid=\"bk\\0x\") vs (n=\"L\\0bk\", bkid=\"x\"): {}", a_dec == b_dec);
-    let c = build_cache_identifier(SCOPE_ID_ENCRYPT, b"tenantx", "L", BKID, None);
-    println!("REPRO BUG-06 control (no NUL, p=\"tenantx\") equal to first: {}", a_enc == c);
-}
-#[tokio::test]
-async fn shared_cache_serves_other_keyrings_branch_key() {
-    let shared: Arc<dyn Cmc> = Arc::new(LocalCmc::new(1000, 1).unwrap());
-    let ks_a = Arc::new(NamedKeystore { logical: "L", key_byte: 0xA1, active_calls: Mutex::new(0) });
-    let ks_b = Arc::new(NamedKeystore { logical: "x\0L", key_byte: 0xB2, active_calls: Mutex::new(0) });
-    let kr_a = HierarchicalKeyring::new(ks_a.clone(), 3600, Some(BKID.into()), None, Some(CacheType::Shared(shared.clone())), Some("tenant\0x".into())).unwrap();
-    let kr_b = HierarchicalKeyring::new(ks_b.clone(), 3600, Some(BKID.into()), None, Some(CacheType::Shared(shared.clone())), Some("tenant".into())).unwrap();
-    let em = || EncryptionMaterials::new(AlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf, vec![], EncryptionContext::new(), Default::default(), None, None, None).unwrap();
-    kr_a.on_encrypt(em()).await.unwrap();
-    let out_b = kr_b.on_encrypt(em()).await.unwrap();
-    println!(
-        "REPRO BUG-06 keystore A get_active calls = {}, keystore B get_active calls = {}",
-        *ks_a.active_calls.lock().unwrap(),
-        *ks_b.active_calls.lock().unwrap()
-    );
-    let ct = &out_b.encrypted_data_keys()[0].ciphertext;
-    println!(
-        "REPRO BUG-06 keyring B's EDK unwraps with keystore A's branch key: {}; with keystore B's own branch key: {}",
-        unwrap(&ks_a.materials(), &EncryptionContext::new(), ct).is_ok(),
-        unwrap(&ks_b.materials(), &EncryptionContext::new(), ct).is_ok()
-    );
-}
-```
+- The test internals moved to `aws_crypto_mpl::__test_internals::aws_kms` (`build_cache_identifier`, `unwrap`, `SCOPE_ID_ENCRYPT`, `SCOPE_ID_DECRYPT`).
+- The fake implements the `KeyStore` trait with `*Input` / `*Output` shapes, and keeps the same logical names, key bytes and `get_active_branch_key` counter.
+- Keyrings are built with `HierarchicalKeyring::builder()` and called through `SharedKeyring`.
+- `LocalCmc::new(1000, 1)` became `LocalCmc::builder().entry_capacity(1000).entry_pruning_tail_size(1)`, shared through `SharedCmc` instead of `CacheType::Shared`.
 
-The reproducer uses a test `Keystore`. The real `BranchKeyStore` path needs DynamoDB and KMS, so it wasn't run.
+The `build_cache_identifier` arguments, partition IDs, logical names and the end-to-end scenario are identical.
 
-Observed output (`.agents/tasks/bug-reports/logs/bugrepro06.log`):
+- Adapted reproducer: [`zz_bugrepro_06_cache_id_nul.rs`](../../.agents/tasks/bug-recheck/reproducers/zz_bugrepro_06_cache_id_nul.rs) (127 lines, not inlined here).
+- Original reproducer (`a1e23d7` API): `.agents/tasks/bug-reports/reproducers/zz_bugrepro_06_cache_id_nul.rs`.
+- Command: `cd mpl && cargo test --test zz_bugrepro_06_cache_id_nul -- --nocapture`. The test was copied into `mpl/tests/` for the run and deleted afterwards.
+
+The reproducer uses a test `KeyStore`. The real `BranchKeyStore` path needs DynamoDB and KMS, so it wasn't run.
+
+Observed output on `main` (`.agents/tasks/bug-recheck/logs/recheck06.log`):
 
 ```text
 running 2 tests
@@ -169,7 +113,11 @@ test shared_cache_serves_other_keyrings_branch_key ... ok
 test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
 ```
 
+The output is the same as the original run at `a1e23d7` (`.agents/tasks/bug-reports/logs/bugrepro06.log`).
+
 ## Fix options
+
+These options were written against `a1e23d7` and still apply on `main`. The constructor named in option 1 is now `HierarchicalKeyringBuilder::build` (`mpl/src/aws_kms/hierarchical_keyring.rs:535`).
 
 1. Reject `0x00` in caller-supplied partition IDs and logical key store names in `HierarchicalKeyring::new`, and in resolved branch key IDs before building the identifier.
    - Pros: the preimage stays byte-identical to the spec for every input that's accepted today without NUL, which covers all realistic configurations. Nothing changes for current users, and the cost is a byte scan per field.

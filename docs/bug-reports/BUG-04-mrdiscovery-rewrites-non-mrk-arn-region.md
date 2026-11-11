@@ -7,36 +7,44 @@ Summary: With `KmsConfiguration::MrDiscovery { region }`, the branch key store r
 - Severity: Low. This is a spec-text / cross-runtime divergence. With the default KMS client, a single-Region key outside the configured region is expected to fail in both Rust and Dafny, with different errors. The outcomes differ only when the caller supplies its own KMS client. It fails closed, and there's no wrong-key or confidentiality impact (see Impact).
 - Related IDs: VR-2026-T17; TM-MPL-007
 
+## Status on main (620771c)
+
+- Status: Still present.
+- Re-checked: 2026-11-10, against `c256243` on `MPL-Verus` (code identical to `main` `620771c`). Details: [RECHECK-main-620771c.md](RECHECK-main-620771c.md), section BUG-04.
+- Evidence: the in-crate test, adapted for API changes only, gives 1 passed. The single-Region `us-east-1` ARN is still rewritten to `us-west-2` (`SRK ARN changed by MRDiscovery: true`) (`.agents/tasks/bug-recheck/logs/recheck04.log`).
+- The module moved from `mpl/src/keystore/` to `mpl/src/key_store/` in `e9bde48` (#98), and `resolve_keystore_arn` is now `resolve_key_store_arn`. The logic is unchanged. The KMS-side failure needs AWS and was not run, as before.
+
+Line numbers outside the Status and Location sections refer to `a1e23d7`, where the bug was first found, and are kept as history. Spec line references (for example `branch-key-store.md` lines 168, 204 and 669) were not re-checked, because `main` removed the spec submodule (`6ef7d80`, #91).
+
 ## Location
 
-Verified against `HEAD a1e23d7`. `mpl/src/keystore/kms_ops.rs:104-107` (`resolve_keystore_arn`) and `:132-148` (`rewrite_arn_region`):
+Current code (`main` `620771c`): `mpl/src/key_store/kms_ops.rs:100-103` (the MrDiscovery arm of `resolve_key_store_arn`, `:88`) and `:144-157` (`rewrite_arn_region`):
 
 ```rust
-104        KmsConfiguration::MrDiscovery { region } => {
-105            reject_alias_arn(record_kms_arn)?;
-106            rewrite_arn_region(record_kms_arn, region)
-107        }
+100         KmsConfiguration::MrDiscovery(mr_discovery) => {
+101             reject_alias_arn(record_kms_arn, branch_key_id)?;
+102             return rewrite_arn_region(record_kms_arn, mr_discovery.region(), branch_key_id);
+103         }
 ...
-132 fn rewrite_arn_region(arn: &str, new_region: &str) -> Result<String, KeystoreError> {
-133     let parts = parse_arn(arn).map_err(|e| {
-        ...                       // 134-138: map to KeystoreErrorKind::RecordMalformed
-139     Ok(format!(
-140         "arn:{}:{}:{}:{}:{}/{}",
-141         parts.partition,
-142         parts.service,
-143         new_region,
-144         parts.account_id,
-145         parts.resource_type,
-146         parts.resource,
-147     ))
+144 fn rewrite_arn_region(arn: &str, new_region: &str, branch_key_id: &str) -> Result<String, Error> {
+145     let parts = parse_arn(arn).map_err(|e| {
+146         malformed_record(branch_key_id, "record kms-arn is malformed").with_source(e)
+147     })?;
+148     Ok(format!(
+149         "arn:{}:{}:{}:{}:{}/{}",
+150         parts.partition,
+151         parts.service,
+152         new_region,
 ```
 
-There's no `mrk-` check. An MRK predicate exists elsewhere (`mpl/src/aws_kms/mrk_match.rs:52`, `is_multi_region_arn`, private to that module), but the keystore path doesn't use it.
+There's still no `mrk-` check. An MRK predicate exists elsewhere (`mpl/src/aws_kms/mrk_match.rs:52`, `is_multi_region_arn`, private to that module), but the key store path doesn't use it.
 
 The resolved ARN is used as the KMS `KeyId`:
 
-- `decrypt_branch_key` (`kms_ops.rs:169`), used by `get_active_branch_key`, `get_branch_key_version` and `get_beacon_key` (`branch_key_store.rs:555/577/599`).
-- `version_key` (`branch_key_store.rs:442`). Per spec, `VersionKey` must fail immediately under Discovery/MRDiscovery; that check is at `branch_key_store.rs:190`.
+- `decrypt_branch_key` (`kms_ops.rs:162`) calls `resolve_key_store_arn` at `:179`. `decrypt_branch_key` is used by `get_active_branch_key`, `get_branch_key_version` and `get_beacon_key` (`branch_key_store.rs:801`, `:839`, `:874`).
+- `version_key` (`branch_key_store.rs:641`) calls `resolve_key_store_arn` at `:663`. Under Discovery / MRDiscovery it still fails first, at `:644`, through `configured_kms_key_arn` (`:112-122`).
+
+Originally reported at `a1e23d7`: `mpl/src/keystore/kms_ops.rs:104-107` (`resolve_keystore_arn`, `:84`) and `:132-148` (`rewrite_arn_region`); `decrypt_branch_key` at `kms_ops.rs:169`; callers at `branch_key_store.rs:555/577/599`; `version_key` at `branch_key_store.rs:442`, with the Discovery check at `:190`.
 
 ## Expected behavior
 
@@ -69,36 +77,33 @@ The Dafny MPL follows lines 168/204: `KMSKeystoreOperations.dfy` `replaceRegion`
 
 ## Reproduction / evidence
 
-`resolve_keystore_arn` is `pub(crate)` in a `pub(crate) mod kms_ops` (`mpl/src/keystore/mod.rs:21`), so an integration test can't reach it. I ran the reproducer as an in-crate unit test in a throwaway copy of the crate under `/tmp`. The only change to that copy was appending `#[cfg(test)] #[path = "zz_bugrepro_04.rs"] mod zz_bugrepro_04;` to its `kms_ops.rs` (confirmed with `diff -r`). The copy was deleted afterwards, and the repository source wasn't modified.
+`resolve_key_store_arn` is `pub(crate)`, and `kms_ops` is a private module (`mod kms_ops`, `mpl/src/key_store/mod.rs:36`), so an integration test can't reach it. The re-check ran the reproducer as an in-crate unit test in a throwaway copy of `mpl/` and `prim/` under `/tmp/bugrecheck04`. The only change to that copy was appending `#[cfg(test)] #[path = "zz_bugrepro_04.rs"] mod zz_bugrepro_04;` to its `kms_ops.rs`. The copy was deleted afterwards, and the repository source wasn't modified.
 
-Command: `CARGO_TARGET_DIR=/tmp/bugrepro04/target cargo test --lib zz_bugrepro_04 -- --nocapture`. Reproducer backup: `.agents/tasks/bug-reports/reproducers/zz_bugrepro_04_mrdiscovery_non_mrk.rs`.
+The original module no longer compiles against `main` (2 compile errors: `unresolved import super::resolve_keystore_arn` and `crate::keystore`). It was adapted for API changes only, with the same ARNs, region and observations. Adapted reproducer: [`zz_bugrepro_04_mrdiscovery_non_mrk.rs`](../../.agents/tasks/bug-recheck/reproducers/zz_bugrepro_04_mrdiscovery_non_mrk.rs). Command: `cargo test --lib zz_bugrepro_04 -- --nocapture`, run in the copy.
 
 ```rust
-// TEMPORARY reproducer for BUG-04 (T17). In-crate test: `resolve_keystore_arn`
-// is pub(crate), so this file is compiled as a child module of
-// `mpl/src/keystore/kms_ops.rs` in a throwaway copy of the crate, by appending
-//     #[cfg(test)] #[path = "zz_bugrepro_04.rs"] mod zz_bugrepro_04;
-// to that copy's kms_ops.rs. The repository source is not modified.
-use super::resolve_keystore_arn;
-use crate::keystore::KmsConfiguration;
+use super::resolve_key_store_arn;
+use crate::key_store::config::{Discovery, KmsConfiguration, MrDiscovery};
 
 const SRK_EAST: &str = "arn:aws:kms:us-east-1:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab";
 const MRK_EAST: &str = "arn:aws:kms:us-east-1:111122223333:key/mrk-1234abcd-12ab-34cd-56ef-1234567890ab";
+const BKID: &str = "bk";
 
 fn mr_discovery(region: &str) -> KmsConfiguration {
-    KmsConfiguration::MrDiscovery { region: region.to_string() }
+    KmsConfiguration::MrDiscovery(MrDiscovery::builder().region(region).build().unwrap())
 }
 
 #[test]
 fn mrdiscovery_rewrites_region_of_single_region_key() {
-    let out = resolve_keystore_arn(&mr_discovery("us-west-2"), SRK_EAST);
-    println!("REPRO BUG-04 MRDiscovery(us-west-2), record SRK  {SRK_EAST} -> {out:?}");
+    let out = resolve_key_store_arn(&mr_discovery("us-west-2"), SRK_EAST, BKID);
+    println!("REPRO BUG-04 MRDiscovery(us-west-2), record SRK  {SRK_EAST} -> {:?}", out.as_ref().map_err(|e| e.to_string()));
     // Control: an MRK record is expected to be rewritten.
-    let out_mrk = resolve_keystore_arn(&mr_discovery("us-west-2"), MRK_EAST);
-    println!("REPRO BUG-04 MRDiscovery(us-west-2), record MRK  {MRK_EAST} -> {out_mrk:?}");
+    let out_mrk = resolve_key_store_arn(&mr_discovery("us-west-2"), MRK_EAST, BKID);
+    println!("REPRO BUG-04 MRDiscovery(us-west-2), record MRK  {MRK_EAST} -> {:?}", out_mrk.as_ref().map_err(|e| e.to_string()));
     // Control: Discovery leaves the record ARN unchanged.
-    let out_disc = resolve_keystore_arn(&KmsConfiguration::Discovery, SRK_EAST);
-    println!("REPRO BUG-04 Discovery,              record SRK  {SRK_EAST} -> {out_disc:?}");
+    let disc = KmsConfiguration::Discovery(Discovery::builder().build().unwrap());
+    let out_disc = resolve_key_store_arn(&disc, SRK_EAST, BKID);
+    println!("REPRO BUG-04 Discovery,              record SRK  {SRK_EAST} -> {:?}", out_disc.as_ref().map_err(|e| e.to_string()));
     println!(
         "REPRO BUG-04 SRK ARN changed by MRDiscovery: {}",
         out.as_deref().ok() != Some(SRK_EAST)
@@ -106,7 +111,9 @@ fn mrdiscovery_rewrites_region_of_single_region_key() {
 }
 ```
 
-Observed output (`.agents/tasks/bug-reports/logs/bugrepro04.log`):
+The header comment of the adapted file is omitted above. It records the same API changes.
+
+Observed output on `main` (`.agents/tasks/bug-recheck/logs/recheck04.log`):
 
 ```text
 running 1 test
@@ -114,13 +121,15 @@ REPRO BUG-04 MRDiscovery(us-west-2), record SRK  arn:aws:kms:us-east-1:111122223
 REPRO BUG-04 MRDiscovery(us-west-2), record MRK  arn:aws:kms:us-east-1:111122223333:key/mrk-1234abcd-12ab-34cd-56ef-1234567890ab -> Ok("arn:aws:kms:us-west-2:111122223333:key/mrk-1234abcd-12ab-34cd-56ef-1234567890ab")
 REPRO BUG-04 Discovery,              record SRK  arn:aws:kms:us-east-1:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab -> Ok("arn:aws:kms:us-east-1:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab")
 REPRO BUG-04 SRK ARN changed by MRDiscovery: true
-test keystore::kms_ops::zz_bugrepro_04::mrdiscovery_rewrites_region_of_single_region_key ... ok
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test key_store::kms_ops::zz_bugrepro_04::mrdiscovery_rewrites_region_of_single_region_key ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 18 filtered out; finished in 0.00s
 ```
 
-The KMS-side failure for the rewritten single-Region ARN wasn't reproduced; it needs AWS credentials and real keys. The existing integration test `test_aws_kms_hierarchical_keyring_integ.rs:815-866` covers only the MRK case.
+The output is the same as the original run at `a1e23d7` (`.agents/tasks/bug-reports/logs/bugrepro04.log`). The KMS-side failure for the rewritten single-Region ARN wasn't reproduced; it needs AWS credentials and real keys. The original report noted that the existing integration test `test_aws_kms_hierarchical_keyring_integ.rs:815-866` covers only the MRK case; that was not re-checked on `main`.
 
 ## Fix options
+
+These options were written against `a1e23d7` and still apply on `main`. The code is now `rewrite_arn_region` and the MrDiscovery arm in `mpl/src/key_store/kms_ops.rs:100-103`, and the error type is `aws_crypto_mpl::Error` instead of `KeystoreError`.
 
 1. Rewrite only MRK ARNs (the Dafny behavior). In `rewrite_arn_region`, or in the `MrDiscovery` arm, return the ARN unchanged unless the resource is `key/mrk-*`. Reuse or share `is_multi_region_arn` from `mrk_match.rs`.
    - Pros: cross-runtime parity, and it matches spec lines 168/204.

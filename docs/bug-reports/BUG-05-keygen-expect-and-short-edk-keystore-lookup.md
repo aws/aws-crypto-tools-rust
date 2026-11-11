@@ -9,30 +9,44 @@ Summary: (a) `DefaultCmm::get_encryption_materials` calls `.expect` on the `Resu
   - (b) costs one keystore round trip per malformed EDK, then fails closed.
 - Related IDs: VR-2026-T16; TM-MPL-023
 
+## Status on main (620771c)
+
+- Status: (a) Still present. (b) Still present, and still likely not a bug.
+- Re-checked: 2026-11-10, against `c256243` on `MPL-Verus` (code identical to `main` `620771c`). Details: [RECHECK-main-620771c.md](RECHECK-main-620771c.md), section BUG-05.
+- Evidence (a), by code reading: `.expect(..)` on `ecdsa_generate_keypair` is unchanged, and the callee still has four `Err` paths.
+- Evidence (b): the test, adapted for API changes only, gives 1 passed. A 43-byte EDK makes 0 key store calls. EDKs of 44, 50 and 59 bytes each make 1 call, then fail with `ciphertext too short: N < 60` (`.agents/tasks/bug-recheck/logs/recheck05.log`). Only the error text changed.
+
+Line numbers outside the Status and Location sections refer to `a1e23d7`, where the bug was first found, and are kept as history.
+
 ## Location
 
-Verified against `HEAD a1e23d7`.
+Current code (`main` `620771c`):
 
-(a) `mpl/src/cmm/default_cmm.rs:114-115`:
+(a) `mpl/src/cmm/default_cmm.rs:137-138`:
 
 ```rust
-114            let keys = ecdsa_generate_keypair(alg)
-115                .expect("ECDSA keypair generation cannot fail for fixed P-256/P-384 algorithms");
+137             let keys = ecdsa_generate_keypair(alg)
+138                 .expect("ECDSA keypair generation cannot fail for fixed P-256/P-384 algorithms");
 ```
 
-`prim/src/ecdsa.rs:370-400` (`ecdsa_generate_keypair`) returns `Result<SignatureKeyPair, Error>` and has four `Err` paths: keygen (line 372), public-key compression (377), DER encoding (383), and the verification-key length check (388-393). The enclosing function already returns `Result<EncryptionMaterials, MaterialsError>`.
+`prim/src/ecdsa.rs:373` (`ecdsa_generate_keypair`) returns `Result<SignatureKeyPair, Error>` and has four `Err` paths: key generation (`:375`), public-key compression (`:380`), DER encoding (`:386`), and the verification-key length check (`:391-396`). The enclosing `get_encryption_materials` (`default_cmm.rs:85`) already returns a `Result`.
 
-(b) `mpl/src/aws_kms/hierarchical_keyring.rs:536-542` checks only for ≥ 44 bytes (salt 16 + IV 12 + version 16) before the cache/keystore lookup at `:570-572`. The full 60-byte minimum is enforced afterwards, in `branch_key_wrap::unwrap` (`branch_key_wrap.rs:231-236`), called at line 601:
+(b) `mpl/src/aws_kms/hierarchical_keyring.rs:879` (in `try_decrypt_edk`, `:867`) checks only for at least 44 bytes (salt 16 + IV 12 + version 16). The key store lookup in `decrypt_edk_at_version` (`:901`) follows at `:934`. The full 60-byte minimum is enforced afterwards in `branch_key_wrap::unwrap` (`mpl/src/aws_kms/branch_key_wrap.rs:236`), called at `hierarchical_keyring.rs:958`:
 
 ```rust
-536        if ciphertext.len() < CIPHERTEXT_VERSION_OFFSET + CIPHERTEXT_VERSION_LEN {
-537            return Err(MaterialsError::keyring_failed(format!(
-538                "HierarchicalKeyring::on_decrypt: EDK ciphertext too short to contain branch-key version: {} bytes (need at least {})",
+879         if ciphertext.len() < CIPHERTEXT_VERSION_OFFSET + CIPHERTEXT_VERSION_LEN {
+880             return Err(Error::new(
+881                 Kind::Cryptographic,
 ...
-570                let bkm = self
-571                    .keystore
-572                    .get_branch_key_version(branch_key_id.to_string(), branch_key_version.clone())
+931                 let bkm = self
+932                     .inner
+933                     .key_store
+934                     .get_branch_key_version()
+935                     .branch_key_id(branch_key_id)
+936                     .branch_key_version(branch_key_version)
 ```
+
+Originally reported at `a1e23d7`: (a) `default_cmm.rs:114-115`; `prim/src/ecdsa.rs:370-400`, with `Err` at `:372`, `:377`, `:383` and `:388-393`. (b) `hierarchical_keyring.rs:536-542` (44-byte check) and `:570-572` (key store call); `branch_key_wrap.rs:231-236` (60-byte check), called at `hierarchical_keyring.rs:601`.
 
 ## Expected behavior
 
@@ -74,85 +88,32 @@ There's no spec requirement for either part; this is robustness / defense-in-dep
 
 ## Reproduction / evidence
 
-(a) wasn't reproduced. It needs a forced AWS-LC failure, which can't be injected without changing `prim/src`. This part is code reading only.
+(a) wasn't reproduced. It needs a forced AWS-LC failure, which can't be injected without changing `prim/src`. This part is code reading only, re-read in the current source on `main`.
 
-(b) Reproducer: `mpl/tests/zz_bugrepro_05_short_edk_lookup.rs` (a temporary untracked test, removed from the tree after the run; full source below, copy in `.agents/tasks/bug-reports/reproducers/`). Command: `cd mpl && cargo test --test zz_bugrepro_05_short_edk_lookup -- --nocapture`.
+(b) Re-check on `main` `620771c` (2026-11-10). The original reproducer no longer compiles against the current API (4 compile errors, kept at the top of the log). It was adapted for API changes only. The fake implements the `KeyStore` trait with `*Input` / `*Output` shapes and counts `get_branch_key_version` calls as before. The keyring and materials are built with builders. The error text is read through `Display` plus the `source()` chain instead of `collected_errors()[0].message`, because with one candidate EDK the keyring now returns that candidate's error itself (`Error::all_failed`, `hierarchical_keyring.rs:798`). The EDK lengths are the same (43, 44, 50, 59 and 60).
 
-```rust
-// TEMPORARY reproducer for BUG-05 part (b) (T16). Delete after running.
-use std::sync::{Arc, Mutex};
-use async_trait::async_trait;
-use aws_crypto_mpl::keystore::{KeyStoreInfo, Keystore, KeystoreError, KmsConfiguration};
-use aws_crypto_mpl::structures::{
-    AlgorithmSuiteId, BeaconKeyMaterials, BranchKeyMaterials, DecryptionMaterials,
-    EncryptedDataKey, EncryptionContext,
-};
-use aws_crypto_mpl::{HierarchicalKeyring, Keyring};
-const BKID: &str = "bk";
-const VERSION: &str = "11111111-2222-4333-8444-555555555555";
-const VERSION_BYTES: [u8; 16] = [0x11, 0x11, 0x11, 0x11, 0x22, 0x22, 0x43, 0x33, 0x84, 0x44, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55];
-struct CountingKeystore {
-    version_calls: Mutex<u32>,
-}
-#[async_trait]
-impl Keystore for CountingKeystore {
-    fn get_key_store_info(&self) -> Result<KeyStoreInfo, KeystoreError> {
-        Ok(KeyStoreInfo {
-            keystore_id: "id".into(),
-            keystore_name: "t".into(),
-            logical_keystore_name: "L".into(),
-            grant_tokens: vec![],
-            kms_configuration: KmsConfiguration::Discovery,
-        })
-    }
-    async fn create_key_store(&self) -> Result<String, KeystoreError> { unimplemented!() }
-    async fn create_key(&self, _: Option<String>, _: Option<EncryptionContext>) -> Result<String, KeystoreError> { unimplemented!() }
-    async fn version_key(&self, _: String) -> Result<(), KeystoreError> { unimplemented!() }
-    async fn get_active_branch_key(&self, _: String) -> Result<BranchKeyMaterials, KeystoreError> { unimplemented!() }
-    async fn get_branch_key_version(&self, _: String, v: String) -> Result<BranchKeyMaterials, KeystoreError> {
-        *self.version_calls.lock().unwrap() += 1;
-        Ok(BranchKeyMaterials::new([7u8; 32], BKID.into(), v, EncryptionContext::new()).unwrap())
-    }
-    async fn get_beacon_key(&self, _: String) -> Result<BeaconKeyMaterials, KeystoreError> { unimplemented!() }
-}
-#[tokio::test]
-async fn short_edk_reaches_keystore_before_rejection() {
-    for len in [43usize, 44, 50, 59, 60] {
-        let ks = Arc::new(CountingKeystore { version_calls: Mutex::new(0) });
-        let kr = HierarchicalKeyring::new(ks.clone(), 3600, Some(BKID.into()), None, None, Some("p".into())).unwrap();
-        let mut ct = vec![0u8; len];
-        if len >= 44 {
-            ct[28..44].copy_from_slice(&VERSION_BYTES);
-        }
-        let edk = EncryptedDataKey::new("aws-kms-hierarchy".into(), BKID.as_bytes().to_vec(), ct);
-        let dm = DecryptionMaterials::new(AlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf, EncryptionContext::new(), Default::default(), None, None, None).unwrap();
-        let r = kr.on_decrypt(dm, &[edk]).await;
-        let inner = r.as_ref().err().and_then(|e| e.collected_errors().first().map(|x| x.message.clone()));
-        println!(
-            "REPRO BUG-05b ciphertext_len={len}: on_decrypt is_err={} keystore get_branch_key_version calls={} inner_error={:?}",
-            r.is_err(),
-            *ks.version_calls.lock().unwrap(),
-            inner
-        );
-    }
-    let _ = VERSION;
-}
-```
+- Adapted reproducer: [`zz_bugrepro_05_short_edk_lookup.rs`](../../.agents/tasks/bug-recheck/reproducers/zz_bugrepro_05_short_edk_lookup.rs) (115 lines, not inlined here).
+- Original reproducer (`a1e23d7` API): `.agents/tasks/bug-reports/reproducers/zz_bugrepro_05_short_edk_lookup.rs`.
+- Command: `cd mpl && cargo test --test zz_bugrepro_05_short_edk_lookup -- --nocapture`. The test was copied into `mpl/tests/` for the run and deleted afterwards.
 
-Observed output (`.agents/tasks/bug-reports/logs/bugrepro05.log`):
+Observed output on `main` (`.agents/tasks/bug-recheck/logs/recheck05.log`):
 
 ```text
 running 1 test
-REPRO BUG-05b ciphertext_len=43: on_decrypt is_err=true keystore get_branch_key_version calls=0 inner_error=Some("HierarchicalKeyring::on_decrypt: EDK ciphertext too short to contain branch-key version: 43 bytes (need at least 44)")
-REPRO BUG-05b ciphertext_len=44: on_decrypt is_err=true keystore get_branch_key_version calls=1 inner_error=Some("Branch key unwrap: ciphertext too short: 44 < 60")
-REPRO BUG-05b ciphertext_len=50: on_decrypt is_err=true keystore get_branch_key_version calls=1 inner_error=Some("Branch key unwrap: ciphertext too short: 50 < 60")
-REPRO BUG-05b ciphertext_len=59: on_decrypt is_err=true keystore get_branch_key_version calls=1 inner_error=Some("Branch key unwrap: ciphertext too short: 59 < 60")
-REPRO BUG-05b ciphertext_len=60: on_decrypt is_err=true keystore get_branch_key_version calls=1 inner_error=Some("Branch key unwrap: AES-256-GCM decrypt failed")
+REPRO BUG-05b ciphertext_len=43: on_decrypt is_err=true keystore get_branch_key_version calls=0 inner_error=Some("Cryptographic: encrypted data key ciphertext too short to contain the branch key version: 43 bytes (need at least 44)")
+REPRO BUG-05b ciphertext_len=44: on_decrypt is_err=true keystore get_branch_key_version calls=1 inner_error=Some("Cryptographic: ciphertext too short: 44 < 60")
+REPRO BUG-05b ciphertext_len=50: on_decrypt is_err=true keystore get_branch_key_version calls=1 inner_error=Some("Cryptographic: ciphertext too short: 50 < 60")
+REPRO BUG-05b ciphertext_len=59: on_decrypt is_err=true keystore get_branch_key_version calls=1 inner_error=Some("Cryptographic: ciphertext too short: 59 < 60")
+REPRO BUG-05b ciphertext_len=60: on_decrypt is_err=true keystore get_branch_key_version calls=1 inner_error=Some("Cryptographic: AES-256-GCM decrypt failed <- Cryptographic: authentication tag did not match")
 test short_edk_reaches_keystore_before_rejection ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 ```
 
+The call counts are the same as in the original run at `a1e23d7` (`.agents/tasks/bug-reports/logs/bugrepro05.log`). Only the message text differs.
+
 ## Fix options
+
+These options were written against `a1e23d7` and still apply on `main`, with one change for (b). BUG-02 has since been fixed on `main` (`e9bde48`, #98). That fix checks the key length in `add_data_key`, after the key store lookup and the AES-GCM open. It does not add an exact-length check before the lookup, so it does not resolve (b), as the re-check confirms. "Fold it into the BUG-02 fix" below would now mean adding that pre-lookup check as a separate change. The error type is now `aws_crypto_mpl::Error` instead of `MaterialsError`.
 
 (a) keygen `.expect`:
 

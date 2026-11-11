@@ -1,40 +1,55 @@
 # BUG-07: `prim::aes_encrypt` leaves plaintext in the caller's buffer on `Err`; `prim::aes_decrypt`'s length guard is weaker than its callee's check
 
-Summary: (a) `aes_encrypt` appends the plaintext to the caller's output `Vec` before validating the key and IV. On any `Err`, the plaintext stays in that buffer. (b) `aes_decrypt` only rejects `plain_text.len() < cipher_text.len()`, but aws-lc-rs requires the lengths to be equal. A longer buffer gets past the guard and fails inside aws-lc-rs with an opaque `Unspecified` error.
+Summary: (a) `aes_encrypt` appends the plaintext to the caller's output `Vec` before validating the key and IV. On any `Err`, the plaintext stays in that buffer. (b) `aes_decrypt` only rejects `plain_text.len() < cipher_text.len()`, but aws-lc-rs requires the lengths to be equal. A longer buffer gets past the guard and fails inside aws-lc-rs with an opaque `Unspecified` error. On `main`, prim reports that error as `authentication tag did not match`.
 
 - Confidence: Confirmed by test
 - Spec conflict: no
 - Severity: Low. (a) is a secret-hygiene issue in a crate-level API. Every in-repo caller validates key and IV lengths first and drops the buffer on `Err`, so I found no path where the residue is returned or written out. (b) fails closed, and the only effect is a less useful error message.
 - Related IDs: VR-2026-T07 (property (e)), VR-2026-C03; TM-MPL-011
 
+## Status on main (620771c)
+
+- Status: Still present (both 07a and 07b).
+- Re-checked: 2026-11-10, against `c256243` on `MPL-Verus` (code identical to `main` `620771c`). Details: [RECHECK-main-620771c.md](RECHECK-main-620771c.md), section BUG-07.
+- Evidence: the original test compiled and ran unchanged (2 passed). After `Err`, the buffer still holds `"HDR:SECRET-PLAINTEXT"`. Buffers of ct + 1 and ct + 16 bytes still pass the guard and are rejected by the callee (`.agents/tasks/bug-recheck/logs/recheck07.log`).
+- What changed: only the error text (commits bec2cfe, f8abe78, e9bde48). A longer decrypt buffer is now reported as `authentication tag did not match` instead of `gather Unspecified`. Every callee error maps to that message (`prim/src/lib.rs:229`). The new text is more misleading than before, because the tag is fine and the problem is the buffer length.
+
+Line numbers outside the Status and Location sections refer to `a1e23d7`, where the bug was first found, and are kept as history.
+
 ## Location
 
-Verified against `HEAD a1e23d7`. `prim/src/lib.rs:197-218` (`aes_encrypt`):
+Current code (`main` `620771c`): `prim/src/lib.rs:175-197` (`aes_encrypt`). The plaintext is appended at `:185`, before the key and nonce checks that can return `Err` (`:187-189`) and the seal (`:192-194`):
 
 ```rust
-206    let old_size = cipher_text.len();
-207    cipher_text.extend_from_slice(message);
-208    let cipher_slice = &mut cipher_text[old_size..];
-209    let key = UnboundKey::new(alg, key).map_err(|e| serr(format!("new {e:?}")))?;
-210    let nonce = Nonce::try_assume_unique_for_key(iv).map_err(|e| serr(format!("new {e:?}")))?;
-211    let key = LessSafeKey::new(key);
-212    let aad = Aad::from(aad);
-213    let tag = key
-214        .seal_in_place_separate_tag(nonce, aad, cipher_slice)
-215        .map_err(|e| serr(format!("Seal {e:?}")))?;
+184     let old_size = cipher_text.len();
+185     cipher_text.extend_from_slice(message);
+186     let cipher_slice = &mut cipher_text[old_size..];
+187     let key = UnboundKey::new(alg, key).map_err(|_| serr("invalid AES-GCM key".to_owned()))?;
+188     let nonce = Nonce::try_assume_unique_for_key(iv)
+189         .map_err(|_| serr("invalid AES-GCM nonce".to_owned()))?;
+190     let key = LessSafeKey::new(key);
+191     let aad = Aad::from(aad);
+192     let tag = key
+193         .seal_in_place_separate_tag(nonce, aad, cipher_slice)
+194         .map_err(|_| serr("AES-GCM encryption failed".to_owned()))?;
 ```
 
-`prim/src/lib.rs:236` (`aes_decrypt` guard):
+`prim/src/lib.rs:206` (`aes_decrypt`), guard at `:215` and callee at `:228-229`:
 
 ```rust
-236    if plain_text.len() < cipher_text.len() {
-237        return err(format!(
-238            "aes_decrypt : Plain text buffer length of {} is less than cipher text length of {}.",
+215     if plain_text.len() < cipher_text.len() {
+216         return err(format!(
+217             "plaintext buffer of {} bytes is shorter than the {} byte ciphertext",
+...
+228     key.open_separate_gather(nonce, aad, cipher_text, auth_tag, plain_text)
+229         .map_err(|_| serr("authentication tag did not match".to_owned()))?;
 ```
 
-The callee is aws-lc-rs 1.17.1 (`prim/Cargo.lock`), `src/aead/unbound_key.rs:140`: `if in_ciphertext_len != out_plaintext_len { return Err(Unspecified); }`. Note that `mpl/Cargo.lock` and `esdk/Cargo.lock` resolve 1.17.0. I read the 1.17.1 source only.
+The callee is aws-lc-rs. All three lock files (`prim/`, `mpl/`, `esdk/`) now resolve 1.18.1. The callee source was not re-read at 1.18.1, but the re-check output shows it still rejects a buffer longer than the ciphertext.
 
-In-repo callers of `aes_encrypt`: `mpl/src/keyring/raw_aes_keyring.rs:225`, `mpl/src/aws_kms/branch_key_wrap.rs:192`, `esdk/src/message/body/body_encrypt.rs:239`, `esdk/src/encrypt.rs:715`.
+In-repo callers of `aes_encrypt`: `mpl/src/keyring/raw_aes_keyring.rs:163`, `mpl/src/aws_kms/branch_key_wrap.rs:199`, `esdk/src/message/body/body_encrypt.rs:244`, `esdk/src/encrypt.rs:776`.
+
+Originally reported at `a1e23d7`: `prim/src/lib.rs:197-218` (`aes_encrypt`, append at `:207`, checks at `:209-210`) and `:227` / `:236` (`aes_decrypt` / guard). Callee was aws-lc-rs 1.17.1 (`src/aead/unbound_key.rs:140`). Callers were at `raw_aes_keyring.rs:225`, `branch_key_wrap.rs:192`, `body_encrypt.rs:239` and `encrypt.rs:715`.
 
 ## Expected behavior
 
@@ -64,7 +79,7 @@ No spec requirement; this is robustness / defense-in-depth. The rustdoc for `aes
 
 ## Reproduction / evidence
 
-Reproducer: `prim/tests/zz_bugrepro_07_aes_buffers.rs` (a temporary untracked test, removed from the tree after the run; full source below, copy in `.agents/tasks/bug-reports/reproducers/`). Command: `cd prim && cargo test --test zz_bugrepro_07_aes_buffers -- --nocapture`.
+Reproducer: `prim/tests/zz_bugrepro_07_aes_buffers.rs`, a temporary untracked test, copied into the tree for each run and removed afterwards (full source below; copy in `.agents/tasks/bug-reports/reproducers/`). Command: `cd prim && cargo test --test zz_bugrepro_07_aes_buffers -- --nocapture`. The `prim` API did not change, so the re-check on `main` ran this test unchanged.
 
 ```rust
 // TEMPORARY reproducer for BUG-07 (T07 / C03). Delete after running.
@@ -100,23 +115,27 @@ fn aes_decrypt_longer_buffer_rejected_by_callee_not_guard() {
 }
 ```
 
-Observed output (`.agents/tasks/bug-reports/logs/bugrepro07.log`):
+Observed output on `main` (`.agents/tasks/bug-recheck/logs/recheck07.log`):
 
 ```text
 running 2 tests
-REPRO BUG-07a bad key: is_err=true err=Some("Error { message: \"new Unspecified\", backtrace: <disabled> }")
+REPRO BUG-07a bad key: is_err=true err=Some("Cryptographic(CryptographicError { message: \"invalid AES-GCM key\" })")
 REPRO BUG-07a buffer after Err = "HDR:SECRET-PLAINTEXT"
 REPRO BUG-07a bad iv: is_err=true buffer after Err = "SECRET-PLAINTEXT"
 REPRO BUG-07b plain_text len = ct len + 0: Ok(())
-REPRO BUG-07b plain_text len = ct len + 1: Err("Error { message: \"gather Unspecified\", backtrace: <disabled> }")
-REPRO BUG-07b plain_text len = ct len + 16: Err("Error { message: \"gather Unspecified\", backtrace: <disabled> }")
-REPRO BUG-07b plain_text len = ct len - 1: Err("Error { message: \"aes_decrypt : Plain text buffer length of 15 is less than cipher text length of 16.\", backtrace: <disabled> }")
+REPRO BUG-07b plain_text len = ct len + 1: Err("Cryptographic(CryptographicError { message: \"authentication tag did not match\" })")
+REPRO BUG-07b plain_text len = ct len + 16: Err("Cryptographic(CryptographicError { message: \"authentication tag did not match\" })")
 test aes_encrypt_leaves_plaintext_in_buffer_on_err ... ok
+REPRO BUG-07b plain_text len = ct len - 1: Err("Cryptographic(CryptographicError { message: \"plaintext buffer of 15 bytes is shorter than the 16 byte ciphertext\" })")
 test aes_decrypt_longer_buffer_rejected_by_callee_not_guard ... ok
 test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 ```
 
+At `a1e23d7` (`.agents/tasks/bug-reports/logs/bugrepro07.log`), the same calls gave the same results with different error text: `new Unspecified` for the bad key, and `gather Unspecified` for the longer buffers.
+
 ## Fix options
+
+These options were written against `a1e23d7` and still apply on `main` (`aes_encrypt` at `prim/src/lib.rs:175`, `aes_decrypt` guard at `:215`). For (b), a descriptive guard message would now also replace the misleading `authentication tag did not match` text for a longer buffer.
 
 (a) `aes_encrypt`
 1. Build `UnboundKey` and `Nonce` before extending the buffer. Then, if sealing fails, zero the appended region and `truncate(old_size)`.

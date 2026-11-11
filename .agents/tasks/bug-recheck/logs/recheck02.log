@@ -1,0 +1,98 @@
+=== [1/2] ORIGINAL reproducer (.agents/tasks/bug-reports/reproducers/zz_bugrepro_02_pdk_length.rs) copied unchanged into mpl/tests; cargo test --test zz_bugrepro_02_pdk_length -- --nocapture ===
+   Compiling aws-crypto-mpl v0.1.0 (/Users/mahnush/Desktop/ESDK-Rust-Verus/MPL/esdk-native-mpl/mpl)
+error[E0432]: unresolved import `aws_crypto_mpl::keystore`
+ --> tests/zz_bugrepro_02_pdk_length.rs:6:21
+  |
+6 | ...ws_crypto_mpl::keystore::{KeyStoreInfo, Keys...
+  |                   ^^^^^^^^ could not find `keystore` in `aws_crypto_mpl`
+
+error[E0432]: unresolved imports `aws_crypto_mpl::AesGcm`, `aws_crypto_mpl::HierarchicalKeyring`, `aws_crypto_mpl::Keyring`, `aws_crypto_mpl::RawAesKeyring`
+  --> tests/zz_bugrepro_02_pdk_length.rs:11:22
+   |
+11 | ...::{AesGcm, HierarchicalKeyring, Keyring, RawAesKeyring};
+   |       ^^^^^^  ^^^^^^^^^^^^^^^^^^^  ^^^^^^^  ^^^^^^^^^^^^^ no `RawAesKeyring` in the root
+   |       |       |                    |
+   |       |       |                    no `Keyring` in the root
+   |       |       no `HierarchicalKeyring` in the root
+   |       no `AesGcm` in the root
+   |
+help: a similar name exists in the module (notice the capitalization)
+   |
+11 - use aws_crypto_mpl::{AesGcm, HierarchicalKeyring, Keyring, RawAesKeyring};
+11 + use aws_crypto_mpl::{AesGcm, HierarchicalKeyring, keyring, RawAesKeyring};
+   |
+
+error[E0603]: module `aws_kms` is private
+ --> tests/zz_bugrepro_02_pdk_length.rs:5:21
+  |
+5 | ...o_mpl::aws_kms::__test_internals::wrap;
+  |           ^^^^^^^  ---------------- module `__test_internals` is not publicly re-exported
+  |           |
+  |           private module
+  |
+note: the module `aws_kms` is defined here
+ --> src/lib.rs:4:1
+  |
+4 | mod aws_kms;
+  | ^^^^^^^^^^^
+
+error[E0603]: module `structures` is private
+  --> tests/zz_bugrepro_02_pdk_length.rs:7:21
+   |
+ 7 | use aws_crypto_mpl::structures::{
+   |                     ^^^^^^^^^^ private module
+ 8 |     AlgorithmSuiteId, BeaconKeyMaterials, Bran...
+   |     ---------------- enum `AlgorithmSuiteId` is not publicly re-exported
+   |
+note: the module `structures` is defined here
+  --> src/lib.rs:14:1
+   |
+14 | mod structures;
+   | ^^^^^^^^^^^^^^
+
+error[E0603]: module `structures` is private
+  --> tests/zz_bugrepro_02_pdk_length.rs:7:21
+   |
+ 7 | use aws_crypto_mpl::structures::{
+   |                     ^^^^^^^^^^ private module
+   |
+note: the module `structures` is defined here
+  --> src/lib.rs:14:1
+   |
+14 | mod structures;
+   | ^^^^^^^^^^^^^^
+
+Some errors have detailed explanations: E0432, E0603.
+For more information about an error, try `rustc --explain E0432`.
+error: could not compile `aws-crypto-mpl` (test "zz_bugrepro_02_pdk_length") due to 5 previous errors
+[exit code: 101]
+
+=== [2/2] ADAPTED reproducer (.agents/tasks/bug-recheck/reproducers/zz_bugrepro_02_pdk_length.rs); same command ===
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.22s
+     Running tests/zz_bugrepro_02_pdk_length.rs (target/debug/deps/zz_bugrepro_02_pdk_length-34c8f9a21c3bf3ec)
+
+running 2 tests
+REPRO BUG-02 F1 suite Esdk(AlgAes256GcmIv12Tag16NoKdf) encryption_key_length = 32
+REPRO BUG-02 F2 EncryptionMaterials::new(5-byte PDK, suite needs 32) is_ok = false
+REPRO BUG-02 F2 EncryptionMaterials::new Err = InvalidMaterials: plaintext data key is 5 bytes, expected 32 for the algorithm suite
+REPRO BUG-02 F2 DecryptionMaterials::new(5-byte PDK, suite needs 32) is_ok = false
+REPRO BUG-02 F2 DecryptionMaterials::new Err = InvalidMaterials: plaintext data key is 5 bytes, expected 32 for the algorithm suite
+
+thread 'f2_constructors_accept_wrong_length_pdk_and_keyrings_pass_it_through' (6412819) panicked at tests/zz_bugrepro_02_pdk_length.rs:143:57:
+called `Result::unwrap()` on an `Err` value: InvalidMaterials(InvalidMaterialsError { message: "plaintext data key is 5 bytes, expected 32 for the algorithm suite" })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test f2_constructors_accept_wrong_length_pdk_and_keyrings_pass_it_through ... FAILED
+REPRO BUG-02 F1 edk_ciphertext_len=65 -> on_decrypt Err: InvalidMaterials: plaintext data key is 5 bytes, expected 32 for the algorithm suite
+REPRO BUG-02 F1 edk_ciphertext_len=60 -> on_decrypt Err: InvalidMaterials: plaintext data key is 0 bytes, expected 32 for the algorithm suite
+REPRO BUG-02 F1 edk_ciphertext_len=124 -> on_decrypt Err: InvalidMaterials: plaintext data key is 64 bytes, expected 32 for the algorithm suite
+test f1_hierarchical_on_decrypt_returns_wrong_length_pdk ... ok
+
+failures:
+
+failures:
+    f2_constructors_accept_wrong_length_pdk_and_keyrings_pass_it_through
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+error: test failed, to rerun pass `--test zz_bugrepro_02_pdk_length`
+[exit code: 101]

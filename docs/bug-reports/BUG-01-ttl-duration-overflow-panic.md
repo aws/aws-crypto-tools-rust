@@ -7,41 +7,51 @@ Summary: `HierarchicalKeyring` and `StormTrackingCmc` accept arbitrarily large t
 - Severity: Low. The trigger is configuration only (trusted application code), and the threshold on Unix is roughly 9.2 × 10^18 s. Still, a "never expire" sentinel such as `u64::MAX` is a plausible thing for an application to pass, and the result is a panic, not an error.
 - Related IDs: VR-2026-T06; TM-MPL-018, TM-MPL-022, TM-MPL-023
 
+## Status on main (620771c)
+
+- Status: Still present.
+- Re-checked: 2026-11-10, against `c256243` on `MPL-Verus` (code identical to `main` `620771c`). Details: [RECHECK-main-620771c.md](RECHECK-main-620771c.md), section BUG-01.
+- Evidence: the reproducer, adapted for API changes only, gives 5 passed / 0 failed, and all four calls panic with `overflow when adding duration to instant` (`.agents/tasks/bug-recheck/logs/recheck01.log`).
+- The TTL is now a `Duration` set through `HierarchicalKeyring::builder().ttl(..)`, but the unchecked additions and the missing upper bound are unchanged. No commit since `a1e23d7` adds an overflow check.
+
+Line numbers outside the Status and Location sections refer to `a1e23d7`, where the bug was first found, and are kept as history.
+
 ## Location
 
-Verified against `HEAD a1e23d7` (branch `aws-crypto-rust/esdk-native-mpl`).
+Current code (`main` `620771c`):
 
-`mpl/src/aws_kms/hierarchical_keyring.rs:342` (OnEncrypt cache put) and `:585` (OnDecrypt cache put), same code at both sites:
+`mpl/src/aws_kms/hierarchical_keyring.rs:702` (OnEncrypt cache put) and `:945` (OnDecrypt cache put), same code at both sites:
 
 ```rust
-338                let now = SystemTime::now();
-339                let entry = CacheEntry::new(
-340                    CachedMaterials::BranchKey(bkm.clone()),
-341                    now,
-342                    now + Duration::from_secs(self.ttl_seconds),
-343                    UsageMetadata::default(),
-344                );
+698                 let now = SystemTime::now();
+699                 let entry = CacheEntry::builder()
+700                     .materials(CachedMaterials::BranchKey(bkm.clone()))
+701                     .creation_time(now)
+702                     .expiry_time(now + self.inner.ttl)
+703                     .build()?;
 ```
 
-`HierarchicalKeyring::new` (`hierarchical_keyring.rs:150`) only rejects `ttl_seconds == 0`.
+`HierarchicalKeyringBuilder::build` (`hierarchical_keyring.rs:535`) only rejects a zero TTL (`:547`).
 
-`mpl/src/cmc/storm_tracking.rs:446` (per-waiter deadline) and `:536` (`within_grace_interval`):
+`mpl/src/cmc/storm_tracking.rs:333` (per-waiter deadline) and `:680` (`within_grace_interval`):
 
 ```rust
-445                            Ok(GetDecision::Wait {
-446                                deadline: Some(now + self.inflight_ttl),
-447                            })
+332                             Ok(GetDecision::Wait {
+333                                 deadline: Some(now + self.inner.in_flight_ttl),
+334                             })
 ...
-531 pub fn within_grace_interval(
-532     inflight: SystemTime,
-533     now: SystemTime,
-534     grace_interval: Duration,
-535 ) -> bool {
-536     now < inflight + grace_interval
-537 }
+675 pub(crate) fn within_grace_interval(
+676     inflight: SystemTime,
+677     now: SystemTime,
+678     grace_interval: Duration,
+679 ) -> bool {
+680     now < inflight + grace_interval
+681 }
 ```
 
-`ValidatedConfig::from_raw` (`storm_tracking.rs:108-143`) checks only the lower bounds (each value ≥ 1) and the ordering `grace_interval <= inflight_ttl <= grace_period`. There is no upper bound.
+`StormTrackingCmcBuilder::build` (`storm_tracking.rs:606-626`) rejects only zero `fan_out`, `in_flight_ttl` and `sleep`, and `grace_interval > in_flight_ttl`. There is no upper bound.
+
+Originally reported at `a1e23d7`: `hierarchical_keyring.rs:342`, `:585` (validation in `HierarchicalKeyring::new`, `:150`); `storm_tracking.rs:446`, `:536` (validation in `ValidatedConfig::from_raw`, `:108-143`).
 
 ## Expected behavior
 
@@ -82,120 +92,13 @@ The same constructor path is reachable through `HierarchicalKeyring::new(.., cac
 
 ## Reproduction / evidence
 
-Reproducer: `mpl/tests/zz_bugrepro_01_ttl_overflow.rs` (a temporary untracked test, removed from the tree after the run; full source below, copy in `.agents/tasks/bug-reports/reproducers/`). Command: `cd mpl && cargo test --test zz_bugrepro_01_ttl_overflow -- --nocapture`. The tests pass when the panic is observed.
+Re-check on `main` `620771c` (2026-11-10). The original reproducer no longer compiles against the current public API (6 compile errors, kept at the top of the log). It was adapted for API changes only: builders instead of positional constructors, `Duration::from_secs(u64::MAX)` instead of `ttl_seconds = u64::MAX`, the `KeyStore` trait with `*Input` / `*Output` shapes, and `SharedKeyring` fluent calls. The inputs are the same: a TTL of `u64::MAX` seconds; storm tracking (grace period, grace interval, inflight TTL) = (MAX, MAX, MAX) and (MAX, 1, MAX); fan-out 1; sleep 1 ms. The pass condition (each call must panic) is unchanged.
 
-```rust
-// TEMPORARY reproducer for BUG-01 (T06). Delete after running.
-use std::sync::Arc;
-use std::time::{Duration, SystemTime};
-use async_trait::async_trait;
-use aws_crypto_mpl::keystore::{KeyStoreInfo, Keystore, KeystoreError, KmsConfiguration};
-use aws_crypto_mpl::structures::{
-    AlgorithmSuiteId, BeaconKeyMaterials, BranchKeyMaterials, EncryptionContext,
-    EncryptionMaterials,
-};
-use aws_crypto_mpl::{Cmc, HierarchicalKeyring, Keyring, StormTrackingCmc};
-const BKID: &str = "bk";
-const VERSION: &str = "11111111-2222-4333-8444-555555555555";
-struct FakeKeystore;
-#[async_trait]
-impl Keystore for FakeKeystore {
-    fn get_key_store_info(&self) -> Result<KeyStoreInfo, KeystoreError> {
-        Ok(KeyStoreInfo {
-            keystore_id: "id".into(),
-            keystore_name: "t".into(),
-            logical_keystore_name: "L".into(),
-            grant_tokens: vec![],
-            kms_configuration: KmsConfiguration::Discovery,
-        })
-    }
-    async fn create_key_store(&self) -> Result<String, KeystoreError> { unimplemented!() }
-    async fn create_key(&self, _: Option<String>, _: Option<EncryptionContext>) -> Result<String, KeystoreError> { unimplemented!() }
-    async fn version_key(&self, _: String) -> Result<(), KeystoreError> { unimplemented!() }
-    async fn get_active_branch_key(&self, _: String) -> Result<BranchKeyMaterials, KeystoreError> {
-        Ok(BranchKeyMaterials::new([7u8; 32], BKID.into(), VERSION.into(), EncryptionContext::new()).unwrap())
-    }
-    async fn get_branch_key_version(&self, _: String, _: String) -> Result<BranchKeyMaterials, KeystoreError> {
-        Ok(BranchKeyMaterials::new([7u8; 32], BKID.into(), VERSION.into(), EncryptionContext::new()).unwrap())
-    }
-    async fn get_beacon_key(&self, _: String) -> Result<BeaconKeyMaterials, KeystoreError> { unimplemented!() }
-}
-fn panic_msg(e: tokio::task::JoinError) -> String {
-    let p = e.into_panic();
-    p.downcast_ref::<&str>().map(|s| s.to_string())
-        .or_else(|| p.downcast_ref::<String>().cloned())
-        .unwrap_or_else(|| "<non-string panic>".into())
-}
-#[test]
-fn std_systemtime_add_limits() {
-    let now = SystemTime::now();
-    println!("REPRO BUG-01 now+u64::MAX s checked_add = {:?}", now.checked_add(Duration::from_secs(u64::MAX)));
-    println!("REPRO BUG-01 now+i64::MAX s checked_add = {:?}", now.checked_add(Duration::from_secs(i64::MAX as u64)));
-    println!("REPRO BUG-01 now+1e15 s checked_add is_some = {}", now.checked_add(Duration::from_secs(1_000_000_000_000_000)).is_some());
-}
-#[tokio::test]
-async fn hierarchical_ttl_u64_max_accepted_then_on_encrypt_panics() {
-    let kr = HierarchicalKeyring::new(Arc::new(FakeKeystore), u64::MAX, Some(BKID.into()), None, None, Some("p".into()));
-    println!("REPRO BUG-01a HierarchicalKeyring::new(ttl_seconds = u64::MAX) is_ok = {}", kr.is_ok());
-    let kr = Arc::new(kr.unwrap());
-    let em = EncryptionMaterials::new(AlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf, vec![], EncryptionContext::new(), Default::default(), None, None, None).unwrap();
-    let h = tokio::spawn(async move { kr.on_encrypt(em).await.is_ok() });
-    match h.await {
-        Err(e) if e.is_panic() => println!("REPRO BUG-01a on_encrypt PANICKED: {}", panic_msg(e)),
-        Err(_) => panic!("join error that is not a panic"),
-        Ok(ok) => panic!("expected panic; on_encrypt returned is_ok={ok}"),
-    }
-}
-#[tokio::test]
-async fn hierarchical_ttl_u64_max_on_decrypt_panics() {
-    use aws_crypto_mpl::aws_kms::__test_internals::wrap;
-    use aws_crypto_mpl::structures::{DecryptionMaterials, EncryptedDataKey};
-    let bkm = BranchKeyMaterials::new([7u8; 32], BKID.into(), VERSION.into(), EncryptionContext::new()).unwrap();
-    let ct = wrap(&bkm, &EncryptionContext::new(), &[1u8; 32]).unwrap();
-    let edk = EncryptedDataKey::new("aws-kms-hierarchy".into(), BKID.as_bytes().to_vec(), ct);
-    let kr = Arc::new(HierarchicalKeyring::new(Arc::new(FakeKeystore), u64::MAX, Some(BKID.into()), None, None, Some("p".into())).unwrap());
-    let dm = DecryptionMaterials::new(AlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf, EncryptionContext::new(), Default::default(), None, None, None).unwrap();
-    let h = tokio::spawn(async move { kr.on_decrypt(dm, &[edk]).await.is_ok() });
-    match h.await {
-        Err(e) if e.is_panic() => println!("REPRO BUG-01d on_decrypt PANICKED: {}", panic_msg(e)),
-        Err(_) => panic!("join error that is not a panic"),
-        Ok(ok) => panic!("expected panic; on_decrypt returned is_ok={ok}"),
-    }
-}
-#[tokio::test]
-async fn storm_tracking_huge_grace_interval_accepted_then_second_get_panics() {
-    // grace_period, grace_interval, inflight_ttl all u64::MAX seconds: satisfies every check in from_raw.
-    let cmc = StormTrackingCmc::new(1000, 1, u64::MAX, u64::MAX, 1, u64::MAX, 1, None);
-    println!("REPRO BUG-01b StormTrackingCmc::new(grace_interval = u64::MAX s) is_ok = {}", cmc.is_ok());
-    let cmc = Arc::new(cmc.unwrap());
-    let first = cmc.get_cache_entry(b"k").await;
-    println!("REPRO BUG-01b first get (miss, marks inflight) = {:?}", first.as_ref().map(|o| o.is_some()));
-    let c2 = Arc::clone(&cmc);
-    let h = tokio::spawn(async move { c2.get_cache_entry(b"k").await.is_ok() });
-    match h.await {
-        Err(e) if e.is_panic() => println!("REPRO BUG-01b second get PANICKED: {}", panic_msg(e)),
-        Err(_) => panic!("join error that is not a panic"),
-        Ok(ok) => panic!("expected panic; get returned is_ok={ok}"),
-    }
-}
-#[tokio::test]
-async fn storm_tracking_huge_inflight_ttl_accepted_then_waiter_deadline_panics() {
-    // grace_interval = 1 s keeps within_grace_interval safe; inflight_ttl = u64::MAX s.
-    let cmc = StormTrackingCmc::new(1000, 1, u64::MAX, 1, 1, u64::MAX, 1, None);
-    println!("REPRO BUG-01c StormTrackingCmc::new(inflight_ttl = u64::MAX s) is_ok = {}", cmc.is_ok());
-    let cmc = Arc::new(cmc.unwrap());
-    let _ = cmc.get_cache_entry(b"k").await;
-    let c2 = Arc::clone(&cmc);
-    let h = tokio::spawn(async move { c2.get_cache_entry(b"k").await.is_ok() });
-    match h.await {
-        Err(e) if e.is_panic() => println!("REPRO BUG-01c second get PANICKED: {}", panic_msg(e)),
-        Err(_) => panic!("join error that is not a panic"),
-        Ok(ok) => panic!("expected panic; get returned is_ok={ok}"),
-    }
-}
-```
+- Adapted reproducer: [`zz_bugrepro_01_ttl_overflow.rs`](../../.agents/tasks/bug-recheck/reproducers/zz_bugrepro_01_ttl_overflow.rs) (173 lines, not inlined here).
+- Original reproducer (`a1e23d7` API): `.agents/tasks/bug-reports/reproducers/zz_bugrepro_01_ttl_overflow.rs`.
+- Command: `cd mpl && cargo test --test zz_bugrepro_01_ttl_overflow -- --nocapture`. The test was copied into `mpl/tests/` for the run and deleted afterwards.
 
-Observed output (`.agents/tasks/bug-reports/logs/bugrepro01.log`, macOS; interleaved thread lines kept as logged):
+Observed output on `main` (`.agents/tasks/bug-recheck/logs/recheck01.log`, macOS; thread lines trimmed):
 
 ```text
 running 5 tests
@@ -203,11 +106,11 @@ REPRO BUG-01 now+u64::MAX s checked_add = None
 REPRO BUG-01 now+i64::MAX s checked_add = None
 REPRO BUG-01 now+1e15 s checked_add is_some = true
 test std_systemtime_add_limits ... ok
-REPRO BUG-01b StormTrackingCmc::new(grace_interval = u64::MAX s) is_ok = true
-REPRO BUG-01b first get (miss, marks inflight) = Ok(false)
 REPRO BUG-01c StormTrackingCmc::new(inflight_ttl = u64::MAX s) is_ok = true
+REPRO BUG-01b StormTrackingCmc::new(grace_interval = u64::MAX s) is_ok = true
 REPRO BUG-01a HierarchicalKeyring::new(ttl_seconds = u64::MAX) is_ok = true
-thread 'storm_tracking_huge_inflight_ttl_accepted_then_waiter_deadline_panics' (5934199) panicked at /rustc/59807616e1fa2540724bfbac14d7976d7e4a3860/library/std/src/time.rs:746:31:
+REPRO BUG-01b first get (miss, marks inflight) = Ok(false)
+thread 'storm_tracking_huge_inflight_ttl_accepted_then_waiter_deadline_panics' (6397751) panicked at /rustc/59807616e1fa2540724bfbac14d7976d7e4a3860/library/std/src/time.rs:746:31:
 overflow when adding duration to instant
 ...
 REPRO BUG-01c second get PANICKED: overflow when adding duration to instant
@@ -219,7 +122,11 @@ REPRO BUG-01d on_decrypt PANICKED: overflow when adding duration to instant
 test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
 ```
 
+The adapted test keeps the original print labels (for example `HierarchicalKeyring::new(ttl_seconds = u64::MAX)`), although the call it now makes is the builder. The output matches the original run at `a1e23d7` (`.agents/tasks/bug-reports/logs/bugrepro01.log`).
+
 ## Fix options
+
+These options were written against `a1e23d7`. On `main`, the four use sites are `hierarchical_keyring.rs:702`, `:945` and `storm_tracking.rs:333`, `:680`. The constructor checks named in option 2 are now `HierarchicalKeyringBuilder::build` (`hierarchical_keyring.rs:535`) and `StormTrackingCmcBuilder::build` (`storm_tracking.rs:606`). The error type is now `aws_crypto_mpl::Error` instead of `MaterialsError` / `CmcError`.
 
 1. Checked addition at each use site, returning an error.
    - Hierarchical keyring: `now.checked_add(..).ok_or_else(|| MaterialsError::keyring_failed("... TTL overflow ..."))`. This matches the Dafny MPL's "INT64 Overflow when putting cache entry" failure.

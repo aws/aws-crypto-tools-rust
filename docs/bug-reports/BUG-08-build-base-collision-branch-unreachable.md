@@ -7,23 +7,39 @@ Summary: `keystore::encryption_context::build_base` returns `Err` when inserting
 - Severity: Informational. Behavior is correct for all inputs. The cost is a misleading comment and an untestable branch, which also makes the C01 round-trip proof slightly harder to state.
 - Related IDs: VR-2026-C01 (property (c)); cap:cat1 (1c)
 
+## Status on main (620771c)
+
+- Status: Still present.
+- Re-checked: 2026-11-10, against `c256243` on `MPL-Verus` (code identical to `main` `620771c`). Details: [RECHECK-main-620771c.md](RECHECK-main-620771c.md), section BUG-08.
+- Evidence: code reading, plus the test adapted for API changes only (1 passed). 10 custom entries go in and 10 prefixed entries come out, with no `Err`, the same as at `a1e23d7` (`.agents/tasks/bug-recheck/logs/recheck08.log`).
+- The file moved from `mpl/src/keystore/` to `mpl/src/key_store/` in `e9bde48` (#98). The logic is unchanged. The custom EC is now a `BTreeMap<String, String>`, so its keys are distinct strings by type. The UTF-8 decoding step in the original argument (step 3 below) is no longer needed.
+
+Line numbers outside the Status and Location sections refer to `a1e23d7`, where the bug was first found, and are kept as history.
+
 ## Location
 
-Verified against `HEAD a1e23d7`. `mpl/src/keystore/encryption_context.rs:109-122`:
+Current code (`main` `620771c`): `build_base` (`mpl/src/key_store/encryption_context.rs:40`), custom-EC loop `:86-104`, dead `Err` `:95-101`:
 
 ```rust
-109            // A custom key that already carries the prefix, or a duplicate
-110            // after prefixing, would otherwise overwrite a previous entry.
-111            if ec
-112                .insert(format!("{CUSTOM_EC_PREFIX}{key_str}"), val_str.to_string())
-113                .is_some()
-114            {
-115                return Err(KeystoreError::new(
-116                    KeystoreErrorKind::Configuration,
-117                    format!(
-118                        "custom encryption context key '{key_str}' collides with an existing \
-119                         encryption context entry after prefixing with '{CUSTOM_EC_PREFIX}'"
+89             // A custom key that already carries the prefix, or a duplicate
+90             // after prefixing, would otherwise overwrite a previous entry.
+91             if ec
+92                 .insert(format!("{CUSTOM_EC_PREFIX}{key_str}"), val_str.to_string())
+93                 .is_some()
+94             {
+95                 return Err(Error::new(
+96                     Kind::Validation,
+97                     format!(
+98                         "custom encryption context key '{key_str}' collides with an existing \
+99                          encryption context entry after prefixing with '{CUSTOM_EC_PREFIX}'"
 ```
+
+Why the insert at `:92` still can never return `Some`, on current code:
+
+- Before the loop, `ec` holds exactly six base keys, inserted at `:60-79`: `branch-key-id`, `type`, `create-time`, `tablename`, `kms-arn` and `hierarchy-version` (constants in `mpl/src/key_store/attributes.rs:11-17`). None of them starts with `aws-crypto-ec:` (`CUSTOM_EC_PREFIX`, `attributes.rs:24`).
+- `custom_ec` (`encryption_context.rs:36`) is a `structures::EncryptionContext(BTreeMap<String, String>)` (`mpl/src/structures/encryption_context.rs:16`), so its keys are distinct, and prepending a fixed prefix keeps them distinct.
+
+Originally reported at `a1e23d7`: `mpl/src/keystore/encryption_context.rs:109-122`; base keys at `:59-78`; constants in `mpl/src/keystore/attributes.rs:11-18`; custom EC as `EncryptionContext(BTreeMap<Vec<u8>, Vec<u8>>)` (`mpl/src/structures/encryption_context.rs:13`), decoded as strict UTF-8 at `:93-98`.
 
 ## Expected behavior
 
@@ -38,7 +54,7 @@ The code meets this. Nothing in the spec requires the collision error. The findi
 
 Why the insert at line 112 can never return `Some`:
 1. Before the loop, `ec` holds exactly six keys (lines 59-78): `branch-key-id`, `type`, `create-time`, `tablename`, `kms-arn` and `hierarchy-version` (constants in `mpl/src/keystore/attributes.rs:11-18`). None of them starts with `aws-crypto-ec:`, so no prefixed key can equal a base key.
-2. The custom EC is an `EncryptionContext(BTreeMap<Vec<u8>, Vec<u8>>)` (`mpl/src/structures/encryption_context.rs:13`), so its keys are distinct byte strings.
+2. At `a1e23d7` the custom EC was an `EncryptionContext(BTreeMap<Vec<u8>, Vec<u8>>)` (`mpl/src/structures/encryption_context.rs:13`), so its keys were distinct byte strings. On `main` it is a `BTreeMap<String, String>` (see Location).
 3. Strict UTF-8 decoding (lines 93-98, which reject invalid input) and prepending a fixed prefix are both injective. So distinct custom keys produce distinct prefixed keys, and no prefixed key collides with an earlier one.
 4. The comment's first example, a custom key that already carries the prefix such as `aws-crypto-ec:a`, becomes `aws-crypto-ec:aws-crypto-ec:a`. That doesn't collide with the prefixed form of `a`.
 5. The later inserts in `active_encryption_context` (`type`, `version`, lines 145-149) use unprefixed names, so they can't overwrite custom entries either.
@@ -54,28 +70,30 @@ An existing test, `distinct_non_utf8_custom_ec_keys_do_not_collapse` (`mpl/tests
 
 ## Reproduction / evidence
 
-Reproducer: `mpl/tests/zz_bugrepro_08_build_base_dead_branch.rs` (a temporary untracked test, removed from the tree after the run; full source below, copy in `.agents/tasks/bug-reports/reproducers/`). Command: `cd mpl && cargo test --test zz_bugrepro_08_build_base_dead_branch -- --nocapture`. The test feeds in the inputs the comment names (an already-prefixed key next to its unprefixed form) plus every base and reserved attribute name, and shows all of them are accepted with no entry lost. A test can't prove unreachability for all inputs; that rests on the code reading above.
+Re-check on `main` `620771c` (2026-11-10). The original reproducer no longer compiles against the current API (2 compile errors, kept at the top of the log). It was adapted for API changes only. The module path is now `aws_crypto_mpl::key_store::__test_internals::encryption_context`, and `EncryptionContext::insert` takes strings instead of `Vec<u8>`. The keys and values are the same. The test feeds in the inputs the comment names (an already-prefixed key next to its unprefixed form) plus every base and reserved attribute name, and shows all of them are accepted with no entry lost. A test can't prove unreachability for all inputs; that rests on the code reading above.
+
+Adapted reproducer: [`zz_bugrepro_08_build_base_dead_branch.rs`](../../.agents/tasks/bug-recheck/reproducers/zz_bugrepro_08_build_base_dead_branch.rs). Command: `cd mpl && cargo test --test zz_bugrepro_08_build_base_dead_branch -- --nocapture`. The test was copied into `mpl/tests/` for the run and deleted afterwards.
 
 ```rust
-// TEMPORARY reproducer for BUG-08 (C01(c)). Delete after running.
-use aws_crypto_mpl::keystore::encryption_context::{
+use aws_crypto_mpl::key_store::__test_internals::encryption_context::{
     EncryptionContextInput, active_encryption_context, decrypt_only_encryption_context,
 };
-use aws_crypto_mpl::structures::EncryptionContext;
+use aws_crypto_mpl::types::EncryptionContext;
+
 #[test]
 fn inputs_named_by_the_comment_do_not_reach_the_collision_branch() {
     let mut custom = EncryptionContext::new();
     // "A custom key that already carries the prefix":
-    custom.insert(b"aws-crypto-ec:a".to_vec(), b"1".to_vec());
-    custom.insert(b"a".to_vec(), b"2".to_vec());
+    custom.insert("aws-crypto-ec:a", "1");
+    custom.insert("a", "2");
     // Custom keys equal to every base key name:
     for k in ["branch-key-id", "type", "create-time", "tablename", "kms-arn", "hierarchy-version", "version", "enc"] {
-        custom.insert(k.as_bytes().to_vec(), b"x".to_vec());
+        custom.insert(k, "x");
     }
     let input = EncryptionContextInput {
         branch_key_id: "bk",
         create_time: "2024-01-01T00:00:00Z",
-        logical_keystore_name: "L",
+        logical_key_store_name: "L",
         kms_arn: "arn:aws:kms:us-west-2:111122223333:key/k",
         hierarchy_version: 1,
         custom_ec: Some(&custom),
@@ -89,7 +107,9 @@ fn inputs_named_by_the_comment_do_not_reach_the_collision_branch() {
 }
 ```
 
-Observed output (`.agents/tasks/bug-reports/logs/bugrepro08.log`):
+The header comment of the adapted file is omitted above. It records the same API changes.
+
+Observed output on `main` (`.agents/tasks/bug-recheck/logs/recheck08.log`):
 
 ```text
 running 1 test
@@ -98,6 +118,8 @@ REPRO BUG-08 10 custom entries in, 10 prefixed entries out: ["aws-crypto-ec:a", 
 test inputs_named_by_the_comment_do_not_reach_the_collision_branch ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 ```
+
+The output is identical to the original run at `a1e23d7`.
 
 ## Fix options
 
