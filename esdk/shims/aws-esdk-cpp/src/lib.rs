@@ -1408,8 +1408,14 @@ fn ddb_client(
     //# - Creating a DynamoDB client MUST apply the target-supplied client configuration,
     //# as defined in [Service client configuration](#service-client-configuration).
     let sdk_config = create_sdk_config(input, http_client)?;
+    let mut config = aws_sdk_dynamodb::config::Builder::from(&sdk_config);
+    // The DynamoDB client ignores the SdkConfig's retry config and uses its own default.
+    // Setting it on the client config makes the caller's retry config apply.
+    if let Some(retry_config) = make_retry_config(&input.retry) {
+        config = config.retry_config(retry_config);
+    }
     Ok(Box::new(MplDdbClient {
-        inner: aws_sdk_dynamodb::Client::new(&sdk_config),
+        inner: aws_sdk_dynamodb::Client::from_conf(config.build()),
     }))
 }
 
