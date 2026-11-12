@@ -10,6 +10,14 @@ on:
         default: >-
           [{"os": "ubuntu", "runner": "codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}"},
            {"os": "macos", "runner": "macos-latest"}]
+      toolchain:
+        description: "Rust toolchain to build and test with."
+        type: string
+        default: stable
+      lint:
+        description: "Run fmt and clippy. Lints change between Rust versions, so only stable runs them."
+        type: boolean
+        default: true
 
 jobs:
   shim:
@@ -36,6 +44,7 @@ jobs:
 
       - uses: ./.github/actions/setup-rust
         with:
+          toolchain: ${{ inputs.toolchain }}
           components: clippy, rustfmt
           workspaces: esdk/shims/aws-esdk-cpp
           free-disk-space: "true"
@@ -48,9 +57,11 @@ jobs:
           role-to-assume: arn:aws:iam::370957321024:role/GitHub-CI-Public-ESDK-Dafny-Role-us-west-2
 
       - name: Format check
+        if: inputs.lint
         run: cargo fmt --all -- --check
 
       - name: Clippy
+        if: inputs.lint
         run: cargo clippy --all-targets -- -D warnings
 
       - name: Build

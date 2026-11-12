@@ -2,6 +2,7 @@
 name = "aws-crypto-mpl"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.94.1"
 keywords = ["cryptography", "security", "encryption"]
 categories = ["cryptography"]
 license = "Apache-2.0"
