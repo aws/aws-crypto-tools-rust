@@ -3,13 +3,15 @@
 //! Frame encryption and body serialization.
 
 use super::{BodyAADContent, body_aad, get_alg_suite, iv_seq};
-use crate::error::val_err;
+use crate::error::{Kind, err, val_err};
 use crate::message::header::{ENDFRAME_SEQUENCE_NUMBER, HeaderInfo, START_SEQUENCE_NUMBER};
 use crate::message::serializable_types::{get_iv_length, get_tag_length};
-use crate::message::serialize_functions::{read_opt_u8, read_up_to_peek, write_bytes, write_u32};
+use crate::message::serialize_functions::{
+    read_opt_u8, read_up_to_peek, write_bytes, write_to_sink, write_u32,
+};
 use crate::message::{DigestWriter, Error, ser_err};
-use crate::types::{SafeRead, SafeWrite};
-use aws_mpl_legacy::primitives::{AesGcm, aes_encrypt};
+use crate::shapes::{Sink, Source};
+use aws_mpl_primitives::{AesGcm, aes_encrypt};
 
 /// Maximum plaintext bytes per message: 2^36 - 32 (AES-GCM safety bound).
 const MAX_DATA: usize = (1usize << 36) - 32;
@@ -26,12 +28,12 @@ pub(crate) struct ConstructFrameInput<'a> {
 }
 
 /// Construct and serialize a single frame (regular or final).
-pub(crate) fn construct_frame(
+pub(crate) async fn construct_frame(
     input: &ConstructFrameInput<'_>,
     iv: &mut [u8],
     aad: &mut Vec<u8>,
     frame_buf: &mut Vec<u8>,
-    ciphertext: &mut dyn SafeWrite,
+    ciphertext: &mut dyn Sink,
     sig_digest: &mut DigestWriter,
 ) -> Result<(), Error> {
     frame_buf.clear();
@@ -51,9 +53,12 @@ pub(crate) fn construct_frame(
     //# - For [framed data](message-body.md#framed-data), this value MUST equal the length, in bytes,
     //# of the plaintext being encrypted in this frame.
     let Ok(plaintext_len_u64) = u64::try_from(input.plaintext.len()) else {
-        return ser_err(&format!(
-            "Plaintext length {} exceeds u64::MAX",
-            input.plaintext.len()
+        return Err(err(
+            Kind::Internal,
+            format!(
+                "plaintext length {} exceeds u64::MAX",
+                input.plaintext.len()
+            ),
         ));
     };
     body_aad(
@@ -188,7 +193,7 @@ pub(crate) fn construct_frame(
         // of the plaintext (the auth tag is a separate field), so plaintext.len()
         // *is* the encrypted content length and lets us skip that buffering.
         let Ok(enc_content_len) = u32::try_from(input.plaintext.len()) else {
-            return ser_err("Plaintext length exceeds u32");
+            return Err(err(Kind::Validation, "plaintext length exceeds u32"));
         };
 
         //= spec/data-format/message-body.md#final-frame-encrypted-content-length
@@ -260,7 +265,7 @@ pub(crate) fn construct_frame(
     //# If the Encrypt operation is streaming the encrypted message and
     //# the entire frame has been serialized,
     //# the serialized frame MUST be released.
-    write_bytes(ciphertext, frame_buf)?;
+    write_to_sink(ciphertext, frame_buf).await?;
 
     //= spec/client-apis/encrypt.md#construct-a-frame
     //= type=implication
@@ -274,23 +279,25 @@ pub(crate) fn construct_frame(
 }
 
 /// Encrypt plaintext and serialize the message body (framed) to the output stream.
-pub(crate) fn encrypt_and_serialize_body(
-    plaintext: &mut dyn SafeRead,
+pub(crate) async fn encrypt_and_serialize_body(
+    plaintext: &mut dyn Source,
     header: &HeaderInfo,
     key: &[u8],
-    ciphertext: &mut dyn SafeWrite,
+    ciphertext: &mut dyn Sink,
     sig_digest: &mut DigestWriter,
-    max_plaintext_length: Option<usize>,
+    max_plaintext_length: Option<u64>,
 ) -> Result<(), Error> {
+    let max_plaintext_length =
+        max_plaintext_length.map(|len| usize::try_from(len).unwrap_or(usize::MAX));
     let mut total_data_size: usize = 0;
     let Ok(frame_length) = usize::try_from(header.body.frame_length()) else {
         return ser_err(&format!(
-            "Frame length {} exceeds usize::MAX",
+            "frame length {} exceeds usize::MAX",
             header.body.frame_length()
         ));
     };
-    let iv_len = usize::from(get_iv_length(&header.suite));
-    let auth_len = usize::from(get_tag_length(&header.suite));
+    let iv_len = get_iv_length(&header.suite);
+    let auth_len = get_tag_length(&header.suite);
     let frame_len = frame_length + iv_len + auth_len + 4;
     let mut frame_buf = Vec::with_capacity(frame_len);
 
@@ -302,6 +309,7 @@ pub(crate) fn encrypt_and_serialize_body(
     //= reason=START_SEQUENCE_NUMBER is defined as 1
     //# If this is the first frame sequentially, the sequence number value MUST be 1.
     let mut sequence_number = START_SEQUENCE_NUMBER;
+    let mut yielder = super::FrameYielder::new(frame_length);
     let alg_suite = get_alg_suite(&header.suite)?;
 
     let mut iv = vec![0; iv_len];
@@ -315,7 +323,8 @@ pub(crate) fn encrypt_and_serialize_body(
     //# this operation MUST process as much of the consumable bytes as possible
     //# by [constructing regular frames](#construct-a-frame).
     loop {
-        in_size = read_up_to_peek(plaintext, &mut plaintext_frame, next_char)?;
+        yielder.next_frame().await;
+        in_size = read_up_to_peek(plaintext, &mut plaintext_frame, next_char).await?;
 
         //= spec/client-apis/encrypt.md#construct-the-body
         //# - If there are not enough input consumable plaintext bytes to create a new regular frame,
@@ -328,7 +337,7 @@ pub(crate) fn encrypt_and_serialize_body(
         if in_size != frame_length {
             break;
         }
-        next_char = read_opt_u8(plaintext)?;
+        next_char = read_opt_u8(plaintext).await?;
 
         //= spec/client-apis/encrypt.md#construct-the-body
         //# - If there are exactly enough consumable plaintext bytes to create one regular frame,
@@ -352,12 +361,12 @@ pub(crate) fn encrypt_and_serialize_body(
         if sequence_number == ENDFRAME_SEQUENCE_NUMBER {
             //= spec/data-format/message-body.md#framed-data
             //# - The number of frames in a single message MUST be less than or equal to `2^32 - 1`.
-            return Err(val_err("Too many frames"));
+            return Err(val_err("too many frames"));
         }
 
         total_data_size += frame_length;
         if total_data_size > MAX_DATA {
-            return Err(val_err("Plaintext too large"));
+            return Err(val_err("plaintext too large"));
         }
         if let Some(max_plaintext_len) = max_plaintext_length
             && total_data_size > max_plaintext_len
@@ -372,7 +381,7 @@ pub(crate) fn encrypt_and_serialize_body(
             //# has a length greater than this value,
             //# this operation MUST immediately fail.
             return Err(val_err(
-                "Plaintext length exceeds configured Plaintext Length Bound",
+                "plaintext length exceeds configured Plaintext Length Bound",
             ));
         }
 
@@ -410,7 +419,8 @@ pub(crate) fn encrypt_and_serialize_body(
             &mut frame_buf,
             ciphertext,
             sig_digest,
-        )?;
+        )
+        .await?;
 
         //= spec/data-format/message-body.md#regular-frame-sequence-number
         //# Subsequent frames MUST be in order and MUST contain an increment of 1 from the previous frame.
@@ -427,13 +437,13 @@ pub(crate) fn encrypt_and_serialize_body(
     // Final frame
     total_data_size += in_size;
     if total_data_size > MAX_DATA {
-        return Err(val_err("Plaintext too large"));
+        return Err(val_err("plaintext too large"));
     }
     if let Some(max_len) = max_plaintext_length
         && total_data_size > max_len
     {
         return Err(val_err(
-            "Plaintext length exceeds specified Plaintext Length Bound",
+            "plaintext length exceeds specified Plaintext Length Bound",
         ));
     }
 
@@ -481,7 +491,8 @@ pub(crate) fn encrypt_and_serialize_body(
         &mut frame_buf,
         ciphertext,
         sig_digest,
-    )?;
+    )
+    .await?;
 
     Ok(())
 }

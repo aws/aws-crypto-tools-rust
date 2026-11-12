@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 keywords = ["crypto", "cryptography", "security", "encryption", "c++"]
 categories = ["cryptography", "external-ffi-bindings"]
-license = "ISC AND (Apache-2.0 OR ISC)"
+license = "Apache-2.0"
 description = "C++ shim exposing the Rust implementation of the AWS Encryption SDK to C++ callers."
 repository = "https://github.com/aws/aws-crypto-tools-rust"
 authors = ["AWS-CryptoTools"]
@@ -15,17 +15,19 @@ readme = "README.md"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [dependencies]
-aws-config = "1.8.12"
-aws-mpl-legacy = { package = "aws-mpl-native", path = "../../../unsafe-unreviewed-mpl/mpl" }
-aws-sdk-dynamodb = "1.103.0"
-aws-sdk-kms = "1.98.0"
-cxx = "1.0.194"
-tokio = {version = "1.49.0", features = ["full"] }
+aws-crypto-mpl = { path = "../../../mpl" }
+aws-mpl-primitives = { path = "../../../prim" }
+cxx = "1.0.202"
+tokio = {version = "1.49", features = ["full"] }
 aws-esdk = { path = "../.." }
+aws-smithy-runtime = { version = "1.16", features = ["client", "default-https-client"] }
+aws-smithy-runtime-api = { version = "1.19", features = ["client"] }
 
 [build-dependencies]
-cxx-build = "1.0.194"
-cc = "1.2.54"
+cxx-build = "1.0.202"
+cc = "1.6.0"
 
-# Declare this crate as its own workspace root so cargo builds it standalone
+# Declare this crate as its own workspace root so cargo builds it standalone.
+# Keep crates materialized under the test server's commons clone out of it.
 [workspace]
+exclude = ["test-server/.commons-clone"]

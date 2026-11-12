@@ -33,6 +33,30 @@ so your commits never carry formatting drift. CI enforces
 `cargo fmt --all -- --check`, so the hook prevents avoidable CI failures.
 See [`.githooks/README.md`](./.githooks/README.md) for details.
 
+## Errors
+
+Each library's `Error` type is generated from [`errors.toml`](./errors.toml).
+After editing it, run `cargo xtask gen-errors` from the repository root and commit the
+generated `src/error/generated.rs` files; CI runs `cargo xtask gen-errors --check`.
+
+### What errors may contain
+
+An error's message, details, and `Debug` output reach logs, so they follow these rules:
+
+- **Never include:** plaintext, data keys, branch key bytes, private keys, ciphertext bytes,
+  or DynamoDB attribute values.
+  Name an attribute and its type, not its value.
+- **Encryption context:** keys may appear; values may not.
+- **Allowed:** ARNs, table names, branch key IDs and versions, keyring and CMM names,
+  key provider IDs and key provider info, error codes, and request IDs.
+
+An AWS SDK error's own `Debug` includes the raw HTTP response,
+whose body can hold a plaintext key or item attribute values.
+So an error's `Debug` shows another library's error, such as an AWS SDK error, by its `Display` chain, not its `Debug`.
+The AWS SDK error itself stays reachable through `source()` and `find_source`.
+
+`esdk/tests/test_error_secrets.rs` checks failing operations against these rules.
+
 ## Contributing via Pull Requests
 Contributions via pull requests are much appreciated. Before sending us a pull request, please ensure that:
 

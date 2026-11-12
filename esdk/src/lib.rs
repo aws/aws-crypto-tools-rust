@@ -2,27 +2,112 @@
 // SPDX-License-Identifier: Apache-2.0
 //! # AWS Encryption SDK for Rust
 //!
-//! A native Rust implementation of the AWS Encryption SDK, providing
-//! client-side encryption using envelope encryption. Data is encrypted
-//! with a unique data key, which is itself encrypted by one or more
-//! wrapping keys (key providers / keyrings).
+//! The AWS Encryption SDK is a client-side encryption library.
+//! It encrypts data with a unique data key per message,
+//! and protects that data key with one or more wrapping keys you control, through a keyring.
+//! The result is an encrypted message that holds the encrypted data keys, the encryption context and the ciphertext.
 //!
-//! The two primary operations are:
-//! - [`encrypt()`](fn@crate::encrypt) — encrypts plaintext and serializes an encrypted message
-//! - [`decrypt()`](fn@crate::decrypt) — deserializes an encrypted message and decrypts the plaintext
+//! ## Getting started
 //!
-//! Per-call configuration (commitment policy, max encrypted data keys, etc.)
-//! lives on the [`EncryptInput`](crate::EncryptInput) /
-//! [`DecryptInput`](crate::DecryptInput) structs.
+//! Add the SDK and an async runtime to your `Cargo.toml`:
 //!
-//! For callers who want to set the cross-call configuration once and reuse it,
-//! the [`Esdk`](crate::Esdk) client is an optional convenience layer:
-//! configure it via [`Esdk::builder`](crate::Esdk::builder) and call
-//! [`Esdk::encrypt`](crate::Esdk::encrypt) / [`Esdk::decrypt`](crate::Esdk::decrypt)
-//! (and the streaming variants) instead.
+//! ```toml
+//! [dependencies]
+//! aws-esdk = "2"
+//! tokio = { version = "1", features = ["full"] }
+//! ```
 //!
-//! The SDK supports both **framed** and **nonframed** message body formats,
-//! as well as **V1** and **V2** message format versions (V2 adds key commitment).
+//! Then create a [`Client`], and encrypt and decrypt with a keyring:
+//!
+//! ```
+//! use aws_esdk::keyring::RawAesKeyring;
+//! use aws_esdk::types::{AesWrappingAlg, EncryptionContext};
+//!
+//! # #[tokio::main(flavor = "current_thread")]
+//! # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! // For demonstration only: load your wrapping key from a secure store.
+//! let keyring = RawAesKeyring::builder()
+//!     .key_namespace("my-key-namespace")
+//!     .key_name("my-key-name")
+//!     .wrapping_key(vec![0x2A; 32])
+//!     .wrapping_alg(AesWrappingAlg::AlgAes256GcmIv12Tag16)
+//!     .build()?;
+//!
+//! let mut encryption_context = EncryptionContext::new();
+//! encryption_context.insert("purpose", "example");
+//!
+//! let esdk = aws_esdk::Client::default();
+//! let encrypted = esdk
+//!     .encrypt()
+//!     .plaintext(b"Hello World")
+//!     .set_encryption_context(Some(encryption_context.clone()))
+//!     .keyring(keyring.clone())
+//!     .send()
+//!     .await?;
+//! let decrypted = esdk
+//!     .decrypt()
+//!     .ciphertext(encrypted.ciphertext())
+//!     .set_encryption_context(Some(encryption_context))
+//!     .keyring(keyring)
+//!     .send()
+//!     .await?;
+//! assert_eq!(decrypted.plaintext(), b"Hello World");
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! ## Using the SDK
+//!
+//! [`Client`] is the client. Configure settings that apply to every call, such as the commitment policy,
+//! with [`Client::builder`]. Each operation is a method on the client that returns a fluent builder:
+//! set its members, then call `send`.
+//!
+//! To keep settings separate from the client, as `aws_sdk_kms::Client::from_conf` does, build a
+//! [`Config`] and pass it to [`Client::from_conf`]:
+//!
+//! ```
+//! use aws_esdk::types::CommitmentPolicy;
+//!
+//! # fn main() -> Result<(), aws_esdk::Error> {
+//! let config = aws_esdk::Config::builder()
+//!     .commitment_policy(CommitmentPolicy::RequireEncryptRequireDecrypt)
+//!     .build()?;
+//! let esdk = aws_esdk::Client::from_conf(config);
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! | Operation | Fluent builder | Output |
+//! |---|---|---|
+//! | [`Client::encrypt`] | [`EncryptFluentBuilder`](operation::encrypt::builders::EncryptFluentBuilder) | [`EncryptOutput`](operation::encrypt::EncryptOutput) |
+//! | [`Client::decrypt`] | [`DecryptFluentBuilder`](operation::decrypt::builders::DecryptFluentBuilder) | [`DecryptOutput`](operation::decrypt::DecryptOutput) |
+//! | [`Client::encrypt_stream`] | [`EncryptStreamFluentBuilder`](operation::encrypt_stream::builders::EncryptStreamFluentBuilder) | [`EncryptStreamOutput`](operation::encrypt_stream::EncryptStreamOutput) |
+//! | [`Client::decrypt_stream`] | [`DecryptStreamFluentBuilder`](operation::decrypt_stream::builders::DecryptStreamFluentBuilder) | [`DecryptStreamOutput`](operation::decrypt_stream::DecryptStreamOutput) |
+//!
+//! Keyrings and cryptographic materials managers (CMMs) are in [`keyring`] and [`cmm`].
+//! To write your own, implement [`Keyring`](keyring::Keyring) or [`Cmm`](cmm::Cmm).
+//!
+//! Every operation fails with an [`Error`]; see the [`error`] module for how to handle each kind.
+//!
+//! ## Crate organization
+//!
+//! The layout follows the AWS SDK for Rust:
+//!
+//! - The crate root holds [`Client`], [`Config`], and [`Error`].
+//! - [`config`] holds [`Config`] and its [`Builder`](config::Builder).
+//! - [`operation`] has a module per operation, holding its output and, under `builders`, its fluent builder.
+//! - [`types`] holds the types the operations take:
+//!   [`EncryptionContext`](types::EncryptionContext), [`AlgorithmSuiteId`](types::AlgorithmSuiteId),
+//!   [`CommitmentPolicy`](types::CommitmentPolicy), and [`AesWrappingAlg`](types::AesWrappingAlg).
+//! - [`error`] holds [`Error`] and the details each error carries.
+//! - [`keyring`], [`cmm`], [`cmc`], and [`key_store`] are the Material Providers Library's resources:
+//!   keyrings, cryptographic materials managers, caches, and the branch key store.
+//! - [`aws_config`], [`aws_sdk_kms`], and [`aws_sdk_dynamodb`] are the AWS SDK crates those resources take clients from.
+//! - [`mpl`] is the whole Material Providers Library.
+//!   Code that implements a keyring, CMM, cache, or key store uses its [`Error`](mpl::Error) and [`types`](mpl::types).
+//!
+//! The SDK reads and writes framed and nonframed message bodies, and message format versions 1 and 2
+//! (version 2 adds key commitment).
 //!
 #![cfg_attr(docsrs, feature(doc_cfg))]
 // Project lint policy. We opt in to several rustc/clippy lint groups plus
@@ -108,21 +193,37 @@
 #![allow(clippy::redundant_pub_crate)] // false positive: conflicts with unreachable_pub
 #![allow(clippy::too_many_lines)] // disagree: arbitrary line-count threshold
 #![allow(unused_crate_dependencies)] // false positives across workspace dev-deps
+#![allow(clippy::missing_const_for_fn)] // a public const fn can't drop const later without breaking callers
 
-mod error;
-pub use error::*;
-mod encrypt;
-pub use encrypt::*;
+mod builder;
+pub mod client;
+pub mod config;
 mod decrypt;
-pub use decrypt::*;
+mod encrypt;
+pub mod error;
+pub mod operation;
+mod shapes;
 mod suites;
-mod types;
-pub use types::*;
-mod client;
-pub use client::*;
+pub mod types;
+
+pub use client::Client;
+pub use config::Config;
+pub use error::generated::Error;
+pub use shapes::async_trait;
+
+/// The Material Providers Library, which this crate is built on.
+/// Its resource modules and AWS SDK clients are also re-exported below,
+/// so most code never names it.
+pub use aws_crypto_mpl as mpl;
+#[cfg(feature = "default-aws-sdk-clients")]
+pub use aws_crypto_mpl::aws_config;
+#[cfg(feature = "ddb")]
+pub use aws_crypto_mpl::aws_sdk_dynamodb;
+#[cfg(feature = "kms")]
+pub use aws_crypto_mpl::aws_sdk_kms;
+pub use aws_crypto_mpl::{cmc, cmm, key_store, keyring};
 
 pub(crate) mod key_derivation;
-pub(crate) mod legacy_compat;
 pub(crate) mod materials;
 pub(crate) mod message;
 
@@ -140,5 +241,9 @@ pub mod __test_internals {
     pub use crate::message::header::{HeaderInfo, generate_message_id, read_header_body};
     pub use crate::message::header_auth::read_header_auth_tag;
     pub use crate::message::header_types::HeaderBody;
-    pub use crate::suites::{get_ecdsa_alg, get_esdk_algorithm_suite_id};
+    pub use crate::shapes::{Sink, Source, Tee};
+    pub use crate::suites::{
+        algorithm_suite_from_bytes, algorithm_suite_id_from_bytes, get_ecdsa_alg,
+        get_esdk_algorithm_suite_id,
+    };
 }

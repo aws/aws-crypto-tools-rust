@@ -1,0 +1,79 @@
+# Assert that every line of executable code added or changed in the PR is covered by tests.
+# There is no minimum bar for the project's total coverage.
+name: Library Rust Coverage
+
+on:
+  workflow_call:
+    inputs:
+      project:
+        description: "Project subdirectory to measure (e.g. mpl, esdk)."
+        required: true
+        type: string
+
+jobs:
+  patchCoverage:
+    name: ${{ inputs.project }} patch coverage
+    runs-on: codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: 'true'
+          fetch-depth: 0
+
+      - name: Install CMake
+        run: sudo apt-get update && sudo apt-get install -y cmake
+
+      - uses: ./.github/actions/setup-rust
+        with:
+          components: llvm-tools-preview
+          workspaces: ${{ inputs.project }}
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Install diff-cover
+        run: pip install diff-cover==9.7.1
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-region: us-west-2
+          role-to-assume: arn:aws:iam::370957321024:role/GitHub-CI-Public-ESDK-Dafny-Role-us-west-2
+          role-session-name: RustCoverage
+          special-characters-workaround: "true"
+
+      # build `prim` without `all-features`; otherwise it tests with FIPS.
+      # FIPS adds nothing for line coverage and is heavier to build.
+      - name: Choose feature flags
+        run: |
+          if [ '${{ inputs.project }}' = 'prim' ]; then
+            echo "FEATURE_FLAGS=" >> "$GITHUB_ENV"
+          else
+            echo "FEATURE_FLAGS=--all-features" >> "$GITHUB_ENV"
+          fi
+
+      - name: Generate line coverage
+        working-directory: ${{ inputs.project }}
+        env:
+          RUSTFLAGS: "-C debuginfo=0"
+        run: cargo llvm-cov $FEATURE_FLAGS --workspace --lcov --remap-path-prefix --output-path lcov.info --verbose
+
+      # Diff PR coverage against base branch coverage
+      - name: Re-root coverage paths to the repository root
+        run: |
+          set -euo pipefail
+          sed -i 's|^SF:|SF:${{ inputs.project }}/|' '${{ inputs.project }}/lcov.info'
+          missing=0
+          while IFS= read -r f; do
+            if [[ ! -f "$f" ]]; then
+              echo "lcov references a path that does not exist from the repository root: $f"
+              missing=1
+            fi
+          done < <(sed -n 's|^SF:||p' '${{ inputs.project }}/lcov.info' | sort -u)
+          exit "$missing"
+
+      - name: Enforce 100% patch coverage
+        run: diff-cover '${{ inputs.project }}/lcov.info' --compare-branch 'origin/${{ github.base_ref }}' --fail-under 100

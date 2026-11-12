@@ -7,8 +7,8 @@
 mod fixtures;
 mod test_helpers;
 
+use aws_esdk::types::AlgorithmSuiteId;
 use aws_esdk::*;
-use aws_mpl_legacy::suites::EsdkAlgorithmSuiteId;
 use test_helpers::*;
 
 #[tokio::test(flavor = "multi_thread")]
@@ -18,11 +18,16 @@ async fn test_verify_signature_fails_on_tampered_footer() {
     let keyring = test_keyring().await;
     let plaintext = b"tamper footer test";
 
-    let mut enc_input =
-        EncryptInput::with_legacy_keyring(plaintext, EncryptionContext::new(), keyring.clone());
-    enc_input.algorithm_suite_id =
-        Some(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384);
-    let valid_ct = encrypt(&enc_input).await.unwrap().ciphertext;
+    let valid_ct = Client::default()
+        .encrypt()
+        .plaintext(plaintext)
+        .keyring(keyring.clone())
+        .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
+        .send()
+        .await
+        .unwrap()
+        .into_ciphertext()
+        .into_inner();
 
     // Footer layout per the Message Footer spec: [signature length: UInt16 BE (2 bytes)][signature].
     // Flip a byte inside the signature itself (past the 2-byte length prefix) so verification fails.
@@ -30,11 +35,6 @@ async fn test_verify_signature_fails_on_tampered_footer() {
     let signature_start = footer_offset + 2;
     let mut tampered_ct = valid_ct.clone();
     tampered_ct[signature_start] ^= 0xFF;
-
-    let valid_input =
-        DecryptInput::with_legacy_keyring(&valid_ct, EncryptionContext::new(), keyring.clone());
-    let tampered_input =
-        DecryptInput::with_legacy_keyring(&tampered_ct, EncryptionContext::new(), keyring);
 
     //= spec/client-apis/decrypt.md#verify-the-signature
     //= type=test
@@ -46,19 +46,26 @@ async fn test_verify_signature_fails_on_tampered_footer() {
     //= type=test
     //= reason=Untampered → Ok; tampered → Err halts decrypt with no plaintext released
     //# If this verification is not successful, this operation MUST immediately halt and fail.
-    assert!(decrypt(&valid_input).await.is_ok(), "valid ct must decrypt");
-    let err = decrypt(&tampered_input)
+    assert!(
+        Client::default()
+            .decrypt()
+            .ciphertext(&valid_ct)
+            .keyring(keyring.clone())
+            .send()
+            .await
+            .is_ok(),
+        "valid ct must decrypt"
+    );
+    let err = Client::default()
+        .decrypt()
+        .ciphertext(&tampered_ct)
+        .keyring(keyring)
+        .send()
         .await
         .expect_err("tampered footer must fail");
-    assert_eq!(
-        err.kind,
-        ErrorKind::Esdk,
-        "tampered footer must produce Esdk error"
-    );
     assert!(
-        err.message.contains("Signature verification failed"),
-        "error message must indicate signature verification failure, got: {}",
-        err.message
+        err.is_cryptographic(),
+        "tampered footer must produce a Cryptographic error"
     );
 }
 
@@ -72,24 +79,22 @@ async fn test_verify_signature_inputs_directly_verified() {
     // algorithm, key, and input — together with negative cases for wrong
     // algorithm, wrong key, and wrong input — gives direct proof that
     // decrypt's verify-the-signature step uses these same values.
-    use aws_mpl_legacy::primitives::{
-        DigestContext, EcdsaSignatureAlgorithm, ecdsa_verify_context,
-    };
+    use aws_mpl_primitives::{DigestContext, EcdsaSignatureAlgorithm, ecdsa_verify_context};
 
     let keyring = test_keyring().await;
-    let mut enc_input = EncryptInput::with_legacy_keyring(
-        b"verify inputs direct test",
-        EncryptionContext::new(),
-        keyring,
-    );
-    enc_input.algorithm_suite_id =
-        Some(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384);
-    let output = encrypt(&enc_input).await.unwrap();
-    let ct = &output.ciphertext;
+    let output = Client::default()
+        .encrypt()
+        .plaintext(b"verify inputs direct test")
+        .keyring(keyring)
+        .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
+        .send()
+        .await
+        .unwrap();
+    let ct = &output.ciphertext();
 
     // Verification key is base64-encoded in the output encryption context.
     let pub_key_b64 = output
-        .encryption_context
+        .encryption_context()
         .get("aws-crypto-public-key")
         .expect("signing suite must publish verification key in EC");
     let verification_key = aws_smithy_types::base64::decode(pub_key_b64).unwrap();
@@ -196,32 +201,47 @@ async fn test_footer_wait_truncated_message_fails() {
     let keyring = test_keyring().await;
     let plaintext = b"truncated footer test";
 
-    let mut enc_input =
-        EncryptInput::with_legacy_keyring(plaintext, EncryptionContext::new(), keyring.clone());
-    enc_input.algorithm_suite_id =
-        Some(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384);
-    let valid_ct = encrypt(&enc_input).await.unwrap().ciphertext;
+    let valid_ct = Client::default()
+        .encrypt()
+        .plaintext(plaintext)
+        .keyring(keyring.clone())
+        .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
+        .send()
+        .await
+        .unwrap()
+        .into_ciphertext()
+        .into_inner();
 
     // Truncate the footer signature: keep sig_len but drop the signature bytes.
     let footer_offset = find_footer_offset_only(&valid_ct);
     let truncated_ct = valid_ct[..footer_offset + 2].to_vec();
 
-    let valid_input =
-        DecryptInput::with_legacy_keyring(&valid_ct, EncryptionContext::new(), keyring.clone());
-    let truncated_input =
-        DecryptInput::with_legacy_keyring(&truncated_ct, EncryptionContext::new(), keyring);
-
     //= spec/client-apis/decrypt.md#verify-the-signature
     //= type=test
-    //= reason=Full ct → Ok; ct truncated mid-footer → SerializationError, EOF on the blocking read signals end-of-message
+    //= reason=Full ct → Ok; ct truncated mid-footer → Serialization error, EOF on the blocking read signals end-of-message
     //# If there are not enough consumable bytes to deserialize the message footer and
     //# the caller has not yet indicated an end to the encrypted message,
     //# the Decrypt operation MUST wait for enough bytes to become consumable or for the caller
     //# to indicate an end to the encrypted message.
-    assert!(decrypt(&valid_input).await.is_ok(), "full ct must decrypt");
-    assert_eq!(
-        decrypt(&truncated_input).await.unwrap_err().kind,
-        ErrorKind::SerializationError,
-        "truncated footer must produce SerializationError"
+    assert!(
+        Client::default()
+            .decrypt()
+            .ciphertext(&valid_ct)
+            .keyring(keyring.clone())
+            .send()
+            .await
+            .is_ok(),
+        "full ct must decrypt"
+    );
+    assert!(
+        Client::default()
+            .decrypt()
+            .ciphertext(&truncated_ct)
+            .keyring(keyring)
+            .send()
+            .await
+            .unwrap_err()
+            .is_serialization(),
+        "truncated footer must produce Serialization error"
     );
 }

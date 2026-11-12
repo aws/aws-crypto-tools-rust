@@ -7,6 +7,7 @@
 mod fixtures;
 mod test_helpers;
 
+use aws_esdk::types::*;
 use aws_esdk::*;
 use test_helpers::*;
 
@@ -20,11 +21,17 @@ async fn test_construct_frame_aead_inputs_authenticated() {
     // frame auth tag is the integrity layer under test.
     let keyring = test_keyring().await;
     let pt: Vec<u8> = (0u8..=200).collect(); // 201 bytes / frame_length 50 → 4 regular + 1 final
-    let mut enc_input =
-        EncryptInput::with_legacy_keyring(&pt, EncryptionContext::new(), keyring.clone());
-    enc_input.frame_length = FrameLength::new(50).unwrap();
-    enc_input.algorithm_suite_id = Some(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey);
-    let ct = encrypt(&enc_input).await.unwrap().ciphertext;
+    let ct = Client::default()
+        .encrypt()
+        .plaintext(&pt)
+        .keyring(keyring.clone())
+        .frame_length(50)
+        .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
+        .send()
+        .await
+        .unwrap()
+        .into_ciphertext()
+        .into_inner();
 
     let frames = parse_all_frames(&ct, 50);
     let first = &frames[0];
@@ -58,7 +65,7 @@ async fn test_construct_frame_aead_inputs_authenticated() {
 
     //= spec/client-apis/encrypt.md#construct-a-frame
     //= type=test
-    //= reason=Flipping one encrypted-content byte → CryptographicError, so each frame carries the AEAD ciphertext+tag
+    //= reason=Flipping one encrypted-content byte → Cryptographic error, so each frame carries the AEAD ciphertext+tag
     //# To construct a regular or final frame that represents the next frame in the encrypted message's body,
     //# the Encrypt operation MUST calculate the encrypted content and an authentication tag using the
     //# [authenticated encryption algorithm](../framework/algorithm-suites.md#encryption-algorithm)
@@ -67,53 +74,50 @@ async fn test_construct_frame_aead_inputs_authenticated() {
     //
     //= spec/client-apis/encrypt.md#construct-a-frame
     //= type=test
-    //= reason=Tampering the encrypted content breaks the body-AAD-bound AEAD tag → CryptographicError
+    //= reason=Tampering the encrypted content breaks the body-AAD-bound AEAD tag → Cryptographic error
     //# - The AAD MUST be the serialized [message body AAD](../data-format/message-body-aad.md),
     //# constructed according to the [Message Body AAD](../data-format/message-body-aad.md) specification, as follows:
     //
     //= spec/client-apis/encrypt.md#construct-a-frame
     //= type=test
-    //= reason=The body AAD content string is bound into the AEAD tag; tampering content → CryptographicError
+    //= reason=The body AAD content string is bound into the AEAD tag; tampering content → Cryptographic error
     //# - The [Body AAD Content](../data-format/message-body-aad.md#body-aad-content) MUST be the structure defined in
     //# [Message Body AAD](../data-format/message-body-aad.md).
-    assert_eq!(
+    assert!(
         try_decrypt_with_keyring(&content_tampered, &keyring)
             .await
             .unwrap_err()
-            .kind,
-        ErrorKind::CryptographicError,
+            .is_cryptographic(),
         "tampered frame content must fail AEAD authentication"
     );
 
     //= spec/client-apis/encrypt.md#construct-a-frame
     //= type=test
-    //= reason=Changing frame 1's on-wire sequence number from 1 → SerializationError, so the serialized value is the frame's sequence number
+    //= reason=Changing frame 1's on-wire sequence number from 1 → Serialization error, so the serialized value is the frame's sequence number
     //# - The [sequence number](../data-format/message-body-aad.md#sequence-number) MUST be the sequence
     //# number of the frame being encrypted.
-    assert_eq!(
+    assert!(
         try_decrypt_with_keyring(&seq_tampered, &keyring)
             .await
             .unwrap_err()
-            .kind,
-        ErrorKind::SerializationError,
+            .is_serialization(),
         "tampered frame sequence number must be rejected"
     );
 
     //= spec/client-apis/encrypt.md#construct-a-frame
     //= type=test
-    //= reason=On-wire declared length equals the 1 remaining plaintext byte; in-bounds tamper (1→0) breaks the AAD-bound AEAD tag → CryptographicError
+    //= reason=On-wire declared length equals the 1 remaining plaintext byte; in-bounds tamper (1→0) breaks the AAD-bound AEAD tag → Cryptographic error
     //# - The [content length](../data-format/message-body-aad.md#content-length) MUST have a value
     //# equal to the length of the plaintext being encrypted.
     assert_eq!(
         final_frame.content_length, 1,
         "final frame's declared content length must equal the 1 remaining plaintext byte"
     );
-    assert_eq!(
+    assert!(
         try_decrypt_with_keyring(&content_length_tampered, &keyring)
             .await
             .unwrap_err()
-            .kind,
-        ErrorKind::CryptographicError,
+            .is_cryptographic(),
         "tampered final-frame content length must fail AEAD authentication"
     );
 }
@@ -230,16 +234,29 @@ async fn test_construct_frame_plaintext_subsequence_consumed_in_order() {
     // All-distinct bytes: any reorder, skip, or duplication breaks equality.
     let keyring = test_keyring().await;
     let pt: Vec<u8> = (0..=255).collect();
-    let mut enc_input =
-        EncryptInput::with_legacy_keyring(&pt, EncryptionContext::new(), keyring.clone());
-    enc_input.frame_length = FrameLength::new(50).unwrap();
-    let ct = encrypt(&enc_input).await.unwrap().ciphertext;
+    let ct = Client::default()
+        .encrypt()
+        .plaintext(&pt)
+        .keyring(keyring.clone())
+        .frame_length(50)
+        .send()
+        .await
+        .unwrap()
+        .into_ciphertext()
+        .into_inner();
 
     //= spec/client-apis/encrypt.md#construct-a-frame
     //= type=test
     //# - The plaintext MUST be the next subsequence of consumable plaintext bytes that have not yet been encrypted.
-    let dec_input = DecryptInput::with_legacy_keyring(&ct, EncryptionContext::new(), keyring);
-    let result = decrypt(&dec_input).await.unwrap().plaintext;
+    let result = Client::default()
+        .decrypt()
+        .ciphertext(&ct)
+        .keyring(keyring)
+        .send()
+        .await
+        .unwrap()
+        .into_plaintext()
+        .into_inner();
     assert_eq!(result, pt);
 }
 
@@ -344,13 +361,16 @@ async fn test_construct_frame_final_frame_field_serialization() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_construct_frame_streaming_frame_released() {
     let keyring = test_keyring().await;
-    let mut stream_input =
-        EncryptStreamInput::with_legacy_keyring(EncryptionContext::new(), keyring.clone());
-    stream_input.frame_length = FrameLength::new(10).unwrap();
     let plaintext = vec![0xAAu8; 50];
     let mut reader = std::io::Cursor::new(&plaintext);
     let mut output = Vec::new();
-    encrypt_stream(&mut reader, &mut output, &stream_input)
+    Client::default()
+        .encrypt_stream()
+        .keyring(keyring.clone())
+        .frame_length(10)
+        .plaintext(&mut reader)
+        .ciphertext(&mut output)
+        .send()
         .await
         .expect("streaming encrypt");
 
@@ -366,7 +386,12 @@ async fn test_construct_frame_streaming_frame_released() {
     //# the serialized frame MUST be released.
     assert!(!output.is_empty());
 
-    let dec_input = DecryptInput::with_legacy_keyring(&output, EncryptionContext::new(), keyring);
-    let decrypted = decrypt(&dec_input).await.unwrap();
-    assert_eq!(decrypted.plaintext, plaintext);
+    let decrypted = Client::default()
+        .decrypt()
+        .ciphertext(&output)
+        .keyring(keyring)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(decrypted.plaintext(), &plaintext);
 }

@@ -1,3 +1,6 @@
+// Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 // Example demonstrating use of streaming APIs.
 //
 // Streamed encrypt/decrypt is for data too large to hold in memory at once.
@@ -7,7 +10,7 @@
 // This example encrypts a plaintext file to a ciphertext file, then decrypts that back to a third file.
 //
 // A non-signing suite is used so streamed decrypt works regardless of message size;
-// the ESDK refuses streamed decrypt of a multi-frame signed message.
+// by default, the ESDK refuses streamed decrypt of a multi-frame signed message.
 
 #include <cstdio>
 #include <cstdint>
@@ -54,7 +57,7 @@ int main() {
             {"is not", "secret"},
         };
 
-        Aws::Esdk::EncryptionSDK esdk;
+        Aws::Esdk::Client esdk;
 
         // Encrypt the plaintext file straight into the ciphertext file.
         {

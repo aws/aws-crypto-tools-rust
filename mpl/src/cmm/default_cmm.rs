@@ -1,11 +1,13 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Default CMM — concrete implementation of the [`Cmm`](super::Cmm) trait
+//! Default CMM — concrete implementation of the [`Cmm`] trait
 //! that wraps a single keyring.
 
-use std::collections::BTreeSet;
-use std::sync::Arc;
+use crate::Error;
+use crate::error::Kind;
+use crate::structures::RequiredEncryptionContextKeys;
+use std::borrow::Cow;
 
 use async_trait::async_trait;
 use aws_mpl_primitives::{
@@ -14,71 +16,91 @@ use aws_mpl_primitives::{
 use base64::Engine;
 
 use super::Cmm;
-use super::request::{DecryptMaterialsRequest, EncryptionMaterialsRequest};
-use crate::keyring::Keyring;
+use super::{
+    DecryptMaterialsInput, DecryptMaterialsOutput, GetEncryptionMaterialsInput,
+    GetEncryptionMaterialsOutput,
+};
+use crate::keyring::SharedKeyring;
+use crate::shared::IntoShared;
 use crate::structures::{
     AsymmetricSignatureAlgorithm, DecryptionMaterials, EncryptionContext, EncryptionMaterials,
-    MaterialsError, SigningKey, VerificationKey,
+    SigningKey, VerificationKey,
 };
 
 /// Reserved encryption-context key under which the default CMM stores the
 /// base64-encoded ECDSA verification key for signing-suite messages.
-const RESERVED_AWS_CRYPTO_PUBLIC_KEY: &[u8] = b"aws-crypto-public-key";
+const RESERVED_AWS_CRYPTO_PUBLIC_KEY: &str = "aws-crypto-public-key";
 
 /// Concrete CMM that uses a single keyring and resolves an algorithm suite
-/// from each request's commitment policy.
+/// from each input's commitment policy.
 ///
 /// On `get_encryption_materials` the default CMM:
 /// - Resolves the algorithm suite from the request (or, if absent, from the
 ///   commitment policy's default).
 /// - For signing suites: generates an ECDSA key pair via `aws-mpl-primitives`, attaches
 ///   the private signing key to the materials, and inserts the
-///   base64-encoded SEC1-compressed public key into a copy of the request's
+///   base64-encoded SEC1-compressed public key into a copy of the input's
 ///   encryption context under the reserved `aws-crypto-public-key` key.
 /// - Calls the wrapped keyring's `on_encrypt` to populate the plaintext data
 ///   key and encrypted data keys.
 ///
 /// On `decrypt_materials` the default CMM:
-/// - Validates the algorithm suite against the request's commitment policy.
-/// - Merges the request's encryption context with its Reproduced
+/// - Validates the algorithm suite against the input's commitment policy.
+/// - Merges the input's encryption context with its Reproduced
 ///   Encryption Context: shared keys must agree, and pairs present only in
 ///   the reproduced context are appended and reported as Required Encryption
-///   Context Keys. See [`merge_reproduced_encryption_context`].
+///   Context Keys. See `merge_reproduced_encryption_context`.
 /// - For signing suites: extracts and base64-decodes the verification key
 ///   from the merged encryption context.
 /// - For non-signing suites: rejects requests whose merged encryption
 ///   context contains the reserved `aws-crypto-public-key`.
 /// - Calls the wrapped keyring's `on_decrypt` to populate the plaintext data
 ///   key.
+#[derive(Clone)]
 pub struct DefaultCmm {
-    keyring: Arc<dyn Keyring>,
+    keyring: SharedKeyring,
 }
 
 impl DefaultCmm {
+    /// `"default"`.
+    #[must_use]
+    pub fn name(&self) -> Cow<'_, str> {
+        Cow::Borrowed("default")
+    }
+
     /// Construct a `DefaultCmm` wrapping the given keyring.
-    pub fn new(keyring: Arc<dyn Keyring>) -> Self {
-        Self { keyring }
+    pub fn new(keyring: impl IntoShared<SharedKeyring>) -> Self {
+        Self {
+            keyring: keyring.into_shared(),
+        }
     }
 }
 
 #[async_trait]
-impl Cmm for DefaultCmm {
+impl Cmm for crate::shared::Builtin<DefaultCmm> {
+    fn name(&self) -> Cow<'_, str> {
+        self.0.name()
+    }
+
     async fn get_encryption_materials(
         &self,
-        request: EncryptionMaterialsRequest,
-    ) -> Result<EncryptionMaterials, MaterialsError> {
-        let commitment_policy = request.commitment_policy();
+        input: GetEncryptionMaterialsInput,
+    ) -> Result<GetEncryptionMaterialsOutput, Error> {
+        let commitment_policy = input.commitment_policy();
 
         // Resolve the algorithm suite for this request: either from the
         // commitment policy's default (when the request doesn't specify one)
-        // or by validating the request's choice against the policy.
-        let suite_id = match request.algorithm_suite_id() {
+        // or by validating the input's choice against the policy.
+        let suite_id = match input.algorithm_suite_id() {
             None => commitment_policy.default_algorithm_suite_id(),
             Some(id) => {
                 if !commitment_policy.allows_for_encrypt(id) {
-                    return Err(MaterialsError::new(format!(
-                        "Algorithm suite {id:?} is not supported by commitment policy {commitment_policy:?} for encryption"
-                    )));
+                    return Err(Error::new(
+                        Kind::Validation,
+                        format!(
+                            "algorithm suite {id:?} is not supported by commitment policy {commitment_policy:?} for encryption"
+                        ),
+                    ));
                 }
                 id
             }
@@ -86,11 +108,12 @@ impl Cmm for DefaultCmm {
 
         let suite = suite_id.specification();
 
-        let mut ec = request.encryption_context().clone();
+        let mut ec = input.encryption_context().clone();
 
         if ec.contains_key(RESERVED_AWS_CRYPTO_PUBLIC_KEY) {
-            return Err(MaterialsError::new(
-                "Encryption context already contains reserved key 'aws-crypto-public-key'; refusing to overwrite",
+            return Err(Error::new(
+                Kind::Validation,
+                "encryption context already contains reserved key 'aws-crypto-public-key'; refusing to overwrite",
             ));
         }
 
@@ -116,48 +139,55 @@ impl Cmm for DefaultCmm {
             let scalar_bytes = keys.signing_key;
             let public_key_bytes = keys.verification_key;
 
-            // Encode the verification key as base64 (standard alphabet, with
-            // padding) and store the resulting ASCII bytes in the EC.
-            let base64_public_key = base64::engine::general_purpose::STANDARD
-                .encode(&public_key_bytes)
-                .into_bytes();
+            // The EC carries the verification key as standard base64 with padding.
+            let base64_public_key =
+                base64::engine::general_purpose::STANDARD.encode(&public_key_bytes);
 
-            ec.insert(RESERVED_AWS_CRYPTO_PUBLIC_KEY.to_vec(), base64_public_key);
+            ec.insert(RESERVED_AWS_CRYPTO_PUBLIC_KEY, base64_public_key);
 
             Some(SigningKey::new(scalar_bytes))
         } else {
             None
         };
 
-        // Required-encryption-context-keys come from the request (or empty).
-        let reck = request
-            .required_encryption_context_keys()
-            .cloned()
-            .unwrap_or_default();
+        let reck = input.required_encryption_context_keys().clone();
 
         // Build empty materials carrying the resolved suite, the (possibly
-        // signing-key-augmented) EC, the request's RECK, and the freshly
+        // signing-key-augmented) EC, the input's RECK, and the freshly
         // generated signing key. The keyring populates the PDK and EDK list.
-        let empty_materials =
-            EncryptionMaterials::new(suite_id, vec![], ec, reck, None, signing_key, None)?;
+        let empty_materials = EncryptionMaterials::builder()
+            .algorithm_suite_id(suite_id)
+            .set_encryption_context(Some(ec))
+            .set_required_encryption_context_keys(Some(reck))
+            .set_signing_key(signing_key)
+            .build()?;
 
-        let materials = self.keyring.on_encrypt(empty_materials).await?;
+        let materials = self
+            .keyring
+            .on_encrypt()
+            .materials(empty_materials)
+            .send()
+            .await?
+            .into_materials();
 
         // on_encrypt populates PDK; returning materials passes it through unchanged.
-        Ok(materials)
+        Ok(materials.into())
     }
 
     async fn decrypt_materials(
         &self,
-        request: DecryptMaterialsRequest,
-    ) -> Result<DecryptionMaterials, MaterialsError> {
-        let suite_id = request.algorithm_suite_id();
-        let commitment_policy = request.commitment_policy();
+        input: DecryptMaterialsInput,
+    ) -> Result<DecryptMaterialsOutput, Error> {
+        let suite_id = input.algorithm_suite_id();
+        let commitment_policy = input.commitment_policy();
 
         if !commitment_policy.allows_for_decrypt(suite_id) {
-            return Err(MaterialsError::new(format!(
-                "Algorithm suite {suite_id:?} is not supported by commitment policy {commitment_policy:?} for decryption"
-            )));
+            return Err(Error::new(
+                Kind::Validation,
+                format!(
+                    "algorithm suite {suite_id:?} is not supported by commitment policy {commitment_policy:?} for decryption"
+                ),
+            ));
         }
 
         // Merge the message's encryption context with the customer-supplied
@@ -166,8 +196,8 @@ impl Cmm for DefaultCmm {
         // the context handed to the keyring as AAD — MUST see the merged
         // context, not the message's.
         let (ec, required_encryption_context_keys) = merge_reproduced_encryption_context(
-            request.encryption_context(),
-            request.reproduced_encryption_context(),
+            input.encryption_context(),
+            input.reproduced_encryption_context(),
         )?;
 
         // For signing suites: extract the verification key from the EC under
@@ -175,45 +205,51 @@ impl Cmm for DefaultCmm {
         // the request if the EC unexpectedly carries that reserved key.
         let verification_key = if suite_id.has_asymmetric_signing() {
             let Some(b64_bytes) = ec.get(RESERVED_AWS_CRYPTO_PUBLIC_KEY) else {
-                return Err(MaterialsError::aws_crypto_public_key_missing(
-                    "decrypt_materials: signing-suite request encryption context is missing the reserved 'aws-crypto-public-key' entry",
+                return Err(Error::new(
+                    Kind::Validation,
+                    "signing-suite request encryption context is missing the reserved 'aws-crypto-public-key' entry",
                 ));
             };
             let decoded = base64::engine::general_purpose::STANDARD
                 .decode(b64_bytes)
                 .map_err(|e| {
-                    MaterialsError::new(format!(
-                        "Failed to base64-decode aws-crypto-public-key value: {e}"
-                    ))
+                    Error::with_cause(
+                        Kind::Validation,
+                        "failed to base64-decode the aws-crypto-public-key value",
+                        e,
+                    )
                 })?;
             Some(VerificationKey::new(decoded))
         } else {
             if ec.contains_key(RESERVED_AWS_CRYPTO_PUBLIC_KEY) {
-                return Err(MaterialsError::aws_crypto_public_key_unexpected(
-                    "decrypt_materials: non-signing-suite request encryption context contains the reserved 'aws-crypto-public-key' entry",
+                return Err(Error::new(
+                    Kind::Validation,
+                    "non-signing-suite request encryption context contains the reserved 'aws-crypto-public-key' entry",
                 ));
             }
             None
         };
 
         // Build empty decryption materials. The keyring populates the PDK by
-        // recovering it from one of the request's encrypted data keys.
-        let empty_materials = DecryptionMaterials::new(
-            suite_id,
-            ec,
-            required_encryption_context_keys,
-            None,
-            verification_key,
-            None,
-        )?;
+        // recovering it from one of the input's encrypted data keys.
+        let empty_materials = DecryptionMaterials::builder()
+            .algorithm_suite_id(suite_id)
+            .set_encryption_context(Some(ec))
+            .set_required_encryption_context_keys(Some(required_encryption_context_keys))
+            .set_verification_key(verification_key)
+            .build()?;
 
         let materials = self
             .keyring
-            .on_decrypt(empty_materials, request.encrypted_data_keys())
-            .await?;
+            .on_decrypt()
+            .materials(empty_materials)
+            .set_encrypted_data_keys(Some(input.encrypted_data_keys))
+            .send()
+            .await?
+            .into_materials();
 
         // on_decrypt populates PDK; returning materials passes it through unchanged.
-        Ok(materials)
+        Ok(materials.into())
     }
 }
 
@@ -225,7 +261,7 @@ impl Cmm for DefaultCmm {
 /// Required Encryption Context Keys that accompany it:
 ///
 /// - For every key present in both contexts, the values MUST be equal or the
-///   operation fails with `MaterialsErrorKind::EncryptionContextValueMismatch`.
+///   operation fails with `Kind::EncryptionContextMismatch`.
 /// - Every pair present in the reproduced context but absent from the message's
 ///   is appended to the returned context, and its key becomes a Required
 ///   Encryption Context Key.
@@ -237,9 +273,9 @@ impl Cmm for DefaultCmm {
 fn merge_reproduced_encryption_context(
     message_ec: &EncryptionContext,
     reproduced_ec: Option<&EncryptionContext>,
-) -> Result<(EncryptionContext, BTreeSet<Vec<u8>>), MaterialsError> {
+) -> Result<(EncryptionContext, RequiredEncryptionContextKeys), Error> {
     let mut ec = message_ec.clone();
-    let mut required_keys = BTreeSet::new();
+    let mut required_keys = RequiredEncryptionContextKeys::new();
 
     let Some(reproduced_ec) = reproduced_ec else {
         return Ok((ec, required_keys));
@@ -249,15 +285,17 @@ fn merge_reproduced_encryption_context(
         match message_ec.get(key) {
             Some(message_value) => {
                 if message_value != value {
-                    return Err(MaterialsError::encryption_context_value_mismatch(format!(
-                        "decrypt_materials: reproduced encryption context disagrees with the message's encryption context on key '{}'",
-                        String::from_utf8_lossy(key),
-                    )));
+                    return Err(Error::new(
+                        Kind::EncryptionContextMismatch,
+                        format!(
+                            "message encryption context does not match reproduced encryption context on key '{key}'",
+                        ),
+                    ));
                 }
             }
             None => {
-                ec.insert(key.clone(), value.clone());
-                required_keys.insert(key.clone());
+                ec.insert(key, value);
+                required_keys.insert(key.to_owned());
             }
         }
     }

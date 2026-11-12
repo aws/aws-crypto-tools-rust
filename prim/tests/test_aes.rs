@@ -125,11 +125,11 @@ fn test_aes_192_gcm_round_trip() -> Result<(), Error> {
 }
 
 #[test]
-fn test_aes_gcm_key_len() {
-    assert_eq!(AesGcm::Aes128Gcm.key_len(), 16);
-    assert_eq!(AesGcm::Aes192Gcm.key_len(), 24);
-    assert_eq!(AesGcm::Aes256Gcm.key_len(), 32);
-    assert_eq!(AesGcm::default().key_len(), 32); // default is Aes256Gcm
+fn test_aes_gcm_key_length() {
+    assert_eq!(AesGcm::Aes128Gcm.key_length(), 16);
+    assert_eq!(AesGcm::Aes192Gcm.key_length(), 24);
+    assert_eq!(AesGcm::Aes256Gcm.key_length(), 32);
+    assert_eq!(AesGcm::default().key_length(), 32); // default is Aes256Gcm
 }
 
 // Error paths — not in Dafny but required to reach 100% line coverage.
@@ -147,7 +147,7 @@ fn test_aes_decrypt_output_buffer_too_small() {
         &mut plain_text,
     )
     .unwrap_err();
-    assert!(err.message.contains("aes_decrypt"));
+    assert!(err.is_cryptographic(), "{:?}", err);
 }
 
 #[test]
@@ -163,7 +163,7 @@ fn test_aes_encrypt_bad_key_length() {
         &mut cipher_text,
     )
     .unwrap_err();
-    assert!(err.message.starts_with("new"));
+    assert!(err.is_cryptographic(), "{:?}", err);
 }
 
 #[test]
@@ -179,7 +179,7 @@ fn test_aes_encrypt_bad_iv_length() {
         &mut cipher_text,
     )
     .unwrap_err();
-    assert!(err.message.starts_with("new"));
+    assert!(err.is_cryptographic(), "{:?}", err);
 }
 
 #[test]
@@ -196,7 +196,7 @@ fn test_aes_decrypt_bad_key_length() {
         &mut plain_text,
     )
     .unwrap_err();
-    assert!(err.message.starts_with("new"));
+    assert!(err.is_cryptographic(), "{:?}", err);
 }
 
 #[test]
@@ -213,7 +213,7 @@ fn test_aes_decrypt_bad_iv_length() {
         &mut plain_text,
     )
     .unwrap_err();
-    assert!(err.message.starts_with("new"));
+    assert!(err.is_cryptographic(), "{:?}", err);
 }
 
 #[test]
@@ -231,5 +231,5 @@ fn test_aes_decrypt_tampered_auth_tag() {
         &mut plain_text,
     )
     .unwrap_err();
-    assert!(err.message.starts_with("gather"));
+    assert!(err.is_cryptographic(), "{:?}", err);
 }

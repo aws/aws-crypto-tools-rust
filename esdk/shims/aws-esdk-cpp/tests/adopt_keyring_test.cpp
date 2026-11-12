@@ -33,12 +33,12 @@ int main() {
         void* raw_handle = ::aws_esdk_ffi::create_raw_aes_keyring(in).into_raw();
 
         // Adopt the handle for use by C++
-        //= spec/shim/shim.md#custom-implementations-of-core-library-interfaces
+        //= spec/shim/shim.md#adopting-custom-implementations
         //= type=test
         //# - The shim MAY let the target adopt a consumer-written implementation of a
         //# core-library interface.
         auto keyring = Aws::Esdk::Keyring::adopt(raw_handle);
-        Aws::Esdk::EncryptionSDK sdk;
+        Aws::Esdk::Client sdk;
         auto plaintext = esdk_test::to_bytes("adopted keyring through the facade");
         auto ciphertext = sdk.encrypt(plaintext, keyring).ciphertext;
         ESDK_CHECK(ciphertext != plaintext);

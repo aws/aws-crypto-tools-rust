@@ -4,6 +4,9 @@
 
 mod fixtures;
 
+use aws_esdk::operation::decrypt::DecryptOutput;
+use aws_esdk::operation::encrypt::EncryptOutput;
+use aws_esdk::types::*;
 use aws_esdk::*;
 use fixtures::*;
 
@@ -19,173 +22,213 @@ pub enum Version {
 
 pub const VERSIONS: [Version; 2] = [Version::V1, Version::V2];
 
-use aws_mpl_legacy::commitment::EsdkCommitmentPolicy;
-use aws_mpl_legacy::dafny::types::keyring::KeyringRef;
-use aws_mpl_legacy::suites::EsdkAlgorithmSuiteId;
+use aws_crypto_mpl::keyring::RawAesKeyring;
+use aws_crypto_mpl::types::AesWrappingAlg;
+use aws_esdk::types::AlgorithmSuiteId;
+use aws_esdk::types::CommitmentPolicy;
 
-/// Create a raw AES keyring for testing (no KMS needed).
-pub async fn test_keyring() -> KeyringRef {
-    let (ns, name) = namespace_and_name(0);
-    mpl()
-        .create_raw_aes_keyring()
+/// Build a native raw-AES keyring.
+fn raw_aes(ns: String, name: String, key: [u8; 32]) -> RawAesKeyring {
+    RawAesKeyring::builder()
         .key_namespace(ns)
         .key_name(name)
-        .wrapping_key(aws_smithy_types::Blob::new([0u8; 32]))
-        .wrapping_alg(aws_mpl_legacy::dafny::types::AesWrappingAlg::AlgAes256GcmIv12Tag16)
-        .send()
-        .await
-        .unwrap()
+        .wrapping_key(key.to_vec())
+        .wrapping_alg(AesWrappingAlg::AlgAes256GcmIv12Tag16)
+        .build()
+        .expect("raw AES keyring construction must succeed for test key material")
+}
+
+/// Create a raw AES keyring for testing (no KMS needed).
+pub async fn test_keyring() -> RawAesKeyring {
+    let (ns, name) = namespace_and_name(0);
+    raw_aes(ns, name, [0u8; 32])
 }
 
 /// Create a raw AES keyring with key material derived from `n`.
-pub async fn aes_keyring(n: u8) -> KeyringRef {
+pub async fn aes_keyring(n: u8) -> RawAesKeyring {
     let (ns, name) = namespace_and_name(n);
-    mpl()
-        .create_raw_aes_keyring()
-        .key_namespace(ns)
-        .key_name(name)
-        .wrapping_key(aws_smithy_types::Blob::new([n; 32]))
-        .wrapping_alg(aws_mpl_legacy::dafny::types::AesWrappingAlg::AlgAes256GcmIv12Tag16)
-        .send()
-        .await
-        .unwrap()
+    raw_aes(ns, name, [n; 32])
 }
 
-/// Create a KMS keyring backed by the shared `KEY_ARN` test key in us-west-2.
-///
-/// Requires AWS credentials with permission to call `kms:GenerateDataKey` and
-/// `kms:Decrypt` against the test key. Tests that only need a round-trip
-/// keyring without specifically exercising KMS should prefer `test_keyring()`
-/// (raw AES) instead.
-pub async fn kms_keyring() -> KeyringRef {
-    let mpl = mpl();
-    let client_supplier = mpl.create_default_client_supplier().send().await.unwrap();
-    let kms_client = client_supplier
-        .get_client()
-        .region("us-west-2")
-        .send()
-        .await
-        .unwrap();
-    mpl.create_aws_kms_keyring()
-        .kms_key_id(KEY_ARN)
-        .kms_client(kms_client)
-        .send()
-        .await
-        .unwrap()
+/// A `Client` with `policy`.
+pub fn esdk_with(policy: CommitmentPolicy) -> Client {
+    Client::builder().commitment_policy(policy).build().unwrap()
 }
 
-/// Create a multi-keyring from a generator and child keyrings.
-pub async fn multi_keyring(generator_kr: KeyringRef, children: Vec<KeyringRef>) -> KeyringRef {
-    mpl()
-        .create_multi_keyring()
-        .generator(generator_kr)
-        .child_keyrings(children)
-        .send()
-        .await
+/// A `Client` that encrypts with non-committing suites and decrypts any message.
+pub fn esdk_v1() -> Client {
+    esdk_with(CommitmentPolicy::ForbidEncryptAllowDecrypt)
+}
+
+/// A `Client` whose commitment policy matches messages of `version`.
+pub fn esdk_for(version: Version) -> Client {
+    esdk_with(commitment_policy_for(version))
+}
+
+/// A `Client` that caps each message at `max` encrypted data keys.
+pub fn esdk_with_max_edks(max: usize) -> Client {
+    Client::builder()
+        .max_encrypted_data_keys(max)
+        .build()
         .unwrap()
 }
 
 /// Encrypt with defaults, return full EncryptOutput.
 pub async fn encrypt_default(plaintext: &[u8]) -> EncryptOutput {
     let keyring = test_keyring().await;
-    let input = EncryptInput::with_legacy_keyring(plaintext, EncryptionContext::new(), keyring);
-    encrypt(&input).await.unwrap()
+    Client::default()
+        .encrypt()
+        .plaintext(plaintext)
+        .keyring(keyring)
+        .send()
+        .await
+        .unwrap()
 }
 
 /// Encrypt with a V1 (non-committing) algorithm suite, return ciphertext bytes.
 pub async fn encrypt_v1(plaintext: &[u8]) -> Vec<u8> {
     let keyring = test_keyring().await;
-    let mut input = EncryptInput::with_legacy_keyring(plaintext, EncryptionContext::new(), keyring);
-    input.algorithm_suite_id = Some(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256);
-    input.commitment_policy = EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
-    encrypt(&input).await.unwrap().ciphertext
+    esdk_v1()
+        .encrypt()
+        .plaintext(plaintext)
+        .keyring(keyring)
+        .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256)
+        .send()
+        .await
+        .unwrap()
+        .into_ciphertext()
+        .into_inner()
 }
 
 /// Encrypt with a V1 (non-committing) algorithm suite and encryption context, return ciphertext bytes.
 pub async fn encrypt_v1_with_ec(plaintext: &[u8], ec: EncryptionContext) -> Vec<u8> {
     let keyring = test_keyring().await;
-    let mut input = EncryptInput::with_legacy_keyring(plaintext, ec, keyring);
-    input.algorithm_suite_id = Some(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256);
-    input.commitment_policy = EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
-    encrypt(&input).await.unwrap().ciphertext
+    esdk_v1()
+        .encrypt()
+        .plaintext(plaintext)
+        .set_encryption_context(Some(ec))
+        .keyring(keyring)
+        .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256)
+        .send()
+        .await
+        .unwrap()
+        .into_ciphertext()
+        .into_inner()
 }
 
 /// Encrypt with default (V2) algorithm suite, return ciphertext bytes.
 pub async fn encrypt_v2(plaintext: &[u8]) -> Vec<u8> {
-    let keyring = test_keyring().await;
-    let input = EncryptInput::with_legacy_keyring(plaintext, EncryptionContext::new(), keyring);
-    encrypt(&input).await.unwrap().ciphertext
+    encrypt_default(plaintext)
+        .await
+        .into_ciphertext()
+        .into_inner()
 }
 
 /// Encrypt plaintext with a given frame length, return ciphertext bytes.
 pub async fn encrypt_with_frame_length(plaintext: &[u8], frame_length: u32) -> Vec<u8> {
     let keyring = test_keyring().await;
-    let mut input = EncryptInput::with_legacy_keyring(plaintext, EncryptionContext::new(), keyring);
-    input.frame_length = FrameLength::new(frame_length).unwrap();
-    encrypt(&input).await.unwrap().ciphertext
+    encrypt_framed_with_keyring(plaintext, frame_length, &keyring).await
 }
 
 /// Encrypt plaintext with a given frame length and caller-supplied keyring, return ciphertext bytes.
 pub async fn encrypt_framed_with_keyring(
     plaintext: &[u8],
     frame_length: u32,
-    keyring: &KeyringRef,
+    keyring: &RawAesKeyring,
 ) -> Vec<u8> {
-    let mut input =
-        EncryptInput::with_legacy_keyring(plaintext, EncryptionContext::new(), keyring.clone());
-    input.frame_length = FrameLength::new(frame_length).unwrap();
-    encrypt(&input).await.unwrap().ciphertext
+    Client::default()
+        .encrypt()
+        .plaintext(plaintext)
+        .keyring(keyring.clone())
+        .frame_length(frame_length)
+        .send()
+        .await
+        .unwrap()
+        .into_ciphertext()
+        .into_inner()
 }
 
 /// Encrypt plaintext with a given frame length under a V1 (non-committing) algorithm
 /// suite, return ciphertext bytes.
 pub async fn encrypt_v1_with_frame_length(plaintext: &[u8], frame_length: u32) -> Vec<u8> {
     let keyring = test_keyring().await;
-    let mut input = EncryptInput::with_legacy_keyring(plaintext, EncryptionContext::new(), keyring);
-    input.algorithm_suite_id = Some(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256);
-    input.commitment_policy = EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
-    input.frame_length = FrameLength::new(frame_length).unwrap();
-    encrypt(&input).await.unwrap().ciphertext
+    esdk_v1()
+        .encrypt()
+        .plaintext(plaintext)
+        .keyring(keyring)
+        .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256)
+        .frame_length(frame_length)
+        .send()
+        .await
+        .unwrap()
+        .into_ciphertext()
+        .into_inner()
 }
 
 /// Encrypt with a signing algorithm suite, return ciphertext bytes.
 pub async fn encrypt_with_signing_suite(plaintext: &[u8]) -> Vec<u8> {
     let keyring = test_keyring().await;
-    let mut input = EncryptInput::with_legacy_keyring(plaintext, EncryptionContext::new(), keyring);
-    input.algorithm_suite_id = Some(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384);
-    encrypt(&input).await.unwrap().ciphertext
+    Client::default()
+        .encrypt()
+        .plaintext(plaintext)
+        .keyring(keyring)
+        .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
+        .send()
+        .await
+        .unwrap()
+        .into_ciphertext()
+        .into_inner()
 }
 
 /// Encrypt a 30-byte 0xAA plaintext with frame_length=10 under the ECDSA-P384
 /// signing suite, returning `(plaintext, keyring, ciphertext)` for streaming
 /// decrypt tests that need a multi-frame signed payload and the matching
 /// keyring to re-feed into `decrypt_stream`.
-pub async fn multi_frame_signed_for_stream() -> (Vec<u8>, KeyringRef, Vec<u8>) {
+pub async fn multi_frame_signed_for_stream() -> (Vec<u8>, RawAesKeyring, Vec<u8>) {
     let keyring = test_keyring().await;
     let plaintext = vec![0xAAu8; 30];
-    let mut input =
-        EncryptInput::with_legacy_keyring(&plaintext, EncryptionContext::new(), keyring.clone());
-    input.frame_length = FrameLength::new(10).unwrap();
-    input.algorithm_suite_id = Some(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384);
-    let ct = encrypt(&input).await.unwrap().ciphertext;
+    let ct = Client::default()
+        .encrypt()
+        .plaintext(&plaintext)
+        .keyring(keyring.clone())
+        .frame_length(10)
+        .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
+        .send()
+        .await
+        .unwrap()
+        .into_ciphertext()
+        .into_inner();
     (plaintext, keyring, ct)
 }
 
 /// Encrypt with a V1 signing algorithm suite, return ciphertext bytes.
 pub async fn encrypt_with_v1_signing_suite(plaintext: &[u8]) -> Vec<u8> {
     let keyring = test_keyring().await;
-    let mut input = EncryptInput::with_legacy_keyring(plaintext, EncryptionContext::new(), keyring);
-    input.algorithm_suite_id = Some(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384);
-    input.commitment_policy = EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
-    encrypt(&input).await.unwrap().ciphertext
+    esdk_v1()
+        .encrypt()
+        .plaintext(plaintext)
+        .keyring(keyring)
+        .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384)
+        .send()
+        .await
+        .unwrap()
+        .into_ciphertext()
+        .into_inner()
 }
 
 /// Encrypt with a non-signing algorithm suite, return ciphertext bytes.
 pub async fn encrypt_without_signing_suite(plaintext: &[u8]) -> Vec<u8> {
     let keyring = test_keyring().await;
-    let mut input = EncryptInput::with_legacy_keyring(plaintext, EncryptionContext::new(), keyring);
-    input.algorithm_suite_id = Some(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey);
-    encrypt(&input).await.unwrap().ciphertext
+    Client::default()
+        .encrypt()
+        .plaintext(plaintext)
+        .keyring(keyring)
+        .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
+        .send()
+        .await
+        .unwrap()
+        .into_ciphertext()
+        .into_inner()
 }
 
 /// Encrypt under a non-signing committing suite with a given frame length.
@@ -193,52 +236,96 @@ pub async fn encrypt_without_signing_suite(plaintext: &[u8]) -> Vec<u8> {
 /// messages for per-frame-field assertions.
 pub async fn encrypt_nonsigning_with_frame_length(plaintext: &[u8], frame_length: u32) -> Vec<u8> {
     let keyring = test_keyring().await;
-    let mut input = EncryptInput::with_legacy_keyring(plaintext, EncryptionContext::new(), keyring);
-    input.algorithm_suite_id = Some(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey);
-    input.frame_length = FrameLength::new(frame_length).unwrap();
-    encrypt(&input).await.unwrap().ciphertext
+    Client::default()
+        .encrypt()
+        .plaintext(plaintext)
+        .keyring(keyring)
+        .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
+        .frame_length(frame_length)
+        .send()
+        .await
+        .unwrap()
+        .into_ciphertext()
+        .into_inner()
 }
 
 /// Encrypt a 30-byte 0xBB plaintext with frame_length=10 under a non-signing
 /// suite, returning `(plaintext, keyring, ciphertext)` for streaming decrypt
 /// tests that need a multi-frame unsigned payload.
-pub async fn multi_frame_unsigned_for_stream() -> (Vec<u8>, KeyringRef, Vec<u8>) {
+pub async fn multi_frame_unsigned_for_stream() -> (Vec<u8>, RawAesKeyring, Vec<u8>) {
     let keyring = test_keyring().await;
     let plaintext = vec![0xBBu8; 30];
-    let mut input =
-        EncryptInput::with_legacy_keyring(&plaintext, EncryptionContext::new(), keyring.clone());
-    input.frame_length = FrameLength::new(10).unwrap();
-    input.algorithm_suite_id = Some(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey);
-    let ct = encrypt(&input).await.unwrap().ciphertext;
+    let ct = Client::default()
+        .encrypt()
+        .plaintext(&plaintext)
+        .keyring(keyring.clone())
+        .frame_length(10)
+        .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
+        .send()
+        .await
+        .unwrap()
+        .into_ciphertext()
+        .into_inner();
     (plaintext, keyring, ct)
 }
 
 /// Encrypt with a specific suite, policy, and keyring, return ciphertext bytes.
 pub async fn encrypt_with_suite(
     plaintext: &[u8],
-    suite: EsdkAlgorithmSuiteId,
-    policy: EsdkCommitmentPolicy,
-    keyring: &KeyringRef,
+    suite: AlgorithmSuiteId,
+    policy: CommitmentPolicy,
+    keyring: &RawAesKeyring,
 ) -> Vec<u8> {
-    let mut enc_input =
-        EncryptInput::with_legacy_keyring(plaintext, EncryptionContext::new(), keyring.clone());
-    enc_input.algorithm_suite_id = Some(suite);
-    enc_input.commitment_policy = policy;
-    encrypt(&enc_input).await.unwrap().ciphertext
+    esdk_with(policy)
+        .encrypt()
+        .plaintext(plaintext)
+        .keyring(keyring.clone())
+        .algorithm_suite_id(suite)
+        .send()
+        .await
+        .unwrap()
+        .into_ciphertext()
+        .into_inner()
+}
+
+/// The commitment policy that decrypts messages of `version`: V1 messages
+/// use non-committing suites.
+pub fn commitment_policy_for(version: Version) -> CommitmentPolicy {
+    match version {
+        Version::V1 => CommitmentPolicy::ForbidEncryptAllowDecrypt,
+        Version::V2 => CommitmentPolicy::RequireEncryptRequireDecrypt,
+    }
+}
+
+/// The non-signing suite for messages of `version`.
+pub fn non_signing_suite_for(version: Version) -> AlgorithmSuiteId {
+    match version {
+        Version::V1 => AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256,
+        Version::V2 => AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey,
+    }
 }
 
 /// Encrypt with a specific version and keyring, return ciphertext bytes.
+/// V1 uses a non-committing suite; V2 uses the default suite.
 pub async fn encrypt_with_version(
     plaintext: &[u8],
     version: Version,
-    keyring: KeyringRef,
+    keyring: RawAesKeyring,
 ) -> Vec<u8> {
-    let mut input = EncryptInput::with_legacy_keyring(plaintext, EncryptionContext::new(), keyring);
-    if let Version::V1 = version {
-        input.algorithm_suite_id = Some(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256);
-        input.commitment_policy = EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
-    }
-    encrypt(&input).await.unwrap().ciphertext
+    let suite = match version {
+        Version::V1 => Some(AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256),
+        Version::V2 => None,
+    };
+    esdk_for(version)
+        .encrypt()
+        .plaintext(plaintext)
+        .keyring(keyring)
+        .set_algorithm_suite_id(suite)
+        .send()
+        .await
+        .unwrap()
+        .into_ciphertext()
+        .into_inner()
 }
 
 /// Encrypt with a non-signing algorithm suite for the given version, with a
@@ -253,17 +340,7 @@ pub async fn encrypt_no_sign_with_ec(
     version: Version,
 ) -> Vec<u8> {
     let keyring = test_keyring().await;
-    let mut input = EncryptInput::with_legacy_keyring(plaintext, ec, keyring);
-    match version {
-        Version::V1 => {
-            input.algorithm_suite_id = Some(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256);
-            input.commitment_policy = EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
-        }
-        Version::V2 => {
-            input.algorithm_suite_id = Some(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey);
-        }
-    }
-    encrypt(&input).await.unwrap().ciphertext
+    encrypt_no_sign_ec_keyring(plaintext, ec, version, &keyring).await
 }
 
 /// Encrypt with a non-signing algorithm suite, caller-supplied EC, version, and keyring.
@@ -271,105 +348,126 @@ pub async fn encrypt_no_sign_ec_keyring(
     plaintext: &[u8],
     ec: EncryptionContext,
     version: Version,
-    keyring: &KeyringRef,
+    keyring: &RawAesKeyring,
 ) -> Vec<u8> {
-    let mut input = EncryptInput::with_legacy_keyring(plaintext, ec, keyring.clone());
-    match version {
-        Version::V1 => {
-            input.algorithm_suite_id = Some(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256);
-            input.commitment_policy = EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
-        }
-        Version::V2 => {
-            input.algorithm_suite_id = Some(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey);
-        }
-    }
-    encrypt(&input).await.unwrap().ciphertext
+    esdk_for(version)
+        .encrypt()
+        .plaintext(plaintext)
+        .set_encryption_context(Some(ec))
+        .keyring(keyring.clone())
+        .algorithm_suite_id(non_signing_suite_for(version))
+        .send()
+        .await
+        .unwrap()
+        .into_ciphertext()
+        .into_inner()
 }
 
 /// Decrypt ciphertext with a caller-supplied keyring, return plaintext bytes.
-pub async fn decrypt_with_keyring(ciphertext: &[u8], keyring: &KeyringRef) -> Vec<u8> {
-    let dec_input =
-        DecryptInput::with_legacy_keyring(ciphertext, EncryptionContext::new(), keyring.clone());
-    decrypt(&dec_input).await.unwrap().plaintext
+pub async fn decrypt_with_keyring(ciphertext: &[u8], keyring: &RawAesKeyring) -> Vec<u8> {
+    try_decrypt_with_keyring(ciphertext, keyring)
+        .await
+        .unwrap()
+        .into_plaintext()
+        .into_inner()
 }
 
 /// Decrypt V1 ciphertext with a caller-supplied keyring, return plaintext bytes.
-pub async fn decrypt_v1_with_keyring(ciphertext: &[u8], keyring: &KeyringRef) -> Vec<u8> {
-    let mut dec_input =
-        DecryptInput::with_legacy_keyring(ciphertext, EncryptionContext::new(), keyring.clone());
-    dec_input.commitment_policy = EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
-    decrypt(&dec_input).await.unwrap().plaintext
+pub async fn decrypt_v1_with_keyring(ciphertext: &[u8], keyring: &RawAesKeyring) -> Vec<u8> {
+    try_decrypt_v1_with_keyring(ciphertext, keyring)
+        .await
+        .unwrap()
+        .into_plaintext()
+        .into_inner()
 }
 
 /// Decrypt ciphertext with a caller-supplied keyring and EC, return plaintext bytes.
 pub async fn decrypt_with_keyring_ec(
     ciphertext: &[u8],
     ec: EncryptionContext,
-    keyring: &KeyringRef,
+    keyring: &RawAesKeyring,
 ) -> Vec<u8> {
-    let dec_input = DecryptInput::with_legacy_keyring(ciphertext, ec, keyring.clone());
-    decrypt(&dec_input).await.unwrap().plaintext
+    Client::default()
+        .decrypt()
+        .ciphertext(ciphertext)
+        .set_encryption_context(Some(ec))
+        .keyring(keyring.clone())
+        .send()
+        .await
+        .unwrap()
+        .into_plaintext()
+        .into_inner()
 }
 
 /// Decrypt V1 ciphertext with a caller-supplied keyring and EC, return plaintext bytes.
 pub async fn decrypt_v1_with_keyring_ec(
     ciphertext: &[u8],
     ec: EncryptionContext,
-    keyring: &KeyringRef,
+    keyring: &RawAesKeyring,
 ) -> Vec<u8> {
-    let mut dec_input = DecryptInput::with_legacy_keyring(ciphertext, ec, keyring.clone());
-    dec_input.commitment_policy = EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
-    decrypt(&dec_input).await.unwrap().plaintext
+    esdk_v1()
+        .decrypt()
+        .ciphertext(ciphertext)
+        .set_encryption_context(Some(ec))
+        .keyring(keyring.clone())
+        .send()
+        .await
+        .unwrap()
+        .into_plaintext()
+        .into_inner()
 }
 
 /// Try to decrypt ciphertext with a caller-supplied keyring, return Result.
 pub async fn try_decrypt_with_keyring(
     ciphertext: &[u8],
-    keyring: &KeyringRef,
+    keyring: &RawAesKeyring,
 ) -> Result<DecryptOutput, Error> {
-    let dec_input =
-        DecryptInput::with_legacy_keyring(ciphertext, EncryptionContext::new(), keyring.clone());
-    decrypt(&dec_input).await
+    Client::default()
+        .decrypt()
+        .ciphertext(ciphertext)
+        .keyring(keyring.clone())
+        .send()
+        .await
 }
 
 /// Try to decrypt V1 ciphertext with a caller-supplied keyring, return Result.
 pub async fn try_decrypt_v1_with_keyring(
     ciphertext: &[u8],
-    keyring: &KeyringRef,
+    keyring: &RawAesKeyring,
 ) -> Result<DecryptOutput, Error> {
-    let mut dec_input =
-        DecryptInput::with_legacy_keyring(ciphertext, EncryptionContext::new(), keyring.clone());
-    dec_input.commitment_policy = EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
-    decrypt(&dec_input).await
+    esdk_v1()
+        .decrypt()
+        .ciphertext(ciphertext)
+        .keyring(keyring.clone())
+        .send()
+        .await
 }
 
 /// Decrypt ciphertext with the default test keyring, return full DecryptOutput.
 pub async fn decrypt_ciphertext(ciphertext: &[u8]) -> DecryptOutput {
-    let keyring = test_keyring().await;
-    let dec_input =
-        DecryptInput::with_legacy_keyring(ciphertext, EncryptionContext::new(), keyring);
-    decrypt(&dec_input).await.unwrap()
+    decrypt_ciphertext_result(ciphertext).await.unwrap()
 }
 
 /// Decrypt ciphertext with the default test keyring, returning the Result
 /// (for negative/tamper tests that expect failure).
 pub async fn decrypt_ciphertext_result(ciphertext: &[u8]) -> Result<DecryptOutput, Error> {
     let keyring = test_keyring().await;
-    let dec_input =
-        DecryptInput::with_legacy_keyring(ciphertext, EncryptionContext::new(), keyring);
-    decrypt(&dec_input).await
+    try_decrypt_with_keyring(ciphertext, &keyring).await
 }
 
 /// Decrypt with a specific policy and keyring, return full DecryptOutput.
 pub async fn decrypt_with(
     ciphertext: &[u8],
-    policy: EsdkCommitmentPolicy,
-    keyring: &KeyringRef,
+    policy: CommitmentPolicy,
+    keyring: &RawAesKeyring,
 ) -> DecryptOutput {
-    let mut dec_input =
-        DecryptInput::with_legacy_keyring(ciphertext, EncryptionContext::new(), keyring.clone());
-    dec_input.commitment_policy = policy;
-    decrypt(&dec_input).await.unwrap()
+    esdk_with(policy)
+        .decrypt()
+        .ciphertext(ciphertext)
+        .keyring(keyring.clone())
+        .send()
+        .await
+        .unwrap()
 }
 
 /// Decrypt a ciphertext that was produced by `encrypt_no_sign_with_ec` (or
@@ -378,72 +476,71 @@ pub async fn decrypt_with(
 /// `encryption_context`.
 pub async fn decrypt_with_version(ciphertext: &[u8], version: Version) -> DecryptOutput {
     let keyring = test_keyring().await;
-    let mut dec_input =
-        DecryptInput::with_legacy_keyring(ciphertext, EncryptionContext::new(), keyring);
-    if let Version::V1 = version {
-        dec_input.commitment_policy = EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
-    }
-    decrypt(&dec_input).await.unwrap()
+    decrypt_with(ciphertext, commitment_policy_for(version), &keyring).await
 }
 
 /// Encrypt then decrypt round-trip, return decrypted plaintext.
 pub async fn round_trip(plaintext: &[u8]) -> Vec<u8> {
-    let keyring = test_keyring().await;
-    let enc_input =
-        EncryptInput::with_legacy_keyring(plaintext, EncryptionContext::new(), keyring.clone());
-    let ct = encrypt(&enc_input).await.unwrap().ciphertext;
-    let dec_input = DecryptInput::with_legacy_keyring(&ct, EncryptionContext::new(), keyring);
-    decrypt(&dec_input).await.unwrap().plaintext
+    let ct = encrypt_v2(plaintext).await;
+    decrypt_ciphertext(&ct).await.into_plaintext().into_inner()
 }
 
 /// Encrypt then decrypt with a given frame length, return decrypted plaintext.
 pub async fn round_trip_framed(plaintext: &[u8], frame_length: u32) -> Vec<u8> {
-    let keyring = test_keyring().await;
-    let mut enc_input =
-        EncryptInput::with_legacy_keyring(plaintext, EncryptionContext::new(), keyring.clone());
-    enc_input.frame_length = FrameLength::new(frame_length).unwrap();
-    let ct = encrypt(&enc_input).await.unwrap().ciphertext;
-    let dec_input = DecryptInput::with_legacy_keyring(&ct, EncryptionContext::new(), keyring);
-    decrypt(&dec_input).await.unwrap().plaintext
+    let ct = encrypt_with_frame_length(plaintext, frame_length).await;
+    decrypt_ciphertext(&ct).await.into_plaintext().into_inner()
 }
 
 /// Encrypt V1 then decrypt, returning decrypted plaintext.
 pub async fn round_trip_v1(plaintext: &[u8], ec: EncryptionContext) -> Vec<u8> {
     let keyring = test_keyring().await;
     let ct = encrypt_v1_with_ec(plaintext, ec).await;
-    let mut dec_input = DecryptInput::with_legacy_keyring(&ct, EncryptionContext::new(), keyring);
-    dec_input.commitment_policy = EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
-    decrypt(&dec_input).await.unwrap().plaintext
+    decrypt_v1_with_keyring(&ct, &keyring).await
 }
 
 /// Encrypt V2 then decrypt, returning decrypted plaintext.
 pub async fn round_trip_v2(plaintext: &[u8], ec: EncryptionContext) -> Vec<u8> {
     let keyring = test_keyring().await;
-    let input = EncryptInput::with_legacy_keyring(plaintext, ec, keyring.clone());
-    let ct = encrypt(&input).await.unwrap().ciphertext;
-    let dec_input = DecryptInput::with_legacy_keyring(&ct, EncryptionContext::new(), keyring);
-    decrypt(&dec_input).await.unwrap().plaintext
+    let ct = Client::default()
+        .encrypt()
+        .plaintext(plaintext)
+        .set_encryption_context(Some(ec))
+        .keyring(keyring.clone())
+        .send()
+        .await
+        .unwrap()
+        .into_ciphertext()
+        .into_inner();
+    decrypt_with_keyring(&ct, &keyring).await
 }
 
 /// Encrypt then decrypt with a signing algorithm suite.
 pub async fn round_trip_signing(plaintext: &[u8]) -> Vec<u8> {
-    let keyring = test_keyring().await;
-    let mut enc_input =
-        EncryptInput::with_legacy_keyring(plaintext, EncryptionContext::new(), keyring.clone());
-    enc_input.algorithm_suite_id =
-        Some(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384);
-    let ct = encrypt(&enc_input).await.unwrap().ciphertext;
-    let dec_input = DecryptInput::with_legacy_keyring(&ct, EncryptionContext::new(), keyring);
-    decrypt(&dec_input).await.unwrap().plaintext
+    let ct = encrypt_with_signing_suite(plaintext).await;
+    decrypt_ciphertext(&ct).await.into_plaintext().into_inner()
 }
 
 /// Encrypt then decrypt with encryption context, returning full DecryptOutput.
 pub async fn round_trip_with_ec(plaintext: &[u8], ec: EncryptionContext) -> DecryptOutput {
     let keyring = test_keyring().await;
-    let enc_input = EncryptInput::with_legacy_keyring(plaintext, ec.clone(), keyring.clone());
-    let ct = encrypt(&enc_input).await.unwrap().ciphertext;
-    let dec_input = DecryptInput::with_legacy_keyring(&ct, ec, keyring);
-    decrypt(&dec_input).await.unwrap()
+    let esdk = Client::default();
+    let ct = esdk
+        .encrypt()
+        .plaintext(plaintext)
+        .set_encryption_context(Some(ec.clone()))
+        .keyring(keyring.clone())
+        .send()
+        .await
+        .unwrap()
+        .into_ciphertext()
+        .into_inner();
+    esdk.decrypt()
+        .ciphertext(&ct)
+        .set_encryption_context(Some(ec))
+        .keyring(keyring)
+        .send()
+        .await
+        .unwrap()
 }
 
 /// Find the start of the message body by scanning for the first frame.
@@ -962,23 +1059,11 @@ pub fn find_footer_offset_only(ct: &[u8]) -> usize {
     panic!("Could not find footer in ciphertext");
 }
 
-/// Returns `true` if the trailing bytes of `ct` look like a valid ECDSA P-384
-/// footer (2-byte length prefix whose value falls in the expected DER signature
-/// range and matches the remaining byte count).
+/// Whether bytes follow the final frame of a message encrypted with the default frame length.
 pub fn has_footer(ct: &[u8]) -> bool {
-    // ECDSA P-384 DER signatures are typically 64..=104 bytes.
-    // The footer is: 2-byte big-endian length + that many signature bytes.
-    for candidate_len in 64..=110 {
-        if ct.len() < 2 + candidate_len {
-            continue;
-        }
-        let offset = ct.len() - 2 - candidate_len;
-        let sig_len = u16::from_be_bytes([ct[offset], ct[offset + 1]]);
-        if sig_len as usize == candidate_len {
-            return true;
-        }
-    }
-    false
+    let frames = parse_all_frames(ct, 4096);
+    let body_end = frames.last().expect("message has a final frame").end_offset;
+    body_end < ct.len()
 }
 
 /// Find the byte offset of the EDK count field in a ciphertext header.
@@ -1287,23 +1372,20 @@ pub async fn try_decrypt_external_nonframed(
     version: Version,
     msg: &[u8],
 ) -> Result<Vec<u8>, Error> {
-    let keyring = mpl()
-        .create_raw_aes_keyring()
-        .key_namespace("aws-raw-vectors-persistant")
-        .key_name("aes-256")
-        .wrapping_key(aws_smithy_types::Blob::new(EXTERNAL_AES_256_WRAPPING_KEY))
-        .wrapping_alg(aws_mpl_legacy::dafny::types::AesWrappingAlg::AlgAes256GcmIv12Tag16)
+    let keyring = raw_aes(
+        "aws-raw-vectors-persistant".to_string(),
+        "aes-256".to_string(),
+        EXTERNAL_AES_256_WRAPPING_KEY,
+    );
+
+    // V1 suite 0x0178 is non-committing; V2 suite 0x0478 is committing.
+    esdk_for(version)
+        .decrypt()
+        .ciphertext(msg)
+        .keyring(keyring)
         .send()
         .await
-        .unwrap();
-
-    let mut dec_input = DecryptInput::with_legacy_keyring(msg, EncryptionContext::new(), keyring);
-    // V1 suite 0x0178 is non-committing; V2 suite 0x0478 is committing.
-    dec_input.commitment_policy = match version {
-        Version::V1 => EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt,
-        Version::V2 => EsdkCommitmentPolicy::RequireEncryptRequireDecrypt,
-    };
-    decrypt(&dec_input).await.map(|o| o.plaintext)
+        .map(|o| o.into_plaintext().into_inner())
 }
 
 /// Parsed body fields from an external nonframed message. The nonframed body
@@ -1383,86 +1465,5 @@ pub fn parse_external_nonframed_body(msg: &[u8], version: Version) -> ExternalNo
         body_start,
         iv,
         encrypted_content_length,
-    }
-}
-
-// === CallStyle parametrization for testing free-function and Esdk-client paths ===
-//
-// Each `#[derive(Clone, Copy)]` variant of [`CallStyle`] selects a way to call
-// encrypt/decrypt under test:
-//   - `Free`   → call the free function directly (e.g. `aws_esdk::encrypt`).
-//   - `Client` → call through `Esdk::default()` (or a custom `Esdk` if needed).
-//
-// Tests that want both-path coverage iterate `CallStyle::ALL` and pass the
-// variant into [`run_encrypt`] / [`run_decrypt`] / [`run_encrypt_stream`] /
-// [`run_decrypt_stream`]. Each helper asserts the same shape of result so the
-// test body is identical across styles.
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum CallStyle {
-    /// Free function (`aws_esdk::encrypt` / `decrypt` / `encrypt_stream` / `decrypt_stream`).
-    Free,
-    /// `Esdk::default()` client method.
-    Client,
-}
-
-impl CallStyle {
-    /// All call styles to iterate over for both-path test coverage.
-    pub const ALL: [Self; 2] = [Self::Free, Self::Client];
-}
-
-/// Run encrypt under the chosen [`CallStyle`].
-pub async fn run_encrypt(
-    style: CallStyle,
-    input: &EncryptInput<'_>,
-) -> Result<EncryptOutput, Error> {
-    match style {
-        CallStyle::Free => encrypt(input).await,
-        CallStyle::Client => Esdk::default().encrypt(input).await,
-    }
-}
-
-/// Run decrypt under the chosen [`CallStyle`].
-pub async fn run_decrypt(
-    style: CallStyle,
-    input: &DecryptInput<'_>,
-) -> Result<DecryptOutput, Error> {
-    match style {
-        CallStyle::Free => decrypt(input).await,
-        CallStyle::Client => Esdk::default().decrypt(input).await,
-    }
-}
-
-/// Run encrypt_stream under the chosen [`CallStyle`].
-pub async fn run_encrypt_stream(
-    style: CallStyle,
-    plaintext: &mut dyn SafeRead,
-    ciphertext: &mut dyn SafeWrite,
-    input: &EncryptStreamInput,
-) -> Result<EncryptStreamOutput, Error> {
-    match style {
-        CallStyle::Free => encrypt_stream(plaintext, ciphertext, input).await,
-        CallStyle::Client => {
-            Esdk::default()
-                .encrypt_stream(plaintext, ciphertext, input)
-                .await
-        }
-    }
-}
-
-/// Run decrypt_stream under the chosen [`CallStyle`].
-pub async fn run_decrypt_stream(
-    style: CallStyle,
-    ciphertext: &mut dyn SafeRead,
-    plaintext: &mut dyn SafeWrite,
-    input: &DecryptStreamInput,
-) -> Result<DecryptStreamOutput, Error> {
-    match style {
-        CallStyle::Free => decrypt_stream(ciphertext, plaintext, input).await,
-        CallStyle::Client => {
-            Esdk::default()
-                .decrypt_stream(ciphertext, plaintext, input)
-                .await
-        }
     }
 }
