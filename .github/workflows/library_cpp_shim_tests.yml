@@ -11,7 +11,7 @@ on:
           [{"os": "ubuntu", "runner": "codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}"},
            {"os": "macos", "runner": "macos-latest"}]
       toolchain:
-        description: "Rust toolchain to build and test with."
+        description: "Rust toolchain to build and test with. \"msrv\" reads rust-version from Cargo.toml."
         type: string
         default: stable
       lint:

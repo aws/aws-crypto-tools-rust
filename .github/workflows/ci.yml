@@ -191,7 +191,6 @@ jobs:
       projects: ${{ toJSON(fromJSON(needs.detect.outputs.jobs)['rust-tests'].*.project) }}
       platforms: '[{"os": "ubuntu", "runner": "codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}"}]'
 
-  # Must match rust-version in the prim, mpl, esdk and C++ shim Cargo.toml files.
   rust-tests-msrv:
     name: Rust tests (MSRV)
     needs: detect
@@ -203,7 +202,7 @@ jobs:
     with:
       projects: ${{ toJSON(fromJSON(needs.detect.outputs.jobs)['rust-tests'].*.project) }}
       platforms: '[{"os": "ubuntu", "runner": "codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}"}]'
-      toolchain: "1.94.1"
+      toolchain: msrv
       lint: false
 
   # Rust beta becomes the next stable release about six weeks later.
@@ -221,6 +220,26 @@ jobs:
       platforms: '[{"os": "ubuntu", "runner": "codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}"}]'
       toolchain: beta
       lint: false
+
+  rust-minimal-versions:
+    name: Rust minimal versions
+    needs: detect
+    if: fromJSON(needs.detect.outputs.jobs)['rust-tests'] != null
+    permissions:
+      contents: read
+    uses: ./.github/workflows/library_rust_minimal_versions.yml
+    with:
+      projects: ${{ toJSON(fromJSON(needs.detect.outputs.jobs)['rust-tests'].*.project) }}
+
+  cpp-shim-minimal-versions:
+    name: C++ shim minimal versions
+    needs: detect
+    if: fromJSON(needs.detect.outputs.jobs)['cpp-shim'] != null
+    permissions:
+      contents: read
+    uses: ./.github/workflows/library_rust_minimal_versions.yml
+    with:
+      projects: '["esdk/shims/aws-esdk-cpp"]'
 
   # macOS and Windows jobs run and show red on failure,
   # but pr-ci-all-required does not wait on them.
@@ -257,7 +276,6 @@ jobs:
     with:
       platforms: '[{"os": "ubuntu", "runner": "codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}"}]'
 
-  # Must match rust-version in esdk/shims/aws-esdk-cpp/Cargo.toml.
   cpp-shim-msrv:
     name: C++ shim (MSRV)
     needs: detect
@@ -268,7 +286,7 @@ jobs:
     uses: ./.github/workflows/library_cpp_shim_tests.yml
     with:
       platforms: '[{"os": "ubuntu", "runner": "codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}"}]'
-      toolchain: "1.94.1"
+      toolchain: msrv
       lint: false
 
   # Rust beta: daily runs only, and it doesn't block merges.
@@ -508,10 +526,12 @@ jobs:
       - detect
       - rust-tests
       - rust-tests-msrv
+      - rust-minimal-versions
       - supply-chain
       - coverage
       - cpp-shim
       - cpp-shim-msrv
+      - cpp-shim-minimal-versions
       - cpp-coverage
       - duvet
       - smithy-conformance

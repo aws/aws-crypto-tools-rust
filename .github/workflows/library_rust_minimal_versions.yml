@@ -1,0 +1,45 @@
+# Reusable workflow: build each project in `projects` with every direct dependency at the lowest version that its Cargo.toml allows.
+name: Library Rust Minimal Versions
+
+on:
+  workflow_call:
+    inputs:
+      projects:
+        description: "JSON array of project subdirectories to check (e.g. [\"mpl\",\"esdk\"])."
+        required: true
+        type: string
+
+jobs:
+  minimalVersions:
+    name: ${{ matrix.project }}
+    strategy:
+      fail-fast: false
+      matrix:
+        project: ${{ fromJSON(inputs.projects) }}
+    runs-on: codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: ${{ matrix.project }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Install CMake
+        run: sudo apt-get update && sudo apt-get install -y cmake
+        working-directory: .
+
+      # -Z direct-minimal-versions needs nightly cargo.
+      - uses: ./.github/actions/setup-rust
+        with:
+          toolchain: nightly
+          workspaces: ${{ matrix.project }}
+
+      # A dependency floor that is too low breaks customers whose lockfile resolves to it.
+      - name: Use the lowest allowed direct dependencies
+        run: cargo update -Z direct-minimal-versions
+
+      - name: Check
+        run: cargo check --all-targets

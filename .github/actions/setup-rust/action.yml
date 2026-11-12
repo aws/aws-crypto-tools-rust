@@ -6,7 +6,9 @@ description: >
 
 inputs:
   toolchain:
-    description: "Rust toolchain to install (e.g. \"stable\", \"beta\", \"1.94.1\")."
+    description: >
+      Rust toolchain to install (e.g. "stable", "beta", "1.94.1").
+      "msrv" installs the rust-version from the first workspace's Cargo.toml.
     required: false
     default: stable
   components:
@@ -44,10 +46,28 @@ runs:
       with:
         go-version: "stable"
 
-    - name: Install Rust toolchain
+    - name: Pick Rust toolchain
+      id: toolchain
+      shell: bash
+      env:
+        TOOLCHAIN: ${{ inputs.toolchain }}
+        WORKSPACES: ${{ inputs.workspaces }}
+      run: |
+        set -euo pipefail
+        if [[ "$TOOLCHAIN" == "msrv" ]]; then
+          ws=$(head -n1 <<< "$WORKSPACES")
+          TOOLCHAIN=$(sed -n 's/^rust-version = "\(.*\)"$/\1/p' "$ws/Cargo.toml")
+          if [[ -z "$TOOLCHAIN" ]]; then
+            echo "::error::$ws/Cargo.toml has no rust-version"
+            exit 1
+          fi
+        fi
+        echo "toolchain=$TOOLCHAIN" >> "$GITHUB_OUTPUT"
+
+    - name: Install Rust ${{ steps.toolchain.outputs.toolchain }}
       uses: dtolnay/rust-toolchain@master
       with:
-        toolchain: ${{ inputs.toolchain }}
+        toolchain: ${{ steps.toolchain.outputs.toolchain }}
         components: ${{ inputs.components }}
 
     # Workspaces without a committed Cargo.lock (e.g. the C++ shim) resolve fresh on every build.

@@ -16,7 +16,7 @@ on:
            {"os": "macos", "runner": "macos-latest"},
            {"os": "windows", "runner": "windows-latest"}]
       toolchain:
-        description: "Rust toolchain to build and test with."
+        description: "Rust toolchain to build and test with. \"msrv\" reads rust-version from Cargo.toml."
         type: string
         default: stable
       lint:
