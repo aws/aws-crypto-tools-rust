@@ -11,6 +11,6 @@ pub mod wire;
 // reuse them so both servers speak the same commons contract.
 pub use aws_esdk_test_server::{error, model};
 
-// The shim's bridge code calls the cxx C++ runtime, which the shim cdylib keeps
-// private. Naming the cxx crate makes Cargo link that runtime into this server.
+// The C++ seam calls the cxx runtime.
+// Rust only links a dependency that the code names, so name cxx here.
 use cxx as _;
