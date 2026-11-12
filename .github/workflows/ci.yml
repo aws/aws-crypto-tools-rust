@@ -191,8 +191,7 @@ jobs:
       projects: ${{ toJSON(fromJSON(needs.detect.outputs.jobs)['rust-tests'].*.project) }}
       platforms: '[{"os": "ubuntu", "runner": "codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}"}]'
 
-  # The oldest Rust these crates support. Keep it equal to rust-version in
-  # prim, mpl, esdk and esdk/shims/aws-esdk-cpp Cargo.toml.
+  # Must match rust-version in the prim, mpl, esdk and C++ shim Cargo.toml files.
   rust-tests-msrv:
     name: Rust tests (MSRV)
     needs: detect
@@ -207,8 +206,8 @@ jobs:
       toolchain: "1.94.1"
       lint: false
 
-  # The next Rust release, about six weeks before it becomes stable.
-  # Daily and manual runs only, and pr-ci-all-required does not wait on it.
+  # Rust beta becomes the next stable release about six weeks later.
+  # A PR doesn't cause a beta break, so only daily runs test it, and it doesn't block merges.
   rust-tests-beta:
     name: Rust tests (beta)
     needs: detect
@@ -258,7 +257,7 @@ jobs:
     with:
       platforms: '[{"os": "ubuntu", "runner": "codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}"}]'
 
-  # See rust-tests-msrv.
+  # Must match rust-version in esdk/shims/aws-esdk-cpp/Cargo.toml.
   cpp-shim-msrv:
     name: C++ shim (MSRV)
     needs: detect
@@ -272,7 +271,7 @@ jobs:
       toolchain: "1.94.1"
       lint: false
 
-  # See rust-tests-beta.
+  # Rust beta: daily runs only, and it doesn't block merges.
   cpp-shim-beta:
     name: C++ shim (beta)
     needs: detect
@@ -353,7 +352,7 @@ jobs:
     with:
       builds: ${{ toJSON(fromJSON(needs.detect.outputs.jobs)['test-server-builds']) }}
 
-  # See rust-tests-beta.
+  # Rust beta: daily runs only, and it doesn't block merges.
   test-server-builds-beta:
     name: TestServer builds (beta)
     needs: detect

@@ -15,7 +15,7 @@ on:
         type: string
         default: stable
       lint:
-        description: "Run fmt and clippy. Lints change between Rust versions, so only stable runs them."
+        description: "Run fmt and clippy. Turn off for non-stable Rust, because lints change between versions."
         type: boolean
         default: true
 
