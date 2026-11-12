@@ -83,13 +83,15 @@ fn has_cdylib(dir: &Path) -> bool {
     dir.join("libaws_esdk_cpp.so").exists() || dir.join("libaws_esdk_cpp.dylib").exists()
 }
 
+// Cargo 1.100 and later write the cxx build output to build/cxx/<hash>/out.
+// Older Cargo writes it to build/cxx-<hash>/out.
 fn find_cxx_runtime(build_dir: &Path) -> Option<PathBuf> {
-    for entry in std::fs::read_dir(build_dir).ok()? {
-        let dir = entry.ok()?.path();
-        let name = dir.file_name()?.to_string_lossy().into_owned();
-        if name.starts_with("cxx-") && dir.join("out/libcxxbridge1.a").exists() {
-            return Some(dir.join("out"));
-        }
-    }
-    None
+    let flat = std::fs::read_dir(build_dir).ok()?.flatten();
+    let nested = std::fs::read_dir(build_dir.join("cxx"))
+        .into_iter()
+        .flatten()
+        .flatten();
+    flat.chain(nested)
+        .map(|entry| entry.path().join("out"))
+        .find(|out| out.join("libcxxbridge1.a").exists())
 }

@@ -40,12 +40,14 @@ set(ESDK_STATICLIB ${ESDK_TARGET_DIR}/${ESDK_PROFILE}/libaws_esdk_cpp.a)
 set(ESDK_BRIDGE_CC ${ESDK_TARGET_DIR}/cxxbridge/aws-esdk-cpp/src/lib.rs.cc)
 
 # Find cxx runtime archive used to link
+# Cargo 1.100 and later write it to build/cxx/<hash>/out; older Cargo writes it to build/cxx-<hash>/out.
 file(GLOB_RECURSE _esdk_cxxbridge_rt
-     ${ESDK_TARGET_DIR}/${ESDK_PROFILE}/build/cxx-*/out/libcxxbridge1.a)
+     ${ESDK_TARGET_DIR}/${ESDK_PROFILE}/build/cxx-*/out/libcxxbridge1.a
+     ${ESDK_TARGET_DIR}/${ESDK_PROFILE}/build/cxx/*/out/libcxxbridge1.a)
 if(NOT _esdk_cxxbridge_rt)
     message(FATAL_ERROR
         "cxx runtime archive libcxxbridge1.a not found under "
-        "${ESDK_TARGET_DIR}/${ESDK_PROFILE}/build/cxx-*/out/. "
+        "${ESDK_TARGET_DIR}/${ESDK_PROFILE}/build/. "
         "Run `cargo build` in ${ESDK_ROOT} first.")
 endif()
 list(GET _esdk_cxxbridge_rt 0 ESDK_CXXBRIDGE_RT)

@@ -2,7 +2,7 @@
 PROFILE_DIR ?= target/debug
 
 STATICLIB   := $(PROFILE_DIR)/libaws_esdk_cpp.a
-CXXBRIDGE_RT = $$(find $(PROFILE_DIR)/build -path "*/cxx-*/out/libcxxbridge1.a" | head -n1)
+CXXBRIDGE_RT = $$(find $(PROFILE_DIR)/build -name libcxxbridge1.a | head -n1)
 UNAME_S     := $(shell uname -s)
 
 PLATFORM_LIBS =
