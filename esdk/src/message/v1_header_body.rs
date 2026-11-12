@@ -20,7 +20,10 @@ use vstd::prelude::*;
 
 verus! {
 
-/// Whether the four V1 reserved bytes are all zero.
+/// Whether the four V1 reserved bytes are all zero, i.e. equal `RESERVED_BYTES`,
+/// the value the writer emits. If `RESERVED_BYTES` ever changes, update this
+/// check too; the unit test `reserved_bytes_ok_only_for_all_zero` asserts
+/// `reserved_bytes_ok(RESERVED_BYTES)`.
 pub(crate) fn reserved_bytes_ok(b: [u8; 4]) -> (ok: bool)
     ensures
         ok <==> (b[0] == 0 && b[1] == 0 && b[2] == 0 && b[3] == 0),

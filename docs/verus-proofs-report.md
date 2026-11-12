@@ -97,6 +97,14 @@ the framed-decrypt loop calls `next_expected_frame`.
   call a verified core, and build the `Error` (`ser_err` / `err` / `val_err`).
   That they pass the right bytes to the core and keep the `Tee` mirror exact is
   checked by tests, not by Verus.
+- **The final-frame sequence check** in `read_and_decrypt_framed_message_body`
+  (`body/body_decrypt.rs`) stays an inline `!=` in the async adapter. Only the
+  regular-frame step (`next_expected_frame`) is verified in-crate; the
+  final-frame check and the start-at-1 property are proved only by the
+  standalone `verification/frame_sequence_proofs.rs` model.
+- **`next_chunk_end`** is proved to stay in bounds, not to equal
+  `start + min(READ_CHUNK, length - start)`; that equivalence is checked by a
+  differential unit test.
 - **The aws-lc-rs FFI** (AES-GCM, ECDSA, HKDF, digests) is out of Verus scope.
 - **`std::str::from_utf8`** is not evaluated by Verus; no in-crate core depends
   on it.
