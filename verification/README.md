@@ -5,26 +5,70 @@ AWS Encryption SDK Rust implementation, following the pipeline in
 `.kiro/agents/ai-verification-pipeline.md` and the target prioritization in
 `docs/verification-recommendations.md`.
 
-## Why a separate directory (not `verus!` inside `esdk/`)
+## In-crate proofs (shipped `esdk` code)
 
-The `esdk` crate depends on `aws-lc-rs`, `tokio`, `aws-sdk-kms`, and trait
-objects (`SafeRead`/`SafeWrite`) that Verus cannot currently build or model.
-Running Verus over the whole crate is therefore not yet possible.
+Shipped `esdk` code is now verified in place with `cargo-verus`. Pure
+synchronous cores sit inside `verus! { }` blocks in `esdk/src/`, and the async
+readers (over `&mut dyn Source`, mirroring into `&mut Tee`) are thin
+**unverified** adapters that call them. `cargo-verus` builds the dependencies
+with plain rustc and verifies only `esdk`. Run from the repo root:
 
-Instead, each proof file here is a **faithful, self-contained Verus model** of a
-specific pure function in the ESDK, carrying the *exact same executable body*
-as the source, plus `requires`/`ensures` contracts. The proof establishes
-panic-freedom and functional correctness for that body. Where a function's real
-signature uses a helper Verus cannot see (e.g. `<[u8]>::copy_from_slice`,
-`u32::to_be_bytes`), the model uses the equivalent primitive operation and the
-file documents the one-line equivalence to the std API.
+```bash
+make -C esdk verus
+```
 
-This is the honest, incremental approach: it does not weaken any proof, and it
-does not hide any executable logic from the verifier (Verus skill invariants
-#1, #10, #11). As the ESDK grows Verus-friendly seams, these models can be
-migrated to `verus!` blocks in-crate.
+It verifies `vstd` first (`1858 verified, 0 errors`, cached after the first
+run); the `aws-esdk` result is the second `verification results::` line.
+Current output for both runs (default, and
+`--no-default-features --features aws-lc-sys`):
 
-## What is proven today
+```
+verification results:: 19 verified, 0 errors
+verification results:: 19 verified, 0 errors
+```
+
+The verified exec fns (each inside a `verus!` block):
+
+| File (`esdk/src/message/`) | Fn | Property proven |
+|---|---|---|
+| `serialize_functions.rs` | `be_u16`, `be_u32`, `be_u64` | Result equals the big-endian value of the bytes (`spec_be_u16/u32/u64`). |
+| `serialize_functions.rs` | `next_chunk_end` | Given `start < length`: `start < end <= length` and `end - start <= READ_CHUNK` (1 MiB). |
+| `serialize_functions.rs` | `bounded_len_u32`, `bounded_len_u64` | `OverBound` iff `len > bound`; `Ok(n)` iff within bound and fits in `usize`, with `n == len`; `TooLargeForPlatform` otherwise. |
+| `header_types.rs` | `msg_format_version_from_u8`, `msg_type_from_u8`, `content_type_from_u8` | `Some(variant)` iff the byte is the spec value for that variant; `None` for every other byte. |
+| `v1_header_body.rs` | `reserved_bytes_ok` | True iff all four reserved bytes are 0. |
+| `v1_header_body.rs` | `iv_len_matches` | True iff the header IV length equals the suite's IV length. |
+| `header.rs` | `edk_count_check` | `Empty` iff count is 0; `OverMax` iff count > 0 and above a configured max; `Ok` otherwise. |
+| `body/body_decrypt.rs` | `next_expected_frame` | `Some` iff `seq_num == expected` and `expected < u32::MAX`; then the value is `expected + 1`. |
+
+The full list, VR targets and trusted boundaries are in
+`docs/verus-proofs-report.md` ("In-crate proofs").
+
+## The standalone models in this directory
+
+Each proof file here is a **faithful, self-contained Verus model** of a
+specific function in the ESDK, carrying the executable body as it was when the
+model was written, plus `requires`/`ensures` contracts. They were written
+before the in-crate seam existed. They import nothing from `esdk`, so they can
+drift from the shipped code. **All 10 models are kept for now**, per the user.
+
+| File | Status |
+|------|--------|
+| `body_aad_proofs.rs` | Current model only; `iv_seq` / `body_aad` are not verified in-crate yet. |
+| `edk_count_proofs.rs` | Superseded in-crate by `edk_count_check` (`header.rs`). |
+| `zeroize_proofs.rs` | Possibly stale: the `write_volatile` loop is no longer in `mpl/src/structures/algorithm_suite.rs`. |
+| `frame_layout_proofs.rs` | Possibly stale: `construct_frame` is now async over `dyn Sink`. |
+| `header_parse_proofs.rs` | Superseded in-crate for the header-field decisions (`*_from_u8`) and bounded readers (`bounded_len_u32/u64`). |
+| `frame_sequence_proofs.rs` | Superseded in-crate by `next_expected_frame` (`body_decrypt.rs`). |
+| `io_stream_model.rs` | Possibly stale: the readers are now async over `dyn Source`, `read_into_vec` reads in chunks, and EC parsing moved to MPL. |
+| `io_stream_aligned.rs` | Bounded readers, big-endian decoding, header-field and EDK-count / frame-sequence checks superseded in-crate; the rest (the `ByteReader` loops, EC sub-parser) is possibly stale for the same reasons as `io_stream_model.rs`. |
+| `header_auth_ordering_proofs.rs` | Possibly stale: `esdk/src/decrypt.rs` changed. |
+| `aes_gcm_bounds_proofs.rs` | Possibly stale: `prim/src/lib.rs` changed and has not been re-audited. |
+
+"Possibly stale" means the model still verifies but its body was not
+re-checked against the current source. The historical notes below describe the
+models as written and still refer to the old `SafeRead`/`SafeWrite` traits.
+
+## What the models prove (as written)
 
 | File | Source function | Property proven |
 |------|-----------------|-----------------|
@@ -155,10 +199,13 @@ separately from these additive proof files.
 
 ## Running the proofs
 
-Requires Verus installed at `~/verus/verus` (see the `verus` skill).
+Requires Verus installed at `~/verus/verus` and `cargo-verus` at
+`~/verus/cargo-verus` (see the `verus` skill).
 
 ```bash
-# From the repo root:
+# From the repo root. In-crate proofs (shipped esdk code):
+make -C esdk verus
+# Standalone models:
 make -C verification verify
 # or directly:
 ~/verus/verus verification/body_aad_proofs.rs

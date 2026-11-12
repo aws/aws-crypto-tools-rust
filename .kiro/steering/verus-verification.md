@@ -5,7 +5,8 @@ fileMatchPattern: 'verification/**'
 
 # Verus Verification in this Repo
 
-Formal Verus proofs for the AWS ESDK live in `verification/`. They follow the
+Formal Verus proofs for the AWS ESDK live in `verus!` blocks inside `esdk/src/`
+(shipped code) and as standalone models in `verification/`. They follow the
 pipeline in `.kiro/agents/ai-verification-pipeline.md` and the target ranking in
 `docs/verification-recommendations.md`.
 
@@ -26,16 +27,30 @@ Success prints `verification results:: N verified, 0 errors`. Verus binary is at
 - Never over-constrain `requires` beyond what real callers satisfy.
 - Never change an `ensures` to match buggy behavior — report the bug instead.
 
-## Why proofs are standalone models (not `verus!` in `esdk/`)
-The `esdk` crate depends on `aws-lc-rs`, `tokio`, `aws-sdk-*`, and
-`SafeRead`/`SafeWrite` trait objects that Verus cannot build or model. So each
-proof file is a faithful, self-contained model of a specific *pure* function:
-the exact executable body plus `requires`/`ensures`. `verification/` is
-referenced by no `Cargo.toml`, so it never affects the normal `cargo` build.
+## In-crate proofs (`verus!` in `esdk/`)
+Shipped `esdk` code is verified in place. `esdk/Cargo.toml` sets
+`[package.metadata.verus] verify = true` and depends on `vstd`
+(`=0.0.0-2026-06-14-0213`). `cargo-verus` builds the dependencies (`aws-lc-rs`,
+`tokio`, `aws-sdk-*`, `mpl`, `prim`) with plain rustc and verifies only the
+`verus!` blocks in `esdk`:
+```bash
+make -C esdk verus   # cargo verus verify, default and --no-default-features --features aws-lc-sys
+```
+It verifies `vstd` first (`1858 verified, 0 errors`); the `aws-esdk` result is
+the second `verification results::` line and must read `N verified, 0 errors`.
+A cached run prints no results line; `touch esdk/src/lib.rs` forces a re-check.
 
-When migrating a model in-crate later, put the code inside a `verus! { }` block
-(never hide exec code behind `#[cfg(not(verus_keep_ghost))]`), keep a single
-source-of-truth definition per type, and re-verify.
+The pattern: the shipped readers are `async fn`s over `&mut dyn Source` (tokio
+`AsyncRead`) that mirror bytes into `&mut Tee` (`dyn Write + Send`). Verus
+cannot verify async or trait objects, so the decision logic lives in pure
+synchronous cores inside `verus! { }`, and the async fns are thin **unverified**
+adapters that read the bytes, call the core, and build the `Error` (`ser_err` /
+`err` / `val_err`). Never hide exec code behind `#[cfg(not(verus_keep_ghost))]`;
+keep one definition per type (move an enum into `verus!` unchanged, never
+duplicate it); keep duvet `//=` annotations next to the code they annotate.
+
+The standalone models in `verification/` are kept; see `verification/README.md`
+for which ones are superseded in-crate or stale.
 
 ## This-repo Verus idioms (confirmed against the installed version)
 - Slice element write: `slice[i] = v;` (the `.set()` method is deprecated).
@@ -46,10 +61,23 @@ source-of-truth definition per type, and re-verify.
   source-of-truth (see `spec_u32_be`/`spec_u64_be` in `body_aad_proofs.rs`) and
   a verified exec helper, and document the one-line equivalence to std.
 
+In-crate (`esdk/`), probe-confirmed:
+- Take fixed-size `[u8; N]` params; spec indexing `b[0]` works as-is.
+- Big-endian: `u16::from(u8)` (and `u32`/`u64`) times constant multipliers.
+  Avoid `as` casts in exec code; they trip the clippy `cast_*` lints.
+- `usize::try_from(u64)` / `usize::try_from(u32)` and `usize::from(u8)` are specified.
+- A const shift such as `1 << 20` must be written `1_048_576`.
+- `derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)` and `#[default]`
+  on an enum inside `verus!` are accepted.
+- `ensures` may use `r is Variant` and `r matches E::V(n) ==> ...`.
+- Doc-comment every new item (`missing_docs` is on), and add in-module
+  `#[cfg(test)] mod tests` for new cores.
+
 ## Good next targets (self-contained, no external crypto)
-- `validate_max_encrypted_data_keys` (`esdk/src/message/header.rs`) — EDK count.
-- `write_volatile` zeroization loop (`mpl/src/structures/algorithm_suite.rs`).
-- Big-endian readers/writers once a non-trait-object seam is available.
+- `iv_seq` / `body_aad` byte layout (`esdk/src/message/body/body_aad.rs`),
+  modeled only in `verification/body_aad_proofs.rs` so far.
+- Frame layout and header-auth ordering, once their sync decision cores are
+  split out of the async code.
 
 Avoid targeting functions whose core is an `aws-lc-rs` call (AES-GCM, ECDSA,
 HKDF): Verus cannot model the FFI backend, so only the surrounding

@@ -25,12 +25,83 @@ Run everything with:
 make -C verification verify
 ```
 
+> **Update (2026-11-12, branch `verus-in-crate-esdk`):** shipped `esdk` code is
+> now verified in place (Option A in `docs/verus-in-crate-migration-design.md`).
+> See "In-crate proofs (shipped `esdk` code)" below. The rest of this report
+> describes the standalone models in `verification/`, which are kept; their
+> current status is in `verification/README.md`.
+
 ### Adherence to the Verus skill invariants
 - No proof was weakened: **no** `assume(...)`, `admit()`, or `#[verifier::external]` anywhere. There is exactly **one** `#[verifier::external_body]` — the `utf8_check` wrapper around `std::str::from_utf8` in the AAD sub-parser — used per Verus skill invariant #11 for a std call Verus cannot evaluate (the same role `tag_ok` plays for the AES-GCM check). Its `ensures` is a **trusted boundary, not a proof**: the UTF-8-validation correctness is delegated to the std library; everything around it (that the parser rejects non-UTF-8 with `Err`, never panics) is proven. This is called out explicitly in §5.
 - Every "verified" claim is backed by actual `0 errors` tool output.
 - Preconditions are satisfiable by real callers (not over-constrained).
 - No `ensures` was changed to match buggy behavior.
 - Load-bearing proofs were **mutation-tested** to confirm they are not vacuous.
+
+---
+
+## In-crate proofs (shipped `esdk` code)
+
+`esdk/Cargo.toml` sets `[package.metadata.verus] verify = true` and depends on
+`vstd = "=0.0.0-2026-06-14-0213"`. `cargo-verus` builds the dependencies
+(`aws-lc-rs`, `tokio`, `aws-sdk-*`, `mpl`, `prim`) with plain rustc and verifies
+the `verus!` blocks in `esdk`. The in-crate code uses no `assume`, `admit`,
+`external_body` or `external`, and no `#[cfg(not(verus_keep_ghost))]`; each
+type has one definition (the header enums moved into `verus!` unchanged).
+
+Run from the repo root:
+
+```bash
+make -C esdk verus
+```
+
+Output (the `aws-esdk` line; `vstd` is verified first with
+`1858 verified, 0 errors` and cached afterwards). Default features, then
+`--no-default-features --features aws-lc-sys`:
+
+```
+verification results:: 19 verified, 0 errors
+verification results:: 19 verified, 0 errors
+```
+
+| Fn | File (`esdk/src/message/`) | Ensures | Target |
+|----|----------------------------|---------|--------|
+| `be_u16` | `serialize_functions.rs` | `r as int == spec_be_u16(b)` | VR-003 |
+| `be_u32` | `serialize_functions.rs` | `r as int == spec_be_u32(b)` | VR-003 |
+| `be_u64` | `serialize_functions.rs` | `r as int == spec_be_u64(b)` | VR-003 |
+| `next_chunk_end` | `serialize_functions.rs` | requires `start < length`; `start < end <= length`, `end - start <= READ_CHUNK` (1 MiB) | VR-003 (bounded allocation per read) |
+| `bounded_len_u32` | `serialize_functions.rs` | `OverBound` iff `len > bound`; `Ok` iff `len <= bound` and fits in `usize`; `TooLargeForPlatform` iff `len <= bound` and does not fit; `Ok(n) ==> n == len` | VR-003 |
+| `bounded_len_u64` | `serialize_functions.rs` | same as `bounded_len_u32`, for `u64` | VR-003 |
+| `msg_format_version_from_u8` | `header_types.rs` | `Some(V1)` iff `b == 1`; `Some(V2)` iff `b == 2`; `None` iff neither | VR-003 |
+| `msg_type_from_u8` | `header_types.rs` | `Some(TypeCustomerAed)` iff `b == 0x80`; `None` otherwise | VR-003 |
+| `content_type_from_u8` | `header_types.rs` | `Some(NonFramed)` iff `b == 1`; `Some(Framed)` iff `b == 2`; `None` iff neither | VR-003 |
+| `reserved_bytes_ok` | `v1_header_body.rs` | `ok` iff all four bytes are 0 | VR-003 |
+| `iv_len_matches` | `v1_header_body.rs` | `ok` iff `iv_len == expected` | VR-003 |
+| `edk_count_check` | `header.rs` | `Empty` iff `count == 0`; `OverMax` iff `count > 0` and `max` is `Some(m)` with `count > m`; `Ok` otherwise | VR-007 |
+| `next_expected_frame` | `body/body_decrypt.rs` | `Some` iff `seq_num == expected && expected < u32::MAX`; `Some(n) ==> n == expected + 1` | VR-004 |
+
+Spec fns `spec_be_u16`/`spec_be_u32`/`spec_be_u64`, the `READ_CHUNK` const and
+the `LenCheck`, `EdkCount`, `MessageFormatVersion`, `MessageType` and
+`ContentType` enums are also inside `verus!`. The shipped callers use these
+cores: `read_u16/u32/u64` call `be_uN`, `read_into_vec` calls `next_chunk_end`,
+`read_seq_u32/u64_bounded` match on `bounded_len_*`, the header readers call the
+`*_from_u8` / `reserved_bytes_ok` / `iv_len_matches` cores,
+`validate_max_encrypted_data_keys` and `read_edks` call `edk_count_check`, and
+the framed-decrypt loop calls `next_expected_frame`.
+
+**Unverified / trusted boundaries:**
+- **The async `Source`/`Tee` adapters** are unverified glue. The readers are
+  `async fn`s over `&mut dyn Source` (tokio `AsyncRead`, `esdk/src/shapes.rs`)
+  that mirror the bytes they read into `&mut Tee` (`dyn Write + Send`). Verus
+  cannot verify async code or trait objects, so the adapters read the bytes,
+  call a verified core, and build the `Error` (`ser_err` / `err` / `val_err`).
+  That they pass the right bytes to the core and keep the `Tee` mirror exact is
+  checked by tests, not by Verus.
+- **The aws-lc-rs FFI** (AES-GCM, ECDSA, HKDF, digests) is out of Verus scope.
+- **`std::str::from_utf8`** is not evaluated by Verus; no in-crate core depends
+  on it.
+- **MPL `EncryptionContext::from_bytes`** now does the encryption-context
+  parsing; it lives in `mpl` and is out of scope here.
 
 ---
 
@@ -63,7 +134,7 @@ make -C verification verify
 | VR-006 AES-GCM panic freedom | **buffer bookkeeping / length guard verified** (in the model): encrypt slice always in-bounds, decrypt rejects under-sized output buffer | the AES-GCM crypto itself (aws-lc-rs `seal`/`open`, FFI) — inherently out of scope |
 | VR-007 EDK count validation | count-check logic verified | the "before any KMS call" ordering (caller-side in `decrypt.rs`) |
 | VR-010 key-material zeroization | computation verified | the `unsafe write_volatile` form + volatile/`ptr.add` equivalence |
-| Infra: `SafeRead`/`SafeWrite` seam | prototyped + aligned | the in-crate migration (source-touching, needs a Verus-buildable seam) |
+| Infra: I/O seam | `esdk` is Verus-buildable; sync `verus!` cores are verified in-crate behind the async `Source`/`Tee` adapters (see "In-crate proofs") | the async adapters themselves stay unverified glue |
 
 ---
 
@@ -89,10 +160,12 @@ Load-bearing proofs were checked by mutating the code and confirming Verus
 
 ## 5. Fidelity caveats (what is and isn't machine-checked)
 
-Because the `esdk` crate pulls in `aws-lc-rs`, `tokio`, and `SafeRead`/`SafeWrite`
-trait objects that Verus cannot build, each proof is a **faithful, self-contained
-model** of a specific function — the exact executable body plus `requires`/`ensures`.
-Honest limits, all documented in the proof files and `verification/README.md`:
+This section covers the standalone models in `verification/` (the in-crate
+boundaries are listed under "In-crate proofs" above). The models were written
+when `esdk`'s readers took `SafeRead`/`SafeWrite` trait objects; each is a
+**faithful, self-contained model** of a specific function as it was then — the
+executable body plus `requires`/`ensures`. Honest limits, all documented in the
+proof files and `verification/README.md`:
 
 - **Models, not in-crate `verus!` blocks.** If the source functions change, the models must be updated in lockstep. The intended end state is to migrate them in-crate so proofs bind to the shipped code.
 - **`to_be_bytes` / `copy_from_slice` equivalence** (in `body_aad_proofs.rs`): the model uses the equivalent primitive; the one-line equivalence to std is documented, not machine-checked.
@@ -109,25 +182,25 @@ boundary above), which the invariants forbid.
 
 ---
 
-## 6. The `SafeRead`/`SafeWrite` abstraction (infrastructure)
+## 6. The I/O seam: `Source`/`Tee` (current) and the `ByteReader` models
 
-The single most reusable result. The other proofs each stop at the trait-object
-I/O boundary; this abstraction removes it. The ESDK only uses two operations on
-those traits — `read_exact` (fill-or-EOF) and `write_all` (append) — so the
-`ByteReader` models the **stream contract** (a byte `Seq<u8>` + cursor with a
-type invariant), not `std::io`. `io_stream_aligned.rs` then matches the exact
-`serialize_functions` reader signatures (`Result` returns, the `raw` byte
-mirror, big-endian correctness, over-limit rejection), making it a **drop-in
-contract**.
+`SafeRead`/`SafeWrite` no longer exist. The shipped readers in
+`esdk/src/message/serialize_functions.rs` are `async fn`s over
+`&mut dyn Source`, where `Source` is tokio `AsyncRead + Unpin + Send`
+(`esdk/src/shapes.rs`), and they mirror every byte they read into
+`raw: &mut Tee`, where `Tee` is `dyn std::io::Write + Send`, so the header can
+be re-authenticated. `read_into_vec` grows its buffer in chunks of at most
+`READ_CHUNK` (1 MiB). Verus cannot verify async code or trait objects, so the
+in-crate proofs keep these adapters unverified and verify the synchronous cores
+they call (see "In-crate proofs" above).
 
-**Remaining in-crate migration** (a separate, source-touching effort): replace
-the bodies of `serialize_functions::{read_bytes,read_vec,read_u8,read_u16,
-read_u32,read_u64,read_opt_u8,read_seq_*}` with a `verus!`-wrapped `ByteReader`
-implementation carrying these contracts, after isolating that module from the
-`aws-lc-rs`/`tokio`/trait-object dependencies so Verus can build it. That binds
-the proofs to the shipped readers and unblocks end-to-end VR-003/004/005 and,
-ultimately, the highest-value VR-001 (key commitment) and VR-002 (header auth
-ordering).
+The `ByteReader` in `io_stream_model.rs` / `io_stream_aligned.rs` modeled the
+old synchronous `SafeRead`/`SafeWrite` contract (a byte `Seq<u8>` plus a cursor
+with a type invariant, `Result` returns, the `raw` mirror). Its bounded-reader,
+big-endian and header-field/EDK-count/frame-sequence parts are superseded by
+the in-crate cores; its read loops and EC sub-parser are possibly stale against
+the async readers, and EC parsing has moved to MPL
+(`EncryptionContext::from_bytes`). The models are kept for now.
 
 ---
 
@@ -146,4 +219,9 @@ ordering).
 - `.kiro/steering/verus-verification.md`
 - `docs/verus-proofs-report.md` (this file)
 
-**Not modified:** any file under `esdk/`, `prim/`, `mpl/`, `unsafe-unreviewed-mpl/`.
+**Not modified by the standalone models:** any file under `esdk/`, `prim/`, `mpl/`, `unsafe-unreviewed-mpl/`.
+
+**In-crate proofs (branch `verus-in-crate-esdk`):** `esdk/Cargo.toml`,
+`esdk/Cargo.lock`, `esdk/Makefile`, `esdk/src/message/serialize_functions.rs`,
+`header_types.rs`, `v1_header_body.rs`, `header.rs`, `encrypted_data_keys.rs`,
+`body/body_decrypt.rs`.
