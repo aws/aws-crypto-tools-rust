@@ -16,6 +16,43 @@ use crate::error::{Kind, err, val_err};
 use crate::shapes::{EncryptionContext, Sink, Source, Tee};
 use aws_crypto_mpl::types::AlgorithmSuite;
 use aws_lc_rs::constant_time;
+use vstd::prelude::*;
+
+verus! {
+
+/// The outcome of checking an encrypted data key count.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum EdkCount {
+    /// The count is positive and within the configured maximum, if any.
+    Ok,
+    /// The count is zero.
+    Empty,
+    /// The count is positive and above the configured maximum.
+    OverMax,
+}
+
+/// Check an encrypted data key count against an optional configured maximum.
+pub(crate) fn edk_count_check(count: usize, max: Option<usize>) -> (r: EdkCount)
+    ensures
+        (r is Empty) <==> count == 0,
+        (r is OverMax) <==> (count > 0 && (max matches Some(m) && count > m)),
+        (r is Ok) <==> (count > 0 && !(max matches Some(m) && count > m)),
+{
+    if count == 0 {
+        EdkCount::Empty
+    } else {
+        match max {
+            Some(m) => if count > m {
+                EdkCount::OverMax
+            } else {
+                EdkCount::Ok
+            },
+            None => EdkCount::Ok,
+        }
+    }
+}
+
+} // verus!
 
 pub(crate) const START_SEQUENCE_NUMBER: u32 = 1;
 
@@ -152,25 +189,22 @@ pub(crate) fn validate_max_encrypted_data_keys(
     max_encrypted_data_keys: Option<std::num::NonZeroUsize>,
     edks: &[aws_crypto_mpl::types::EncryptedDataKey],
 ) -> Result<(), Error> {
-    if edks.is_empty() {
+    let max = max_encrypted_data_keys.map(std::num::NonZeroUsize::get);
+    match edk_count_check(edks.len(), max) {
+        EdkCount::Ok => Ok(()),
         //= spec/data-format/message-header.md#encrypted-data-key-count
         //# This value MUST be greater than 0.
-        return Err(err(
+        EdkCount::Empty => Err(err(
             Kind::InvalidMaterials,
             "encrypted data key count must be greater than 0",
-        ));
-    }
-
-    if let Some(max) = max_encrypted_data_keys
-        && edks.len() > max.get()
-    {
-        return Err(val_err(format!(
+        )),
+        // OverMax implies `max` is `Some`.
+        EdkCount::OverMax => Err(val_err(format!(
             "encrypted data key count {} exceeds configured maximum {}",
             edks.len(),
-            max.get(),
-        )));
+            max.unwrap_or_default(),
+        ))),
     }
-    Ok(())
 }
 
 /// Generates a fresh message id of the size required by the algorithm suite's
@@ -270,4 +304,20 @@ pub(crate) async fn write_header(
     serialize_functions::write_to_sink(ciphertext, &auth_buf).await?;
     serialize_functions::write_bytes(sig_digest, &auth_buf)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn edk_count_check_cases() {
+        assert_eq!(edk_count_check(0, None), EdkCount::Empty);
+        assert_eq!(edk_count_check(0, Some(1)), EdkCount::Empty);
+        assert_eq!(edk_count_check(1, None), EdkCount::Ok);
+        assert_eq!(edk_count_check(usize::MAX, None), EdkCount::Ok);
+        assert_eq!(edk_count_check(3, Some(3)), EdkCount::Ok);
+        assert_eq!(edk_count_check(4, Some(3)), EdkCount::OverMax);
+        assert_eq!(edk_count_check(2, Some(3)), EdkCount::Ok);
+    }
 }

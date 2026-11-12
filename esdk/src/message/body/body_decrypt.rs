@@ -13,6 +13,25 @@ use crate::message::serialize_functions::{
 use crate::message::{Error, header, ser_err, serialize_functions};
 use crate::shapes::{Sink, Source, Tee};
 use aws_mpl_primitives::aes_decrypt;
+use vstd::prelude::*;
+
+verus! {
+
+/// The sequence number expected after a regular frame numbered `seq_num`,
+/// or `None` if `seq_num` is not `expected` or `expected` has no successor.
+fn next_expected_frame(seq_num: u32, expected: u32) -> (r: Option<u32>)
+    ensures
+        (r is Some) <==> (seq_num == expected && expected < u32::MAX),
+        r matches Some(n) ==> n == expected + 1,
+{
+    if seq_num == expected {
+        expected.checked_add(1)
+    } else {
+        None
+    }
+}
+
+} // verus!
 
 /// Write the previous frame's plaintext to the output, or fail if streaming a signed message.
 async fn release_previous_frame(
@@ -328,9 +347,13 @@ pub(crate) async fn read_and_decrypt_framed_message_body(
         //= spec/client-apis/decrypt.md#decrypt-the-message-body
         //# Otherwise, the Decrypt operation MUST treat them as the [Sequence Number](../data-format/message-body.md#regular-frame-sequence-number)
         //# and deserialize the following bytes according to the [regular frame spec](../data-format/message-body.md#regular-frame).
-        if seq_num != expected_frame {
+        //
+        // `next_expected_frame` also returns `None` when `expected_frame == u32::MAX`, but that
+        // arm is unreachable here: this branch has `seq_num != ENDFRAME_SEQUENCE_NUMBER`
+        // (`u32::MAX`), so `seq_num == expected_frame` already rules it out.
+        let Some(next) = next_expected_frame(seq_num, expected_frame) else {
             return ser_err("sequence number out of order");
-        }
+        };
 
         //= spec/client-apis/decrypt.md#decrypt-the-message-body
         //= type=implication
@@ -353,7 +376,7 @@ pub(crate) async fn read_and_decrypt_framed_message_body(
         //= spec/client-apis/decrypt.md#decrypt-the-message-body
         //# Otherwise, this value MUST be 1 greater than the value of the sequence number
         //# of the previous frame.
-        expected_frame += 1;
+        expected_frame = next;
 
         // IV
 
@@ -669,4 +692,21 @@ pub(crate) async fn read_and_decrypt_non_framed_message_body(
     )?;
 
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn next_expected_frame_cases() {
+        assert_eq!(next_expected_frame(1, 1), Some(2));
+        assert_eq!(next_expected_frame(2, 1), None);
+        assert_eq!(next_expected_frame(0, 1), None);
+        assert_eq!(
+            next_expected_frame(u32::MAX - 1, u32::MAX - 1),
+            Some(u32::MAX)
+        );
+        assert_eq!(next_expected_frame(u32::MAX, u32::MAX), None);
+    }
 }

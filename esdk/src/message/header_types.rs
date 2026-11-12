@@ -10,14 +10,87 @@ use crate::shapes::{EncryptionContext, Source, Tee};
 use crate::suites::algorithm_suite_from_bytes;
 use aws_crypto_mpl::types::AlgorithmSuite;
 use aws_crypto_mpl::types::EncryptedDataKey;
+use vstd::prelude::*;
 
 pub(crate) type MessageId = Vec<u8>;
+
+verus! {
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) enum MessageFormatVersion {
     V1 = 1,
     V2 = 2,
 }
+
+/// The message format version encoded by `b`, or `None` if `b` is not a
+/// supported version.
+pub(crate) fn msg_format_version_from_u8(b: u8) -> (r: Option<MessageFormatVersion>)
+    ensures
+        (r == Some(MessageFormatVersion::V1)) <==> b == 1,
+        (r == Some(MessageFormatVersion::V2)) <==> b == 2,
+        (r is None) <==> (b != 1 && b != 2),
+{
+    //= spec/data-format/message-header.md#supported-versions
+    //# The supported versions MUST be:
+    match b {
+        //= spec/data-format/message-header.md#supported-versions
+        //# - Hex value `01` MUST be version 1.0
+        1 => Some(MessageFormatVersion::V1),
+        //= spec/data-format/message-header.md#supported-versions
+        //# - Hex value `02` MUST be version 2.0
+        2 => Some(MessageFormatVersion::V2),
+        _ => None,
+    }
+}
+
+//= spec/data-format/message-header.md#supported-types
+//# The supported types MUST be:
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+pub(crate) enum MessageType {
+    //= spec/data-format/message-header.md#supported-types
+    //# - `80` MUST be Customer Authenticated Encrypted Data
+    #[default]
+    TypeCustomerAed = 0x80,
+}
+
+/// The message type encoded by `b`, or `None` if `b` is not a supported type.
+pub(crate) fn msg_type_from_u8(b: u8) -> (r: Option<MessageType>)
+    ensures
+        (r == Some(MessageType::TypeCustomerAed)) <==> b == 0x80,
+        (r is None) <==> b != 0x80,
+{
+    if b == 0x80 {
+        Some(MessageType::TypeCustomerAed)
+    } else {
+        None
+    }
+}
+
+//= spec/data-format/message-header.md#supported-content-types
+//# The supported content types MUST be:
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+pub(crate) enum ContentType {
+    NonFramed = 1,
+    #[default]
+    Framed = 2,
+}
+
+/// The content type encoded by `b`, or `None` if `b` is not a supported
+/// content type.
+pub(crate) fn content_type_from_u8(b: u8) -> (r: Option<ContentType>)
+    ensures
+        (r == Some(ContentType::NonFramed)) <==> b == 1,
+        (r == Some(ContentType::Framed)) <==> b == 2,
+        (r is None) <==> (b != 1 && b != 2),
+{
+    match b {
+        1 => Some(ContentType::NonFramed),
+        2 => Some(ContentType::Framed),
+        _ => None,
+    }
+}
+
+} // verus!
 
 pub(crate) fn write_msg_format_version(
     w: &mut Tee,
@@ -33,39 +106,21 @@ pub(crate) async fn read_msg_format_version(
     raw: &mut Tee,
 ) -> Result<MessageFormatVersion, Error> {
     let version = read_u8(r, raw).await?;
-    //= spec/data-format/message-header.md#supported-versions
-    //# The supported versions MUST be:
-    //
     //= spec/client-apis/decrypt.md#parse-the-header
     //# The value MUST be a [supported version](../data-format/message-header.md#supported-versions).
-    match version {
-        //= spec/data-format/message-header.md#supported-versions
-        //# - Hex value `01` MUST be version 1.0
-        val if val == MessageFormatVersion::V1 as u8 => Ok(MessageFormatVersion::V1),
-        //= spec/data-format/message-header.md#supported-versions
-        //# - Hex value `02` MUST be version 2.0
-        val if val == MessageFormatVersion::V2 as u8 => Ok(MessageFormatVersion::V2),
+    match msg_format_version_from_u8(version) {
+        Some(v) => Ok(v),
         //= spec/client-apis/decrypt.md#encrypted-message-format
         //# To make diagnosing this mistake easier, implementations SHOULD detect the first two bytes of the Base64 encoding of any supported message [versions](../data-format/message-header.md#version)
         //# and [types](../data-format/message-header.md#type)
         //# and fail with a more specific error message.
-        0x41 => ser_err(
+        None if version == 0x41 => ser_err(
             "input appears to be Base64-encoded. The ESDK expects raw binary message format, not Base64",
         ),
-        _ => ser_err(&format!(
+        None => ser_err(&format!(
             "unsupported message format version: {version:#04x}"
         )),
     }
-}
-
-//= spec/data-format/message-header.md#supported-types
-//# The supported types MUST be:
-#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
-pub(crate) enum MessageType {
-    //= spec/data-format/message-header.md#supported-types
-    //# - `80` MUST be Customer Authenticated Encrypted Data
-    #[default]
-    TypeCustomerAed = 0x80,
 }
 
 pub(crate) fn write_msg_type(w: &mut Tee, data: MessageType) -> Result<(), Error> {
@@ -81,19 +136,10 @@ pub(crate) async fn read_msg_type(r: &mut dyn Source, raw: &mut Tee) -> Result<M
 
     //= spec/client-apis/decrypt.md#v1-header-deserialization
     //# The value MUST be a [supported type](../data-format/message-header.md#supported-types).
-    match msg_type {
-        val if val == MessageType::TypeCustomerAed as u8 => Ok(MessageType::TypeCustomerAed),
-        _ => ser_err(&format!("unsupported message type: {msg_type:#04x}")),
+    match msg_type_from_u8(msg_type) {
+        Some(t) => Ok(t),
+        None => ser_err(&format!("unsupported message type: {msg_type:#04x}")),
     }
-}
-
-//= spec/data-format/message-header.md#supported-content-types
-//# The supported content types MUST be:
-#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
-pub(crate) enum ContentType {
-    NonFramed = 1,
-    #[default]
-    Framed = 2,
 }
 
 pub(crate) fn write_content_type(w: &mut Tee, data: ContentType) -> Result<(), Error> {
@@ -115,10 +161,9 @@ pub(crate) async fn read_content_type(
     //
     //= spec/client-apis/decrypt.md#v2-header-deserialization
     //# The value MUST be a [supported content type](../data-format/message-header.md#supported-content-types).
-    match content_type {
-        val if val == ContentType::NonFramed as u8 => Ok(ContentType::NonFramed),
-        val if val == ContentType::Framed as u8 => Ok(ContentType::Framed),
-        _ => ser_err(&format!("unsupported content type: {content_type:#04x}")),
+    match content_type_from_u8(content_type) {
+        Some(c) => Ok(c),
+        None => ser_err(&format!("unsupported content type: {content_type:#04x}")),
     }
 }
 
@@ -299,4 +344,41 @@ pub(crate) async fn read_message_id_v2(
 
 pub(crate) fn write_message_id(w: &mut Tee, message_id: &MessageId) -> Result<(), Error> {
     write_bytes(w, message_id)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn from_u8_cores_accept_exactly_the_spec_bytes() {
+        for b in 0..=u8::MAX {
+            let version = match b {
+                1 => Some(MessageFormatVersion::V1),
+                2 => Some(MessageFormatVersion::V2),
+                _ => None,
+            };
+            assert_eq!(msg_format_version_from_u8(b), version);
+            let msg_type = (b == 0x80).then_some(MessageType::TypeCustomerAed);
+            assert_eq!(msg_type_from_u8(b), msg_type);
+            let content_type = match b {
+                1 => Some(ContentType::NonFramed),
+                2 => Some(ContentType::Framed),
+                _ => None,
+            };
+            assert_eq!(content_type_from_u8(b), content_type);
+        }
+    }
+
+    #[test]
+    fn from_u8_cores_round_trip_the_discriminants() {
+        for v in [MessageFormatVersion::V1, MessageFormatVersion::V2] {
+            assert_eq!(msg_format_version_from_u8(v as u8), Some(v));
+        }
+        let t = MessageType::TypeCustomerAed;
+        assert_eq!(msg_type_from_u8(t as u8), Some(t));
+        for c in [ContentType::NonFramed, ContentType::Framed] {
+            assert_eq!(content_type_from_u8(c as u8), Some(c));
+        }
+    }
 }
