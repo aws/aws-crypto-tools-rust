@@ -83,12 +83,23 @@ fn has_cdylib(dir: &Path) -> bool {
     dir.join("libaws_esdk_cpp.so").exists() || dir.join("libaws_esdk_cpp.dylib").exists()
 }
 
+// Cargo puts the cxx crate's build output in build/cxx-<hash>/out up to Rust
+// 1.99, and in build/cxx/<hash>/out from Rust 1.100.
 fn find_cxx_runtime(build_dir: &Path) -> Option<PathBuf> {
+    let has_runtime = |dir: &Path| dir.join("out/libcxxbridge1.a").exists();
     for entry in std::fs::read_dir(build_dir).ok()? {
         let dir = entry.ok()?.path();
         let name = dir.file_name()?.to_string_lossy().into_owned();
-        if name.starts_with("cxx-") && dir.join("out/libcxxbridge1.a").exists() {
+        if name.starts_with("cxx-") && has_runtime(&dir) {
             return Some(dir.join("out"));
+        }
+        if name == "cxx" {
+            for hash in std::fs::read_dir(&dir).ok()? {
+                let hash_dir = hash.ok()?.path();
+                if has_runtime(&hash_dir) {
+                    return Some(hash_dir.join("out"));
+                }
+            }
         }
     }
     None
