@@ -20,7 +20,7 @@
 
 ## Executive Summary
 
-This document identifies **10 prioritized verification targets** derived from the 31 threats in the
+This document identifies **11 prioritized verification targets** derived from the 31 threats in the
 ESDK threat model (`docs/threat-model.md`). **Zero formal verification** of any kind exists for this
 codebase. All coverage gaps are 1.0.
 
@@ -110,6 +110,7 @@ All Coverage_Gap = **1.0** (no formal verification exists).
 | 8 | **7.2** | ECDSA signature length | `signature_len`/`field_size` invariants hold; `sign_fixed_len` terminates | `verus-zero-panic` | `prim/src/ecdsa.rs` | 1 week | **Yes** |
 | 9 | **6.4** | HKDF / key derivation length | Output-length checks panic-free; `derive_key_v2` buffers sized correctly | `verus-zero-panic` | `esdk/src/key_derivation.rs`, `prim/src/hkdf.rs` | 1 week | **Yes** |
 | 10 | **6.0** | Key-material zeroization *(verified — computation)* | `write_volatile` zeroization loop in-bounds; buffer fully zeroed. **Done:** `PlaintextDataKey::zeroize` proven no-panic + `all_zero` in `verification/zeroize_proofs.rs`. **Remaining:** `unsafe`/`volatile` equivalence (informal). | `verus-unsafe-ffi-safety` | `mpl/src/structures/algorithm_suite.rs`, `unsafe-unreviewed-mpl/mpl/src/lib.rs` | 1 week | **Yes** |
+| 11 | **4.8** | Data-key non-disclosure *(information flow; not started)* | During encrypt and decrypt, the plaintext data key and the keys derived from it are never written directly to the output stream or returned to the caller. They reach the output only as AES-GCM input or, for the data key, after the keyring has encrypted it into an EDK. Approach: a ghost secret label on key bytes, proven never to reach output buffers or return values. Out of scope: keyrings/CMMs (they receive the key by design), whether AES-GCM ciphertext reveals the key (aws-lc-rs), and public key-byte accessors unless removed or excluded. **Sequencing:** after the in-crate Verus work (Option A). | unassigned (information-flow) | `esdk/src/encrypt.rs`, `esdk/src/decrypt.rs`, `esdk/src/key_derivation.rs`, `esdk/src/message/body/*`, `mpl/src/structures/{algorithm_suite,encryption_materials,decryption_materials}.rs` | 3–4 weeks | No |
 
 ---
 
@@ -127,6 +128,14 @@ All Coverage_Gap = **1.0** (no formal verification exists).
 | 8 | ECDSA sig length | 3 (High) | 1.0 | 0.8 | 3 | **7.2** |
 | 9 | HKDF length | 2 (Medium) | 1.0 | 0.8 | 4 | **6.4** |
 | 10 | Zeroization | 3 (High) | 1.0 | 0.5 | 4 | **6.0** |
+| 11 | Data-key non-disclosure | 4 (Critical) | 1.0 | 0.3 | 4 | **4.8** |
+
+VR-011 scoring notes: Severity 4 because a disclosed data key decrypts the whole message (I1 is
+rated "Critical (if exploited)" in the threat model). Feasibility 0.3 because Verus has no built-in
+information-flow checking, so the secret label is a hand-rolled ghost discipline that must be
+threaded through the whole encrypt and decrypt paths, and the work depends on the in-crate Verus
+migration (Option A), which is still in progress. Blast radius 4 because every encrypt and decrypt
+handles a data key.
 
 ---
 
@@ -149,6 +158,7 @@ interop. Every area below has a coverage gap of 1.0 at the Rust level.
 | Commitment-policy enforcement | **Stub (Ok(()))** | Critical | `unsafe-unreviewed-mpl/mpl/src/commitment.rs` |
 | Keyring / CMM behavior | **External Dafny dep** | N/A (out of repo) | `unsafe-unreviewed-mpl/mpl/src/{keyring.rs, cmm.rs, kms_keyring.rs}` → `aws_mpl_legacy::dafny` |
 | Key-material zeroization | **None** | Medium | `mpl/src/structures/algorithm_suite.rs`, `unsafe-unreviewed-mpl/mpl/src/lib.rs` |
+| Data-key non-disclosure (information flow, VR-011) | **None** (gap 1.0) | High | `esdk/src/encrypt.rs`, `esdk/src/decrypt.rs`, `esdk/src/key_derivation.rs`, `esdk/src/message/body/*`, `mpl/src/structures/{algorithm_suite,encryption_materials,decryption_materials}.rs` |
 
 ---
 
@@ -508,6 +518,55 @@ recommendation:
   scoring: { severity: 3, coverage_gap: 0.3, feasibility: 0.5, blast_radius: 4 }
   quick_win: true
   dependencies: []
+
+recommendation:
+  id: VR-2026-011
+  rank: 11
+  priority_score: 4.8
+  status: not_started
+  property_kind: information_flow   # structural non-disclosure, not functional correctness like VR-001..VR-010
+  target:
+    library: aws-esdk (+ aws-crypto-mpl key types)
+    file: esdk/src/encrypt.rs, esdk/src/decrypt.rs
+    function: encrypt / decrypt paths, incl. key_derivation.rs (derive_key*), message/body/* (frame encrypt/decrypt), header_auth.rs
+  property: "During encrypt and decrypt, the plaintext data key and the keys derived from it are never written directly to the output stream or returned to the caller. They reach the output only as AES-GCM input or, for the data key, after the keyring has encrypted it into an EDK."
+  formal_spec: "label(PlaintextDataKey bytes) = Secret ∧ label(derive(k)) = Secret; ∀ write to output stream / return value v: label(v) ≠ Secret; Secret bytes flow only into aes_encrypt/aes_decrypt key inputs, or into the keyring (which returns an EDK)"
+  approach: |
+    Track a ghost secret label on key bytes (the plaintext data key and every key derived from it)
+    through the encrypt and decrypt paths, and prove that no labelled bytes reach output buffers
+    (the SafeWrite stream, the returned ciphertext/plaintext buffers) or return values. AES-GCM
+    key inputs and the keyring/CMM call are the only permitted sinks.
+  tool: Verus
+  agent: unassigned   # no existing agent covers information-flow proofs
+  estimated_effort: 3-4 engineer-weeks
+  threat_references:
+    - { id: I1, category: Information Disclosure, description: "Plaintext data key leaked (here: through the output stream or a return value)" }
+    - { id: I5, category: Information Disclosure, description: "Key material persists after use (here: handed back to the caller so it outlives the operation)" }
+    - { id: S3, category: Spoofing, description: "Malicious keyring — bounds the guarantee: a keyring/CMM receives the key by design, so VR-011 cannot protect against one" }
+  trace_to_spec: "spec/framework/structures.md §Plaintext Data Key; spec/client-apis/encrypt.md; spec/client-apis/decrypt.md"
+  coverage_gap: 1.0   # no proof exists
+  scope_limits:
+    - "Keyrings and CMMs are outside the guarantee: they receive the plaintext data key by design, including caller-supplied custom ones."
+    - "Does not cover whether AES-GCM ciphertext reveals the key; that rests on the cryptography (aws-lc-rs), which Verus cannot prove."
+    - "Holds only if public accessors that hand out key bytes are removed or excluded from scope."
+  public_accessors_found:   # current main-merged code, HEAD a891e52
+    - "mpl/src/structures/algorithm_suite.rs: PlaintextDataKey::as_bytes() is still `pub` (returns &[u8]); the type is re-exported publicly via mpl/src/types.rs. It is also `Clone`. The same pub as_bytes() pattern exists on SigningKey and SymmetricSigningKey."
+    - "mpl/src/structures/encryption_materials.rs (L117) and decryption_materials.rs (L87): pub fn plaintext_data_key() -> Option<&PlaintextDataKey> on the materials types."
+    - "unsafe-unreviewed-mpl/ no longer exists (removed in cdd5980, #107), so `pub struct Secret(pub Vec<u8>)` is gone from the dependency path; no `struct Secret` remains in esdk/, mpl/, or prim/."
+    - "Custom keyrings/CMMs need some way to read the key bytes, so these accessors cannot simply be removed; the realistic option is to exclude the keyring/CMM boundary from scope (scope limit 1) and prove the ESDK itself never calls them toward an output sink."
+  sequencing: |
+    Best done after the in-crate Verus work (Option A, in progress). Tracking the key needs the real
+    encrypt/decrypt code under Verus; the standalone models in verification/ do not carry the key
+    through the whole path.
+  rationale: |
+    This is the property behind the claim "there is no way to extract a data key to pass it along
+    outside the library", restricted to what the library itself does. It is an information-flow
+    property, unlike VR-001..VR-010, which are functional-correctness or panic-freedom properties.
+    The score is low because feasibility is low (hand-rolled ghost labels, dependent on Option A),
+    not because the threat is minor.
+  scoring: { severity: 4, coverage_gap: 1.0, feasibility: 0.3, blast_radius: 4 }
+  quick_win: false
+  dependencies: [ "In-crate Verus migration (Option A)" ]
 ```
 
 ---
@@ -551,4 +610,5 @@ orchestration**:
 4. VR-006 (AES-GCM panic freedom) — **DONE for the non-FFI part** (`verification/aes_gcm_bounds_proofs.rs`): encrypt buffer slicing proven in-bounds, decrypt length guard proven to reject under-sized output. The AES-GCM crypto itself is aws-lc-rs FFI, inherently out of scope.
 5. **Higher-effort:** VR-001 (key commitment verification) — highest absolute score. Flag the commitment-policy stub (`validate_commitment_policy_on_*` returning `Ok(())`) to engineering in parallel.
 6. VR-002 (header auth ordering) + VR-003 (parsing safety) + VR-004 (frame sequence).
-7. **Continuous:** Re-score after each proof; coverage_gap drops, priorities shift. Migrate the standalone `verification/` models into in-crate `verus!` blocks once the `esdk` crate has a Verus-buildable seam, so the proofs bind to the shipped code directly rather than to a mirror.
+7. **After Option A:** VR-011 (data-key non-disclosure) — an information-flow proof that the plaintext data key and derived keys never reach the output stream or a return value, only AES-GCM key inputs or the keyring (as an EDK). Needs the real encrypt/decrypt code under Verus, so it starts once the in-crate migration lands. Decide first whether the public key-byte accessors (`PlaintextDataKey::as_bytes()`, the materials' `plaintext_data_key()` getters) are removed or excluded from scope.
+8. **Continuous:** Re-score after each proof; coverage_gap drops, priorities shift. Migrate the standalone `verification/` models into in-crate `verus!` blocks once the `esdk` crate has a Verus-buildable seam, so the proofs bind to the shipped code directly rather than to a mirror.

@@ -811,6 +811,7 @@ agent assignments see `docs/verification-recommendations.md`.
 | 5 | 9.0 | Frame construction / body serialization | Frame iteration and slicing never exceed buffer bounds; no panic | Verus | D2 | `verus-zero-panic` | `esdk/src/message/body/body_encrypt.rs` |
 | 6 | 9.0 | AES-GCM panic freedom | All slice accesses (nonce, tag, ciphertext) in-bounds; wrappers never panic | Verus | D1 | `verus-zero-panic` | `prim/src/lib.rs` (`aes_encrypt`, `aes_decrypt`) |
 | 7 | 6.0 | Key-material zeroization | `Secret`/`PlaintextDataKey` bytes are zeroed on drop; `write_volatile` loop is in-bounds | Verus | I1, I5 | `verus-unsafe-ffi-safety` | `mpl/src/structures/algorithm_suite.rs`, `unsafe-unreviewed-mpl/mpl/src/lib.rs` |
+| 8 | 4.8 | Data-key non-disclosure (VR-011, information flow) | Plaintext data key and keys derived from it are never written directly to the output stream or returned to the caller; they reach output only as AES-GCM input or, for the data key, as an EDK from the keyring. Keyrings/CMMs, AES-GCM ciphertext strength, and public key-byte accessors are out of scope. Best done after the in-crate Verus work (Option A) | Verus | I1, I5, S3 | unassigned | `esdk/src/encrypt.rs`, `esdk/src/decrypt.rs`, `esdk/src/key_derivation.rs`, `esdk/src/message/body/*` |
 
 ### Verification Target Format (per recommendation)
 
