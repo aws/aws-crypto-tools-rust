@@ -205,8 +205,10 @@ they call (see "In-crate proofs" above).
 The `ByteReader` in `io_stream_model.rs` / `io_stream_aligned.rs` modeled the
 old synchronous `SafeRead`/`SafeWrite` contract (a byte `Seq<u8>` plus a cursor
 with a type invariant, `Result` returns, the `raw` mirror). Its bounded-reader,
-big-endian and header-field/EDK-count/frame-sequence parts are superseded by
-the in-crate cores; its read loops and EC sub-parser are possibly stale against
+big-endian, header-field and EDK-count parts, and the regular-frame step of its
+frame-sequence loop, are superseded by the in-crate cores. The final-frame
+sequence check and the start-at-1 invariant remain model-only (possibly stale);
+its read loops and EC sub-parser are possibly stale against
 the async readers, and EC parsing has moved to MPL
 (`EncryptionContext::from_bytes`). The models are kept for now.
 

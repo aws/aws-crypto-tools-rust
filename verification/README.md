@@ -60,7 +60,7 @@ drift from the shipped code. **All 10 models are kept for now**, per the user.
 | `header_parse_proofs.rs` | Superseded in-crate for the header-field decisions (`*_from_u8`) and bounded readers (`bounded_len_u32/u64`). |
 | `frame_sequence_proofs.rs` | Partly superseded: the regular-frame step is verified in-crate by `next_expected_frame` (`body_decrypt.rs`); the final-frame check (`check_final`) and the start-at-1 lemmas remain model-only. |
 | `io_stream_model.rs` | Possibly stale: the readers are now async over `dyn Source`, `read_into_vec` reads in chunks, and EC parsing moved to MPL. |
-| `io_stream_aligned.rs` | Bounded readers, big-endian decoding, header-field and EDK-count / frame-sequence checks superseded in-crate; the rest (the `ByteReader` loops, EC sub-parser) is possibly stale for the same reasons as `io_stream_model.rs`. |
+| `io_stream_aligned.rs` | Bounded readers, big-endian decoding, header-field and EDK-count checks, and the regular-frame step (`next_expected_frame`) superseded in-crate; the final-frame check and the start-at-1 invariant remain model-only (possibly stale); the rest (the `ByteReader` loops, EC sub-parser) is possibly stale for the same reasons as `io_stream_model.rs`. |
 | `header_auth_ordering_proofs.rs` | Possibly stale: `esdk/src/decrypt.rs` changed. |
 | `aes_gcm_bounds_proofs.rs` | Possibly stale: `prim/src/lib.rs` changed and has not been re-audited. |
 
