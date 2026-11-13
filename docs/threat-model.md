@@ -4,6 +4,7 @@
 **Date:** September 2026  
 **Scope:** AWS Encryption SDK (Rust implementation — `aws-esdk` crate, v2.0.0)  
 **Code Baseline:** commit `d8c1c3d` ("feat(esdk-cpp): C++ shim types, raw AES keyring round trip (#66)")  
+**Revised:** November 2026, against `5ea2a804` (branch `Mahnush_Verus`). Rechecked at that commit: the MPL dependency path (§1, §3.1a), commitment-policy enforcement (§7.2, E3, §15.2), key zeroization (I1, §15.2), in-tree `unsafe` (§12.2), the dependency table (§12.3), FIPS features (§12.4), the spec source (§16) and the verification status (§14). The threat analysis in the other sections is the `d8c1c3d` analysis and was not re-audited.  
 **Methodology:** STRIDE + Attack Trees + Risk-Based Verification Prioritization  
 **Classification:** Internal  
 **Pipeline Reference:** `.kiro/agents/ai-verification-pipeline.md`
@@ -37,12 +38,13 @@ The AWS Encryption SDK (ESDK) is a client-side encryption library that enables a
 encrypt and decrypt data using envelope encryption. This threat model analyzes the security
 properties of the ESDK as specified in the formal specification and as implemented in this
 repository: a **hand-written, native Rust** workspace (`aws-esdk` v2.0.0) whose cryptographic
-primitives are thin wrappers over `aws-lc-rs`. The ESDK message layer is native Rust; the
-Material Providers Library (CMM, keyrings, commitment-policy enforcement) is currently supplied
-through the `aws-mpl-native` shim (`aws_mpl_legacy`), which delegates keyring/CMM behavior to an
-external, Dafny-transpiled `aws-mpl-legacy` v0.2.0 crate for legacy interop. There is **no Dafny
-transpilation in this repository** — no `implementation_from_dafny.rs`, no `.dfy` sources, and no
-`dafny_runtime` dependency in-tree.
+primitives are thin wrappers over `aws-lc-rs`. The ESDK message layer is native Rust, and so is
+the Material Providers Library (CMM, keyrings, key store, cache): `esdk/Cargo.toml` depends on the
+in-repo `aws-crypto-mpl` (`mpl/`) and `aws-mpl-primitives` (`prim/`). There is no Dafny code or
+Dafny-transpiled dependency on this path: no `.dfy` sources, no `dafny_runtime`, no
+`aws-mpl-legacy`. (History: at the `d8c1c3d` baseline the ESDK linked a Dafny-backed legacy MPL
+shim in `unsafe-unreviewed-mpl/`; the ESDK was retargeted onto the native MPL in `e9bde488` (#98),
+and `unsafe-unreviewed-mpl/` was removed in `cdd5980` (#107).)
 
 The SDK's primary security goals are:
 
@@ -65,7 +67,7 @@ and maps mitigations to specification requirements and formal verification targe
 - Key management interfaces (CMM, Keyring, KMS interaction)
 - Message format parsing and serialization
 - Caching CMM (CMC / storm-tracking cache) and branch key store
-- Memory management of key material (zeroization of `Secret` / `PlaintextDataKey`)
+- Memory management of key material (zeroization of `PlaintextDataKey` and the other secret key types in `mpl/src/structures/`)
 - Boundary with the `aws-lc-rs` cryptographic backend (safe Rust API; `aws-lc-sys`/`aws-lc-fips-sys` are pulled transitively via `aws-lc-rs` features)
 
 ### Out of Scope
@@ -124,22 +126,22 @@ environments, and interaction with Key Management Services — not generic cloud
 
 ### 3.1a Repository Layout (crates)
 
-The workspace is four hand-written Rust crates (there is no single root `Cargo.toml`; each crate builds independently):
+The library is three hand-written Rust crates (there is no single root `Cargo.toml`; each crate builds independently). `xtask/` is a build-helper crate and is not part of the library.
 
 | Directory | Package (crate) | Version / Edition | Role |
 |-----------|-----------------|-------------------|------|
-| `esdk/` | `aws-esdk` | 2.0.0 / 2024 | The ESDK proper: `encrypt()`/`decrypt()`, message-format (de)serialization, key derivation. |
+| `esdk/` | `aws-esdk` | 2.0.0 / 2024 | The ESDK proper: `encrypt()`/`decrypt()`, message-format (de)serialization, key derivation. Depends on `mpl/` and `prim/` by path. Also holds the C++ shim (`esdk/shims/aws-esdk-cpp/`). |
 | `prim/` | `aws-mpl-primitives` | 0.1.0 / 2024 | Thin, hand-written wrappers over `aws-lc-rs`: AES-GCM, HMAC, digest, random, HKDF, KBKDF, ECDSA. |
-| `mpl/` | `aws-crypto-mpl` | 0.1.0 / 2024 | Native MPL (default CMM, Raw AES keyring, KMS Hierarchical keyring, branch-key store, CMC). **Not yet wired into the ESDK dependency path.** |
-| `unsafe-unreviewed-mpl/mpl` | `aws-mpl-native` (lib `aws_mpl_legacy`) | 0.2.0 / 2021 | The MPL crate the ESDK actually links against. Keyring/CMM/commitment entry points are largely `not_implemented()` stubs; real behavior comes from the external Dafny-transpiled `aws-mpl-legacy` v0.2.0 registry crate re-exported as `aws_mpl_legacy::dafny`. |
-| `unsafe-unreviewed-mpl/prim` | `aws-mpl-primitives` (legacy) | 0.1.0 | Broader legacy primitives (`ecdh.rs`, `aes_kdf_ctr.rs`, memory tracker) used by the `aws-mpl-native` shim. |
-| `spec/` | — (git submodule) | — | The `awslabs/aws-encryption-sdk-specification` used as the source of truth (referenced in code doc-comments as `spec/...`). |
+| `mpl/` | `aws-crypto-mpl` | 0.1.0 / 2024 | Native MPL (default CMM, Raw AES keyring, KMS Hierarchical keyring, branch-key store, CMC). This is the MPL the ESDK links against. |
 
-**Key gotcha for this threat model:** the ESDK (`esdk/`) depends on `aws-mpl-native`
-(`unsafe-unreviewed-mpl/mpl`, aliased `aws_mpl_legacy`), **not** the top-level native `mpl/`
-crate. So for the shipping ESDK, CMM/keyring/commitment-policy logic is still routed through the
-Dafny-backed legacy library, while the native `mpl/` (`aws-crypto-mpl`) is a parallel,
-in-progress replacement.
+The specification (`awslabs/aws-encryption-sdk-specification`, referenced in code doc-comments as
+`spec/...`) is not vendored: `scripts/resolve-spec.sh` checks out the ref in
+`scripts/spec-source.json` into `spec/` when `make duvet` runs.
+
+History: the `d8c1c3d` baseline also had `unsafe-unreviewed-mpl/` (`aws-mpl-native`, lib
+`aws_mpl_legacy`, a shim over the Dafny-transpiled `aws-mpl-legacy` v0.2.0), and the ESDK linked
+that shim instead of `mpl/`. The ESDK moved to the native MPL in `e9bde488` (#98) and the directory
+was removed in `cdd5980` (#107). The spec was a git submodule until `6ef7d800` (#91).
 
 ### 3.2 Encrypted Message Format
 
@@ -296,7 +298,7 @@ Plaintext Data Key (generated per message)
 **Data Flow Steps:**
 1. Caller provides encrypted message + keyring/CMM
 2. ESDK parses message header (algorithm suite, EDKs, EC, commit key)
-3. ESDK validates commitment policy allows this algorithm suite (spec requirement; **note:** the linked MPL shim's `validate_commitment_policy_on_decrypt` currently returns `Ok(())` — see §12.2 and the recommendations doc)
+3. ESDK validates commitment policy allows this algorithm suite (`CommitmentPolicy::allows_for_decrypt` on the parsed suite in `esdk/src/decrypt.rs`, again on the materials' suite in `esdk/src/materials.rs`; the default CMM also checks it in `mpl/src/cmm/default_cmm.rs`)
 4. ESDK validates EDK count is > 0 and ≤ maximum configured
 5. ESDK calls CMM.DecryptMaterials() → calls Keyring.OnDecrypt() with EDKs
 6. For KMS keyring: network call to KMS Decrypt with EDK ciphertext
@@ -480,8 +482,9 @@ or modifies the encryption context.
 
 **Residual Risk:** None if implemented correctly. The header auth tag is computed/verified over
 the full header via the AES-GCM path, and the commitment policy is checked before decryption.
-There is currently **no formal (Verus) proof** of this ordering at the Rust level — see
-[Verification Recommendations](#14-verification-recommendations-prioritized).
+The ordering (verify header before decrypting the body) has a Verus proof only over a standalone
+model (`verification/header_auth_ordering_proofs.rs`, VR-002), not over the shipped async
+`decrypt_steps` — see [Verification Recommendations](#14-verification-recommendations-prioritized).
 
 ---
 
@@ -504,9 +507,9 @@ ciphertext that decrypts to different plaintexts depending on which data key is 
 **Mitigation (Implementation):**
 - Commit key comparison is performed before any frame decryption via `validate_suite_data` in `esdk/src/message/header.rs`, using a constant-time compare (`aws_lc_rs::constant_time::verify_slices_are_equal`)
 - `FORBID_ENCRYPT_ALLOW_DECRYPT` only exists for backward compatibility with pre-commitment messages
-- **Gap:** commitment-policy *enforcement* (`validate_commitment_policy_on_encrypt`/`_on_decrypt` in `unsafe-unreviewed-mpl/mpl/src/commitment.rs`) currently returns `Ok(())` — the effective control today is the commit-key comparison in `validate_suite_data`, not policy gating
+- Commitment-policy enforcement is implemented: `CommitmentPolicy::allows_for_encrypt` / `allows_for_decrypt` (`mpl/src/structures/commitment_policy.rs`) are checked by the ESDK on the input suite (`esdk/src/encrypt.rs`), the parsed suite (`esdk/src/decrypt.rs`) and the materials' suite (`esdk/src/materials.rs`), and by the default CMM (`mpl/src/cmm/default_cmm.rs`). (History: at the `d8c1c3d` baseline the linked legacy shim's `validate_commitment_policy_on_*` returned `Ok(())`; that shim was removed in `cdd5980`.)
 
-**Residual Risk:** Systems that explicitly configure `FORBID_ENCRYPT_ALLOW_DECRYPT` remain vulnerable to this attack class (a conscious spec trade-off). Additionally, because policy enforcement is currently stubbed, algorithm-suite restrictions derived from the commitment policy are not applied at this layer — see the Critical implementation recommendation in §15.2.
+**Residual Risk:** Systems that explicitly configure `FORBID_ENCRYPT_ALLOW_DECRYPT` remain vulnerable to this attack class (a conscious spec trade-off). Neither the policy checks nor the commit-key comparison has a Verus proof (VR-001 is not started).
 
 ---
 
@@ -594,7 +597,7 @@ many expensive KMS API calls, causing cost amplification and latency.
 
 **Mitigation (Implementation — Rust):**
 - Rust's ownership model prevents accidental copies
-- `zeroize` crate can be used for explicit key zeroing on drop
+- `PlaintextDataKey`, `SigningKey` and `SymmetricSigningKey` (`mpl/src/structures/algorithm_suite.rs`) derive `Zeroize` and `ZeroizeOnDrop` from the `zeroize` crate, so their bytes are zeroed on drop; branch keys, beacon keys and the Raw AES wrapping key are also zeroized on drop with the `zeroize` crate. (History: the earlier hand-written `unsafe` `write_volatile` loop in `PlaintextDataKey::zeroize` was removed in `a864ad87`, #131.)
 - No garbage collector means deterministic deallocation
 
 **Residual Risk:** OS-level memory access (ptrace, /proc/mem) can still read process memory. Mitigation requires OS-level hardening (disable core dumps, encrypted swap, mlock).
@@ -720,61 +723,73 @@ Threats in this model are grounded in demonstrated exploitability:
 
 ### 12.2 Native Rust Implementation and In-Tree `unsafe`
 
-The ESDK, primitives, and native MPL crates in this repository are **hand-written native Rust**,
-not Dafny-transpiled. Dafny enters only as an external legacy dependency (`aws-mpl-legacy` v0.2.0,
-re-exported as `aws_mpl_legacy::dafny`) that the `aws-mpl-native` shim delegates keyring/CMM work
-to; `esdk/src/legacy_compat.rs` is the type-conversion boundary between the Dafny-transpiled types
-and the native `suites` types.
+The ESDK, primitives, and MPL crates in this repository are **hand-written native Rust**, and the
+ESDK depends only on the in-repo `mpl/` and `prim/` for MPL work. Some MPL comments cite the Dafny
+MPL as the reference behavior (for example `mpl/src/structures/materials_checks.rs`, "Ported from
+`Materials.dfy`"), but no Dafny code is compiled or linked.
 
-In-tree `unsafe` is small and localized:
+In-tree `unsafe` (at `5ea2a804`) is confined to the C++ shim:
 
 | Location | Count | What it does |
 |----------|-------|--------------|
-| `mpl/src/structures/algorithm_suite.rs` | 1 | `core::ptr::write_volatile` zeroization loop over a `Vec`'s own length (bounds-safe by construction) |
-| `esdk/shims/aws-esdk-cpp/src/lib.rs` | 1 | `&*ptr` dereference of a non-null raw pointer to return a C++ FFI handle (shim, not core library) |
-| `unsafe-unreviewed-mpl/prim/src/use_memory_tracker.rs` | 3 items | `unsafe impl GlobalAlloc` (debug memory tracker; non-shipping) |
-| `prim/src/*`, `esdk/src/*` | 0 | No `unsafe` in the crypto primitives or the ESDK message layer |
+| `esdk/shims/aws-esdk-cpp/src/lib.rs` | 4 `unsafe` expressions | `&*ptr` dereference of a non-null raw pointer to return a C++ FFI handle; `as_ref()` on caller-supplied raw pointers for the KMS client, DynamoDB client and cache (shim, not core library) |
+| `esdk/src/*`, `mpl/src/*`, `prim/src/*` | 0 | No `unsafe` in the ESDK, the MPL or the crypto primitives (`unsafe_op_in_unsafe_fn` in the `lib.rs` lint lists is a lint name, not an `unsafe` block) |
 
 There are **no** raw `aws-lc-sys` FFI calls (no `EC_POINT`/`EC_GROUP`), no `from_raw_parts`,
-no `set_len`, and no `unsafe impl Send/Sync` in production code. Test/benchmark harnesses
-(`esdk/performance-tests/src/alloc.rs`, `esdk/tests/test_resource_leaks.rs`) define their own
-counting/leak-detection allocators with `unsafe`, but these are not part of the shipped library.
+no `set_len`, and no `unsafe impl Send/Sync` in `esdk/src`, `mpl/src` or `prim/src`. Test,
+benchmark and test-server code (`esdk/performance-tests/src/alloc.rs`, `esdk/tests/test_resource_leaks.rs`,
+`esdk/tests/test_body_allocation.rs`, `mpl/tests/test_keyring_memory.rs`,
+`esdk/shims/aws-esdk-cpp/src/tests.rs`, `esdk/shims/aws-esdk-cpp/test-server/src/seam.rs` and
+`esdk/shims/aws-esdk-cpp/examples/custom-keyring/src/lib.rs`) uses `unsafe` for counting
+allocators and FFI test harnesses, but these are not part of the shipped library.
+
+(History: at the `d8c1c3d` baseline the list also had a `core::ptr::write_volatile` zeroization
+loop in `mpl/src/structures/algorithm_suite.rs`, removed in `a864ad87` (#131), and an `unsafe impl
+GlobalAlloc` in `unsafe-unreviewed-mpl/prim/src/use_memory_tracker.rs`, removed with that
+directory in `cdd5980` (#107).)
 
 Risks:
-- The Dafny-backed legacy MPL (`aws-mpl-legacy` v0.2.0) is an external binary/registry artifact; its keyring/CMM logic is not auditable from this repository's source.
-- The native `mpl/` (`aws-crypto-mpl`) keyrings/CMM are hand-written and require review; note they are **not yet on the ESDK dependency path**.
+- The native `mpl/` (`aws-crypto-mpl`) keyrings/CMM/key store/cache are hand-written, are on the ESDK dependency path, and require review.
 - Native primitive wrappers (`prim/src/lib.rs`, `prim/src/ecdsa.rs`, `prim/src/hkdf.rs`) are manually written over `aws-lc-rs` and require review, though they contain no `unsafe`.
+- The C++ shim's raw-pointer handling is the only in-tree `unsafe` on a shipped path.
 
 ### 12.3 Dependency Supply Chain
 
-Versions reflect `esdk/Cargo.toml` (and `prim/Cargo.toml`) as of commit `d8c1c3d` (September 2026).
+Versions are the requirement strings in `esdk/Cargo.toml` and `mpl/Cargo.toml` at `5ea2a804`
+(not lockfile versions).
 
-| Dependency | Version | Role | Risk |
-|------------|---------|------|------|
-| `aws-lc-rs` | 1.15.4 (`default-features = false`) | All cryptographic primitives (safe Rust API) | Wraps C code; FIPS-validated variant available via feature |
-| `aws-lc-sys` | via `aws-lc-rs/aws-lc-sys` feature (default) | Native crypto backend (non-FIPS) | C code via FFI; not pinned directly in this manifest |
-| `aws-lc-fips-sys` | via `aws-lc-rs/fips` feature | Native crypto backend (FIPS) | C code via FFI; enabled by the `fips` feature |
-| `aws-mpl-legacy` (`aws-mpl-native`) | local path (`unsafe-unreviewed-mpl/mpl`, v0.2.0) | MPL shim → external Dafny-transpiled MPL | Delegates keyring/CMM to external Dafny crate |
-| `aws-sdk-kms` | 1.98.0 | KMS API calls | AWS-maintained; version-pinned |
-| `aws-sdk-dynamodb` | 1.103.0 | Branch key store access | AWS-maintained; version-pinned |
-| `aws-smithy-types` | 1.3.6 | Smithy type support | AWS-maintained |
-| `tokio` | 1.49.0 | Async runtime | Widely audited; large attack surface |
-| `async-trait` | 0.1.89 | Async trait support (keyring/CMM traits) | Widely used |
-| `zeroize` | 1.8.2 | Zeroizing key material on drop | Well-audited |
-| `rand` (dev) | 0.9.2 | Random in examples/tests | Dev-dependency only |
-| `pem` (dev) | 3.0.6 | PEM parsing in examples/tests | Dev-dependency only |
-| `aws-config` (dev) | 1.8.12 | Example credential loading | Dev-dependency only |
+| Dependency | Declared in | Version | Role | Risk |
+|------------|-------------|---------|------|------|
+| `aws-crypto-mpl` | `esdk` | local path (`mpl/`) | Native MPL: CMM, keyrings, key store, cache | In-repo, hand-written; requires review |
+| `aws-mpl-primitives` | `esdk`, `mpl` | local path (`prim/`) | Wrappers over `aws-lc-rs` | In-repo, hand-written; requires review |
+| `aws-lc-rs` | `esdk` (`prim` too) | 1.18.1 (`default-features = false`) | All cryptographic primitives (safe Rust API) | Wraps C code; FIPS-validated variant available via feature |
+| `aws-lc-sys` | via `aws-lc-rs/aws-lc-sys` feature (default) | — | Native crypto backend (non-FIPS) | C code via FFI; not pinned directly |
+| `aws-lc-fips-sys` | via `aws-lc-rs/fips` feature | — | Native crypto backend (FIPS) | C code via FFI; enabled by the `fips` feature |
+| `aws-sdk-kms` | `mpl` (optional, `kms` feature) | 1.123.0 | KMS API calls | AWS-maintained |
+| `aws-sdk-dynamodb` | `mpl` (optional, `ddb` feature) | 1.130.0 | Branch key store access | AWS-maintained |
+| `aws-config` | `mpl` (optional, `default-aws-sdk-clients`); `esdk` dev | 1.12.0 | Default AWS SDK client construction | AWS-maintained |
+| `aws-smithy-types` | `esdk`, `mpl` | 1.8.1 | Smithy type support | AWS-maintained |
+| `aws-smithy-runtime-api` | `mpl` (`client` feature); `esdk` dev, `mpl` dev (`http-1x` feature) | 1.19.0 | Smithy runtime types (SDK client/error plumbing) | AWS-maintained |
+| `aws-smithy-http-client` (dev) | `esdk` | 1.5.0 (`rustls-aws-lc`) | HTTP client for examples/tests | Dev-dependency only |
+| `aws-types` | `esdk`, `mpl` | 1.6.0 | AWS SDK shared types | AWS-maintained |
+| `tokio` | `esdk`, `mpl` (optional) | 1.49 | Async runtime | Widely audited; large attack surface |
+| `async-trait` | `mpl` | 0.1.92 | Async trait support (keyring/CMM traits) | Widely used |
+| `zeroize` | `esdk` 1.9.0; `mpl` 1.9.0 with `derive` | 1.9.0 | Zeroizing key material on drop | Well-audited |
+| `lru`, `time`, `uuid`, `base64` | `mpl` | 0.18.5, 0.3.55, 1.27.0, 0.23.1 | Cache, timestamps, IDs, encoding | Widely used |
+| `vstd` | `esdk` | =0.0.0-2026-06-14-0213 | Verus specs and proofs; the `verus!` blocks compile to plain Rust under rustc | Verification library; adds no runtime crypto |
+| `rand` (dev) | `esdk` | 0.10.3 | Random in examples/tests | Dev-dependency only |
+| `pem` (dev) | `esdk` | 4.0.0 | PEM parsing in examples/tests | Dev-dependency only |
 
-Note: this manifest does **not** declare `dafny_runtime` or `dashmap`; the earlier baseline's
-entries for those (and the direct `aws-lc-sys 0.44` / `aws-lc-fips-sys 0.14.1` pins) do not apply
-to this codebase.
+Note: no manifest declares `dafny_runtime`, `dashmap` or `aws-mpl-legacy`. (History: at the
+`d8c1c3d` baseline `esdk` depended on `aws-mpl-legacy`, a path dependency on
+`unsafe-unreviewed-mpl/mpl`; it was dropped in `e9bde488` (#98).)
 
 ### 12.4 FIPS Compliance
 
-`esdk/Cargo.toml` (and `prim/Cargo.toml`) expose feature flags that select the crypto backend
-through `aws-lc-rs`:
-- `default = ["aws-lc-rs/aws-lc-sys"]`: non-FIPS backend
-- `fips = ["aws-lc-rs/fips"]`: FIPS 140-3 validated module
+`esdk/Cargo.toml`, `mpl/Cargo.toml` and `prim/Cargo.toml` expose feature flags that select the
+crypto backend through `aws-lc-rs`; the `esdk` features forward to `prim` and `mpl`:
+- `aws-lc-sys` (in `default`): non-FIPS backend (`aws-lc-rs/aws-lc-sys`)
+- `fips`: FIPS 140-3 validated module (`aws-lc-rs/fips`)
 
 Threat: If the FIPS boundary is incorrectly drawn (e.g., key material passes through non-FIPS code paths), compliance claims are invalidated.
 
@@ -788,7 +803,7 @@ Threat: If the FIPS boundary is incorrectly drawn (e.g., key material passes thr
 | RR2 | Streaming plaintext misuse by callers | High | Application responsibility; documented in spec |
 | RR3 | Ciphertext length leaks plaintext size | Low | Industry standard; padding is caller responsibility |
 | RR4 | Memory exposure via OS-level access | Medium | Requires privileged OS access; mitigated by deployment hardening |
-| RR5 | Legacy Dafny-backed MPL (external `aws-mpl-legacy` v0.2.0) is not auditable in-repo | Low | Used only for keyring/CMM interop; native `mpl/` replacement is in progress; integration tests provide coverage |
+| RR5 | Native MPL keyring/CMM/key store logic (`mpl/`) has no formal verification | Medium | In-repo and reviewable; covered by unit and integration tests. (History: this row was "the Dafny-backed legacy MPL is not auditable in-repo"; that dependency was removed in `cdd5980`.) |
 | RR6 | Discovery keyring decrypts unintended messages | Medium | Configuration choice; filters available |
 | RR7 | No maximum message size enforcement in SDK | Low | Application-level concern |
 
@@ -798,9 +813,29 @@ Threat: If the FIPS boundary is incorrectly drawn (e.g., key material passes thr
 
 Using the prioritization formula: `Priority = Severity × Coverage_Gap × Feasibility × Blast_Radius`
 
-All targets reference real files in this repository. There is currently **no formal (Verus)
-verification** of any kind for this codebase, so every coverage gap is 1.0. For full scoring and
-agent assignments see `docs/verification-recommendations.md`.
+All targets reference real files in this repository. Scores below are the original ranking. For
+the current coverage gaps, full scoring and agent assignments see
+`docs/verification-recommendations.md`.
+
+**Verification status at `5ea2a804`.** Verus checks two things:
+
+- **In-crate (shipped `esdk` code).** `make -C esdk verus` verifies the `verus!` blocks in
+  `esdk/src/message/` (22 exec fns, 3 proof fns): `40 verified, 0 errors` for both the default
+  features and `--no-default-features --features aws-lc-sys`. This covers parts of VR-003
+  (big-endian decoding, bounded readers, header-field decisions, the 0x41 Base64 hint),
+  VR-004 (regular- and final-frame sequence checks, frames-start-at-1 lemmas), VR-005 (body AAD,
+  IV, frame prefix layout) and VR-007 (EDK count check). The async readers and loops around these
+  cores are unverified glue.
+- **Model only (standalone files in `verification/`).** `make -C verification verify`: 10 files,
+  71 verified, 0 errors. VR-002 (header-auth ordering), VR-006 (AES-GCM buffer bounds in `prim`),
+  the EDK list loop, the frame `ct ‖ tag` append and VR-010 (zeroization) are checked only here.
+  The VR-010 model describes a `write_volatile` loop that no longer exists (removed in
+  `a864ad87`); it is deferred and unchanged.
+- **Not started:** VR-001 (key commitment), VR-008 (ECDSA length), VR-009 (HKDF length), VR-011
+  (data-key non-disclosure).
+
+The fn-by-fn list and the reasons each model-only property is not in-crate are in
+`docs/verus-proofs-report.md` ("In-crate proofs") and `verification/README.md`.
 
 | Priority | Score | Target | Property to Verify | Tool | Threat ID | Agent | File |
 |----------|-------|--------|-------------------|------|-----------|-------|------|
@@ -810,8 +845,8 @@ agent assignments see `docs/verification-recommendations.md`.
 | 4 | 9.6 | Frame sequence validation | Sequential frame numbers enforced (no gaps/reordering); final-frame handling correct | Verus | T2, T3 | `verus-header-parsing-proofs` | `esdk/src/message/body/body_decrypt.rs` |
 | 5 | 9.0 | Frame construction / body serialization | Frame iteration and slicing never exceed buffer bounds; no panic | Verus | D2 | `verus-zero-panic` | `esdk/src/message/body/body_encrypt.rs` |
 | 6 | 9.0 | AES-GCM panic freedom | All slice accesses (nonce, tag, ciphertext) in-bounds; wrappers never panic | Verus | D1 | `verus-zero-panic` | `prim/src/lib.rs` (`aes_encrypt`, `aes_decrypt`) |
-| 7 | 6.0 | Key-material zeroization | `Secret`/`PlaintextDataKey` bytes are zeroed on drop; `write_volatile` loop is in-bounds | Verus | I1, I5 | `verus-unsafe-ffi-safety` | `mpl/src/structures/algorithm_suite.rs`, `unsafe-unreviewed-mpl/mpl/src/lib.rs` |
-| 8 | 4.8 | Data-key non-disclosure (VR-011, information flow) | Plaintext data key and keys derived from it are never written directly to the output stream or returned to the caller; they reach output only as AES-GCM input or, for the data key, as an EDK from the keyring. Keyrings/CMMs, AES-GCM ciphertext strength, and public key-byte accessors are out of scope. Best done after the in-crate Verus work (Option A) | Verus | I1, I5, S3 | unassigned | `esdk/src/encrypt.rs`, `esdk/src/decrypt.rs`, `esdk/src/key_derivation.rs`, `esdk/src/message/body/*` |
+| 7 | 6.0 | Key-material zeroization | `PlaintextDataKey` (and the other secret key types) bytes are zeroed on drop. Zeroization now comes from `#[derive(Zeroize, ZeroizeOnDrop)]`; the existing model covers the removed `write_volatile` loop and is deferred | Verus | I1, I5 | `verus-unsafe-ffi-safety` | `mpl/src/structures/algorithm_suite.rs` |
+| 8 | 4.8 | Data-key non-disclosure (VR-011, information flow) | Plaintext data key and keys derived from it are never written directly to the output stream or returned to the caller; they reach output only as AES-GCM input or, for the data key, as an EDK from the keyring. Keyrings/CMMs, AES-GCM ciphertext strength, and public key-byte accessors are out of scope. Builds on the in-crate Verus setup (Option A, now in place for `esdk`); not started | Verus | I1, I5, S3 | unassigned | `esdk/src/encrypt.rs`, `esdk/src/decrypt.rs`, `esdk/src/key_derivation.rs`, `esdk/src/message/body/*` |
 
 ### Verification Target Format (per recommendation)
 
@@ -830,9 +865,9 @@ recommendation:
   trace_to_spec: "spec/client-apis/decrypt.md §Get the decryption materials; spec/client-apis/key-derivation.md#hkdf-commit-key"
   priority_score: 16.0
   rationale: "Critical elevation-of-privilege threat (CVE-2020-8897 class) with no existing
-              Verus verification. Commitment-policy enforcement is currently a stub in the
-              linked MPL shim (validate_commitment_policy_on_* return Ok(())), so the Rust-level
-              commit-key comparison in validate_suite_data is the effective control."
+              Verus verification. The commit-key comparison in validate_suite_data and the
+              commitment-policy checks (CommitmentPolicy::allows_for_encrypt/_decrypt, called
+              from esdk and the default CMM) are both unproven."
 ```
 
 ---
@@ -854,9 +889,9 @@ recommendation:
 
 | Priority | Recommendation | Rationale |
 |----------|---------------|-----------|
-| Critical | Implement real commitment-policy enforcement (the linked shim's `validate_commitment_policy_on_encrypt`/`_on_decrypt` in `unsafe-unreviewed-mpl/mpl/src/commitment.rs` currently return `Ok(())`) | Without enforcement, algorithm-suite/commitment restrictions are not applied at this layer |
-| High | Audit the in-tree `unsafe` (zeroization in `mpl/src/structures/algorithm_suite.rs`; FFI handle in the C++ shim) and the external Dafny-backed MPL | Small but present unsafe surface; external MPL is not auditable in-repo |
-| High | Confirm zeroization for plaintext data key on drop (`Secret` and `PlaintextDataKey` implement zeroizing `Drop`) | Reduces key exposure window |
+| Done | Commitment-policy enforcement is implemented (`CommitmentPolicy::allows_for_encrypt`/`_decrypt`, checked in `esdk/src/encrypt.rs`, `decrypt.rs`, `materials.rs` and `mpl/src/cmm/default_cmm.rs`). (History: at `d8c1c3d` this was the Critical item "implement real enforcement", because the legacy shim returned `Ok(())`.) | Keep the checks covered by tests; a Verus proof is part of VR-001 |
+| High | Audit the in-tree `unsafe` (raw-pointer handling in the C++ shim, `esdk/shims/aws-esdk-cpp/src/lib.rs`) | Small but present unsafe surface |
+| High | Keep zeroization on drop for the plaintext data key and other secrets (`PlaintextDataKey`, `SigningKey`, `SymmetricSigningKey` derive `Zeroize`/`ZeroizeOnDrop`) | Reduces key exposure window |
 | High | Pin all dependency versions exactly | Prevents supply chain attacks via version range exploitation |
 | Medium | Fuzz the message parser with arbitrary bytes | Validates robustness against malformed input |
 | Medium | Add integration tests with corrupted ciphertexts | Validates all auth tag / signature checks fire correctly |
@@ -877,10 +912,10 @@ recommendation:
 
 ## 16. References
 
-The formal specification is the `spec/` git submodule
-(`awslabs/aws-encryption-sdk-specification`, pinned at `92c0524`); the ESDK source doc-comments
-reference it with `spec/...` paths. Initialize it with `git submodule update --init spec` to read
-the files locally.
+The formal specification is `awslabs/aws-encryption-sdk-specification`; the ESDK source
+doc-comments reference it with `spec/...` paths. It is not a submodule (since `6ef7d800`, #91):
+`scripts/resolve-spec.sh` checks out the ref in `scripts/spec-source.json` (currently `master`)
+into `spec/`, and `make -C esdk duvet` runs it.
 
 | Document | Location |
 |----------|----------|

@@ -85,7 +85,8 @@ fns are 22 exec fns (13 before this work) and 3 proof fns. The verified fns (eac
   crate, which this work does not do. The model was re-audited against
   `prim/src/lib.rs` and matches.
 - **Zeroization,** `zeroize_proofs.rs`: unchanged, deferred; out of scope for
-  this work.
+  this work. It models a `write_volatile` loop that was removed in `a864ad87`;
+  the current `zeroize`-crate derive is not verified.
 
 The full list, VR targets and trusted boundaries are in
 `docs/verus-proofs-report.md` ("In-crate proofs").
@@ -103,7 +104,7 @@ drift from the shipped code. **All 10 models are kept** (none removed), and
 |------|--------|
 | `body_aad_proofs.rs` | Superseded in-crate by `iv_seq_core` / `body_aad_core` (`body/body_aad.rs`). |
 | `edk_count_proofs.rs` | Superseded in-crate by `edk_count_check` (`header.rs`). |
-| `zeroize_proofs.rs` | Unchanged, deferred; out of scope for this work. (The `write_volatile` loop it models is no longer in `mpl/src/structures/algorithm_suite.rs`.) |
+| `zeroize_proofs.rs` | Unchanged, deferred; out of scope for this work. It models code that no longer exists: the hand-written `write_volatile` loop in `PlaintextDataKey::zeroize` was removed in `a864ad87` (#131), and `PlaintextDataKey`, `SigningKey` and `SymmetricSigningKey` now `#[derive(Zeroize, ZeroizeOnDrop)]`. The current zeroization is not verified. |
 | `frame_layout_proofs.rs` | Superseded in-crate for the prefix layout by `write_frame_prefix` (`body/body_encrypt.rs`); the `ct ‖ tag` append (by `aes_encrypt`) remains model-only. |
 | `header_parse_proofs.rs` | Superseded in-crate: header-field decisions (`*_from_u8`), the 0x41 Base64 hint (`classify_version_byte`) and bounded readers (`bounded_len_u32/u64`). |
 | `frame_sequence_proofs.rs` | Superseded in-crate: the regular-frame step (`next_expected_frame`), the final-frame check (`final_frame_seq_ok`) and the start-at-1 / sequential-run lemmas (`lemma_frames_start_at_1`, `lemma_accepts_run`), all in `body_decrypt.rs`. The async loop that threads `expected_frame` is unverified glue. |
@@ -123,7 +124,7 @@ models as written and still refer to the old `SafeRead`/`SafeWrite` traits.
 | `body_aad_proofs.rs` | `iv_seq` (`esdk/src/message/body/body_aad.rs`) | No panic given `iv.len() >= 4`; last 4 bytes are the big-endian sequence number; prefix unchanged. |
 | `body_aad_proofs.rs` | `body_aad` byte layout (`esdk/src/message/body/body_aad.rs`) | No panic; output is exactly `message_id ‖ content_str ‖ seq_be(4) ‖ len_be(8)`; length is `message_id.len() + content_str.len() + 12`. |
 | `edk_count_proofs.rs` | `validate_max_encrypted_data_keys` (`esdk/src/message/header.rs`) | No panic; returns `Ok` **iff** the EDK count is `> 0` and (if a maximum is configured) `<= max`. Rejects empty lists and over-max counts. |
-| `zeroize_proofs.rs` | `PlaintextDataKey::zeroize` (`mpl/src/structures/algorithm_suite.rs`) | No panic (all writes in bounds, length unchanged) and, on return, the buffer is **fully zeroed** — no key bytes remain. Modeled as safe indexed writes; see the scope note below. |
+| `zeroize_proofs.rs` | `PlaintextDataKey::zeroize` (`mpl/src/structures/algorithm_suite.rs`; the hand-written loop was removed in `a864ad87`) | No panic (all writes in bounds, length unchanged) and, on return, the buffer is **fully zeroed** — no key bytes remain. Modeled as safe indexed writes; see the scope note below. |
 | `frame_layout_proofs.rs` | `construct_frame` frame assembly (`esdk/src/message/body/body_encrypt.rs`) | No panic; the `frame_buf` is assembled with exactly the spec fields in order — regular: `seq(4) ‖ iv ‖ ct‖tag`; final: `FFFFFFFF(4) ‖ seq(4) ‖ iv ‖ enc_content_len(4) ‖ ct‖tag`. Completes VR-005 for the byte-layout seam; see the scope note below. |
 | `header_parse_proofs.rs` | Header-field decisions: `read_msg_format_version`, `read_content_type`, `read_msg_type` (`esdk/src/message/header_types.rs`); bounded readers `read_seq_u32/u64_bounded` (`esdk/src/message/serialize_functions.rs`) | Total (no panic) parse decisions: a byte is accepted **iff** it is a spec-supported version / content-type / message-type, with the correct variant; over-limit length fields are rejected before they size any read/allocation. Covers VR-003 for the pure decision logic; see the scope note below. |
 | `frame_sequence_proofs.rs` | Frame sequence-number validation in `read_and_decrypt_framed_message_body` (`esdk/src/message/body/body_decrypt.rs`) | Regular/final frames accepted **iff** the sequence number equals the running `expected` (strictly sequential, starting at 1, no gaps/repeats/reordering); the `expected += 1` increment never overflows; total (no panic). Covers VR-004 for the sequence state machine; see the scope note below. |
@@ -139,7 +140,10 @@ and VR-010.
 
 ### Scope note for `zeroize_proofs.rs` (unsafe `write_volatile`)
 
-The source `zeroize` writes each byte with
+*History: this note describes the source as it was when the model was written.
+The loop was removed in `a864ad87` (#131); the model is deferred and unchanged.*
+
+The source `zeroize` wrote each byte with
 `core::ptr::write_volatile(ptr.add(i), 0)` inside `unsafe`. The `volatile`
 qualifier is an *operational* guard against dead-store elimination (the Vec is
 about to drop), not a functional or memory-safety property. Verus's raw-pointer
@@ -236,8 +240,10 @@ report an out-of-bounds error).
 - `io_stream_model.rs` — the minimal proof of the idea (`Option`-returning `read_exact`, the end-to-end loop payoff).
 - `io_stream_aligned.rs` — **DONE:** the `ByteReader` contract reshaped to the *exact* `serialize_functions` reader shape: readers return `Result<T, SerErr>` (EOF → `Err`, as the real code does), each takes a `raw: &mut Vec<u8>` mirror that receives the consumed bytes (the real `raw: &mut dyn SafeWrite` used to reconstruct the authenticated header), and the bounded reader rejects an over-limit length *before* reading the payload. `read_u16`/`read_u32` are proven to equal the big-endian byte assembly (`u16/u32::from_be_bytes`). The end-to-end `read_seq_u16` proves a length-prefixed field read keeps the `raw` mirror exact.
 
-**Remaining (the actual in-crate migration — a larger, source-touching change):**
-replace the bodies of `serialize_functions::{read_bytes,read_vec,read_u8,read_u16,
+**Remaining, as planned then (history):** *the in-crate migration was done
+differently: the readers became async over `dyn Source`, and the decision cores
+were verified in-crate instead (see "In-crate proofs" above). The original plan
+follows.* Replace the bodies of `serialize_functions::{read_bytes,read_vec,read_u8,read_u16,
 read_u32,read_u64,read_opt_u8,read_seq_*}` with a `verus!`-wrapped `ByteReader`
 implementation carrying these `requires`/`ensures`, so the proofs bind to the
 shipped readers instead of a mirror. That step needs the `esdk` crate to become

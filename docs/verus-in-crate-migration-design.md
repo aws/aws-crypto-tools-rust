@@ -1,6 +1,6 @@
 # Design Doc — Binding the Verus Proofs to Shipped ESDK Code
 
-**Status:** Draft for team discussion
+**Status:** Decided — Option A implemented for `esdk` (see §9 Outcome). Originally a draft for team discussion.
 
 **Author:** Mahnush
 
@@ -12,7 +12,7 @@
 
 > **Update (this revision):** extended beyond the ESDK message layer to cover a planned Verus verification effort for the **MPL and MPL primitives** (`mpl/` = `aws-crypto-mpl`, and the primitives in `prim/`). See §2.5 (MPL scope & layering), the MPL rows added to the options in §§3–5, and the MPL-specific open questions in §8.
 
-> **Status (2026-11-12, branch `verus-in-crate-esdk`):** **Option A was chosen and is being implemented** for the ESDK. The §2 evidence below predates the `main` merge (`a891e52`) and no longer matches the code: `SafeRead`/`SafeWrite` are gone, the readers are now `async fn`s over `&mut dyn Source` (tokio `AsyncRead`, `esdk/src/shapes.rs`) that mirror bytes into `&mut Tee` (`dyn Write + Send`), `esdk` no longer depends on `aws-mpl-legacy`, and `cargo-verus` verifies `esdk` while building its dependencies (`aws-lc-rs`, `tokio`, `aws-sdk-*`, `mpl`, `prim`) with plain rustc. The approach in use is pure synchronous `verus!` cores called by the unverified async adapters; `make -C esdk verus` reports `19 verified, 0 errors`. The verified fn list and the trusted boundaries are in `docs/verus-proofs-report.md` ("In-crate proofs"). The rest of this doc is left as written.
+> **Status (`5ea2a804`, branch `Mahnush_Verus`): decided and implemented.** Option A was chosen and works for the ESDK; see **§9 Outcome**. §§1–8 are the original options analysis and are left as written. Their evidence predates the `main` merge (`a891e52`) and the removal of `unsafe-unreviewed-mpl/` (`cdd5980`, #107), so statements there about `SafeRead`/`SafeWrite`, `aws-mpl-legacy` / `aws_mpl_legacy`, the Dafny-backed MPL shim, the native `mpl/` being off the ESDK dependency path, and the `write_volatile` zeroization loop are history, not the current code.
 
 ---
 
@@ -32,6 +32,8 @@ We have Verus proofs for the ESDK message layer — 71 obligations, 0 errors, co
 ---
 
 ## 2. Why "just wrap it in `verus!`" does not work
+
+> *History (pre-`a891e52` code).* This section's blockers did not hold: see §9 Outcome. `esdk` no longer depends on `aws-mpl-legacy`, `SafeRead`/`SafeWrite` no longer exist, and `cargo-verus` builds the dependency set with plain rustc and verifies only `esdk`.
 
 Investigation of the coupling (files/lines below) shows a true in-crate wrap is blocked by three compounding facts:
 
@@ -60,19 +62,21 @@ The plan extends verification to the **Material Providers Library**. In this rep
 
 | MPL layer | Files | Verus tractability | Notes |
 |-----------|-------|--------------------|-------|
-| **Materials structures** | `mpl/src/structures/*` (algorithm_suite, encryption_context, encrypted_data_key, {encryption,decryption,branch_key,beacon_key}_materials, commitment_policy, error) | **High** — mostly pure data + invariants | Prime targets: field/length invariants, encryption-context (de)serialization/canonicalization, EDK structure. Includes the `write_volatile` zeroization already proven (VR-010) in `algorithm_suite.rs`. |
+| **Materials structures** | `mpl/src/structures/*` (algorithm_suite, encryption_context, encrypted_data_key, {encryption,decryption,branch_key,beacon_key}_materials, commitment_policy, error) | **High** — mostly pure data + invariants | Prime targets: field/length invariants, encryption-context (de)serialization/canonicalization, EDK structure. *(History: when written, `algorithm_suite.rs` had a `write_volatile` zeroization loop with a VR-010 model; the loop was removed in `a864ad87` (#131) in favor of `#[derive(Zeroize, ZeroizeOnDrop)]`, and the model is deferred.)* |
 | **Byte-layout / matching / KDF logic** | `mpl/src/aws_kms/{cache_entry_identifier, mrk_match, branch_key_wrap}.rs` | **High–Medium** — pure functions over bytes/strings | `cache_entry_identifier` byte layout (the crate already has a std digest oracle test for it), MRK ARN matching, branch-key wrap/unwrap AAD construction & fixed-size slicing (the `.expect(...)` sites in the threat model). |
 | **Key commitment** | `mpl` commit-key derivation + the ESDK-side `validate_suite_data` constant-time compare | **Medium** — logic modelable; HKDF primitive is FFI | This is **VR-001**, the CVE-2020-8897 class. The extract-then-two-expands *structure* and the constant-time comparison decision are modelable; the HKDF math itself is `aws-lc-rs` (out of scope). |
 | **CMM / cache** | `mpl/src/cmm/*`, `mpl/src/cmc/*` (default CMM, local + storm-tracking cache, LRU) | **Medium–Low** | Cache eligibility/TTL decisions and the storm-tracking state machine are modelable as pure logic; the `lru`/`time`/concurrency parts are not. |
 | **Keyring / keystore I/O** | `mpl/src/keyring/*`, `mpl/src/keystore/*`, `mpl/src/aws_kms/hierarchical_keyring.rs`, `kms_ops.rs`, `kms_config.rs` | **Low** | Dominated by `aws-sdk-kms`/`aws-sdk-dynamodb`/`tokio` async I/O — out of Verus scope, same as the aws-lc-rs FFI. Only surrounding bounds/validation logic is provable. |
 
-**Important prioritization caveat.** The native `mpl/` crate is **not currently on the ESDK dependency path** — the shipping ESDK still routes CMM/keyring work through the Dafny-backed `unsafe-unreviewed-mpl` (`aws-mpl-legacy`). So MPL proofs today verify the *native replacement* MPL, not what the ESDK actually executes end-to-end. That is fine and forward-looking (the native MPL is the intended future), but the team should decide whether MPL verification tracks the native `mpl/` (bet on the future) or must also address the legacy Dafny shim (which is an external, non-auditable artifact — see `docs/threat-model.md` §12.2 / RR5). **Recommendation: target native `mpl/`; treat the Dafny shim as out of scope / trusted, and note the residual explicitly.**
+**Important prioritization caveat.** *(History: resolved. The ESDK has depended on the native `mpl/` since `e9bde488` (#98), and `unsafe-unreviewed-mpl/` was removed in `cdd5980` (#107). The original text follows.)* The native `mpl/` crate is **not currently on the ESDK dependency path** — the shipping ESDK still routes CMM/keyring work through the Dafny-backed `unsafe-unreviewed-mpl` (`aws-mpl-legacy`). So MPL proofs today verify the *native replacement* MPL, not what the ESDK actually executes end-to-end. That is fine and forward-looking (the native MPL is the intended future), but the team should decide whether MPL verification tracks the native `mpl/` (bet on the future) or must also address the legacy Dafny shim (which is an external, non-auditable artifact — see `docs/threat-model.md` §12.2 / RR5). **Recommendation: target native `mpl/`; treat the Dafny shim as out of scope / trusted, and note the residual explicitly.**
 
 **Consequence for the options.** The same three structural options apply to the MPL, with one addition: because the *materials structures* are pure data types, the cleanest MPL seam is often not "extract a crate" but "verify the structures and their pure helpers directly once the crate can be Verus-built" — which still requires solving the crate-granularity/dep-graph problem (Option A-style) unless the pure logic is extracted (Option B-style into e.g. `mpl-core`).
 
 ---
 
 ## 3. Option A — Thread Verus through `esdk` in place
+
+> *Outcome:* chosen and implemented; the feasibility risk below did not materialize. See §9.
 
 **Idea.** Introduce a slice-based reader/writer core *inside* `esdk`, reroute the `dyn` functions through it, and put `verus! {}` around the core, verified as part of the `esdk` crate build (via `cargo-verus`).
 
@@ -175,6 +179,8 @@ The plan extends verification to the **Material Providers Library**. In this rep
 
 ## 6. Comparison
 
+> *Outcome:* the table is the pre-decision assessment. In practice Option A's feasibility risk was low once the dependencies stopped needing to be Verus-buildable (§9).
+
 | | A: in-place Verus | B: extracted core crate | C: fidelity tests |
 |---|---|---|---|
 | Verifies *shipped* code? | Yes (if feasible) | **Yes** (the core crate) | No (drift detection) |
@@ -214,7 +220,7 @@ Same strategy for both ESDK and MPL: **C now, B as the primary migration, A only
 
 Phases 2–4 are the MPL additions. They are independent of Phase 1 (different crate), so ESDK and MPL migration can proceed in parallel once the shared byte-primitives decision (§8 Q1) is made.
 
-**Non-negotiables under any option** (from the Verus soundness invariants): no `assume`/`admit`/`external_body`/`external` to force a pass; success requires actual `0 errors`; the documented `std::str::from_utf8` boundary and the aws-lc-rs/HKDF FFI boundaries are the only accepted trust anchors and must stay flagged; the verified type/function must be the shipped one (no `cfg`-gated divergent definitions). For MPL specifically: proofs target the **native `mpl/`**, and the Dafny-backed legacy MPL (`aws-mpl-legacy`) remains an explicitly-noted out-of-scope trusted artifact.
+**Non-negotiables under any option** (from the Verus soundness invariants): no `assume`/`admit`/`external_body`/`external` to force a pass; success requires actual `0 errors`; the documented `std::str::from_utf8` boundary and the aws-lc-rs/HKDF FFI boundaries are the only accepted trust anchors and must stay flagged; the verified type/function must be the shipped one (no `cfg`-gated divergent definitions). For MPL specifically: proofs target the **native `mpl/`**, and the Dafny-backed legacy MPL (`aws-mpl-legacy`) remains an explicitly-noted out-of-scope trusted artifact. *(History: the legacy MPL was removed in `cdd5980`, so this trust anchor no longer exists.)*
 
 ---
 
@@ -226,12 +232,58 @@ Phases 2–4 are the MPL additions. They are independent of Phase 1 (different c
 4. **Scope:** how far to push — parsing layer (VR-003/004/005) only, or through key-commitment (VR-001), decrypt/CMM orchestration (VR-002), and the MPL materials/keyring logic per the Phase table in §7?
 5. **CI:** add `cargo-verus`/`make verify` as a required check, and on which crate(s) — `esdk-wire`, `mpl-core`, both?
 6. **Toolchain policy:** pin the Verus version (currently `0.2026.07.12`, Rust `1.96.0`) in CI; who owns upgrades?
-7. **MPL target — native vs legacy (new):** MPL proofs would target the native `mpl/` (`aws-crypto-mpl`), which is **not yet on the ESDK dependency path** (the shipping ESDK uses the Dafny-backed `unsafe-unreviewed-mpl`). Is verifying the native MPL — the intended future — the right bet, with the legacy Dafny shim documented as out-of-scope/trusted? Or is there a requirement to also cover what the ESDK executes today?
+7. **MPL target — native vs legacy (new):** *(History: moot since `cdd5980`; the native `mpl/` is the only MPL and is on the ESDK dependency path.)* MPL proofs would target the native `mpl/` (`aws-crypto-mpl`), which is **not yet on the ESDK dependency path** (the shipping ESDK uses the Dafny-backed `unsafe-unreviewed-mpl`). Is verifying the native MPL — the intended future — the right bet, with the legacy Dafny shim documented as out-of-scope/trusted? Or is there a requirement to also cover what the ESDK executes today?
 8. **MPL scope boundaries (new):** confirm the crypto/I/O trust boundaries for MPL — HKDF/AES via `aws-lc-rs` (FFI, out of scope), KMS/DynamoDB via `aws-sdk-*` + `tokio` (out of scope). Proofs cover the surrounding structure/layout/decision logic only; is that assurance level acceptable for the key-commitment and branch-key-wrap threats?
 
 ---
 
+## 9. Outcome
+
+*Recorded at `5ea2a804` (branch `Mahnush_Verus`). The details are in `docs/verus-proofs-report.md` ("In-crate proofs") and `verification/README.md`.*
+
+**Decision.** Option A (thread Verus through `esdk` in place) was implemented for the ESDK. Option B (`esdk-wire` / `mpl-core`) was not needed and was not built. Option C's idea is partly in place as unit tests next to the in-crate cores (see below).
+
+**Why the §2 blockers did not hold.**
+- *Dependency graph.* `cargo-verus` builds the dependencies (`aws-lc-rs`, `tokio`, `aws-sdk-*`, `mpl`, `prim`) with plain rustc and verifies only the crate marked `[package.metadata.verus] verify = true` (`esdk`). The dependencies never had to be Verus-buildable, and nothing was gated out of the build.
+- *Dafny-backed MPL.* Before the in-crate work started, `esdk` had moved to the native `mpl/` (`e9bde488`, #98) and `unsafe-unreviewed-mpl/` had been removed (`cdd5980`, #107).
+- *Trait objects.* `SafeRead`/`SafeWrite` were replaced upstream by async readers over `&mut dyn Source` (tokio `AsyncRead`) that mirror into `&mut Tee`. Verus still cannot verify async code or trait objects, so the design that works is: pure synchronous cores inside `verus! { }`, called by thin, **unverified** async adapters that read the bytes, call the core and build the `Error`. The cores return plain values (`bool`, `Option`, small enums such as `LenCheck` and `EdkCount`), which answers §8 Q2 without a wire-error crate.
+
+**What `esdk/` changed.** `esdk/Cargo.toml` gained `vstd = "=0.0.0-2026-06-14-0213"` as a regular dependency (the `verus!` blocks compile to plain Rust under rustc) and `[package.metadata.verus] verify = true`; `esdk/Makefile` gained a `verus` target. The `verus!` blocks are in seven files under `esdk/src/message/`: `serialize_functions.rs`, `header_types.rs`, `v1_header_body.rs`, `header.rs`, `body/body_aad.rs`, `body/body_decrypt.rs`, `body/body_encrypt.rs`. The in-crate code has no `assume`, `admit`, `external_body`, `external` or `#[cfg(not(verus_keep_ghost))]`, and each type has one definition. `mpl/` and `prim/` have no Verus dependency or metadata.
+
+**Result.** `make -C esdk verus` at `5ea2a804`:
+
+```
+verification results:: 40 verified, 0 errors     # default features
+verification results:: 40 verified, 0 errors     # --no-default-features --features aws-lc-sys
+```
+
+40 is Verus's obligation count; the checked items are 22 exec fns and 3 proof fns (lemmas). (The `19 verified` figure in an earlier revision of this doc was an intermediate state.)
+
+**What is in-crate vs model-only.**
+
+| Target | In-crate (shipped `esdk` code) | Model only (`verification/`), and why |
+|--------|-------------------------------|----------------------------------------|
+| VR-003 header parsing | Big-endian decoding, bounded readers, chunked-read bounds, header-field decisions, 0x41 Base64 hint, reserved bytes, IV length | Fixed-field header loop and EDK list loop: async loops over `dyn Source`, no sync logic left to extract. The EC sub-parser model is obsolete (parsing moved to MPL) |
+| VR-004 frame sequence | Regular- and final-frame checks; start-at-1 and sequential-run lemmas | — (the async loop that threads `expected_frame` is unverified glue, not a model) |
+| VR-005 frame layout | Body AAD, IV, frame prefix | `ct ‖ tag`: appended by `aes_encrypt` (aws-lc-rs FFI) and released through `dyn Sink` / `DigestWriter` |
+| VR-007 EDK count | Count check | — (the "before any KMS call" ordering is in async orchestration) |
+| VR-002 header-auth ordering | — | Model only: the order is a sequence of `.await?` calls in the async `decrypt_steps`; a sync core would only prove `Ok ⇒ Ok` |
+| VR-006 AES-GCM bounds | — | Model only: the code is in `prim`; verifying it in place would add Verus to the published `aws-mpl-primitives` crate, which this work does not do |
+| VR-010 zeroization | — | Model only, deferred and unchanged. It models a `write_volatile` loop that no longer exists (removed in `a864ad87`, #131) |
+
+**Trusted / unverified boundaries.** The async `Source`/`Tee` adapters and the async loop threading are unverified glue, checked by tests. vstd does not model `to_be_bytes`, so the cores use verified `u32_to_be` / `u64_to_be`, and their equality with `to_be_bytes()` is a unit test. `next_chunk_end` is proved to stay in bounds; its equality with `start + min(READ_CHUNK, length - start)` is a differential unit test. The aws-lc-rs FFI is out of scope.
+
+**Against the §7 plan.** Phase 0 (C) is partly done: the in-crate cores have `#[cfg(test)]` unit tests, including the `to_be_bytes` and `next_chunk_end` equivalence tests above; there is no separate model-vs-shipped harness. Phase 1 was done via A rather than B. Phases 2–4 (MPL) and 5 (orchestration) have not started. The layering and tractability table in §2.5 still applies. Two things in §2.5 changed: the native `mpl/` is now on the ESDK path (so it is the only MPL to target), and the "dep graph is not Verus-buildable" blocker may not hold for `mpl/` either, since `cargo-verus` builds dependencies with plain rustc. That has not been tried for `mpl/`; doing so would add `vstd` and Verus metadata to the published `aws-crypto-mpl` crate.
+
+**Answers to §8, where the work settled them.** Q1: no new crate. Q2: plain return values from the cores; `Error` (with its backtrace) is built only in the adapters. Q4: the parsing/layout layer (VR-003/004/005/007) is done in-crate; VR-001, VR-002 in shipped code and the MPL remain open. Q5: Verus is not a CI check yet (no workflow under `.github/workflows/` runs it); `make -C esdk verus` is run by hand. Q6: still open; the pins are Verus `0.2026.07.12`, toolchain `1.96.0`, `vstd =0.0.0-2026-06-14-0213`. Q7: moot (the legacy MPL is gone). Q3 and Q8 are still open.
+
+**Standalone models.** All 10 files in `verification/` are kept and still verify (`make -C verification verify`: 71 verified, 0 errors). Most are superseded by the in-crate cores; `verification/README.md` lists each file's status.
+
+---
+
 ## Appendix — current proof inventory (for reference)
+
+Standalone models, at `5ea2a804`. For the in-crate proofs see §9.
 
 | File | Obligations | Target |
 |------|-------------|--------|
@@ -249,4 +301,4 @@ Phases 2–4 are the MPL additions. They are independent of Phase 1 (different c
 
 Run: `make -C verification verify` (Verus `0.2026.07.12`, toolchain `1.96.0`).
 
-**MPL status:** the inventory above is **ESDK-only**. There are currently **no MPL proofs** — MPL verification is the planned work described in §2.5 and the Phase 2–4 table in §7. The one MPL-adjacent proof so far is `zeroize_proofs.rs` (VR-010), which models `PlaintextDataKey::zeroize` in `mpl/src/structures/algorithm_suite.rs`; it is the natural first `mpl-core` target once that seam exists.
+**MPL status:** the inventory above is **ESDK-only**. There are currently **no MPL proofs** — MPL verification is the planned work described in §2.5 and the Phase 2–4 table in §7. The one MPL-adjacent model is `zeroize_proofs.rs` (VR-010). It models a hand-written `write_volatile` loop in `PlaintextDataKey::zeroize` that was removed in `a864ad87` (#131); zeroization now comes from `#[derive(Zeroize, ZeroizeOnDrop)]`. The model is deferred and unchanged, and does not describe current code.

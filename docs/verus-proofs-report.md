@@ -1,8 +1,8 @@
 # Verus Proofs — Work Report
 
 **Repository:** `aws-crypto-tools-rust` (AWS Encryption SDK for Rust)
-**Code baseline:** commit `d8c1c3d`
-**Date:** September 2026
+**Code baseline:** commit `d8c1c3d` for the standalone models; the "In-crate proofs" section and the status tables are current at `5ea2a804`
+**Date:** September 2026 (models); November 2026 (in-crate)
 **Verus:** `0.2026.07.12.0b42f4c`, toolchain `1.96.0` (binary at `~/verus/verus`)
 **Pipeline / targets:** `.kiro/agents/ai-verification-pipeline.md`, `docs/verification-recommendations.md`
 
@@ -11,14 +11,16 @@
 ## 1. Summary
 
 Introduced formal Verus verification to the ESDK, starting from the prioritized
-targets in the verification-recommendations doc. Eight proof files were written
-and verified — **48 obligations verified, 0 errors** in total — and an
+targets in the verification-recommendations doc. The standalone `verification/`
+directory now holds ten proof files — **71 obligations verified, 0 errors** in
+total (§3) — and an
 `SafeRead`/`SafeWrite` abstraction was prototyped and aligned to the real reader
 signatures to unblock loop-level proofs.
 
-All work is **additive and non-breaking**: proofs live in a standalone
-`verification/` directory referenced by no `Cargo.toml`; `cargo check` on the
-`esdk` crate is unaffected; no shipped source was modified.
+The standalone models are **additive and non-breaking**: they live in a
+standalone `verification/` directory referenced by no `Cargo.toml`, and adding
+them modified no shipped source. (The later in-crate work, below, does modify
+`esdk`.)
 
 Run everything with:
 ```bash
@@ -149,7 +151,7 @@ and `construct_frame` writes the frame fields with `write_frame_prefix`.
 | Encryption-context (AAD) parser | `io_stream_aligned.rs` (`read_canonical_ec` etc.) | Obsolete: parsing moved to MPL (`EncryptionContext::from_bytes`), outside this ESDK scope; esdk only reads a `u16` length and the bytes. |
 | Frame ciphertext ‖ tag | `frame_layout_proofs.rs` | `aes_encrypt` (`aws-mpl-primitives`, aws-lc-rs FFI) appends them, and the frame is released through `dyn Sink` / `DigestWriter`. |
 | AES-GCM buffer bounds | `aes_gcm_bounds_proofs.rs` | The code is in `prim`, which `make -C esdk verus` builds with plain rustc. Verifying it in place would add `vstd` and Verus metadata to the published `aws-mpl-primitives` crate, which this work does not do. Re-audited against `prim/src/lib.rs`: the model matches. |
-| Zeroization | `zeroize_proofs.rs` | Unchanged, deferred; out of scope for this work. |
+| Zeroization | `zeroize_proofs.rs` | Unchanged, deferred; out of scope for this work. The model describes a hand-written `write_volatile` loop in `PlaintextDataKey::zeroize` that no longer exists (removed in `a864ad87`, #131; the key types now `#[derive(Zeroize, ZeroizeOnDrop)]`), so it does not describe current code. |
 
 ---
 
@@ -159,7 +161,7 @@ and `construct_frame` writes the frame fields with `write_frame_prefix`.
 |------|----------|--------|----------------|
 | `body_aad_proofs.rs` | 4 | VR-005 | `iv_seq`: no panic given `iv.len() >= 4`, last 4 bytes = big-endian sequence number, prefix unchanged. `body_aad`: output = `message_id ‖ content ‖ seq_be(4) ‖ len_be(8)`, length exact. Plus `u32_be`/`u64_be` helpers. |
 | `edk_count_proofs.rs` | 4 | VR-007 | `validate_max_encrypted_data_keys`: returns `Ok` **iff** EDK count `> 0` and (if a max is set) `<= max`; empty and over-max rejected; no panic. Three boundary lemmas. |
-| `zeroize_proofs.rs` | 4 | VR-010 | `PlaintextDataKey::zeroize`: no panic; buffer **fully zeroed** on return (no key bytes remain). Modeled via safe indexed writes (see caveats). |
+| `zeroize_proofs.rs` | 4 | VR-010 | `PlaintextDataKey::zeroize` as it was (the loop was removed in `a864ad87`; model deferred): no panic; buffer **fully zeroed** on return (no key bytes remain). Modeled via safe indexed writes (see caveats). |
 | `frame_layout_proofs.rs` | 7 | VR-005 | `construct_frame` frame assembly: no panic; `frame_buf` = exact spec layout for regular (`seq ‖ iv ‖ ct‖tag`) and final (`FFFFFFFF ‖ seq ‖ iv ‖ ecl ‖ ct‖tag`) frames. Length + final-frame-sentinel lemmas. |
 | `header_parse_proofs.rs` | 7 | VR-003 | Version / content-type / message-type parse: total (no panic), accept **iff** spec-supported, correct variant, Base64 `0x41` hint exact. Bounded readers reject over-limit lengths before use. |
 | `frame_sequence_proofs.rs` | 5 | VR-004 | Frame sequence state machine: accept **iff** sequential from 1 (no gaps/repeats/reordering); `expected += 1` **overflow-free**; total. First-frame-must-be-1 and out-of-order-rejected lemmas. |
@@ -181,7 +183,7 @@ and `construct_frame` writes the frame fields with `write_frame_prefix`.
 | VR-002 header auth tag ordering | **model only** (`header_auth_ordering_proofs.rs`, re-audited against `decrypt_steps`): body decrypt unreachable without a verified header tag | not in-crate: the order is in an async fn and the tag check is aws-lc-rs FFI |
 | VR-006 AES-GCM panic freedom | **model only** (`aes_gcm_bounds_proofs.rs`, re-audited against `prim/src/lib.rs`): encrypt slice always in-bounds, decrypt rejects under-sized output buffer | not in-crate: `prim` is not Verus-checked; the AES-GCM crypto itself (aws-lc-rs `seal`/`open`, FFI) is out of scope |
 | VR-007 EDK count validation | **in-crate**: count-check logic (`edk_count_check`) | the "before any KMS call" ordering (caller-side in `decrypt.rs`) |
-| VR-010 key-material zeroization | model only; unchanged, deferred (out of scope for this work) | the modeled `write_volatile` loop is no longer in `mpl` |
+| VR-010 key-material zeroization | model only; unchanged, deferred (out of scope for this work) | the modeled `write_volatile` loop was removed in `a864ad87`; current zeroization (`#[derive(Zeroize, ZeroizeOnDrop)]`) is not verified |
 | Infra: I/O seam | `esdk` is Verus-buildable; sync `verus!` cores are verified in-crate behind the async `Source`/`Tee` adapters (see "In-crate proofs") | the async adapters themselves stay unverified glue |
 
 ---
@@ -215,9 +217,9 @@ when `esdk`'s readers took `SafeRead`/`SafeWrite` trait objects; each is a
 executable body plus `requires`/`ensures`. Honest limits, all documented in the
 proof files and `verification/README.md`:
 
-- **Models, not in-crate `verus!` blocks.** If the source functions change, the models must be updated in lockstep. The intended end state is to migrate them in-crate so proofs bind to the shipped code.
+- **Models, not in-crate `verus!` blocks.** If the source functions change, the models must be updated in lockstep. Most of what they cover is now also verified in-crate (see "In-crate proofs"); the rest is model-only for the reasons listed there.
 - **`to_be_bytes` / `copy_from_slice` equivalence** (in `body_aad_proofs.rs`): the model uses the equivalent primitive; the one-line equivalence to std is documented, not machine-checked. (The in-crate `iv_seq` / `body_aad` now use the verified `u32_to_be` / `u64_to_be`, checked against `to_be_bytes` by unit tests.)
-- **`zeroize` unsafe form**: Verus's `Vec` model doesn't expose the raw-pointer `PointsTo` permissions, so the proof covers the equivalent safe indexed-write loop; the `volatile` qualifier and `ptr.add(i)`-in-bounds equivalence are argued informally.
+- **`zeroize` unsafe form** (history; the loop was removed in `a864ad87`): Verus's `Vec` model doesn't expose the raw-pointer `PointsTo` permissions, so the proof covers the equivalent safe indexed-write loop; the `volatile` qualifier and `ptr.add(i)`-in-bounds equivalence were argued informally.
 - **`construct_frame` FFI + trait I/O**: `aes_encrypt` (aws-lc-rs) is modeled by its length contract with the FFI output as a real `&[u8]`; the `dyn SafeWrite` release and the ciphertext byte *values* are out of scope.
 - **Parser/sequence trait-object reads**: the proofs cover the decision/state-machine given the read value; the trait-object read itself is out of scope (this is exactly what the `io_stream_*` abstraction is designed to close).
 
@@ -269,7 +271,7 @@ against the async readers. The models are kept.
 - `.kiro/steering/verus-verification.md`
 - `docs/verus-proofs-report.md` (this file)
 
-**Not modified by the standalone models:** any file under `esdk/`, `prim/`, `mpl/`, `unsafe-unreviewed-mpl/`.
+**Not modified by the standalone models:** any file under `esdk/`, `prim/`, `mpl/` (or `unsafe-unreviewed-mpl/`, which existed then and was removed upstream in `cdd5980`, #107).
 
 **In-crate proofs (branch `verus-in-crate-esdk`):** `esdk/Cargo.toml`,
 `esdk/Cargo.lock`, `esdk/Makefile`, `esdk/src/message/serialize_functions.rs`,
