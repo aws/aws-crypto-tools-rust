@@ -72,12 +72,26 @@ In-crate (`esdk/`), probe-confirmed:
 - `ensures` may use `r is Variant` and `r matches E::V(n) ==> ...`.
 - Doc-comment every new item (`missing_docs` is on), and add in-module
   `#[cfg(test)] mod tests` for new cores.
+- `const`s inside `verus!` are accepted and can be named in specs.
+- `&str` consts inside `verus!` need an explicit `&'static str` (Verus rejects
+  the elided lifetime); add `#[expect(clippy::redundant_static_lifetimes, reason = …)]`.
+  Their bytes in specs: `vstd::string::StringSliceAdditionalSpecFns::spec_bytes(s)`;
+  `str::as_bytes` ensures `b@ == s.spec_bytes()`. Call the trait by path: a
+  plain `use` of it is an unused import in the cargo build.
+- Spec fns are erased in the cargo build, so do not `use` them from another
+  module; import the module (`use … ::serialize_functions as sf;`) and write
+  `sf::spec_u32_to_be(..)`.
+- Cast-free byte from a value `< 256`: `match u8::try_from(v) { Ok(b) => b, Err(_) => 0 }`
+  (see `low_byte`; vstd has no spec for `unwrap_or_default`).
+- Big-endian encoding: use `u32_to_be` / `u64_to_be` (`serialize_functions.rs`),
+  not `to_be_bytes` / `copy_from_slice`; `Vec::clear`, `Vec::extend_from_slice`
+  and indexed slice writes are specified.
 
 ## Good next targets (self-contained, no external crypto)
-- `iv_seq` / `body_aad` byte layout (`esdk/src/message/body/body_aad.rs`),
-  modeled only in `verification/body_aad_proofs.rs` so far.
-- Frame layout and header-auth ordering, once their sync decision cores are
-  split out of the async code.
+- Nothing self-contained is left in esdk. The remaining models
+  (header-auth ordering, EDK list loop, frame `ct ‖ tag`, AES-GCM bounds in
+  `prim`) are blocked by async fns, `dyn Source` / `dyn Sink`, aws-lc-rs, or
+  the decision not to add Verus to `prim`; see `verification/README.md`.
 
 Avoid targeting functions whose core is an `aws-lc-rs` call (AES-GCM, ECDSA,
 HKDF): Verus cannot model the FFI backend, so only the surrounding

@@ -30,6 +30,12 @@ make -C verification verify
 > See "In-crate proofs (shipped `esdk` code)" below. The rest of this report
 > describes the standalone models in `verification/`, which are kept; their
 > current status is in `verification/README.md`.
+>
+> **Update (branch `verus-in-crate-rest`):** the body AAD and IV layout, the
+> frame prefix layout, the final-frame sequence check, the frames-start-at-1
+> lemmas and the 0x41 Base64 hint moved in-crate too (40 verified, 0 errors).
+> The properties that stay model-only, and why, are listed under "In-crate
+> proofs".
 
 ### Adherence to the Verus skill invariants
 - No proof was weakened: **no** `assume(...)`, `admit()`, or `#[verifier::external]` anywhere. There is exactly **one** `#[verifier::external_body]` — the `utf8_check` wrapper around `std::str::from_utf8` in the AAD sub-parser — used per Verus skill invariant #11 for a std call Verus cannot evaluate (the same role `tag_ok` plays for the AES-GCM check). Its `ensures` is a **trusted boundary, not a proof**: the UTF-8-validation correctness is delegated to the std library; everything around it (that the parser rejects non-UTF-8 with `Err`, never panics) is proven. This is called out explicitly in §5.
@@ -60,9 +66,12 @@ Output (the `aws-esdk` line; `vstd` is verified first with
 `--no-default-features --features aws-lc-sys`:
 
 ```
-verification results:: 19 verified, 0 errors
-verification results:: 19 verified, 0 errors
+verification results:: 40 verified, 0 errors
+verification results:: 40 verified, 0 errors
 ```
+
+The count is Verus's obligation count, not a function count; the checked
+fns are 22 exec fns (13 before this work) and 3 proof fns.
 
 | Fn | File (`esdk/src/message/`) | Ensures | Target |
 |----|----------------------------|---------|--------|
@@ -78,16 +87,31 @@ verification results:: 19 verified, 0 errors
 | `reserved_bytes_ok` | `v1_header_body.rs` | `ok` iff all four bytes are 0 | VR-003 |
 | `iv_len_matches` | `v1_header_body.rs` | `ok` iff `iv_len == expected` | VR-003 |
 | `edk_count_check` | `header.rs` | `Empty` iff `count == 0`; `OverMax` iff `count > 0` and `max` is `Some(m)` with `count > m`; `Ok` otherwise | VR-007 |
-| `next_expected_frame` | `body/body_decrypt.rs` | `Some` iff `seq_num == expected && expected < u32::MAX`; `Some(n) ==> n == expected + 1` | VR-004 |
+| `next_expected_frame` | `body/body_decrypt.rs` | `Some` iff `seq_num == expected && expected < u32::MAX`; `Some(n) ==> n == expected + 1`; `r == spec_next_expected_frame(seq_num, expected)` | VR-004 |
+| `final_frame_seq_ok` | `body/body_decrypt.rs` | `ok` iff `seq_num == expected` | VR-004 |
+| proof fn `lemma_accepts_run` | `body/body_decrypt.rs` | requires `accepts_run(seqs, expected)`; `seqs[i] == expected + i` for every `i`; `run_end(seqs, expected) == expected + seqs.len()` | VR-004 |
+| proof fn `lemma_frames_start_at_1` | `body/body_decrypt.rs` | from `START_SEQUENCE_NUMBER`: `seqs[i] == i + 1`; the accepted final sequence number `== seqs.len() + 1` (the total frame count) | VR-004 |
+| `classify_version_byte` | `header_types.rs` | `Supported(V1)` iff `b == 1`; `Supported(V2)` iff `b == 2`; `Base64Hint` iff `b == 0x41`; `Unsupported` iff none of these | VR-003 |
+| `u32_to_be`, `u64_to_be`, `low_byte` | `serialize_functions.rs` | `r@ == spec_u32_to_be(x)` / `spec_u64_to_be(x)` (big-endian); `low_byte`: requires `v < 256`, `b == v` | VR-005 |
+| `body_aad_content_type_string` | `body/body_aad.rs` | the bytes of `r` are `spec_body_aad_content(bc)` (the bytes of the matching const) | VR-005 |
+| `iv_seq_core` | `body/body_aad.rs` | requires `len >= 4`; result `== old.subrange(0, len - 4) + spec_u32_to_be(seq)` | VR-005 |
+| `body_aad_core` | `body/body_aad.rs` | result `== message_id@ + spec_body_aad_content(bc) + spec_u32_to_be(seq) + spec_u64_to_be(length)` | VR-005 |
+| `write_frame_prefix` | `body/body_encrypt.rs` | appends exactly `spec_frame_prefix(seq, iv@, final_content_len)`: regular `seq ‖ iv`; final `spec_u32_to_be(ENDFRAME) ‖ seq ‖ iv ‖ len` | VR-005 |
+| proof fn `lemma_endframe_bytes` | `body/body_encrypt.rs` | `spec_u32_to_be(ENDFRAME_SEQUENCE_NUMBER) == [FF, FF, FF, FF]` | VR-005 |
 
 Spec fns `spec_be_u16`/`spec_be_u32`/`spec_be_u64`, the `READ_CHUNK` const and
-the `LenCheck`, `EdkCount`, `MessageFormatVersion`, `MessageType` and
-`ContentType` enums are also inside `verus!`. The shipped callers use these
+the `LenCheck`, `EdkCount`, `MessageFormatVersion`, `MessageType`,
+`ContentType`, `VersionByte` and `BodyAADContent` enums, the three body AAD
+content strings, and `START_SEQUENCE_NUMBER` / `ENDFRAME_SEQUENCE_NUMBER` are
+also inside `verus!`. The shipped callers use these
 cores: `read_u16/u32/u64` call `be_uN`, `read_into_vec` calls `next_chunk_end`,
 `read_seq_u32/u64_bounded` match on `bounded_len_*`, the header readers call the
 `*_from_u8` / `reserved_bytes_ok` / `iv_len_matches` cores,
-`validate_max_encrypted_data_keys` and `read_edks` call `edk_count_check`, and
-the framed-decrypt loop calls `next_expected_frame`.
+`validate_max_encrypted_data_keys` and `read_edks` call `edk_count_check`,
+the framed-decrypt loop calls `next_expected_frame` and `final_frame_seq_ok`,
+`read_msg_format_version` matches on `classify_version_byte`, `iv_seq` and
+`body_aad` call `iv_seq_core` and `body_aad_core` after their `debug_assert!`s,
+and `construct_frame` writes the frame fields with `write_frame_prefix`.
 
 **Unverified / trusted boundaries:**
 - **The async `Source`/`Tee` adapters** are unverified glue. The readers are
@@ -97,11 +121,16 @@ the framed-decrypt loop calls `next_expected_frame`.
   call a verified core, and build the `Error` (`ser_err` / `err` / `val_err`).
   That they pass the right bytes to the core and keep the `Tee` mirror exact is
   checked by tests, not by Verus.
-- **The final-frame sequence check** in `read_and_decrypt_framed_message_body`
-  (`body/body_decrypt.rs`) stays an inline `!=` in the async adapter. Only the
-  regular-frame step (`next_expected_frame`) is verified in-crate; the
-  final-frame check and the start-at-1 property are proved only by the
-  standalone `verification/frame_sequence_proofs.rs` model.
+- **Frame-sequence loop threading.** Both sequence checks and the
+  start-at-1 lemmas are in-crate, but the async loop in
+  `read_and_decrypt_framed_message_body` that sets `expected_frame =
+  START_SEQUENCE_NUMBER` and feeds each `next_expected_frame` result to the
+  next iteration is unverified glue; the lemmas describe what it does.
+- **`u32_to_be` / `u64_to_be` vs `to_be_bytes`.** vstd does not model
+  `to_be_bytes`, so the cores use verified encoders; that they equal
+  `to_be_bytes()` is checked by unit tests. The body AAD content strings are
+  proved to be the bytes of the shipped consts, not checked byte by byte
+  against the spec text (tests do that).
 - **`next_chunk_end`** is proved to stay in bounds, not to equal
   `start + min(READ_CHUNK, length - start)`; that equivalence is checked by a
   differential unit test.
@@ -110,6 +139,17 @@ the framed-decrypt loop calls `next_expected_frame`.
   on it.
 - **MPL `EncryptionContext::from_bytes`** now does the encryption-context
   parsing; it lives in `mpl` and is out of scope here.
+
+**Properties that stay model-only, and why:**
+
+| Property | Model | Why it is not in-crate |
+|---|---|---|
+| Header-auth ordering (verify before decrypt) | `header_auth_ordering_proofs.rs` | The order is the sequence of `.await?` calls in the async `decrypt_steps` (`esdk/src/decrypt.rs`), and "verified" is the `Result` of the aws-lc-rs tag check. Verus cannot verify async fns; a sync core would only prove `Ok ⇒ Ok`. Re-audited: the current order (parse → materials → verify header → decrypt body → verify signature → release last frame) matches the model. |
+| EDK list loop | `io_stream_aligned.rs` (`read_edks`) | The count decision is in-crate (`edk_count_check`). What is left is a `for` loop of `.await?` reads over `dyn Source` plus the MPL `EncryptedDataKey` builder; no sync decision logic is left to extract. |
+| Encryption-context (AAD) parser | `io_stream_aligned.rs` (`read_canonical_ec` etc.) | Obsolete: parsing moved to MPL (`EncryptionContext::from_bytes`), outside this ESDK scope; esdk only reads a `u16` length and the bytes. |
+| Frame ciphertext ‖ tag | `frame_layout_proofs.rs` | `aes_encrypt` (`aws-mpl-primitives`, aws-lc-rs FFI) appends them, and the frame is released through `dyn Sink` / `DigestWriter`. |
+| AES-GCM buffer bounds | `aes_gcm_bounds_proofs.rs` | The code is in `prim`, which `make -C esdk verus` builds with plain rustc. Verifying it in place would add `vstd` and Verus metadata to the published `aws-mpl-primitives` crate, which this work does not do. Re-audited against `prim/src/lib.rs`: the model matches. |
+| Zeroization | `zeroize_proofs.rs` | Unchanged, deferred; out of scope for this work. |
 
 ---
 
@@ -135,13 +175,13 @@ the framed-decrypt loop calls `next_expected_frame`.
 
 | Target | Status | Residual (honestly scoped) |
 |--------|--------|-----------------------------|
-| VR-003 header parsing safety | **fully verified in the model**: decisions + fixed-field header loop + EDK sub-parser + AAD/encryption-context sub-parser | binding to the in-crate readers (the migration) |
-| VR-004 frame sequence validation | state machine **+ end-to-end framed-decrypt body loop** verified (in the model) | binding to the in-crate `body_decrypt` |
-| VR-005 frame construction/serialization | byte layout **+ end-to-end read loop** verified (in the model) | write-side trait-object release + FFI ciphertext values |
-| VR-002 header auth tag ordering | **control-flow ordering verified** (in the model): body decrypt unreachable without a verified header tag | the AES-GCM tag check itself (aws-lc-rs FFI); binding to in-crate `internal_decrypt` |
-| VR-006 AES-GCM panic freedom | **buffer bookkeeping / length guard verified** (in the model): encrypt slice always in-bounds, decrypt rejects under-sized output buffer | the AES-GCM crypto itself (aws-lc-rs `seal`/`open`, FFI) — inherently out of scope |
-| VR-007 EDK count validation | count-check logic verified | the "before any KMS call" ordering (caller-side in `decrypt.rs`) |
-| VR-010 key-material zeroization | computation verified | the `unsafe write_volatile` form + volatile/`ptr.add` equivalence |
+| VR-003 header parsing safety | **in-crate**: big-endian decoding, bounded readers, header-field decisions, the 0x41 Base64 hint (`classify_version_byte`), reserved bytes, IV length, EDK count. **Model only**: the fixed-field header loop and EDK list loop (`io_stream_aligned.rs`) | the async readers over `dyn Source` (unverified glue); the EC sub-parser model is obsolete (parsing is in MPL) |
+| VR-004 frame sequence validation | **in-crate**: regular-frame step (`next_expected_frame`), final-frame check (`final_frame_seq_ok`), sequential-run and start-at-1 lemmas | the async loop that threads `expected_frame` (unverified glue) |
+| VR-005 frame construction/serialization | **in-crate**: body AAD layout (`body_aad_core`), IV (`iv_seq_core`), frame prefix layout (`write_frame_prefix`). **Model only**: the `ct ‖ tag` append (`frame_layout_proofs.rs`) | `aes_encrypt` (FFI) output and the `dyn Sink` / `DigestWriter` release |
+| VR-002 header auth tag ordering | **model only** (`header_auth_ordering_proofs.rs`, re-audited against `decrypt_steps`): body decrypt unreachable without a verified header tag | not in-crate: the order is in an async fn and the tag check is aws-lc-rs FFI |
+| VR-006 AES-GCM panic freedom | **model only** (`aes_gcm_bounds_proofs.rs`, re-audited against `prim/src/lib.rs`): encrypt slice always in-bounds, decrypt rejects under-sized output buffer | not in-crate: `prim` is not Verus-checked; the AES-GCM crypto itself (aws-lc-rs `seal`/`open`, FFI) is out of scope |
+| VR-007 EDK count validation | **in-crate**: count-check logic (`edk_count_check`) | the "before any KMS call" ordering (caller-side in `decrypt.rs`) |
+| VR-010 key-material zeroization | model only; unchanged, deferred (out of scope for this work) | the modeled `write_volatile` loop is no longer in `mpl` |
 | Infra: I/O seam | `esdk` is Verus-buildable; sync `verus!` cores are verified in-crate behind the async `Source`/`Tee` adapters (see "In-crate proofs") | the async adapters themselves stay unverified glue |
 
 ---
@@ -176,7 +216,7 @@ executable body plus `requires`/`ensures`. Honest limits, all documented in the
 proof files and `verification/README.md`:
 
 - **Models, not in-crate `verus!` blocks.** If the source functions change, the models must be updated in lockstep. The intended end state is to migrate them in-crate so proofs bind to the shipped code.
-- **`to_be_bytes` / `copy_from_slice` equivalence** (in `body_aad_proofs.rs`): the model uses the equivalent primitive; the one-line equivalence to std is documented, not machine-checked.
+- **`to_be_bytes` / `copy_from_slice` equivalence** (in `body_aad_proofs.rs`): the model uses the equivalent primitive; the one-line equivalence to std is documented, not machine-checked. (The in-crate `iv_seq` / `body_aad` now use the verified `u32_to_be` / `u64_to_be`, checked against `to_be_bytes` by unit tests.)
 - **`zeroize` unsafe form**: Verus's `Vec` model doesn't expose the raw-pointer `PointsTo` permissions, so the proof covers the equivalent safe indexed-write loop; the `volatile` qualifier and `ptr.add(i)`-in-bounds equivalence are argued informally.
 - **`construct_frame` FFI + trait I/O**: `aes_encrypt` (aws-lc-rs) is modeled by its length contract with the FFI output as a real `&[u8]`; the `dyn SafeWrite` release and the ciphertext byte *values* are out of scope.
 - **Parser/sequence trait-object reads**: the proofs cover the decision/state-machine given the read value; the trait-object read itself is out of scope (this is exactly what the `io_stream_*` abstraction is designed to close).
@@ -206,11 +246,11 @@ The `ByteReader` in `io_stream_model.rs` / `io_stream_aligned.rs` modeled the
 old synchronous `SafeRead`/`SafeWrite` contract (a byte `Seq<u8>` plus a cursor
 with a type invariant, `Result` returns, the `raw` mirror). Its bounded-reader,
 big-endian, header-field and EDK-count parts, and the regular-frame step of its
-frame-sequence loop, are superseded by the in-crate cores. The final-frame
-sequence check and the start-at-1 invariant remain model-only (possibly stale);
-its read loops and EC sub-parser are possibly stale against
-the async readers, and EC parsing has moved to MPL
-(`EncryptionContext::from_bytes`). The models are kept for now.
+frame-sequence loop (regular and final frame, start at 1), are superseded by
+the in-crate cores. Its EDK list loop stays model-only (an async loop over
+`dyn Source`); its EC sub-parser is obsolete, since EC parsing has moved to MPL
+(`EncryptionContext::from_bytes`); its other read loops are possibly stale
+against the async readers. The models are kept.
 
 ---
 
@@ -235,3 +275,7 @@ the async readers, and EC parsing has moved to MPL
 `esdk/Cargo.lock`, `esdk/Makefile`, `esdk/src/message/serialize_functions.rs`,
 `header_types.rs`, `v1_header_body.rs`, `header.rs`, `encrypted_data_keys.rs`,
 `body/body_decrypt.rs`.
+
+**In-crate proofs (branch `verus-in-crate-rest`):**
+`esdk/src/message/serialize_functions.rs`, `header.rs`, `header_types.rs`,
+`body/body_aad.rs`, `body/body_decrypt.rs`, `body/body_encrypt.rs`.
