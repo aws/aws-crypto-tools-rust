@@ -1,12 +1,16 @@
 # Design Doc — Binding the Verus Proofs to Shipped ESDK Code
 
-**Status:** Draft for team discussion\\
-**Author:** Mahnush\\
-**Date:** September 2026\\
-**Scope:** How to convert the current out-of-crate Verus *models* into verification of *actual shipped* code, across (1) the ESDK parsing/message layer and (2) the Material Providers Library (MPL) — its cryptographic-materials structures and keyring/CMM/keystore logic.\\
+**Status:** Draft for team discussion
+
+**Author:** Mahnush
+
+**Date:** September 2026
+
+**Scope:** How to convert the current out-of-crate Verus *models* into verification of *actual shipped* code, across (1) the ESDK parsing/message layer and (2) the Material Providers Library (MPL) — its cryptographic-materials structures and keyring/CMM/keystore logic.
+
 **Related:** `docs/verus-proofs-report.md`, `docs/verification-recommendations.md`, `docs/threat-model.md`, `verification/README.md`, `.kiro/steering/verus-verification.md`
 
-> **Update (this revision):** extended beyond the ESDK message layer to cover a planned Verus verification effort for the **MPL and MPL materials** (`mpl/` = `aws-crypto-mpl`, and the primitives in `prim/`). See §2.5 (MPL scope & layering), the MPL rows added to the options in §§3–5, and the MPL-specific open questions in §8.
+> **Update (this revision):** extended beyond the ESDK message layer to cover a planned Verus verification effort for the **MPL and MPL primitives** (`mpl/` = `aws-crypto-mpl`, and the primitives in `prim/`). See §2.5 (MPL scope & layering), the MPL rows added to the options in §§3–5, and the MPL-specific open questions in §8.
 
 > **Status (2026-11-12, branch `verus-in-crate-esdk`):** **Option A was chosen and is being implemented** for the ESDK. The §2 evidence below predates the `main` merge (`a891e52`) and no longer matches the code: `SafeRead`/`SafeWrite` are gone, the readers are now `async fn`s over `&mut dyn Source` (tokio `AsyncRead`, `esdk/src/shapes.rs`) that mirror bytes into `&mut Tee` (`dyn Write + Send`), `esdk` no longer depends on `aws-mpl-legacy`, and `cargo-verus` verifies `esdk` while building its dependencies (`aws-lc-rs`, `tokio`, `aws-sdk-*`, `mpl`, `prim`) with plain rustc. The approach in use is pure synchronous `verus!` cores called by the unverified async adapters; `make -C esdk verus` reports `19 verified, 0 errors`. The verified fn list and the trusted boundaries are in `docs/verus-proofs-report.md` ("In-crate proofs"). The rest of this doc is left as written.
 
