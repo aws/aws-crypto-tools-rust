@@ -120,6 +120,11 @@ pub(crate) fn content_type_from_u8(b: u8) -> (r: Option<ContentType>)
     }
 }
 
+// Message ID lengths in bytes. Inside `verus!` so the key-derivation length
+// specs (`key_derivation.rs`) can name `MESSAGE_ID_LEN_V2`.
+pub(crate) const MESSAGE_ID_LEN_V1: usize = 16;
+pub(crate) const MESSAGE_ID_LEN_V2: usize = 32;
+
 } // verus!
 
 pub(crate) fn write_msg_format_version(
@@ -310,9 +315,6 @@ impl HeaderAuth {
         }
     }
 }
-
-pub(crate) const MESSAGE_ID_LEN_V1: usize = 16;
-pub(crate) const MESSAGE_ID_LEN_V2: usize = 32;
 
 // --- Shared header read/write functions (suite ID, message ID) ---
 

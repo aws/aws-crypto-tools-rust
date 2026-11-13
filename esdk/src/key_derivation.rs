@@ -5,10 +5,80 @@
 use super::Error;
 use crate::error::{Kind, err};
 use crate::message::header_types::MESSAGE_ID_LEN_V2;
+use crate::message::header_types::{MessageFormatVersion, msg_format_version_from_u8};
 use crate::message::serializable_types::get_encrypt_key_length;
 use crate::suites::kdf_digest;
 use aws_crypto_mpl::types::{AlgorithmSuite, KeyDerivationAlgorithm};
+use vstd::prelude::*;
 use zeroize::Zeroizing;
+
+verus! {
+
+/// Why `check_v2_key_lengths` rejected a V2 key derivation, in check order.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum V2KeyLenError {
+    /// The suite's encryption KDF is the identity KDF, which has no HKDF key length.
+    IdentityKdf,
+    /// The message ID (the HKDF salt) is not `MESSAGE_ID_LEN_V2` bytes.
+    MessageIdLen,
+    /// The plaintext data key (the HKDF input keying material) is not the
+    /// suite's key length.
+    PlaintextKeyLen,
+}
+
+/// Whether an identity-KDF plaintext data key of `plaintext_key_len` bytes can
+/// be used verbatim as a suite encryption key of `encrypt_key_len` bytes.
+fn identity_kdf_key_len_ok(plaintext_key_len: usize, encrypt_key_len: usize) -> (ok: bool)
+    ensures
+        ok <==> plaintext_key_len == encrypt_key_len,
+{
+    plaintext_key_len == encrypt_key_len
+}
+
+/// The V2 length checks: the KDF must be HKDF, the message ID must be
+/// `MESSAGE_ID_LEN_V2` bytes, and the plaintext data key must be the suite's
+/// key length `suite_key_len`. On success, returns the HKDF key length, which
+/// sizes the derived encryption key buffer.
+///
+/// `derive_key_v2` is the unverified adapter: it reads these inputs from the
+/// suite and the slices, and turns each `V2KeyLenError` into an `Error`.
+fn check_v2_key_lengths(
+    identity_kdf: bool,
+    suite_key_len: usize,
+    message_id_len: usize,
+    plaintext_key_len: usize,
+) -> (r: Result<usize, V2KeyLenError>)
+    ensures
+        (r is Ok) <==> (!identity_kdf && message_id_len == MESSAGE_ID_LEN_V2
+            && plaintext_key_len == suite_key_len),
+        r matches Ok(n) ==> n == suite_key_len && n == plaintext_key_len,
+        (r matches Err(V2KeyLenError::IdentityKdf)) <==> identity_kdf,
+        (r matches Err(V2KeyLenError::MessageIdLen)) <==> (!identity_kdf && message_id_len
+            != MESSAGE_ID_LEN_V2),
+        (r matches Err(V2KeyLenError::PlaintextKeyLen)) <==> (!identity_kdf && message_id_len
+            == MESSAGE_ID_LEN_V2 && plaintext_key_len != suite_key_len),
+{
+    // For V2 algorithms the KDF can only be HKDF.
+    if identity_kdf {
+        return Err(V2KeyLenError::IdentityKdf);
+    }
+    if message_id_len != MESSAGE_ID_LEN_V2 {
+        return Err(V2KeyLenError::MessageIdLen);
+    }
+    //= spec/framework/transitive-requirements.md#hkdf-encryption-key
+    //# - The length of the input keying material MUST equal the key derivation input length
+    //# specified by the algorithm suite's encryption key derivation settings.
+    //
+    //= spec/framework/transitive-requirements.md#hkdf-commit-key
+    //# - The length of the input keying material MUST equal the key derivation input length
+    //# specified by the algorithm suite's commit key derivation settings.
+    if plaintext_key_len != suite_key_len {
+        return Err(V2KeyLenError::PlaintextKeyLen);
+    }
+    Ok(suite_key_len)
+}
+
+} // verus!
 
 // Holds a derived data key and an optional commitment key (the latter only for
 // committing algorithm suites). This is `pub` only so `derive_keys` is reachable
@@ -22,20 +92,6 @@ use zeroize::Zeroizing;
 pub struct ExpandedKeyMaterial {
     pub data_key: Zeroizing<Vec<u8>>,
     pub commitment_key: Option<Zeroizing<Vec<u8>>>,
-}
-
-// Returns the HKDF key length defined by the algorithm suite, which serves as
-// both the input (plaintext data key) length and the output (derived key)
-// length. Only HKDF suites carry a length; the identity KDF reaching here is a
-// config error.
-fn hkdf_key_len(suite: &AlgorithmSuite) -> Result<usize, Error> {
-    match suite.encryption_kdf() {
-        KeyDerivationAlgorithm::IdentityKdf => Err(err(
-            Kind::Internal,
-            "algorithm suite KDF must be HKDF to derive a key length, got IdentityKdf",
-        )),
-        _ => Ok(suite.encryption_key_length()),
-    }
 }
 
 // Output length in bytes of each supported hash. Used to size the all-zero HKDF
@@ -76,7 +132,7 @@ pub(crate) fn derive_key_v1(
             // The identity KDF uses the plaintext data key verbatim, so its length
             // must already equal the suite's encryption key length.
             let encrypt_key_len = get_encrypt_key_length(suite);
-            if plaintext_data_key.len() != encrypt_key_len {
+            if !identity_kdf_key_len_ok(plaintext_data_key.len(), encrypt_key_len) {
                 return Err(err(
                     Kind::InvalidMaterials,
                     format!(
@@ -158,33 +214,44 @@ pub fn derive_key_v2(
     // internal bug rather than bad input.
     debug_assert_eq!(suite.message_format_version(), 2);
 
-    // For V2 algorithms the KDF can only be HKDF.
-    let kdf_key_len = hkdf_key_len(suite)?;
-    if message_id.len() != MESSAGE_ID_LEN_V2 {
-        return Err(err(
-            Kind::Internal,
-            format!(
-                "V2 message ID (HKDF salt) must be {MESSAGE_ID_LEN_V2} bytes, got {}",
-                message_id.len()
-            ),
-        ));
-    }
-    //= spec/framework/transitive-requirements.md#hkdf-encryption-key
-    //# - The length of the input keying material MUST equal the key derivation input length
-    //# specified by the algorithm suite's encryption key derivation settings.
-    //
-    //= spec/framework/transitive-requirements.md#hkdf-commit-key
-    //# - The length of the input keying material MUST equal the key derivation input length
-    //# specified by the algorithm suite's commit key derivation settings.
-    if plaintext_data_key.len() != kdf_key_len {
-        return Err(err(
-            Kind::InvalidMaterials,
-            format!(
-                "plaintext data key length {} does not match KDF input key length {kdf_key_len}",
-                plaintext_data_key.len()
-            ),
-        ));
-    }
+    // The HKDF key length is the suite's encryption key length; it is both the
+    // input (plaintext data key) length and the output (derived key) length.
+    // `check_v2_key_lengths` is the verified decision; this maps its rejections
+    // to errors.
+    let identity_kdf = matches!(suite.encryption_kdf(), KeyDerivationAlgorithm::IdentityKdf);
+    let suite_key_len = suite.encryption_key_length();
+    let kdf_key_len = match check_v2_key_lengths(
+        identity_kdf,
+        suite_key_len,
+        message_id.len(),
+        plaintext_data_key.len(),
+    ) {
+        Ok(n) => n,
+        Err(V2KeyLenError::IdentityKdf) => {
+            return Err(err(
+                Kind::Internal,
+                "algorithm suite KDF must be HKDF to derive a key length, got IdentityKdf",
+            ));
+        }
+        Err(V2KeyLenError::MessageIdLen) => {
+            return Err(err(
+                Kind::Internal,
+                format!(
+                    "V2 message ID (HKDF salt) must be {MESSAGE_ID_LEN_V2} bytes, got {}",
+                    message_id.len()
+                ),
+            ));
+        }
+        Err(V2KeyLenError::PlaintextKeyLen) => {
+            return Err(err(
+                Kind::InvalidMaterials,
+                format!(
+                    "plaintext data key length {} does not match KDF input key length {suite_key_len}",
+                    plaintext_data_key.len()
+                ),
+            ));
+        }
+    };
 
     //= spec/framework/transitive-requirements.md#hkdf-encryption-key
     //= reason=V2 suites share the same HKDF hash for encryption and commit derivation; suite.commitment.hkdf.hmac is the HKDF hash configured by the suite
@@ -279,12 +346,63 @@ pub fn derive_keys(
     debug_assert_ne!(message_id.len(), 0);
     debug_assert_eq!(get_encrypt_key_length(suite), plaintext_data_key.len());
 
-    match suite.message_format_version() {
-        1 => derive_key_v1(message_id, plaintext_data_key, suite),
-        2 => derive_key_v2(message_id, plaintext_data_key, suite),
-        _ => Err(err(
+    // The version decision is the verified `msg_format_version_from_u8`
+    // (exactly 1 => V1, exactly 2 => V2, anything else => None).
+    match msg_format_version_from_u8(suite.message_format_version()) {
+        Some(MessageFormatVersion::V1) => derive_key_v1(message_id, plaintext_data_key, suite),
+        Some(MessageFormatVersion::V2) => derive_key_v2(message_id, plaintext_data_key, suite),
+        None => Err(err(
             Kind::Internal,
             format!("unknown message version {}", suite.message_format_version()),
         )),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::message::header_types::MESSAGE_ID_LEN_V1;
+
+    #[test]
+    fn identity_kdf_key_len_ok_iff_equal() {
+        assert!(identity_kdf_key_len_ok(32, 32));
+        assert!(!identity_kdf_key_len_ok(31, 32));
+        assert!(!identity_kdf_key_len_ok(33, 32));
+        assert!(identity_kdf_key_len_ok(0, 0));
+    }
+
+    #[test]
+    fn check_v2_key_lengths_cases() {
+        assert_eq!(
+            check_v2_key_lengths(false, 32, MESSAGE_ID_LEN_V2, 32),
+            Ok(32)
+        );
+        // The identity KDF is rejected first, whatever the lengths.
+        assert_eq!(
+            check_v2_key_lengths(true, 32, MESSAGE_ID_LEN_V2, 32),
+            Err(V2KeyLenError::IdentityKdf)
+        );
+        assert_eq!(
+            check_v2_key_lengths(true, 32, 0, 0),
+            Err(V2KeyLenError::IdentityKdf)
+        );
+        // Then the message ID length, before the key length.
+        for mid in [
+            0,
+            MESSAGE_ID_LEN_V1,
+            MESSAGE_ID_LEN_V2 - 1,
+            MESSAGE_ID_LEN_V2 + 1,
+        ] {
+            assert_eq!(
+                check_v2_key_lengths(false, 32, mid, 0),
+                Err(V2KeyLenError::MessageIdLen)
+            );
+        }
+        for pdk in [0, 16, 31, 33] {
+            assert_eq!(
+                check_v2_key_lengths(false, 32, MESSAGE_ID_LEN_V2, pdk),
+                Err(V2KeyLenError::PlaintextKeyLen)
+            );
+        }
     }
 }

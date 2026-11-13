@@ -23,15 +23,19 @@ Current output for both runs (default, and
 `--no-default-features --features aws-lc-sys`):
 
 ```
-verification results:: 40 verified, 0 errors
-verification results:: 40 verified, 0 errors
+verification results:: 45 verified, 0 errors
+verification results:: 45 verified, 0 errors
 ```
 
 The count is Verus's obligation count, not a function count; the checked
-fns are 22 exec fns (13 before this work) and 3 proof fns. The verified fns (each inside a `verus!` block):
+fns are 24 exec fns (13 before the in-crate work, 22 before VR-009) and 3 proof
+fns. The verified fns (each inside a `verus!` block; paths are under
+`esdk/src/message/` unless they start with `esdk/src/`):
 
-| File (`esdk/src/message/`) | Fn | Property proven |
+| File | Fn | Property proven |
 |---|---|---|
+| `esdk/src/key_derivation.rs` | `identity_kdf_key_len_ok` (called by `derive_key_v1`) | True iff the identity-KDF plaintext data key length equals the suite encryption key length. VR-009. |
+| `esdk/src/key_derivation.rs` | `check_v2_key_lengths` (called by `derive_key_v2`) | `Ok` iff the KDF is not the identity KDF, the message ID is `MESSAGE_ID_LEN_V2` (32) bytes and the plaintext key length equals the suite key length; `Ok(n)` has `n` equal to both (it sizes the derived encryption key); each `Err` variant fires exactly when its check is the first to fail (identity KDF, then message ID, then key length). VR-009. |
 | `serialize_functions.rs` | `be_u16`, `be_u32`, `be_u64` | Result equals the big-endian value of the bytes (`spec_be_u16/u32/u64`). |
 | `serialize_functions.rs` | `next_chunk_end` | Given `start < length`: `start < end <= length` and `end - start <= READ_CHUNK` (1 MiB). |
 | `serialize_functions.rs` | `bounded_len_u32`, `bounded_len_u64` | `OverBound` iff `len > bound`; `Ok(n)` iff within bound and fits in `usize`, with `n == len`; `TooLargeForPlatform` otherwise. |
@@ -51,9 +55,44 @@ fns are 22 exec fns (13 before this work) and 3 proof fns. The verified fns (eac
 | `body/body_encrypt.rs` | `write_frame_prefix` (called by `construct_frame`) | Appends exactly `spec_frame_prefix`: regular `seq ‖ iv`; final `FFFFFFFF ‖ seq ‖ iv ‖ enc_content_len`. |
 | `body/body_encrypt.rs` | proof fn `lemma_endframe_bytes` | `spec_u32_to_be(ENDFRAME_SEQUENCE_NUMBER)` is the bytes `FF FF FF FF`. |
 
-`START_SEQUENCE_NUMBER`, `ENDFRAME_SEQUENCE_NUMBER` (`header.rs`) and
-`BodyAADContent` with its three content strings (`body_aad.rs`) are also inside
-`verus!`, so the proofs use the shipped definitions.
+`START_SEQUENCE_NUMBER`, `ENDFRAME_SEQUENCE_NUMBER` (`header.rs`),
+`BodyAADContent` with its three content strings (`body_aad.rs`),
+`MESSAGE_ID_LEN_V1` / `MESSAGE_ID_LEN_V2` (`header_types.rs`) and
+`V2KeyLenError` (`key_derivation.rs`) are also inside `verus!`, so the proofs
+use the shipped definitions. `derive_keys` dispatches on the verified
+`msg_format_version_from_u8` (V1 iff the suite's version byte is 1, V2 iff 2,
+an error otherwise).
+
+### VR-009 (HKDF / key-derivation lengths): esdk half proven, prim half not
+
+Proven in-crate: the length checks in `esdk/src/key_derivation.rs` listed
+above. They are total (no panic; they do no arithmetic, so no overflow), and
+their `ensures` state exactly which inputs are accepted and, for V2, which
+check rejects, in the order the code runs them. `derive_key_v1`,
+`derive_key_v2` and `derive_keys` are the unverified adapters: they read the
+lengths from the MPL `AlgorithmSuite` and the slices, call the cores, build the
+`Error`s (same kinds and messages as before), allocate the buffers and call
+HKDF. Not proven:
+
+- **The prim side** (`prim/src/hkdf.rs`, including `get_len`, and the
+  aws-lc-rs `hkdf` / `hkdf_extract` / `hkdf_expand`). Verus is not enabled in
+  `prim`, by decision. The HKDF primitive, including its output-length limit,
+  is a trust boundary.
+- **Buffer sizes read straight from the suite.** The V1 output length
+  (`encryption_key_length()`) and the V2 commit-key length
+  (`algorithm_suite_data_length()`) are MPL getters used directly by
+  `vec![0u8; n]` in the adapters; `mpl` is not Verus-checked. Only the V2
+  encryption-key buffer goes through a verified core (`check_v2_key_lengths`'s
+  `Ok(n)`).
+- **The V1 HKDF salt length** (`digest_length`: SHA-256/384/512 → 32/48/64).
+  It matches on `aws_mpl_primitives::DigestAlg`, a `prim` enum Verus does not
+  see; modelling it would need an external type specification (a trusted
+  assumption), so the table is left unverified and covered by the existing
+  key-derivation tests.
+- **The `debug_assert!`s** in `derive_keys`, `derive_key_v1` and
+  `derive_key_v2` (non-empty message ID, key length equals the suite length,
+  message version) are debug-build-only caller checks outside `verus!`; they do
+  not run in release builds.
 
 ### Properties that stay model-only, and why
 
@@ -87,6 +126,8 @@ fns are 22 exec fns (13 before this work) and 3 proof fns. The verified fns (eac
 - **Zeroization,** `zeroize_proofs.rs`: unchanged, deferred; out of scope for
   this work. It models a `write_volatile` loop that was removed in `a864ad87`;
   the current `zeroize`-crate derive is not verified.
+
+There is no standalone model for VR-009; it was done in-crate directly.
 
 The full list, VR targets and trusted boundaries are in
 `docs/verus-proofs-report.md` ("In-crate proofs").

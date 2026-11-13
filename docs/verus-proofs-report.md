@@ -38,6 +38,11 @@ make -C verification verify
 > lemmas and the 0x41 Base64 hint moved in-crate too (40 verified, 0 errors).
 > The properties that stay model-only, and why, are listed under "In-crate
 > proofs".
+>
+> **Update (branch `verus-vr009-key-derivation`):** the esdk half of VR-009 is
+> verified in-crate: the key-length checks in `esdk/src/key_derivation.rs`
+> (`identity_kdf_key_len_ok`, `check_v2_key_lengths`; 45 verified, 0 errors).
+> The prim half (`prim/src/hkdf.rs`, aws-lc-rs HKDF) is not proven.
 
 ### Adherence to the Verus skill invariants
 - No proof was weakened: **no** `assume(...)`, `admit()`, or `#[verifier::external]` anywhere. There is exactly **one** `#[verifier::external_body]` — the `utf8_check` wrapper around `std::str::from_utf8` in the AAD sub-parser — used per Verus skill invariant #11 for a std call Verus cannot evaluate (the same role `tag_ok` plays for the AES-GCM check). Its `ensures` is a **trusted boundary, not a proof**: the UTF-8-validation correctness is delegated to the std library; everything around it (that the parser rejects non-UTF-8 with `Err`, never panics) is proven. This is called out explicitly in §5.
@@ -68,15 +73,19 @@ Output (the `aws-esdk` line; `vstd` is verified first with
 `--no-default-features --features aws-lc-sys`:
 
 ```
-verification results:: 40 verified, 0 errors
-verification results:: 40 verified, 0 errors
+verification results:: 45 verified, 0 errors
+verification results:: 45 verified, 0 errors
 ```
 
 The count is Verus's obligation count, not a function count; the checked
-fns are 22 exec fns (13 before this work) and 3 proof fns.
+fns are 24 exec fns (13 before the in-crate work, 22 before VR-009) and 3
+proof fns. Files are under `esdk/src/message/` unless the path starts with
+`esdk/src/`.
 
-| Fn | File (`esdk/src/message/`) | Ensures | Target |
-|----|----------------------------|---------|--------|
+| Fn | File | Ensures | Target |
+|----|------|---------|--------|
+| `identity_kdf_key_len_ok` | `esdk/src/key_derivation.rs` | `ok` iff `plaintext_key_len == encrypt_key_len` | VR-009 |
+| `check_v2_key_lengths` | `esdk/src/key_derivation.rs` | `Ok` iff `!identity_kdf && message_id_len == MESSAGE_ID_LEN_V2 && plaintext_key_len == suite_key_len`; `Ok(n) ==> n == suite_key_len && n == plaintext_key_len`; `Err(IdentityKdf)` iff `identity_kdf`; `Err(MessageIdLen)` iff not identity and the message ID length is wrong; `Err(PlaintextKeyLen)` iff both earlier checks pass and the key length is wrong | VR-009 |
 | `be_u16` | `serialize_functions.rs` | `r as int == spec_be_u16(b)` | VR-003 |
 | `be_u32` | `serialize_functions.rs` | `r as int == spec_be_u32(b)` | VR-003 |
 | `be_u64` | `serialize_functions.rs` | `r as int == spec_be_u64(b)` | VR-003 |
@@ -103,10 +112,13 @@ fns are 22 exec fns (13 before this work) and 3 proof fns.
 
 Spec fns `spec_be_u16`/`spec_be_u32`/`spec_be_u64`, the `READ_CHUNK` const and
 the `LenCheck`, `EdkCount`, `MessageFormatVersion`, `MessageType`,
-`ContentType`, `VersionByte` and `BodyAADContent` enums, the three body AAD
-content strings, and `START_SEQUENCE_NUMBER` / `ENDFRAME_SEQUENCE_NUMBER` are
+`ContentType`, `VersionByte`, `BodyAADContent` and `V2KeyLenError` enums, the
+three body AAD content strings, `START_SEQUENCE_NUMBER` /
+`ENDFRAME_SEQUENCE_NUMBER` and `MESSAGE_ID_LEN_V1` / `MESSAGE_ID_LEN_V2` are
 also inside `verus!`. The shipped callers use these
-cores: `read_u16/u32/u64` call `be_uN`, `read_into_vec` calls `next_chunk_end`,
+cores: `derive_key_v1` calls `identity_kdf_key_len_ok`, `derive_key_v2`
+matches on `check_v2_key_lengths` and sizes the derived encryption key with its
+`Ok(n)`, `derive_keys` dispatches on `msg_format_version_from_u8`, `read_u16/u32/u64` call `be_uN`, `read_into_vec` calls `next_chunk_end`,
 `read_seq_u32/u64_bounded` match on `bounded_len_*`, the header readers call the
 `*_from_u8` / `reserved_bytes_ok` / `iv_len_matches` cores,
 `validate_max_encrypted_data_keys` and `read_edks` call `edk_count_check`,
@@ -137,6 +149,17 @@ and `construct_frame` writes the frame fields with `write_frame_prefix`.
   `start + min(READ_CHUNK, length - start)`; that equivalence is checked by a
   differential unit test.
 - **The aws-lc-rs FFI** (AES-GCM, ECDSA, HKDF, digests) is out of Verus scope.
+- **VR-009, prim half and key-derivation adapters.** `prim/src/hkdf.rs`
+  (including `get_len`) and the aws-lc-rs HKDF calls are not proven: Verus is
+  not enabled in `prim`, by decision, so HKDF and its output-length limit are a
+  trust boundary. In esdk, `derive_key_v1` / `derive_key_v2` / `derive_keys`
+  are unverified adapters. Not proven there: the V1 output length and the V2
+  commit-key length, which are MPL getters (`encryption_key_length()`,
+  `algorithm_suite_data_length()`) passed straight to `vec![0u8; n]`; the V1
+  salt length table `digest_length`, which matches on the `prim` enum
+  `DigestAlg` that Verus does not see (modelling it would need an external
+  type specification, a trusted assumption); and the debug-only
+  `debug_assert!`s on the caller's inputs.
 - **`std::str::from_utf8`** is not evaluated by Verus; no in-crate core depends
   on it.
 - **MPL `EncryptionContext::from_bytes`** now does the encryption-context
@@ -183,6 +206,7 @@ and `construct_frame` writes the frame fields with `write_frame_prefix`.
 | VR-002 header auth tag ordering | **model only** (`header_auth_ordering_proofs.rs`, re-audited against `decrypt_steps`): body decrypt unreachable without a verified header tag | not in-crate: the order is in an async fn and the tag check is aws-lc-rs FFI |
 | VR-006 AES-GCM panic freedom | **model only** (`aes_gcm_bounds_proofs.rs`, re-audited against `prim/src/lib.rs`): encrypt slice always in-bounds, decrypt rejects under-sized output buffer | not in-crate: `prim` is not Verus-checked; the AES-GCM crypto itself (aws-lc-rs `seal`/`open`, FFI) is out of scope |
 | VR-007 EDK count validation | **in-crate**: count-check logic (`edk_count_check`) | the "before any KMS call" ordering (caller-side in `decrypt.rs`) |
+| VR-009 HKDF / key-derivation lengths | **esdk half in-crate**: the V1 identity-KDF key-length check (`identity_kdf_key_len_ok`) and the V2 KDF / message-ID / key-length checks that size the derived encryption key (`check_v2_key_lengths`), total and accept iff the checks pass; `derive_keys` dispatches on the verified `msg_format_version_from_u8` | **prim half not proven**: `prim/src/hkdf.rs` (incl. `get_len`) and aws-lc-rs HKDF (trust boundary; Verus not enabled in `prim`). In esdk, unverified: buffer sizes read directly from MPL getters (V1 output, V2 commit key), the V1 salt table `digest_length`, the `debug_assert!`s |
 | VR-010 key-material zeroization | model only; unchanged, deferred (out of scope for this work) | the modeled `write_volatile` loop was removed in `a864ad87`; current zeroization (`#[derive(Zeroize, ZeroizeOnDrop)]`) is not verified |
 | Infra: I/O seam | `esdk` is Verus-buildable; sync `verus!` cores are verified in-crate behind the async `Source`/`Tee` adapters (see "In-crate proofs") | the async adapters themselves stay unverified glue |
 
@@ -281,3 +305,7 @@ against the async readers. The models are kept.
 **In-crate proofs (branch `verus-in-crate-rest`):**
 `esdk/src/message/serialize_functions.rs`, `header.rs`, `header_types.rs`,
 `body/body_aad.rs`, `body/body_decrypt.rs`, `body/body_encrypt.rs`.
+
+**In-crate proofs (branch `verus-vr009-key-derivation`):**
+`esdk/src/key_derivation.rs`, `esdk/src/message/header_types.rs` (the message
+ID length consts moved into `verus!`).

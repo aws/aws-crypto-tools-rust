@@ -16,6 +16,11 @@
 > unsafe inventory, progress and next-steps sections for those changes. The target list, the
 > scores and the panic inventory are still the `d8c1c3d` analysis.
 >
+> **Revision note (branch `verus-vr009-key-derivation`):** the esdk half of VR-009 (the
+> key-length checks in `esdk/src/key_derivation.rs`) is now verified in-crate; the in-crate count
+> is 45 verified, 0 errors over 24 exec fns and 3 proof fns. The prim half of VR-009
+> (`prim/src/hkdf.rs`) is not proven. Other "at `5ea2a804`" statements are unchanged.
+>
 > **Earlier re-analysis note (baseline `d8c1c3d`, kept as history):** the baseline before that
 > (`88157eaf`) described a *different* codebase: an `AwsEncryptionSDK/runtimes/rust/src/` layout with
 > Dafny-transpiled code (`implementation_from_dafny.rs`), files
@@ -31,15 +36,16 @@ This document identifies **11 prioritized verification targets** derived from th
 ESDK threat model (`docs/threat-model.md`).
 
 **Status at `5ea2a804`:**
-- **In-crate (shipped code):** `make -C esdk verus` reports `40 verified, 0 errors` (default
-  features and `--no-default-features --features aws-lc-sys`) over 22 exec fns and 3 proof fns in
-  `esdk/src/message/`. These cover the synchronous decision and layout cores of VR-003, VR-004,
-  VR-005 and VR-007. The async readers, loops and orchestration around them are unverified glue.
+- **In-crate (shipped code):** `make -C esdk verus` reports `45 verified, 0 errors` (default
+  features and `--no-default-features --features aws-lc-sys`) over 24 exec fns and 3 proof fns in
+  `esdk/src/message/` and `esdk/src/key_derivation.rs`. These cover the synchronous decision and
+  layout cores of VR-003, VR-004, VR-005 and VR-007, and the esdk half of VR-009 (key-derivation
+  length checks; the prim half is not proven). The async readers, loops and orchestration around them are unverified glue.
 - **Model only:** `make -C verification verify` reports 71 verified, 0 errors over 10 standalone
   files. VR-002 (header-auth ordering), VR-006 (AES-GCM buffer bounds), the EDK list loop, the
   frame `ct ‖ tag` append and VR-010 (zeroization) are checked only in these models, which import
   nothing from the crates and can drift from them.
-- **Not started:** VR-001, VR-008, VR-009, VR-011.
+- **Not started:** VR-001, VR-008, VR-011, and the prim half of VR-009 (`prim/src/hkdf.rs`).
 
 **Highest-risk findings:**
 - **Key commitment verification** (Score: 16.0, not started) — No proof that the derived commit key is verified (constant-time) against the header suite data before frame decryption. CVE-2020-8897 demonstrated this exact attack class. The commitment-policy checks (`CommitmentPolicy::allows_for_encrypt`/`_decrypt`, called from `esdk/src/encrypt.rs`, `decrypt.rs`, `materials.rs` and `mpl/src/cmm/default_cmm.rs`) are implemented but also unproven. (History: at `d8c1c3d` the legacy shim's policy checks were stubs returning `Ok(())`.)
@@ -66,11 +72,12 @@ in-crate code uses no `assume`, `admit`, `external_body` or `external`. Run from
 make -C esdk verus
 ```
 
-Result at `5ea2a804` (the `aws-esdk` lines; `vstd` is verified once and cached):
+Result on branch `verus-vr009-key-derivation` (the `aws-esdk` lines; `vstd` is verified once and
+cached; it was 40 at `5ea2a804`, before VR-009):
 
 ```
-verification results:: 40 verified, 0 errors     # default features
-verification results:: 40 verified, 0 errors     # --no-default-features --features aws-lc-sys
+verification results:: 45 verified, 0 errors     # default features
+verification results:: 45 verified, 0 errors     # --no-default-features --features aws-lc-sys
 ```
 
 | Target | In-crate fns (`esdk/src/message/`) | Property |
@@ -80,10 +87,12 @@ verification results:: 40 verified, 0 errors     # --no-default-features --featu
 | VR-004 | `next_expected_frame`, `final_frame_seq_ok`, proof fns `lemma_accepts_run`, `lemma_frames_start_at_1` (`body/body_decrypt.rs`) | Regular frame accepted iff `seq == expected` (overflow-free increment); final frame accepted iff `seq == expected`; frames accepted from `START_SEQUENCE_NUMBER` are numbered 1, 2, … |
 | VR-005 | `u32_to_be`, `u64_to_be`, `low_byte` (`serialize_functions.rs`); `body_aad_content_type_string`, `iv_seq_core`, `body_aad_core` (`body/body_aad.rs`); `write_frame_prefix`, proof fn `lemma_endframe_bytes` (`body/body_encrypt.rs`) | Body AAD is exactly `message_id ‖ content ‖ seq_be(4) ‖ len_be(8)`; IV's last 4 bytes are the big-endian sequence number; frame prefix is `seq ‖ iv` (regular) or `FFFFFFFF ‖ seq ‖ iv ‖ len` (final) |
 | VR-007 | `edk_count_check` (`header.rs`) | `Empty` iff count is 0; `OverMax` iff count exceeds a configured max; `Ok` otherwise |
+| VR-009 (esdk half) | `identity_kdf_key_len_ok`, `check_v2_key_lengths` (`esdk/src/key_derivation.rs`) | V1 identity KDF: accept iff the plaintext key length equals the suite encryption key length. V2: `Ok(n)` iff the KDF is HKDF, the message ID is 32 bytes and the plaintext key length equals the suite key length, with `n` equal to both (it sizes the derived encryption key); otherwise the first failing check, in code order. Total; no arithmetic |
 
 The shipped callers (`read_u16/u32/u64`, `read_into_vec`, `read_seq_u32/u64_bounded`, the header
 readers, `validate_max_encrypted_data_keys`, `read_edks`, the framed-decrypt loop,
-`read_msg_format_version`, `iv_seq`, `body_aad`, `construct_frame`) call these cores. What they
+`read_msg_format_version`, `iv_seq`, `body_aad`, `construct_frame`, `derive_key_v1`,
+`derive_key_v2`, and `derive_keys` via `msg_format_version_from_u8`) call these cores. What they
 do around the call is not verified:
 
 - **Async `Source`/`Tee` adapters.** The readers are `async fn`s over `&mut dyn Source` (tokio
@@ -94,6 +103,13 @@ do around the call is not verified:
   unverified glue; the lemmas describe what it does.
 - **`u32_to_be` / `u64_to_be` vs `to_be_bytes`**, and `next_chunk_end` vs
   `start + min(READ_CHUNK, length - start)`: checked by unit tests, not by Verus.
+- **Key-derivation adapters (VR-009).** `derive_key_v1` / `derive_key_v2` / `derive_keys` read
+  the lengths from the MPL `AlgorithmSuite`, build the errors, allocate the buffers and call HKDF.
+  Not proven: the V1 output length and V2 commit-key length (MPL getters passed straight to
+  `vec![0u8; n]`), the V1 salt table `digest_length` (it matches on the `prim` enum `DigestAlg`,
+  which Verus does not see without a trusted external type specification), and the debug-only
+  `debug_assert!`s. The prim half (`prim/src/hkdf.rs`, incl. `get_len`, and aws-lc-rs HKDF) is a
+  trust boundary: Verus is not enabled in `prim`, by decision.
 
 The full fn table and trusted boundaries are in `docs/verus-proofs-report.md` ("In-crate proofs").
 
@@ -161,7 +177,7 @@ set during the model work and were not rescored for the in-crate work.
 | 6 | **9.0** | AES-GCM panic freedom | **Model only** (`aes_gcm_bounds_proofs.rs`, non-FFI part). Not in-crate: `prim` is not Verus-checked | `aes_encrypt`/`aes_decrypt` never panic; buffer slicing in-bounds. The AES-GCM crypto itself (aws-lc-rs FFI) is out of Verus scope | `verus-zero-panic` | `prim/src/lib.rs` | 1 week | **Yes** |
 | 7 | **8.0** | EDK count validation | **In-crate** for the count check (`edk_count_check`). Not proven: the "before any KMS call" ordering (caller-side, async) | Count > 0 and ≤ configured max, enforced BEFORE any KMS calls | `verus-header-parsing-proofs` | `esdk/src/message/header.rs` (`edk_count_check`, `validate_max_encrypted_data_keys`) | 3 days | **Yes** |
 | 8 | **7.2** | ECDSA signature length | **Not started** | `signature_len`/`field_size` invariants hold; `sign_fixed_len` terminates | `verus-zero-panic` | `prim/src/ecdsa.rs` | 1 week | **Yes** |
-| 9 | **6.4** | HKDF / key derivation length | **Not started** | Output-length checks panic-free; `derive_key_v2` buffers sized correctly | `verus-zero-panic` | `esdk/src/key_derivation.rs`, `prim/src/hkdf.rs` | 1 week | **Yes** |
+| 9 | **6.4** | HKDF / key derivation length | **esdk half in-crate** (`identity_kdf_key_len_ok`, `check_v2_key_lengths` in `key_derivation.rs`: total, accept iff the length checks pass; V2 encryption-key buffer sized by the verified result). **prim half not proven** (`prim/src/hkdf.rs` incl. `get_len`; Verus not enabled in `prim`). Unverified in esdk: V1 output and V2 commit-key sizes read straight from MPL getters, the V1 salt table `digest_length` | Output-length checks panic-free; `derive_key_v2` buffers sized correctly | `verus-zero-panic` | `esdk/src/key_derivation.rs`, `prim/src/hkdf.rs` | 1 week | **Yes** |
 | 10 | **6.0** | Key-material zeroization | **Model only, deferred.** `zeroize_proofs.rs` models a hand-written `write_volatile` loop that was removed in `a864ad87`; zeroization now comes from `#[derive(Zeroize, ZeroizeOnDrop)]` on `PlaintextDataKey`, `SigningKey` and `SymmetricSigningKey`. The model is unchanged and no longer describes the code | Secret key bytes are zeroed on drop | `verus-unsafe-ffi-safety` | `mpl/src/structures/algorithm_suite.rs` | 1 week | No |
 | 11 | **4.8** | Data-key non-disclosure *(information flow)* | **Not started** | During encrypt and decrypt, the plaintext data key and the keys derived from it are never written directly to the output stream or returned to the caller. They reach the output only as AES-GCM input or, for the data key, after the keyring has encrypted it into an EDK. Approach: a ghost secret label on key bytes, proven never to reach output buffers or return values. Out of scope: keyrings/CMMs (they receive the key by design), whether AES-GCM ciphertext reveals the key (aws-lc-rs), and public key-byte accessors unless removed or excluded. **Sequencing:** builds on the in-crate Verus setup (Option A, in place for `esdk`) | unassigned (information-flow) | `esdk/src/encrypt.rs`, `esdk/src/decrypt.rs`, `esdk/src/key_derivation.rs`, `esdk/src/message/body/*`, `mpl/src/structures/{algorithm_suite,encryption_materials,decryption_materials}.rs` | 3–4 weeks | No |
 
@@ -208,7 +224,7 @@ dependency path. (History: at `d8c1c3d` the ESDK linked an external Dafny-transp
 | Frame construction / body ser | **In-crate** AAD, IV and prefix layout; **model only** `ct ‖ tag` | Medium | `esdk/src/message/body/body_encrypt.rs`, `body/body_aad.rs` |
 | AES-GCM encrypt/decrypt | **Model only** (non-FFI bounds, VR-006) | High | `prim/src/lib.rs` (`aes_encrypt`, `aes_decrypt`) |
 | ECDSA sign/verify | **None** | Medium | `prim/src/ecdsa.rs` |
-| HKDF / key derivation | **None** | Medium | `esdk/src/key_derivation.rs`, `prim/src/hkdf.rs` |
+| HKDF / key derivation | **In-crate** esdk length checks (VR-009 esdk half); **none** for `prim/src/hkdf.rs` and aws-lc-rs HKDF | Medium (prim side, MPL-getter buffer sizes) | `esdk/src/key_derivation.rs`, `prim/src/hkdf.rs` |
 | Commitment-policy enforcement | **Implemented, unproven** | High | `mpl/src/structures/commitment_policy.rs` (`allows_for_encrypt`/`_decrypt`); callers in `esdk/src/encrypt.rs`, `decrypt.rs`, `materials.rs`, `mpl/src/cmm/default_cmm.rs` |
 | Keyring / CMM behavior | **None** (native, in-repo) | Medium | `mpl/src/keyring/*`, `mpl/src/cmm/*`, `mpl/src/aws_kms/*` |
 | Key-material zeroization | **None for current code** (`zeroize` crate derive). The VR-010 model covers removed code and is deferred | Medium | `mpl/src/structures/algorithm_suite.rs` |
@@ -273,7 +289,7 @@ on the nonce**, contrary to the prior report's `aes_gcm.rs` claim.
 | 5 | VR-009 + VR-010: HKDF length + zeroization | 6.4 + 6.0 | 1 week each |
 
 Status at `5ea2a804`: VR-007's count check and parts of VR-005 are in-crate; VR-006 is model only;
-VR-008 and VR-009 are not started; VR-010 is deferred (its model covers removed code). See the
+VR-008 is not started; VR-009's esdk half is in-crate and its prim half is not started; VR-010 is deferred (its model covers removed code). See the
 Prioritization Summary.
 
 ---
@@ -373,7 +389,7 @@ recommendation:
   rank: 3
   priority_score: 10.8
   status: partly_in_crate   # at 5ea2a804; decision cores in-crate, loops model-only, async readers unverified
-  in_crate:   # make -C esdk verus: 40 verified, 0 errors (whole crate)
+  in_crate:   # make -C esdk verus: 40 verified, 0 errors (whole crate) at 5ea2a804; 45 after VR-009
     - "be_u16/be_u32/be_u64, bounded_len_u32/u64, next_chunk_end (serialize_functions.rs)"
     - "msg_format_version_from_u8, msg_type_from_u8, content_type_from_u8, classify_version_byte (header_types.rs)"
     - "reserved_bytes_ok, iv_len_matches (v1_header_body.rs)"
@@ -584,6 +600,35 @@ recommendation:
   dependencies: []
 
 recommendation:
+  id: VR-2026-009
+  rank: 9
+  priority_score: 6.4
+  status: esdk_half_in_crate   # branch verus-vr009-key-derivation; prim half not started
+  in_crate:   # make -C esdk verus: 45 verified, 0 errors (whole crate)
+    - "identity_kdf_key_len_ok (key_derivation.rs): ok iff plaintext_key_len == encrypt_key_len. Called by derive_key_v1 for the identity KDF"
+    - "check_v2_key_lengths (key_derivation.rs): Ok iff the KDF is not the identity KDF, message_id_len == MESSAGE_ID_LEN_V2 (32) and plaintext_key_len == suite_key_len; Ok(n) ==> n equals both (n sizes the derived encryption key); each Err variant iff its check is the first to fail (identity KDF, then message ID, then key length). Called by derive_key_v2"
+    - "derive_keys dispatches on the verified msg_format_version_from_u8 (header_types.rs)"
+  target:
+    library: aws-esdk
+    file: esdk/src/key_derivation.rs
+    function: derive_keys / derive_key_v1 / derive_key_v2   # + prim/src/hkdf.rs (not proven)
+  property: "Key-derivation length checks and output-buffer sizing are total (no panic, no overflow) and accept exactly the lengths the spec allows."
+  tool: Verus
+  agent: verus-zero-panic
+  estimated_effort: 1 week
+  trace_to_spec: "spec/framework/transitive-requirements.md#hkdf-encryption-key; #hkdf-commit-key"
+  verified:
+    - "the esdk length checks above: total (no arithmetic, no panic), accept iff all checks pass, reject with the first failing check"
+  not_proven:
+    - "prim half: prim/src/hkdf.rs (incl. get_len) and the aws-lc-rs hkdf / hkdf_extract / hkdf_expand calls, including the HKDF output-length limit. Verus is not enabled in prim, by decision; this is a trust boundary"
+    - "V1 output length (suite.encryption_key_length()) and V2 commit-key length (suite.algorithm_suite_data_length()): MPL getters passed straight to vec![0u8; n] in the unverified adapters; mpl is not Verus-checked"
+    - "V1 salt length table digest_length (DigestAlg -> 32/48/64): DigestAlg is a prim enum Verus does not see; modelling it would need an external type specification (a trusted assumption). Covered by tests"
+    - "the debug_assert!s in derive_keys / derive_key_v1 / derive_key_v2 (debug builds only)"
+  scoring: { severity: 2, coverage_gap: 1.0, feasibility: 0.8, blast_radius: 4 }   # not rescored
+  quick_win: true
+  dependencies: []
+
+recommendation:
   id: VR-2026-010
   rank: 10
   priority_score: 6.0
@@ -664,7 +709,7 @@ recommendation:
     - "Custom keyrings/CMMs need some way to read the key bytes, so these accessors cannot simply be removed; the realistic option is to exclude the keyring/CMM boundary from scope (scope limit 1) and prove the ESDK itself never calls them toward an output sink."
   sequencing: |
     Builds on the in-crate Verus work (Option A), which is in place for esdk at 5ea2a804
-    (make -C esdk verus: 40 verified, 0 errors). Tracking the key needs the real encrypt/decrypt
+    (make -C esdk verus: 40 verified, 0 errors; 45 after VR-009). Tracking the key needs the real encrypt/decrypt
     code under Verus; the standalone models in verification/ do not carry the key through the whole
     path. The in-crate setup so far covers only synchronous cores: the encrypt/decrypt paths are
     async fns, and the key types live in mpl, which is not Verus-checked, so the approach still has
@@ -718,6 +763,9 @@ end to end.
 - In-crate Verus for `esdk` (Option A): `esdk` is Verus-buildable, and the synchronous cores of
   VR-003, VR-004, VR-005 and VR-007 are verified in shipped code behind the async `Source`/`Tee`
   adapters (`make -C esdk verus`: 40 verified, 0 errors, 22 exec fns and 3 proof fns).
+- VR-009, esdk half (branch `verus-vr009-key-derivation`): the key-length checks in
+  `esdk/src/key_derivation.rs` are verified in-crate (`make -C esdk verus`: 45 verified, 0 errors,
+  24 exec fns and 3 proof fns).
 - Commitment-policy enforcement is implemented in code (not a verification item; listed because
   earlier revisions flagged the legacy stub).
 
@@ -732,8 +780,9 @@ end to end.
    fn. Stays model only unless the orchestration gains a synchronous state machine.
 4. **VR-006 in shipped code** — would require adding Verus to `prim` (`aws-mpl-primitives`), which
    this work chose not to do. Stays model only.
-5. **VR-008 / VR-009** (ECDSA and HKDF length invariants) — not started; `prim/src/ecdsa.rs`,
-   `prim/src/hkdf.rs` and `esdk/src/key_derivation.rs`.
+5. **VR-008 / VR-009 prim half** (ECDSA and HKDF length invariants) — not started;
+   `prim/src/ecdsa.rs` and `prim/src/hkdf.rs`. Both would need Verus in `prim`, which this work
+   chose not to add. (VR-009's esdk half, `esdk/src/key_derivation.rs`, is in-crate.)
 6. **VR-010 (zeroization)** — deferred. `verification/zeroize_proofs.rs` is unchanged and models a
    loop that was removed in `a864ad87`; a target for the current `zeroize`-crate derive would need
    to be defined first.
