@@ -61,6 +61,84 @@ pub(crate) fn be_u64(b: [u8; 8]) -> (r: u64)
         + u64::from(b[7])
 }
 
+/// The four big-endian bytes of `x` (what `x.to_be_bytes()` returns).
+pub(crate) open spec fn spec_u32_to_be(x: u32) -> Seq<u8> {
+    seq![
+        (x / 16_777_216) as u8,
+        ((x / 65_536) % 256) as u8,
+        ((x / 256) % 256) as u8,
+        (x % 256) as u8,
+    ]
+}
+
+/// The eight big-endian bytes of `x` (what `x.to_be_bytes()` returns).
+pub(crate) open spec fn spec_u64_to_be(x: u64) -> Seq<u8> {
+    seq![
+        (x / 72_057_594_037_927_936) as u8,
+        ((x / 281_474_976_710_656) % 256) as u8,
+        ((x / 1_099_511_627_776) % 256) as u8,
+        ((x / 4_294_967_296) % 256) as u8,
+        ((x / 16_777_216) % 256) as u8,
+        ((x / 65_536) % 256) as u8,
+        ((x / 256) % 256) as u8,
+        (x % 256) as u8,
+    ]
+}
+
+/// `v` as a byte, without an `as` cast. The `Err` arm is unreachable under `requires`.
+#[expect(
+    clippy::manual_unwrap_or_default,
+    reason = "vstd has no spec for Result::unwrap_or_default"
+)]
+fn low_byte(v: u64) -> (b: u8)
+    requires
+        v < 256,
+    ensures
+        b as int == v as int,
+{
+    match u8::try_from(v) {
+        Ok(b) => b,
+        Err(_) => 0,
+    }
+}
+
+/// Encode `x` big-endian; equal to `x.to_be_bytes()`.
+/// Written out because vstd does not model `to_be_bytes`.
+pub(crate) fn u32_to_be(x: u32) -> (r: [u8; 4])
+    ensures
+        r@ == spec_u32_to_be(x),
+{
+    let v = u64::from(x);
+    let r = [
+        low_byte(v / 16_777_216),
+        low_byte(v / 65_536 % 256),
+        low_byte(v / 256 % 256),
+        low_byte(v % 256),
+    ];
+    assert(r@ =~= spec_u32_to_be(x));
+    r
+}
+
+/// Encode `x` big-endian; equal to `x.to_be_bytes()`.
+/// Written out because vstd does not model `to_be_bytes`.
+pub(crate) fn u64_to_be(x: u64) -> (r: [u8; 8])
+    ensures
+        r@ == spec_u64_to_be(x),
+{
+    let r = [
+        low_byte(x / 72_057_594_037_927_936),
+        low_byte(x / 281_474_976_710_656 % 256),
+        low_byte(x / 1_099_511_627_776 % 256),
+        low_byte(x / 4_294_967_296 % 256),
+        low_byte(x / 16_777_216 % 256),
+        low_byte(x / 65_536 % 256),
+        low_byte(x / 256 % 256),
+        low_byte(x % 256),
+    ];
+    assert(r@ =~= spec_u64_to_be(x));
+    r
+}
+
 /// The most bytes `read_into_vec` adds to its buffer per read (1 MiB).
 /// 1 MiB matches serde's (Rust serialization library's) up-front allocation.
 /// But this value is arbitrary and we can change it at any time.
@@ -397,6 +475,28 @@ mod tests {
         for v in samples {
             let b = v.to_be_bytes();
             assert_eq!(be_u64(b), u64::from_be_bytes(b));
+        }
+    }
+
+    #[test]
+    fn u32_to_be_matches_to_be_bytes() {
+        let mut samples = vec![0, 1, 0x0102_0304, u32::MAX - 1, u32::MAX];
+        samples.extend((0..=u32::MAX).step_by(65_521));
+        for x in samples {
+            assert_eq!(u32_to_be(x), x.to_be_bytes(), "x={x:#x}");
+        }
+    }
+
+    #[test]
+    fn u64_to_be_matches_to_be_bytes() {
+        let mut samples = vec![0, 1, 0x0102_0304_0506_0708, u64::MAX - 1, u64::MAX];
+        samples.extend((0..=u64::MAX).step_by(0x0001_0000_0000_0F01));
+        let mut state = 3;
+        for _ in 0..4096 {
+            samples.push(lcg(&mut state));
+        }
+        for x in samples {
+            assert_eq!(u64_to_be(x), x.to_be_bytes(), "x={x:#x}");
         }
     }
 

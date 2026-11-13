@@ -17,18 +17,106 @@ use vstd::prelude::*;
 
 verus! {
 
+/// The regular-frame step as a spec: the next expected sequence number,
+/// or `None` if the frame is rejected.
+pub(crate) open spec fn spec_next_expected_frame(seq_num: u32, expected: u32) -> Option<u32> {
+    if seq_num == expected && expected < u32::MAX {
+        Some((expected + 1) as u32)
+    } else {
+        None
+    }
+}
+
 /// The sequence number expected after a regular frame numbered `seq_num`,
 /// or `None` if `seq_num` is not `expected` or `expected` has no successor.
 fn next_expected_frame(seq_num: u32, expected: u32) -> (r: Option<u32>)
     ensures
         (r is Some) <==> (seq_num == expected && expected < u32::MAX),
         r matches Some(n) ==> n == expected + 1,
+        r == spec_next_expected_frame(seq_num, expected),
 {
     if seq_num == expected {
         expected.checked_add(1)
     } else {
         None
     }
+}
+
+/// Whether a final frame numbered `seq_num` is accepted when `expected` is next.
+fn final_frame_seq_ok(seq_num: u32, expected: u32) -> (ok: bool)
+    ensures
+        ok <==> seq_num == expected,
+{
+    seq_num == expected
+}
+
+/// Whether the regular frames numbered `seqs`, in order, are all accepted by
+/// `next_expected_frame` starting from `expected`.
+///
+/// `read_and_decrypt_framed_message_body` is the unverified async adapter these
+/// specs describe: it sets `expected_frame = START_SEQUENCE_NUMBER`, replaces it
+/// with `next_expected_frame`'s result after each regular frame, and checks the
+/// final frame with `final_frame_seq_ok`.
+spec fn accepts_run(seqs: Seq<u32>, expected: u32) -> bool
+    decreases seqs.len(),
+{
+    if seqs.len() == 0 {
+        true
+    } else {
+        match spec_next_expected_frame(seqs[0], expected) {
+            Some(n) => accepts_run(seqs.drop_first(), n),
+            None => false,
+        }
+    }
+}
+
+/// The expected sequence number after the regular frames `seqs`, starting from `expected`.
+spec fn run_end(seqs: Seq<u32>, expected: u32) -> int
+    decreases seqs.len(),
+{
+    if seqs.len() == 0 {
+        expected as int
+    } else {
+        match spec_next_expected_frame(seqs[0], expected) {
+            Some(n) => run_end(seqs.drop_first(), n),
+            None => expected as int,
+        }
+    }
+}
+
+/// An accepted run of regular frames is numbered consecutively from `expected`,
+/// and the next expected number is `expected` plus the run length.
+proof fn lemma_accepts_run(seqs: Seq<u32>, expected: u32)
+    requires
+        accepts_run(seqs, expected),
+    ensures
+        forall|i: int| 0 <= i < seqs.len() ==> seqs[i] as int == expected as int + i,
+        run_end(seqs, expected) == expected as int + seqs.len(),
+    decreases seqs.len(),
+{
+    if seqs.len() > 0 {
+        let n = (expected + 1) as u32;
+        lemma_accepts_run(seqs.drop_first(), n);
+        assert forall|i: int| 0 <= i < seqs.len() implies seqs[i] as int == expected as int + i by {
+            if i > 0 {
+                assert(seqs[i] == seqs.drop_first()[i - 1]);
+            }
+        }
+    }
+}
+
+/// Frames start at 1: in a message the decryptor accepts, regular frame `i`
+/// (0-based) has sequence number `i + 1`, and the final frame's sequence number
+/// equals the total frame count (message-body.md#final-frame-sequence-number).
+proof fn lemma_frames_start_at_1(seqs: Seq<u32>, final_seq: u32)
+    requires
+        accepts_run(seqs, START_SEQUENCE_NUMBER),
+        final_seq as int == run_end(seqs, START_SEQUENCE_NUMBER),
+    ensures
+        forall|i: int| 0 <= i < seqs.len() ==> seqs[i] as int == i + 1,
+        final_seq as int == seqs.len() + 1,
+{
+    lemma_accepts_run(seqs, START_SEQUENCE_NUMBER);
 }
 
 } // verus!
@@ -162,7 +250,7 @@ pub(crate) async fn read_and_decrypt_framed_message_body(
             //= spec/data-format/message-body.md#regular-frame-sequence-number
             //# The sequence number MUST be interpreted as a UInt32.
             let seq_num: u32 = read_u32(ciphertext, sig_digest).await?;
-            if seq_num != expected_frame {
+            if !final_frame_seq_ok(seq_num, expected_frame) {
                 return ser_err("final sequence number out of order");
             }
 
@@ -708,5 +796,14 @@ mod tests {
             Some(u32::MAX)
         );
         assert_eq!(next_expected_frame(u32::MAX, u32::MAX), None);
+    }
+
+    #[test]
+    fn final_frame_seq_ok_cases() {
+        assert!(final_frame_seq_ok(1, 1));
+        assert!(final_frame_seq_ok(u32::MAX, u32::MAX));
+        assert!(!final_frame_seq_ok(2, 1));
+        assert!(!final_frame_seq_ok(0, 1));
+        assert!(!final_frame_seq_ok(1, 2));
     }
 }

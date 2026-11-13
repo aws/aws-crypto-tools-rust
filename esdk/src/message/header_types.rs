@@ -43,6 +43,36 @@ pub(crate) fn msg_format_version_from_u8(b: u8) -> (r: Option<MessageFormatVersi
     }
 }
 
+/// How the decryptor treats a message's first (version) byte.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum VersionByte {
+    /// A supported message format version.
+    Supported(MessageFormatVersion),
+    /// `0x41` (`A`): the first Base64 character of every supported message, so
+    /// the input is probably Base64-encoded.
+    Base64Hint,
+    /// Any other unsupported byte.
+    Unsupported,
+}
+
+/// Classify the version byte `b`: a supported version, the Base64 hint, or unsupported.
+pub(crate) fn classify_version_byte(b: u8) -> (r: VersionByte)
+    ensures
+        (r == VersionByte::Supported(MessageFormatVersion::V1)) <==> b == 1,
+        (r == VersionByte::Supported(MessageFormatVersion::V2)) <==> b == 2,
+        (r is Base64Hint) <==> b == 0x41,
+        (r is Unsupported) <==> (b != 1 && b != 2 && b != 0x41),
+{
+    match msg_format_version_from_u8(b) {
+        Some(v) => VersionByte::Supported(v),
+        None => if b == 0x41 {
+            VersionByte::Base64Hint
+        } else {
+            VersionByte::Unsupported
+        },
+    }
+}
+
 //= spec/data-format/message-header.md#supported-types
 //# The supported types MUST be:
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
@@ -108,16 +138,16 @@ pub(crate) async fn read_msg_format_version(
     let version = read_u8(r, raw).await?;
     //= spec/client-apis/decrypt.md#parse-the-header
     //# The value MUST be a [supported version](../data-format/message-header.md#supported-versions).
-    match msg_format_version_from_u8(version) {
-        Some(v) => Ok(v),
+    match classify_version_byte(version) {
+        VersionByte::Supported(v) => Ok(v),
         //= spec/client-apis/decrypt.md#encrypted-message-format
         //# To make diagnosing this mistake easier, implementations SHOULD detect the first two bytes of the Base64 encoding of any supported message [versions](../data-format/message-header.md#version)
         //# and [types](../data-format/message-header.md#type)
         //# and fail with a more specific error message.
-        None if version == 0x41 => ser_err(
+        VersionByte::Base64Hint => ser_err(
             "input appears to be Base64-encoded. The ESDK expects raw binary message format, not Base64",
         ),
-        None => ser_err(&format!(
+        VersionByte::Unsupported => ser_err(&format!(
             "unsupported message format version: {version:#04x}"
         )),
     }
@@ -367,6 +397,22 @@ mod tests {
                 _ => None,
             };
             assert_eq!(content_type_from_u8(b), content_type);
+        }
+    }
+
+    #[test]
+    fn classify_version_byte_cases() {
+        let v1 = VersionByte::Supported(MessageFormatVersion::V1);
+        let v2 = VersionByte::Supported(MessageFormatVersion::V2);
+        assert_eq!(classify_version_byte(1), v1);
+        assert_eq!(classify_version_byte(2), v2);
+        assert_eq!(classify_version_byte(0x41), VersionByte::Base64Hint);
+        for b in [0, 3, 0x40, 0x42, 0xFF] {
+            assert_eq!(
+                classify_version_byte(b),
+                VersionByte::Unsupported,
+                "b={b:#x}"
+            );
         }
     }
 

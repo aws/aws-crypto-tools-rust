@@ -52,13 +52,14 @@ pub(crate) fn edk_count_check(count: usize, max: Option<usize>) -> (r: EdkCount)
     }
 }
 
-} // verus!
-
 pub(crate) const START_SEQUENCE_NUMBER: u32 = 1;
 
 //= spec/data-format/message-body.md#sequence-number-end
 //# The value MUST be encoded as the 4 bytes `FF FF FF FF` in hexadecimal notation.
 pub(crate) const ENDFRAME_SEQUENCE_NUMBER: u32 = 0xFFFF_FFFF;
+
+} // verus!
+
 pub(crate) const NONFRAMED_SEQUENCE_NUMBER: u32 = 1;
 
 //= spec/data-format/message-body.md#nonframed-data-encrypted-content-length

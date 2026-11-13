@@ -7,11 +7,148 @@ use crate::error::{Kind, err, val_err};
 use crate::message::header::{ENDFRAME_SEQUENCE_NUMBER, HeaderInfo, START_SEQUENCE_NUMBER};
 use crate::message::serializable_types::{get_iv_length, get_tag_length};
 use crate::message::serialize_functions::{
-    read_opt_u8, read_up_to_peek, write_bytes, write_to_sink, write_u32,
+    self as sf, read_opt_u8, read_up_to_peek, write_bytes, write_to_sink,
 };
 use crate::message::{DigestWriter, Error, ser_err};
 use crate::shapes::{Sink, Source};
 use aws_mpl_primitives::{AesGcm, aes_encrypt};
+use vstd::prelude::*;
+
+verus! {
+
+/// The frame fields before the encrypted content:
+/// a final frame (`final_content_len` is `Some`) is
+/// Sequence Number End ‖ Sequence Number ‖ IV ‖ Encrypted Content Length;
+/// a regular frame is Sequence Number ‖ IV.
+pub(crate) open spec fn spec_frame_prefix(
+    seq: u32,
+    iv: Seq<u8>,
+    final_content_len: Option<u32>,
+) -> Seq<u8> {
+    match final_content_len {
+        Some(n) => sf::spec_u32_to_be(ENDFRAME_SEQUENCE_NUMBER) + sf::spec_u32_to_be(seq) + iv
+            + sf::spec_u32_to_be(n),
+        None => sf::spec_u32_to_be(seq) + iv,
+    }
+}
+
+/// The Sequence Number End field is the bytes `FF FF FF FF`.
+proof fn lemma_endframe_bytes()
+    ensures
+        sf::spec_u32_to_be(ENDFRAME_SEQUENCE_NUMBER) == seq![0xFFu8, 0xFF, 0xFF, 0xFF],
+{
+    assert(sf::spec_u32_to_be(ENDFRAME_SEQUENCE_NUMBER) =~= seq![0xFFu8, 0xFF, 0xFF, 0xFF]);
+}
+
+/// Append the frame fields before the encrypted content to `frame_buf`.
+/// `final_content_len` is `Some(encrypted content length)` for a final frame
+/// and `None` for a regular frame.
+fn write_frame_prefix(
+    frame_buf: &mut Vec<u8>,
+    sequence_number: u32,
+    iv: &[u8],
+    final_content_len: Option<u32>,
+)
+    ensures
+        final(frame_buf)@ == old(frame_buf)@ + spec_frame_prefix(
+            sequence_number,
+            iv@,
+            final_content_len,
+        ),
+{
+    if final_content_len.is_some() {
+        // Sequence Number End
+
+        //= spec/client-apis/encrypt.md#construct-a-frame
+        //= reason=The following lines serialize SeqNumEnd, SeqNum, IV, EncContentLen, EncContent, and AuthTag in order per the Final Frame spec
+        //# For a final frame, each field MUST be serialized according to its specification:
+        //
+        //= spec/data-format/message-body.md#final-frame
+        //# A final frame MUST consist of, in order,
+        //# Sequence Number End,
+        //# Sequence Number,
+        //# IV,
+        //# Encrypted Content Length,
+        //# Encrypted Content,
+        //# and Authentication Tag.
+        //
+        //= spec/client-apis/encrypt.md#construct-a-frame
+        //# - MUST serialize the [Sequence Number End](../data-format/message-body.md#sequence-number-end).
+        //
+        //= spec/data-format/message-body.md#sequence-number-end
+        //# The value MUST be encoded as the 4 bytes `FF FF FF FF` in hexadecimal notation.
+        frame_buf.extend_from_slice(&sf::u32_to_be(ENDFRAME_SEQUENCE_NUMBER));
+    }
+
+    // Sequence Number
+
+    //= spec/client-apis/encrypt.md#construct-a-frame
+    //= reason=The following lines serialize SeqNum, IV, EncContent, and AuthTag in order per the Regular Frame spec
+    //# For a regular frame, each field MUST be serialized according to its specification:
+    //
+    //= spec/client-apis/encrypt.md#construct-a-frame
+    //# - MUST serialize the [Sequence Number](../data-format/message-body.md#regular-frame-sequence-number).
+    //# The value MUST be the sequence number of this frame.
+    //
+    //= spec/data-format/message-body.md#regular-frame-sequence-number
+    //# The sequence number MUST be interpreted as a UInt32.
+    //
+    //= spec/client-apis/encrypt.md#construct-a-frame
+    //= reason=The line below serializes the sequence number for both regular and final frames in this shared code path
+    //# - MUST serialize the [Sequence Number](../data-format/message-body.md#final-frame-sequence-number).
+    //# The value MUST be the sequence number of this frame.
+    //
+    //= spec/data-format/message-body.md#final-frame-sequence-number
+    //= reason=u32_to_be serializes the sequence number as a UInt32, same type as the regular frame sequence number
+    //# The Final Frame Sequence Number MUST be interpreted as the same type as the
+    //# [Regular Frame Sequence Number](#regular-frame-sequence-number).
+    //
+    //= spec/data-format/message-body.md#final-frame-sequence-number
+    //= reason=u32_to_be writes exactly 4 bytes, the same length as the regular frame sequence number field
+    //# The length of the Final Frame Sequence number field MUST be the same as the
+    //# [Regular Frame Sequence Number](#regular-frame-sequence-number).
+    frame_buf.extend_from_slice(&sf::u32_to_be(sequence_number));
+
+    // IV
+
+    //= spec/client-apis/encrypt.md#construct-a-frame
+    //# - MUST serialize the [IV](../data-format/message-body.md#regular-frame-iv).
+    //
+    //= spec/client-apis/encrypt.md#construct-a-frame
+    //# The value MUST be the IV used when calculating the encrypted content for this frame.
+    //
+    //= spec/client-apis/encrypt.md#construct-a-frame
+    //= reason=The line below serializes the IV for both regular and final frames in this shared code path
+    //# - MUST serialize the [IV](../data-format/message-body.md#final-frame-iv).
+    //
+    //= spec/data-format/message-body.md#final-frame-iv
+    //= reason=iv is &[u8], interpreted as raw bytes
+    //# The IV MUST be interpreted as bytes.
+    frame_buf.extend_from_slice(iv);
+
+    if let Some(enc_content_len) = final_content_len {
+        // Encrypted Content Length
+
+        //= spec/client-apis/encrypt.md#construct-a-frame
+        //# - MUST serialize the [Encrypted Content Length](../data-format/message-body.md#final-frame-encrypted-content-length).
+        //
+        //= spec/data-format/message-body.md#final-frame-encrypted-content-length
+        //# The length of the serialized encrypted content length field MUST be 4 bytes.
+        //
+        //= spec/data-format/message-header.md#frame-length
+        //= reason=enc_content_len is bounded by the frame length from the header, interpreted as a UInt32
+        //# The frame length MUST be interpreted as a UInt32.
+        frame_buf.extend_from_slice(&sf::u32_to_be(enc_content_len));
+    }
+
+    assert(frame_buf@ =~= old(frame_buf)@ + spec_frame_prefix(
+        sequence_number,
+        iv@,
+        final_content_len,
+    ));
+}
+
+} // verus!
 
 /// Maximum plaintext bytes per message: 2^36 - 32 (AES-GCM safety bound).
 const MAX_DATA: usize = (1usize << 36) - 32;
@@ -104,106 +241,30 @@ pub(crate) async fn construct_frame(
     //# A generated IV MUST be a unique IV within the message.
     iv_seq(input.sequence_number, iv);
 
-    //= spec/data-format/message-body.md#final-frame
-    //= reason=The two `if input.is_final` blocks below add Sequence Number End and Encrypted Content Length to the shared frame serialization path
-    //# A final frame MUST only differ from a regular frame by the addition of the
-    //# Sequence Number End
-    //# and Encrypted Content Length.
-    if input.is_final {
-        // Sequence Number End
+    // Encrypted Content Length (final frames only)
 
-        //= spec/client-apis/encrypt.md#construct-a-frame
-        //= reason=The following lines serialize SeqNumEnd, SeqNum, IV, EncContentLen, EncContent, and AuthTag in order per the Final Frame spec
-        //# For a final frame, each field MUST be serialized according to its specification:
-        //
-        //= spec/data-format/message-body.md#final-frame
-        //# A final frame MUST consist of, in order,
-        //# Sequence Number End,
-        //# Sequence Number,
-        //# IV,
-        //# Encrypted Content Length,
-        //# Encrypted Content,
-        //# and Authentication Tag.
-        //
-        //= spec/client-apis/encrypt.md#construct-a-frame
-        //# - MUST serialize the [Sequence Number End](../data-format/message-body.md#sequence-number-end).
-        //
-        //= spec/data-format/message-body.md#sequence-number-end
-        //# The value MUST be encoded as the 4 bytes `FF FF FF FF` in hexadecimal notation.
-        write_u32(frame_buf, ENDFRAME_SEQUENCE_NUMBER)?;
-    }
-
-    // Sequence Number
-
-    //= spec/client-apis/encrypt.md#construct-a-frame
-    //= reason=The following lines serialize SeqNum, IV, EncContent, and AuthTag in order per the Regular Frame spec
-    //# For a regular frame, each field MUST be serialized according to its specification:
-    //
-    //= spec/client-apis/encrypt.md#construct-a-frame
-    //# - MUST serialize the [Sequence Number](../data-format/message-body.md#regular-frame-sequence-number).
-    //# The value MUST be the sequence number of this frame.
-    //
-    //= spec/data-format/message-body.md#regular-frame-sequence-number
-    //# The sequence number MUST be interpreted as a UInt32.
-    //
-    //= spec/client-apis/encrypt.md#construct-a-frame
-    //= reason=write_u32 above serializes the sequence number for both regular and final frames in this shared code path
-    //# - MUST serialize the [Sequence Number](../data-format/message-body.md#final-frame-sequence-number).
-    //# The value MUST be the sequence number of this frame.
-    //
-    //= spec/data-format/message-body.md#final-frame-sequence-number
-    //= reason=write_u32 serializes the sequence number as a UInt32, same type as the regular frame sequence number
-    //# The Final Frame Sequence Number MUST be interpreted as the same type as the
-    //# [Regular Frame Sequence Number](#regular-frame-sequence-number).
-    //
-    //= spec/data-format/message-body.md#final-frame-sequence-number
-    //= reason=write_u32 writes exactly 4 bytes, the same length as the regular frame sequence number field
-    //# The length of the Final Frame Sequence number field MUST be the same as the
-    //# [Regular Frame Sequence Number](#regular-frame-sequence-number).
-    write_u32(frame_buf, input.sequence_number)?;
-
-    // IV
-
-    //= spec/client-apis/encrypt.md#construct-a-frame
-    //# - MUST serialize the [IV](../data-format/message-body.md#regular-frame-iv).
-    //
-    //= spec/client-apis/encrypt.md#construct-a-frame
-    //# The value MUST be the IV used when calculating the encrypted content for this frame.
-    //
-    //= spec/client-apis/encrypt.md#construct-a-frame
-    //= reason=write_bytes above serializes the IV for both regular and final frames in this shared code path
-    //# - MUST serialize the [IV](../data-format/message-body.md#final-frame-iv).
-    //
-    //= spec/data-format/message-body.md#final-frame-iv
-    //= reason=iv is &[u8], interpreted as raw bytes
-    //# The IV MUST be interpreted as bytes.
-    write_bytes(frame_buf, iv)?;
-
-    if input.is_final {
-        // Encrypted Content Length
-
-        //= spec/client-apis/encrypt.md#construct-a-frame
-        //# - MUST serialize the [Encrypted Content Length](../data-format/message-body.md#final-frame-encrypted-content-length).
-        //
-        //= spec/data-format/message-body.md#final-frame-encrypted-content-length
-        //# The encrypted content length MUST be a UInt32.
-        // The wire layout puts this length field before the encrypted content,
-        // so we'd otherwise need to encrypt into a scratch buffer just to learn
-        // the ciphertext length. AES-GCM produces a ciphertext exactly the size
-        // of the plaintext (the auth tag is a separate field), so plaintext.len()
-        // *is* the encrypted content length and lets us skip that buffering.
+    //= spec/data-format/message-body.md#final-frame-encrypted-content-length
+    //# The encrypted content length MUST be a UInt32.
+    // The wire layout puts this length field before the encrypted content,
+    // so we'd otherwise need to encrypt into a scratch buffer just to learn
+    // the ciphertext length. AES-GCM produces a ciphertext exactly the size
+    // of the plaintext (the auth tag is a separate field), so plaintext.len()
+    // *is* the encrypted content length and lets us skip that buffering.
+    let final_content_len = if input.is_final {
         let Ok(enc_content_len) = u32::try_from(input.plaintext.len()) else {
             return Err(err(Kind::Validation, "plaintext length exceeds u32"));
         };
+        Some(enc_content_len)
+    } else {
+        None
+    };
 
-        //= spec/data-format/message-body.md#final-frame-encrypted-content-length
-        //# The length of the serialized encrypted content length field MUST be 4 bytes.
-        //
-        //= spec/data-format/message-header.md#frame-length
-        //= reason=enc_content_len is bounded by the frame length from the header, interpreted as a UInt32
-        //# The frame length MUST be interpreted as a UInt32.
-        write_u32(frame_buf, enc_content_len)?;
-    }
+    //= spec/data-format/message-body.md#final-frame
+    //= reason=write_frame_prefix adds Sequence Number End and Encrypted Content Length only when final_content_len is Some, on the shared frame serialization path
+    //# A final frame MUST only differ from a regular frame by the addition of the
+    //# Sequence Number End
+    //# and Encrypted Content Length.
+    write_frame_prefix(frame_buf, input.sequence_number, iv, final_content_len);
 
     // Encrypted Content + Authentication Tag
 
@@ -495,4 +556,43 @@ pub(crate) async fn encrypt_and_serialize_body(
     .await?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::message::serialize_functions::write_u32;
+
+    /// The bytes the `write_u32`/`write_bytes` calls in `construct_frame` wrote
+    /// before `write_frame_prefix` replaced them.
+    fn old_prefix(seq: u32, iv: &[u8], final_content_len: Option<u32>) -> Vec<u8> {
+        let mut buf = Vec::new();
+        if final_content_len.is_some() {
+            write_u32(&mut buf, ENDFRAME_SEQUENCE_NUMBER).unwrap();
+        }
+        write_u32(&mut buf, seq).unwrap();
+        write_bytes(&mut buf, iv).unwrap();
+        if let Some(n) = final_content_len {
+            write_u32(&mut buf, n).unwrap();
+        }
+        buf
+    }
+
+    #[test]
+    fn write_frame_prefix_matches_old_layout() {
+        let iv: Vec<u8> = (0..12).collect();
+        for (seq, final_content_len) in [
+            (1, None),
+            (0x0102_0304, None),
+            (1, Some(0)),
+            (7, Some(0x0A0B_0C0D)),
+            (u32::MAX - 1, Some(u32::MAX)),
+        ] {
+            let mut buf = vec![0xEE; 2];
+            write_frame_prefix(&mut buf, seq, &iv, final_content_len);
+            let mut expected = vec![0xEE; 2];
+            expected.extend(old_prefix(seq, &iv, final_content_len));
+            assert_eq!(buf, expected, "seq={seq} final={final_content_len:?}");
+        }
+    }
 }
