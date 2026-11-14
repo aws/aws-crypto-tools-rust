@@ -68,12 +68,15 @@ jobs:
               - '!esdk/test-server/**'
               - '!esdk/shims/aws-esdk-cpp/test-server/**'
             prim-test-server:
+              - 'test-server-control/**'
               - 'prim/**'
             mpl-test-server:
+              - 'test-server-control/**'
               - 'prim/**'
               - 'mpl/**'
               - '!prim/test-server/**'
             esdk-test-server:
+              - 'test-server-control/**'
               - 'prim/**'
               - 'mpl/**'
               - 'esdk/**'
@@ -346,7 +349,7 @@ jobs:
       # Test-Server-Override lines.
       pull-requests: read
       id-token: write
-    uses: aws/aws-crypto-tools-commons/.github/workflows/esdk-test-server-reusable.yml@main
+    uses: aws/aws-crypto-tools-commons/.github/workflows/esdk-test-server-reusable.yml@lucmcdon/test-server-per-test-coverage
     with:
       runner: *codebuild-linux
       commons-ref: main
@@ -368,7 +371,7 @@ jobs:
       pull-requests: read
       # Its test job assumes an AWS role for the hierarchical keyring Tests.
       id-token: write
-    uses: aws/aws-crypto-tools-commons/.github/workflows/mpl-test-server-reusable.yml@main
+    uses: aws/aws-crypto-tools-commons/.github/workflows/mpl-test-server-reusable.yml@lucmcdon/test-server-per-test-coverage
     with:
       runner: *codebuild-linux
       focus: rust
@@ -386,7 +389,7 @@ jobs:
     permissions:
       contents: read
       actions: read
-    uses: aws/aws-crypto-tools-commons/.github/workflows/primitives-test-server-reusable.yml@main
+    uses: aws/aws-crypto-tools-commons/.github/workflows/primitives-test-server-reusable.yml@lucmcdon/test-server-per-test-coverage
     with:
       runner: *codebuild-linux
       focus: rust

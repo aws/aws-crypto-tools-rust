@@ -21,9 +21,19 @@ use std::sync::Arc;
 
 /// Build the router. Shared with tests so they can drive the real wire in-process.
 pub fn app(state: Arc<AppState>) -> Router {
-    Router::new()
-        .route("/service/:service/operation/:operation", post(dispatch))
-        .with_state(state)
+    let router = Router::new().route("/service/:service/operation/:operation", post(dispatch));
+    #[cfg(testserver_coverage)]
+    let router = router.route("/control/coverage", post(dump_coverage));
+    router.with_state(state)
+}
+
+/// Writes the coverage of the test that just ran to the file named in the body.
+#[cfg(testserver_coverage)]
+async fn dump_coverage(path: String) -> (axum::http::StatusCode, String) {
+    match test_server_control::dump_coverage(&path) {
+        Ok(()) => (axum::http::StatusCode::OK, String::new()),
+        Err(message) => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, message),
+    }
 }
 
 async fn dispatch(
