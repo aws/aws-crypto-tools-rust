@@ -151,9 +151,7 @@ impl AppState {
         let mut builder =
             Client::builder().commitment_policy(map_commitment(req.config.commitment_policy));
         builder.set_max_encrypted_data_keys(max_edks(&req.config)?);
-        let esdk = builder
-            .build()
-            .map_err(|e| ServerError::esdk(e.to_string()))?;
+        let esdk = builder.build().map_err(ServerError::from_esdk)?;
         let entry = ClientEntry { esdk, keyring };
         let client_id = uuid::Uuid::new_v4().to_string();
         self.clients
@@ -176,7 +174,7 @@ impl AppState {
             .set_frame_length(frame_length)
             .send()
             .await
-            .map_err(|e| ServerError::esdk(e.to_string()))?;
+            .map_err(ServerError::from_esdk)?;
         Ok(EncryptResponse {
             ciphertext: output.into_ciphertext().into_inner(),
         })
@@ -191,7 +189,7 @@ impl AppState {
             .keyring(keyring)
             .send()
             .await
-            .map_err(|e| ServerError::esdk(e.to_string()))?;
+            .map_err(ServerError::from_esdk)?;
         let encryption_context = Some(model_encryption_context(output.encryption_context()));
         let algorithm_suite_id = model_algorithm_suite(output.algorithm_suite_id());
         Ok(DecryptResponse {
@@ -228,7 +226,7 @@ impl AppState {
             .set_plaintext_length_bound(plaintext_length_bound)
             .send()
             .await
-            .map_err(|e| ServerError::esdk(e.to_string()))?;
+            .map_err(ServerError::from_esdk)?;
         Ok(EncryptStreamResponse { ciphertext })
     }
 
@@ -249,7 +247,7 @@ impl AppState {
             .signed_streaming(SignedStreaming::ReleaseRegularFrames)
             .send()
             .await
-            .map_err(|e| ServerError::esdk(e.to_string()))?;
+            .map_err(ServerError::from_esdk)?;
         Ok(DecryptStreamResponse {
             plaintext,
             encryption_context: Some(model_encryption_context(output.encryption_context())),

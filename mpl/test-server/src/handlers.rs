@@ -65,7 +65,7 @@ impl AppState {
             .wrapping_key(req.wrapping_key)
             .wrapping_alg(alg)
             .build()
-            .map_err(|e| ServerError::mpl(e.to_string()))?;
+            .map_err(ServerError::from_mpl)?;
 
         let id = uuid::Uuid::new_v4().to_string();
         self.keyrings
@@ -122,14 +122,14 @@ impl AppState {
             KmsConfiguration::Discovery(Discovery {}) => MplKmsConfiguration::Discovery(
                 MplDiscovery::builder()
                     .build()
-                    .map_err(|e| ServerError::mpl(e.to_string()))?,
+                    .map_err(ServerError::from_mpl)?,
             ),
             KmsConfiguration::MrDiscovery(MrDiscovery { region }) => {
                 MplKmsConfiguration::MrDiscovery(
                     MplMrDiscovery::builder()
                         .region(region)
                         .build()
-                        .map_err(|e| ServerError::mpl(e.to_string()))?,
+                        .map_err(ServerError::from_mpl)?,
                 )
             }
         };
@@ -144,7 +144,7 @@ impl AppState {
             .ddb_client(ddb)
             .build()
             .await
-            .map_err(|e| ServerError::mpl(e.to_string()))?;
+            .map_err(ServerError::from_mpl)?;
 
         let id = uuid::Uuid::new_v4().to_string();
         self.key_stores
@@ -167,7 +167,7 @@ impl AppState {
         let cache = DefaultCmc::builder()
             .entry_capacity(entry_capacity)
             .build()
-            .map_err(|e| ServerError::mpl(e.to_string()))?;
+            .map_err(ServerError::from_mpl)?;
 
         let id = uuid::Uuid::new_v4().to_string();
         self.caches
@@ -211,7 +211,7 @@ impl AppState {
             .set_partition_id(req.partition_id)
             .build()
             .await
-            .map_err(|e| ServerError::mpl(e.to_string()))?;
+            .map_err(ServerError::from_mpl)?;
 
         let id = uuid::Uuid::new_v4().to_string();
         self.keyrings
@@ -232,7 +232,7 @@ impl AppState {
                 req.required_encryption_context_keys.into_iter().collect(),
             ))
             .build()
-            .map_err(|e| ServerError::mpl(e.to_string()))?;
+            .map_err(ServerError::from_mpl)?;
         Ok(InitializeEncryptionMaterialsResponse {
             materials: encryption_materials_to_shape(&materials)?,
         })
@@ -249,7 +249,7 @@ impl AppState {
                 req.required_encryption_context_keys.into_iter().collect(),
             ))
             .build()
-            .map_err(|e| ServerError::mpl(e.to_string()))?;
+            .map_err(ServerError::from_mpl)?;
         Ok(InitializeDecryptionMaterialsResponse {
             materials: decryption_materials_to_shape(&materials)?,
         })
@@ -265,7 +265,7 @@ impl AppState {
             .materials(shape_to_encryption_materials(req.materials)?)
             .send()
             .await
-            .map_err(|e| ServerError::mpl(e.to_string()))?;
+            .map_err(ServerError::from_mpl)?;
         Ok(OnEncryptResponse {
             materials: encryption_materials_to_shape(output.materials())?,
         })
@@ -282,7 +282,7 @@ impl AppState {
             .set_encrypted_data_keys(Some(map_edks(req.encrypted_data_keys)?))
             .send()
             .await
-            .map_err(|e| ServerError::mpl(e.to_string()))?;
+            .map_err(ServerError::from_mpl)?;
         Ok(OnDecryptResponse {
             materials: decryption_materials_to_shape(output.materials())?,
         })
@@ -302,7 +302,7 @@ impl AppState {
             .set_max_plaintext_length(req.max_plaintext_length)
             .send()
             .await
-            .map_err(|e| ServerError::mpl(e.to_string()))?;
+            .map_err(ServerError::from_mpl)?;
         let materials = output.encryption_materials();
 
         let pdk = materials
@@ -347,7 +347,7 @@ impl AppState {
             )
             .send()
             .await
-            .map_err(|e| ServerError::mpl(e.to_string()))?;
+            .map_err(ServerError::from_mpl)?;
         let materials = output.decryption_materials();
 
         let pdk = materials
@@ -502,7 +502,7 @@ fn map_edks(edks: Vec<EncryptedDataKeyShape>) -> Result<Vec<EncryptedDataKey>, S
                 .key_provider_info(edk.key_provider_info)
                 .ciphertext(edk.ciphertext)
                 .build()
-                .map_err(|e| ServerError::mpl(e.to_string()))
+                .map_err(ServerError::from_mpl)
         })
         .collect()
 }
@@ -553,7 +553,7 @@ fn shape_to_encryption_materials(
                 .collect()
         }))
         .build()
-        .map_err(|e| ServerError::mpl(e.to_string()))
+        .map_err(ServerError::from_mpl)
 }
 
 fn shape_to_decryption_materials(
@@ -569,7 +569,7 @@ fn shape_to_decryption_materials(
         .set_verification_key(shape.verification_key.map(VerificationKey::new))
         .set_symmetric_signing_key(shape.symmetric_signing_key.map(SymmetricSigningKey::new))
         .build()
-        .map_err(|e| ServerError::mpl(e.to_string()))
+        .map_err(ServerError::from_mpl)
 }
 
 fn encryption_materials_to_shape(
