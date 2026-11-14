@@ -23,17 +23,22 @@ Current output for both runs (default, and
 `--no-default-features --features aws-lc-sys`):
 
 ```
-verification results:: 45 verified, 0 errors
-verification results:: 45 verified, 0 errors
+verification results:: 57 verified, 0 errors
+verification results:: 57 verified, 0 errors
 ```
 
 The count is Verus's obligation count, not a function count; the checked
-fns are 24 exec fns (13 before the in-crate work, 22 before VR-009) and 3 proof
-fns. The verified fns (each inside a `verus!` block; paths are under
-`esdk/src/message/` unless they start with `esdk/src/`):
+fns are 34 exec fns (13 before the in-crate work, 22 before VR-009, 24 before
+VR-011) and 3 proof fns. The verified fns (each inside a `verus!` block; paths
+are under `esdk/src/message/` unless they start with `esdk/src/`):
 
 | File | Fn | Property proven |
 |---|---|---|
+| `esdk/src/secret.rs` | `DataKeyRef::len`, `MessageKey::len`, `PublicBytes::len` | `n == self.view().len()` (key lengths are public). VR-011. |
+| `esdk/src/secret.rs` | `MessageKey::zeroed`, `CommitmentValue::zeroed` (and private `zero_vec`) | The view is `len` zero bytes; the key derivation adapters then fill it. VR-011. |
+| `esdk/src/secret.rs` | `CommitmentValue::as_suite_data` | Declassification (decrypt side): `s@ == self.view()`. VR-011. |
+| `esdk/src/secret.rs` | `PublicBytes::from_commitment` (and private `copy_vec`) | Declassification (encrypt side): `p.view() == c.view()` and `p.is_public()`. VR-011. |
+| `esdk/src/secret.rs` | `PublicBytes::into_vec`; type invariant `PublicBytes::inv` | `v@ == self.view()`; every `PublicBytes` is labelled `Label::Public`. VR-011. |
 | `esdk/src/key_derivation.rs` | `identity_kdf_key_len_ok` (called by `derive_key_v1`) | True iff the identity-KDF plaintext data key length equals the suite encryption key length. VR-009. |
 | `esdk/src/key_derivation.rs` | `check_v2_key_lengths` (called by `derive_key_v2`) | `Ok` iff the KDF is not the identity KDF, the message ID is `MESSAGE_ID_LEN_V2` (32) bytes and the plaintext key length equals the suite key length; `Ok(n)` has `n` equal to both (it sizes the derived encryption key); each `Err` variant fires exactly when its check is the first to fail (identity KDF, then message ID, then key length). VR-009. |
 | `serialize_functions.rs` | `be_u16`, `be_u32`, `be_u64` | Result equals the big-endian value of the bytes (`spec_be_u16/u32/u64`). |
@@ -58,8 +63,10 @@ fns. The verified fns (each inside a `verus!` block; paths are under
 `START_SEQUENCE_NUMBER`, `ENDFRAME_SEQUENCE_NUMBER` (`header.rs`),
 `BodyAADContent` with its three content strings (`body_aad.rs`),
 `MESSAGE_ID_LEN_V1` / `MESSAGE_ID_LEN_V2` (`header_types.rs`) and
-`V2KeyLenError` (`key_derivation.rs`) are also inside `verus!`, so the proofs
-use the shipped definitions. `derive_keys` dispatches on the verified
+`V2KeyLenError` (`key_derivation.rs`), and the ghost `Label` enum with the
+`DataKeyRef`, `MessageKey`, `CommitmentValue` and `PublicBytes` types
+(`esdk/src/secret.rs`) are also inside `verus!`, so the proofs use the shipped
+definitions. `derive_keys` dispatches on the verified
 `msg_format_version_from_u8` (V1 iff the suite's version byte is 1, V2 iff 2,
 an error otherwise).
 
@@ -81,7 +88,9 @@ HKDF. Not proven:
 - **Buffer sizes read straight from the suite.** The V1 output length
   (`encryption_key_length()`) and the V2 commit-key length
   (`algorithm_suite_data_length()`) are MPL getters used directly by
-  `vec![0u8; n]` in the adapters; `mpl` is not Verus-checked. Only the V2
+  `MessageKey::zeroed(n)` / `CommitmentValue::zeroed(n)` in the adapters
+  (Verus proves only that these return `n` zero bytes, not that `n` is right);
+  `mpl` is not Verus-checked. Only the V2
   encryption-key buffer goes through a verified core (`check_v2_key_lengths`'s
   `Ok(n)`).
 - **The V1 HKDF salt length** (`digest_length`: SHA-256/384/512 → 32/48/64).
@@ -93,6 +102,29 @@ HKDF. Not proven:
   `derive_key_v2` (non-empty message ID, key length equals the suite length,
   message version) are debug-build-only caller checks outside `verus!`; they do
   not run in release builds.
+
+### VR-011 (data-key non-disclosure): confinement, not a Verus proof
+
+VR-011 is **not Verus-proven**. The guarantee on branch `vr011-confinement` is
+confinement: esdk code outside `esdk/src/secret.rs` cannot read the bytes of
+the plaintext data key (`DataKeyRef`) or of the derived message key
+(`MessageKey`). That is checked by the Rust compiler (private fields; no
+`Clone`, `PartialEq` or `Debug` on the secret types) and by clippy
+(`esdk/clippy.toml` bans esdk's calls to the mpl data-key accessors outside
+the two ingress adapters). Verus checks only the `secret.rs` rows in the table
+above: each accessor's `ensures` against the closed `view()`, and the
+`PublicBytes` label invariant. The V2 commitment value is public by spec (it
+is the header suite data); `as_suite_data` and `from_commitment` are its two
+declassification points.
+
+Trusted, unverified (TB-A, outside `verus!` in `secret.rs`):
+`data_key_from_encryption_materials`, `data_key_from_decryption_materials`,
+`identity_copy`, `hkdf_v1`, `hkdf_v2_extract`, `hkdf_v2_expand_key`,
+`hkdf_v2_expand_commitment`, `seal`, `open`. Also trusted: aws-lc-rs (through
+`aws-mpl-primitives`), keyrings and CMMs, and the mpl key types. Not checked by
+any tool: that `key_derivation.rs` passes the HKDF PRK only to the `secret.rs`
+expand adapters (grep only). Not done: a verified encrypt/decrypt flow (plan
+step 7). Full record: VR-2026-011 in `docs/verification-recommendations.md`.
 
 ### Properties that stay model-only, and why
 

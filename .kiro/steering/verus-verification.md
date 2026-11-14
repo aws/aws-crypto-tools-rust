@@ -87,6 +87,28 @@ In-crate (`esdk/`), probe-confirmed:
   not `to_be_bytes` / `copy_from_slice`; `Vec::clear`, `Vec::extend_from_slice`
   and indexed slice writes are specified.
 
+Secret and labelled types (VR-011, `esdk/src/secret.rs`), probe-confirmed:
+- Ghost values built from an expression: write `let ghost g: bool = a.s@ || b.s@;`
+  then `Ghost(g)`. An inline `Ghost(a.s@ || b.s@)` is rejected ("unexpected
+  ghost block attribute").
+- `zeroize::Zeroizing<_>` cannot be a field of a type inside `verus!`: Verus
+  rejects it unless it gets an `external_type_specification`, which is a
+  trusted spec and not allowed here. Hold a `Vec<u8>` and
+  `#[derive(Zeroize, ZeroizeOnDrop)]` (zeroize `derive` feature) instead.
+- A `pub`/`pub(crate)` fn's `ensures` cannot read a private field ("field
+  expression for an opaque datatype"). Add a `closed spec fn view(&self)` and
+  write the `ensures` against `self.view()`.
+- A trait declared inside `verus!` but implemented outside it has its method
+  `ensures` trusted silently (an impl that breaks them still verifies). Give
+  such traits `requires` only, no `ensures`, unless a named trusted assumption
+  is approved.
+- A verified fn cannot call a fn or name a type declared outside `verus!`
+  (mpl types, the esdk `Error`, prim fns). Keep such calls in unverified
+  adapters outside `verus!` and list them by name as the trusted base.
+- Confinement (private fields, no byte accessors, clippy `disallowed-methods`)
+  is compiler/lint-checked, not Verus. Verus does not check that a function is
+  absent; do not describe confinement as Verus-proven.
+
 ## Good next targets (self-contained, no external crypto)
 - Nothing self-contained is left in esdk. The remaining models
   (header-auth ordering, EDK list loop, frame `ct ‖ tag`, AES-GCM bounds in

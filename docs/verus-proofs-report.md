@@ -43,6 +43,13 @@ make -C verification verify
 > verified in-crate: the key-length checks in `esdk/src/key_derivation.rs`
 > (`identity_kdf_key_len_ok`, `check_v2_key_lengths`; 45 verified, 0 errors).
 > The prim half (`prim/src/hkdf.rs`, aws-lc-rs HKDF) is not proven.
+>
+> **Update (branch `vr011-confinement`):** VR-011 plan steps 2–6. The plaintext
+> data key and the derived message key are confined to `esdk/src/secret.rs`.
+> That is checked by the Rust compiler and clippy, **not by Verus**. Verus
+> covers only the secret types' accessors and the commitment-value
+> declassification (57 verified, 0 errors). See "VR-011" under "In-crate
+> proofs".
 
 ### Adherence to the Verus skill invariants
 - No proof was weakened: **no** `assume(...)`, `admit()`, or `#[verifier::external]` anywhere. There is exactly **one** `#[verifier::external_body]` — the `utf8_check` wrapper around `std::str::from_utf8` in the AAD sub-parser — used per Verus skill invariant #11 for a std call Verus cannot evaluate (the same role `tag_ok` plays for the AES-GCM check). Its `ensures` is a **trusted boundary, not a proof**: the UTF-8-validation correctness is delegated to the std library; everything around it (that the parser rejects non-UTF-8 with `Err`, never panics) is proven. This is called out explicitly in §5.
@@ -73,17 +80,22 @@ Output (the `aws-esdk` line; `vstd` is verified first with
 `--no-default-features --features aws-lc-sys`:
 
 ```
-verification results:: 45 verified, 0 errors
-verification results:: 45 verified, 0 errors
+verification results:: 57 verified, 0 errors
+verification results:: 57 verified, 0 errors
 ```
 
 The count is Verus's obligation count, not a function count; the checked
-fns are 24 exec fns (13 before the in-crate work, 22 before VR-009) and 3
-proof fns. Files are under `esdk/src/message/` unless the path starts with
-`esdk/src/`.
+fns are 34 exec fns (13 before the in-crate work, 22 before VR-009, 24 before
+VR-011) and 3 proof fns. Files are under `esdk/src/message/` unless the path
+starts with `esdk/src/`.
 
 | Fn | File | Ensures | Target |
 |----|------|---------|--------|
+| `DataKeyRef::len`, `MessageKey::len`, `PublicBytes::len` | `esdk/src/secret.rs` | `n == self.view().len()` | VR-011 |
+| `MessageKey::zeroed`, `CommitmentValue::zeroed`, private `zero_vec` | `esdk/src/secret.rs` | the view is `len` zero bytes | VR-011 |
+| `CommitmentValue::as_suite_data` | `esdk/src/secret.rs` | `s@ == self.view()` (decrypt-side declassification) | VR-011 |
+| `PublicBytes::from_commitment`, private `copy_vec` | `esdk/src/secret.rs` | `p.view() == c.view()`, `p.is_public()` (encrypt-side declassification); `copy_vec`: `v@ == src@` | VR-011 |
+| `PublicBytes::into_vec`; type invariant `PublicBytes::inv` | `esdk/src/secret.rs` | `v@ == self.view()`; every `PublicBytes` has `lab@ == Label::Public` | VR-011 |
 | `identity_kdf_key_len_ok` | `esdk/src/key_derivation.rs` | `ok` iff `plaintext_key_len == encrypt_key_len` | VR-009 |
 | `check_v2_key_lengths` | `esdk/src/key_derivation.rs` | `Ok` iff `!identity_kdf && message_id_len == MESSAGE_ID_LEN_V2 && plaintext_key_len == suite_key_len`; `Ok(n) ==> n == suite_key_len && n == plaintext_key_len`; `Err(IdentityKdf)` iff `identity_kdf`; `Err(MessageIdLen)` iff not identity and the message ID length is wrong; `Err(PlaintextKeyLen)` iff both earlier checks pass and the key length is wrong | VR-009 |
 | `be_u16` | `serialize_functions.rs` | `r as int == spec_be_u16(b)` | VR-003 |
@@ -155,7 +167,8 @@ and `construct_frame` writes the frame fields with `write_frame_prefix`.
   trust boundary. In esdk, `derive_key_v1` / `derive_key_v2` / `derive_keys`
   are unverified adapters. Not proven there: the V1 output length and the V2
   commit-key length, which are MPL getters (`encryption_key_length()`,
-  `algorithm_suite_data_length()`) passed straight to `vec![0u8; n]`; the V1
+  `algorithm_suite_data_length()`) passed straight to `MessageKey::zeroed(n)` /
+  `CommitmentValue::zeroed(n)` (Verus proves only the `n` zero bytes, not `n`); the V1
   salt length table `digest_length`, which matches on the `prim` enum
   `DigestAlg` that Verus does not see (modelling it would need an external
   type specification, a trusted assumption); and the debug-only
@@ -164,6 +177,45 @@ and `construct_frame` writes the frame fields with `write_frame_prefix`.
   on it.
 - **MPL `EncryptionContext::from_bytes`** now does the encryption-context
   parsing; it lives in `mpl` and is out of scope here.
+- **VR-011 (data-key non-disclosure): not Verus-proven.** See the VR-011
+  section below.
+
+**VR-011: what each mechanism checks.** Property (decision D0): during
+encrypt and decrypt, the plaintext data key and the derived message encryption
+key are never written directly to the output or returned to the caller; they
+reach the output only through AES-GCM or, for the data key, as an EDK from the
+keyring. The V2 commitment value is public by spec (header suite data) and is
+declassified.
+
+- **Compiler-checked (Rust privacy):** outside `esdk/src/secret.rs`, esdk code
+  cannot read the bytes of a `DataKeyRef` or `MessageKey`. The fields are
+  private, and the types derive no `Clone`, `PartialEq` or `Debug`.
+  `PublicBytes`, the header suite-data type, can only be built from a
+  `CommitmentValue`. Without the `test-internals` feature,
+  `__test_internals` has no key-returning items.
+- **Lint-checked (clippy, `esdk/clippy.toml`):** esdk calls
+  `PlaintextDataKey::as_bytes`, the materials' `plaintext_data_key` and the
+  builders' `get_plaintext_data_key` only in the two ingress adapters, which
+  carry `#[expect(clippy::disallowed_methods)]`. CI runs
+  `cargo clippy --all-targets -- -D warnings`.
+- **Grep-checked only:** prim AES-GCM and HKDF are imported only in
+  `secret.rs`, and `key_derivation.rs` passes the HKDF PRK (returned by
+  `secret::hkdf_v2_extract`) only to the two `secret.rs` expand adapters.
+  No tool enforces either.
+- **Verus-proven:** only the `secret.rs` rows in the table above (accessor
+  `ensures` against the closed `view()`, and the `PublicBytes` label
+  invariant). Verus does not check that a function is absent, and the
+  encrypt/decrypt flow is not under Verus (plan step 7, not done).
+- **Trusted (TB-A, unverified adapters outside `verus!` in `secret.rs`):**
+  `data_key_from_encryption_materials`, `data_key_from_decryption_materials`,
+  `identity_copy`, `hkdf_v1`, `hkdf_v2_extract`, `hkdf_v2_expand_key`,
+  `hkdf_v2_expand_commitment`, `seal`, `open`. Also trusted: aws-lc-rs
+  (through `aws-mpl-primitives`), keyrings and CMMs, and the mpl key types
+  and materials (D1).
+- **Out of scope:** the mpl accessors themselves (D2), the ECDSA signing key
+  (D6), the `test-internals` feature (D3), and memory-level leaks (VR-010).
+  Error and `Debug` paths are covered structurally, plus the empirical
+  `esdk/tests/test_error_secrets.rs` (D5).
 
 **Properties that stay model-only, and why:**
 
@@ -207,6 +259,7 @@ and `construct_frame` writes the frame fields with `write_frame_prefix`.
 | VR-006 AES-GCM panic freedom | **model only** (`aes_gcm_bounds_proofs.rs`, re-audited against `prim/src/lib.rs`): encrypt slice always in-bounds, decrypt rejects under-sized output buffer | not in-crate: `prim` is not Verus-checked; the AES-GCM crypto itself (aws-lc-rs `seal`/`open`, FFI) is out of scope |
 | VR-007 EDK count validation | **in-crate**: count-check logic (`edk_count_check`) | the "before any KMS call" ordering (caller-side in `decrypt.rs`) |
 | VR-009 HKDF / key-derivation lengths | **esdk half in-crate**: the V1 identity-KDF key-length check (`identity_kdf_key_len_ok`) and the V2 KDF / message-ID / key-length checks that size the derived encryption key (`check_v2_key_lengths`), total and accept iff the checks pass; `derive_keys` dispatches on the verified `msg_format_version_from_u8` | **prim half not proven**: `prim/src/hkdf.rs` (incl. `get_len`) and aws-lc-rs HKDF (trust boundary; Verus not enabled in `prim`). In esdk, unverified: buffer sizes read directly from MPL getters (V1 output, V2 commit key), the V1 salt table `digest_length`, the `debug_assert!`s |
+| VR-011 data-key non-disclosure | **confinement** to `esdk/src/secret.rs`, compiler- and clippy-checked (not Verus); **Verus**: the secret types' accessors and the commitment-value declassification | not Verus-proven overall: the encrypt/decrypt flow (plan step 7), the TB-A adapters, aws-lc-rs, keyrings/CMMs and mpl key types are trusted; the PRK hand-off in `key_derivation.rs` is grep-checked only |
 | VR-010 key-material zeroization | model only; unchanged, deferred (out of scope for this work) | the modeled `write_volatile` loop was removed in `a864ad87`; current zeroization (`#[derive(Zeroize, ZeroizeOnDrop)]`) is not verified |
 | Infra: I/O seam | `esdk` is Verus-buildable; sync `verus!` cores are verified in-crate behind the async `Source`/`Tee` adapters (see "In-crate proofs") | the async adapters themselves stay unverified glue |
 
@@ -309,3 +362,9 @@ against the async readers. The models are kept.
 **In-crate proofs (branch `verus-vr009-key-derivation`):**
 `esdk/src/key_derivation.rs`, `esdk/src/message/header_types.rs` (the message
 ID length consts moved into `verus!`).
+
+**VR-011 confinement (branch `vr011-confinement`):** `esdk/src/secret.rs`
+(new), `esdk/clippy.toml` (new), `esdk/Cargo.toml`, `esdk/Cargo.lock`,
+`esdk/src/lib.rs`, `esdk/src/key_derivation.rs`, `esdk/src/encrypt.rs`,
+`esdk/src/decrypt.rs`, `esdk/src/message/body/body_encrypt.rs`,
+`esdk/src/message/body/body_decrypt.rs`, `esdk/tests/test_custom_keyring.rs`.

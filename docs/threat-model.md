@@ -817,22 +817,29 @@ All targets reference real files in this repository. Scores below are the origin
 the current coverage gaps, full scoring and agent assignments see
 `docs/verification-recommendations.md`.
 
-**Verification status at `5ea2a804`.** Verus checks two things:
+**Verification status on branch `vr011-confinement`** (in-crate counts; the model results are
+unchanged since `5ea2a804`). Verus checks two things:
 
 - **In-crate (shipped `esdk` code).** `make -C esdk verus` verifies the `verus!` blocks in
-  `esdk/src/message/` (22 exec fns, 3 proof fns): `40 verified, 0 errors` for both the default
-  features and `--no-default-features --features aws-lc-sys`. This covers parts of VR-003
-  (big-endian decoding, bounded readers, header-field decisions, the 0x41 Base64 hint),
-  VR-004 (regular- and final-frame sequence checks, frames-start-at-1 lemmas), VR-005 (body AAD,
-  IV, frame prefix layout) and VR-007 (EDK count check). The async readers and loops around these
-  cores are unverified glue.
+  `esdk/src/message/`, `esdk/src/key_derivation.rs` and `esdk/src/secret.rs` (34 exec fns,
+  3 proof fns): `57 verified, 0 errors` for both the default features and
+  `--no-default-features --features aws-lc-sys` (40 at `5ea2a804`, 45 after VR-009). This
+  covers parts of VR-003 (big-endian decoding, bounded readers, header-field decisions, the 0x41
+  Base64 hint), VR-004 (regular- and final-frame sequence checks, frames-start-at-1 lemmas),
+  VR-005 (body AAD, IV, frame prefix layout), VR-007 (EDK count check), the esdk half of VR-009
+  (key-derivation length checks) and the secret-type accessors of VR-011. The async readers and
+  loops around these cores are unverified glue.
+- **VR-011 confinement (compiler- and lint-checked, not Verus).** esdk code outside
+  `esdk/src/secret.rs` cannot read the bytes of the plaintext data key or the derived message key
+  (Rust privacy, plus clippy `disallowed-methods` in `esdk/clippy.toml`). VR-011 as a whole is not
+  Verus-proven.
 - **Model only (standalone files in `verification/`).** `make -C verification verify`: 10 files,
   71 verified, 0 errors. VR-002 (header-auth ordering), VR-006 (AES-GCM buffer bounds in `prim`),
   the EDK list loop, the frame `ct ‖ tag` append and VR-010 (zeroization) are checked only here.
   The VR-010 model describes a `write_volatile` loop that no longer exists (removed in
   `a864ad87`); it is deferred and unchanged.
-- **Not started:** VR-001 (key commitment), VR-008 (ECDSA length), VR-009 (HKDF length), VR-011
-  (data-key non-disclosure).
+- **Not started:** VR-001 (key commitment), VR-008 (ECDSA length), the prim half of VR-009 (HKDF
+  length, `prim/src/hkdf.rs`).
 
 The fn-by-fn list and the reasons each model-only property is not in-crate are in
 `docs/verus-proofs-report.md` ("In-crate proofs") and `verification/README.md`.
@@ -846,7 +853,7 @@ The fn-by-fn list and the reasons each model-only property is not in-crate are i
 | 5 | 9.0 | Frame construction / body serialization | Frame iteration and slicing never exceed buffer bounds; no panic | Verus | D2 | `verus-zero-panic` | `esdk/src/message/body/body_encrypt.rs` |
 | 6 | 9.0 | AES-GCM panic freedom | All slice accesses (nonce, tag, ciphertext) in-bounds; wrappers never panic | Verus | D1 | `verus-zero-panic` | `prim/src/lib.rs` (`aes_encrypt`, `aes_decrypt`) |
 | 7 | 6.0 | Key-material zeroization | `PlaintextDataKey` (and the other secret key types) bytes are zeroed on drop. Zeroization now comes from `#[derive(Zeroize, ZeroizeOnDrop)]`; the existing model covers the removed `write_volatile` loop and is deferred | Verus | I1, I5 | `verus-unsafe-ffi-safety` | `mpl/src/structures/algorithm_suite.rs` |
-| 8 | 4.8 | Data-key non-disclosure (VR-011, information flow) | Plaintext data key and keys derived from it are never written directly to the output stream or returned to the caller; they reach output only as AES-GCM input or, for the data key, as an EDK from the keyring. Keyrings/CMMs, AES-GCM ciphertext strength, and public key-byte accessors are out of scope. Builds on the in-crate Verus setup (Option A, now in place for `esdk`); not started | Verus | I1, I5, S3 | unassigned | `esdk/src/encrypt.rs`, `esdk/src/decrypt.rs`, `esdk/src/key_derivation.rs`, `esdk/src/message/body/*` |
+| 8 | 4.8 | Data-key non-disclosure (VR-011, information flow) | The plaintext data key and the derived message encryption key are never written directly to the output stream or returned to the caller; they reach output only through AES-GCM or, for the data key, as an EDK from the keyring. The V2 commitment value is derived from the data key but public by spec (header suite data), so it is a declassification. **Status (branch `vr011-confinement`):** confined to `esdk/src/secret.rs`, checked by the compiler (privacy) and clippy (`esdk/clippy.toml`), not by Verus. Verus covers only the secret types' accessors and the commitment declassification. Trusted: the TB-A adapters (`data_key_from_encryption_materials`, `data_key_from_decryption_materials`, `identity_copy`, `hkdf_v1`, `hkdf_v2_extract`, `hkdf_v2_expand_key`, `hkdf_v2_expand_commitment`, `seal`, `open`), aws-lc-rs, keyrings/CMMs. Out of scope: mpl key types and accessors, the ECDSA signing key, the `test-internals` feature. Not done: a verified encrypt/decrypt flow | Rust compiler + clippy; Verus (secret-type API only) | I1, I5, S3 | unassigned | `esdk/src/secret.rs`, `esdk/clippy.toml`; callers in `esdk/src/encrypt.rs`, `esdk/src/decrypt.rs`, `esdk/src/key_derivation.rs`, `esdk/src/message/body/*` |
 
 ### Verification Target Format (per recommendation)
 
