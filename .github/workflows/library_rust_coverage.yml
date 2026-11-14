@@ -9,6 +9,11 @@ on:
         description: "Project subdirectory to measure (e.g. mpl, esdk)."
         required: true
         type: string
+      test-server-report:
+        description: "Artifact of a TestServer run in this workflow run whose coverage/rust.lcov also counts. Empty for none."
+        required: false
+        type: string
+        default: ""
 
 jobs:
   patchCoverage:
@@ -75,5 +80,41 @@ jobs:
           done < <(sed -n 's|^SF:||p' '${{ inputs.project }}/lcov.info' | sort -u)
           exit "$missing"
 
+      # The test server dashboard merges this report, line by line, with the
+      # coverage the cross-language test server gives the same commit.
+      - name: Write the line coverage report
+        run: |
+          mkdir -p "$RUNNER_TEMP/local-coverage"
+          cp '${{ inputs.project }}/lcov.info' "$RUNNER_TEMP/local-coverage/${{ inputs.project }}.lcov"
+
+      - name: Upload the line coverage report
+        uses: actions/upload-artifact@v7
+        with:
+          name: local-coverage-${{ inputs.project }}
+          path: ${{ runner.temp }}/local-coverage/${{ inputs.project }}.lcov
+          if-no-files-found: error
+
+      # The cross-language TestServer runs this project's code too, so its line
+      # coverage of the Rust server counts toward the gate.
+      # Its lcov paths are already relative to the repository root.
+      - name: Download the TestServer's line coverage
+        if: inputs.test-server-report != ''
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.test-server-report }}
+          path: ${{ runner.temp }}/test-server-report
+
+      # diff-cover counts a line as covered when any report covers it.
+      # The TestServer report also measures the test servers' own source,
+      # which is not library code (ci.yml's library filters skip it too),
+      # so the gate leaves test-server files out.
       - name: Enforce 100% patch coverage
-        run: diff-cover '${{ inputs.project }}/lcov.info' --compare-branch 'origin/${{ github.base_ref }}' --fail-under 100
+        run: |
+          set -euo pipefail
+          reports=('${{ inputs.project }}/lcov.info')
+          if [ -d "$RUNNER_TEMP/test-server-report" ]; then
+            while IFS= read -r f; do reports+=("$f"); done < <(find "$RUNNER_TEMP/test-server-report" -path '*/coverage/rust.lcov')
+          fi
+          echo "Coverage reports: ${reports[*]}"
+          diff-cover "${reports[@]}" --exclude '*/test-server/*' --compare-branch 'origin/${{ github.base_ref }}' --fail-under 100

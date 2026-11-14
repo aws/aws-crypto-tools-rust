@@ -130,7 +130,7 @@ jobs:
               ],
               "coverage": [
                 {"when": "esdk", "project": "esdk"},
-                {"when": "mpl", "project": "mpl"},
+                {"when": "mpl", "project": "mpl", "test-server-report": "mpl-test-server-reports"},
                 {"when": "prim", "project": "prim"}
               ],
               "cpp-shim": [
@@ -140,7 +140,7 @@ jobs:
                 {"when": "esdk"}
               ],
               "duvet": [
-                {"when": "esdk", "name": "esdk", "project": "esdk", "artifact": "esdk-duvet-report"},
+                {"when": "esdk", "name": "esdk", "project": "esdk", "artifact": "esdk-duvet-report", "test-server-duvet": "esdk-test-server-duvet"},
                 {"when": "esdk", "name": "aws-esdk-cpp", "project": "esdk/shims/aws-esdk-cpp", "artifact": "aws-esdk-cpp-duvet-report"}
               ],
               "test-server-builds": [
@@ -238,12 +238,37 @@ jobs:
     with:
       platforms: '[{"os": "macos", "runner": "macos-latest"}]'
 
+  # The duvet test annotations of the shared commons Tests that run for Rust.
+  test-server-duvet:
+    name: TestServer duvet annotations
+    needs: detect
+    if: fromJSON(needs.detect.outputs.jobs)['duvet'] != null
+    permissions:
+      contents: read
+      # The reusable workflow's resolve job reads this pull request's
+      # Test-Server-Override lines.
+      pull-requests: read
+    uses: aws/aws-crypto-tools-commons/.github/workflows/test-server-duvet-reusable.yml@main
+    with:
+      runner: *codebuild-linux
+      commons-ref: main
+      product: esdk
+      language: rust
+      config-path: esdk/test-server
+      spec-command: scripts/resolve-spec.sh
+      spec-root: .
+      artifact-name: esdk-test-server-duvet
+    secrets:
+      repo-pat: ${{ secrets.COMMONS_REPO_PAT }}
+
   # 100% of new lines must be covered by tests.
   # Coverage is measured against the PR's base branch, so it only runs on PRs.
   coverage:
     name: Patch coverage (${{ matrix.project }})
-    needs: detect
-    if: github.event_name == 'pull_request' && fromJSON(needs.detect.outputs.jobs)['coverage'] != null
+    # The MPL TestServer's line coverage of the Rust server counts toward the mpl gate.
+    # always(): run even when that job is skipped or fails.
+    needs: [detect, mpl-test-server]
+    if: always() && github.event_name == 'pull_request' && fromJSON(needs.detect.outputs.jobs)['coverage'] != null
     strategy:
       fail-fast: false
       matrix:
@@ -254,6 +279,7 @@ jobs:
     uses: ./.github/workflows/library_rust_coverage.yml
     with:
       project: ${{ matrix.project }}
+      test-server-report: ${{ matrix.test-server-report }}
 
   cpp-coverage:
     name: C++ shim patch coverage
@@ -266,7 +292,7 @@ jobs:
 
   duvet:
     name: Duvet
-    needs: detect
+    needs: [detect, test-server-duvet]
     if: fromJSON(needs.detect.outputs.jobs)['duvet'] != null
     permissions:
       contents: read
@@ -438,6 +464,7 @@ jobs:
       - supply-chain
       - coverage
       - cpp-shim
+      - test-server-duvet
       - cpp-coverage
       - duvet
       - smithy-conformance
