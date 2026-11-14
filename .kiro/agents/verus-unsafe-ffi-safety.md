@@ -21,9 +21,10 @@ Together they form a complete verification chain:
 All agents share:
 - The same Verus toolchain at `~/verus/verus`
 - The same `Seq<u8>` abstraction for byte buffer modeling
-- The same ESDK specification source at `mpl/aws-encryption-sdk-specification/`
+- The same ESDK specification source at `spec/` (repo root, checked out by `scripts/resolve-spec.sh`; not a submodule, may be absent locally; tracked documents listed in `esdk/.duvet/config.toml`)
 - The same shared constants (algorithm suite IDs, IV/tag lengths, key lengths)
-- The same project implementation at `AwsEncryptionSDK/runtimes/rust/src/`
+- The same project implementation at `esdk/src/` (crate `aws-esdk`, the only Verus-checked crate), with `mpl/src/` (`aws-crypto-mpl`) and `prim/src/` (`aws-mpl-primitives`) as dependencies that are not Verus-checked
+- The same capability map and provability gate at `.kiro/agents/verus-capabilities.md` (in-crate constraints, what is already proven, what is not provable here)
 
 ## Motivation
 
@@ -350,14 +351,13 @@ fn shrink_output_to_exact(buf: &mut Vec<u8>, exact_len: usize)
 
 ## Process
 
-1. **Read the Implementation:** Examine all `unsafe` blocks in the Rust code:
-   - `AwsEncryptionSDK/runtimes/rust/src/aes_gcm.rs` — AES-GCM via aws-lc-rs (uses `LessSafeKey`)
-   - `AwsEncryptionSDK/runtimes/rust/src/ecdsa.rs` — ECDSA via aws-lc-rs/aws-lc-sys (raw EC_POINT ops)
-   - `AwsEncryptionSDK/runtimes/rust/src/hmac.rs` — HMAC via aws-lc-rs
-   - `AwsEncryptionSDK/runtimes/rust/src/random.rs` — RNG via aws-lc-rs
-   - `AwsEncryptionSDK/runtimes/rust/src/digest.rs` — Hash functions
-   - `AwsEncryptionSDK/runtimes/rust/src/aes_kdf_ctr.rs` — AES-KDF-CTR
-   - `AwsEncryptionSDK/runtimes/rust/src/ecdh.rs` — ECDH key agreement
+1. **Read the Implementation:** Examine all `unsafe` blocks in the Rust code. Current facts (see `docs/verification-recommendations.md`, "Unsafe Code Inventory", and `.kiro/agents/verus-capabilities.md`, Category 3):
+   - There is **no `unsafe` in `esdk/src`, `mpl/src` or `prim/src`**, and no raw `aws-lc-sys` calls (no `EC_POINT` / `EC_GROUP`, no `from_raw_parts`, no `set_len`). Re-check with a search before relying on this.
+   - The only shipped-path `unsafe` is 4 expressions in `esdk/shims/aws-esdk-cpp/src/lib.rs` (`&*ptr` / `as_ref()` on C++-supplied handles). Validity of those pointers is a property of the C++ caller and is not Verus-provable.
+   - The crypto boundary is the **safe** `aws-lc-rs` API, reached through `prim/src/lib.rs` (AES-GCM `aes_encrypt` / `aes_decrypt` via `LessSafeKey`, `hmac`, `digest`, `generate_random_bytes`, `kbkdf_ctr_hmac`), `prim/src/ecdsa.rs` (ECDSA via the safe signature API) and `prim/src/hkdf.rs` (HKDF). `prim` is not Verus-checked, by decision, so proofs of safe-wrapper preconditions there are standalone models in `verification/`.
+   - Zeroization of `PlaintextDataKey` comes from `#[derive(Zeroize, ZeroizeOnDrop)]` (trusted `zeroize` crate); the hand-written `write_volatile` loop was removed in `a864ad87`, and the VR-010 model (`verification/zeroize_proofs.rs`) describes removed code.
+   - There is no ECDH code in `prim/`.
+   - The generic raw-pointer workflow below applies only if new `unsafe` code is introduced.
 
 2. **Catalog All Unsafe Operations:** For each `unsafe` block:
    - What raw pointer operations occur?
@@ -380,8 +380,8 @@ fn shrink_output_to_exact(buf: &mut Vec<u8>, exact_len: usize)
    - Prove no information leakage from buffer sizing
 
 5. **Prove Composability:** Show that safe Rust callers always satisfy the unsafe block's preconditions:
-   - `AESEncryptExtern` validates key/iv/msg lengths BEFORE calling `do_aes_encrypt`
-   - `do_aes_encrypt` creates `UnboundKey` and `LessSafeKey` BEFORE calling `seal_in_place_separate_tag`
+   - The callers in `esdk/src` (e.g. `construct_frame` in `esdk/src/message/body/body_encrypt.rs`) pass key/iv/plaintext lengths that satisfy `prim::aes_encrypt`'s checks
+   - `prim::aes_encrypt` (`prim/src/lib.rs`) creates `UnboundKey` and `LessSafeKey` (errors mapped with `map_err`) BEFORE calling `seal_in_place_separate_tag`
    - The aws-lc-rs API layer provides safe wrappers — prove the wrapper's preconditions
 
 6. **Verify:** Run `~/verus/verus <file>.rs` to confirm all proofs pass.
@@ -479,23 +479,15 @@ verus! {
 
 ## Key Unsafe Blocks to Verify in This Project
 
-From `AwsEncryptionSDK/runtimes/rust/src/ecdsa.rs`:
-```rust
-// These call raw aws-lc-sys functions:
-unsafe { EC_GROUP_new_by_curve_name(nid) }
-unsafe { EC_POINT_new(ec_group) }
-unsafe { EC_POINT_oct2point(ec_group, ec_point, data.as_ptr(), data.len(), null_mut()) }
-unsafe { EC_POINT_point2oct(ec_group, ec_point, form, out_buf.as_mut_ptr(), PUBLIC_KEY_MAX_LEN, null_mut()) }
-unsafe { EC_POINT_free(ec_point) }
-```
+There are currently **no `unsafe` blocks in `esdk/src`, `mpl/src` or `prim/src`**. The raw `aws-lc-sys` `EC_POINT` / `EC_GROUP` calls this section used to list came from an older, Dafny-era ESDK source layout that does not exist in this repo; `prim/src/ecdsa.rs` uses the safe `aws-lc-rs` signature API. The only shipped-path `unsafe` is in the C++ shim (`esdk/shims/aws-esdk-cpp/src/lib.rs`, 4 expressions), whose pointer validity is trusted (C++ caller).
 
-From `AwsEncryptionSDK/runtimes/rust/src/aes_gcm.rs`:
+What remains provable is the **safe-wrapper preconditions** around `aws-lc-rs`. From `prim/src/lib.rs` (`aes_encrypt` / `aes_decrypt`; `prim` is not Verus-checked, by decision, so this is model-only, see `verification/aes_gcm_bounds_proofs.rs`, VR-006):
 ```rust
-// aws-lc-rs wrappers (internally unsafe):
-UnboundKey::new(alg, key)           // key must be valid length
-Nonce::assume_unique_for_key(iv.try_into().unwrap())  // iv must be 12 bytes
-key.seal_in_place_separate_tag(nonce, aad, &mut in_out_buffer)  // buffer must be valid
-key.open_separate_gather(nonce, aad, cipher_text, auth_tag, &mut out_buffer)  // all buffers valid
+// aws-lc-rs safe API (internally unsafe); every failure is mapped to Err, no unwrap:
+UnboundKey::new(alg, key)                         // key must be the suite's key length
+Nonce::try_assume_unique_for_key(iv)              // iv must be 12 bytes, else Err
+key.seal_in_place_separate_tag(nonce, aad, cipher_slice)  // in-place over the appended message
+key.open_separate_gather(nonce, aad, cipher_text, auth_tag, plain_text)  // plain_text.len() >= cipher_text.len() checked first
 ```
 
 ## Rules
