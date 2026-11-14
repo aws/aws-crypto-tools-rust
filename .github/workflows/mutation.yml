@@ -37,15 +37,23 @@ jobs:
 
   mutation:
     needs: scope
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - crate: mpl
+            server: mpl/test-server:mpl-test-server
+          - crate: esdk
+            server: esdk/test-server:esdk-test-server
     permissions:
       contents: read
       id-token: write
     uses: aws/aws-crypto-tools-commons/.github/workflows/mutation-rust-reusable.yml@lucmcdon/test-server-mutation
     with:
       runner: codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}
-      crate: mpl
-      product: mpl
-      server: mpl/test-server:mpl-test-server
+      crate: ${{ matrix.crate }}
+      product: ${{ matrix.crate }}
+      server: ${{ matrix.server }}
       changed-since: ${{ needs.scope.outputs.changed-since }}
       commons-ref: lucmcdon/test-server-mutation
       aws-role-arn: arn:aws:iam::370957321024:role/GitHub-CI-Public-ESDK-Dafny-Role-us-west-2
