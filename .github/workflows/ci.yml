@@ -368,6 +368,44 @@ jobs:
     secrets:
       repo-pat: ${{ secrets.COMMONS_REPO_PAT }}
 
+  # Checks that each duvet test annotation's test runs the code it cites,
+  # using the TestServer runs' per-test coverage.
+  # Not in pr-ci-all-required, so it can't block a merge yet.
+  duvet-test-reach:
+    name: duvet test reach (${{ matrix.library }})
+    needs: [detect, esdk-test-server, mpl-test-server]
+    if: always() && needs.detect.result == 'success'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - library: esdk
+            source: esdk/src
+            local-tests: esdk/tests
+            crate: aws-esdk
+            artifacts: esdk-test-server-reports*
+          - library: mpl
+            source: mpl/src
+            local-tests: mpl/tests
+            crate: aws-crypto-mpl
+            artifacts: mpl-test-server-reports*
+    permissions:
+      contents: read
+      actions: read
+      # The reusable workflow reads this pull request's Test-Server-Override lines.
+      pull-requests: read
+    uses: aws/aws-crypto-tools-commons/.github/workflows/duvet-test-reach-reusable.yml@lucmcdon/duvet-test-reach
+    with:
+      runner: *codebuild-linux
+      library: ${{ matrix.library }}
+      language: rust
+      source: ${{ matrix.source }}
+      local-tests: ${{ matrix.local-tests }}
+      crate: ${{ matrix.crate }}
+      artifacts: ${{ matrix.artifacts }}
+    secrets:
+      repo-pat: ${{ secrets.COMMONS_REPO_PAT }}
+
   # Benchmarks only upload to CloudWatch on the daily run.
   # Not in pr-ci-all-required, so a slow or noisy benchmark can't block a merge.
   benchmarks:
