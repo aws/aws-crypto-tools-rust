@@ -5,5 +5,19 @@
     "default-cmm",
     "static-keyring"
   ],
-  "unsupportedFeatures": []
+  "unsupportedFeatures": [],
+  "errors": {
+    "supported": {
+      "kind": { "version": 1 },
+      "service": { "version": 1 },
+      "resource": { "version": 1 },
+      "code": { "version": 1 },
+      "retryable": { "version": 1 },
+      "retryKind": { "version": 1 },
+      "conflictReason": { "version": 1 }
+    },
+    "unsupported": {
+      "message": "Rust error messages can change in any release, so tests check the other members instead"
+    }
+  }
 }

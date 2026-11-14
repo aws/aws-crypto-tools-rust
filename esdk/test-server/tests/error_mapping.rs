@@ -4,7 +4,9 @@
 //! Which error type each failure returns:
 //! a rejected CreateClient configuration is `GenericServerError`,
 //! invalid Encrypt input is `ESDKClientError`.
+//! An `ESDKClientError` from the ESDK also carries the error's kind and other members.
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use aws_esdk_test_server::handlers::AppState;
@@ -74,16 +76,38 @@ async fn post<Req: serde::Serialize>(
     (status, bytes.to_vec())
 }
 
-fn error_type(body: &[u8]) -> String {
+fn member(body: &[u8], name: &str) -> Option<Value> {
     let Value::Map(map) = ciborium::from_reader(body).expect("decode cbor error") else {
         panic!("error body was not a CBOR map");
     };
-    map.iter()
-        .find_map(|(k, v)| match (k, v) {
-            (Value::Text(k), Value::Text(v)) if k == "__type" => Some(v.clone()),
-            _ => None,
-        })
+    map.into_iter().find_map(|(k, v)| match k {
+        Value::Text(k) if k == name => Some(v),
+        _ => None,
+    })
+}
+
+fn error_type(body: &[u8]) -> String {
+    member(body, "__type")
+        .and_then(|v| v.into_text().ok())
         .expect("error carries __type")
+}
+
+async fn create_raw_aes_client(state: &Arc<AppState>) -> String {
+    let create = raw_aes_create_client(
+        "esdk-test-server",
+        (0u8..32).collect(),
+        AesWrappingAlg::Alg256,
+    );
+    let (status, body) = post(state, "CreateClient", &create).await;
+    assert_eq!(
+        status,
+        200,
+        "CreateClient: {}",
+        String::from_utf8_lossy(&body)
+    );
+    let client: CreateClientResponse =
+        ciborium::from_reader(&body[..]).expect("decode CreateClient response");
+    client.client_id
 }
 
 /// Commons KEYRING-006.
@@ -121,23 +145,8 @@ async fn create_client_rejects_reserved_namespace_as_generic_error() {
 #[tokio::test]
 async fn encrypt_rejects_non_positive_frame_length_as_esdk_error() {
     let state = Arc::new(AppState::new());
-    let create = raw_aes_create_client(
-        "esdk-test-server",
-        (0u8..32).collect(),
-        AesWrappingAlg::Alg256,
-    );
-    let (status, body) = post(&state, "CreateClient", &create).await;
-    assert_eq!(
-        status,
-        200,
-        "CreateClient: {}",
-        String::from_utf8_lossy(&body)
-    );
-    let client: CreateClientResponse =
-        ciborium::from_reader(&body[..]).expect("decode CreateClient response");
-
     let encrypt = EncryptRequest {
-        client_id: client.client_id,
+        client_id: create_raw_aes_client(&state).await,
         plaintext: b"error-mapping plaintext".to_vec(),
         encryption_context: None,
         algorithm_suite_id: None,
@@ -150,4 +159,34 @@ async fn encrypt_rejects_non_positive_frame_length_as_esdk_error() {
         ESDK_ERROR,
         "invalid ESDK encrypt input is the modeled ESDK error",
     );
+}
+
+/// Commons EC-010, with the error checks on.
+#[tokio::test]
+async fn encrypt_with_reserved_context_key_sends_the_error_kind() {
+    let state = Arc::new(AppState::new());
+    let encrypt = EncryptRequest {
+        client_id: create_raw_aes_client(&state).await,
+        plaintext: b"error-mapping plaintext".to_vec(),
+        encryption_context: Some(BTreeMap::from([(
+            "aws-crypto-public-key".to_owned(),
+            "any-value".to_owned(),
+        )])),
+        algorithm_suite_id: None,
+        frame_length: None,
+    };
+    let (status, body) = post(&state, "Encrypt", &encrypt).await;
+    assert_eq!(
+        status, 400,
+        "a reserved encryption context key must be rejected"
+    );
+    assert_eq!(error_type(&body), ESDK_ERROR);
+    assert_eq!(
+        member(&body, "kind"),
+        Some(Value::Text("Validation".to_owned()))
+    );
+    assert_eq!(member(&body, "retryable"), Some(Value::Bool(false)));
+    // A local check calls no AWS service, so the server leaves these members out.
+    assert_eq!(member(&body, "service"), None);
+    assert_eq!(member(&body, "resource"), None);
 }
