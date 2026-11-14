@@ -11,8 +11,8 @@ use crate::message::serialize_functions::{
     read_bytes, read_into_vec, read_seq_u32_bounded, read_u32, write_to_sink,
 };
 use crate::message::{Error, header, ser_err, serialize_functions};
+use crate::secret::{self, MessageKey};
 use crate::shapes::{Sink, Source, Tee};
-use aws_mpl_primitives::aes_decrypt;
 use vstd::prelude::*;
 
 verus! {
@@ -140,7 +140,7 @@ pub(crate) async fn read_and_decrypt_framed_message_body(
     ciphertext: &mut dyn Source,
     w: &mut dyn Sink,
     header: &HeaderInfo,
-    key: &[u8],
+    key: &MessageKey,
     sig_digest: &mut Tee,
     fail_if_multi_frame: bool,
 ) -> Result<Vec<u8>, Error> {
@@ -383,7 +383,7 @@ pub(crate) async fn read_and_decrypt_framed_message_body(
                 //= reason=`?` propagates aes_decrypt errors, halting decryption immediately
                 //# If this decryption fails, this operation MUST immediately halt and fail.
                 // final frame is empty, so return last full frame
-                aes_decrypt(
+                secret::open(
                     alg_suite,
                     key,
                     &enc_content,
@@ -404,7 +404,7 @@ pub(crate) async fn read_and_decrypt_framed_message_body(
                 //= spec/client-apis/decrypt.md#decrypt-the-message-body
                 //= reason=`?` propagates aes_decrypt errors, halting decryption immediately
                 //# If this decryption fails, this operation MUST immediately halt and fail.
-                aes_decrypt(
+                secret::open(
                     alg_suite,
                     key,
                     &enc_content,
@@ -577,7 +577,7 @@ pub(crate) async fn read_and_decrypt_framed_message_body(
         //= spec/client-apis/decrypt.md#decrypt-the-message-body
         //= reason=`?` propagates aes_decrypt errors, halting decryption immediately
         //# If this decryption fails, this operation MUST immediately halt and fail.
-        aes_decrypt(
+        secret::open(
             alg_suite,
             //= spec/client-apis/decrypt.md#decrypt-the-message-body
             //= reason=key is the derived data key passed from step_decrypt_body
@@ -605,7 +605,7 @@ pub(crate) async fn read_and_decrypt_framed_message_body(
 pub(crate) async fn read_and_decrypt_non_framed_message_body(
     ciphertext: &mut dyn Source,
     header: &HeaderInfo,
-    key: &[u8],
+    key: &MessageKey,
     sig_digest: &mut Tee,
 ) -> Result<Vec<u8>, Error> {
     // nonframed write-path requirements: ESDK only encrypts framed data
@@ -760,7 +760,7 @@ pub(crate) async fn read_and_decrypt_non_framed_message_body(
     //= spec/client-apis/decrypt.md#nonframed-message-body-decryption
     //= reason=`?` propagates aes_decrypt errors, halting decryption immediately
     //# If this decryption fails, this operation MUST immediately halt and fail.
-    aes_decrypt(
+    secret::open(
         get_alg_suite(&header.suite)?,
         //= spec/client-apis/decrypt.md#nonframed-message-body-decryption
         //# - The cipherkey MUST be the derived data key.

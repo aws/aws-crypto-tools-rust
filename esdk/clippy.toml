@@ -1,0 +1,10 @@
+# VR-011: esdk reads the plaintext data key only in esdk/src/secret.rs, at the
+# two ingress adapters (`data_key_from_encryption_materials` and
+# `data_key_from_decryption_materials`), which carry `#[expect]` for this lint.
+disallowed-methods = [
+    { path = "aws_crypto_mpl::types::PlaintextDataKey::as_bytes", reason = "read the data key only in esdk/src/secret.rs" },
+    { path = "aws_crypto_mpl::types::EncryptionMaterials::plaintext_data_key", reason = "read the data key only in esdk/src/secret.rs" },
+    { path = "aws_crypto_mpl::types::DecryptionMaterials::plaintext_data_key", reason = "read the data key only in esdk/src/secret.rs" },
+    { path = "aws_crypto_mpl::types::builders::EncryptionMaterialsBuilder::get_plaintext_data_key", reason = "read the data key only in esdk/src/secret.rs" },
+    { path = "aws_crypto_mpl::types::builders::DecryptionMaterialsBuilder::get_plaintext_data_key", reason = "read the data key only in esdk/src/secret.rs" },
+]

@@ -10,8 +10,9 @@ use crate::message::serialize_functions::{
     self as sf, read_opt_u8, read_up_to_peek, write_bytes, write_to_sink,
 };
 use crate::message::{DigestWriter, Error, ser_err};
+use crate::secret::{self, MessageKey};
 use crate::shapes::{Sink, Source};
-use aws_mpl_primitives::{AesGcm, aes_encrypt};
+use aws_mpl_primitives::AesGcm;
 use vstd::prelude::*;
 
 verus! {
@@ -156,7 +157,7 @@ const MAX_DATA: usize = (1usize << 36) - 32;
 /// Input for constructing a single frame (regular or final).
 pub(crate) struct ConstructFrameInput<'a> {
     pub(crate) alg_suite: AesGcm,
-    pub(crate) key: &'a [u8],
+    pub(crate) key: &'a MessageKey,
     pub(crate) plaintext: &'a [u8],
     pub(crate) message_id: &'a [u8],
     pub(crate) aad_content: BodyAADContent,
@@ -302,7 +303,7 @@ pub(crate) async fn construct_frame(
     //
     //= spec/client-apis/encrypt.md#construct-a-frame
     //# The value MUST be the authentication tag output when calculating the encrypted content for this frame.
-    aes_encrypt(
+    secret::seal(
         input.alg_suite,
         iv,
         //= spec/client-apis/encrypt.md#construct-a-frame
@@ -343,7 +344,7 @@ pub(crate) async fn construct_frame(
 pub(crate) async fn encrypt_and_serialize_body(
     plaintext: &mut dyn Source,
     header: &HeaderInfo,
-    key: &[u8],
+    key: &MessageKey,
     ciphertext: &mut dyn Sink,
     sig_digest: &mut DigestWriter,
     max_plaintext_length: Option<u64>,

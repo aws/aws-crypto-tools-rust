@@ -7,10 +7,10 @@ use crate::error::{Kind, err};
 use crate::message::header_types::MESSAGE_ID_LEN_V2;
 use crate::message::header_types::{MessageFormatVersion, msg_format_version_from_u8};
 use crate::message::serializable_types::get_encrypt_key_length;
+use crate::secret::{self, CommitmentValue, DataKeyRef, MessageKey};
 use crate::suites::kdf_digest;
 use aws_crypto_mpl::types::{AlgorithmSuite, KeyDerivationAlgorithm};
 use vstd::prelude::*;
-use zeroize::Zeroizing;
 
 verus! {
 
@@ -80,18 +80,12 @@ fn check_v2_key_lengths(
 
 } // verus!
 
-// Holds a derived data key and an optional commitment key (the latter only for
-// committing algorithm suites). This is `pub` only so `derive_keys` is reachable
-// from integration tests via `__test_internals`; it is not supported public API.
-#[doc(hidden)]
-#[expect(
-    clippy::exhaustive_structs,
-    reason = "test-internal struct, not public API"
-)]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ExpandedKeyMaterial {
-    pub data_key: Zeroizing<Vec<u8>>,
-    pub commitment_key: Option<Zeroizing<Vec<u8>>>,
+// Holds the derived message encryption key and an optional commitment value (the
+// latter only for committing algorithm suites). Both are opaque `secret` types:
+// code outside `secret.rs` cannot read their bytes (VR-011).
+pub(crate) struct DerivedKeys {
+    pub(crate) data_key: MessageKey,
+    pub(crate) commitment_key: Option<CommitmentValue>,
 }
 
 // Output length in bytes of each supported hash. Used to size the all-zero HKDF
@@ -109,9 +103,9 @@ fn digest_length(alg: aws_mpl_primitives::DigestAlg) -> Result<usize, Error> {
 // key commitment.
 pub(crate) fn derive_key_v1(
     message_id: &[u8],
-    plaintext_data_key: &[u8],
+    plaintext_data_key: &DataKeyRef<'_>,
     suite: &AlgorithmSuite,
-) -> Result<ExpandedKeyMaterial, Error> {
+) -> Result<DerivedKeys, Error> {
     // `derive_keys` dispatches on the message version, so a non-V1 suite here is an
     // internal bug rather than bad input.
     debug_assert_eq!(suite.message_format_version(), 1);
@@ -141,8 +135,8 @@ pub(crate) fn derive_key_v1(
                     ),
                 ));
             }
-            Ok(ExpandedKeyMaterial {
-                data_key: Zeroizing::new(plaintext_data_key.to_vec()),
+            Ok(DerivedKeys {
+                data_key: secret::identity_copy(plaintext_data_key),
                 commitment_key: None,
             })
         }
@@ -167,7 +161,7 @@ pub(crate) fn derive_key_v1(
             //# - The length of the output keying material MUST equal the encryption key length
             //# specified by the algorithm suite's encryption settings.
             let output_len = suite.encryption_key_length();
-            let mut derived_key = Zeroizing::new(vec![0u8; output_len]);
+            let mut derived_key = MessageKey::zeroed(output_len);
 
             //= spec/framework/transitive-requirements.md#hkdf-encryption-key
             //# - If the algorithm suite is not key committing,
@@ -179,9 +173,9 @@ pub(crate) fn derive_key_v1(
             //= type=implication
             //= reason=primitives::hkdf bundles HKDF-Extract and HKDF-Expand; the PRK input to expand is the extract output by construction of the helper
             //# - The pseudorandom key MUST be the output of the extract step.
-            aws_mpl_primitives::hkdf(alg, &salt, plaintext_data_key, &info, &mut derived_key[..])?;
+            secret::hkdf_v1(alg, &salt, plaintext_data_key, &info, &mut derived_key)?;
 
-            Ok(ExpandedKeyMaterial {
+            Ok(DerivedKeys {
                 data_key: derived_key,
                 commitment_key: None,
             })
@@ -204,12 +198,11 @@ const KEY_LABEL: &str = "DERIVEKEY";
 //= spec/framework/transitive-requirements.md#hkdf-commit-key
 //# If an algorithm suite uses HKDF to derive the commit key,
 //# the AWS Encryption SDK MUST use HKDF as follows.
-#[doc(hidden)]
-pub fn derive_key_v2(
+pub(crate) fn derive_key_v2(
     message_id: &[u8],
-    plaintext_data_key: &[u8],
+    plaintext_data_key: &DataKeyRef<'_>,
     suite: &AlgorithmSuite,
-) -> Result<ExpandedKeyMaterial, Error> {
+) -> Result<DerivedKeys, Error> {
     // `derive_keys` dispatches on the message version, so a non-V2 suite here is an
     // internal bug rather than bad input.
     debug_assert_eq!(suite.message_format_version(), 2);
@@ -289,17 +282,17 @@ pub fn derive_key_v2(
     //# the AWS Encryption SDK SHOULD only perform the extract step once
     //# and use the same output from the extract step
     //# for both the encryption key and the commitment key.
-    let pseudo_random_key = aws_mpl_primitives::hkdf_extract(alg, message_id, plaintext_data_key);
+    let pseudo_random_key = secret::hkdf_v2_extract(alg, message_id, plaintext_data_key);
 
     //= spec/framework/transitive-requirements.md#hkdf-encryption-key
     //# - The length of the output keying material MUST equal the encryption key length
     //# specified by the algorithm suite's encryption settings.
-    let mut encrypt_key = Zeroizing::new(vec![0u8; kdf_key_len]);
+    let mut encrypt_key = MessageKey::zeroed(kdf_key_len);
 
     //= spec/framework/transitive-requirements.md#hkdf-commit-key
     //# - The length of the output keying material MUST equal the key derivation output length
     //# specified by the algorithm suite's commit key derivation settings.
-    let mut commit_key = Zeroizing::new(vec![0u8; commit_len]);
+    let mut commit_key = CommitmentValue::zeroed(commit_len);
 
     //= spec/framework/transitive-requirements.md#hkdf-encryption-key
     //# - If the algorithm suite is key committing,
@@ -312,7 +305,7 @@ pub fn derive_key_v2(
     //= type=implication
     //= reason=pseudo_random_key holds the hkdf_extract return value above and is the only PRK input threaded into hkdf_expand here by data dependency
     //# - The pseudorandom key MUST be the output of the extract step.
-    aws_mpl_primitives::hkdf_expand(&pseudo_random_key, &info, &mut encrypt_key[..])?;
+    secret::hkdf_v2_expand_key(&pseudo_random_key, &info, &mut encrypt_key)?;
 
     //= spec/framework/transitive-requirements.md#hkdf-commit-key
     //= type=implication
@@ -321,28 +314,25 @@ pub fn derive_key_v2(
     //
     //= spec/framework/transitive-requirements.md#hkdf-commit-key
     //# - The info MUST be the string `COMMITKEY` as UTF-8 encoded bytes.
-    aws_mpl_primitives::hkdf_expand(
+    secret::hkdf_v2_expand_commitment(
         &pseudo_random_key,
         &[COMMIT_LABEL.as_bytes()],
-        &mut commit_key[..],
+        &mut commit_key,
     )?;
 
-    Ok(ExpandedKeyMaterial {
+    Ok(DerivedKeys {
         data_key: encrypt_key,
         commitment_key: Some(commit_key),
     })
 }
 
 // Derives key material for encryption/decryption. Delegates to the V1 or V2
-// routine based on the algorithm suite's message version. `pub` only so it is
-// reachable from integration tests via `__test_internals`; internal callers use
-// the crate path.
-#[doc(hidden)]
-pub fn derive_keys(
+// routine based on the algorithm suite's message version.
+pub(crate) fn derive_keys(
     message_id: &[u8],
-    plaintext_data_key: &[u8],
+    plaintext_data_key: &DataKeyRef<'_>,
     suite: &AlgorithmSuite,
-) -> Result<ExpandedKeyMaterial, Error> {
+) -> Result<DerivedKeys, Error> {
     debug_assert_ne!(message_id.len(), 0);
     debug_assert_eq!(get_encrypt_key_length(suite), plaintext_data_key.len());
 
@@ -355,6 +345,67 @@ pub fn derive_keys(
             Kind::Internal,
             format!("unknown message version {}", suite.message_format_version()),
         )),
+    }
+}
+
+/// Test-only API: key derivation over caller-supplied bytes, returning the
+/// derived bytes so esdk's integration tests can assert on them. Built only with
+/// the `test-internals` feature; it is a key accessor, so it is out of scope for
+/// VR-011. Not public API; exempt from semantic versioning.
+#[cfg(feature = "test-internals")]
+pub(crate) mod test_api {
+    use super::{AlgorithmSuite, DerivedKeys, Error, secret};
+    use zeroize::Zeroizing;
+
+    /// The derived data key and optional commitment key, as bytes.
+    #[expect(
+        clippy::exhaustive_structs,
+        reason = "test-internal struct, not public API"
+    )]
+    #[derive(Clone, Debug, Eq, PartialEq)]
+    pub struct ExpandedKeyMaterial {
+        /// The derived message encryption key.
+        pub data_key: Zeroizing<Vec<u8>>,
+        /// The V2 commitment key, if the suite commits.
+        pub commitment_key: Option<Zeroizing<Vec<u8>>>,
+    }
+
+    fn expose(keys: &DerivedKeys) -> ExpandedKeyMaterial {
+        ExpandedKeyMaterial {
+            data_key: secret::expose_message_key_for_tests(&keys.data_key),
+            commitment_key: keys
+                .commitment_key
+                .as_ref()
+                .map(secret::expose_commitment_for_tests),
+        }
+    }
+
+    /// `derive_keys` over a caller-supplied plaintext data key.
+    ///
+    /// # Errors
+    ///
+    /// As the crate-internal `derive_keys`.
+    pub fn derive_keys(
+        message_id: &[u8],
+        plaintext_data_key: &[u8],
+        suite: &AlgorithmSuite,
+    ) -> Result<ExpandedKeyMaterial, Error> {
+        let key = secret::data_key_from_slice_for_tests(plaintext_data_key);
+        super::derive_keys(message_id, &key, suite).map(|k| expose(&k))
+    }
+
+    /// `derive_key_v2` over a caller-supplied plaintext data key.
+    ///
+    /// # Errors
+    ///
+    /// As the crate-internal `derive_key_v2`.
+    pub fn derive_key_v2(
+        message_id: &[u8],
+        plaintext_data_key: &[u8],
+        suite: &AlgorithmSuite,
+    ) -> Result<ExpandedKeyMaterial, Error> {
+        let key = secret::data_key_from_slice_for_tests(plaintext_data_key);
+        super::derive_key_v2(message_id, &key, suite).map(|k| expose(&k))
     }
 }
 

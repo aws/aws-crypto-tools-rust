@@ -19,13 +19,15 @@ aws-types = "1.6.0"
 aws-crypto-mpl = { path = "../mpl", default-features = false }
 aws-mpl-primitives = { path = "../prim", default-features = false }
 aws-lc-rs = { version = "1.18.1", default-features = false }
-zeroize = "1.9.0"
+zeroize = { version = "1.9.0", features = ["derive"] }
 # Verus specs and proofs. The verus! blocks compile to plain Rust under rustc.
 vstd = "=0.0.0-2026-06-14-0213"
 
 # Necessary for examples
 [dev-dependencies]
 aws-crypto-mpl = { path = "../mpl", features = ["test-utils"] }
+# Turns on `test-internals` for this crate's own integration tests.
+aws-esdk = { path = ".", features = ["test-internals"] }
 aws-smithy-runtime-api = { version = "1.19.0", features = ["http-1x"] }
 tokio = { version = "1.49", features = ["rt", "macros", "rt-multi-thread", "fs"] }
 pem = "4.0.0"
@@ -56,3 +58,6 @@ kms = ["aws-crypto-mpl/kms"]
 ddb = ["aws-crypto-mpl/ddb"]
 default-aws-sdk-clients = ["aws-crypto-mpl/default-aws-sdk-clients"]
 rt-tokio = ["aws-crypto-mpl/rt-tokio"]
+# Exposes the key-returning `__test_internals` items that esdk's own integration
+# tests use. Not public API; exempt from semantic versioning.
+test-internals = []

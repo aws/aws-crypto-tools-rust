@@ -112,6 +112,7 @@ version = "2.0.0"
 dependencies = [
  "aws-config",
  "aws-crypto-mpl",
+ "aws-esdk",
  "aws-lc-rs",
  "aws-mpl-primitives",
  "aws-smithy-http-client",
