@@ -274,7 +274,7 @@ jobs:
       # The reusable workflow's resolve job reads this pull request's
       # Test-Server-Override lines.
       pull-requests: read
-    uses: aws/aws-crypto-tools-commons/.github/workflows/test-server-duvet-reusable.yml@lucmcdon/test-server-duvet
+    uses: aws/aws-crypto-tools-commons/.github/workflows/test-server-duvet-reusable.yml@main
     with:
       runner: *codebuild-linux
       commons-ref: main
