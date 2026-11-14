@@ -2,7 +2,6 @@
 PROFILE_DIR ?= target/debug
 
 STATICLIB   := $(PROFILE_DIR)/libaws_esdk_cpp.a
-CXXBRIDGE_RT = $$(find $(PROFILE_DIR)/build -path "*/cxx-*/out/libcxxbridge1.a" | head -n1)
 UNAME_S     := $(shell uname -s)
 
 PLATFORM_LIBS =
@@ -10,7 +9,7 @@ ifeq ($(UNAME_S),Darwin)
 PLATFORM_LIBS += -framework Security -framework CoreFoundation -framework SystemConfiguration
 endif
 
-LINK_LIBS = $(STATICLIB) $(CXXBRIDGE_RT) -lpthread -ldl $(PLATFORM_LIBS)
+LINK_LIBS = $(STATICLIB) -lpthread -ldl $(PLATFORM_LIBS)
 
 CXXFLAGS_COMMON = -Iinclude -std=c++17
 COV_CXXFLAGS ?=

@@ -8,7 +8,6 @@ CARGO_FLAGS := $(if $(filter release,$(PROFILE)),--release,)
 
 CXXBRIDGE_CC := $(TARGET_DIR)/cxxbridge/aws-esdk-cpp/src/lib.rs.cc
 STATICLIB := $(TARGET_DIR)/$(PROFILE)/libaws_esdk_cpp.a
-CXXBRIDGE_RT = $(shell find $(TARGET_DIR)/$(PROFILE)/build -path "*/cxx-*/out/libcxxbridge1.a" | head -n1)
 
 # Link the static archive BY PATH: -laws_esdk_cpp would pick the cdylib, whose
 # Rust export list hides the compiled facade's Aws::Esdk symbols. The generated
@@ -22,7 +21,6 @@ endif
 benchmark: benchmark.cpp benchmark_support.h $(STATICLIB)
 	g++ benchmark.cpp \
 		$(STATICLIB) \
-		$(CXXBRIDGE_RT) \
 		-I$(SHIM_DIR)/include \
 		-lpthread -ldl $(PLATFORM_LIBS) \
 		-std=c++17 -O2 \
