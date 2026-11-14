@@ -171,6 +171,7 @@ name = "aws-mpl-primitives"
 version = "0.1.0"
 dependencies = [
  "aws-lc-rs",
+ "vstd",
 ]
 
 [[package]]

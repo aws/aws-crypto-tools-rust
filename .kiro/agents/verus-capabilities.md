@@ -40,9 +40,9 @@ These numbers go stale as soon as code changes. Before citing a count, re-run th
 
 | Crate / item | Path | Verus status |
 |--------------|------|--------------|
-| `aws-esdk` | `esdk/src/` | **The only Verus-checked crate.** `[package.metadata.verus] verify = true`; only code inside `verus! { }` is verified. |
+| `aws-esdk` | `esdk/src/` | **Verus-checked.** `[package.metadata.verus] verify = true`; only code inside `verus! { }` is verified. |
 | `aws-crypto-mpl` | `mpl/src/` | Dependency. Built by `cargo-verus` with plain rustc; not verified. Keyrings, CMMs, material types (`PlaintextDataKey`, `AlgorithmSuite`). |
-| `aws-mpl-primitives` | `prim/src/` | Dependency. Built with plain rustc. **Verus is not enabled in `prim`, by decision**: verifying it in place would add `vstd` and Verus metadata to the published crate. Safe wrappers over `aws-lc-rs` (AES-GCM, HKDF, ECDSA, digest, RNG). |
+| `aws-mpl-primitives` | `prim/src/` | **Verus-enabled for VR-008 only.** `[package.metadata.verus] verify = true`, `make -C prim verus`; only `prim/src/ecdsa.rs` has a `verus!` block (VR-008, verified-decision-core + trusted-adapter). `prim/src/lib.rs` (VR-006) and `prim/src/hkdf.rs` (VR-009 prim half) have none yet and are built with plain rustc (planned). Safe wrappers over `aws-lc-rs` (AES-GCM, HKDF, ECDSA, digest, RNG). |
 | C++ shim | `esdk/shims/aws-esdk-cpp/` | Not Verus-checked. Holds the only shipped-path `unsafe`. |
 | Standalone models | `verification/` | Verus-checked models (`make -C verification verify`). |
 | Spec | `spec/` at the repo root | Resolved by `scripts/resolve-spec.sh`; not a submodule and may be absent locally. The tracked documents are listed in `esdk/.duvet/config.toml` (`spec/data-format/*`, `spec/client-apis/*`, …). |
@@ -97,7 +97,8 @@ From the steering file and the proofs report:
 
 ### 2d. Total error handling (no panicking `unwrap` / `expect`)
 - Known `.expect` sites (from the `d8c1c3d` panic inventory in `docs/verification-recommendations.md`, not re-audited): `esdk/src/encrypt.rs` HKDF output-length `expect`; `esdk/src/types.rs` default-config `NonZeroU32::new(4096).expect` / `.unwrap()`. Re-check before scoping.
-- **Provable in kind, not in place:** the `prim` panic points (`aes_encrypt` / `aes_decrypt` in `prim/src/lib.rs`, VR-006; `sign_fixed_len` / `check_sig_len` in `prim/src/ecdsa.rs`, VR-008; `prim/src/hkdf.rs`, VR-009 prim half). Because `prim` is not Verus-enabled by decision, these are model-only in `verification/` or not started.
+- **In-crate (VR-008):** `sign_fixed_len` / `check_sig_len` in `prim/src/ecdsa.rs` — the bounded `MAX_SIGN_ATTEMPTS` retry terminates (`may_retry`) and no `copy_from_slice` runs on a length mismatch (`len_matches`). Verified-decision-core + trusted-adapter shape: `sign_fixed_len` stays the unverified adapter; no crypto property is proven.
+- **Provable in kind, not in place:** the remaining `prim` panic points (`aes_encrypt` / `aes_decrypt` in `prim/src/lib.rs`, VR-006; `prim/src/hkdf.rs`, VR-009 prim half). `prim/src/lib.rs` and `prim/src/hkdf.rs` have no `verus!` block yet (planned), so these are model-only in `verification/` or not started.
 - **Agent:** `verus-zero-panic` for all of category 2.
 
 ---
@@ -106,7 +107,7 @@ From the steering file and the proofs report:
 
 - **No in-crate surface.** `esdk/src`, `mpl/src` and `prim/src` contain no `unsafe`.
 - **The C++ shim** (`esdk/shims/aws-esdk-cpp/src/lib.rs`, 4 `unsafe` expressions): the validity of C++-supplied pointers is not Verus-provable (it is a property of the C++ caller; trusted). Treat any shim concern as threat-driven, not a Verus target, unless a Rust-side null/ownership decision can be extracted into a sync core.
-- **Safe-wrapper preconditions** (AES key length 16/24/32, IV 12, tag 16): provable only around the aws-lc-rs call, never inside it. The in-`prim` versions fall under the `prim` decision above.
+- **Safe-wrapper preconditions** (AES key length 16/24/32, IV 12, tag 16): provable only around the aws-lc-rs call, never inside it. The AES-GCM versions are in `prim/src/lib.rs`, which has no `verus!` block yet (model-only, VR-006); the ECDSA length gate is already in-crate (VR-008, `prim/src/ecdsa.rs`).
 - **Zeroization:** `zeroize` derive, trusted. VR-010 model is deferred (removed code).
 - **Agent:** `verus-unsafe-ffi-safety` if a target ever qualifies.
 
@@ -129,7 +130,8 @@ From the steering file and the proofs report:
 | `spec_be_uN ∘ spec_uN_to_be` identity lemma | Yes | Yes (candidate) | `verus-header-parsing-proofs` |
 | Sync indexing / arithmetic cores in `esdk/src` never panic | Yes | Yes, if extractable into `verus!` | `verus-zero-panic` |
 | Header-auth tag verified before any frame (shipped order) | Yes on a model | **No in place**: async `.await?` order | model only (VR-002) |
-| `prim` AES-GCM / ECDSA / HKDF never panic | Yes in kind | **No in place**: `prim` not Verus-enabled by decision | model only (`verification/`) |
+| `prim` ECDSA `sign_fixed_len` terminates / no OOB copy | Yes | **Yes, in place** (done: VR-008, `prim/src/ecdsa.rs`) | `verus-zero-panic` |
+| `prim` AES-GCM / HKDF never panic | Yes in kind | **No in place**: `prim/src/lib.rs` / `hkdf.rs` have no `verus!` block yet (planned) | model only (`verification/`) |
 | Anything inside `mpl` in place | Yes in kind | **No**: `mpl` not Verus-checked | out of scope here |
 | Constant-time comparison / no timing leak | **No**: Verus does not model timing | n/a | out of scope; review / tooling |
 | AES-GCM, ECDSA, HKDF are cryptographically secure | **No**: crypto analysis, not code proof | n/a | out of scope; aws-lc-rs / design |
@@ -158,7 +160,7 @@ Verus has verified OS memory management and microkernels (CortenMM, Atmosphere),
 - Never scope cryptographic security, external-service policy, probabilistic secrecy or timing as Verus targets
 - Never describe a compiler, lint (clippy) or test check as Verus-proven; never describe a model-only proof as covering the shipped code
 - Ground every target in a real `esdk/src` file/function and a `spec/` citation (with the Duvet annotation where one exists)
-- Respect the recorded decisions: `esdk` is the only Verus-checked crate; `prim` and `mpl` are not verified in place
+- Respect the recorded decisions: `esdk` and the T1 slice of `prim` (VR-008, `prim/src/ecdsa.rs`) are Verus-checked; the rest of `prim` (`lib.rs`, `hkdf.rs`) and all of `mpl` are not verified in place
 - Do not manufacture raw-FFI or `unsafe` proof work: there is no `unsafe` in `esdk/src`, `mpl/src` or `prim/src`
 - New targets continue the existing numbering (`VR-012`, `VR-013`, …; YAML id `VR-2026-012`, …) and carry `origin: threat-driven` or `origin: capability-driven`. VR-001…VR-011 keep their ids
 - Report verified counts only from the latest `0 errors` tool output; defer to the `verus` skill's soundness invariants

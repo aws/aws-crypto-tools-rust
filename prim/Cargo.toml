@@ -12,6 +12,11 @@ readme = "README.md"
 
 [dependencies]
 aws-lc-rs = { version = "1.18.1", default-features = false }
+# Verus specs and proofs. The verus! blocks compile to plain Rust under rustc.
+vstd = "=0.0.0-2026-06-14-0213"
+
+[package.metadata.verus]
+verify = true
 
 [features]
 default = ["aws-lc-sys"]

@@ -6,6 +6,8 @@ use crate::Error;
 use crate::err;
 use crate::serr;
 
+use vstd::prelude::*;
+
 use aws_lc_rs::encoding::AsBigEndian;
 use aws_lc_rs::encoding::AsDer;
 use aws_lc_rs::encoding::EcPrivateKeyRfc5915Der;
@@ -162,6 +164,40 @@ pub const fn signature_len(alg: EcdsaSignatureAlgorithm) -> usize {
     }
 }
 
+verus! {
+
+/// Whether a candidate DER signature of `candidate_len` bytes may be written
+/// into a buffer of `want_len` bytes: exactly when the lengths are equal.
+///
+/// This is the verified gate that guards the `copy_from_slice` in
+/// [`sign_fixed_len`]: the adapter copies only when this returns `true`, so
+/// the write can never be out of bounds (VR-008). `want_len` is
+/// `signature.len()`, which [`check_sig_len`] already pins to
+/// [`signature_len`] for the algorithm before any signing begins.
+fn len_matches(candidate_len: usize, want_len: usize) -> (ok: bool)
+    ensures
+        ok <==> candidate_len == want_len,
+{
+    candidate_len == want_len
+}
+
+/// Whether the bounded retry in [`sign_fixed_len`] should keep going: it may
+/// make another attempt exactly while `attempt < max`.
+///
+/// The adapter's loop advances `attempt` by one each iteration and stops as
+/// soon as this returns `false`, so `attempt` rises monotonically to the
+/// fixed `max` ([`MAX_SIGN_ATTEMPTS`]) and the loop runs at most `max` times.
+/// This is the verified termination decision; the adapter owns the external
+/// `aws-lc-rs` signing call that each iteration performs.
+fn may_retry(attempt: u32, max: u32) -> (go: bool)
+    ensures
+        go <==> attempt < max,
+{
+    attempt < max
+}
+
+} // verus!
+
 /// Call `sign_once` until it produces a DER signature of exactly
 /// `signature.len()` bytes, writing it into `signature` and giving up after
 /// [`MAX_SIGN_ATTEMPTS`].
@@ -173,6 +209,14 @@ pub const fn signature_len(alg: EcdsaSignatureAlgorithm) -> usize {
 /// making the attempts independent; a deterministic scheme (RFC 6979)
 /// would produce the same length forever and always exhaust the retries.
 ///
+/// This is the unverified trusted-boundary adapter (the `aws-lc-rs`
+/// `Signature`, the crate `Error`, and `copy_from_slice` are all things
+/// Verus cannot model, so they stay out of `verus!`). Its two safety
+/// decisions are the verified [`may_retry`] (so the loop runs at most
+/// [`MAX_SIGN_ATTEMPTS`] times and terminates) and [`len_matches`] (so the
+/// `copy_from_slice` runs only on a length match, never out of bounds —
+/// VR-008). No crypto property is proven: `sign_once` is trusted.
+///
 /// # Errors
 ///
 /// Returns an [`Error`] if `sign_once` fails, or if no signature of
@@ -182,12 +226,14 @@ fn sign_fixed_len(
     mut sign_once: impl FnMut() -> Result<aws_lc_rs::signature::Signature, Error>,
 ) -> Result<(), Error> {
     let want_len = signature.len();
-    for _ in 0..MAX_SIGN_ATTEMPTS {
+    let mut attempt: u32 = 0;
+    while may_retry(attempt, MAX_SIGN_ATTEMPTS) {
         let candidate = sign_once()?;
-        if candidate.as_ref().len() == want_len {
+        if len_matches(candidate.as_ref().len(), want_len) {
             signature.copy_from_slice(candidate.as_ref());
             return Ok(());
         }
+        attempt += 1;
     }
     err(format!(
         "no {want_len} byte DER signature produced in {MAX_SIGN_ATTEMPTS} attempts"

@@ -50,6 +50,18 @@ make -C verification verify
 > covers only the secret types' accessors and the commitment-value
 > declassification (57 verified, 0 errors). See "VR-011" under "In-crate
 > proofs".
+>
+> **Update (branch `verus-prim-t1`):** Verus is now enabled in the
+> `aws-mpl-primitives` crate (`prim/Cargo.toml` sets
+> `[package.metadata.verus] verify = true` and depends on the same
+> `vstd = "=0.0.0-2026-06-14-0213"` pin as esdk; `make -C prim verus` runs
+> `cargo verus verify` on default features and again with
+> `--no-default-features --features aws-lc-sys`). The first in-crate prim
+> target is VR-008 (T1) in `prim/src/ecdsa.rs`: **2 verified, 0 errors** on
+> both feature sets. It is a verified-decision-core + trusted-adapter shape,
+> the same honesty as esdk's VR-009 — see "VR-008" under "In-crate proofs".
+> VR-006 (AES-GCM, `prim/src/lib.rs`) and the prim half of VR-009
+> (`prim/src/hkdf.rs`) stay model-only; enabling Verus for them is planned.
 
 ### Adherence to the Verus skill invariants
 - No proof was weakened: **no** `assume(...)`, `admit()`, or `#[verifier::external]` anywhere. There is exactly **one** `#[verifier::external_body]` — the `utf8_check` wrapper around `std::str::from_utf8` in the AAD sub-parser — used per Verus skill invariant #11 for a std call Verus cannot evaluate (the same role `tag_ok` plays for the AES-GCM check). Its `ensures` is a **trusted boundary, not a proof**: the UTF-8-validation correctness is delegated to the std library; everything around it (that the parser rejects non-UTF-8 with `Err`, never panics) is proven. This is called out explicitly in §5.
@@ -162,9 +174,10 @@ and `construct_frame` writes the frame fields with `write_frame_prefix`.
   differential unit test.
 - **The aws-lc-rs FFI** (AES-GCM, ECDSA, HKDF, digests) is out of Verus scope.
 - **VR-009, prim half and key-derivation adapters.** `prim/src/hkdf.rs`
-  (including `get_len`) and the aws-lc-rs HKDF calls are not proven: Verus is
-  not enabled in `prim`, by decision, so HKDF and its output-length limit are a
-  trust boundary. In esdk, `derive_key_v1` / `derive_key_v2` / `derive_keys`
+  (including `get_len`) and the aws-lc-rs HKDF calls are not proven: `prim` is
+  now Verus-enabled, but only `prim/src/ecdsa.rs` carries a `verus!` block
+  (VR-008); `hkdf.rs` has none yet (planned), so HKDF and its output-length
+  limit are a trust boundary. In esdk, `derive_key_v1` / `derive_key_v2` / `derive_keys`
   are unverified adapters. Not proven there: the V1 output length and the V2
   commit-key length, which are MPL getters (`encryption_key_length()`,
   `algorithm_suite_data_length()`) passed straight to `MessageKey::zeroed(n)` /
@@ -217,6 +230,56 @@ declassified.
   Error and `Debug` paths are covered structurally, plus the empirical
   `esdk/tests/test_error_secrets.rs` (D5).
 
+### VR-008 in-crate (`aws-mpl-primitives`, `prim/src/ecdsa.rs`)
+
+`prim/Cargo.toml` sets `[package.metadata.verus] verify = true` and depends on
+`vstd = "=0.0.0-2026-06-14-0213"`. `cargo-verus` builds the crate's one
+dependency (`aws-lc-rs`) with plain rustc and verifies the `verus!` block in
+`prim/src/ecdsa.rs`. No `assume`, `admit`, `external_body` or `external`, and
+no `#[cfg(not(verus_keep_ghost))]`.
+
+Run from the repo root:
+
+```bash
+make -C prim verus
+```
+
+Output (default features, then `--no-default-features --features aws-lc-sys`):
+
+```
+verification results:: 2 verified, 0 errors
+verification results:: 2 verified, 0 errors
+```
+
+| Fn | File | Ensures | Target |
+|----|------|---------|--------|
+| `len_matches` | `prim/src/ecdsa.rs` | `ok` iff `candidate_len == want_len` | VR-008 |
+| `may_retry` | `prim/src/ecdsa.rs` | `go` iff `attempt < max` | VR-008 |
+
+This is a **verified-decision-core + trusted-adapter** shape, the same honesty
+as esdk's VR-009: the two `verus!` fns are pure decisions over plain
+`usize`/`u32`/`bool`, and `sign_fixed_len` stays the **single, unverified
+adapter** outside `verus!`. The adapter owns the crate `Error`, the `aws-lc-rs`
+`Signature`, the signing call, and `copy_from_slice` — none of which Verus can
+model. Its loop is driven by the verified decisions:
+`while may_retry(attempt, MAX_SIGN_ATTEMPTS)` with `attempt += 1` each
+iteration, and the `copy_from_slice` guarded by
+`if len_matches(candidate.len(), want_len)`.
+
+**What is proven:** the bounded retry terminates (it runs at most
+`MAX_SIGN_ATTEMPTS` times, because `may_retry` is `attempt < max` and the
+adapter advances `attempt` monotonically), and no `copy_from_slice` runs on a
+length mismatch, so the write can never be out of bounds.
+
+**What is not proven:** nothing about the cryptography. The `aws-lc-rs` signing
+call is a trusted boundary. `sign_fixed_len` itself is the unverified adapter,
+not verified code. The `decreases` sits on the verified `may_retry` decision
+rather than literally on the `while` keyword, because the loop cannot go inside
+`verus!` without pulling `Error`, the `aws-lc-rs` `Signature` and the
+`MAX_SIGN_ATTEMPTS` const (all declared outside `verus!`) into the verified
+region; the termination guarantee is the same, one indirection away from the
+loop keyword.
+
 **Properties that stay model-only, and why:**
 
 | Property | Model | Why it is not in-crate |
@@ -225,7 +288,7 @@ declassified.
 | EDK list loop | `io_stream_aligned.rs` (`read_edks`) | The count decision is in-crate (`edk_count_check`). What is left is a `for` loop of `.await?` reads over `dyn Source` plus the MPL `EncryptedDataKey` builder; no sync decision logic is left to extract. |
 | Encryption-context (AAD) parser | `io_stream_aligned.rs` (`read_canonical_ec` etc.) | Obsolete: parsing moved to MPL (`EncryptionContext::from_bytes`), outside this ESDK scope; esdk only reads a `u16` length and the bytes. |
 | Frame ciphertext ‖ tag | `frame_layout_proofs.rs` | `aes_encrypt` (`aws-mpl-primitives`, aws-lc-rs FFI) appends them, and the frame is released through `dyn Sink` / `DigestWriter`. |
-| AES-GCM buffer bounds | `aes_gcm_bounds_proofs.rs` | The code is in `prim`, which `make -C esdk verus` builds with plain rustc. Verifying it in place would add `vstd` and Verus metadata to the published `aws-mpl-primitives` crate, which this work does not do. Re-audited against `prim/src/lib.rs`: the model matches. |
+| AES-GCM buffer bounds | `aes_gcm_bounds_proofs.rs` | The code is in `prim/src/lib.rs`. `prim` is now Verus-enabled (for VR-008 in `ecdsa.rs`), but `lib.rs` has no `verus!` block yet; proving AES-GCM bounds in place is planned, not done here. Re-audited against `prim/src/lib.rs`: the model matches. |
 | Zeroization | `zeroize_proofs.rs` | Unchanged, deferred; out of scope for this work. The model describes a hand-written `write_volatile` loop in `PlaintextDataKey::zeroize` that no longer exists (removed in `a864ad87`, #131; the key types now `#[derive(Zeroize, ZeroizeOnDrop)]`), so it does not describe current code. |
 
 ---
@@ -256,9 +319,10 @@ declassified.
 | VR-004 frame sequence validation | **in-crate**: regular-frame step (`next_expected_frame`), final-frame check (`final_frame_seq_ok`), sequential-run and start-at-1 lemmas | the async loop that threads `expected_frame` (unverified glue) |
 | VR-005 frame construction/serialization | **in-crate**: body AAD layout (`body_aad_core`), IV (`iv_seq_core`), frame prefix layout (`write_frame_prefix`). **Model only**: the `ct ‖ tag` append (`frame_layout_proofs.rs`) | `aes_encrypt` (FFI) output and the `dyn Sink` / `DigestWriter` release |
 | VR-002 header auth tag ordering | **model only** (`header_auth_ordering_proofs.rs`, re-audited against `decrypt_steps`): body decrypt unreachable without a verified header tag | not in-crate: the order is in an async fn and the tag check is aws-lc-rs FFI |
-| VR-006 AES-GCM panic freedom | **model only** (`aes_gcm_bounds_proofs.rs`, re-audited against `prim/src/lib.rs`): encrypt slice always in-bounds, decrypt rejects under-sized output buffer | not in-crate: `prim` is not Verus-checked; the AES-GCM crypto itself (aws-lc-rs `seal`/`open`, FFI) is out of scope |
+| VR-006 AES-GCM panic freedom | **model only** (`aes_gcm_bounds_proofs.rs`, re-audited against `prim/src/lib.rs`): encrypt slice always in-bounds, decrypt rejects under-sized output buffer | not in-crate: `prim` is now Verus-enabled but only for VR-008 (`ecdsa.rs`); `prim/src/lib.rs` has no `verus!` block yet (planned); the AES-GCM crypto itself (aws-lc-rs `seal`/`open`, FFI) is out of scope |
+| VR-008 ECDSA fixed-length signing | **in-crate** (`prim/src/ecdsa.rs`, verified-decision-core + trusted-adapter): the bounded `MAX_SIGN_ATTEMPTS` retry terminates (`may_retry`) and no `copy_from_slice` runs on a length mismatch (`len_matches`, tied to `check_sig_len`) | the `sign_fixed_len` adapter, the `aws-lc-rs` signing call and `copy_from_slice` are the trusted boundary; no crypto property is proven |
 | VR-007 EDK count validation | **in-crate**: count-check logic (`edk_count_check`) | the "before any KMS call" ordering (caller-side in `decrypt.rs`) |
-| VR-009 HKDF / key-derivation lengths | **esdk half in-crate**: the V1 identity-KDF key-length check (`identity_kdf_key_len_ok`) and the V2 KDF / message-ID / key-length checks that size the derived encryption key (`check_v2_key_lengths`), total and accept iff the checks pass; `derive_keys` dispatches on the verified `msg_format_version_from_u8` | **prim half not proven**: `prim/src/hkdf.rs` (incl. `get_len`) and aws-lc-rs HKDF (trust boundary; Verus not enabled in `prim`). In esdk, unverified: buffer sizes read directly from MPL getters (V1 output, V2 commit key), the V1 salt table `digest_length`, the `debug_assert!`s |
+| VR-009 HKDF / key-derivation lengths | **esdk half in-crate**: the V1 identity-KDF key-length check (`identity_kdf_key_len_ok`) and the V2 KDF / message-ID / key-length checks that size the derived encryption key (`check_v2_key_lengths`), total and accept iff the checks pass; `derive_keys` dispatches on the verified `msg_format_version_from_u8` | **prim half not proven**: `prim/src/hkdf.rs` (incl. `get_len`) and aws-lc-rs HKDF (trust boundary; `prim` is Verus-enabled but `hkdf.rs` has no `verus!` block yet, planned). In esdk, unverified: buffer sizes read directly from MPL getters (V1 output, V2 commit key), the V1 salt table `digest_length`, the `debug_assert!`s |
 | VR-011 data-key non-disclosure | **confinement** to `esdk/src/secret.rs`, compiler- and clippy-checked (not Verus); **Verus**: the secret types' accessors and the commitment-value declassification | not Verus-proven overall: the encrypt/decrypt flow (plan step 7), the TB-A adapters, aws-lc-rs, keyrings/CMMs and mpl key types are trusted; the PRK hand-off in `key_derivation.rs` is grep-checked only |
 | VR-010 key-material zeroization | model only; unchanged, deferred (out of scope for this work) | the modeled `write_volatile` loop was removed in `a864ad87`; current zeroization (`#[derive(Zeroize, ZeroizeOnDrop)]`) is not verified |
 | Infra: I/O seam | `esdk` is Verus-buildable; sync `verus!` cores are verified in-crate behind the async `Source`/`Tee` adapters (see "In-crate proofs") | the async adapters themselves stay unverified glue |
