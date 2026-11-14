@@ -9,4 +9,4 @@ description = "Coverage and mutant controls the commons test runner sends to the
 [dependencies]
 
 [lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ["cfg(testserver_coverage)"] }
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(testserver_coverage)", "cfg(testserver_mutants)"] }

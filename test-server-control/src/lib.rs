@@ -4,7 +4,10 @@
 //! Controls that the commons test runner sends to a Rust test server between tests.
 //!
 //! The servers answer `POST /control/coverage` only when they are built with
-//! `RUSTFLAGS="-C instrument-coverage --cfg testserver_coverage"`.
+//! `RUSTFLAGS="-C instrument-coverage --cfg testserver_coverage"`,
+//! and `POST /control/mutant` only with `--cfg testserver_mutants`.
+
+pub mod mutant;
 
 #[cfg(testserver_coverage)]
 mod llvm {

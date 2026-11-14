@@ -25,4 +25,4 @@ uuid = { version = "1", features = ["v4"] }
 tower = { version = "0.5", features = ["util"] }
 
 [lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ["cfg(testserver_coverage)"] }
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(testserver_coverage)", "cfg(testserver_mutants)"] }
