@@ -397,12 +397,34 @@ jobs:
     secrets:
       repo-pat: ${{ secrets.COMMONS_REPO_PAT }}
 
+  # The lines each of a project's own tests runs, for duvet-test-reach.
+  # Not in pr-ci-all-required.
+  local-per-test-coverage:
+    name: Per-test coverage (${{ matrix.project }})
+    needs: detect
+    if: needs.detect.result == 'success'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - project: esdk
+            crate: aws-esdk
+          - project: mpl
+            crate: aws-crypto-mpl
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/library_rust_per_test_coverage.yml
+    with:
+      project: ${{ matrix.project }}
+      crate: ${{ matrix.crate }}
+
   # Checks that each duvet test annotation's test runs the code it cites,
   # using the per-test coverage of the TestServer runs and the local tests.
   # Not in pr-ci-all-required, so it can't block a merge yet.
   duvet-test-reach:
     name: duvet test reach (${{ matrix.library }})
-    needs: [detect, esdk-test-server, mpl-test-server, coverage]
+    needs: [detect, esdk-test-server, mpl-test-server, local-per-test-coverage]
     if: always() && needs.detect.result == 'success'
     strategy:
       fail-fast: false

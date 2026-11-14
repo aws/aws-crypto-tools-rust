@@ -66,39 +66,6 @@ jobs:
           RUSTFLAGS: "-C debuginfo=0"
         run: cargo llvm-cov $FEATURE_FLAGS --workspace --lcov --remap-path-prefix --output-path lcov.info --verbose
 
-      - name: Install cargo-nextest
-        uses: taiki-e/install-action@cargo-nextest
-
-      - name: Check out the commons per-test coverage tool
-        uses: actions/checkout@v6
-        with:
-          repository: aws/aws-crypto-tools-commons
-          ref: lucmcdon/test-server-per-test-coverage
-          path: commons
-          sparse-checkout: test-server-common/tools
-
-      # nextest runs each test in its own process, and the runner gives each
-      # one its own profile file. The build is the one cargo llvm-cov just made.
-      - name: Record the lines each test runs
-        working-directory: ${{ inputs.project }}
-        env:
-          RUSTFLAGS: "-C debuginfo=0"
-          CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER: python3 ${{ github.workspace }}/commons/test-server-common/tools/per_test_coverage.py run-test
-          PER_TEST_COVERAGE_DIR: ${{ runner.temp }}/per-test-raw
-          PER_TEST_REPOSITORY: ${{ github.repository }}
-          PER_TEST_ROOT: ${{ github.workspace }}
-        run: cargo llvm-cov nextest $FEATURE_FLAGS --workspace --no-report --no-fail-fast
-
-      - name: Write the per-test line coverage
-        run: python3 commons/test-server-common/tools/per_test_coverage.py build "$RUNNER_TEMP/per-test-raw" "$RUNNER_TEMP/per-test-coverage/per-test-coverage"
-
-      - name: Upload the per-test line coverage
-        uses: actions/upload-artifact@v7
-        with:
-          name: per-test-coverage-${{ inputs.project }}
-          path: ${{ runner.temp }}/per-test-coverage
-          if-no-files-found: error
-
       # Diff PR coverage against base branch coverage
       - name: Re-root coverage paths to the repository root
         run: |
