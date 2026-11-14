@@ -15,16 +15,21 @@
 //!   header suite data): these are the declassification points.
 //!
 //! None of these types derives `Clone`, `PartialEq` or `Debug`, and their fields
-//! are private. Outside this module their only exec accessor is `len()`; the key
-//! length is public by design. That part of the guarantee is checked by the
-//! Rust compiler (privacy), plus the clippy `disallowed-methods` rule in
-//! `esdk/clippy.toml`, which confines esdk's calls to the mpl data-key accessors
-//! to the two ingress adapters below. It is not a Verus proof.
+//! are private. Outside this module, the only exec accessor on [`MessageKey`]
+//! and [`DataKeyRef`] is `len()`; the key length is public by design.
+//! `MessageKey::zeroed` and `CommitmentValue::zeroed` are constructors, not
+//! accessors. The exception is [`CommitmentValue`], whose only exec accessor is
+//! the declassification [`CommitmentValue::as_suite_data`]. These facts come from Rust privacy and
+//! review of this module (which also holds the unverified TB-A adapters that
+//! read the private fields directly), plus the clippy `disallowed-methods` rule
+//! in `esdk/clippy.toml`, which confines esdk's calls to the mpl data-key
+//! accessors to the two ingress adapters below. They are not a Verus proof:
+//! Verus does not check that a function is absent.
 //!
-//! The types and their accessors sit inside `verus!`: Verus checks that each
-//! accessor's result matches the closed `view()`, that `len()` is the only
-//! exec accessor on [`MessageKey`] and [`DataKeyRef`], and that a
-//! [`PublicBytes`] is always labelled [`Label::Public`] (its type invariant).
+//! The types and their verified accessors sit inside `verus!`. Verus checks
+//! only that each verified accessor's result satisfies its `ensures` against
+//! the closed `view()`, and that a [`PublicBytes`] is always labelled
+//! [`Label::Public`] (its type invariant).
 //!
 //! # Trusted base (TB-A)
 //!
