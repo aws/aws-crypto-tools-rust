@@ -22,7 +22,36 @@ use serde::Serialize;
 
 /// Build the router. Shared with tests so they can drive the real wire in-process.
 pub fn app() -> Router {
-    Router::new().route("/service/:service/operation/:operation", post(dispatch))
+    let router = Router::new().route("/service/:service/operation/:operation", post(dispatch));
+    #[cfg(testserver_coverage)]
+    let router = router.route("/control/coverage", post(dump_coverage));
+    #[cfg(testserver_mutants)]
+    let router = router.route("/control/mutant", post(set_mutant));
+    router
+}
+
+/// Writes the coverage of the test that just ran to the file named in the body.
+#[cfg(testserver_coverage)]
+async fn dump_coverage(path: String) -> (axum::http::StatusCode, String) {
+    match test_server_control::dump_coverage(&path) {
+        Ok(()) => (axum::http::StatusCode::OK, String::new()),
+        Err(message) => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, message),
+    }
+}
+
+/// Turns on the mutant whose id is the body, for mutation testing.
+#[cfg(testserver_mutants)]
+async fn set_mutant(id: String) -> (axum::http::StatusCode, String) {
+    match id.trim().parse() {
+        Ok(id) => {
+            test_server_control::mutant::set(id);
+            (axum::http::StatusCode::OK, String::new())
+        }
+        Err(e) => (
+            axum::http::StatusCode::BAD_REQUEST,
+            format!("bad mutant id {id:?}: {e}"),
+        ),
+    }
 }
 
 async fn dispatch(

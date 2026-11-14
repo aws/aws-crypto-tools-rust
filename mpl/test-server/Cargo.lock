@@ -137,6 +137,7 @@ dependencies = [
  "futures-util",
  "serde",
  "serde_bytes",
+ "test-server-control",
  "tokio",
  "tower",
  "uuid",
@@ -1740,6 +1741,10 @@ dependencies = [
  "quote",
  "syn 2.0.119",
 ]
+
+[[package]]
+name = "test-server-control"
+version = "0.1.0"
 
 [[package]]
 name = "time"

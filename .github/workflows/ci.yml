@@ -68,12 +68,15 @@ jobs:
               - '!esdk/test-server/**'
               - '!esdk/shims/aws-esdk-cpp/test-server/**'
             prim-test-server:
+              - 'test-server-control/**'
               - 'prim/**'
             mpl-test-server:
+              - 'test-server-control/**'
               - 'prim/**'
               - 'mpl/**'
               - '!prim/test-server/**'
             esdk-test-server:
+              - 'test-server-control/**'
               - 'prim/**'
               - 'mpl/**'
               - 'esdk/**'
@@ -249,7 +252,7 @@ jobs:
       # The reusable workflow's resolve job reads this pull request's
       # Test-Server-Override lines.
       pull-requests: read
-    uses: aws/aws-crypto-tools-commons/.github/workflows/test-server-duvet-reusable.yml@lucmcdon/test-server-duvet
+    uses: aws/aws-crypto-tools-commons/.github/workflows/test-server-duvet-reusable.yml@main
     with:
       runner: *codebuild-linux
       commons-ref: main
@@ -369,7 +372,7 @@ jobs:
       # Test-Server-Override lines.
       pull-requests: read
       id-token: write
-    uses: aws/aws-crypto-tools-commons/.github/workflows/esdk-test-server-reusable.yml@main
+    uses: aws/aws-crypto-tools-commons/.github/workflows/esdk-test-server-reusable.yml@lucmcdon/test-server-per-test-coverage
     with:
       runner: *codebuild-linux
       commons-ref: main
@@ -391,9 +394,7 @@ jobs:
       pull-requests: read
       # Its test job assumes an AWS role for the hierarchical keyring Tests.
       id-token: write
-    # aws/aws-crypto-tools-commons#73's branch writes the line coverage report;
-    # the ref moves to @main when #73 merges.
-    uses: aws/aws-crypto-tools-commons/.github/workflows/mpl-test-server-reusable.yml@lucmcdon/test-server-duvet
+    uses: aws/aws-crypto-tools-commons/.github/workflows/mpl-test-server-reusable.yml@lucmcdon/test-server-per-test-coverage
     with:
       runner: *codebuild-linux
       focus: rust
@@ -411,11 +412,71 @@ jobs:
     permissions:
       contents: read
       actions: read
-    uses: aws/aws-crypto-tools-commons/.github/workflows/primitives-test-server-reusable.yml@main
+    uses: aws/aws-crypto-tools-commons/.github/workflows/primitives-test-server-reusable.yml@lucmcdon/test-server-per-test-coverage
     with:
       runner: *codebuild-linux
       focus: rust
       checkout-languages: rust
+    secrets:
+      repo-pat: ${{ secrets.COMMONS_REPO_PAT }}
+
+  # The lines each of a project's own tests runs, for duvet-test-reach.
+  # Not in pr-ci-all-required.
+  local-per-test-coverage:
+    name: Per-test coverage (${{ matrix.project }})
+    needs: detect
+    if: needs.detect.result == 'success'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - project: esdk
+            crate: aws-esdk
+          - project: mpl
+            crate: aws-crypto-mpl
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/library_rust_per_test_coverage.yml
+    with:
+      project: ${{ matrix.project }}
+      crate: ${{ matrix.crate }}
+
+  # Checks that each duvet test annotation's test runs the code it cites,
+  # using the per-test coverage of the TestServer runs and the local tests.
+  # Not in pr-ci-all-required, so it can't block a merge yet.
+  duvet-test-reach:
+    name: duvet test reach (${{ matrix.library }})
+    needs: [detect, esdk-test-server, mpl-test-server, local-per-test-coverage]
+    if: always() && needs.detect.result == 'success'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - library: esdk
+            source: esdk/src
+            local-tests: esdk/tests
+            crate: aws-esdk
+            artifacts: esdk-test-server-reports* per-test-coverage-esdk local-coverage-esdk
+          - library: mpl
+            source: mpl/src
+            local-tests: mpl/tests
+            crate: aws-crypto-mpl
+            artifacts: mpl-test-server-reports* per-test-coverage-mpl local-coverage-mpl
+    permissions:
+      contents: read
+      actions: read
+      # The reusable workflow reads this pull request's Test-Server-Override lines.
+      pull-requests: read
+    uses: aws/aws-crypto-tools-commons/.github/workflows/duvet-test-reach-reusable.yml@lucmcdon/duvet-test-reach
+    with:
+      runner: *codebuild-linux
+      library: ${{ matrix.library }}
+      language: rust
+      source: ${{ matrix.source }}
+      local-tests: ${{ matrix.local-tests }}
+      crate: ${{ matrix.crate }}
+      artifacts: ${{ matrix.artifacts }}
     secrets:
       repo-pat: ${{ secrets.COMMONS_REPO_PAT }}
 

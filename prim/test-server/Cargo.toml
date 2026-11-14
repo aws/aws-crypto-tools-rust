@@ -12,6 +12,7 @@ path = "src/main.rs"
 
 [dependencies]
 aws-mpl-primitives = { path = ".." }
+test-server-control = { path = "../../test-server-control" }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal"] }
 axum = "0.7"
 ciborium = "0.2"
@@ -21,3 +22,6 @@ uuid = { version = "1", features = ["v4"] }
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(testserver_coverage)", "cfg(testserver_mutants)"] }

@@ -1,0 +1,59 @@
+# Mutation testing: do the tests fail when the library is changed in small ways?
+# A pull request mutates only the lines it changes; the nightly and manual runs mutate every line.
+# This is its own workflow, so pr-ci-all-required never waits on it and a surviving mutant blocks nothing.
+name: Mutation testing
+
+on:
+  pull_request:
+  schedule:
+    # 08:00 UTC every day
+    - cron: '0 8 * * *'
+  workflow_dispatch:
+
+jobs:
+  scope:
+    name: Choose the lines to mutate
+    runs-on: codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      changed-since: ${{ steps.lines.outputs.changed-since }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Check whether this pull request changes the mutation testing
+        if: github.event_name == 'pull_request'
+        id: filter
+        uses: dorny/paths-filter@v4
+        with:
+          filters: |
+            mutation:
+              - '.github/workflows/mutation.yml'
+              - 'test-server-control/**'
+      - name: Mutate the pull request's changed lines
+        if: github.event_name == 'pull_request' && steps.filter.outputs.mutation != 'true'
+        run: echo "changed-since=${{ github.base_ref }}" >> "$GITHUB_OUTPUT"
+        id: lines
+
+  mutation:
+    needs: scope
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - crate: mpl
+            server: mpl/test-server:mpl-test-server
+          - crate: esdk
+            server: esdk/test-server:esdk-test-server
+    permissions:
+      contents: read
+      id-token: write
+    uses: aws/aws-crypto-tools-commons/.github/workflows/mutation-rust-reusable.yml@lucmcdon/test-server-mutation
+    with:
+      runner: codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}
+      crate: ${{ matrix.crate }}
+      product: ${{ matrix.crate }}
+      server: ${{ matrix.server }}
+      changed-since: ${{ needs.scope.outputs.changed-since }}
+      commons-ref: lucmcdon/test-server-mutation
+      aws-role-arn: arn:aws:iam::370957321024:role/GitHub-CI-Public-ESDK-Dafny-Role-us-west-2
