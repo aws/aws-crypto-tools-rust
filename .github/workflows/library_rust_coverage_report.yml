@@ -30,7 +30,8 @@ jobs:
           set -euo pipefail
           selected=()
           for d in */; do
-            [[ -f "${d}Cargo.toml" ]] && selected+=("${d%/}")
+            # test-server-control is test code the test servers share, not a library.
+            [[ -f "${d}Cargo.toml" && "$d" != test-server-control/ ]] && selected+=("${d%/}")
           done
           if [[ ${#selected[@]} -eq 0 ]]; then
             projects='[]'
