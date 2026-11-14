@@ -398,11 +398,11 @@ jobs:
       repo-pat: ${{ secrets.COMMONS_REPO_PAT }}
 
   # Checks that each duvet test annotation's test runs the code it cites,
-  # using the TestServer runs' per-test coverage.
+  # using the per-test coverage of the TestServer runs and the local tests.
   # Not in pr-ci-all-required, so it can't block a merge yet.
   duvet-test-reach:
     name: duvet test reach (${{ matrix.library }})
-    needs: [detect, esdk-test-server, mpl-test-server]
+    needs: [detect, esdk-test-server, mpl-test-server, coverage]
     if: always() && needs.detect.result == 'success'
     strategy:
       fail-fast: false
@@ -412,12 +412,12 @@ jobs:
             source: esdk/src
             local-tests: esdk/tests
             crate: aws-esdk
-            artifacts: esdk-test-server-reports*
+            artifacts: esdk-test-server-reports* per-test-coverage-esdk
           - library: mpl
             source: mpl/src
             local-tests: mpl/tests
             crate: aws-crypto-mpl
-            artifacts: mpl-test-server-reports*
+            artifacts: mpl-test-server-reports* per-test-coverage-mpl
     permissions:
       contents: read
       actions: read
