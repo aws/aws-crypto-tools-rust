@@ -66,7 +66,7 @@ You must prove absence of ALL of these panic sources:
 `prim/src/lib.rs` and `prim/src/ecdsa.rs` guard their `copy_from_slice` calls with explicit length checks that return an `Error` on mismatch. The proof obligation is that those checks are correct and exhaustive, so the subsequent `copy_from_slice` can never panic:
 
 - `aes_encrypt` / `aes_decrypt` (`prim/src/lib.rs`): a wrong key length is reported as `Err` by the safe `aws-lc-rs` key constructor, not a panic; `aes_decrypt` returns `Err` unless the plaintext buffer is at least as long as the ciphertext, which is what makes the gather/scatter safe. Model the buffer relationship (VR-006, model-only).
-- `sign_fixed_len` / `check_sig_len` (`prim/src/ecdsa.rs`): **in-crate (VR-008)**. `check_sig_len` rejects a wrong-sized `signature` buffer before signing, and `sign_fixed_len` only `copy_from_slice`s a candidate whose length equals `signature.len()`. Proven in `prim/src/ecdsa.rs` as a **verified-decision-core + trusted-adapter** shape (the same honesty as esdk's VR-009): the `verus!` fns `len_matches` (the copy gate, `ok <==> candidate_len == want_len`) and `may_retry` (the bounded-loop decision, `go <==> attempt < max`) are pure decisions over `usize`/`u32`/`bool`; `sign_fixed_len` stays the single, unverified adapter outside `verus!` that owns the `Error`, the `aws-lc-rs` `Signature`, the signing call and `copy_from_slice`. Proven: no copy on a length mismatch, and the bounded `MAX_SIGN_ATTEMPTS` retry terminates. **Not** proven: the crypto, or `sign_fixed_len` itself. The `decreases` sits on `may_retry`, not the `while` keyword, because the loop can't enter `verus!` without naming `Error`/`Signature`/`MAX_SIGN_ATTEMPTS` (all declared outside it).
+- `sign_fixed_len` / `check_sig_len` (`prim/src/ecdsa.rs`): **in-crate (VR-008)**. `check_sig_len` rejects a wrong-sized `signature` buffer before signing, and the retry copies a candidate only when its length equals `signature.len()`. The real retry loop is inside `verus!` as `sign_fixed_len_core`: the `while` loop carries `decreases MAX_SIGN_ATTEMPTS - attempt` (termination) and the loop invariant `want_len == signature.len()`, so the `copy_from_slice` under the `candidate.len() == want_len` guard has equal lengths and is proven in bounds. `MAX_SIGN_ATTEMPTS` lives inside `verus!`. The thin `sign_fixed_len` adapter outside `verus!` owns only the `Error`/`format!` strings and maps the closure's signing errors onto a `verus!`-internal `SignCoreError`. The only trusted boundary inside `verus!` is the FFI/std surface: `aws-lc-rs`'s opaque `Signature` (`external_type_specification`), `Signature::as_ref` and `<[u8]>::copy_from_slice` (`assume_specification`s). Proven: the bounded `MAX_SIGN_ATTEMPTS` retry terminates, and no copy runs out of bounds. **Not** proven: the crypto — the signing closure's result (including the candidate length) is trusted.
 - `prim/src/hkdf.rs`: the HKDF length guards before copying derived key material (VR-009 prim half, model-only).
 
 VR-008 is in-crate; VR-006 and VR-009's prim half are provable **in kind** but **not in place** today, because `prim/src/lib.rs` and `prim/src/hkdf.rs` have no `verus!` block yet. Do not present those two as in-crate provable until the planned Verus-in-prim work lands.
@@ -362,36 +362,59 @@ proof fn lemma_aad_length_no_overflow(
 
 ### Proving Loop Termination — `sign_fixed_len` bounded retry (in-crate, VR-008)
 
-> This is **in-crate** in `prim/src/ecdsa.rs` (VR-008). It is a verified-decision-core + trusted-adapter shape: the loop itself cannot enter `verus!` because its signature and body name `Error`, the `aws-lc-rs` `Signature` and the `MAX_SIGN_ATTEMPTS` const, all declared outside `verus!`. So the two pure decisions go inside `verus!`, and `sign_fixed_len` stays the single unverified adapter that drives them. The `decreases` lives on the `may_retry` decision, not literally on the adapter's `while` keyword; the termination guarantee is the same, one indirection away.
+> This is **in-crate** in `prim/src/ecdsa.rs` (VR-008). The real retry loop is inside `verus!`: `sign_fixed_len_core` carries the `while` loop with a genuine `decreases MAX_SIGN_ATTEMPTS - attempt`, and the guarded `copy_from_slice` is proven in bounds. `MAX_SIGN_ATTEMPTS` is defined inside `verus!` too. The pieces Verus cannot model are kept as a thin trusted boundary: `aws-lc-rs`'s opaque `Signature` (an `external_type_specification`), `Signature::as_ref` and `<[u8]>::copy_from_slice` (`assume_specification`s for std/FFI, the copy's equal-length precondition restated verbatim from vstd), and the `sign_once` closure's signing call. The crate `Error` never enters `verus!`: a thin `sign_fixed_len` adapter maps the closure's errors onto a `verus!`-internal `SignCoreError` and builds the `Error`/`format!` strings. There is **no** `#[cfg(not(verus_keep_ghost))]` and no `external_body` on the loop itself — only the external-type/`assume_specification` boundary.
 
 ```rust
 verus! {
 
-// The copy gate: the adapter copies a candidate signature only when this holds,
-// so copy_from_slice never runs on a length mismatch (no out-of-bounds write).
-fn len_matches(candidate_len: usize, want_len: usize) -> (ok: bool)
-    ensures ok <==> candidate_len == want_len,
-{ candidate_len == want_len }
+// Trusted boundary: aws-lc-rs's Signature is opaque to Verus.
+#[verifier::external_type_specification]
+#[verifier::external_body]
+pub struct ExSignature(aws_lc_rs::signature::Signature);
 
-// The bounded-loop decision: the adapter keeps retrying only while this holds,
-// advancing `attempt` by one each iteration, so the loop runs at most `max`
-// times and terminates.
-fn may_retry(attempt: u32, max: u32) -> (go: bool)
-    ensures go <==> attempt < max,
-{ attempt < max }
+// Trusted boundary: the candidate byte view (length unconstrained) and the
+// std copy (equal-length precondition = panic freedom), restated from vstd.
+pub assume_specification[ <aws_lc_rs::signature::Signature as AsRef<[u8]>>::as_ref ](
+    s: &aws_lc_rs::signature::Signature) -> &[u8];
+pub assume_specification<T: Copy>[ <[T]>::copy_from_slice ](dst: &mut [T], src: &[T])
+    requires old(dst)@.len() == src@.len(), ensures final(dst)@ == src@;
+
+const MAX_SIGN_ATTEMPTS: u32 = 128;
+
+// verus!-internal error so the crate Error never enters the verified region.
+enum SignCoreError { Failed, Exhausted }
+
+// The VERIFIED core: the real loop, under decreases; the copy is proven in bounds.
+fn sign_fixed_len_core<F: FnMut() -> Result<aws_lc_rs::signature::Signature, SignCoreError>>(
+    signature: &mut [u8], mut sign_once: F,
+) -> Result<(), SignCoreError>
+    requires forall|f: F| #[trigger] call_requires(f, ()),  // closure has no precondition
+{
+    let want_len = signature.len();
+    let mut attempt: u32 = 0;
+    while attempt < MAX_SIGN_ATTEMPTS
+        invariant
+            attempt <= MAX_SIGN_ATTEMPTS,
+            want_len == signature@.len(),
+            forall|f: F| #[trigger] call_requires(f, ()),
+        decreases MAX_SIGN_ATTEMPTS - attempt,   // termination, on the real loop
+    {
+        assert(call_requires(sign_once, ()));
+        let candidate = sign_once()?;
+        let candidate_bytes: &[u8] = candidate.as_ref();
+        if candidate_bytes.len() == want_len {
+            signature.copy_from_slice(candidate_bytes);  // equal lengths => in bounds
+            return Ok(());
+        }
+        attempt += 1;
+    }
+    Err(SignCoreError::Exhausted)
+}
 
 }
 
-// Unverified adapter, OUTSIDE verus! (owns Error, the aws-lc-rs Signature, the
-// signing call and copy_from_slice). Driven by the two verified decisions:
-//   while may_retry(attempt, MAX_SIGN_ATTEMPTS) {
-//       let candidate = sign_once()?;
-//       if len_matches(candidate.as_ref().len(), want_len) {
-//           signature.copy_from_slice(candidate.as_ref());  // gated: in-bounds
-//           return Ok(());
-//       }
-//       attempt += 1;
-//   }
+// Thin adapter OUTSIDE verus!: builds the Error (format!) and maps the signing
+// closure's error into SignCoreError. No loop logic lives here.
 ```
 
 ## Process
@@ -403,7 +426,7 @@ fn may_retry(attempt: u32, max: u32) -> (go: bool)
    - `esdk/src/encrypt.rs`, `esdk/src/key_derivation.rs` — encrypt orchestration and key derivation.
 
    **In-crate in `prim` (checked by `make -C prim verus`):**
-   - `prim/src/ecdsa.rs` — ECDSA signing for the footer, `sign_fixed_len`, `check_sig_len` (VR-008): the verified `len_matches` / `may_retry` decisions with `sign_fixed_len` as the unverified adapter. Already proven; build on it, don't re-prove.
+   - `prim/src/ecdsa.rs` — ECDSA signing for the footer, `sign_fixed_len`, `check_sig_len` (VR-008): the real retry loop (`sign_fixed_len_core`) is inside `verus!` with `decreases MAX_SIGN_ATTEMPTS - attempt` and a bounds-proven `copy_from_slice`; `sign_fixed_len` is the thin Error-building adapter. Already proven; build on it, don't re-prove.
 
    **Model-only for now (the rest of `prim`, standalone under `verification/`):** `prim/src/lib.rs` and `prim/src/hkdf.rs` have no `verus!` block yet, so proofs over them are standalone models in `verification/`, not proofs about the shipped crate. **Enabling Verus for these is planned; when that lands they become in-crate targets.**
    - `prim/src/lib.rs` — AES-GCM `aes_encrypt` / `aes_decrypt` (VR-006).
@@ -454,7 +477,7 @@ fn may_retry(attempt: u32, max: u32) -> (go: bool)
 These come from `.kiro/steering/verus-verification.md` and `.kiro/agents/verus-capabilities.md`. They decide what is provable in the shipped `esdk` crate:
 
 - Verus cannot verify `async fn` or `dyn` trait objects. Keep decision logic in a synchronous core inside `verus!`; the async writers/readers stay unverified glue.
-- A verified fn cannot call or name items declared outside `verus!` (mpl types, the esdk `Error`, prim fns). Keep those calls in the unverified adapter. Concrete prim example: VR-008's `sign_fixed_len` can't enter `verus!` because its signature names `Error`, the `aws-lc-rs` `Signature` and the `MAX_SIGN_ATTEMPTS` const (all outside `verus!`); only the `len_matches` / `may_retry` decisions over `usize`/`u32`/`bool` go inside, with `sign_fixed_len` the unverified adapter.
+- A verified fn cannot freely name a type declared outside `verus!` (mpl types, the esdk `Error`). Two ways out: keep that type in an unverified adapter, or — for a genuinely external type Verus cannot model — declare a trusted boundary with `external_type_specification` / `assume_specification`. The latter is for FFI/std only (invariant #7: model the FFI contract explicitly), never an escape hatch over your own loop or logic. Concrete prim example (VR-008): `sign_fixed_len_core` holds the real retry loop inside `verus!` — `MAX_SIGN_ATTEMPTS` moved inside, the `aws-lc-rs` `Signature` modeled by an `external_type_specification`, its `as_ref` and `<[u8]>::copy_from_slice` by `assume_specification` — while the crate `Error` is kept out of `verus!` entirely via a `verus!`-internal `SignCoreError` and a thin `sign_fixed_len` adapter that builds the `Error`.
 - A trait declared in `verus!` but implemented outside has its `ensures` trusted silently — use `requires`-only traits.
 - `to_be_bytes` is not modeled by vstd. Use `u32_to_be` / `u64_to_be` (`esdk/src/message/serialize_functions.rs`).
 - Never hide exec code behind `#[cfg(not(verus_keep_ghost))]`. Keep one definition per type.

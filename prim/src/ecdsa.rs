@@ -132,23 +132,6 @@ const fn get_ver_alg(x: EcdsaSignatureAlgorithm) -> &'static EcdsaVerificationAl
     }
 }
 
-/// Maximum number of signing attempts made while looking for a DER
-/// signature of the canonical length (see [`sign_fixed_len`]).
-///
-/// Each attempt succeeds with probability 1/2, which follows from the
-/// encoding rather than from measurement. `r` and `s` are each encoded as a
-/// DER INTEGER, and each independently takes a leading `0x00` byte exactly
-/// when its high bit is set — probability 1/2 apiece. So a signature runs
-/// one byte long when both take the pad (1/4), one byte short when neither
-/// does (1/4), and lands on the canonical length when exactly one does
-/// (1/2). An `r` or `s` whose top byte is zero shortens it further, which
-/// shifts the rate by about 1/256.
-///
-/// At p = 1/2, exhausting 128 attempts has probability 2^-128, negligible
-/// against the other failure modes of signing. The expected number of
-/// attempts is 2, so a bound this loose costs nothing in practice.
-const MAX_SIGN_ATTEMPTS: u32 = 128;
-
 /// The DER-encoded signature length [`ecdsa_sign`] emits for `alg`: 71
 /// bytes for P-256, 103 for P-384.
 ///
@@ -166,34 +149,131 @@ pub const fn signature_len(alg: EcdsaSignatureAlgorithm) -> usize {
 
 verus! {
 
-/// Whether a candidate DER signature of `candidate_len` bytes may be written
-/// into a buffer of `want_len` bytes: exactly when the lengths are equal.
-///
-/// This is the verified gate that guards the `copy_from_slice` in
-/// [`sign_fixed_len`]: the adapter copies only when this returns `true`, so
-/// the write can never be out of bounds (VR-008). `want_len` is
-/// `signature.len()`, which [`check_sig_len`] already pins to
-/// [`signature_len`] for the algorithm before any signing begins.
-fn len_matches(candidate_len: usize, want_len: usize) -> (ok: bool)
+// Trusted boundary: `aws-lc-rs`'s `Signature` is an external type Verus
+// cannot see into, so we model it as opaque (the sanctioned way to name an
+// FFI type inside `verus!` — not an escape hatch over our own proof). Nothing
+// is assumed about its contents; only `as_ref`'s length, below, is used.
+//
+// `ExSignature` is the Verus spec handle for the external type, never a value
+// the crate constructs or exposes, so the crate's Debug/docs lints do not
+// apply to it.
+#[verifier::external_type_specification]
+#[verifier::external_body]
+#[doc(hidden)]
+#[allow(missing_debug_implementations, missing_docs, dead_code)]
+pub struct ExSignature(aws_lc_rs::signature::Signature);
+
+// Trusted boundary: the candidate signature's byte view. Its length is left
+// unconstrained — the proof does not assume anything about how long a signed
+// candidate is; it only compares that length against `want_len` at runtime
+// and copies when they are equal.
+pub assume_specification[ <aws_lc_rs::signature::Signature as AsRef<[u8]>>::as_ref ](
+    s: &aws_lc_rs::signature::Signature,
+) -> &[u8];
+
+// `<[u8]>::copy_from_slice`. vstd carries this exact specification (in
+// `vstd::std_specs::slice`), but this toolchain does not register it for a
+// downstream crate, so it is restated here verbatim. The `requires` is the
+// std precondition — equal destination and source lengths — which is exactly
+// what makes the copy panic-free; this declaration does not weaken it.
+pub assume_specification<T: Copy>[ <[T]>::copy_from_slice ](dst: &mut [T], src: &[T])
+    requires
+        old(dst)@.len() == src@.len(),
     ensures
-        ok <==> candidate_len == want_len,
-{
-    candidate_len == want_len
+        final(dst)@ == src@;
+
+/// Maximum number of signing attempts made while looking for a DER
+/// signature of the canonical length (see [`sign_fixed_len`]).
+///
+/// Each attempt succeeds with probability 1/2, which follows from the
+/// encoding rather than from measurement. `r` and `s` are each encoded as a
+/// DER INTEGER, and each independently takes a leading `0x00` byte exactly
+/// when its high bit is set — probability 1/2 apiece. So a signature runs
+/// one byte long when both take the pad (1/4), one byte short when neither
+/// does (1/4), and lands on the canonical length when exactly one does
+/// (1/2). An `r` or `s` whose top byte is zero shortens it further, which
+/// shifts the rate by about 1/256.
+///
+/// At p = 1/2, exhausting 128 attempts has probability 2^-128, negligible
+/// against the other failure modes of signing. The expected number of
+/// attempts is 2, so a bound this loose costs nothing in practice.
+///
+/// Defined inside `verus!` so it can bound the verified retry loop
+/// (`decreases MAX_SIGN_ATTEMPTS - attempt`); this is the single definition,
+/// erased to a plain `const` for the cargo build.
+const MAX_SIGN_ATTEMPTS: u32 = 128;
+
+/// Why the verified retry core ([`sign_fixed_len_core`]) stopped without
+/// writing a signature. Defined inside `verus!` so the crate [`Error`] type —
+/// which Verus does not model — never enters the verified region; the
+/// unverified adapter [`sign_fixed_len`] maps each variant to the [`Error`]
+/// (same kind, same message) the callers had before.
+enum SignCoreError {
+    /// A single signing attempt (the external `aws-lc-rs` call) failed.
+    Failed,
+    /// No candidate of the required length appeared within [`MAX_SIGN_ATTEMPTS`].
+    Exhausted,
 }
 
-/// Whether the bounded retry in [`sign_fixed_len`] should keep going: it may
-/// make another attempt exactly while `attempt < max`.
+/// The verified core of the bounded signing retry: call `sign_once` until it
+/// yields a DER signature of exactly `signature.len()` bytes, write it into
+/// `signature`, and give up after [`MAX_SIGN_ATTEMPTS`].
 ///
-/// The adapter's loop advances `attempt` by one each iteration and stops as
-/// soon as this returns `false`, so `attempt` rises monotonically to the
-/// fixed `max` ([`MAX_SIGN_ATTEMPTS`]) and the loop runs at most `max` times.
-/// This is the verified termination decision; the adapter owns the external
-/// `aws-lc-rs` signing call that each iteration performs.
-fn may_retry(attempt: u32, max: u32) -> (go: bool)
-    ensures
-        go <==> attempt < max,
+/// Two panic-freedom properties are proven in place by Verus (VR-008):
+///
+/// - **Termination.** The `while` loop counts `attempt` up from 0 and stops
+///   at [`MAX_SIGN_ATTEMPTS`]; the `decreases MAX_SIGN_ATTEMPTS - attempt`
+///   clause, with the `attempt <= MAX_SIGN_ATTEMPTS` invariant, is what Verus
+///   checks to prove the bounded retry always terminates — it can run at most
+///   [`MAX_SIGN_ATTEMPTS`] times.
+/// - **No out-of-bounds copy.** `signature.copy_from_slice(candidate_bytes)`
+///   runs only inside the `candidate_bytes.len() == want_len` guard, and
+///   vstd's `copy_from_slice` specification requires the destination and
+///   source lengths to be equal. The loop invariant carries `want_len ==
+///   signature.len()`, so under the guard the lengths are equal and Verus
+///   proves the write is in bounds. [`check_sig_len`] has already pinned
+///   `signature.len()` to [`signature_len`] for the algorithm before signing
+///   begins.
+///
+/// No crypto property is proven: `sign_once` runs the external `aws-lc-rs`
+/// signing operation and its result is trusted. Only the loop bound and the
+/// buffer write are machine-checked.
+fn sign_fixed_len_core<F: FnMut() -> Result<aws_lc_rs::signature::Signature, SignCoreError>>(
+    signature: &mut [u8],
+    mut sign_once: F,
+) -> Result<(), SignCoreError>
+    requires
+        // The closure is always callable: it takes no argument and carries no
+        // precondition. This is a property of the closure, not an assumption
+        // about its result — the proof never inspects what it returns.
+        forall|f: F| #[trigger] call_requires(f, ()),
 {
-    attempt < max
+    let want_len = signature.len();
+    let mut attempt: u32 = 0;
+    while attempt < MAX_SIGN_ATTEMPTS
+        invariant
+            attempt <= MAX_SIGN_ATTEMPTS,
+            want_len == signature@.len(),
+            forall|f: F| #[trigger] call_requires(f, ()),
+        decreases MAX_SIGN_ATTEMPTS - attempt,
+    {
+        // The loop invariant says the closure is callable for every value of
+        // `F`; instantiating it at the current `sign_once` discharges the
+        // call's precondition. No assumption is made about the result.
+        assert(call_requires(sign_once, ()));
+        let candidate = sign_once()?;
+        let candidate_bytes: &[u8] = candidate.as_ref();
+        if candidate_bytes.len() == want_len {
+            // Guard gives `candidate_bytes.len() == want_len`; the invariant
+            // gives `want_len == signature.len()`. So the two lengths are
+            // equal and vstd's `copy_from_slice` precondition holds — the
+            // write is proven in bounds.
+            signature.copy_from_slice(candidate_bytes);
+            return Ok(());
+        }
+        attempt += 1;
+    }
+    Err(SignCoreError::Exhausted)
 }
 
 } // verus!
@@ -209,13 +289,10 @@ fn may_retry(attempt: u32, max: u32) -> (go: bool)
 /// making the attempts independent; a deterministic scheme (RFC 6979)
 /// would produce the same length forever and always exhaust the retries.
 ///
-/// This is the unverified trusted-boundary adapter (the `aws-lc-rs`
-/// `Signature`, the crate `Error`, and `copy_from_slice` are all things
-/// Verus cannot model, so they stay out of `verus!`). Its two safety
-/// decisions are the verified [`may_retry`] (so the loop runs at most
-/// [`MAX_SIGN_ATTEMPTS`] times and terminates) and [`len_matches`] (so the
-/// `copy_from_slice` runs only on a length match, never out of bounds —
-/// VR-008). No crypto property is proven: `sign_once` is trusted.
+/// This thin adapter owns only the pieces Verus does not model: it builds the
+/// crate [`Error`] values (with `format!`), while the verified
+/// [`sign_fixed_len_core`] owns the proven loop bound and the bounds-safe
+/// copy (VR-008). No crypto property is proven: `sign_once` is trusted.
 ///
 /// # Errors
 ///
@@ -226,18 +303,24 @@ fn sign_fixed_len(
     mut sign_once: impl FnMut() -> Result<aws_lc_rs::signature::Signature, Error>,
 ) -> Result<(), Error> {
     let want_len = signature.len();
-    let mut attempt: u32 = 0;
-    while may_retry(attempt, MAX_SIGN_ATTEMPTS) {
-        let candidate = sign_once()?;
-        if len_matches(candidate.as_ref().len(), want_len) {
-            signature.copy_from_slice(candidate.as_ref());
-            return Ok(());
+    // `sign_failure` captures the signing error so its message is preserved
+    // across the verus-internal `SignCoreError` boundary.
+    let mut sign_failure: Option<Error> = None;
+    let result = sign_fixed_len_core(signature, || match sign_once() {
+        Ok(candidate) => Ok(candidate),
+        Err(e) => {
+            sign_failure = Some(e);
+            Err(SignCoreError::Failed)
         }
-        attempt += 1;
+    });
+    match result {
+        Ok(()) => Ok(()),
+        Err(SignCoreError::Failed) => Err(sign_failure
+            .unwrap_or_else(|| serr("ECDSA signing failed".to_owned()))),
+        Err(SignCoreError::Exhausted) => err(format!(
+            "no {want_len} byte DER signature produced in {MAX_SIGN_ATTEMPTS} attempts"
+        )),
     }
-    err(format!(
-        "no {want_len} byte DER signature produced in {MAX_SIGN_ATTEMPTS} attempts"
-    ))
 }
 
 /// Check that a caller-supplied signature buffer is the length `alg`

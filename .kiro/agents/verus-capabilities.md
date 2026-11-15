@@ -42,7 +42,7 @@ These numbers go stale as soon as code changes. Before citing a count, re-run th
 |--------------|------|--------------|
 | `aws-esdk` | `esdk/src/` | **Verus-checked.** `[package.metadata.verus] verify = true`; only code inside `verus! { }` is verified. |
 | `aws-crypto-mpl` | `mpl/src/` | Dependency. Built by `cargo-verus` with plain rustc; not verified. Keyrings, CMMs, material types (`PlaintextDataKey`, `AlgorithmSuite`). |
-| `aws-mpl-primitives` | `prim/src/` | **Verus-enabled for VR-008 only.** `[package.metadata.verus] verify = true`, `make -C prim verus`; only `prim/src/ecdsa.rs` has a `verus!` block (VR-008, verified-decision-core + trusted-adapter). `prim/src/lib.rs` (VR-006) and `prim/src/hkdf.rs` (VR-009 prim half) have none yet and are built with plain rustc (planned). Safe wrappers over `aws-lc-rs` (AES-GCM, HKDF, ECDSA, digest, RNG). |
+| `aws-mpl-primitives` | `prim/src/` | **Verus-enabled for VR-008 only.** `[package.metadata.verus] verify = true`, `make -C prim verus`; only `prim/src/ecdsa.rs` has a `verus!` block (VR-008: the real `sign_fixed_len` retry loop verified in place with `decreases` + a bounds-proven copy). `prim/src/lib.rs` (VR-006) and `prim/src/hkdf.rs` (VR-009 prim half) have none yet and are built with plain rustc (planned). Safe wrappers over `aws-lc-rs` (AES-GCM, HKDF, ECDSA, digest, RNG). |
 | C++ shim | `esdk/shims/aws-esdk-cpp/` | Not Verus-checked. Holds the only shipped-path `unsafe`. |
 | Standalone models | `verification/` | Verus-checked models (`make -C verification verify`). |
 | Spec | `spec/` at the repo root | Resolved by `scripts/resolve-spec.sh`; not a submodule and may be absent locally. The tracked documents are listed in `esdk/.duvet/config.toml` (`spec/data-format/*`, `spec/client-apis/*`, …). |
@@ -97,7 +97,7 @@ From the steering file and the proofs report:
 
 ### 2d. Total error handling (no panicking `unwrap` / `expect`)
 - Known `.expect` sites (from the `d8c1c3d` panic inventory in `docs/verification-recommendations.md`, not re-audited): `esdk/src/encrypt.rs` HKDF output-length `expect`; `esdk/src/types.rs` default-config `NonZeroU32::new(4096).expect` / `.unwrap()`. Re-check before scoping.
-- **In-crate (VR-008):** `sign_fixed_len` / `check_sig_len` in `prim/src/ecdsa.rs` — the bounded `MAX_SIGN_ATTEMPTS` retry terminates (`may_retry`) and no `copy_from_slice` runs on a length mismatch (`len_matches`). Verified-decision-core + trusted-adapter shape: `sign_fixed_len` stays the unverified adapter; no crypto property is proven.
+- **In-crate (VR-008):** `sign_fixed_len_core` in `prim/src/ecdsa.rs` — the real retry loop is inside `verus!` with `decreases MAX_SIGN_ATTEMPTS - attempt` (termination) and the guarded `copy_from_slice` proven in bounds. The `aws-lc-rs` `Signature` / signing closure is the trusted boundary (`external_type_specification` + `assume_specification`); the thin `sign_fixed_len` adapter builds the `Error`; no crypto property is proven.
 - **Provable in kind, not in place:** the remaining `prim` panic points (`aes_encrypt` / `aes_decrypt` in `prim/src/lib.rs`, VR-006; `prim/src/hkdf.rs`, VR-009 prim half). `prim/src/lib.rs` and `prim/src/hkdf.rs` have no `verus!` block yet (planned), so these are model-only in `verification/` or not started.
 - **Agent:** `verus-zero-panic` for all of category 2.
 
