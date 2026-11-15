@@ -64,6 +64,19 @@ make -C verification verify
 > "In-crate proofs". VR-006 (AES-GCM, `prim/src/lib.rs`) and the prim half of
 > VR-009 (`prim/src/hkdf.rs`) stay model-only; enabling Verus for them is
 > planned.
+>
+> **Update (branch `verus-prim-t2`):** VR-006 (T2, AES-GCM buffer safety) is
+> now in-crate in `prim/src/lib.rs`: **5 verified, 0 errors** on both feature
+> sets (3 from VR-008 plus 2 new T2 cores). Two cores inside `verus!` carry
+> the obligations — `aes_encrypt_extend_core` (the `aes_encrypt` slice bounds:
+> the `split_at_mut(old_size)` index is proven in range by the
+> `extend_from_slice` length fact, so `cipher_text[old_size..]` cannot panic)
+> and `aes_decrypt_len_ok` (the `aes_decrypt` plaintext-vs-ciphertext length
+> precondition). **Not proven:** the AES-GCM key length (16/24/32) and the IV
+> validity — those are enforced inside `aws-lc-rs`, a trusted boundary, not by
+> Rust-side branches in `prim`; and no crypto correctness. The prim half of
+> VR-009 (`prim/src/hkdf.rs`) stays model-only; enabling Verus for it is
+> planned. See "VR-006" under "In-crate proofs".
 
 ### Adherence to the Verus skill invariants (esdk)
 - No proof was weakened: **no** `assume(...)`, `admit()`, or `#[verifier::external]` anywhere in esdk. In esdk there is exactly **one** `#[verifier::external_body]` — the `utf8_check` wrapper around `std::str::from_utf8` in the AAD sub-parser — used per Verus skill invariant #11 for a std call Verus cannot evaluate (the same role `tag_ok` plays for the AES-GCM check). Its `ensures` is a **trusted boundary, not a proof**: the UTF-8-validation correctness is delegated to the std library; everything around it (that the parser rejects non-UTF-8 with `Err`, never panics) is proven. This is called out explicitly in §5.
@@ -177,9 +190,9 @@ and `construct_frame` writes the frame fields with `write_frame_prefix`.
 - **The aws-lc-rs FFI** (AES-GCM, ECDSA, HKDF, digests) is out of Verus scope.
 - **VR-009, prim half and key-derivation adapters.** `prim/src/hkdf.rs`
   (including `get_len`) and the aws-lc-rs HKDF calls are not proven: `prim` is
-  now Verus-enabled, but only `prim/src/ecdsa.rs` carries a `verus!` block
-  (VR-008); `hkdf.rs` has none yet (planned), so HKDF and its output-length
-  limit are a trust boundary. In esdk, `derive_key_v1` / `derive_key_v2` / `derive_keys`
+  Verus-enabled and `prim/src/ecdsa.rs` (VR-008) and `prim/src/lib.rs` (VR-006)
+  carry `verus!` blocks, but `hkdf.rs` has none yet (planned), so HKDF and its
+  output-length limit are a trust boundary. In esdk, `derive_key_v1` / `derive_key_v2` / `derive_keys`
   are unverified adapters. Not proven there: the V1 output length and the V2
   commit-key length, which are MPL getters (`encryption_key_length()`,
   `algorithm_suite_data_length()`) passed straight to `MessageKey::zeroed(n)` /
@@ -287,6 +300,52 @@ runs the `aws-lc-rs` signing operation and its result (including the candidate
 length) is trusted; the proof never assumes anything about it. Only the loop
 bound and the in-bounds copy are machine-checked.
 
+### VR-006 in-crate (`aws-mpl-primitives`, `prim/src/lib.rs`)
+
+The AES-GCM buffer-safety cores are now inside a `verus!` block in
+`prim/src/lib.rs`, checked by the same `make -C prim verus`. No `assume`,
+`admit`, `external_body`, `external`, or `#[cfg(not(verus_keep_ghost))]`; the
+cores reason against vstd's own specifications for `Vec::extend_from_slice`,
+`Vec::as_mut_slice` and `<[T]>::split_at_mut` (vstd registers these for the
+downstream crate, so — unlike T1's `copy_from_slice` — none had to be
+restated). The `aws-lc-rs` calls and the crate `Error` stay in the thin
+`aes_encrypt`/`aes_decrypt` adapters outside `verus!`, exactly as T1 keeps them
+out of `sign_fixed_len_core`.
+
+Output (default features, then `--no-default-features --features aws-lc-sys`),
+the `aws-mpl-primitives` line, now covering both VR-008 and VR-006:
+
+```
+verification results:: 5 verified, 0 errors
+verification results:: 5 verified, 0 errors
+```
+
+| Fn | File | What Verus checks | Target |
+|----|------|-------------------|--------|
+| `aes_encrypt_extend_core` | `prim/src/lib.rs` | after `extend_from_slice(message)`, `old_size` is in range for `split_at_mut`, so the appended tail slice (`cipher_text[old_size..]`) is in bounds and exactly `message.len()` bytes | VR-006 |
+| `aes_decrypt_len_ok` | `prim/src/lib.rs` | `Ok` iff `plain_text.len() >= cipher_text.len()`; `Err` iff `plain_text.len() < cipher_text.len()` (the guard before the gather) | VR-006 |
+
+The shipped `aes_encrypt` calls `aes_encrypt_extend_core` to obtain the
+in-bounds ciphertext region it hands to the `aws-lc-rs` seal; the shipped
+`aes_decrypt` returns `Err` when `aes_decrypt_len_ok` rejects an under-sized
+plaintext buffer, before the `open_separate_gather` call. There is one
+definition of each function — the proved core is the shipped core. Both cores
+were mutation-tested: moving the split index to `old_size + 1` fails the
+`split_at_mut` precondition, and making `aes_decrypt_len_ok` always return `Ok`
+fails its postcondition, so neither obligation is a tautology.
+
+**What is proven (VR-006):** only the Rust-side buffer safety / no-panic.
+(a) `aes_decrypt` rejects a plaintext buffer shorter than the ciphertext before
+the `aws-lc-rs` gather; (b) `aes_encrypt`'s `cipher_text[old_size..]` slice is
+always in bounds with length `message.len()`, so it cannot panic.
+
+**What is NOT proven (VR-006):** the AES-GCM key length (16/24/32) and the IV
+validity. These are enforced *inside* `aws-lc-rs` — `UnboundKey::new` returns
+`Err` on a bad key length and `Nonce::try_assume_unique_for_key` returns `Err`
+on a bad IV — not by Rust-side branches in `prim`, so Verus cannot see them;
+they are a trusted boundary. No crypto correctness is proven either (the
+`seal`/`open` and tag verification are `aws-lc-rs`).
+
 **Properties that stay model-only, and why:**
 
 | Property | Model | Why it is not in-crate |
@@ -295,7 +354,7 @@ bound and the in-bounds copy are machine-checked.
 | EDK list loop | `io_stream_aligned.rs` (`read_edks`) | The count decision is in-crate (`edk_count_check`). What is left is a `for` loop of `.await?` reads over `dyn Source` plus the MPL `EncryptedDataKey` builder; no sync decision logic is left to extract. |
 | Encryption-context (AAD) parser | `io_stream_aligned.rs` (`read_canonical_ec` etc.) | Obsolete: parsing moved to MPL (`EncryptionContext::from_bytes`), outside this ESDK scope; esdk only reads a `u16` length and the bytes. |
 | Frame ciphertext ‖ tag | `frame_layout_proofs.rs` | `aes_encrypt` (`aws-mpl-primitives`, aws-lc-rs FFI) appends them, and the frame is released through `dyn Sink` / `DigestWriter`. |
-| AES-GCM buffer bounds | `aes_gcm_bounds_proofs.rs` | The code is in `prim/src/lib.rs`. `prim` is now Verus-enabled (for VR-008 in `ecdsa.rs`), but `lib.rs` has no `verus!` block yet; proving AES-GCM bounds in place is planned, not done here. Re-audited against `prim/src/lib.rs`: the model matches. |
+| AES-GCM buffer bounds | `aes_gcm_bounds_proofs.rs` (superseded) | **Now in-crate (VR-006, T2):** `prim/src/lib.rs` has a `verus!` block with `aes_encrypt_extend_core` and `aes_decrypt_len_ok`; the standalone model is kept only as the historical model. The AES-GCM key/IV checks and crypto itself remain trusted (`aws-lc-rs`). |
 | Zeroization | `zeroize_proofs.rs` | Unchanged, deferred; out of scope for this work. The model describes a hand-written `write_volatile` loop in `PlaintextDataKey::zeroize` that no longer exists (removed in `a864ad87`, #131; the key types now `#[derive(Zeroize, ZeroizeOnDrop)]`), so it does not describe current code. |
 
 ---
@@ -313,7 +372,7 @@ bound and the in-bounds copy are machine-checked.
 | `io_stream_model.rs` | 8 | infra | Prototype `SafeRead`/`SafeWrite` abstraction: `ByteReader` (cursor + type invariant), total EOF-safe `read_exact`/`read_u32`, `write_all`; **end-to-end read loop** `read_and_validate_seq_run` (reads sequence numbers from the stream, enforces sequential-from-1, panic-free). |
 | `io_stream_aligned.rs` | 24 | infra + VR-003/004/005 | The abstraction reshaped to the **exact `serialize_functions` signatures**: `read_vec`/`read_u8`/`read_u16`/`read_u32`/`read_opt_u8`/`read_seq_u32_bounded` returning `Result<T, SerErr>` (EOF → `Err`; `read_opt_u8` → `Ok(None)`), each mirroring consumed bytes into `raw` (`raw' == raw ++ consumed`); bounded reader rejects over-limit length before reading; end-to-end `read_seq_u16`. **Plus four end-to-end loops:** (a) V1 header tail parse (`read_v1_header_tail`) — total, rejects malformed input, each field spec-valid; (b) framed-decrypt body loop (`read_and_decrypt_framed_body`) — total, strictly sequential from 1, overflow-free, terminating; (c) **EDK list sub-parser** (`read_edks`) — total, rejects `count == 0` and `count > max` before iterating, entry loop terminates; (d) **AAD/encryption-context sub-parser** (`read_canonical_ec`/`read_str_u16`/`read_ec_pairs`) — total, empty-EC short-circuit, non-UTF-8 rejected, pair loop terminates. |
 | `header_auth_ordering_proofs.rs` | 5 | VR-002 | Models the `internal_decrypt` 5-step control flow as a phase state machine. Proves the **ordering** invariant: `step_decrypt_body` requires `phase == HeaderVerified`, and the only producer of that phase is a successful `step_verify_header` (which requires `tag_ok`). Therefore **no frame is decrypted unless the header auth tag verified first**; if the tag check fails, the body is never decrypted (the operation halts). |
-| `aes_gcm_bounds_proofs.rs` | 3 | VR-006 (partial) | The **non-FFI** buffer bookkeeping of `aes_encrypt`/`aes_decrypt` (`prim/src/lib.rs`). Proves the `aes_encrypt` `cipher_text[old_size..]` slice is always in bounds (never panics) with exact length tracking, and the `aes_decrypt` length guard always rejects an under-sized output buffer before the FFI gather. The AES-GCM crypto itself (aws-lc-rs `seal`/`open`) is out of Verus scope. |
+| `aes_gcm_bounds_proofs.rs` | 3 | VR-006 (partial) | The **non-FFI** buffer bookkeeping of `aes_encrypt`/`aes_decrypt` (`prim/src/lib.rs`). Proves the `aes_encrypt` `cipher_text[old_size..]` slice is always in bounds (never panics) with exact length tracking, and the `aes_decrypt` length guard always rejects an under-sized output buffer before the FFI gather. The AES-GCM crypto itself (aws-lc-rs `seal`/`open`) is out of Verus scope. **Superseded:** this is now proven in-crate (VR-006, T2 — see "VR-006 in-crate"); the standalone model is kept as history. |
 | **Total** | **71** | | **0 errors** |
 
 ---
@@ -326,7 +385,7 @@ bound and the in-bounds copy are machine-checked.
 | VR-004 frame sequence validation | **in-crate**: regular-frame step (`next_expected_frame`), final-frame check (`final_frame_seq_ok`), sequential-run and start-at-1 lemmas | the async loop that threads `expected_frame` (unverified glue) |
 | VR-005 frame construction/serialization | **in-crate**: body AAD layout (`body_aad_core`), IV (`iv_seq_core`), frame prefix layout (`write_frame_prefix`). **Model only**: the `ct ‖ tag` append (`frame_layout_proofs.rs`) | `aes_encrypt` (FFI) output and the `dyn Sink` / `DigestWriter` release |
 | VR-002 header auth tag ordering | **model only** (`header_auth_ordering_proofs.rs`, re-audited against `decrypt_steps`): body decrypt unreachable without a verified header tag | not in-crate: the order is in an async fn and the tag check is aws-lc-rs FFI |
-| VR-006 AES-GCM panic freedom | **model only** (`aes_gcm_bounds_proofs.rs`, re-audited against `prim/src/lib.rs`): encrypt slice always in-bounds, decrypt rejects under-sized output buffer | not in-crate: `prim` is now Verus-enabled but only for VR-008 (`ecdsa.rs`); `prim/src/lib.rs` has no `verus!` block yet (planned); the AES-GCM crypto itself (aws-lc-rs `seal`/`open`, FFI) is out of scope |
+| VR-006 AES-GCM panic freedom | **in-crate** (`prim/src/lib.rs`, T2): `aes_encrypt_extend_core` proves the encrypt slice (`cipher_text[old_size..]`) is always in bounds and exactly `message.len()` bytes; `aes_decrypt_len_ok` proves the decrypt plaintext-vs-ciphertext length precondition that rejects an under-sized output buffer before the gather | **not** Verus-proven: the AES-GCM key length (16/24/32) and the IV validity — enforced inside `aws-lc-rs` (`UnboundKey::new` / `Nonce::try_assume_unique_for_key` return `Err`), a trusted boundary; and the crypto itself (aws-lc-rs `seal`/`open`, FFI) |
 | VR-008 ECDSA fixed-length signing | **in-crate** (`prim/src/ecdsa.rs`, `sign_fixed_len_core` inside `verus!`): the bounded `MAX_SIGN_ATTEMPTS` retry loop terminates (`decreases MAX_SIGN_ATTEMPTS - attempt`) and the guarded `copy_from_slice` is proven in bounds (tied to `check_sig_len`) | the `aws-lc-rs` signing closure and `Signature` type are the trusted boundary; the thin `sign_fixed_len` adapter builds the `Error`; no crypto property is proven |
 | VR-007 EDK count validation | **in-crate**: count-check logic (`edk_count_check`) | the "before any KMS call" ordering (caller-side in `decrypt.rs`) |
 | VR-009 HKDF / key-derivation lengths | **esdk half in-crate**: the V1 identity-KDF key-length check (`identity_kdf_key_len_ok`) and the V2 KDF / message-ID / key-length checks that size the derived encryption key (`check_v2_key_lengths`), total and accept iff the checks pass; `derive_keys` dispatches on the verified `msg_format_version_from_u8` | **prim half not proven**: `prim/src/hkdf.rs` (incl. `get_len`) and aws-lc-rs HKDF (trust boundary; `prim` is Verus-enabled but `hkdf.rs` has no `verus!` block yet, planned). In esdk, unverified: buffer sizes read directly from MPL getters (V1 output, V2 commit key), the V1 salt table `digest_length`, the `debug_assert!`s |

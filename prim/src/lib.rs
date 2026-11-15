@@ -70,6 +70,8 @@ pub use hkdf::*;
 use aws_lc_rs::aead::{Aad, LessSafeKey, Nonce, UnboundKey};
 use aws_lc_rs::rand;
 
+use vstd::prelude::*;
+
 /// Digest Algorithm. Default is Sha512
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 #[non_exhaustive]
@@ -162,10 +164,76 @@ const fn get_aes_alg(alg: AesGcm) -> &'static aws_lc_rs::aead::Algorithm {
     }
 }
 
+verus! {
+
+/// Extend `cipher_text` with `message` and return the freshly appended tail
+/// as a mutable slice of exactly `message.len()` bytes — the in-place target
+/// the AES-GCM seal writes the ciphertext into.
+///
+/// This is the verified core of [`aes_encrypt`]'s buffer bookkeeping (VR-006,
+/// part (b)). The slice obligation it discharges is the one that would panic
+/// in the shipped code: `extend_from_slice` makes
+/// `cipher_text.len() == old_size + message.len()`, so `old_size` is in range
+/// for `split_at_mut` and the returned tail is exactly `message.len()` bytes.
+/// Verus proves both facts; no index operation here can be out of bounds. The
+/// AES-GCM crypto itself is not in scope — the returned slice is handed to the
+/// `aws-lc-rs` seal in the [`aes_encrypt`] adapter, outside `verus!`.
+fn aes_encrypt_extend_core<'a>(cipher_text: &'a mut Vec<u8>, message: &[u8]) -> (slice: &'a mut [u8])
+    ensures
+        slice@.len() == message@.len(),
+{
+    let old_size = cipher_text.len();
+    cipher_text.extend_from_slice(message);
+    // `extend_from_slice` gives `cipher_text.len() == old_size + message.len()`,
+    // so `old_size <= cipher_text.len()` and `split_at_mut(old_size)` cannot
+    // panic. The tail runs from `old_size` to the end, i.e. `message.len()`
+    // bytes — the ciphertext region the seal overwrites in place.
+    let (_head, tail) = cipher_text.as_mut_slice().split_at_mut(old_size);
+    tail
+}
+
+/// Why [`aes_decrypt_len_ok`] rejected its inputs, kept inside `verus!` so the
+/// crate [`Error`] — which Verus does not model — never enters the verified
+/// region (the same device T1 uses with `SignCoreError`).
+enum AesDecryptLenError {
+    /// The plaintext buffer is shorter than the ciphertext.
+    PlainTooShort,
+}
+
+/// The verified decision core of [`aes_decrypt`] (VR-006, part (a)): accept
+/// iff the plaintext buffer is at least as long as the ciphertext.
+///
+/// This is the guard that makes the downstream `aws-lc-rs`
+/// `open_separate_gather` buffer-safe: the gather scatters `cipher_text.len()`
+/// bytes into `plain_text`, so a plaintext buffer shorter than the ciphertext
+/// must be rejected before the FFI call. The `ensures` ties the result to the
+/// exact length relation on the real values, so the adapter cannot proceed to
+/// the gather unless `plain_text.len() >= cipher_text.len()`.
+fn aes_decrypt_len_ok(plain_text_len: usize, cipher_text_len: usize) -> (r: Result<(), AesDecryptLenError>)
+    ensures
+        (r is Ok) <==> plain_text_len >= cipher_text_len,
+        (r is Err) <==> plain_text_len < cipher_text_len,
+{
+    if plain_text_len < cipher_text_len {
+        Err(AesDecryptLenError::PlainTooShort)
+    } else {
+        Ok(())
+    }
+}
+
+} // verus!
+
 /// Encrypt message with AES GCM
 ///
 /// On success, `cipher_text` is extended with the ciphertext followed by the
 /// authentication tag.
+///
+/// The Rust-side buffer bookkeeping is proven panic-free by Verus (VR-006):
+/// [`aes_encrypt_extend_core`] discharges the slice-bounds obligation so
+/// `cipher_text[old_size..]` can never be out of bounds. The AES-GCM key
+/// length and IV validity are *not* Verus-proven — they are enforced inside
+/// `aws-lc-rs` (`UnboundKey::new` / `Nonce::try_assume_unique_for_key` return
+/// `Err`), which is a trusted boundary. No crypto property is proven.
 ///
 /// # Errors
 ///
@@ -181,9 +249,9 @@ pub fn aes_encrypt(
     cipher_text: &mut Vec<u8>,
 ) -> Result<(), Error> {
     let alg = get_aes_alg(alg);
-    let old_size = cipher_text.len();
-    cipher_text.extend_from_slice(message);
-    let cipher_slice = &mut cipher_text[old_size..];
+    // Verified core: extend with `message` and hand back the in-bounds tail
+    // slice of exactly `message.len()` bytes for the seal to overwrite.
+    let cipher_slice = aes_encrypt_extend_core(cipher_text, message);
     let key = UnboundKey::new(alg, key).map_err(|_| serr("invalid AES-GCM key".to_owned()))?;
     let nonce = Nonce::try_assume_unique_for_key(iv)
         .map_err(|_| serr("invalid AES-GCM nonce".to_owned()))?;
@@ -197,6 +265,15 @@ pub fn aes_encrypt(
 }
 
 /// Decrypt message with AES GCM
+///
+/// The plaintext-vs-ciphertext length precondition is proven panic-free by
+/// Verus (VR-006): [`aes_decrypt_len_ok`] is the verified decision core that
+/// rejects an under-sized `plain_text` buffer before the `aws-lc-rs` gather.
+/// The AES-GCM key length, IV validity and tag verification are *not*
+/// Verus-proven — they are enforced inside `aws-lc-rs`
+/// (`UnboundKey::new` / `Nonce::try_assume_unique_for_key` /
+/// `open_separate_gather` return `Err`), which is a trusted boundary. No
+/// crypto property is proven.
 ///
 /// # Errors
 ///
@@ -212,7 +289,8 @@ pub fn aes_decrypt(
     aad: &[u8],
     plain_text: &mut [u8],
 ) -> Result<(), Error> {
-    if plain_text.len() < cipher_text.len() {
+    // Verified core: reject an under-sized plaintext buffer before the gather.
+    if aes_decrypt_len_ok(plain_text.len(), cipher_text.len()).is_err() {
         return err(format!(
             "plaintext buffer of {} bytes is shorter than the {} byte ciphertext",
             plain_text.len(),
