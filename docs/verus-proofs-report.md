@@ -99,6 +99,21 @@ make -C verification verify
 > trusted boundary; and all three prim panic-point targets (VR-006, VR-008,
 > VR-009 prim half) are now in-crate. See "VR-009" under "In-crate proofs".
 
+> **Update (branch `verus-vr001`):** VR-001 (key commitment) is now **partly
+> in-crate**. The accept/reject *decision* of `validate_suite_data`
+> (`esdk/src/message/header.rs`) is verified by a `verus!` core,
+> `suite_data_check`: **59 verified, 0 errors** on both feature sets (up from
+> 57; +2 real, mutation-tested obligations). **Proven (property a):** the
+> decision accepts **iff** the header suite data equals the derived (expected)
+> suite data **and** the suite's committed length agrees with the expected
+> length, and otherwise rejects commitment-first. **Not proven, trusted by
+> design:** the *constant-time* property of the comparison (property c) rests on
+> the `aws_lc_rs::constant_time::verify_slices_are_equal` API contract — Verus
+> does not model timing; and the *ordering* (validation before frame
+> decryption, property b) is enforced by call-site structure / code review, not
+> by Verus (the decrypt path is async over `dyn Source`). See "VR-001" under
+> "In-crate proofs" and the per-target status table.
+
 ### Adherence to the Verus skill invariants (esdk)
 - No proof was weakened: **no** `assume(...)`, `admit()`, or `#[verifier::external]` anywhere in esdk. In esdk there is exactly **one** `#[verifier::external_body]` — the `utf8_check` wrapper around `std::str::from_utf8` in the AAD sub-parser — used per Verus skill invariant #11 for a std call Verus cannot evaluate (the same role `tag_ok` plays for the AES-GCM check). Its `ensures` is a **trusted boundary, not a proof**: the UTF-8-validation correctness is delegated to the std library; everything around it (that the parser rejects non-UTF-8 with `Err`, never panics) is proven. This is called out explicitly in §5.
 - Every "verified" claim is backed by actual `0 errors` tool output.
@@ -128,13 +143,13 @@ Output (the `aws-esdk` line; `vstd` is verified first with
 `--no-default-features --features aws-lc-sys`:
 
 ```
-verification results:: 57 verified, 0 errors
-verification results:: 57 verified, 0 errors
+verification results:: 59 verified, 0 errors
+verification results:: 59 verified, 0 errors
 ```
 
 The count is Verus's obligation count, not a function count; the checked
-fns are 34 exec fns (13 before the in-crate work, 22 before VR-009, 24 before
-VR-011) and 3 proof fns. Files are under `esdk/src/message/` unless the path
+fns are 35 exec fns (13 before the in-crate work, 22 before VR-009, 24 before
+VR-011, 34 before VR-001) and 3 proof fns. Files are under `esdk/src/message/` unless the path
 starts with `esdk/src/`.
 
 | Fn | File | Ensures | Target |
@@ -158,6 +173,7 @@ starts with `esdk/src/`.
 | `reserved_bytes_ok` | `v1_header_body.rs` | `ok` iff all four bytes are 0 | VR-003 |
 | `iv_len_matches` | `v1_header_body.rs` | `ok` iff `iv_len == expected` | VR-003 |
 | `edk_count_check` | `header.rs` | `Empty` iff `count == 0`; `OverMax` iff `count > 0` and `max` is `Some(m)` with `count > m`; `Ok` otherwise | VR-007 |
+| `suite_data_check` | `header.rs` | with `requires bytes_equal <==> header@ == expected@`: `Ok` iff `header@ == expected@` and `commit_len == expected@.len()`; `Err(CommitmentMismatch)` iff `header@ != expected@` (checked first); `Err(LengthMismatch)` iff `header@ == expected@` but `commit_len != expected@.len()` | VR-001 (property a) |
 | `next_expected_frame` | `body/body_decrypt.rs` | `Some` iff `seq_num == expected && expected < u32::MAX`; `Some(n) ==> n == expected + 1`; `r == spec_next_expected_frame(seq_num, expected)` | VR-004 |
 | `final_frame_seq_ok` | `body/body_decrypt.rs` | `ok` iff `seq_num == expected` | VR-004 |
 | proof fn `lemma_accepts_run` | `body/body_decrypt.rs` | requires `accepts_run(seqs, expected)`; `seqs[i] == expected + i` for every `i`; `run_end(seqs, expected) == expected + seqs.len()` | VR-004 |
@@ -460,6 +476,7 @@ panic-point targets — VR-006, VR-008 and the VR-009 prim half — are in-crate
 
 | Target | Status | Residual (honestly scoped) |
 |--------|--------|-----------------------------|
+| VR-001 key commitment verification | **partly in-crate** (`esdk/src/message/header.rs`, `suite_data_check`): the accept/reject **decision** (property a) is verified — `validate_suite_data` accepts **iff** the header suite data equals the derived commit key **and** the committed length agrees, rejecting commitment-first otherwise; obligation mutation-tested | **not Verus-proven, trusted by design**: (c) *constant time* — the timing of `aws_lc_rs::constant_time::verify_slices_are_equal` is an aws-lc-rs API contract (Verus does not model timing); (b) *ordering* (commitment validation before frame decryption) — enforced structurally by the call-site in the async decrypt path over `dyn Source`, not by Verus (a model-only / in-place ordering proof is a possible future step). The derived commit key bytes and the comparison FFI stay at the trusted boundary |
 | VR-003 header parsing safety | **in-crate**: big-endian decoding, bounded readers, header-field decisions, the 0x41 Base64 hint (`classify_version_byte`), reserved bytes, IV length, EDK count. **Model only**: the fixed-field header loop and EDK list loop (`io_stream_aligned.rs`) | the async readers over `dyn Source` (unverified glue); the EC sub-parser model is obsolete (parsing is in MPL) |
 | VR-004 frame sequence validation | **in-crate**: regular-frame step (`next_expected_frame`), final-frame check (`final_frame_seq_ok`), sequential-run and start-at-1 lemmas | the async loop that threads `expected_frame` (unverified glue) |
 | VR-005 frame construction/serialization | **in-crate**: body AAD layout (`body_aad_core`), IV (`iv_seq_core`), frame prefix layout (`write_frame_prefix`). **Model only**: the `ct ‖ tag` append (`frame_layout_proofs.rs`) | `aes_encrypt` (FFI) output and the `dyn Sink` / `DigestWriter` release |
@@ -494,6 +511,7 @@ Load-bearing proofs were checked by mutating the code and confirming Verus
 - **HKDF key-length decision (`hkdf_key_len_ok`, T3):** mapping length 16 to `Aes192` → the `Ok(Aes128) <==> len == 16` and `Ok(Aes192) <==> len == 24` postconditions fail; accepting an extra length (`20 => Ok(...)`) → the `Ok <==> {16,24,32}` and `Err <==>` postconditions fail.
 - **HKDF salt size (`salt_size_core`, T3):** returning 40 for SHA-256 → the `Sha256 ==> sz == 32` postcondition fails; returning `MAX_SALT_SIZE + 1` for SHA-512 → the `sz <= MAX_SALT_SIZE` and `Sha512 ==> sz == 64` postconditions fail.
 - **HKDF no-salt slice (`no_salt_slice_core`, T3):** dropping the `requires salt.len() == MAX_SALT_SIZE` precondition → the `&salt[0..sz]` subrange reports `precondition not satisfied` (the slice is no longer provably in bounds).
+- **key-commitment decision (`suite_data_check`, VR-001 property a):** dropping the committed-length check (accepting whenever the bytes match) → the `Ok <==> (… && commit_len == expected@.len())` and `Err(LengthMismatch) <==>` postconditions fail; inverting the commitment branch (accepting when the bytes differ) → the `Ok`, `Err(CommitmentMismatch)` and `Err(LengthMismatch)` postconditions fail. Both confirm the decision is genuinely constrained, not tautological.
 
 ---
 

@@ -58,10 +58,11 @@ ESDK threat model (`docs/threat-model.md`).
   files. VR-002 (header-auth ordering), VR-006 (AES-GCM buffer bounds), the EDK list loop, the
   frame `ct ‖ tag` append and VR-010 (zeroization) are checked only in these models, which import
   nothing from the crates and can drift from them.
-- **Not started:** VR-001, VR-008, and the prim half of VR-009 (`prim/src/hkdf.rs`).
+- **Not started:** VR-008 and the prim half of VR-009 (`prim/src/hkdf.rs`).
+- **Partly in-crate:** VR-001 (branch `verus-vr001`) — the key-commitment *decision* is Verus-proven; constant time and ordering are trusted/structural (see below).
 
 **Highest-risk findings:**
-- **Key commitment verification** (Score: 16.0, not started) — No proof that the derived commit key is verified (constant-time) against the header suite data before frame decryption. CVE-2020-8897 demonstrated this exact attack class. The commitment-policy checks (`CommitmentPolicy::allows_for_encrypt`/`_decrypt`, called from `esdk/src/encrypt.rs`, `decrypt.rs`, `materials.rs` and `mpl/src/cmm/default_cmm.rs`) are implemented but also unproven. (History: at `d8c1c3d` the legacy shim's policy checks were stubs returning `Ok(())`.)
+- **Key commitment verification** (Score: 16.0, partly in-crate — branch `verus-vr001`) — The accept/reject **decision** is now Verus-proven in shipped code: `validate_suite_data` (`esdk/src/message/header.rs`) drives the verified core `suite_data_check`, which accepts **iff** the header suite data equals the derived commit key **and** the committed length agrees, rejecting commitment-first otherwise (mutation-tested; `make -C esdk verus`: 59 verified, 0 errors). **Not Verus-proven, trusted by design:** the comparison's *constant-time* execution (an `aws_lc_rs::constant_time::verify_slices_are_equal` API contract — Verus does not model timing) and the *ordering* that this validation runs before frame decryption (enforced structurally by the async decrypt call-site, not by Verus). CVE-2020-8897 demonstrated this exact attack class; the decision is now proven correct, while its constant-time execution and its placement before frame decryption remain trusted/structural. The commitment-policy checks (`CommitmentPolicy::allows_for_encrypt`/`_decrypt`, called from `esdk/src/encrypt.rs`, `decrypt.rs`, `materials.rs` and `mpl/src/cmm/default_cmm.rs`) are implemented but unproven. (History: at `d8c1c3d` the legacy shim's policy checks were stubs returning `Ok(())`.)
 - **Header authentication tag ordering** (Score: 12.0, model only) — The verify-before-decrypt ordering is proven over a model of the decrypt pipeline, not over the shipped async `decrypt_steps`.
 - **Header / EDK parsing safety** (Score: 10.8, partly in-crate) — The field decisions, big-endian decoding, bounded readers and EDK count check are verified in-crate; the async readers over `dyn Source` and the EDK list loop are not.
 
@@ -833,7 +834,7 @@ end to end.
 
 | Category | Threats | Verified (partial) | Top Target |
 |----------|---------|--------------------|------------|
-| Elevation of Privilege | 5 | **0** | Key commitment verification (VR-001, not started) |
+| Elevation of Privilege | 5 | **0** | Key commitment verification (VR-001, partly in-crate: the decision is Verus-proven; constant time and ordering are trusted/structural) |
 | Tampering | 8 | **2** | Frame sequence checks (VR-004, in-crate) and body AAD binding (VR-005, in-crate); header auth ordering (VR-002) in the model only |
 | Denial of Service | 5 | **3** | Header-field decisions and bounded readers (VR-003, in-crate) + EDK count (VR-007, in-crate); AES-GCM buffer bounds (VR-006) in the model only |
 | Information Disclosure | 6 | **0** | Zeroization (VR-010): the model covers removed code and is deferred. VR-011: esdk confines the data key and message key to `esdk/src/secret.rs` (compiler/lint-checked, not Verus; branch `vr011-confinement`) |
@@ -871,11 +872,21 @@ end to end.
   34 exec fns and 3 proof fns). VR-011 is not Verus-proven; see VR-2026-011.
 - Commitment-policy enforcement is implemented in code (not a verification item; listed because
   earlier revisions flagged the legacy stub).
+- VR-001, property (a) (branch `verus-vr001`): the key-commitment accept/reject **decision** in
+  `esdk/src/message/header.rs` is verified in-crate. `validate_suite_data` drives `suite_data_check`,
+  which accepts iff the header suite data equals the derived commit key and the committed length
+  agrees, rejecting commitment-first otherwise (`make -C esdk verus`: 59 verified, 0 errors, 35 exec
+  fns and 3 proof fns; mutation-tested). Property (c) constant-time is trusted to the
+  `aws_lc_rs::constant_time::verify_slices_are_equal` API contract (Verus does not model timing);
+  property (b) ordering (validation before frame decryption) is enforced structurally by the async
+  decrypt call-site and is not Verus-proven.
 
 **Remaining, in priority order:**
-1. **VR-001 (key commitment verification)** — highest score, not started. The constant-time
-   commit-key comparison decision and the HKDF derivation *structure* are candidates for in-crate
-   cores; the HKDF primitive itself is aws-lc-rs.
+1. **VR-001 properties (b) and (c)** — the decision (property a) is in-crate; what is left is **not**
+   Verus-provable here: the *constant-time* comparison (property c) is an aws-lc-rs API contract, and
+   the *ordering* that validation precedes frame decryption (property b) lives in the async decrypt
+   orchestration over `dyn Source`. A model-only / in-place ordering proof (as for VR-002) is a
+   possible future step; Verus still does not prove timing.
 2. **VR-007 call ordering** — that the EDK count check runs before any keyring/KMS call. This
    lives in the async decrypt orchestration (`esdk/src/decrypt.rs`), so it is blocked the same way
    as VR-002.

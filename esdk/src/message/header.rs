@@ -52,6 +52,65 @@ pub(crate) fn edk_count_check(count: usize, max: Option<usize>) -> (r: EdkCount)
     }
 }
 
+/// Why `suite_data_check` rejected the key commitment, in check order.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum SuiteDataError {
+    /// The header's suite data does not equal the derived commit key.
+    CommitmentMismatch,
+    /// The committed suite-data length disagrees with the suite's declared length.
+    LengthMismatch,
+}
+
+/// The verified accept/reject decision for key-commitment validation (VR-001,
+/// property (a)). The result is `Ok` exactly when the header's suite data
+/// equals the derived (expected) suite data **and** the suite's committed
+/// length agrees with the expected length; otherwise it rejects, commitment
+/// first.
+///
+/// `bytes_equal` is the outcome of the slice comparison, which the
+/// `validate_suite_data` adapter performs at the trusted boundary with
+/// `aws_lc_rs::constant_time::verify_slices_are_equal`. The `requires` ties
+/// `bytes_equal` to real `Seq<u8>` equality of the two buffers, so the
+/// `ensures` constrains the decision against the actual byte sequences and
+/// lengths, not against an opaque flag:
+///
+/// - `Ok` iff `header@ == expected@` and `commit_len == expected.len()`;
+/// - `Err(CommitmentMismatch)` iff `header@ != expected@` (checked first);
+/// - `Err(LengthMismatch)` iff `header@ == expected@` but the lengths disagree.
+///
+/// NOT proven here, and trusted/structural by design:
+/// - constant time: the timing behavior of `verify_slices_are_equal` is an
+///   aws-lc-rs API contract; Verus does not model timing;
+/// - ordering (validation before frame decryption): enforced by call-site
+///   structure and code review, not by this proof.
+pub(crate) fn suite_data_check(
+    bytes_equal: bool,
+    header: &[u8],
+    expected: &[u8],
+    commit_len: usize,
+) -> (r: Result<(), SuiteDataError>)
+    requires
+        bytes_equal <==> header@ == expected@,
+    ensures
+        (r is Ok) <==> (header@ == expected@ && commit_len == expected@.len()),
+        (r matches Err(SuiteDataError::CommitmentMismatch)) <==> (header@ != expected@),
+        (r matches Err(SuiteDataError::LengthMismatch)) <==> (header@ == expected@
+            && commit_len != expected@.len()),
+{
+    // `header` is referenced only by the `requires` (to tie `bytes_equal` to
+    // `header@ == expected@`); it has no runtime role in the decision, which is
+    // driven by `bytes_equal` and the lengths. Discard it so the cargo build
+    // does not flag it as unused.
+    let _ = header;
+    if !bytes_equal {
+        return Err(SuiteDataError::CommitmentMismatch);
+    }
+    if commit_len != expected.len() {
+        return Err(SuiteDataError::LengthMismatch);
+    }
+    Ok(())
+}
+
 pub(crate) const START_SEQUENCE_NUMBER: u32 = 1;
 
 //= spec/data-format/message-body.md#sequence-number-end
@@ -246,29 +305,44 @@ pub(crate) fn validate_suite_data(
     header_body: &HeaderBody,
     expected_suite_data: &[u8],
 ) -> Result<(), Error> {
+    let header_suite_data = header_body.suite_data();
+
     //= spec/framework/transitive-requirements.md#hkdf-commit-key
     //= type=implication
-    //= reason=aws_lc_rs::constant_time::verify_slices_are_equal performs a constant-time slice equality check by aws-lc-rs API contract
+    //= reason=aws_lc_rs::constant_time::verify_slices_are_equal performs a constant-time slice equality check by aws-lc-rs API contract; its timing behavior is trusted, not Verus-proven
     //# Verification of the commitment key MUST be a constant time comparison.
-    if constant_time::verify_slices_are_equal(header_body.suite_data(), expected_suite_data)
-        .is_err()
-    {
-        return Err(err(
-            Kind::Cryptographic,
-            "the key commitment in the message header does not match the derived commit key",
-        ));
-    }
+    //
+    // Trusted boundary: the constant-time comparison itself. Verus does not
+    // model timing, so its constant-time property rests on the aws-lc-rs API
+    // contract. The boolean outcome `bytes_equal` is exactly `Seq`-equality of
+    // the two buffers, which is what `suite_data_check` reasons about.
+    let bytes_equal =
+        constant_time::verify_slices_are_equal(header_suite_data, expected_suite_data).is_ok();
 
     //= spec/data-format/message-header.md#algorithm-suite-data
     //# The length of the suite data field MUST be equal to the [Algorithm Suite Data Length](../framework/algorithm-suites.md#algorithm-suite-data-length) value
     //# of the [algorithm suite](../framework/algorithm-suites.md) specified by the [Algorithm Suite ID](#algorithm-suite-id) field.
-    if commit_key_length(suite) != expected_suite_data.len() {
-        return Err(err(
+    //
+    // `suite_data_check` is the verified decision (VR-001 property (a)): it
+    // accepts iff the commitment matches and the committed length agrees, and
+    // rejects commitment-first otherwise. This adapter owns the crate `Error`
+    // type and maps each rejection to the message it previously produced.
+    match suite_data_check(
+        bytes_equal,
+        header_suite_data,
+        expected_suite_data,
+        commit_key_length(suite),
+    ) {
+        Ok(()) => Ok(()),
+        Err(SuiteDataError::CommitmentMismatch) => Err(err(
+            Kind::Cryptographic,
+            "the key commitment in the message header does not match the derived commit key",
+        )),
+        Err(SuiteDataError::LengthMismatch) => Err(err(
             Kind::Internal,
             "algorithm suite data length does not match the algorithm suite's declared suite-data length",
-        ));
+        )),
     }
-    Ok(())
 }
 
 /// Write the message header (body + auth tag) to the output stream.
@@ -310,6 +384,30 @@ pub(crate) async fn write_header(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn suite_data_check_cases() {
+        let a = b"commitkey";
+        let b = b"commitkey";
+        let c = b"different";
+        // Accept: bytes equal and length agrees.
+        assert_eq!(suite_data_check(true, a, b, b.len()), Ok(()));
+        // Reject on commitment mismatch, even if the length would agree.
+        assert_eq!(
+            suite_data_check(false, a, c, c.len()),
+            Err(SuiteDataError::CommitmentMismatch)
+        );
+        // Reject on length disagreement when the commitment matches.
+        assert_eq!(
+            suite_data_check(true, a, b, b.len() + 1),
+            Err(SuiteDataError::LengthMismatch)
+        );
+        // Commitment is checked first: a mismatch wins over a bad length too.
+        assert_eq!(
+            suite_data_check(false, a, c, c.len() + 1),
+            Err(SuiteDataError::CommitmentMismatch)
+        );
+    }
 
     #[test]
     fn edk_count_check_cases() {
