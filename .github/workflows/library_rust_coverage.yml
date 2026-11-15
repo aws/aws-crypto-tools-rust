@@ -74,7 +74,7 @@ jobs:
         working-directory: ${{ inputs.project }}
         env:
           RUSTFLAGS: "-C debuginfo=0"
-        run: cargo llvm-cov $FEATURE_FLAGS --workspace --branch --lcov --remap-path-prefix --output-path lcov.info --verbose
+        run: cargo llvm-cov $FEATURE_FLAGS --workspace --branch --lcov --skip-functions --remap-path-prefix --output-path lcov.info --verbose
 
       # Diff PR coverage against base branch coverage
       - name: Re-root coverage paths to the repository root

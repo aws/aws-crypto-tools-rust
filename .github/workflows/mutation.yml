@@ -67,7 +67,7 @@ jobs:
     permissions:
       contents: read
       id-token: write
-    uses: aws/aws-crypto-tools-commons/.github/workflows/mutation-rust-reusable.yml@lucmcdon/test-server-mutation
+    uses: aws/aws-crypto-tools-commons/.github/workflows/mutation-rust-reusable.yml@lucmcdon/test-server-branch-coverage
     with:
       runner: codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}
       crate: ${{ matrix.crate }}

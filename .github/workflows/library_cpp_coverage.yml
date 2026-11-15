@@ -75,7 +75,7 @@ jobs:
           ESDK_TEST_LOGICAL_KEYSTORE: KeyStoreDdbTable
           ESDK_TEST_BRANCH_KEY_ID: 3ce7656b-e166-40f3-8c9b-a920ce6596cd
           ESDK_TEST_REGION: us-west-2
-        run: make coverage-cpp COV_ENV_ARGS=--branch COV_CPP_REPORT="report --branch --lcov --output-path lcov.info"
+        run: make coverage-cpp COV_ENV_ARGS=--branch COV_CPP_REPORT="report --branch --lcov --skip-functions --output-path lcov.info"
 
       # Diff PR coverage against base branch coverage
       - name: Re-root coverage paths to the repository root
