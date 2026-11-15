@@ -1,7 +1,7 @@
 # Verus Proofs — Work Report
 
 **Repository:** `aws-crypto-tools-rust` (AWS Encryption SDK for Rust)
-**Code baseline:** commit `d8c1c3d` for the standalone models; the "In-crate proofs" section and the status tables are current at `5ea2a804`
+**Code baseline:** commit `d8c1c3d` for the standalone models; the "In-crate proofs" section and the status tables are current at `2fb844fa`
 **Date:** September 2026 (models); November 2026 (in-crate)
 **Verus:** `0.2026.07.12.0b42f4c`, toolchain `1.96.0` (binary at `~/verus/verus`)
 **Pipeline / targets:** `.kiro/agents/ai-verification-pipeline.md`, `docs/verification-recommendations.md`
@@ -12,10 +12,14 @@
 
 Introduced formal Verus verification to the ESDK, starting from the prioritized
 targets in the verification-recommendations doc. The standalone `verification/`
-directory now holds ten proof files — **71 obligations verified, 0 errors** in
-total (§3) — and an
+directory then held ten proof files — **71 obligations verified, 0 errors** in
+total — and an
 `SafeRead`/`SafeWrite` abstraction was prototyped and aligned to the real reader
 signatures to unblock loop-level proofs.
+
+As of `2fb844fa` the `verification/` directory holds eleven proof files —
+**78 obligations verified, 0 errors** (§3) — after the VR-001 (b) commitment
+ordering model (`commitment_ordering_proofs.rs`) was added.
 
 The standalone models are **additive and non-breaking**: they live in a
 standalone `verification/` directory referenced by no `Cargo.toml`, and adding

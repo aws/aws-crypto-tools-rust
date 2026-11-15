@@ -4,7 +4,7 @@
 **Date:** September 2026  
 **Scope:** AWS Encryption SDK (Rust implementation — `aws-esdk` crate, v2.0.0)  
 **Code Baseline:** commit `d8c1c3d` ("feat(esdk-cpp): C++ shim types, raw AES keyring round trip (#66)")  
-**Revised:** November 2026, against `5ea2a804` (branch `Mahnush_Verus`). Rechecked at that commit: the MPL dependency path (§1, §3.1a), commitment-policy enforcement (§7.2, E3, §15.2), key zeroization (I1, §15.2), in-tree `unsafe` (§12.2), the dependency table (§12.3), FIPS features (§12.4), the spec source (§16) and the verification status (§14). The threat analysis in the other sections is the `d8c1c3d` analysis and was not re-audited.  
+**Revised:** November 2026, against `2fb844fa` (branch `Mahnush_Verus`). Rechecked at that commit: the MPL dependency path (§1, §3.1a), commitment-policy enforcement (§7.2, E3, §15.2), key zeroization (I1, §15.2), in-tree `unsafe` (§12.2), the dependency table (§12.3), FIPS features (§12.4), the spec source (§16) and the verification status (§14). The verification status reflects the in-crate prim proofs (VR-006/008/009 prim half) and VR-001 properties (a) in-crate and (b) model-only. The threat analysis in the other sections is the `d8c1c3d` analysis and was not re-audited.  
 **Methodology:** STRIDE + Attack Trees + Risk-Based Verification Prioritization  
 **Classification:** Internal  
 **Pipeline Reference:** `.kiro/agents/ai-verification-pipeline.md`
