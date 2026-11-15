@@ -509,7 +509,7 @@ ciphertext that decrypts to different plaintexts depending on which data key is 
 - `FORBID_ENCRYPT_ALLOW_DECRYPT` only exists for backward compatibility with pre-commitment messages
 - Commitment-policy enforcement is implemented: `CommitmentPolicy::allows_for_encrypt` / `allows_for_decrypt` (`mpl/src/structures/commitment_policy.rs`) are checked by the ESDK on the input suite (`esdk/src/encrypt.rs`), the parsed suite (`esdk/src/decrypt.rs`) and the materials' suite (`esdk/src/materials.rs`), and by the default CMM (`mpl/src/cmm/default_cmm.rs`). (History: at the `d8c1c3d` baseline the linked legacy shim's `validate_commitment_policy_on_*` returned `Ok(())`; that shim was removed in `cdd5980`.)
 
-**Residual Risk:** Systems that explicitly configure `FORBID_ENCRYPT_ALLOW_DECRYPT` remain vulnerable to this attack class (a conscious spec trade-off). Neither the policy checks nor the commit-key comparison has a Verus proof (VR-001 is not started).
+**Residual Risk:** Systems that explicitly configure `FORBID_ENCRYPT_ALLOW_DECRYPT` remain vulnerable to this attack class (a conscious spec trade-off). The commit-key comparison decision is now Verus-proven (VR-001, property (a): accept iff the header suite data equals the derived value and the lengths agree); its constant-time execution is trusted to aws-lc-rs and its placement before frame decryption is structural, not Verus-proven. The policy checks remain unproven.
 
 ---
 
@@ -838,8 +838,11 @@ unchanged since `5ea2a804`). Verus checks two things:
   the EDK list loop, the frame `ct ‖ tag` append and VR-010 (zeroization) are checked only here.
   The VR-010 model describes a `write_volatile` loop that no longer exists (removed in
   `a864ad87`); it is deferred and unchanged.
-- **Not started:** VR-001 (key commitment), VR-008 (ECDSA length), the prim half of VR-009 (HKDF
-  length, `prim/src/hkdf.rs`).
+- **Partly in-crate:** VR-001 (key commitment) — the commitment equality/length decision in
+  `validate_suite_data` is Verus-proven; constant-time is trusted to aws-lc-rs and the
+  validation-before-frame-decryption ordering is structural, not Verus-proven.
+- **Done (in-crate):** VR-008 (ECDSA length) and the prim half of VR-009 (HKDF length,
+  `prim/src/hkdf.rs`) are proven in-crate since Verus was enabled in `prim`.
 
 The fn-by-fn list and the reasons each model-only property is not in-crate are in
 `docs/verus-proofs-report.md` ("In-crate proofs") and `verification/README.md`.
@@ -896,7 +899,7 @@ recommendation:
 
 | Priority | Recommendation | Rationale |
 |----------|---------------|-----------|
-| Done | Commitment-policy enforcement is implemented (`CommitmentPolicy::allows_for_encrypt`/`_decrypt`, checked in `esdk/src/encrypt.rs`, `decrypt.rs`, `materials.rs` and `mpl/src/cmm/default_cmm.rs`). (History: at `d8c1c3d` this was the Critical item "implement real enforcement", because the legacy shim returned `Ok(())`.) | Keep the checks covered by tests; a Verus proof is part of VR-001 |
+| Done | Commitment-policy enforcement is implemented (`CommitmentPolicy::allows_for_encrypt`/`_decrypt`, checked in `esdk/src/encrypt.rs`, `decrypt.rs`, `materials.rs` and `mpl/src/cmm/default_cmm.rs`). (History: at `d8c1c3d` this was the Critical item "implement real enforcement", because the legacy shim returned `Ok(())`.) | Keep the checks covered by tests. The commit-key comparison decision is Verus-proven (VR-001, property (a)); the policy checks themselves remain unproven |
 | High | Audit the in-tree `unsafe` (raw-pointer handling in the C++ shim, `esdk/shims/aws-esdk-cpp/src/lib.rs`) | Small but present unsafe surface |
 | High | Keep zeroization on drop for the plaintext data key and other secrets (`PlaintextDataKey`, `SigningKey`, `SymmetricSigningKey` derive `Zeroize`/`ZeroizeOnDrop`) | Reduces key exposure window |
 | High | Pin all dependency versions exactly | Prevents supply chain attacks via version range exploitation |
