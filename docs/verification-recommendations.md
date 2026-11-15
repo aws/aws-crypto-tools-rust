@@ -43,7 +43,7 @@
 This document identifies **11 prioritized verification targets** derived from the 31 threats in the
 ESDK threat model (`docs/threat-model.md`).
 
-**Status at `5ea2a804`:**
+**Status at `2fb844fa`:**
 - **In-crate (shipped code):** on branch `vr011-confinement`, `make -C esdk verus` reports
   `57 verified, 0 errors` (default features and `--no-default-features --features aws-lc-sys`)
   over 34 exec fns and 3 proof fns in `esdk/src/message/`, `esdk/src/key_derivation.rs` and
@@ -56,10 +56,14 @@ ESDK threat model (`docs/threat-model.md`).
   clippy `disallowed-methods` rule on the mpl data-key accessors).
 - **Model only:** `make -C verification verify` reports 78 verified, 0 errors over 11 standalone
   files. VR-002 (header-auth ordering), VR-001 property (b) (key-commitment ordering,
-  `commitment_ordering_proofs.rs`), VR-006 (AES-GCM buffer bounds), the EDK list loop, the
-  frame `ct ‖ tag` append and VR-010 (zeroization) are checked only in these models, which import
-  nothing from the crates and can drift from them.
-- **Not started:** VR-008 and the prim half of VR-009 (`prim/src/hkdf.rs`).
+  `commitment_ordering_proofs.rs`), the EDK list loop, the frame `ct ‖ tag` append and VR-010
+  (zeroization) are checked only in these models, which import nothing from the crates and can
+  drift from them. (VR-006's AES-GCM buffer bounds are now proven in-crate in `prim/src/lib.rs`;
+  `aes_gcm_bounds_proofs.rs` is kept as superseded history.)
+- **In-crate in `prim`:** VR-006 (AES-GCM buffer safety, `prim/src/lib.rs`), VR-008 (ECDSA
+  `sign_fixed_len`, `prim/src/ecdsa.rs`) and the prim half of VR-009 (HKDF length/slice safety,
+  `prim/src/hkdf.rs`) are proven in-crate since Verus was enabled in `prim` (`make -C prim verus`:
+  10 verified, 0 errors on both feature sets).
 - **Partly in-crate:** VR-001 (branch `verus-vr001`) — the key-commitment *decision* (property a) is Verus-proven in-crate; its *ordering* (property b) is now proven **model only** (`commitment_ordering_proofs.rs`), not over the shipped decrypt path; constant time (property c) stays trusted (see below).
 
 **Highest-risk findings:**
@@ -144,7 +148,7 @@ models import nothing from the crates, so they can drift from the shipped code. 
 in-crate work and were written against the old synchronous `SafeRead`/`SafeWrite` readers, which
 no longer exist. Current status per file (from `verification/README.md`):
 
-| File | Verus result | Target | Status at `5ea2a804` |
+| File | Verus result | Target | Status at `2fb844fa` |
 |------|--------------|--------|----------------------|
 | `body_aad_proofs.rs` | 4 verified, 0 errors | VR-005 | Superseded in-crate (`iv_seq_core`, `body_aad_core`) |
 | `edk_count_proofs.rs` | 4 verified, 0 errors | VR-007 | Superseded in-crate (`edk_count_check`) |
@@ -196,16 +200,16 @@ Scores are the original ranking, computed with Coverage_Gap = **1.0** for every 
 Status column is current at `2fb844fa`; the per-target `coverage_gap` values in the YAML below were
 set during the model work and were not rescored for the in-crate work.
 
-| Rank | Score | Target | Status at `5ea2a804` | Property | Agent | File | Effort | Quick Win |
+| Rank | Score | Target | Status at `2fb844fa` | Property | Agent | File | Effort | Quick Win |
 |------|-------|--------|----------------------|----------|-------|------|--------|-----------|
-| 1 | **16.0** | Key commitment verification | **Not started** | Derived commit key == header suite data (constant-time) before ANY frame decryption | `verus-header-parsing-proofs` | `esdk/src/message/header.rs` (`validate_suite_data`), `esdk/src/key_derivation.rs` (`derive_key_v2`) | 2 weeks | No |
+| 1 | **16.0** | Key commitment verification | **Partly in-crate** — (a) decision in-crate (`suite_data_check`); (b) ordering model-only (`commitment_ordering_proofs.rs`); (c) constant-time trusted (aws-lc-rs) | Derived commit key == header suite data (constant-time) before ANY frame decryption | `verus-header-parsing-proofs` | `esdk/src/message/header.rs` (`validate_suite_data`), `esdk/src/key_derivation.rs` (`derive_key_v2`) | 2 weeks | No |
 | 2 | **12.0** | Header auth tag ordering | **Model only** (`header_auth_ordering_proofs.rs`) | Header tag verified before frame processing in ALL paths. The model proves body decrypt is unreachable without a verified header tag. Not in-crate: the order lives in the async `decrypt_steps` and the tag check is aws-lc-rs | `verus-header-parsing-proofs` | `esdk/src/decrypt.rs`, `esdk/src/message/header_auth.rs` | 2 weeks | No |
 | 3 | **10.8** | Header body parsing safety | **Partly in-crate.** In-crate: big-endian decoding, bounded readers, chunked-read bounds, header-field decisions, 0x41 hint, reserved bytes, IV length. Model only: the fixed-field header loop and EDK list loop. Unverified glue: the async readers over `dyn Source`. Obsolete model: encryption-context parser (now in MPL) | Malformed input returns `Err`, never panics; fields stay in-bounds | `verus-header-parsing-proofs` | `esdk/src/message/header_types.rs`, `serialize_functions.rs`, `encrypted_data_keys.rs`, `encryption_context.rs`, `{v1,v2}_header_body.rs` | 2 weeks | No |
 | 4 | **9.6** | Frame sequence validation | **In-crate** for the checks: `next_expected_frame`, `final_frame_seq_ok`, start-at-1 and sequential-run lemmas. Unverified glue: the async loop that threads `expected_frame` | Sequential numbers enforced, no gaps/reordering; final frame correct | `verus-header-parsing-proofs` | `esdk/src/message/body/body_decrypt.rs` | 2 weeks | No |
 | 5 | **9.0** | Frame construction / body serialization | **Partly in-crate.** In-crate: body AAD (`body_aad_core`), IV (`iv_seq_core`), frame prefix (`write_frame_prefix`). Model only: the `ct ‖ tag` append. Out of scope: ciphertext values (FFI), the `dyn Sink` / `DigestWriter` release | Frame iteration and slicing stay in-bounds; no panic | `verus-zero-panic` | `esdk/src/message/body/body_encrypt.rs`, `body/body_aad.rs`, `body/body_decrypt.rs` | 1 week | **Yes** |
 | 6 | **9.0** | AES-GCM panic freedom | **Model only** (`aes_gcm_bounds_proofs.rs`, non-FFI part). Not in-crate: `prim` is not Verus-checked | `aes_encrypt`/`aes_decrypt` never panic; buffer slicing in-bounds. The AES-GCM crypto itself (aws-lc-rs FFI) is out of Verus scope | `verus-zero-panic` | `prim/src/lib.rs` | 1 week | **Yes** |
 | 7 | **8.0** | EDK count validation | **In-crate** for the count check (`edk_count_check`). Not proven: the "before any KMS call" ordering (caller-side, async) | Count > 0 and ≤ configured max, enforced BEFORE any KMS calls | `verus-header-parsing-proofs` | `esdk/src/message/header.rs` (`edk_count_check`, `validate_max_encrypted_data_keys`) | 3 days | **Yes** |
-| 8 | **7.2** | ECDSA signature length | **Not started** | `signature_len`/`field_size` invariants hold; `sign_fixed_len` terminates | `verus-zero-panic` | `prim/src/ecdsa.rs` | 1 week | **Yes** |
+| 8 | **7.2** | ECDSA signature length | **In-crate** (`prim/src/ecdsa.rs`, `sign_fixed_len` core) | `signature_len`/`field_size` invariants hold; `sign_fixed_len` terminates | `verus-zero-panic` | `prim/src/ecdsa.rs` | 1 week | **Yes** |
 | 9 | **6.4** | HKDF / key derivation length | **esdk half in-crate** (`identity_kdf_key_len_ok`, `check_v2_key_lengths` in `key_derivation.rs`: total, accept iff the length checks pass; V2 encryption-key buffer sized by the verified result). **prim half not proven** (`prim/src/hkdf.rs` incl. `get_len`; Verus not enabled in `prim`). Unverified in esdk: V1 output and V2 commit-key sizes read straight from MPL getters, the V1 salt table `digest_length` | Output-length checks panic-free; `derive_key_v2` buffers sized correctly | `verus-zero-panic` | `esdk/src/key_derivation.rs`, `prim/src/hkdf.rs` | 1 week | **Yes** |
 | 10 | **6.0** | Key-material zeroization | **Model only, deferred.** `zeroize_proofs.rs` models a hand-written `write_volatile` loop that was removed in `a864ad87`; zeroization now comes from `#[derive(Zeroize, ZeroizeOnDrop)]` on `PlaintextDataKey`, `SigningKey` and `SymmetricSigningKey`. The model is unchanged and no longer describes the code | Secret key bytes are zeroed on drop | `verus-unsafe-ffi-safety` | `mpl/src/structures/algorithm_suite.rs` | 1 week | No |
 | 11 | **4.8** | Data-key non-disclosure *(information flow)* | **Confinement in-crate (compiler/lint-checked, not Verus)** on branch `vr011-confinement`: key bytes are readable only in `esdk/src/secret.rs`. **Verus** covers only the secret types' accessors and the commitment-value declassification. Trusted: the nine TB-A adapters in `secret.rs`, aws-lc-rs, keyrings/CMMs. Not done: a verified encrypt/decrypt flow | During encrypt and decrypt, the plaintext data key and the derived message encryption key are never written directly to the output stream or returned to the caller. They reach the output only through AES-GCM (the message key as its key input) or, for the data key, after the keyring has encrypted it into an EDK. The V2 commitment value is derived from the data key but is public by spec (header suite data); it is a declassification. Out of scope: keyrings/CMMs, mpl key types and accessors, whether AES-GCM/HKDF outputs reveal the key (aws-lc-rs), the ECDSA signing key, and the `test-internals` feature. **Sequencing:** builds on the in-crate Verus setup (Option A, in place for `esdk`) | unassigned (information-flow) | `esdk/src/encrypt.rs`, `esdk/src/decrypt.rs`, `esdk/src/key_derivation.rs`, `esdk/src/message/body/*`, `mpl/src/structures/{algorithm_suite,encryption_materials,decryption_materials}.rs` | 3–4 weeks | No |
@@ -318,8 +322,10 @@ on the nonce**, contrary to the prior report's `aes_gcm.rs` claim.
 | 4 | VR-008: ECDSA signature length invariants (`prim/src/ecdsa.rs`) | 7.2 | 1 week |
 | 5 | VR-009 + VR-010: HKDF length + zeroization | 6.4 + 6.0 | 1 week each |
 
-Status at `5ea2a804`: VR-007's count check and parts of VR-005 are in-crate; VR-006 is model only;
-VR-008 is not started; VR-009's esdk half is in-crate and its prim half is not started; VR-010 is deferred (its model covers removed code). See the
+Status at `2fb844fa`: VR-007's count check and parts of VR-005 are in-crate; VR-006 (AES-GCM
+buffer safety) is in-crate in `prim/src/lib.rs`; VR-008 (ECDSA length) is in-crate in
+`prim/src/ecdsa.rs`; VR-009's esdk half and its prim half are both in-crate (the prim half in
+`prim/src/hkdf.rs`); VR-010 is deferred (its model covers removed code). See the
 Prioritization Summary.
 
 ---
@@ -633,7 +639,7 @@ recommendation:
   id: VR-2026-009
   rank: 9
   priority_score: 6.4
-  status: esdk_half_in_crate   # branch verus-vr009-key-derivation; prim half not started
+  status: both_halves_in_crate   # esdk half (key_derivation.rs) and prim half (prim/src/hkdf.rs, after Verus enabled in prim) both in-crate
   in_crate:   # make -C esdk verus: 45 verified, 0 errors (whole crate, at VR-009; 57 after VR-011)
     - "identity_kdf_key_len_ok (key_derivation.rs): ok iff plaintext_key_len == encrypt_key_len. Called by derive_key_v1 for the identity KDF"
     - "check_v2_key_lengths (key_derivation.rs): Ok iff the KDF is not the identity KDF, message_id_len == MESSAGE_ID_LEN_V2 (32) and plaintext_key_len == suite_key_len; Ok(n) ==> n equals both (n sizes the derived encryption key); each Err variant iff its check is the first to fail (identity KDF, then message ID, then key length). Called by derive_key_v2"
@@ -836,7 +842,7 @@ recommendation:
 
 ## Risk Summary
 
-Status at `5ea2a804`. "In-crate" means shipped `esdk` code checked by `make -C esdk verus`;
+Status at `2fb844fa`. "In-crate" means shipped `esdk` code checked by `make -C esdk verus`;
 "model" means a standalone file in `verification/`. Every entry is partial: none covers a threat
 end to end.
 
@@ -844,7 +850,7 @@ end to end.
 |----------|---------|--------------------|------------|
 | Elevation of Privilege | 5 | **0** | Key commitment verification (VR-001, partly in-crate: the decision (a) is Verus-proven in-crate; the ordering (b) is proven model only; constant time (c) is trusted) |
 | Tampering | 8 | **2** | Frame sequence checks (VR-004, in-crate) and body AAD binding (VR-005, in-crate); header auth ordering (VR-002) in the model only |
-| Denial of Service | 5 | **3** | Header-field decisions and bounded readers (VR-003, in-crate) + EDK count (VR-007, in-crate); AES-GCM buffer bounds (VR-006) in the model only |
+| Denial of Service | 5 | **3** | Header-field decisions and bounded readers (VR-003, in-crate) + EDK count (VR-007, in-crate); AES-GCM buffer bounds (VR-006, in-crate in `prim`) |
 | Information Disclosure | 6 | **0** | Zeroization (VR-010): the model covers removed code and is deferred. VR-011: esdk confines the data key and message key to `esdk/src/secret.rs` (compiler/lint-checked, not Verus; branch `vr011-confinement`) |
 | Spoofing | 4 | **0** | Frame sequence / ECDSA signature (VR-004, VR-008) |
 | Repudiation | 3 | **0** | ECDSA signature (VR-008) |
@@ -910,11 +916,12 @@ end to end.
    as VR-002.
 3. **VR-002 in shipped code** — blocked: the order is a sequence of `.await?` calls in an async
    fn. Stays model only unless the orchestration gains a synchronous state machine.
-4. **VR-006 in shipped code** — would require adding Verus to `prim` (`aws-mpl-primitives`), which
-   this work chose not to do. Stays model only.
-5. **VR-008 / VR-009 prim half** (ECDSA and HKDF length invariants) — not started;
-   `prim/src/ecdsa.rs` and `prim/src/hkdf.rs`. Both would need Verus in `prim`, which this work
-   chose not to add. (VR-009's esdk half, `esdk/src/key_derivation.rs`, is in-crate.)
+4. **VR-006 in shipped code** — done. Verus was subsequently enabled in `prim`
+   (`aws-mpl-primitives`), and the AES-GCM buffer safety is now proven in-crate in
+   `prim/src/lib.rs`. The standalone `aes_gcm_bounds_proofs.rs` is kept as superseded history.
+5. **VR-008 / VR-009 prim half** (ECDSA and HKDF length invariants) — done in-crate in
+   `prim/src/ecdsa.rs` and `prim/src/hkdf.rs` once Verus was enabled in `prim`. (VR-009's esdk
+   half, `esdk/src/key_derivation.rs`, is also in-crate.)
 6. **VR-010 (zeroization)** — deferred. `verification/zeroize_proofs.rs` is unchanged and models a
    loop that was removed in `a864ad87`; a target for the current `zeroize`-crate derive would need
    to be defined first.
