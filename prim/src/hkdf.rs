@@ -220,9 +220,12 @@ pub fn hkdf_no_salt(
     okm: &mut [u8],
 ) -> Result<(), Error> {
     let salt = [0u8; MAX_SALT_SIZE];
-    // Verified core: take the digest's default salt length of leading zero
-    // bytes. `no_salt_slice_core` proves `sz <= MAX_SALT_SIZE == salt.len()`,
-    // so this slice is in bounds and cannot panic (VR-009, prim half (b)).
+    // The compile-time length of this literal discharges the core's
+    // `requires salt@.len() == MAX_SALT_SIZE` by construction here (the adapter
+    // boundary, as in T1/T2). Verified core: take the digest's default salt
+    // length of leading zero bytes. `no_salt_slice_core` proves
+    // `sz <= MAX_SALT_SIZE == salt.len()`, so this slice is in bounds and
+    // cannot panic (VR-009, prim half (b)).
     let salt = no_salt_slice_core(&salt, digest_to_hkdf(alg));
     hkdf(alg, salt, ikm, info, okm)
 }
