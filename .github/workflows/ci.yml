@@ -483,6 +483,7 @@ jobs:
       crate: ${{ matrix.crate }}
       product: ${{ matrix.product }}
       server: ${{ matrix.server }}
+      commons-ref: lucmcdon/test-server-mutation-all
       aws-role-arn: arn:aws:iam::370957321024:role/GitHub-CI-Public-ESDK-Dafny-Role-us-west-2
     secrets:
       repo-pat: ${{ secrets.COMMONS_REPO_PAT }}
