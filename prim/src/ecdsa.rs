@@ -315,8 +315,9 @@ fn sign_fixed_len(
     });
     match result {
         Ok(()) => Ok(()),
-        Err(SignCoreError::Failed) => Err(sign_failure
-            .unwrap_or_else(|| serr("ECDSA signing failed".to_owned()))),
+        Err(SignCoreError::Failed) => {
+            Err(sign_failure.unwrap_or_else(|| serr("ECDSA signing failed".to_owned())))
+        }
         Err(SignCoreError::Exhausted) => err(format!(
             "no {want_len} byte DER signature produced in {MAX_SIGN_ATTEMPTS} attempts"
         )),
