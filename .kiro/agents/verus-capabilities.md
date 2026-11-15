@@ -42,7 +42,7 @@ These numbers go stale as soon as code changes. Before citing a count, re-run th
 |--------------|------|--------------|
 | `aws-esdk` | `esdk/src/` | **Verus-checked.** `[package.metadata.verus] verify = true`; only code inside `verus! { }` is verified. |
 | `aws-crypto-mpl` | `mpl/src/` | Dependency. Built by `cargo-verus` with plain rustc; not verified. Keyrings, CMMs, material types (`PlaintextDataKey`, `AlgorithmSuite`). |
-| `aws-mpl-primitives` | `prim/src/` | **Verus-enabled for VR-008 and VR-006.** `[package.metadata.verus] verify = true`, `make -C prim verus`; `prim/src/ecdsa.rs` has a `verus!` block (VR-008: the real `sign_fixed_len` retry loop verified in place with `decreases` + a bounds-proven copy) and `prim/src/lib.rs` has one (VR-006: `aes_encrypt`/`aes_decrypt` buffer-safety cores — the slice-bounds and the plaintext-vs-ciphertext length precondition). `prim/src/hkdf.rs` (VR-009 prim half) has none yet and is built with plain rustc (planned). Safe wrappers over `aws-lc-rs` (AES-GCM, HKDF, ECDSA, digest, RNG). |
+| `aws-mpl-primitives` | `prim/src/` | **Verus-enabled for VR-008, VR-006 and VR-009 prim half.** `[package.metadata.verus] verify = true`, `make -C prim verus`; `prim/src/ecdsa.rs` has a `verus!` block (VR-008: the real `sign_fixed_len` retry loop verified in place with `decreases` + a bounds-proven copy), `prim/src/lib.rs` has one (VR-006: `aes_encrypt`/`aes_decrypt` buffer-safety cores — the slice-bounds and the plaintext-vs-ciphertext length precondition) and `prim/src/hkdf.rs` has one (VR-009 prim half, T3: the `{16, 24, 32}` HKDF key-length decision `hkdf_key_len_ok` and the no-salt slice bound `salt_size_core`/`no_salt_slice_core`). All three prim panic-point targets are in-crate. Safe wrappers over `aws-lc-rs` (AES-GCM, HKDF, ECDSA, digest, RNG); the crypto itself stays trusted. |
 | C++ shim | `esdk/shims/aws-esdk-cpp/` | Not Verus-checked. Holds the only shipped-path `unsafe`. |
 | Standalone models | `verification/` | Verus-checked models (`make -C verification verify`). |
 | Spec | `spec/` at the repo root | Resolved by `scripts/resolve-spec.sh`; not a submodule and may be absent locally. The tracked documents are listed in `esdk/.duvet/config.toml` (`spec/data-format/*`, `spec/client-apis/*`, …). |
@@ -68,7 +68,7 @@ From the steering file and the proofs report:
 ## Category 1: Functional correctness against mathematical specs
 
 ### 1a. Pre-/postcondition adherence (`requires` / `ensures`)
-- **Done in-crate:** header-field decision cores (`msg_format_version_from_u8`, `msg_type_from_u8`, `content_type_from_u8`, `classify_version_byte`, `reserved_bytes_ok`, `iv_len_matches`; VR-003); `edk_count_check` (VR-007); `identity_kdf_key_len_ok`, `check_v2_key_lengths` (VR-009 esdk half).
+- **Done in-crate:** header-field decision cores (`msg_format_version_from_u8`, `msg_type_from_u8`, `content_type_from_u8`, `classify_version_byte`, `reserved_bytes_ok`, `iv_len_matches`; VR-003); `edk_count_check` (VR-007); `identity_kdf_key_len_ok`, `check_v2_key_lengths` (VR-009 esdk half); `hkdf_key_len_ok`, `salt_size_core`, `no_salt_slice_core` (VR-009 prim half, T3); the VR-008 (`prim/src/ecdsa.rs`) and VR-006 (`prim/src/lib.rs`) prim cores.
 - **Not started:** the key-commitment accept/reject decision in `validate_suite_data` (`esdk/src/message/header.rs`, VR-001). Only the equality decision is provable; constant-time behaviour is not (see the decision aid).
 - **Agent:** `verus-header-parsing-proofs`.
 
@@ -99,7 +99,7 @@ From the steering file and the proofs report:
 - Known `.expect` sites (from the `d8c1c3d` panic inventory in `docs/verification-recommendations.md`, not re-audited): `esdk/src/encrypt.rs` HKDF output-length `expect`; `esdk/src/types.rs` default-config `NonZeroU32::new(4096).expect` / `.unwrap()`. Re-check before scoping.
 - **In-crate (VR-008):** `sign_fixed_len_core` in `prim/src/ecdsa.rs` — the real retry loop is inside `verus!` with `decreases MAX_SIGN_ATTEMPTS - attempt` (termination) and the guarded `copy_from_slice` proven in bounds. The `aws-lc-rs` `Signature` / signing closure is the trusted boundary (`external_type_specification` + `assume_specification`); the thin `sign_fixed_len` adapter builds the `Error`; no crypto property is proven.
 - **In-crate (VR-006):** `aes_encrypt_extend_core` and `aes_decrypt_len_ok` in `prim/src/lib.rs` — both inside `verus!`. `aes_encrypt_extend_core` extends `cipher_text` with `message` and returns the appended tail as a slice of exactly `message.len()` bytes; the `split_at_mut(old_size)` index is proven in bounds by the `extend_from_slice` length fact, so `cipher_text[old_size..]` can never panic. `aes_decrypt_len_ok` is the decision core proving `Ok` iff `plain_text.len() >= cipher_text.len()` — the guard that makes the `aws-lc-rs` gather buffer-safe. The thin `aes_encrypt`/`aes_decrypt` adapters outside `verus!` build the `Error` and own all `aws-lc-rs` calls. **Not proven:** the AES-GCM key length (16/24/32) and the IV validity — those are enforced inside `aws-lc-rs` (`UnboundKey::new` / `Nonce::try_assume_unique_for_key` return `Err`), a trusted boundary Verus cannot see into; and no crypto property.
-- **Provable in kind, not in place:** `prim/src/hkdf.rs` (VR-009 prim half) has no `verus!` block yet (planned), so it is model-only in `verification/`.
+- **In-crate (T3):** `prim/src/hkdf.rs` (VR-009 prim half) carries a `verus!` block — the `{16, 24, 32}` HKDF key-length decision and the no-salt slice bound are verified in place; the aws-lc-rs HKDF crypto stays trusted.
 - **Agent:** `verus-zero-panic` for all of category 2.
 
 ---
@@ -132,7 +132,7 @@ From the steering file and the proofs report:
 | Sync indexing / arithmetic cores in `esdk/src` never panic | Yes | Yes, if extractable into `verus!` | `verus-zero-panic` |
 | Header-auth tag verified before any frame (shipped order) | Yes on a model | **No in place**: async `.await?` order | model only (VR-002) |
 | `prim` ECDSA `sign_fixed_len` terminates / no OOB copy | Yes | **Yes, in place** (done: VR-008, `prim/src/ecdsa.rs`) | `verus-zero-panic` |
-| `prim` AES-GCM / HKDF never panic | Yes in kind | **No in place**: `prim/src/lib.rs` / `hkdf.rs` have no `verus!` block yet (planned) | model only (`verification/`) |
+| `prim` AES-GCM / HKDF Rust-side buffer & decision safety | Yes | Yes (done: VR-006 in `prim/src/lib.rs`, VR-009 prim half in `prim/src/hkdf.rs`) | `verus-zero-panic` |
 | Anything inside `mpl` in place | Yes in kind | **No**: `mpl` not Verus-checked | out of scope here |
 | Constant-time comparison / no timing leak | **No**: Verus does not model timing | n/a | out of scope; review / tooling |
 | AES-GCM, ECDSA, HKDF are cryptographically secure | **No**: crypto analysis, not code proof | n/a | out of scope; aws-lc-rs / design |
@@ -161,7 +161,7 @@ Verus has verified OS memory management and microkernels (CortenMM, Atmosphere),
 - Never scope cryptographic security, external-service policy, probabilistic secrecy or timing as Verus targets
 - Never describe a compiler, lint (clippy) or test check as Verus-proven; never describe a model-only proof as covering the shipped code
 - Ground every target in a real `esdk/src` file/function and a `spec/` citation (with the Duvet annotation where one exists)
-- Respect the recorded decisions: `esdk` and the T1 slice of `prim` (VR-008, `prim/src/ecdsa.rs`) are Verus-checked; the rest of `prim` (`lib.rs`, `hkdf.rs`) and all of `mpl` are not verified in place
+- Respect the recorded decisions: `esdk` and all three prim panic-point cores — VR-008 (`prim/src/ecdsa.rs`), VR-006 (`prim/src/lib.rs`) and VR-009 prim half (`prim/src/hkdf.rs`) — are Verus-checked in place; the rest of `prim` and all of `mpl` are not verified in place
 - Do not manufacture raw-FFI or `unsafe` proof work: there is no `unsafe` in `esdk/src`, `mpl/src` or `prim/src`
 - New targets continue the existing numbering (`VR-012`, `VR-013`, …; YAML id `VR-2026-012`, …) and carry `origin: threat-driven` or `origin: capability-driven`. VR-001…VR-011 keep their ids
 - Report verified counts only from the latest `0 errors` tool output; defer to the `verus` skill's soundness invariants

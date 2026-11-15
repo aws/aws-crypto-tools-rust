@@ -42,7 +42,8 @@ make -C verification verify
 > **Update (branch `verus-vr009-key-derivation`):** the esdk half of VR-009 is
 > verified in-crate: the key-length checks in `esdk/src/key_derivation.rs`
 > (`identity_kdf_key_len_ok`, `check_v2_key_lengths`; 45 verified, 0 errors).
-> The prim half (`prim/src/hkdf.rs`, aws-lc-rs HKDF) is not proven.
+> The prim half (`prim/src/hkdf.rs`) is now also in-crate — see the
+> `verus-prim-t3` update below; the aws-lc-rs HKDF crypto stays trusted.
 >
 > **Update (branch `vr011-confinement`):** VR-011 plan steps 2–6. The plaintext
 > data key and the derived message key are confined to `esdk/src/secret.rs`.
@@ -77,6 +78,26 @@ make -C verification verify
 > Rust-side branches in `prim`; and no crypto correctness. The prim half of
 > VR-009 (`prim/src/hkdf.rs`) stays model-only; enabling Verus for it is
 > planned. See "VR-006" under "In-crate proofs".
+>
+> **Update (branch `verus-prim-t3`):** the prim half of VR-009 (T3, HKDF
+> key-length and no-salt slice safety) is now in-crate in `prim/src/hkdf.rs`:
+> **10 verified, 0 errors** on both feature sets. Three cores inside `verus!`
+> carry the obligations — `hkdf_key_len_ok` (the `{16, 24, 32}` HKDF
+> key-length decision, proven total and correct against the real `okm.len()`:
+> `Ok` for exactly those three lengths, each mapped to its AES size, and `Err`
+> for every other length); `salt_size_core` (the per-digest default salt
+> length, proven `<= MAX_SALT_SIZE`); and `no_salt_slice_core` (the
+> `&salt[0..sz]` subrange on the 64-byte zero buffer, proven in bounds so
+> `hkdf_no_salt` cannot panic on the slice). The verified count reflects real
+> obligations: each was mutation-tested (wrong mapping, accepting an extra
+> length, wrong salt value, an over-long salt, and dropping the buffer-length
+> precondition each produce a Verus error). **Not proven:** the HKDF crypto
+> itself, the derived key bytes, and the `aws-lc-rs` extract/expand/fill
+> results (including their `Err` cases) — those are the trusted boundary. With
+> T3, VR-009 is verified on **both** halves (esdk in
+> `esdk/src/key_derivation.rs`, prim in `prim/src/hkdf.rs`), each with its own
+> trusted boundary; and all three prim panic-point targets (VR-006, VR-008,
+> VR-009 prim half) are now in-crate. See "VR-009" under "In-crate proofs".
 
 ### Adherence to the Verus skill invariants (esdk)
 - No proof was weakened: **no** `assume(...)`, `admit()`, or `#[verifier::external]` anywhere in esdk. In esdk there is exactly **one** `#[verifier::external_body]` — the `utf8_check` wrapper around `std::str::from_utf8` in the AAD sub-parser — used per Verus skill invariant #11 for a std call Verus cannot evaluate (the same role `tag_ok` plays for the AES-GCM check). Its `ensures` is a **trusted boundary, not a proof**: the UTF-8-validation correctness is delegated to the std library; everything around it (that the parser rejects non-UTF-8 with `Err`, never panics) is proven. This is called out explicitly in §5.
@@ -188,11 +209,14 @@ and `construct_frame` writes the frame fields with `write_frame_prefix`.
   `start + min(READ_CHUNK, length - start)`; that equivalence is checked by a
   differential unit test.
 - **The aws-lc-rs FFI** (AES-GCM, ECDSA, HKDF, digests) is out of Verus scope.
-- **VR-009, prim half and key-derivation adapters.** `prim/src/hkdf.rs`
-  (including `get_len`) and the aws-lc-rs HKDF calls are not proven: `prim` is
-  Verus-enabled and `prim/src/ecdsa.rs` (VR-008) and `prim/src/lib.rs` (VR-006)
-  carry `verus!` blocks, but `hkdf.rs` has none yet (planned), so HKDF and its
-  output-length limit are a trust boundary. In esdk, `derive_key_v1` / `derive_key_v2` / `derive_keys`
+- **VR-009, prim half and key-derivation adapters.** `prim/src/hkdf.rs` now
+  carries a `verus!` block (VR-009 prim half, T3): the `{16, 24, 32}` HKDF
+  key-length decision (`hkdf_key_len_ok`) and the no-salt slice bound
+  (`salt_size_core`, `no_salt_slice_core`) are proven in-crate, alongside
+  VR-008 (`prim/src/ecdsa.rs`) and VR-006 (`prim/src/lib.rs`). Still a trust
+  boundary: the aws-lc-rs HKDF crypto itself and the extract / expand / fill
+  results, reached only through the thin adapters outside `verus!`. In esdk,
+  `derive_key_v1` / `derive_key_v2` / `derive_keys`
   are unverified adapters. Not proven there: the V1 output length and the V2
   commit-key length, which are MPL getters (`encryption_key_length()`,
   `algorithm_suite_data_length()`) passed straight to `MessageKey::zeroed(n)` /
@@ -346,6 +370,61 @@ on a bad IV — not by Rust-side branches in `prim`, so Verus cannot see them;
 they are a trusted boundary. No crypto correctness is proven either (the
 `seal`/`open` and tag verification are `aws-lc-rs`).
 
+### VR-009 prim half in-crate (`aws-mpl-primitives`, `prim/src/hkdf.rs`)
+
+The HKDF key-length decision and the no-salt slice are now inside a `verus!`
+block in `prim/src/hkdf.rs`, checked by the same `make -C prim verus`. No
+`assume`, `admit`, `external_body`, `external`, or
+`#[cfg(not(verus_keep_ghost))]`. The crate `Error`, the `DigestAlg` enum and
+the external `aws-lc-rs` `aead::Algorithm` stay in thin adapters outside
+`verus!` (`get_len`, `digest_to_hkdf`, `hkdf_no_salt`), exactly as T1 keeps the
+`Error` out of `sign_fixed_len_core` and T2 keeps it out of the AES cores. The
+cores reason over plain `usize` and a `verus!`-internal `HkdfDigest` enum (a
+mirror of `DigestAlg`), so no crate type Verus cannot model enters the proof.
+
+Output (default features, then `--no-default-features --features aws-lc-sys`),
+the `aws-mpl-primitives` line, now covering VR-008, VR-006 and VR-009 prim
+half:
+
+```
+verification results:: 10 verified, 0 errors
+verification results:: 10 verified, 0 errors
+```
+
+| Fn | File | What Verus checks | Target |
+|----|------|-------------------|--------|
+| `hkdf_key_len_ok` | `prim/src/hkdf.rs` | `Ok` iff `len ∈ {16, 24, 32}` and `Err` otherwise (decision is total); each `Ok` variant pinned to its length (`Aes128 ⟺ 16`, `Aes192 ⟺ 24`, `Aes256 ⟺ 32`) | VR-009 prim half |
+| `salt_size_core` | `prim/src/hkdf.rs` | the default salt length per digest (`Sha256⇒32`, `Sha384⇒48`, `Sha512⇒64`) and `sz <= MAX_SALT_SIZE` (64) | VR-009 prim half |
+| `no_salt_slice_core` | `prim/src/hkdf.rs` | given a `MAX_SALT_SIZE`-byte buffer, the subrange `salt[0..sz]` is in bounds (so `hkdf_no_salt` cannot panic on the slice) and its length is the digest's salt size | VR-009 prim half |
+
+The shipped `get_len` dispatches on `hkdf_key_len_ok`'s verified decision and
+maps each variant to the matching `aws-lc-rs` algorithm; the shipped
+`hkdf_no_salt` builds the `[0u8; MAX_SALT_SIZE]` buffer and takes its salt
+slice through `no_salt_slice_core`. There is one definition of each function —
+the proved core is the shipped core. Each obligation was mutation-tested: a
+wrong key-length mapping, accepting an extra length, a wrong salt value, a
+salt length of `MAX_SALT_SIZE + 1`, and dropping the buffer-length `requires`
+each produce a Verus error (`postcondition not satisfied` / `precondition not
+satisfied`), so none of the obligations is a tautology.
+
+**What is proven (VR-009 prim half):** only the Rust-side decision and
+no-panic. (a) The HKDF key-length decision over the real `okm.len()` is total
+and correct — `Ok` for exactly `{16, 24, 32}` and `Err` for every other
+length, the same `{16, 24, 32}` shape the esdk half keys off; (b) the no-salt
+slice `&salt[0..sz]` is always in bounds, so `hkdf_no_salt` cannot panic on it.
+
+**What is NOT proven (VR-009 prim half):** the HKDF crypto itself, the derived
+key bytes, and the `aws-lc-rs` extract / expand / fill results (including their
+`Err` cases) — these are the trusted `aws-lc-rs` boundary, reached only through
+the thin adapters outside `verus!`.
+
+**VR-009 is now verified on both halves.** The esdk half
+(`esdk/src/key_derivation.rs`: `identity_kdf_key_len_ok`, `check_v2_key_lengths`)
+and the prim half (`prim/src/hkdf.rs`: `hkdf_key_len_ok`, `salt_size_core`,
+`no_salt_slice_core`) are each in-crate, each with its own trusted boundary
+(the esdk MPL getters / the aws-lc-rs HKDF). With T3, all three prim
+panic-point targets — VR-006, VR-008 and the VR-009 prim half — are in-crate.
+
 **Properties that stay model-only, and why:**
 
 | Property | Model | Why it is not in-crate |
@@ -388,7 +467,7 @@ they are a trusted boundary. No crypto correctness is proven either (the
 | VR-006 AES-GCM panic freedom | **in-crate** (`prim/src/lib.rs`, T2): `aes_encrypt_extend_core` proves the encrypt slice (`cipher_text[old_size..]`) is always in bounds and exactly `message.len()` bytes; `aes_decrypt_len_ok` proves the decrypt plaintext-vs-ciphertext length precondition that rejects an under-sized output buffer before the gather | **not** Verus-proven: the AES-GCM key length (16/24/32) and the IV validity — enforced inside `aws-lc-rs` (`UnboundKey::new` / `Nonce::try_assume_unique_for_key` return `Err`), a trusted boundary; and the crypto itself (aws-lc-rs `seal`/`open`, FFI) |
 | VR-008 ECDSA fixed-length signing | **in-crate** (`prim/src/ecdsa.rs`, `sign_fixed_len_core` inside `verus!`): the bounded `MAX_SIGN_ATTEMPTS` retry loop terminates (`decreases MAX_SIGN_ATTEMPTS - attempt`) and the guarded `copy_from_slice` is proven in bounds (tied to `check_sig_len`) | the `aws-lc-rs` signing closure and `Signature` type are the trusted boundary; the thin `sign_fixed_len` adapter builds the `Error`; no crypto property is proven |
 | VR-007 EDK count validation | **in-crate**: count-check logic (`edk_count_check`) | the "before any KMS call" ordering (caller-side in `decrypt.rs`) |
-| VR-009 HKDF / key-derivation lengths | **esdk half in-crate**: the V1 identity-KDF key-length check (`identity_kdf_key_len_ok`) and the V2 KDF / message-ID / key-length checks that size the derived encryption key (`check_v2_key_lengths`), total and accept iff the checks pass; `derive_keys` dispatches on the verified `msg_format_version_from_u8` | **prim half not proven**: `prim/src/hkdf.rs` (incl. `get_len`) and aws-lc-rs HKDF (trust boundary; `prim` is Verus-enabled but `hkdf.rs` has no `verus!` block yet, planned). In esdk, unverified: buffer sizes read directly from MPL getters (V1 output, V2 commit key), the V1 salt table `digest_length`, the `debug_assert!`s |
+| VR-009 HKDF / key-derivation lengths | **both halves in-crate**. esdk half (`esdk/src/key_derivation.rs`): the V1 identity-KDF key-length check (`identity_kdf_key_len_ok`) and the V2 KDF / message-ID / key-length checks that size the derived encryption key (`check_v2_key_lengths`), total and accept iff the checks pass; `derive_keys` dispatches on the verified `msg_format_version_from_u8`. prim half (`prim/src/hkdf.rs`, T3): the `{16, 24, 32}` key-length decision (`hkdf_key_len_ok`), total and correct against `okm.len()`, and the no-salt slice bound (`salt_size_core` `<= MAX_SALT_SIZE`, `no_salt_slice_core` in bounds) | **prim half trust boundary**: the aws-lc-rs HKDF crypto and the extract/expand/fill results (incl. their `Err`), reached through the adapters outside `verus!`. In esdk, unverified: buffer sizes read directly from MPL getters (V1 output, V2 commit key), the V1 salt table `digest_length`, the `debug_assert!`s |
 | VR-011 data-key non-disclosure | **confinement** to `esdk/src/secret.rs`, compiler- and clippy-checked (not Verus); **Verus**: the secret types' accessors and the commitment-value declassification | not Verus-proven overall: the encrypt/decrypt flow (plan step 7), the TB-A adapters, aws-lc-rs, keyrings/CMMs and mpl key types are trusted; the PRK hand-off in `key_derivation.rs` is grep-checked only |
 | VR-010 key-material zeroization | model only; unchanged, deferred (out of scope for this work) | the modeled `write_volatile` loop was removed in `a864ad87`; current zeroization (`#[derive(Zeroize, ZeroizeOnDrop)]`) is not verified |
 | Infra: I/O seam | `esdk` is Verus-buildable; sync `verus!` cores are verified in-crate behind the async `Source`/`Tee` adapters (see "In-crate proofs") | the async adapters themselves stay unverified glue |
@@ -412,6 +491,9 @@ Load-bearing proofs were checked by mutating the code and confirming Verus
 - **EDK sub-parser:** recursing the entry loop without decrementing the count → the `decreases` (termination) proof fails (an unbounded loop reading off an untrusted count is rejected).
 - **AAD sub-parser:** recursing the (key, value) pair loop without decrementing → the `decreases` (termination) proof fails.
 - **AES-GCM decrypt guard:** making the guard always proceed (ignoring the buffer-size check) → the `proceed <==> (plain_text_len >= cipher_text_len)` postcondition fails.
+- **HKDF key-length decision (`hkdf_key_len_ok`, T3):** mapping length 16 to `Aes192` → the `Ok(Aes128) <==> len == 16` and `Ok(Aes192) <==> len == 24` postconditions fail; accepting an extra length (`20 => Ok(...)`) → the `Ok <==> {16,24,32}` and `Err <==>` postconditions fail.
+- **HKDF salt size (`salt_size_core`, T3):** returning 40 for SHA-256 → the `Sha256 ==> sz == 32` postcondition fails; returning `MAX_SALT_SIZE + 1` for SHA-512 → the `sz <= MAX_SALT_SIZE` and `Sha512 ==> sz == 64` postconditions fail.
+- **HKDF no-salt slice (`no_salt_slice_core`, T3):** dropping the `requires salt.len() == MAX_SALT_SIZE` precondition → the `&salt[0..sz]` subrange reports `precondition not satisfied` (the slice is no longer provably in bounds).
 
 ---
 
@@ -432,10 +514,15 @@ proof files and `verification/README.md`:
 
 - **UTF-8 validation (AAD sub-parser)**: the encryption-context key/value strings are validated with `std::str::from_utf8`, which Verus cannot evaluate. This is wrapped in the single `#[verifier::external_body]` in the project (`utf8_check`), whose `ensures ok == utf8_valid(bytes@)` is a **trusted boundary**: we assert the std check agrees with an abstract `utf8_valid` predicate. What is proven is that the parser branches on the result and rejects non-UTF-8 with `Err(Utf8)`, never panicking. The correctness of UTF-8 validation itself is delegated to std.
 
-Functions whose core is an `aws-lc-rs` FFI call (AES-GCM, ECDSA, HKDF) were
-**deliberately not** targeted directly — proving them would require hiding the
-real work behind `external_body` (beyond the single, documented std-`from_utf8`
-boundary above), which the invariants forbid.
+The `aws-lc-rs` FFI calls themselves (AES-GCM seal/open, ECDSA sign, HKDF
+extract/expand/fill) are **deliberately not** targeted directly — proving them
+would require hiding the real work behind `external_body` (beyond the single,
+documented std-`from_utf8` boundary above), which the invariants forbid. What
+*is* proven in-crate for these functions is the Rust-side decision and
+buffer/slice safety around the FFI call: VR-006 (AES-GCM buffer bounds),
+VR-008 (the ECDSA retry loop and copy) and VR-009 prim half (the HKDF
+`{16, 24, 32}` key-length decision and the no-salt slice bound). The crypto
+and the FFI results stay the trusted boundary.
 
 ---
 
