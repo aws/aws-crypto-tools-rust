@@ -444,7 +444,6 @@ jobs:
 
   # Checks that each duvet test annotation's test runs the code it cites,
   # using the per-test coverage of the TestServer runs and the local tests.
-  # Not in pr-ci-all-required, so it can't block a merge yet.
   duvet-test-reach:
     name: duvet test reach (${{ matrix.library }})
     needs: [detect, esdk-test-server, mpl-test-server, local-per-test-coverage]
@@ -561,6 +560,7 @@ jobs:
       - prim-test-server
       - gen-errors
       - license-headers
+      - duvet-test-reach
     runs-on: *codebuild-linux
     steps:
       - name: Check job results
