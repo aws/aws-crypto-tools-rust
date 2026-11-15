@@ -61,6 +61,15 @@ pub(crate) fn be_u64(b: [u8; 8]) -> (r: u64)
         + u64::from(b[7])
 }
 
+// Big-endian encoders exist for u32 and u64 only, while decoders exist for
+// u16/u32/u64. This asymmetry is by design, not a missing function: `write_u16`
+// (like `write_u32`/`write_u8`) encodes via `to_be_bytes()` directly, so u16
+// serialization needs no hand-written encoder. These `*_to_be` spec/exec
+// encoders were added only where a *proof* must reason about a field's bytes
+// (the body AAD's u32 sequence number and u64 content length), hence u32/u64.
+// Consequently the VR-012 round-trip lemmas below cover the u32/u64 pairs; u16
+// is decoder-only. A `u16_to_be` + round-trip would be proof-coverage
+// completeness, not a bug fix.
 /// The four big-endian bytes of `x` (what `x.to_be_bytes()` returns).
 pub(crate) open spec fn spec_u32_to_be(x: u32) -> Seq<u8> {
     seq![
