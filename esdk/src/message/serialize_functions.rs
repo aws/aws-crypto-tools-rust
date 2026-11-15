@@ -139,6 +139,80 @@ pub(crate) fn u64_to_be(x: u64) -> (r: [u8; 8])
     r
 }
 
+/// VR-012: the big-endian `u32` codec is round-trip exact.
+///
+/// `b` holds the four bytes the encoder produces for `x`
+/// (the hypothesis `b@ == spec_u32_to_be(x)` is what `u32_to_be(x)` guarantees
+/// about its returned array). The lemma proves the decoder recovers `x`:
+/// `spec_be_u32(b) == x as int`, i.e. decode-after-encode is the identity on
+/// every `u32`. This genuinely couples the two spec functions — it is false if
+/// either `spec_u32_to_be` or `spec_be_u32` is altered — rather than restating
+/// one in terms of itself.
+pub(crate) proof fn lemma_u32_round_trip(x: u32, b: [u8; 4])
+    requires
+        b@ == spec_u32_to_be(x),
+    ensures
+        spec_be_u32(b) == x as int,
+{
+    // The seq equality gives each byte of `b` in terms of `x`.
+    assert(b[0] == (x / 16_777_216) as u8);
+    assert(b[1] == ((x / 65_536) % 256) as u8);
+    assert(b[2] == ((x / 256) % 256) as u8);
+    assert(b[3] == (x % 256) as u8);
+    // Z3 closes the positional-value sum from these four facts.
+}
+
+/// VR-012: the big-endian `u64` codec is round-trip exact.
+///
+/// As `lemma_u32_round_trip`, for the `u64` encoder/decoder pair:
+/// given `b@ == spec_u64_to_be(x)`, the decoder recovers `x`
+/// (`spec_be_u64(b) == x as int`). Decode-after-encode is the identity on every
+/// `u64`, and the equality couples `spec_u64_to_be` with `spec_be_u64`.
+pub(crate) proof fn lemma_u64_round_trip(x: u64, b: [u8; 8])
+    requires
+        b@ == spec_u64_to_be(x),
+    ensures
+        spec_be_u64(b) == x as int,
+{
+    // Each byte of `b`, as the `% 256` digit of a quotient of `x`. The high
+    // byte needs no `% 256` because `x < 2^64` already bounds `x / 256^7 < 256`.
+    assert(b[0] as int == (x as int / 72_057_594_037_927_936) % 256);
+    assert(b[1] as int == (x as int / 281_474_976_710_656) % 256);
+    assert(b[2] as int == (x as int / 1_099_511_627_776) % 256);
+    assert(b[3] as int == (x as int / 4_294_967_296) % 256);
+    assert(b[4] as int == (x as int / 16_777_216) % 256);
+    assert(b[5] as int == (x as int / 65_536) % 256);
+    assert(b[6] as int == (x as int / 256) % 256);
+    assert(b[7] as int == x as int % 256);
+    // Reconstruct `x` from the bottom up with the Euclidean identity at each
+    // 256-boundary: a quotient equals its next quotient shifted up by 256 plus
+    // its own low digit. Stating each step keeps every obligation linear once
+    // the quotient/remainder pair is fixed, so Z3 does not have to crack the
+    // whole nonlinear modular sum at once.
+    let xi = x as int;
+    assert(xi == (xi / 256) * 256 + xi % 256) by (nonlinear_arith);
+    assert(xi / 256 == (xi / 65_536) * 256 + (xi / 256) % 256) by (nonlinear_arith);
+    assert(xi / 65_536 == (xi / 16_777_216) * 256 + (xi / 65_536) % 256)
+        by (nonlinear_arith);
+    assert(xi / 16_777_216 == (xi / 4_294_967_296) * 256 + (xi / 16_777_216) % 256)
+        by (nonlinear_arith);
+    assert(xi / 4_294_967_296 == (xi / 1_099_511_627_776) * 256
+        + (xi / 4_294_967_296) % 256) by (nonlinear_arith);
+    assert(xi / 1_099_511_627_776 == (xi / 281_474_976_710_656) * 256
+        + (xi / 1_099_511_627_776) % 256) by (nonlinear_arith);
+    assert(xi / 281_474_976_710_656 == (xi / 72_057_594_037_927_936) * 256
+        + (xi / 281_474_976_710_656) % 256) by (nonlinear_arith);
+    // Top quotient is itself its low digit: `x / 256^7 < 256`, so it equals
+    // `(x / 256^7) % 256`.
+    assert(xi / 72_057_594_037_927_936 == (xi / 72_057_594_037_927_936) % 256)
+        by (nonlinear_arith)
+        requires
+            0 <= xi < 18_446_744_073_709_551_616,
+    ;
+    // With the quotient chain and digit identities in hand, the positional sum
+    // in `spec_be_u64` collapses to `x`.
+}
+
 /// The most bytes `read_into_vec` adds to its buffer per read (1 MiB).
 /// 1 MiB matches serde's (Rust serialization library's) up-front allocation.
 /// But this value is arbitrary and we can change it at any time.

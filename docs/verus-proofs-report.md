@@ -133,6 +133,23 @@ make -C verification verify
 > They are deliberately not part of VR-001 — they live partly in `mpl`, which is
 > not Verus-enabled — and remain tracked separately as **implemented but
 > unproven** (see the per-target status table and `verification-recommendations.md`).
+>
+> **Update (branch `verus-vr012`):** VR-012 (big-endian codec round-trip,
+> capability-driven, category 1c) is now in-crate. Two proof lemmas in
+> `esdk/src/message/serialize_functions.rs` — `lemma_u32_round_trip` and
+> `lemma_u64_round_trip` — prove the verified big-endian encoders and decoders
+> are **exact inverses** for `u32` and `u64`: for every `x`, decoding the bytes
+> `u32_to_be(x)` / `u64_to_be(x)` produce recovers `x`
+> (`spec_be_u32(b) == x` when `b@ == spec_u32_to_be(x)`, and the `u64` analogue).
+> This couples the two spec fns that were each previously verified only against
+> their own side, bridging the `[u8; N]`-vs-`Seq<u8>` mismatch via the
+> hypothesis `b@ == spec_uN_to_be(x)`. **69 verified, 0 errors** on both feature
+> sets (up from 59; +10 obligations — the two lemmas plus the staged
+> `by (nonlinear_arith)` sub-obligations in the `u64` proof; mutation-tested).
+> No `rlimit` bump, `assume`, `admit` or `external_body`. This is a
+> functional-correctness lemma about the codec only — it says nothing about the
+> async readers/writers. `u16` has a decoder (`be_u16`) but no encoder, so there
+> is no `u16` round-trip. See "VR-012" under "In-crate proofs".
 
 ### Adherence to the Verus skill invariants (esdk)
 - No proof was weakened: **no** `assume(...)`, `admit()`, or `#[verifier::external]` anywhere in esdk. In esdk there is exactly **one** `#[verifier::external_body]` — the `utf8_check` wrapper around `std::str::from_utf8` in the AAD sub-parser — used per Verus skill invariant #11 for a std call Verus cannot evaluate (the same role `tag_ok` plays for the AES-GCM check). Its `ensures` is a **trusted boundary, not a proof**: the UTF-8-validation correctness is delegated to the std library; everything around it (that the parser rejects non-UTF-8 with `Err`, never panics) is proven. This is called out explicitly in §5.
@@ -163,13 +180,16 @@ Output (the `aws-esdk` line; `vstd` is verified first with
 `--no-default-features --features aws-lc-sys`:
 
 ```
-verification results:: 59 verified, 0 errors
-verification results:: 59 verified, 0 errors
+verification results:: 69 verified, 0 errors
+verification results:: 69 verified, 0 errors
 ```
 
 The count is Verus's obligation count, not a function count; the checked
-fns are 35 exec fns (13 before the in-crate work, 22 before VR-009, 24 before
-VR-011, 34 before VR-001) and 3 proof fns. Files are under `esdk/src/message/` unless the path
+fns are 36 exec fns (13 before the in-crate work, 22 before VR-009, 24 before
+VR-011, 34 before VR-001, 35 before VR-012) and 5 proof fns (3 before VR-012; the
+two VR-012 round-trip lemmas bring it to 5). The count rose from 59 to 69 at
+VR-012: the two lemmas plus the staged `by (nonlinear_arith)` sub-obligations in
+the `u64` proof each count. Files are under `esdk/src/message/` unless the path
 starts with `esdk/src/`.
 
 | Fn | File | Ensures | Target |
@@ -184,6 +204,8 @@ starts with `esdk/src/`.
 | `be_u16` | `serialize_functions.rs` | `r as int == spec_be_u16(b)` | VR-003 |
 | `be_u32` | `serialize_functions.rs` | `r as int == spec_be_u32(b)` | VR-003 |
 | `be_u64` | `serialize_functions.rs` | `r as int == spec_be_u64(b)` | VR-003 |
+| `lemma_u32_round_trip` (proof fn) | `serialize_functions.rs` | `b@ == spec_u32_to_be(x) ==> spec_be_u32(b) == x as int` (decode-after-encode is the identity for `u32`) | VR-012 |
+| `lemma_u64_round_trip` (proof fn) | `serialize_functions.rs` | `b@ == spec_u64_to_be(x) ==> spec_be_u64(b) == x as int` (decode-after-encode is the identity for `u64`) | VR-012 |
 | `next_chunk_end` | `serialize_functions.rs` | requires `start < length`; `start < end <= length`, `end - start <= READ_CHUNK` (1 MiB) | VR-003 (bounded allocation per read) |
 | `bounded_len_u32` | `serialize_functions.rs` | `OverBound` iff `len > bound`; `Ok` iff `len <= bound` and fits in `usize`; `TooLargeForPlatform` iff `len <= bound` and does not fit; `Ok(n) ==> n == len` | VR-003 |
 | `bounded_len_u64` | `serialize_functions.rs` | same as `bounded_len_u32`, for `u64` | VR-003 |
@@ -509,6 +531,7 @@ panic-point targets — VR-006, VR-008 and the VR-009 prim half — are in-crate
 | VR-009 HKDF / key-derivation lengths | **both halves in-crate**. esdk half (`esdk/src/key_derivation.rs`): the V1 identity-KDF key-length check (`identity_kdf_key_len_ok`) and the V2 KDF / message-ID / key-length checks that size the derived encryption key (`check_v2_key_lengths`), total and accept iff the checks pass; `derive_keys` dispatches on the verified `msg_format_version_from_u8`. prim half (`prim/src/hkdf.rs`, T3): the `{16, 24, 32}` key-length decision (`hkdf_key_len_ok`), total and correct against `okm.len()`, and the no-salt slice bound (`salt_size_core` `<= MAX_SALT_SIZE`, `no_salt_slice_core` in bounds) | **prim half trust boundary**: the aws-lc-rs HKDF crypto and the extract/expand/fill results (incl. their `Err`), reached through the adapters outside `verus!`. In esdk, unverified: buffer sizes read directly from MPL getters (V1 output, V2 commit key), the V1 salt table `digest_length`, the `debug_assert!`s |
 | VR-011 data-key non-disclosure | **confinement** to `esdk/src/secret.rs`, compiler- and clippy-checked (not Verus); **Verus**: the secret types' accessors and the commitment-value declassification | not Verus-proven overall: the encrypt/decrypt flow (plan step 7), the TB-A adapters, aws-lc-rs, keyrings/CMMs and mpl key types are trusted; the PRK hand-off in `key_derivation.rs` is grep-checked only |
 | VR-010 key-material zeroization | model only; unchanged, deferred (out of scope for this work) | the modeled `write_volatile` loop was removed in `a864ad87`; current zeroization (`#[derive(Zeroize, ZeroizeOnDrop)]`) is not verified |
+| VR-012 big-endian codec round-trip | **in-crate** (`esdk/src/message/serialize_functions.rs`): `lemma_u32_round_trip` and `lemma_u64_round_trip` prove the verified big-endian encoders and decoders are **exact inverses** for `u32` and `u64` — `spec_be_u32(b) == x` when `b@ == spec_u32_to_be(x)`, and the `u64` analogue; mutation-tested. Capability-driven (category 1c), couples the two spec fns each previously verified only against their own side | a functional-correctness lemma about the **codec** only; it says nothing about the async readers/writers (`read_*`/`write_*`) that call the exec helpers. No `u16` round-trip: `u16` has a decoder (`be_u16`) but no encoder. That the exec fns equal std's `from_be_bytes`/`to_be_bytes` rests on their own ensures and the in-module tests, not on these lemmas |
 | Infra: I/O seam | `esdk` is Verus-buildable; sync `verus!` cores are verified in-crate behind the async `Source`/`Tee` adapters (see "In-crate proofs") | the async adapters themselves stay unverified glue |
 
 ---
@@ -535,6 +558,7 @@ Load-bearing proofs were checked by mutating the code and confirming Verus
 - **HKDF no-salt slice (`no_salt_slice_core`, T3):** dropping the `requires salt.len() == MAX_SALT_SIZE` precondition → the `&salt[0..sz]` subrange reports `precondition not satisfied` (the slice is no longer provably in bounds).
 - **key-commitment decision (`suite_data_check`, VR-001 property a):** dropping the committed-length check (accepting whenever the bytes match) → the `Ok <==> (… && commit_len == expected@.len())` and `Err(LengthMismatch) <==>` postconditions fail; inverting the commitment branch (accepting when the bytes differ) → the `Ok`, `Err(CommitmentMismatch)` and `Err(LengthMismatch)` postconditions fail. Both confirm the decision is genuinely constrained, not tautological.
 - **key-commitment ordering (`commitment_ordering_proofs.rs`, VR-001 property b):** letting `verify` reach `Verified` without the accept condition (returning `Verified` unconditionally) → the `verify` `(next == Verified) <==> commitment_accepts(…)` and `(next == Unverified) <==> !commitment_accepts(…)` postconditions fail; and, with a forbidden `decrypt_frame(HeaderState::Unverified)` call added, removing the `requires state == Verified` guard flips that call from *precondition not satisfied* to passing — so with the guard in place the forbidden call is rejected. Both confirm the ordering is genuinely constrained, not tautological.
+- **big-endian codec round-trip (`lemma_u32_round_trip` / `lemma_u64_round_trip`, VR-012):** mutating the decoder `spec_be_u32` (changing the `b[3]` term to `b[3] * 2`) → `lemma_u32_round_trip`'s `spec_be_u32(b) == x as int` postcondition fails (67 verified, 2 errors; the other error is `be_u32`'s own ensures, also tied to the decoder spec); mutating `spec_be_u64` (adding `+ 1` to the `b[7]` term) → `lemma_u64_round_trip`'s postcondition fails (67 verified, 2 errors), then reverted. Both confirm the lemmas genuinely couple the encoder and decoder spec fns and are not a restatement of one side against itself.
 
 ---
 

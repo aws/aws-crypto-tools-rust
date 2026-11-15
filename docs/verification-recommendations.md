@@ -29,6 +29,18 @@
 > in-crate count is now 57 verified, 0 errors over 34 exec fns and 3 proof fns. The property
 > wording changed (decision D0): the V2 commitment value is public by spec. See VR-2026-011.
 >
+> **Revision note (branch `verus-vr012`, based on `Mahnush_Verus` at `4396173f`):** VR-012
+> (big-endian codec round-trip) is added and proven in-crate. Two proof lemmas in
+> `esdk/src/message/serialize_functions.rs` — `lemma_u32_round_trip` and `lemma_u64_round_trip` —
+> prove the verified big-endian encoders and decoders are exact inverses: for every `u32` (resp.
+> `u64`) `x`, decoding the bytes the encoder produces for `x` recovers `x`
+> (`spec_be_u32(b) == x` when `b@ == spec_u32_to_be(x)`, and the `u64` analogue). This couples the
+> two previously independent spec functions (each exec fn was verified only against its own spec).
+> The in-crate count is now **69 verified, 0 errors** on both feature sets (was 59 at `4396173f`),
+> over 36 exec fns and 5 proof fns. VR-012 is a functional-correctness lemma about the codec; it
+> says nothing about the async readers/writers that call the exec helpers. Encoders exist only for
+> `u32` and `u64`, so the round-trip covers those pairs; `u16` has a decoder (`be_u16`) only.
+>
 > **Earlier re-analysis note (baseline `d8c1c3d`, kept as history):** the baseline before that
 > (`88157eaf`) described a *different* codebase: an `AwsEncryptionSDK/runtimes/rust/src/` layout with
 > Dafny-transpiled code (`implementation_from_dafny.rs`), files
@@ -40,17 +52,20 @@
 
 ## Executive Summary
 
-This document identifies **11 prioritized verification targets** derived from the 31 threats in the
-ESDK threat model (`docs/threat-model.md`).
+This document identifies **12 prioritized verification targets** derived from the 31 threats in the
+ESDK threat model (`docs/threat-model.md`). Targets VR-001..VR-011 are threat-derived; VR-012 is a
+capability-driven functional-correctness lemma (category 1c) about the message codec.
 
-**Status at `2fb844fa`:**
-- **In-crate (shipped code):** on branch `vr011-confinement`, `make -C esdk verus` reports
-  `57 verified, 0 errors` (default features and `--no-default-features --features aws-lc-sys`)
-  over 34 exec fns and 3 proof fns in `esdk/src/message/`, `esdk/src/key_derivation.rs` and
-  `esdk/src/secret.rs` (it was 45 over 24 exec fns before VR-011). These cover the synchronous
-  decision and layout cores of VR-003, VR-004, VR-005 and VR-007, the esdk half of VR-009
-  (key-derivation length checks; the prim half is not proven), and the secret-type accessors of
-  VR-011. The async readers, loops and orchestration around them are unverified glue.
+**Status at `4396173f` (VR-012 branch):**
+- **In-crate (shipped code):** `make -C esdk verus` reports **`69 verified, 0 errors`** (default
+  features and `--no-default-features --features aws-lc-sys`) over 36 exec fns and 5 proof fns in
+  `esdk/src/message/`, `esdk/src/key_derivation.rs` and `esdk/src/secret.rs` (it was 59 at
+  `4396173f` before VR-012, and 57 before VR-011). These cover the synchronous decision and layout
+  cores of VR-001 (a), VR-003, VR-004, VR-005 and VR-007, the esdk half of VR-009 (key-derivation
+  length checks; the prim half is not proven), the secret-type accessors of VR-011, and the
+  big-endian codec round-trip of VR-012 (`lemma_u32_round_trip`, `lemma_u64_round_trip` in
+  `serialize_functions.rs`). The async readers, loops and orchestration around them are unverified
+  glue.
 - **VR-011, compiler/lint-checked (not Verus):** esdk code outside `esdk/src/secret.rs` cannot
   read the bytes of the plaintext data key or of the derived message key (Rust privacy, plus a
   clippy `disallowed-methods` rule on the mpl data-key accessors).
@@ -213,6 +228,7 @@ set during the model work and were not rescored for the in-crate work.
 | 9 | **6.4** | HKDF / key derivation length | **esdk half in-crate** (`identity_kdf_key_len_ok`, `check_v2_key_lengths` in `key_derivation.rs`: total, accept iff the length checks pass; V2 encryption-key buffer sized by the verified result). **prim half not proven** (`prim/src/hkdf.rs` incl. `get_len`; Verus not enabled in `prim`). Unverified in esdk: V1 output and V2 commit-key sizes read straight from MPL getters, the V1 salt table `digest_length` | Output-length checks panic-free; `derive_key_v2` buffers sized correctly | `verus-zero-panic` | `esdk/src/key_derivation.rs`, `prim/src/hkdf.rs` | 1 week | **Yes** |
 | 10 | **6.0** | Key-material zeroization | **Model only, deferred.** `zeroize_proofs.rs` models a hand-written `write_volatile` loop that was removed in `a864ad87`; zeroization now comes from `#[derive(Zeroize, ZeroizeOnDrop)]` on `PlaintextDataKey`, `SigningKey` and `SymmetricSigningKey`. The model is unchanged and no longer describes the code | Secret key bytes are zeroed on drop | `verus-unsafe-ffi-safety` | `mpl/src/structures/algorithm_suite.rs` | 1 week | No |
 | 11 | **4.8** | Data-key non-disclosure *(information flow)* | **Confinement in-crate (compiler/lint-checked, not Verus)** on branch `vr011-confinement`: key bytes are readable only in `esdk/src/secret.rs`. **Verus** covers only the secret types' accessors and the commitment-value declassification. Trusted: the nine TB-A adapters in `secret.rs`, aws-lc-rs, keyrings/CMMs. Not done: a verified encrypt/decrypt flow | During encrypt and decrypt, the plaintext data key and the derived message encryption key are never written directly to the output stream or returned to the caller. They reach the output only through AES-GCM (the message key as its key input) or, for the data key, after the keyring has encrypted it into an EDK. The V2 commitment value is derived from the data key but is public by spec (header suite data); it is a declassification. Out of scope: keyrings/CMMs, mpl key types and accessors, whether AES-GCM/HKDF outputs reveal the key (aws-lc-rs), the ECDSA signing key, and the `test-internals` feature. **Sequencing:** builds on the in-crate Verus setup (Option A, in place for `esdk`) | unassigned (information-flow) | `esdk/src/encrypt.rs`, `esdk/src/decrypt.rs`, `esdk/src/key_derivation.rs`, `esdk/src/message/body/*`, `mpl/src/structures/{algorithm_suite,encryption_materials,decryption_materials}.rs` | 3–4 weeks | No |
+| 12 | **4.0** | Big-endian codec round-trip *(capability-driven, category 1c)* | **In-crate** (branch `verus-vr012`): `lemma_u32_round_trip` and `lemma_u64_round_trip` in `serialize_functions.rs` are verified (`make -C esdk verus`: 69 verified, 0 errors on both feature sets; mutation-tested). Couples the previously independent encoder/decoder spec fns | The verified big-endian encoders and decoders are exact inverses for `u32` and `u64`: decoding the bytes `u32_to_be(x)`/`u64_to_be(x)` produce recovers `x` (`spec_be_u32(b) == x` when `b@ == spec_u32_to_be(x)`, and the `u64` analogue). A functional-correctness lemma about the codec only — not about the async readers/writers. `u16` has a decoder (`be_u16`) but no encoder, so no `u16` round-trip | `verus-header-parsing-proofs` | `esdk/src/message/serialize_functions.rs` | ~1 day | No |
 
 ---
 
@@ -231,6 +247,12 @@ set during the model work and were not rescored for the in-crate work.
 | 9 | HKDF length | 2 (Medium) | 1.0 | 0.8 | 4 | **6.4** |
 | 10 | Zeroization | 3 (High) | 1.0 | 0.5 | 4 | **6.0** |
 | 11 | Data-key non-disclosure | 4 (Critical) | 1.0 | 0.3 | 4 | **4.8** |
+| 12 | Big-endian codec round-trip | 2 (Medium) | 1.0 | 1.0 | 2 | **4.0** |
+
+VR-012 scoring notes: capability-driven (category 1c), not threat-derived. Severity 2 because a
+codec inverse bug would be a correctness defect in header (de)serialization rather than a direct
+security bypass; the decoders are already used on the shipped path. Feasibility 1.0 — self-contained
+pure arithmetic over existing spec fns, no async or FFI. Blast radius 2 (the codec helpers only).
 
 VR-011 scoring notes: Severity 4 because a disclosed data key decrypts the whole message (I1 is
 rated "Critical (if exploited)" in the threat model). Feasibility 0.3 because Verus has no built-in
@@ -836,6 +858,47 @@ recommendation:
   scoring: { severity: 4, coverage_gap: 1.0, feasibility: 0.3, blast_radius: 4 }
   quick_win: false
   dependencies: [ "In-crate Verus setup (Option A) — in place for esdk" ]
+
+recommendation:
+  id: VR-2026-012
+  rank: 12
+  priority_score: 4.0
+  origin: capability-driven   # suggested by the full-pipeline re-derivation, not from a threat; category 1c
+  category: 1c   # functional-correctness lemma over already-verified in-crate code
+  status: in_crate   # branch verus-vr012; both proof lemmas verified, mutation-tested
+  property_kind: functional_correctness   # codec inverse, like VR-001..VR-009
+  target:
+    library: aws-esdk
+    file: esdk/src/message/serialize_functions.rs
+    function: lemma_u32_round_trip, lemma_u64_round_trip (proof fns); they relate spec_u32_to_be/spec_be_u32 and spec_u64_to_be/spec_be_u64
+  property: "The verified big-endian encoders and decoders are exact inverses (decode-after-encode is the identity). For every u32 x, if b@ == spec_u32_to_be(x) then spec_be_u32(b) == x as int; for every u64 x, if b@ == spec_u64_to_be(x) then spec_be_u64(b) == x as int. Encoders exist only for u32 and u64, so the round-trip covers those two pairs. u16 has a decoder (be_u16 / spec_be_u16) but no encoder, so there is no u16 round-trip."
+  formal_spec: "∀ x: u32, b: [u8;4]. b@ == spec_u32_to_be(x) ⟹ spec_be_u32(b) == x; ∀ x: u64, b: [u8;8]. b@ == spec_u64_to_be(x) ⟹ spec_be_u64(b) == x. The [u8;N]-vs-Seq<u8> mismatch (decoders take an array, encoders return a seq) is bridged by the hypothesis b@ == spec_uN_to_be(x), which is exactly what the exec encoders u32_to_be/u64_to_be ensure about their returned array."
+  approach: |
+    Two proof fns inside the existing verus! block. Each takes the encoded array b and the
+    hypothesis b@ == spec_uN_to_be(x), derives each byte of b as the corresponding %256 digit of a
+    quotient of x, and lets Z3 close the positional-value sum against spec_be_uN. The u64 lemma's
+    nonlinear modular sum over power-of-256 constants exceeds the default solver budget, so its
+    reconstruction is staged: the Euclidean identity q_k == q_{k+1}*256 + q_k%256 is asserted at
+    each 256-boundary with `by (nonlinear_arith)`, keeping each obligation linear once the
+    quotient/remainder pair is fixed. No rlimit bump, assume, admit or external_body is used.
+    Runtime behavior of the exec fns is unchanged; this is proof-only (ghost) code.
+  enforcement:
+    verus_proven:   # make -C esdk verus, branch verus-vr012: 69 verified, 0 errors on both feature sets (was 59)
+      - "lemma_u32_round_trip: b@ == spec_u32_to_be(x) ⟹ spec_be_u32(b) == x as int"
+      - "lemma_u64_round_trip: b@ == spec_u64_to_be(x) ⟹ spec_be_u64(b) == x as int"
+      - "mutation test: changing spec_be_u32 (b[3]*2) fails lemma_u32_round_trip's postcondition (67 verified, 2 errors); changing spec_be_u64 (+1 on b[7]) fails lemma_u64_round_trip's postcondition (67 verified, 2 errors); both reverted. The lemmas genuinely couple the two spec fns and are not tautologies"
+    not_verus_proven:
+      - "no u16 round-trip (no u16 encoder exists); the lemmas say nothing about the async read_*/write_* fns, which remain unverified glue; that the exec decoders/encoders equal std's from_be_bytes/to_be_bytes is covered by the existing exec ensures and the in-module exhaustive/sampled tests, not by these lemmas"
+  trace_to_spec: "spec/data-format/message-header.md (big-endian integer fields: Version/Type/Algorithm Suite ID/AAD Length/EDK fields/Frame Length are UInt16/UInt32); the codec is the shared primitive those field reads/writes use"
+  tool: Verus
+  agent: verus-header-parsing-proofs
+  estimated_effort: ~1 engineer-day
+  threat_references:
+    - { id: "(none)", category: "capability-driven", description: "No direct threat; strengthens the already-verified header codec by proving its two directions are inverse, closing the gap that each side was verified only against its own spec fn" }
+  coverage_gap: 1.0
+  scoring: { severity: 2, coverage_gap: 1.0, feasibility: 1.0, blast_radius: 2 }
+  quick_win: false
+  dependencies: [ "In-crate big-endian codec (spec_be_u32/u64, spec_u32/u64_to_be) — already verified in serialize_functions.rs" ]
 ```
 
 ---
@@ -884,6 +947,14 @@ end to end.
   the key-returning `__test_internals` items are behind the `test-internals` feature, and a small
   Verus layer covers the secret types' accessors (`make -C esdk verus`: 57 verified, 0 errors,
   34 exec fns and 3 proof fns). VR-011 is not Verus-proven; see VR-2026-011.
+- VR-012, big-endian codec round-trip (branch `verus-vr012`, capability-driven, category 1c): the
+  verified big-endian encoders and decoders in `esdk/src/message/serialize_functions.rs` are proven
+  exact inverses for `u32` and `u64`. `lemma_u32_round_trip` and `lemma_u64_round_trip` prove that
+  decoding the bytes `u32_to_be(x)`/`u64_to_be(x)` produce recovers `x`, coupling the two spec fns
+  that were previously each verified only against their own side (`make -C esdk verus`: 69 verified,
+  0 errors on both feature sets, 36 exec fns and 5 proof fns; mutation-tested). A
+  functional-correctness lemma about the codec only; it says nothing about the async readers/writers.
+  `u16` has a decoder but no encoder, so there is no `u16` round-trip.
 - Commitment-policy enforcement is implemented in code (not a verification item; listed because
   earlier revisions flagged the legacy stub).
 - VR-001, property (a) (branch `verus-vr001`): the key-commitment accept/reject **decision** in
