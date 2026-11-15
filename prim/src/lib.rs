@@ -229,7 +229,7 @@ fn aes_decrypt_len_ok(plain_text_len: usize, cipher_text_len: usize) -> (r: Resu
 /// authentication tag.
 ///
 /// The Rust-side buffer bookkeeping is proven panic-free by Verus (VR-006):
-/// [`aes_encrypt_extend_core`] discharges the slice-bounds obligation so
+/// `aes_encrypt_extend_core` discharges the slice-bounds obligation so
 /// `cipher_text[old_size..]` can never be out of bounds. The AES-GCM key
 /// length and IV validity are *not* Verus-proven — they are enforced inside
 /// `aws-lc-rs` (`UnboundKey::new` / `Nonce::try_assume_unique_for_key` return
@@ -267,7 +267,7 @@ pub fn aes_encrypt(
 /// Decrypt message with AES GCM
 ///
 /// The plaintext-vs-ciphertext length precondition is proven panic-free by
-/// Verus (VR-006): [`aes_decrypt_len_ok`] is the verified decision core that
+/// Verus (VR-006): `aes_decrypt_len_ok` is the verified decision core that
 /// rejects an under-sized `plain_text` buffer before the `aws-lc-rs` gather.
 /// The AES-GCM key length, IV validity and tag verification are *not*
 /// Verus-proven — they are enforced inside `aws-lc-rs`
