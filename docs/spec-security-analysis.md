@@ -19,7 +19,7 @@ Method: the code under `mpl/src`, `prim/src`, the four test-server crates and th
 | Item | Evidence re-read in this pass |
 |---|---|
 | Storm-tracking `build()` enforces only `fan_out ≥ 1`, `in_flight_ttl > 0`, `sleep > 0`, `grace_interval ≤ in_flight_ttl` | `cmc/storm_tracking.rs:613-627`. Test `test_durations_are_stored_exactly` builds grace period `0` and expects `Ok` (`mpl/tests/test_storm_tracking_cmc.rs:388-404`). The only rejection tests are `in_flight_ttl = 0` (`:368-373`) and `grace_interval > in_flight_ttl` (`:379-384`) |
-| FORBID default suite is `03 78`, spec says `00 14` | `structures/commitment_policy.rs:43-58` (comment `:46-48`); spec `commitment-policy.md` section "ESDK.FORBID_ENCRYPT_ALLOW_DECRYPT" |
+| FORBID default suite is `03 78`, spec says `00 78` | `structures/commitment_policy.rs:43-58` (comment `:46-48`); spec `commitment-policy.md` section "ESDK.FORBID_ENCRYPT_ALLOW_DECRYPT" |
 | Only `SharedKeyring` and `SharedCmm` run checks; `Builtin<T>` and the handle's `Arc` are private | `keyring/fluent_builders.rs:80-84`, `:161-165`; `cmm/fluent_builders.rs:171`, `:319`; `shared.rs:66`, `:110`. See the [check matrix](#shared-handle-check-matrix) |
 | No `unsafe` in `mpl/src`; `prim/src` has only the lint name | `grep unsafe mpl/src` finds nothing; `prim/src/lib.rs:33` |
 | One Duvet annotation block, no `mpl/.duvet/config.toml` | `mpl/src/cmc/entry.rs:201-205`; `file_search .duvet/config.toml` finds only `esdk/` and `esdk/shims/aws-esdk-cpp/` |
@@ -271,7 +271,7 @@ CreateKey / VersionKey: these need a single-key config (`branch_key_store.rs:112
 
 | Option | Default | Impact |
 |---|---|---|
-| Commitment policy | Per request (CMM input) | Gates encrypt and decrypt suites. `FORBID_ENCRYPT_ALLOW_DECRYPT` default suite is now `03 78` (spec says `00 14`). The other two policies default to `05 78` |
+| Commitment policy | Per request (CMM input) | Gates encrypt and decrypt suites. `FORBID_ENCRYPT_ALLOW_DECRYPT` default suite is now `03 78` (spec says `00 78`). The other two policies default to `05 78` |
 | Algorithm suite | Policy default | Key size, KDF, signing, commitment |
 | `RawAesKeyringBuilder` | All four fields required | Key length must match `AesWrappingAlg`. Namespace must not start with `aws-kms` |
 | `ttl` (hierarchical) | Required, `Duration` > 0, no upper bound | Plaintext branch-key residency in the cache. Huge values panic (BUG-01). Must be > the cache's grace period |
@@ -305,7 +305,7 @@ Keyrings:
 
 CMM / commitment policy:
 - `allows_for_encrypt` / `allows_for_decrypt` match the `commitment-policy.md` tables (`commitment_policy.rs:62`, `:77`).
-- Default suite: **deviation** for `FORBID_ENCRYPT_ALLOW_DECRYPT` (`03 78` instead of the spec's `00 14`; documented at `:46-48`). The other two policies meet "`05 78` MUST be the default".
+- Default suite: **deviation** for `FORBID_ENCRYPT_ALLOW_DECRYPT` (`03 78` instead of the spec's `00 78`; documented at `:46-48`). The other two policies meet "`05 78` MUST be the default".
 - Reproduced EC: shared keys MUST agree, and reproduced-only pairs are appended as RECK (`default_cmm.rs:273-303`).
 - Materials: RECK ⊆ EC; EDKs empty without a PDK; signing/verification/symmetric keys absent when the suite has none ("If the algorithm suite does not contain an asymmetric signing algorithm, the signing key MUST NOT be present", `structures.md` "Signing Key"); verification-key length matches the suite; PDK length = suite key length (new). Enforced in the builders and in `add_data_key`. The converse (a signing suite MUST have a signing key, `cmm-interface.md` "Get Encryption Materials") is enforced only by `materials_checks` on the fluent path (second pass C5).
 - CMM output: GetEncryptionMaterials output has a PDK and ≥ 1 EDK; DecryptMaterials output has a PDK. Enforced by `SharedCmm::send()`.
