@@ -113,6 +113,16 @@ make -C verification verify
 > decryption, property b) is enforced by call-site structure / code review, not
 > by Verus (the decrypt path is async over `dyn Source`). See "VR-001" under
 > "In-crate proofs" and the per-target status table.
+>
+> **Out of scope for VR-001:** the commitment-*policy* checks
+> (`CommitmentPolicy::allows_for_encrypt` / `_decrypt`, in
+> `mpl/src/structures/commitment_policy.rs`, called from `esdk/src/encrypt.rs`,
+> `decrypt.rs`, `materials.rs` and `mpl/src/cmm/default_cmm.rs`) are a *distinct*
+> control: policy decides whether committing suites are required or allowed at
+> all, whereas `validate_suite_data` checks that the commitment *value* matches.
+> They are deliberately not part of VR-001 — they live partly in `mpl`, which is
+> not Verus-enabled — and remain tracked separately as **implemented but
+> unproven** (see the per-target status table and `verification-recommendations.md`).
 
 ### Adherence to the Verus skill invariants (esdk)
 - No proof was weakened: **no** `assume(...)`, `admit()`, or `#[verifier::external]` anywhere in esdk. In esdk there is exactly **one** `#[verifier::external_body]` — the `utf8_check` wrapper around `std::str::from_utf8` in the AAD sub-parser — used per Verus skill invariant #11 for a std call Verus cannot evaluate (the same role `tag_ok` plays for the AES-GCM check). Its `ensures` is a **trusted boundary, not a proof**: the UTF-8-validation correctness is delegated to the std library; everything around it (that the parser rejects non-UTF-8 with `Err`, never panics) is proven. This is called out explicitly in §5.
