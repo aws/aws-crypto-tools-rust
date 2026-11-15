@@ -509,7 +509,7 @@ ciphertext that decrypts to different plaintexts depending on which data key is 
 - `FORBID_ENCRYPT_ALLOW_DECRYPT` only exists for backward compatibility with pre-commitment messages
 - Commitment-policy enforcement is implemented: `CommitmentPolicy::allows_for_encrypt` / `allows_for_decrypt` (`mpl/src/structures/commitment_policy.rs`) are checked by the ESDK on the input suite (`esdk/src/encrypt.rs`), the parsed suite (`esdk/src/decrypt.rs`) and the materials' suite (`esdk/src/materials.rs`), and by the default CMM (`mpl/src/cmm/default_cmm.rs`). (History: at the `d8c1c3d` baseline the linked legacy shim's `validate_commitment_policy_on_*` returned `Ok(())`; that shim was removed in `cdd5980`.)
 
-**Residual Risk:** Systems that explicitly configure `FORBID_ENCRYPT_ALLOW_DECRYPT` remain vulnerable to this attack class (a conscious spec trade-off). The commit-key comparison decision is now Verus-proven (VR-001, property (a): accept iff the header suite data equals the derived value and the lengths agree); its constant-time execution is trusted to aws-lc-rs and its placement before frame decryption is structural, not Verus-proven. The policy checks remain unproven.
+**Residual Risk:** Systems that explicitly configure `FORBID_ENCRYPT_ALLOW_DECRYPT` remain vulnerable to this attack class (a conscious spec trade-off). The commit-key comparison decision is now Verus-proven (VR-001, property (a): accept iff the header suite data equals the derived value and the lengths agree); its placement before frame decryption (property (b)) is now proven **model only** (`verification/commitment_ordering_proofs.rs`, same status as VR-002) — over a model of the decrypt pipeline, **not** over the shipped async `decrypt_steps` (what stays trusted is that `decrypt_steps` is the real pipeline and that the async frame loop runs after the synchronous commitment step returns; an in-place / typestate Stage 2 proof was deliberately not taken). Its constant-time execution (property (c)) is trusted to aws-lc-rs. The policy checks remain unproven.
 
 ---
 
@@ -833,14 +833,18 @@ unchanged since `5ea2a804`). Verus checks two things:
   `esdk/src/secret.rs` cannot read the bytes of the plaintext data key or the derived message key
   (Rust privacy, plus clippy `disallowed-methods` in `esdk/clippy.toml`). VR-011 as a whole is not
   Verus-proven.
-- **Model only (standalone files in `verification/`).** `make -C verification verify`: 10 files,
-  71 verified, 0 errors. VR-002 (header-auth ordering), VR-006 (AES-GCM buffer bounds in `prim`),
+- **Model only (standalone files in `verification/`).** `make -C verification verify`: 11 files,
+  78 verified, 0 errors. VR-002 (header-auth ordering), VR-001 property (b) (key-commitment
+  ordering, `commitment_ordering_proofs.rs`), VR-006 (AES-GCM buffer bounds in `prim`),
   the EDK list loop, the frame `ct ‖ tag` append and VR-010 (zeroization) are checked only here.
   The VR-010 model describes a `write_volatile` loop that no longer exists (removed in
   `a864ad87`); it is deferred and unchanged.
 - **Partly in-crate:** VR-001 (key commitment) — the commitment equality/length decision in
-  `validate_suite_data` is Verus-proven; constant-time is trusted to aws-lc-rs and the
-  validation-before-frame-decryption ordering is structural, not Verus-proven.
+  `validate_suite_data` is Verus-proven in-crate (property a); the validation-before-frame-decryption
+  ordering (property b) is now proven **model only** (`verification/commitment_ordering_proofs.rs`,
+  same status as VR-002) over a model of the decrypt pipeline, **not** over the shipped async
+  `decrypt_steps` (an in-place / typestate Stage 2 proof was deliberately not taken); constant-time
+  (property c) is trusted to aws-lc-rs.
 - **Done (in-crate):** VR-008 (ECDSA length) and the prim half of VR-009 (HKDF length,
   `prim/src/hkdf.rs`) are proven in-crate since Verus was enabled in `prim`.
 

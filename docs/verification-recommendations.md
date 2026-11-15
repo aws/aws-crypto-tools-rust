@@ -54,15 +54,16 @@ ESDK threat model (`docs/threat-model.md`).
 - **VR-011, compiler/lint-checked (not Verus):** esdk code outside `esdk/src/secret.rs` cannot
   read the bytes of the plaintext data key or of the derived message key (Rust privacy, plus a
   clippy `disallowed-methods` rule on the mpl data-key accessors).
-- **Model only:** `make -C verification verify` reports 71 verified, 0 errors over 10 standalone
-  files. VR-002 (header-auth ordering), VR-006 (AES-GCM buffer bounds), the EDK list loop, the
+- **Model only:** `make -C verification verify` reports 78 verified, 0 errors over 11 standalone
+  files. VR-002 (header-auth ordering), VR-001 property (b) (key-commitment ordering,
+  `commitment_ordering_proofs.rs`), VR-006 (AES-GCM buffer bounds), the EDK list loop, the
   frame `ct ‖ tag` append and VR-010 (zeroization) are checked only in these models, which import
   nothing from the crates and can drift from them.
 - **Not started:** VR-008 and the prim half of VR-009 (`prim/src/hkdf.rs`).
-- **Partly in-crate:** VR-001 (branch `verus-vr001`) — the key-commitment *decision* is Verus-proven; constant time and ordering are trusted/structural (see below).
+- **Partly in-crate:** VR-001 (branch `verus-vr001`) — the key-commitment *decision* (property a) is Verus-proven in-crate; its *ordering* (property b) is now proven **model only** (`commitment_ordering_proofs.rs`), not over the shipped decrypt path; constant time (property c) stays trusted (see below).
 
 **Highest-risk findings:**
-- **Key commitment verification** (Score: 16.0, partly in-crate — branch `verus-vr001`) — The accept/reject **decision** is now Verus-proven in shipped code: `validate_suite_data` (`esdk/src/message/header.rs`) drives the verified core `suite_data_check`, which accepts **iff** the header suite data equals the derived commit key **and** the committed length agrees, rejecting commitment-first otherwise (mutation-tested; `make -C esdk verus`: 59 verified, 0 errors). **Not Verus-proven, trusted by design:** the comparison's *constant-time* execution (an `aws_lc_rs::constant_time::verify_slices_are_equal` API contract — Verus does not model timing) and the *ordering* that this validation runs before frame decryption (enforced structurally by the async decrypt call-site, not by Verus). CVE-2020-8897 demonstrated this exact attack class; the decision is now proven correct, while its constant-time execution and its placement before frame decryption remain trusted/structural. The commitment-policy checks (`CommitmentPolicy::allows_for_encrypt`/`_decrypt`, called from `esdk/src/encrypt.rs`, `decrypt.rs`, `materials.rs` and `mpl/src/cmm/default_cmm.rs`) are implemented but unproven. (History: at `d8c1c3d` the legacy shim's policy checks were stubs returning `Ok(())`.)
+- **Key commitment verification** (Score: 16.0, partly in-crate — branch `verus-vr001`) — The accept/reject **decision** is now Verus-proven in shipped code: `validate_suite_data` (`esdk/src/message/header.rs`) drives the verified core `suite_data_check`, which accepts **iff** the header suite data equals the derived commit key **and** the committed length agrees, rejecting commitment-first otherwise (mutation-tested; `make -C esdk verus`: 59 verified, 0 errors). **Not Verus-proven, trusted by design:** the comparison's *constant-time* execution (an `aws_lc_rs::constant_time::verify_slices_are_equal` API contract — Verus does not model timing). The *ordering* that this validation runs before frame decryption (property b) is now proven **model only** (`verification/commitment_ordering_proofs.rs`), on a model of the decrypt pipeline — **not** over the shipped async `decrypt_steps`; what stays trusted is that `decrypt_steps` is the real pipeline and that the async frame loop runs after the synchronous commitment step returns (an in-place / typestate Stage 2 proof was deliberately not taken). CVE-2020-8897 demonstrated this exact attack class; the decision is now proven correct, the ordering is proven on a model, while its constant-time execution remains trusted. The commitment-policy checks (`CommitmentPolicy::allows_for_encrypt`/`_decrypt`, called from `esdk/src/encrypt.rs`, `decrypt.rs`, `materials.rs` and `mpl/src/cmm/default_cmm.rs`) are implemented but unproven. (History: at `d8c1c3d` the legacy shim's policy checks were stubs returning `Ok(())`.)
 - **Header authentication tag ordering** (Score: 12.0, model only) — The verify-before-decrypt ordering is proven over a model of the decrypt pipeline, not over the shipped async `decrypt_steps`.
 - **Header / EDK parsing safety** (Score: 10.8, partly in-crate) — The field decisions, big-endian decoding, bounded readers and EDK count check are verified in-crate; the async readers over `dyn Source` and the EDK list loop are not.
 
@@ -154,13 +155,19 @@ no longer exist. Current status per file (from `verification/README.md`):
 | `io_stream_model.rs` | 8 verified, 0 errors | infra | Possibly stale (models the removed `SafeRead`/`SafeWrite` readers) |
 | `io_stream_aligned.rs` | 24 verified, 0 errors | infra + VR-003/004/005 | Readers, header-field, EDK-count and sequence checks superseded in-crate. Model only: the EDK list loop (`read_edks`). Obsolete: the encryption-context sub-parser (parsing moved to MPL `EncryptionContext::from_bytes`) |
 | `header_auth_ordering_proofs.rs` | 5 verified, 0 errors | VR-002 | Model only; re-audited against `decrypt_steps` (`esdk/src/decrypt.rs`) and matches |
+| `commitment_ordering_proofs.rs` | 7 verified, 0 errors | VR-001 (b) | Model only; models the commit-before-frame ordering in `decrypt_steps` as a `HeaderState { Unverified, Verified }` machine; the modeled decision mirrors `suite_data_check`. **Not** a proof about the shipped async decrypt path |
 | `aes_gcm_bounds_proofs.rs` | 3 verified, 0 errors | VR-006 | Model only; re-audited against `prim/src/lib.rs` and matches |
-| **Total** | **71 verified, 0 errors** | | |
+| **Total** | **78 verified, 0 errors** | | |
 
 **Why the model-only properties are not in-crate** (from `docs/verus-proofs-report.md`):
 - **VR-002 header-auth ordering:** the order is the sequence of `.await?` calls in the async
   `decrypt_steps`, and "verified" is the `Result` of the aws-lc-rs tag check. Verus cannot verify
   async fns, and a sync core would only prove `Ok ⇒ Ok`.
+- **VR-001 (b) key-commitment ordering:** same reason as VR-002 — the order lives in the async
+  `decrypt_steps`. The commitment check runs in the synchronous `?`-chained step 2 and completes
+  before the async frame loop (step 4); the model proves a frame is unreachable without an
+  accepting commitment check. It is a standalone model, not a proof about `esdk/src/decrypt.rs`;
+  an in-place / typestate (Stage 2) proof was deliberately not taken.
 - **EDK list loop:** the count decision is in-crate; what is left is a `for` loop of `.await?`
   reads over `dyn Source` plus the MPL `EncryptedDataKey` builder, with no sync decision logic left
   to extract.
@@ -177,6 +184,7 @@ no longer exist. Current status per file (from `verification/README.md`):
 - `zeroize_proofs.rs` proves the equivalent safe indexed-write loop (Verus's `Vec` model exposes no `PointsTo` tokens); the `volatile` / `ptr.add(i)` equivalence was argued informally. The code it modeled has since been removed.
 - `frame_layout_proofs.rs` models `aes_encrypt` by its length contract; the ciphertext values (FFI) and the trait-object release are out of scope.
 - `header_auth_ordering_proofs.rs` models the tag check as a boolean `tag_ok`; the cryptographic soundness of the check is delegated to aws-lc-rs.
+- `commitment_ordering_proofs.rs` models the commitment comparison as a boolean `bytes_equal` tied to `Seq<u8>` equality (mirroring `suite_data_check`); the constant-time property of the comparison is delegated to aws-lc-rs, and the ordering is proven over a model of `decrypt_steps`, not over the shipped async path.
 - `io_stream_aligned.rs` has the project's only `#[verifier::external_body]`: `utf8_check` around `std::str::from_utf8`, a trusted boundary in the (now obsolete) encryption-context sub-parser model.
 
 ---
@@ -834,7 +842,7 @@ end to end.
 
 | Category | Threats | Verified (partial) | Top Target |
 |----------|---------|--------------------|------------|
-| Elevation of Privilege | 5 | **0** | Key commitment verification (VR-001, partly in-crate: the decision is Verus-proven; constant time and ordering are trusted/structural) |
+| Elevation of Privilege | 5 | **0** | Key commitment verification (VR-001, partly in-crate: the decision (a) is Verus-proven in-crate; the ordering (b) is proven model only; constant time (c) is trusted) |
 | Tampering | 8 | **2** | Frame sequence checks (VR-004, in-crate) and body AAD binding (VR-005, in-crate); header auth ordering (VR-002) in the model only |
 | Denial of Service | 5 | **3** | Header-field decisions and bounded readers (VR-003, in-crate) + EDK count (VR-007, in-crate); AES-GCM buffer bounds (VR-006) in the model only |
 | Information Disclosure | 6 | **0** | Zeroization (VR-010): the model covers removed code and is deferred. VR-011: esdk confines the data key and message key to `esdk/src/secret.rs` (compiler/lint-checked, not Verus; branch `vr011-confinement`) |
@@ -857,8 +865,8 @@ end to end.
 ## Next Steps
 
 **Done (at `5ea2a804`):**
-- Standalone models in `verification/` for VR-002, VR-003, VR-004, VR-005, VR-006, VR-007 and
-  VR-010 (`make -C verification verify`: 10 files, 71 verified, 0 errors).
+- Standalone models in `verification/` for VR-001 (b), VR-002, VR-003, VR-004, VR-005, VR-006,
+  VR-007 and VR-010 (`make -C verification verify`: 11 files, 78 verified, 0 errors).
 - In-crate Verus for `esdk` (Option A): `esdk` is Verus-buildable, and the synchronous cores of
   VR-003, VR-004, VR-005 and VR-007 are verified in shipped code behind the async `Source`/`Tee`
   adapters (`make -C esdk verus`: 40 verified, 0 errors, 22 exec fns and 3 proof fns).
@@ -877,16 +885,26 @@ end to end.
   which accepts iff the header suite data equals the derived commit key and the committed length
   agrees, rejecting commitment-first otherwise (`make -C esdk verus`: 59 verified, 0 errors, 35 exec
   fns and 3 proof fns; mutation-tested). Property (c) constant-time is trusted to the
-  `aws_lc_rs::constant_time::verify_slices_are_equal` API contract (Verus does not model timing);
-  property (b) ordering (validation before frame decryption) is enforced structurally by the async
-  decrypt call-site and is not Verus-proven.
+  `aws_lc_rs::constant_time::verify_slices_are_equal` API contract (Verus does not model timing).
+- VR-001, property (b) (branch `verus-vr001-ordering`): the key-commitment **ordering** (validation
+  before frame decryption) is proven **model only** in `verification/commitment_ordering_proofs.rs`
+  (`make -C verification verify`: 7 verified, 0 errors in that file). It models the committing-suite
+  portion of `decrypt_steps` as a `HeaderState { Unverified, Verified }` machine where the frame
+  decrypt step requires `Verified` and `Verified` is reachable only through a modeled commitment
+  decision (mirroring `suite_data_check`) that accepts; both obligations are mutation-tested. This
+  is a standalone model with the same status as VR-002 — **not** a proof about the shipped async
+  `decrypt_steps`. What stays trusted: that `decrypt_steps` is the real pipeline and that the async
+  frame loop runs after the synchronous commitment step returns. An in-place / typestate (Stage 2)
+  proof over the shipped path was deliberately not taken.
 
 **Remaining, in priority order:**
-1. **VR-001 properties (b) and (c)** — the decision (property a) is in-crate; what is left is **not**
-   Verus-provable here: the *constant-time* comparison (property c) is an aws-lc-rs API contract, and
-   the *ordering* that validation precedes frame decryption (property b) lives in the async decrypt
-   orchestration over `dyn Source`. A model-only / in-place ordering proof (as for VR-002) is a
-   possible future step; Verus still does not prove timing.
+1. **VR-001 property (c), and (b) in shipped code** — the decision (property a) is in-crate and the
+   *ordering* (property b) is now proven **model only** (`verification/commitment_ordering_proofs.rs`,
+   same status as VR-002). What is left is **not** Verus-provable here: the *constant-time* comparison
+   (property c) is an aws-lc-rs API contract (Verus does not model timing); and an **in-place /
+   typestate (Stage 2)** proof of the ordering over the shipped async `decrypt_steps` (over
+   `dyn Source`), which would remove the trust that `decrypt_steps` is the real pipeline — deliberately
+   not taken in this work.
 2. **VR-007 call ordering** — that the EDK count check runs before any keyring/KMS call. This
    lives in the async decrypt orchestration (`esdk/src/decrypt.rs`), so it is blocked the same way
    as VR-002.

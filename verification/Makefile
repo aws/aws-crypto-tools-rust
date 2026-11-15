@@ -4,7 +4,7 @@
 VERUS ?= $(HOME)/verus/verus
 
 # All standalone proof files in this directory.
-PROOFS := body_aad_proofs.rs edk_count_proofs.rs zeroize_proofs.rs frame_layout_proofs.rs header_parse_proofs.rs frame_sequence_proofs.rs io_stream_model.rs io_stream_aligned.rs header_auth_ordering_proofs.rs aes_gcm_bounds_proofs.rs
+PROOFS := body_aad_proofs.rs edk_count_proofs.rs zeroize_proofs.rs frame_layout_proofs.rs header_parse_proofs.rs frame_sequence_proofs.rs io_stream_model.rs io_stream_aligned.rs header_auth_ordering_proofs.rs commitment_ordering_proofs.rs aes_gcm_bounds_proofs.rs
 
 .PHONY: verify
 verify: $(PROOFS)
