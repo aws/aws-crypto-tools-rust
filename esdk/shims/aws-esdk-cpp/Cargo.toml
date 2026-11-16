@@ -15,13 +15,23 @@ readme = "README.md"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [dependencies]
-aws-crypto-mpl = { path = "../../../mpl" }
-aws-mpl-primitives = { path = "../../../prim" }
+aws-crypto-mpl = { path = "../../../mpl", default-features = false, features = ["kms", "ddb", "default-aws-sdk-clients", "rt-tokio"] }
+aws-mpl-primitives = { path = "../../../prim", default-features = false }
 cxx = "1.0.202"
 tokio = {version = "1.49", features = ["full"] }
-aws-esdk = { path = "../.." }
+aws-esdk = { path = "../..", default-features = false, features = ["kms", "ddb", "default-aws-sdk-clients", "rt-tokio"] }
 aws-smithy-runtime = { version = "1.16", features = ["client", "default-https-client"] }
 aws-smithy-runtime-api = { version = "1.19", features = ["client"] }
+
+[features]
+default = ["aws-lc-sys"]
+# The crypto backend: `aws-lc-sys` (the default), or `fips` for AWS-LC's FIPS module.
+# To use AWS-LC FIPS, build with `--no-default-features --features fips`,
+# or configure CMake with `-DESDK_FIPS=ON`.
+# The ESDK's other features stay on, because the C++ API always offers
+# the AWS KMS keyrings and the key store.
+aws-lc-sys = ["aws-esdk/aws-lc-sys"]
+fips = ["aws-esdk/fips"]
 
 [build-dependencies]
 cxx-build = "1.0.202"

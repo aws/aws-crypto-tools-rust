@@ -38,6 +38,14 @@ That produces the static library and the cxx-generated C++ sources under
 `target/`, which the `AWS::esdk` CMake target and the `Makefile` example/test
 targets consume.
 
+To use AWS-LC's FIPS module instead, build with:
+
+```bash
+cargo build --no-default-features --features fips
+```
+
+Through CMake, configure with `-DESDK_FIPS=ON`.
+
 ## Using it in a CMake project
 
 ```cmake

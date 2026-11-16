@@ -26,6 +26,12 @@ else()
     list(APPEND ESDK_CARGO_ARGS --release)
 endif()
 
+# Build with AWS-LC's FIPS module instead of the default AWS-LC.
+option(ESDK_FIPS "Build the ESDK with AWS-LC's FIPS module" OFF)
+if(ESDK_FIPS)
+    list(APPEND ESDK_CARGO_ARGS --no-default-features --features fips)
+endif()
+
 # Build the Rust staticlib/cxx-generated source
 execute_process(
     COMMAND cargo ${ESDK_CARGO_ARGS}
