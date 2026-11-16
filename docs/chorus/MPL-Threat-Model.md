@@ -30,7 +30,7 @@ Headline numbers (recounted from `docs/threat-model.md`, Appendix: Threat Risk M
 - Risk ratings: 3 High, 14 Medium, 9 Low.
 - Severity ratings: 5 Critical, 9 High, 10 Medium, 2 Low.
 - Likelihood ratings: 19 Low, 7 Medium, 0 High.
-- 23 of 26 threats have at least one Verus verification target; 3 (TM-MPL-019, TM-MPL-020, TM-MPL-026) have none because no provable code property exists. There are 33 active targets (26 threat-driven, 7 capability-driven). The targets are recommendations; no Verus proof exists yet.
+- 23 of 26 threats have at least one Verus verification target; 3 (TM-MPL-019, TM-MPL-020, TM-MPL-026) have none because no provable code property exists. There are 33 active targets (26 threat-driven, 7 capability-driven). The targets are recommendations. Five of them have a Verus proof of a model of the code (T02 partly, C01, C02, T03, T05; see section 7). None verifies the shipped code, and no score changed.
 - 9 bug reports exist (BUG-01 to BUG-09), 11 items when BUG-05 and BUG-07 are split into (a) and (b). All 9 link to at least one threat. On `main` `620771c` (re-checked 2026-11-10, with no change in `mpl/` or `prim/` since): open are BUG-01, BUG-04, BUG-05 (a) and (b), BUG-06, BUG-07 (a) and (b), BUG-08; fixed are BUG-02, BUG-03 and BUG-09 (commit `e9bde48`, #98).
 
 Risk matrix. Rows are severity, columns are likelihood. Each cell gives the number of threats and the resulting risk. The rule is the one used in `docs/threat-model.md`.
@@ -250,6 +250,7 @@ TM-MPL-002: Branch-key record decrypts under an attacker-influenced KMS key.
 
 - Attack: a DynamoDB tamperer (TA1) writes a record whose `kms-arn` points at an attacker-controlled key.
 - Mitigation: for `KmsKeyArn` and `KmsMrKeyArn` configurations, `resolve_key_store_arn` sends the configured ARN as the KMS `KeyId` after the compatibility check (`mpl/src/key_store/kms_ops.rs:88`, `:94-95`, `:105`). `DynamoDbKeyStore::build` validates the configured ARN (`key_store/branch_key_store.rs:381`).
+- Proof status (T03): Proved (model level, not the shipped code, under stated hypotheses): 39 verified, 0 errors. In both pinned modes the KMS `KeyId` is the configured ARN. Observation O2: the model of ARN validity accepts empty partition, region and account (looser than the spec); it does not change the property.
 - Residual: by spec, Discovery modes trust the record's ARN (`kms_ops.rs:96-103`).
 - Second pass: Discovery is not decrypt-only in this code. The hierarchical keyring calls `get_active_branch_key` on encrypt (`hierarchical_keyring.rs:692`), which runs the same `decrypt_branch_key` with the record's ARN (`branch_key_store.rs:792`, `:801`). A TA1 who can write the table, and who controls a KMS key whose key policy lets the application's role call Decrypt, can plant an ACTIVE record whose branch key the attacker knows, and new encryptions then wrap data keys under it. The preconditions (Discovery or MRDiscovery configured, DynamoDB write, an attacker key policy, no IAM scoping of `kms:Decrypt`) keep Likelihood at Low. The control is configuration: use a single-key configuration, or scope `kms:Decrypt` in IAM. BUG-04 does not widen this threat, because an attacker who can write the record already controls the ARN's region and account.
 
@@ -272,6 +273,7 @@ TM-MPL-005: Branch-key record substitution or rollback.
 - Attack: swap in a valid record from another branch key id or version, or replay an older ACTIVE record.
 - Mitigation: every attribute except `enc` (branch key id, type, version, kms-arn, hierarchy version, create time, custom context, `tablename` = logical name) is placed in the KMS encryption context and authenticated by KMS Decrypt or ReEncrypt as AAD (`key_store/branch_key_store.rs:132-136`; `kms_ops::build_authenticated_encryption_context`, `mpl/src/key_store/kms_ops.rs:49`). Materials are rebuilt only from the authenticated context, with a strict 32-byte branch-key check (`key_store/record.rs:95`, `:164`).
 - Residual: correctness rests on the reconstructed context exactly matching the write-time context. This is the top verification target (VR-2026-T01). A user-supplied `KeyStore` sits outside this mitigation, and the keyring does not compare the returned materials' id and version with the request (`hierarchical_keyring.rs:692-696`, `:934-939`; `key_store/client_impl.rs:305-308`, `:373-376`), although on decrypt the AAD still binds them. BUG-08 (a dead collision `Err` in `key_store/encryption_context.rs:91-102`) is informational and does not affect the rating.
+- Proof status: T02: Partly proved (model level, not the shipped code, under stated hypotheses): 21 verified, 1 errors. C01: Proved (model level, not the shipped code, under stated hypotheses): 40 verified, 0 errors. T01: None yet. G1 is a confirmed spec-vs-code gap: the code accepts a record without `create-time` and `hierarchy-version` (`lemma_g1_code_ignores_fields`); the impact is low because an altered record fails KMS Decrypt. BUG-08 is dead if and only if A_ITER holds. Rating unchanged.
 - Second pass, authentic-record rollback: an older ACTIVE record of the same branch key id is a valid, KMS-authenticated record. A TA1 with DynamoDB write access can put an earlier copy of the ACTIVE item back, and `get_active_branch_key` accepts it. The keyring then encrypts under an older branch-key version. No key is disclosed, and decrypt of existing messages is unaffected because the version comes from the EDK. The effect is a rotation rollback, which matters because rotation bounds the salt and IV birthday risk (TM-MPL-012). Nothing detects it: `fetch_record` uses a plain `GetItem` with no consistent-read flag (`branch_key_store.rs:148`, `:155-163`), and the keyring does not remember the highest version it has seen. VersionKey's optimistic lock (`:752`) protects concurrent rotations by the library, not against table tampering. The rating is unchanged because the core property (a record cannot be forged or moved to another id or version) holds.
 
 TM-MPL-013: Branch-key AAD inconsistency.
@@ -396,6 +398,7 @@ TM-MPL-014: KBKDF fixed-info misuse.
 - Attack: a wrong fixed-info layout or L value weakens derivation.
 - Mitigation: fixed info is the label `aws-kms-hierarchy`, `0x00`, the salt, and a big-endian 32-bit L = 256 (NIST SP 800-108 counter-mode HMAC-SHA-256), computed by `prim::kbkdf_ctr_hmac` (`prim/src/lib.rs:313`); the derivation is `derive_branch_key` (`branch_key_wrap.rs:122`) with a `Zeroizing` output.
 - Residual: correctness of the byte layout and L value. Second pass: the spec gives the salt, key and label, but not the fixed-info byte layout. Interoperability with other MPL runtimes therefore rests on the code, and a proof can only be stated against the code. No Dafny conformance claim is made.
+- Proof status (T05): Proved (model level, not the shipped code, under stated hypotheses): 33 verified, 0 errors. Fixed info is `aws-kms-hierarchy`, `0x00`, the 16-byte salt and `00 00 01 00` (38 bytes), and the output is 32 bytes. The KBKDF output is uninterpreted in the proof, so it does not show the derived key is correct. Finding F1: the spec does not state the layout (a spec gap, not a code defect). Rating unchanged.
 
 TM-MPL-019: Missing Duvet coverage.
 
@@ -421,34 +424,43 @@ Sources. Threat ratings are from `docs/threat-model.md`. Target IDs and scores a
 
 Bug status is from `docs/bug-reports/RECHECK-main-620771c.md` (including its addendum for HEAD `9955ecd`) and `docs/bug-reports/README.md`. Open: BUG-01, BUG-04, BUG-05 (a and b), BUG-06, BUG-07 (a and b), BUG-08. Fixed on `main` by `e9bde48` (#98): BUG-02, BUG-03, BUG-09.
 
-| Threat (risk) | Verification targets (score) | Related bugs |
-|---|---|---|
-| TM-MPL-001 (Low) | T24 (1.20), T20 (1.68) | - |
-| TM-MPL-002 (Medium) | T03 (5.12), T01 (8.96) | - (BUG-04 does not widen it) |
-| TM-MPL-003 (Low) | T19 (1.92) | BUG-06 (supplier path) |
-| TM-MPL-004 (Medium) | T11 (2.88) | - |
-| TM-MPL-005 (High) | T01 (8.96), T02 (6.72) | BUG-08 (open, informational) |
-| TM-MPL-006 (Medium) | T09 (2.56) | BUG-02 (fixed) |
-| TM-MPL-007 (Medium) | T17 (1.92) | BUG-04 (open) |
-| TM-MPL-008 (Medium) | T09 (2.56) | - |
-| TM-MPL-009 (High) | T13 (4.41) | BUG-06 (open, High) |
-| TM-MPL-010 (High) | T13 (4.41), T14 (3.78) | BUG-06 (open, High), BUG-09 (fixed) |
-| TM-MPL-011 (Medium) | T07 (3.84), T20 (1.68) | BUG-07 (through T07 property (e) only) |
-| TM-MPL-012 (Medium) | T04 (4.48) | - |
-| TM-MPL-013 (Medium) | T10 (2.88), T15 (1.92) | BUG-03 (fixed) |
-| TM-MPL-014 (Medium) | T05 (4.32) | - |
-| TM-MPL-015 (Low) | T26 (3.20) | BUG-07 (a) (open) |
-| TM-MPL-016 (Low) | T18 (1.92) | - |
-| TM-MPL-017 (Medium) | T12 (2.88), T15 (1.92) | BUG-03 (fixed) |
-| TM-MPL-018 (Medium) | T21 (2.24), T06 (4.20), T27 (3.78) | BUG-01 (open) |
-| TM-MPL-019 (Medium) | - (fully excluded: process and traceability, no code property) | - |
-| TM-MPL-020 (Low) | - (fully excluded: operational audit control) | - |
-| TM-MPL-021 (Low) | T22 (1.60) | - |
-| TM-MPL-022 (Low) | T23 (1.26), T06 (4.20) | BUG-01 (open) |
-| TM-MPL-023 (Low) | T16 (2.24), T20 (1.68), T06 (4.20) | BUG-01, BUG-05 (a and b), BUG-07 (b) (open); BUG-02 (fixed) |
-| TM-MPL-024 (Medium) | T25 (1.44) | - |
-| TM-MPL-025 (Medium, provisional) | T27 (3.78) | BUG-05 (b) is related, not the cause |
-| TM-MPL-026 (Low) | - (fully excluded: test-only, no target needed) | - |
+| Threat (risk) | Verification targets (score) | Related bugs | Proof status |
+|---|---|---|---|
+| TM-MPL-001 (Low) | T24 (1.20), T20 (1.68) | - | None yet |
+| TM-MPL-002 (Medium) | T03 (5.12), T01 (8.96) | - (BUG-04 does not widen it) | T03: Proved (model level, not the shipped code, under stated hypotheses): 39 verified, 0 errors |
+| TM-MPL-003 (Low) | T19 (1.92) | BUG-06 (supplier path) | None yet |
+| TM-MPL-004 (Medium) | T11 (2.88) | - | None yet |
+| TM-MPL-005 (High) | T01 (8.96), T02 (6.72) | BUG-08 (open, informational) | T02: Partly proved (model level, not the shipped code, under stated hypotheses): 21 verified, 1 errors. C01: Proved (model level, not the shipped code, under stated hypotheses): 40 verified, 0 errors. T01: None yet |
+| TM-MPL-006 (Medium) | T09 (2.56) | BUG-02 (fixed) | None yet |
+| TM-MPL-007 (Medium) | T17 (1.92) | BUG-04 (open) | None yet |
+| TM-MPL-008 (Medium) | T09 (2.56) | - | None yet |
+| TM-MPL-009 (High) | T13 (4.41) | BUG-06 (open, High) | None yet |
+| TM-MPL-010 (High) | T13 (4.41), T14 (3.78) | BUG-06 (open, High), BUG-09 (fixed) | None yet |
+| TM-MPL-011 (Medium) | T07 (3.84), T20 (1.68) | BUG-07 (through T07 property (e) only) | None yet |
+| TM-MPL-012 (Medium) | T04 (4.48) | - | None yet |
+| TM-MPL-013 (Medium) | T10 (2.88), T15 (1.92) | BUG-03 (fixed) | None yet |
+| TM-MPL-014 (Medium) | T05 (4.32) | - | T05: Proved (model level, not the shipped code, under stated hypotheses): 33 verified, 0 errors |
+| TM-MPL-015 (Low) | T26 (3.20) | BUG-07 (a) (open) | None yet |
+| TM-MPL-016 (Low) | T18 (1.92) | - | None yet |
+| TM-MPL-017 (Medium) | T12 (2.88), T15 (1.92) | BUG-03 (fixed) | None yet |
+| TM-MPL-018 (Medium) | T21 (2.24), T06 (4.20), T27 (3.78) | BUG-01 (open) | None yet |
+| TM-MPL-019 (Medium) | - (fully excluded: process and traceability, no code property) | - | n/a |
+| TM-MPL-020 (Low) | - (fully excluded: operational audit control) | - | n/a |
+| TM-MPL-021 (Low) | T22 (1.60) | - | None yet |
+| TM-MPL-022 (Low) | T23 (1.26), T06 (4.20) | BUG-01 (open) | None yet |
+| TM-MPL-023 (Low) | T16 (2.24), T20 (1.68), T06 (4.20) | BUG-01, BUG-05 (a and b), BUG-07 (b) (open); BUG-02 (fixed) | None yet |
+| TM-MPL-024 (Medium) | T25 (1.44) | - | None yet |
+| TM-MPL-025 (Medium, provisional) | T27 (3.78) | BUG-05 (b) is related, not the cause | None yet |
+| TM-MPL-026 (Low) | - (fully excluded: test-only, no target needed) | - | n/a |
+
+Proof status. Five Verus proofs exist in `verus-proofs/` (`verus-proofs/README.md`, `verus-proofs/README-t03-t05.md`). Each proves a re-typed model of the shipped Rust, not the shipped code. They reduce uncertainty about the logic, not about the shipped code. No rating, score or rank changed, and coverage gaps will be recalculated when a proof is linked to the shipped code. C02 (Proved (model level, not the shipped code, under stated hypotheses): 21 verified, 0 errors) is a capability target and has no threat ID.
+
+- G1 confirmed formally (T02, TM-MPL-005): the code accepts a branch-key record that lacks `create-time` and `hierarchy-version`; the spec says a record MUST include them. The code is more permissive than the spec, never stricter.
+- O1 DEV-ALIAS (T03, TM-MPL-004): two byte-identical alias ARNs fail the code's MRK match where the spec text matches. A documented deviation, unreachable for a configuration `build()` accepts.
+- O2 (T03, TM-MPL-002): the model of ARN validity accepts an ARN with empty partition, region and account, which is looser than the spec. No effect on the T03 property.
+- F1 (T05, TM-MPL-014): the spec does not state the KBKDF fixed-info layout. A spec gap, not a code defect.
+- BUG-08 (C01): the collision `Err` in `build_base` is dead if and only if A_ITER holds (a `BTreeMap` yields each key once), and live if a key repeats.
+- C02 relies on vstd's own `assume_specification` for `copy_from_slice`.
 
 The refreshed targets since the previous edition: T27 is new (3.78, rank 14; provisional because TM-MPL-025 is unconfirmed). T21 rose from 1.96 to 2.24 (coverage gap 0.7 to 0.8; three liveness properties added). T25 stays 1.44 with citations moved and `Keyring::adopt` added to its scope. T26 stays 3.20 with two sites added (expired `LocalCmc` entries, the un-wiped key `Vec` on the ECDSA error path). T13 (4.41) and T14 (3.78) were re-scored at the `620771c` refresh when TM-MPL-009 and TM-MPL-010 moved to Likelihood Medium. There are 33 active targets: 26 threat-driven (T01 to T07, T09 to T27) and 7 capability-driven (C01 to C05, C07, C08).
 
@@ -569,7 +581,7 @@ These notes record differences between sources, or editorial choices. In every c
 6. Bug-to-threat links. All nine bugs now map to a threat. BUG-02 and BUG-08, which the previous edition listed as unlinked, map through the bug reports' Related IDs and `docs/completeness-audit.md` section 3b (BUG-02 to TM-MPL-006 and 023, BUG-08 to TM-MPL-005). BUG-07 links to TM-MPL-011 only through target T07. The mapping from a bug to a threat does not change that threat's rating, except that BUG-06 is the confirmed realization of TM-MPL-009 and TM-MPL-010.
 7. BUG-06 severity. The bug reports rate BUG-06 High. The severity was raised from Low to High on the owner's decision after the main re-check. The finding, evidence, status and confidence are unchanged. Every bug table in this document shows High.
 8. Advisory verification. The previous edition marked CVE-2026-6550 / GHSA-v638-38fc-rhfv as unverified. It has since been verified against the GitHub Advisory Database. It concerns a caching CMM in the AWS Encryption SDK for Python and does not apply to this code.
-9. Targets. Target IDs and scores come from `docs/verification-targets.md` as refreshed at HEAD `9955ecd`. T08 and C06 are retired and appear nowhere in the cross-reference. No Verus proof exists for any target.
+9. Targets. Target IDs and scores come from `docs/verification-targets.md` as refreshed at HEAD `9955ecd`. T08 and C06 are retired and appear nowhere in the cross-reference. Five targets (T02, C01, C02, T03, T05) have a Verus proof of a model of the code, listed in section 7; scores and ranks are the pre-proof values and were not changed.
 10. Citations. File and line citations were copied from `docs/threat-model.md`, which re-checked them against the working tree at HEAD `9955ecd`, and were re-run mechanically against the working tree for this edition. Line numbers refer to the current code on `main` `620771c`.
 
 ## Appendix B. Threat risk matrix and rating history

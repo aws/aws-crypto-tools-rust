@@ -24,6 +24,32 @@ No capability-driven target was added, removed or re-scored. C01 to C08 keep the
 3. **The bound is not yet well defined.** The spec's own defaults break its ordering (Inflight TTL 20 s, Grace Period 10 s); the code uses 10 s on purpose (`storm_tracking.rs:117-119`). "At least 1" is in the configured time unit, while the code takes a `Duration` and tests accept sub-second values (`test_sub_second_grace_period_is_honored`, `test_storm_tracking_cmc.rs:283`). The owner has to choose the minimum before a proof can state it; T21 (a) keeps it symbolic.
 4. **It would not change the order of work.** With this document's conventions a sibling scores 2 (consequence: a spec-MUST violation that downstream accepts) × 0.9 (tests exist and encode the regressed contract) × 0.7 (caller-chosen configuration) × 2 (opt-in storm-tracking cache) = 2.52. That is far below the 6.0 quick-win threshold. It would also not address BUG-01, which needs upper bounds (T06), not lower bounds.
 
+## Proofs written (HEAD d288750)
+
+This file covers C01 and C02; T02, T03 and T05 are in `01-threat-driven.md`. Five targets have a Verus proof in `verus-proofs/` (HEAD `d288750`; run again with `~/verus/verus verus-proofs/<file>.rs` from the repo root, Verus 0.2026.07.12.0b42f4c). Each is a proof about a hand-written, re-typed model of the shipped Rust. None verifies the shipped code: the code is not inside `verus!`, is not compiled by Verus, and nothing detects a later edit to `mpl/` or `prim/`. The link between model and code is a correspondence table in each file header, reviewed by a human. Read every status as: the logic of the model is machine-checked; the model's fidelity to the code is audited, not checked. Sources: `verus-proofs/README.md` (T02, C01, C02) and `verus-proofs/README-t03-t05.md` (T03, T05).
+
+| Target | Proof file | Result line (re-run) | Status | Assumptions |
+|---|---|---|---|---|
+| C01 | [`c01_ec_roundtrip.rs`](../../verus-proofs/c01_ec_roundtrip.rs) | `verification results:: 40 verified, 0 errors` | Proved (model level, not the shipped code, under stated hypotheses). | A_ITER (`custom.iter()` yields each key once; precondition of every builder theorem); A_STR; A_BLD; A_DDB and A_NAME for the `theorem_prod_*` results; T02 model copied into the file. |
+| C02 | [`c02_sign_fixed_len.rs`](../../verus-proofs/c02_sign_fixed_len.rs) | `verification results:: 21 verified, 0 errors` | Proved (model level, not the shipped code, under stated hypotheses). | vstd `assume_specification` for `copy_from_slice` (A1); abstract signing closure (A3); `Backend` trait without contracts stands for aws-lc-rs (A4); ghost call log checked by hand (A5). |
+
+Canonical status strings (the same text is in each YAML `proof_status` field and in the `Proof status` column):
+
+- C01: Proved (model level, not the shipped code, under stated hypotheses): 40 verified, 0 errors
+- C02: Proved (model level, not the shipped code, under stated hypotheses): 21 verified, 0 errors
+
+**Scores are unchanged.** Scores, ranks, coverage gaps, feasibility, severity and the quick-wins list in this document record the pre-proof prioritization and were not changed by these proofs. A model-level proof is not a proof of the shipped code, and re-scoring would be arbitrary. Coverage gaps will be recalculated when a proof is linked to the shipped code (for example with `cargo verus` on the crate, or by moving the logic into `verus!`).
+
+### Findings from the proofs
+
+- **BUG-08 (C01).** The collision `Err` branch in `build_base` is dead if and only if A_ITER holds (a `BTreeMap` yields each key once), and live if a key repeats. Model level.
+- **C02 assumption.** The no-partial-write claim relies on vstd's own `assume_specification` for `<[T]>::copy_from_slice`, listed in the proof's TCB.
+
+### Next steps for the proofs
+
+- Link each proof to the shipped code (`cargo verus` on the crate, or move the logic into `verus!`), then recalculate its coverage gap.
+- Add a CI step that runs the proof files and fails on any change to the result lines (T02 is expected to show `1 errors` until G1 is fixed).
+
 ## 0. What changed since a1e23d7
 
 | ID | Change | Old score | New score | Reason |
@@ -58,16 +84,16 @@ Ties: higher severity, then higher feasibility, then ID. Quick win: score > 6.0 
 
 ## 2. Summary table (ranked)
 
-| Rank | ID | Score | Origin | Target | Property | Agent | Ref | Effort |
-|---|---|---|---|---|---|---|---|---|
-| 1 | VR-2026-C01 | 6.72 | C | `key_store/encryption_context.rs` builders ∘ `key_store/record.rs` reconstruction | CreateKey ECs reconstruct to exactly (id, version, custom EC); collision branch dead (BUG-08); record→EC→record inverse | verus-header-parsing-proofs | cap:cat1 (1c) | 1 week (quick win) |
-| 2 | VR-2026-C02 | 6.40 | C | `prim::ecdsa` `sign_fixed_len`, `check_sig_len`, `ecdsa_sign*`, `ecdsa_verify*` | ≤ 128 `sign_once` calls; no panic; buffer written only with an exact-length candidate | verus-zero-panic | cap:cat2 (2d) | 1 week (quick win) |
-| 3 | VR-2026-C03 | 5.60 | C | `prim::{hmac, digest, aes_encrypt, aes_decrypt, hkdf*, kbkdf_ctr_hmac}`, `DigestContext::finish` | No panic on any input; exact Ok/Err length contract | verus-zero-panic | cap:cat2 (2a/2d) | 1 week |
-| 4 | VR-2026-C07 | 5.04 | C | `materials_checks::{check_encryption_transition, check_decryption_transition, check_*_materials_complete}` + `send()` wiring | Transition accepted iff the keyring only added a PDK (when absent) and EDKs; every fluent `send()` runs the check | verus-header-parsing-proofs | cap:cat1 (1a/1b) | 1 week |
-| 5 | VR-2026-C04 | 2.80 | C | PDK length invariant (`check_data_key_length`, `add_data_key` ×2, materials `build` ×2, keyring producers) | Every materials PDK has the suite's `encryption_key_length` (expected to VERIFY) | verus-header-parsing-proofs | cap:cat1 (1a) | 1 week |
-| 6 | VR-2026-C05 | 2.40 | C | `AlgorithmSuiteId::specification`, `id_bytes`, `verification_key_length` | Suite table refines spec; ids injective, never `00 00`; cross-crate length agreement | verus-header-parsing-proofs | cap:cat1 (1a) | 1 day |
-| 7 | VR-2026-C08 | 0.96 | C | `CacheEntry::record_use` + `Cmc::update_usage_metadata` impls | Counters never wrap; both change together or neither; overflow deletes the entry | verus-zero-panic | cap:cat2 (2b) | 1 day |
-| — | VR-2026-C06 | Retired | C | ~~`HierarchicalKeyring::new` grace-vs-TTL integer division~~ | — | — | — | — |
+| Rank | ID | Score | Origin | Target | Property | Agent | Ref | Effort | Proof status |
+|---|---|---|---|---|---|---|---|---|---|
+| 1 | VR-2026-C01 | 6.72 | C | `key_store/encryption_context.rs` builders ∘ `key_store/record.rs` reconstruction | CreateKey ECs reconstruct to exactly (id, version, custom EC); collision branch dead (BUG-08); record→EC→record inverse | verus-header-parsing-proofs | cap:cat1 (1c) | 1 week (quick win) | Proved (model level, not the shipped code, under stated hypotheses): 40 verified, 0 errors |
+| 2 | VR-2026-C02 | 6.40 | C | `prim::ecdsa` `sign_fixed_len`, `check_sig_len`, `ecdsa_sign*`, `ecdsa_verify*` | ≤ 128 `sign_once` calls; no panic; buffer written only with an exact-length candidate | verus-zero-panic | cap:cat2 (2d) | 1 week (quick win) | Proved (model level, not the shipped code, under stated hypotheses): 21 verified, 0 errors |
+| 3 | VR-2026-C03 | 5.60 | C | `prim::{hmac, digest, aes_encrypt, aes_decrypt, hkdf*, kbkdf_ctr_hmac}`, `DigestContext::finish` | No panic on any input; exact Ok/Err length contract | verus-zero-panic | cap:cat2 (2a/2d) | 1 week | None yet |
+| 4 | VR-2026-C07 | 5.04 | C | `materials_checks::{check_encryption_transition, check_decryption_transition, check_*_materials_complete}` + `send()` wiring | Transition accepted iff the keyring only added a PDK (when absent) and EDKs; every fluent `send()` runs the check | verus-header-parsing-proofs | cap:cat1 (1a/1b) | 1 week | None yet |
+| 5 | VR-2026-C04 | 2.80 | C | PDK length invariant (`check_data_key_length`, `add_data_key` ×2, materials `build` ×2, keyring producers) | Every materials PDK has the suite's `encryption_key_length` (expected to VERIFY) | verus-header-parsing-proofs | cap:cat1 (1a) | 1 week | None yet |
+| 6 | VR-2026-C05 | 2.40 | C | `AlgorithmSuiteId::specification`, `id_bytes`, `verification_key_length` | Suite table refines spec; ids injective, never `00 00`; cross-crate length agreement | verus-header-parsing-proofs | cap:cat1 (1a) | 1 day | None yet |
+| 7 | VR-2026-C08 | 0.96 | C | `CacheEntry::record_use` + `Cmc::update_usage_metadata` impls | Counters never wrap; both change together or neither; overflow deletes the entry | verus-zero-panic | cap:cat2 (2b) | 1 day | None yet |
+| — | VR-2026-C06 | Retired | C | ~~`HierarchicalKeyring::new` grace-vs-TTL integer division~~ | — | — | — | — | None (retired) |
 
 Quick wins: **C01**, **C02**.
 
@@ -135,6 +161,8 @@ recommendation:
     blast_radius: 4
     product: "3 × 0.8 × 0.7 × 4 = 6.72"
   quick_win: true
+  proof_status: "Proved (model level, not the shipped code, under stated hypotheses): 40 verified, 0 errors"
+  proof_file: verus-proofs/c01_ec_roundtrip.rs
   dependencies: [VR-2026-T02]
 ```
 
@@ -179,6 +207,8 @@ recommendation:
     blast_radius: 4
     product: "2 × 0.8 × 1.0 × 4 = 6.40"
   quick_win: true
+  proof_status: "Proved (model level, not the shipped code, under stated hypotheses): 21 verified, 0 errors"
+  proof_file: verus-proofs/c02_sign_fixed_len.rs
   dependencies: []
 ```
 
@@ -228,6 +258,7 @@ recommendation:
     blast_radius: 4
     product: "2 × 0.7 × 1.0 × 4 = 5.60"
   quick_win: false
+  proof_status: "None yet"
   dependencies: []
 ```
 
@@ -291,6 +322,7 @@ recommendation:
     blast_radius: 4      # every MPL and ESDK path goes through send()
     product: "3 × 0.6 × 0.7 × 4 = 5.04"
   quick_win: false       # score < 6.0
+  proof_status: "None yet"
   dependencies: []
 ```
 
@@ -345,6 +377,7 @@ recommendation:
     blast_radius: 4
     product: "2 × 0.5 × 0.7 × 4 = 2.80"
   quick_win: false
+  proof_status: "None yet"
   dependencies: []
 ```
 
@@ -384,6 +417,7 @@ recommendation:
     blast_radius: 4
     product: "3 × 0.5 × 0.4 × 4 = 2.40"
   quick_win: false
+  proof_status: "None yet"
   dependencies: []
 ```
 
@@ -430,6 +464,7 @@ recommendation:
     blast_radius: 2      # Cmc API users only
     product: "2 × 0.6 × 0.4 × 2 = 0.96"
   quick_win: false
+  proof_status: "None yet"
   dependencies: []
 ```
 
@@ -448,6 +483,7 @@ recommendation:
     overflow risk. Nothing non-trivial is left to prove. The remaining risk (a user Cmc returning
     grace_period() = None skips the check) is a trusted-caller note under TM-MPL-010, not a code property.
   successor: none
+  proof_status: "None (retired)"
 ```
 
 ## 4. Overlaps with Step 1

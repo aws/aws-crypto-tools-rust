@@ -26,6 +26,43 @@ Other effects:
 - **Threat coverage.** Every TM-MPL-001..026 is accounted for in §4 and §6: 23 have an active target (001..018, 021..025), 3 are fully excluded (019, 020 and the new 026, test-only loopback servers). The STRIDE table (§4) now counts 26 threats; it counted 24 before (completeness audit G4-1).
 - **Sections changed.** Header and §0 (new IDs), this section, §0.1 (history note), §1 (re-sorted, T27 added, T21 re-scored), §2 (T27 added; T02, T26, T25 updated; ranks), §3 (T27 row; T21, T25, T26, T02 rows), §4 (26 threats), §5 (note), §6 (TM-MPL-026, TM-MPL-025, 001..026; the TM-MPL-018 partial-exclusion line now names T27 as well as T21 and T06), §7 (new findings). `04-validation.md` was rewritten for `9955ecd` after these edits (18 checks, one mapping fix).
 
+## Proofs written (HEAD d288750)
+
+Five targets have a Verus proof in `verus-proofs/` (HEAD `d288750`; run again with `~/verus/verus verus-proofs/<file>.rs` from the repo root, Verus 0.2026.07.12.0b42f4c). Each is a proof about a hand-written, re-typed model of the shipped Rust. None verifies the shipped code: the code is not inside `verus!`, is not compiled by Verus, and nothing detects a later edit to `mpl/` or `prim/`. The link between model and code is a correspondence table in each file header, reviewed by a human. Read every status as: the logic of the model is machine-checked; the model's fidelity to the code is audited, not checked. Sources: `verus-proofs/README.md` (T02, C01, C02) and `verus-proofs/README-t03-t05.md` (T03, T05).
+
+| Target | Proof file | Result line (re-run) | Status | Assumptions |
+|---|---|---|---|---|
+| T02 | [`t02_record_reconstruction.rs`](../verus-proofs/t02_record_reconstruction.rs) | `verification results:: 21 verified, 1 errors` | Partly proved (model level, not the shipped code, under stated hypotheses). The one error is the intentional G1 obligation `lemma_g1_spec_soundness_FAILS`. | Verus, Z3, vstd `Seq`/`Map`/`Set` axioms; A_STR (`String` is `Seq<char>`); nine hand-copied string constants. |
+| C01 | [`c01_ec_roundtrip.rs`](../verus-proofs/c01_ec_roundtrip.rs) | `verification results:: 40 verified, 0 errors` | Proved (model level, not the shipped code, under stated hypotheses). | A_ITER (`custom.iter()` yields each key once; precondition of every builder theorem); A_STR; A_BLD; A_DDB and A_NAME for the `theorem_prod_*` results; T02 model copied into the file. |
+| C02 | [`c02_sign_fixed_len.rs`](../verus-proofs/c02_sign_fixed_len.rs) | `verification results:: 21 verified, 0 errors` | Proved (model level, not the shipped code, under stated hypotheses). | vstd `assume_specification` for `copy_from_slice` (A1); abstract signing closure (A3); `Backend` trait without contracts stands for aws-lc-rs (A4); ghost call log checked by hand (A5). |
+| T03 | [`t03_resolve_pinned_arn.rs`](../verus-proofs/t03_resolve_pinned_arn.rs) | `verification results:: 39 verified, 0 errors` | Proved (model level, not the shipped code, under stated hypotheses). Discovery and MrDiscovery arms are out of scope (BUG-04, T17). | H_ORACLE, H_BUILD, H_CALLER, A_STR, A_MR. |
+| T05 | [`t05_kbkdf_fixed_info.rs`](../verus-proofs/t05_kbkdf_fixed_info.rs) | `verification results:: 33 verified, 0 errors` | Proved (model level, not the shipped code, under stated hypotheses). The KBKDF output is uninterpreted, so this shows which arguments the primitive receives, not that the derived key is correct. | A_KDF (uninterpreted `kbkdf_spec`), A_STD, A_LBL. |
+
+Canonical status strings (the same text is in each YAML `proof_status` field and in the `Proof status` column):
+
+- T02: Partly proved (model level, not the shipped code, under stated hypotheses): 21 verified, 1 errors
+- C01: Proved (model level, not the shipped code, under stated hypotheses): 40 verified, 0 errors
+- C02: Proved (model level, not the shipped code, under stated hypotheses): 21 verified, 0 errors
+- T03: Proved (model level, not the shipped code, under stated hypotheses): 39 verified, 0 errors
+- T05: Proved (model level, not the shipped code, under stated hypotheses): 33 verified, 0 errors
+
+**Scores are unchanged.** Scores, ranks, coverage gaps, feasibility, severity and the quick-wins list in this document record the pre-proof prioritization and were not changed by these proofs. A model-level proof is not a proof of the shipped code, and re-scoring would be arbitrary. Coverage gaps will be recalculated when a proof is linked to the shipped code (for example with `cargo verus` on the crate, or by moving the logic into `verus!`).
+
+### Findings from the proofs
+
+- **G1 confirmed formally (T02).** The code accepts a branch-key record that lacks `create-time` and `hierarchy-version`: the outcome is identical with or without them (`lemma_g1_code_ignores_fields`, `lemma_g1_witness_accepted_without_fields`), and the spec property fails as `lemma_g1_spec_soundness_FAILS`. The code is more permissive than the spec, never stricter (`lemma_g1_spec_completeness`).
+- **O1, DEV-ALIAS (T03).** Two byte-identical alias ARNs fail the code's MRK match, where the spec text matches. This is a documented deviation, stricter than the spec, and unreachable for any configuration `build()` accepts (H_BUILD).
+- **O2 (T03).** The model of ARN validity accepts an ARN with empty partition, region and account, which is looser than the spec. It does not affect the T03 property (the KMS `KeyId` is the configured ARN either way). It is a conformance gap in config validation.
+- **F1 (T05).** The spec does not state the KBKDF fixed-info layout `"aws-kms-hierarchy" || 0x00 || salt(16) || 00 00 01 00` (38 bytes, 32-byte output). This is a spec gap, not a code defect.
+- **BUG-08 (C01).** The collision `Err` branch in `build_base` is dead if and only if A_ITER holds (a `BTreeMap` yields each key once), and live if a key repeats. Model level.
+- **C02 assumption.** The no-partial-write claim relies on vstd's own `assume_specification` for `<[T]>::copy_from_slice`, listed in the proof's TCB.
+
+### Next steps for the proofs
+
+- Link each proof to the shipped code (`cargo verus` on the crate, or move the logic into `verus!`), then recalculate its coverage gap.
+- Owner decisions: enforce `create-time` and `hierarchy-version` on a read path (G1); state the KBKDF fixed-info layout in the spec (F1); decide whether config validation should reject ARNs with empty parts (O2).
+- Add a CI step that runs the proof files and fails on any change to the result lines (T02 is expected to show `1 errors` until G1 is fixed).
+
 ## 0. Methodology notes
 
 - **Formula.** `Priority = Severity × Coverage_Gap × Feasibility × Blast_Radius`. Every score was recomputed from its factors (see 04-validation check 5).
@@ -61,43 +98,43 @@ History of the `620771c` refresh. Scores and ranks in this table are as of that 
 
 ## 1. Combined ranked summary
 
-| Rank | Score | Origin | Target | Property | Agent | Ref | Effort |
-|---|---|---|---|---|---|---|---|
-| 1 | 8.96 | T | T01 key-store auth-EC builders (`kms_ops.rs:49`, `branch_key_store.rs:132`, `:1089`, `:1141`) | Write-time EC == KMS-AAD EC == reconstruction EC | verus-header-parsing-proofs | TM-MPL-005, TM-MPL-002 | 2 weeks |
-| 2 | 6.72 | T | T02 `record::branch_key_materials_from_authenticated_encryption_context` (`record.rs:95`) | Exact Ok/Err characterization, including the spec clause that a record MUST include `create-time` and `hierarchy-version` (expected FAIL, G1) | verus-header-parsing-proofs | TM-MPL-005 | 1 week |
-| 3 | 6.72 | C | C01 `key_store/encryption_context.rs` builders ∘ `record.rs` reconstruction | Round trip on (id, version, custom EC); collision branch dead (BUG-08) | verus-header-parsing-proofs | cap:cat1 (1c) | 1 week |
-| 4 | 6.40 | C | C02 `prim::ecdsa` `sign_fixed_len` (`ecdsa.rs:180`) and callers | ≤ 128 attempts; no panic; no partial write | verus-zero-panic | cap:cat2 (2d) | 1 week |
-| 5 | 5.60 | C | C03 `prim::{hmac, digest, aes_encrypt, aes_decrypt, hkdf*, kbkdf_ctr_hmac}`, `DigestContext::finish` | No panic; exact length contract | verus-zero-panic | cap:cat2 (2a/2d) | 1 week |
-| 6 | 5.12 | T | T03 `kms_ops::resolve_key_store_arn` pinned modes (`kms_ops.rs:88`) | KeyId is always the configured ARN | verus-header-parsing-proofs | TM-MPL-002 | 1 day |
-| 7 | 5.04 | C | C07 `materials_checks` transitions + `send()` wiring | Keyring may only add PDK/EDKs; every `send()` checks | verus-header-parsing-proofs | cap:cat1 (1a/1b) | 1 week |
-| 8 | 4.48 | T | T04 `branch_key_wrap::wrap` (`:157`) | Fresh salt + IV per call; 60+n layout | verus-unsafe-ffi-safety | TM-MPL-012 | 1 week |
-| 9 | 4.41 | T | T13 `build_cache_identifier` (`cache_entry_identifier.rs:35`) + keyring inputs | Injective iff fields NUL-free (BUG-06 counterexample) | verus-header-parsing-proofs | TM-MPL-009, TM-MPL-010 | 1 week |
-| 10 | 4.32 | T | T05 `branch_key_wrap::derive_branch_key` (`:122`) | KBKDF fixed-info layout, 32 B out | verus-header-parsing-proofs | TM-MPL-014 | 1 day |
-| 11 | 4.20 | T | T06 `SystemTime + Duration` (`hierarchical_keyring.rs:702`, `:945`; `storm_tracking.rs:333`, `:680`) | No overflow panic (expected FAIL, BUG-01) | verus-zero-panic | TM-MPL-018, 022, 023 | 1 week |
-| 12 | 3.84 | T | T07 raw-AES wrap/unwrap + `prim::aes_*` | Fresh 12 B IV; length preconditions | verus-unsafe-ffi-safety | TM-MPL-011 | 1 week |
-| 13 | 3.78 | T | T14 `as_branch_key_materials` (`:1000`), `cache_entry_within_limits` (`:989`), `generate_partition_id` (`:626`) | Only BranchKey entries; exact `Duration` TTL; v4 id | verus-header-parsing-proofs | TM-MPL-010 | 1 week |
-| 14 | 3.78 | T | T27 `HierarchicalKeyring::on_decrypt` EDK loop → `try_decrypt_edk` → `decrypt_edk_at_version` (`hierarchical_keyring.rs:734`, `:751-772`, `:901`) | Key-store calls and loop iterations per decrypt bounded by the EDK list (verifies); no constant bound (expected FAIL; provisional, TM-MPL-025 unconfirmed) | verus-zero-panic | TM-MPL-025, TM-MPL-018 | 1 week |
-| 15 | 3.20 | T | T26 transient / error-path secret buffers | Wiped or moved to `ZeroizeOnDrop` on every exit (expected FAIL: BUG-07a, un-wiped decrypt buffers, `ecdsa_generate_keypair` error path); expired `LocalCmc` entries resident until read | verus-unsafe-ffi-safety | TM-MPL-015 | 2 weeks |
-| 16 | 2.88 | T | T10 `compute_aad` (`:61`), UUID codec | AAD layout; UUID round trip | verus-header-parsing-proofs | TM-MPL-013 | 1 week |
-| 17 | 2.88 | T | T11 `aws_kms_mrk_match_for_decrypt` (`mrk_match.rs:24`), `is_arn_compatible` | MRK match semantics | verus-header-parsing-proofs | TM-MPL-004 | 2 weeks |
-| 18 | 2.88 | T | T12 `merge_reproduced_encryption_context` (`default_cmm.rs:273`) | Union on agreement | verus-header-parsing-proofs | TM-MPL-017 | 1 week |
-| 19 | 2.80 | C | C04 PDK length invariant (`check_data_key_length`, `algorithm_suite.rs:547`) | PDK length = suite key length (expected VERIFY) | verus-header-parsing-proofs | cap:cat1 (1a) | 1 week |
-| 20 | 2.56 | T | T09 commitment policy + `DefaultCmm` gates | Allow-tables match spec | verus-header-parsing-proofs | TM-MPL-006, TM-MPL-008 | 1 week |
-| 21 | 2.40 | C | C05 suite table | Refines spec; ids injective | verus-header-parsing-proofs | cap:cat1 (1a) | 1 day |
-| 22 | 2.24 | T | T16 malformed-input panic sites | No panic on malformed EDK/EC/ARN | verus-zero-panic | TM-MPL-023 | 1 week |
-| 23 | 2.24 | T | T21 `cmc/storm_tracking.rs` (`build` `:606`) | Builder enforces spec ordering (expected FAIL); `\|inflight\| ≤ fan_out`; failed leader's mark cleared (expected FAIL); every waiter has a deadline (expected FAIL); no panic under the state lock | verus-zero-panic (+ concurrency) | TM-MPL-018 | 1 month |
-| 24 | 1.92 | T | T15 `EncryptionContext::{to_bytes, from_bytes}` (`:91`, `:145`) | Canonical codec (expected VERIFY) | verus-header-parsing-proofs | TM-MPL-013, TM-MPL-017 | 2 weeks |
-| 25 | 1.92 | T | T17 Discovery / MRDiscovery ARN (`kms_ops.rs:96-102`, `:118`, `:144`) | Region rewrite only for MRKs (expected FAIL, BUG-04) | verus-header-parsing-proofs | TM-MPL-007 | 1 week |
-| 26 | 1.92 | T | T18 `version_key` EC derivation (`branch_key_store.rs:641`, `:706-722`) | Preserves id/arn/hv/tablename/custom EC | verus-header-parsing-proofs | TM-MPL-016 | 1 week |
-| 27 | 1.92 | T | T19 hierarchical bkid binding | Only matching EDKs attempted | verus-header-parsing-proofs | TM-MPL-003 | 1 week |
-| 28 | 1.68 | T | T20 raw-AES provider-info codec (`:129`, `:191`) | Round trip, total | verus-header-parsing-proofs | TM-MPL-023, 011, 001 | 1 week |
-| 29 | 1.60 | T | T22 `Debug` + error `DataKeyInfo` | Independent of secret bytes | verus-unsafe-ffi-safety | TM-MPL-021 | 1 week |
-| 30 | 1.44 | T | T25 C++ shim handles (`esdk/shims/aws-esdk-cpp/src/lib.rs:715`, `:728`, `:1570-1571`, `:1661`; `into_keyring_handle` `:2059`) | Every deref null-dominated; the Rust half of `Keyring::adopt` (non-null unique `Box`) is provable, the C++ half is a caller obligation | verus-unsafe-ffi-safety | TM-MPL-024 | 1 week |
-| 31 | 1.26 | T | T23 `LocalCmc` (`cmc/local.rs`) | Capacity + TTL invariants | verus-zero-panic | TM-MPL-022 | 2 weeks |
-| 32 | 1.20 | T | T24 `RawAesKeyringBuilder::build` (`:350`, check `:360`) | No `aws-kms` namespace | verus-header-parsing-proofs | TM-MPL-001 | 1 day |
-| 33 | 0.96 | C | C08 `CacheEntry::record_use` (`entry.rs:206`) + `update_usage_metadata` | Counters never wrap; overflow evicts | verus-zero-panic | cap:cat2 (2b) | 1 day |
-| — | Retired | T | T08 ~~`PlaintextDataKey::zeroize` unsafe loop~~ | code removed (a864ad8) | — | (TM-MPL-015 → T26) | — |
-| — | Retired | C | C06 ~~grace-vs-TTL integer division~~ | code removed | — | — | — |
+| Rank | Score | Origin | Target | Property | Agent | Ref | Effort | Proof status |
+|---|---|---|---|---|---|---|---|---|
+| 1 | 8.96 | T | T01 key-store auth-EC builders (`kms_ops.rs:49`, `branch_key_store.rs:132`, `:1089`, `:1141`) | Write-time EC == KMS-AAD EC == reconstruction EC | verus-header-parsing-proofs | TM-MPL-005, TM-MPL-002 | 2 weeks | None yet |
+| 2 | 6.72 | T | T02 `record::branch_key_materials_from_authenticated_encryption_context` (`record.rs:95`) | Exact Ok/Err characterization, including the spec clause that a record MUST include `create-time` and `hierarchy-version` (expected FAIL, G1) | verus-header-parsing-proofs | TM-MPL-005 | 1 week | Partly proved (model level, not the shipped code, under stated hypotheses): 21 verified, 1 errors |
+| 3 | 6.72 | C | C01 `key_store/encryption_context.rs` builders ∘ `record.rs` reconstruction | Round trip on (id, version, custom EC); collision branch dead (BUG-08) | verus-header-parsing-proofs | cap:cat1 (1c) | 1 week | Proved (model level, not the shipped code, under stated hypotheses): 40 verified, 0 errors |
+| 4 | 6.40 | C | C02 `prim::ecdsa` `sign_fixed_len` (`ecdsa.rs:180`) and callers | ≤ 128 attempts; no panic; no partial write | verus-zero-panic | cap:cat2 (2d) | 1 week | Proved (model level, not the shipped code, under stated hypotheses): 21 verified, 0 errors |
+| 5 | 5.60 | C | C03 `prim::{hmac, digest, aes_encrypt, aes_decrypt, hkdf*, kbkdf_ctr_hmac}`, `DigestContext::finish` | No panic; exact length contract | verus-zero-panic | cap:cat2 (2a/2d) | 1 week | None yet |
+| 6 | 5.12 | T | T03 `kms_ops::resolve_key_store_arn` pinned modes (`kms_ops.rs:88`) | KeyId is always the configured ARN | verus-header-parsing-proofs | TM-MPL-002 | 1 day | Proved (model level, not the shipped code, under stated hypotheses): 39 verified, 0 errors |
+| 7 | 5.04 | C | C07 `materials_checks` transitions + `send()` wiring | Keyring may only add PDK/EDKs; every `send()` checks | verus-header-parsing-proofs | cap:cat1 (1a/1b) | 1 week | None yet |
+| 8 | 4.48 | T | T04 `branch_key_wrap::wrap` (`:157`) | Fresh salt + IV per call; 60+n layout | verus-unsafe-ffi-safety | TM-MPL-012 | 1 week | None yet |
+| 9 | 4.41 | T | T13 `build_cache_identifier` (`cache_entry_identifier.rs:35`) + keyring inputs | Injective iff fields NUL-free (BUG-06 counterexample) | verus-header-parsing-proofs | TM-MPL-009, TM-MPL-010 | 1 week | None yet |
+| 10 | 4.32 | T | T05 `branch_key_wrap::derive_branch_key` (`:122`) | KBKDF fixed-info layout, 32 B out | verus-header-parsing-proofs | TM-MPL-014 | 1 day | Proved (model level, not the shipped code, under stated hypotheses): 33 verified, 0 errors |
+| 11 | 4.20 | T | T06 `SystemTime + Duration` (`hierarchical_keyring.rs:702`, `:945`; `storm_tracking.rs:333`, `:680`) | No overflow panic (expected FAIL, BUG-01) | verus-zero-panic | TM-MPL-018, 022, 023 | 1 week | None yet |
+| 12 | 3.84 | T | T07 raw-AES wrap/unwrap + `prim::aes_*` | Fresh 12 B IV; length preconditions | verus-unsafe-ffi-safety | TM-MPL-011 | 1 week | None yet |
+| 13 | 3.78 | T | T14 `as_branch_key_materials` (`:1000`), `cache_entry_within_limits` (`:989`), `generate_partition_id` (`:626`) | Only BranchKey entries; exact `Duration` TTL; v4 id | verus-header-parsing-proofs | TM-MPL-010 | 1 week | None yet |
+| 14 | 3.78 | T | T27 `HierarchicalKeyring::on_decrypt` EDK loop → `try_decrypt_edk` → `decrypt_edk_at_version` (`hierarchical_keyring.rs:734`, `:751-772`, `:901`) | Key-store calls and loop iterations per decrypt bounded by the EDK list (verifies); no constant bound (expected FAIL; provisional, TM-MPL-025 unconfirmed) | verus-zero-panic | TM-MPL-025, TM-MPL-018 | 1 week | None yet |
+| 15 | 3.20 | T | T26 transient / error-path secret buffers | Wiped or moved to `ZeroizeOnDrop` on every exit (expected FAIL: BUG-07a, un-wiped decrypt buffers, `ecdsa_generate_keypair` error path); expired `LocalCmc` entries resident until read | verus-unsafe-ffi-safety | TM-MPL-015 | 2 weeks | None yet |
+| 16 | 2.88 | T | T10 `compute_aad` (`:61`), UUID codec | AAD layout; UUID round trip | verus-header-parsing-proofs | TM-MPL-013 | 1 week | None yet |
+| 17 | 2.88 | T | T11 `aws_kms_mrk_match_for_decrypt` (`mrk_match.rs:24`), `is_arn_compatible` | MRK match semantics | verus-header-parsing-proofs | TM-MPL-004 | 2 weeks | None yet |
+| 18 | 2.88 | T | T12 `merge_reproduced_encryption_context` (`default_cmm.rs:273`) | Union on agreement | verus-header-parsing-proofs | TM-MPL-017 | 1 week | None yet |
+| 19 | 2.80 | C | C04 PDK length invariant (`check_data_key_length`, `algorithm_suite.rs:547`) | PDK length = suite key length (expected VERIFY) | verus-header-parsing-proofs | cap:cat1 (1a) | 1 week | None yet |
+| 20 | 2.56 | T | T09 commitment policy + `DefaultCmm` gates | Allow-tables match spec | verus-header-parsing-proofs | TM-MPL-006, TM-MPL-008 | 1 week | None yet |
+| 21 | 2.40 | C | C05 suite table | Refines spec; ids injective | verus-header-parsing-proofs | cap:cat1 (1a) | 1 day | None yet |
+| 22 | 2.24 | T | T16 malformed-input panic sites | No panic on malformed EDK/EC/ARN | verus-zero-panic | TM-MPL-023 | 1 week | None yet |
+| 23 | 2.24 | T | T21 `cmc/storm_tracking.rs` (`build` `:606`) | Builder enforces spec ordering (expected FAIL); `\|inflight\| ≤ fan_out`; failed leader's mark cleared (expected FAIL); every waiter has a deadline (expected FAIL); no panic under the state lock | verus-zero-panic (+ concurrency) | TM-MPL-018 | 1 month | None yet |
+| 24 | 1.92 | T | T15 `EncryptionContext::{to_bytes, from_bytes}` (`:91`, `:145`) | Canonical codec (expected VERIFY) | verus-header-parsing-proofs | TM-MPL-013, TM-MPL-017 | 2 weeks | None yet |
+| 25 | 1.92 | T | T17 Discovery / MRDiscovery ARN (`kms_ops.rs:96-102`, `:118`, `:144`) | Region rewrite only for MRKs (expected FAIL, BUG-04) | verus-header-parsing-proofs | TM-MPL-007 | 1 week | None yet |
+| 26 | 1.92 | T | T18 `version_key` EC derivation (`branch_key_store.rs:641`, `:706-722`) | Preserves id/arn/hv/tablename/custom EC | verus-header-parsing-proofs | TM-MPL-016 | 1 week | None yet |
+| 27 | 1.92 | T | T19 hierarchical bkid binding | Only matching EDKs attempted | verus-header-parsing-proofs | TM-MPL-003 | 1 week | None yet |
+| 28 | 1.68 | T | T20 raw-AES provider-info codec (`:129`, `:191`) | Round trip, total | verus-header-parsing-proofs | TM-MPL-023, 011, 001 | 1 week | None yet |
+| 29 | 1.60 | T | T22 `Debug` + error `DataKeyInfo` | Independent of secret bytes | verus-unsafe-ffi-safety | TM-MPL-021 | 1 week | None yet |
+| 30 | 1.44 | T | T25 C++ shim handles (`esdk/shims/aws-esdk-cpp/src/lib.rs:715`, `:728`, `:1570-1571`, `:1661`; `into_keyring_handle` `:2059`) | Every deref null-dominated; the Rust half of `Keyring::adopt` (non-null unique `Box`) is provable, the C++ half is a caller obligation | verus-unsafe-ffi-safety | TM-MPL-024 | 1 week | None yet |
+| 31 | 1.26 | T | T23 `LocalCmc` (`cmc/local.rs`) | Capacity + TTL invariants | verus-zero-panic | TM-MPL-022 | 2 weeks | None yet |
+| 32 | 1.20 | T | T24 `RawAesKeyringBuilder::build` (`:350`, check `:360`) | No `aws-kms` namespace | verus-header-parsing-proofs | TM-MPL-001 | 1 day | None yet |
+| 33 | 0.96 | C | C08 `CacheEntry::record_use` (`entry.rs:206`) + `update_usage_metadata` | Counters never wrap; overflow evicts | verus-zero-panic | cap:cat2 (2b) | 1 day | None yet |
+| — | Retired | T | T08 ~~`PlaintextDataKey::zeroize` unsafe loop~~ | code removed (a864ad8) | — | (TM-MPL-015 → T26) | — | None (retired) |
+| — | Retired | C | C06 ~~grace-vs-TTL integer division~~ | code removed | — | — | — | None (retired) |
 
 Totals: **33 active targets**, 26 threat-driven (T01–T07, T09–T27) and 7 capability-driven (C01–C05, C07, C08), plus 2 retired (T08, C06). Agent routing: verus-header-parsing-proofs ×20, verus-zero-panic ×8, verus-unsafe-ffi-safety ×5.
 
@@ -129,6 +166,7 @@ recommendation:
   coverage_evidence: "test_key_store_record.rs covers only test-utils helpers; production builders are reached only by live-AWS integ tests."
   scoring: {severity: 4, coverage_gap: 0.8, feasibility: 0.7, blast_radius: 4, product: "4 × 0.8 × 0.7 × 4 = 8.96"}
   quick_win: false     # 2 weeks
+  proof_status: "None yet"
   dependencies: []
 ```
 
@@ -153,6 +191,8 @@ recommendation:
   coverage_evidence: "test_key_store_record.rs (23 tests, e.g. materials_branch_key_rejects_wrong_length :169). No test builds a record or EC without `create-time` or `hierarchy-version` (G1)."
   scoring: {severity: 4, coverage_gap: 0.6, feasibility: 0.7, blast_radius: 4, product: "4 × 0.6 × 0.7 × 4 = 6.72"}
   quick_win: true
+  proof_status: "Partly proved (model level, not the shipped code, under stated hypotheses): 21 verified, 1 errors"
+  proof_file: verus-proofs/t02_record_reconstruction.rs
   dependencies: []
 ```
 
@@ -177,6 +217,8 @@ recommendation:
   coverage_evidence: "Each half tested alone (test_key_store_encryption_context.rs, test_key_store_record.rs); no composition test."
   scoring: {severity: 3, coverage_gap: 0.8, feasibility: 0.7, blast_radius: 4, product: "3 × 0.8 × 0.7 × 4 = 6.72"}
   quick_win: true
+  proof_status: "Proved (model level, not the shipped code, under stated hypotheses): 40 verified, 0 errors"
+  proof_file: verus-proofs/c01_ec_roundtrip.rs
   dependencies: [VR-2026-T02]
 ```
 
@@ -201,6 +243,8 @@ recommendation:
   coverage_evidence: "prim/tests/test_ecdsa.rs; oracle not injectable, so retry exhaustion is untested."
   scoring: {severity: 2, coverage_gap: 0.8, feasibility: 1.0, blast_radius: 4, product: "2 × 0.8 × 1.0 × 4 = 6.40"}
   quick_win: true
+  proof_status: "Proved (model level, not the shipped code, under stated hypotheses): 21 verified, 0 errors"
+  proof_file: verus-proofs/c02_sign_fixed_len.rs
   dependencies: []
 ```
 
@@ -225,6 +269,7 @@ recommendation:
   coverage_evidence: "prim/tests negative-length tests; no wrong-length finish buffer, no over-long aes_decrypt buffer."
   scoring: {severity: 2, coverage_gap: 0.7, feasibility: 1.0, blast_radius: 4, product: "2 × 0.7 × 1.0 × 4 = 5.60"}
   quick_win: false
+  proof_status: "None yet"
   dependencies: []
 ```
 
@@ -249,6 +294,8 @@ recommendation:
   coverage_evidence: "No direct unit test (pub(crate)); predicate tested in test_key_store_kms_config.rs; end-to-end only integ."
   scoring: {severity: 4, coverage_gap: 0.8, feasibility: 0.4, blast_radius: 4, product: "4 × 0.8 × 0.4 × 4 = 5.12"}
   quick_win: false
+  proof_status: "Proved (model level, not the shipped code, under stated hypotheses): 39 verified, 0 errors"
+  proof_file: verus-proofs/t03_resolve_pinned_arn.rs
   dependencies: [VR-2026-T11]
 ```
 
@@ -273,6 +320,7 @@ recommendation:
   coverage_evidence: "test_materials_checks.rs (27 tests, e.g. on_encrypt_rejects_a_changed_algorithm_suite :271)."
   scoring: {severity: 3, coverage_gap: 0.6, feasibility: 0.7, blast_radius: 4, product: "3 × 0.6 × 0.7 × 4 = 5.04"}
   quick_win: false
+  proof_status: "None yet"
   dependencies: []
 ```
 
@@ -297,6 +345,7 @@ recommendation:
   coverage_evidence: "wrap_ciphertext_layout_lengths_match_spec (:939), wrap_two_calls_produce_distinct_ciphertexts (:1168)."
   scoring: {severity: 4, coverage_gap: 0.7, feasibility: 0.4, blast_radius: 4, product: "4 × 0.7 × 0.4 × 4 = 4.48"}
   quick_win: false
+  proof_status: "None yet"
   dependencies: [VR-2026-T05, VR-2026-T10]
 ```
 
@@ -322,6 +371,7 @@ recommendation:
   coverage_evidence: "cache_entry_identifier_* tests (:647, :680, :708, :736, :770); no NUL case."
   scoring: {severity: 3, coverage_gap: 0.7, feasibility: 0.7, blast_radius: 3, product: "3 × 0.7 × 0.7 × 3 = 4.41"}
   quick_win: false
+  proof_status: "None yet"
   dependencies: []
 ```
 
@@ -346,6 +396,8 @@ recommendation:
   coverage_evidence: "Self-consistent round trips only; prim vectors test the primitive (test_kbkdf_ctr_hmac_raw_vectors :329)."
   scoring: {severity: 3, coverage_gap: 0.9, feasibility: 0.4, blast_radius: 4, product: "3 × 0.9 × 0.4 × 4 = 4.32"}
   quick_win: false
+  proof_status: "Proved (model level, not the shipped code, under stated hypotheses): 33 verified, 0 errors"
+  proof_file: verus-proofs/t05_kbkdf_fixed_info.rs
   dependencies: []
 ```
 
@@ -374,6 +426,7 @@ recommendation:
   coverage_evidence: "test_keyring_memory.rs :100, :113 check memory only and never reach the key store; the only several-EDK test (test_aws_kms_hierarchical_keyring.rs::on_decrypt_with_several_failing_edks_aggregates_without_a_single_cause :1998) fails before any key-store call. No test asserts a bound on key-store calls per decrypt."
   scoring: {severity: 2, coverage_gap: 0.9, feasibility: 0.7, blast_radius: 3, product: "2 × 0.9 × 0.7 × 3 = 3.78"}
   quick_win: false
+  proof_status: "None yet"
   dependencies: [VR-2026-T21]   # soft
 ```
 
@@ -398,6 +451,7 @@ recommendation:
   coverage_evidence: "Zeroize tests cover types only (:248, :228); no test of transient buffers."
   scoring: {severity: 2, coverage_gap: 1.0, feasibility: 0.4, blast_radius: 4, product: "2 × 1.0 × 0.4 × 4 = 3.20"}
   quick_win: false
+  proof_status: "None yet"
   dependencies: []
 ```
 
@@ -422,12 +476,13 @@ recommendation:
   coverage_evidence: "esdk/shims/aws-esdk-cpp/src/tests.rs: require_handle_rejects_null_and_borrows_non_null (:715), null keyring / key-store tests (:733, :746, :791), into_keyring_handle_boxes_the_keyring (:1624)."
   scoring: {severity: 3, coverage_gap: 0.6, feasibility: 0.4, blast_radius: 2, product: "3 × 0.6 × 0.4 × 2 = 1.44"}
   quick_win: false
+  proof_status: "None yet"
   dependencies: []
 ```
 
 ## 3. Coverage-gap analysis
 
-No Verus proof exists for any target. Files are under `mpl/tests/` unless prefixed. "integ" = live-AWS.
+No Verus proof of the shipped code exists for any target. Five targets (T02, C01, C02, T03, T05) have a proof of a model, listed in "Proofs written"; the coverage gaps below are the pre-proof values and were not recalculated. Files are under `mpl/tests/` unless prefixed. "integ" = live-AWS.
 
 | Target | Existing tests | Gap | Justification |
 |---|---|---|---|
@@ -467,7 +522,7 @@ No Verus proof exists for any target. Files are under `mpl/tests/` unless prefix
 
 ## 4. Risk summary by STRIDE category
 
-From `docs/threat-model.md` §7 (TM-MPL-025 listed under Denial of Service; TM-MPL-024 and TM-MPL-026 under Elevation of Privilege). "Verified" is 0: no Verus proof exists yet.
+From `docs/threat-model.md` §7 (TM-MPL-025 listed under Denial of Service; TM-MPL-024 and TM-MPL-026 under Elevation of Privilege). "Verified" is 0: it counts threats whose target is proved against the shipped code, and the five proofs in "Proofs written" are model level.
 
 | Category | Threats | Verified | With target | Fully excluded | Targets | Top-priority target |
 |---|---|---|---|---|---|---|
@@ -491,7 +546,7 @@ Capability-driven targets by closest category (advisory): Tampering/integrity �
 | 3 | VR-2026-C01 EC builder ∘ reconstruction | 6.72 | 1 week | C |
 | 4 | VR-2026-C02 ECDSA bounded retry | 6.40 | 1 week | C |
 
-Unchanged by the `9955ecd` refresh. T01 (8.96) needs 2 weeks. The new T27 (3.78) and the re-scored T21 (2.24) are below the threshold; T26 (3.20, 2 weeks) and T25 (1.44) also stay out. Cheap targets below threshold: T03 (5.12, 1 day), T05 (4.32, 1 day), C05 (2.40, 1 day).
+Unchanged by the `9955ecd` refresh and by the proofs in "Proofs written" (T02 partly proved, C01 and C02 proved, all at model level and not the shipped code; the list is not re-scored). T01 (8.96) needs 2 weeks. The new T27 (3.78) and the re-scored T21 (2.24) are below the threshold; T26 (3.20, 2 weeks) and T25 (1.44) also stay out. Cheap targets below threshold: T03 (5.12, 1 day), T05 (4.32, 1 day), C05 (2.40, 1 day).
 
 ## 6. Out of scope / not Verus-provable
 
@@ -526,9 +581,11 @@ Each needs an owner decision.
 - T16 (BUG-05a/b): `default_cmm.rs:138` `.expect` on ECDSA keygen; 44–59-byte EDK costs one key-store lookup.
 - T26 (BUG-07a): `prim::aes_encrypt` leaves plaintext in the caller's buffer on `Err`; raw-AES decrypt buffer not wiped on error paths. Also: expired `LocalCmc` entries stay resident until read (`local.rs:131`, `:166`), and `ecdsa_generate_keypair` leaves the private-key `Vec` un-wiped on its error return (`ecdsa.rs:387`, `:391-392`).
 - T27 (TM-MPL-025, unconfirmed): no bound on key-store calls per decrypt; the EDK count and versions are chosen by the ciphertext sender.
-- T02 (G1): `create-time` and `hierarchy-version` are not required on any read path, although the spec says a record MUST include them.
+- T02 (G1): `create-time` and `hierarchy-version` are not required on any read path, although the spec says a record MUST include them. Confirmed by the T02 proof at model level: the code accepts a record without them (`lemma_g1_code_ignores_fields`, `lemma_g1_witness_accepted_without_fields`; the spec property fails as `lemma_g1_spec_soundness_FAILS`).
 - T25: C++ `Keyring::adopt` has no null, type or ownership check (`EncryptionSDK.cpp:541-547`).
 - C03 (BUG-07b): `aes_decrypt` guard weaker than its callee; misleading error text.
-- C01(c) (BUG-08): dead collision `Err` in `build_base`.
+- C01(c) (BUG-08): dead collision `Err` in `build_base`. The C01 proof (model level) shows it is dead if and only if A_ITER holds, and live if a key repeats.
+- T03 (O1, O2): O1 two byte-identical alias ARNs fail the code's MRK match, where the spec text matches (documented deviation, unreachable for any configuration `build()` accepts). O2 the ARN-validity model accepts empty partition, region and account, which is looser than the spec; no effect on the T03 property. Found by the T03 proof at model level.
+- T05 (F1): the spec does not state the KBKDF fixed-info layout. A spec gap found by the T05 proof at model level, not a code defect.
 - C07: fields not constrained by `check_encryption_transition` (symmetric signing keys, EDK order) to be compared with Dafny `Materials.dfy`.
 - Closed since a1e23d7: C04-F1/F2 (BUG-02), T15 unsorted-accept (BUG-03), T14 `ttl + 1 s` (BUG-09).

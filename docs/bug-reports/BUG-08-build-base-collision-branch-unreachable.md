@@ -123,6 +123,16 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 The output is identical to the original run at `a1e23d7`.
 
+## Formal check (C01)
+A Verus proof of a model of `build_base` and the reconstruction exists: `verus-proofs/c01_ec_roundtrip.rs`. Status: Proved (model level, not the shipped code, under stated hypotheses): 40 verified, 0 errors. It is a proof of a re-typed model, not of the shipped code.
+
+- `theorem_bug08_collision_iff_duplicate`: for a non-empty id and type, `build_base` returns `Err(Collision)` if and only if the key sequence from `custom.iter()` repeats a key.
+- `theorem_bug08_collision_unreachable`: if the sequence has no repeated key (hypothesis A_ITER), `Collision` is not returned.
+- `lemma_bug08_collision_live_under_duplicates`: if a key repeats, the branch is reachable in the model. So "dead" is a conclusion that depends on A_ITER, not an artifact of the model.
+- `lemma_bug08_prefixed_custom_key_ok`: a custom key that already carries `aws-crypto-ec:` is stored as `aws-crypto-ec:aws-crypto-ec:x` and round-trips; it is not a collision.
+
+Result: the branch is dead if and only if A_ITER holds (`custom.iter()` yields each key once), and live if a key repeats. A_ITER holds for `BTreeMap`, and `EncryptionContext` is a newtype over `BTreeMap<String, String>`, but Verus cannot check it (vstd has no spec for `BTreeMap::iter` on `String` keys). The branch would become reachable if `EncryptionContext` stopped being a map, and the proof would then not apply. This note adds a formal check at model level. It does not change this bug's severity, status, confidence or evidence. Fix option 3 below refers to this proof. At model level it exists, but it does not discharge the branch in the shipped code, because the shipped code is not inside the proof.
+
 ## Fix options
 
 1. Keep the check as defense-in-depth and fix the comment. State that the branch is unreachable by construction and guards against future changes (for example, a base key that starts with the prefix, or a switch back to lossy decoding).

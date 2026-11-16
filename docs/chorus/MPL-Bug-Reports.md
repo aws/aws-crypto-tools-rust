@@ -57,17 +57,17 @@ How to read the table:
 
 Ratings are from `docs/threat-model.md` (TM-MPL-001..026, HEAD `9955ecd`). Target IDs are from `docs/verification-targets.md`. The mapping is the bug to threat to target table in `docs/completeness-audit.md` section 3b, plus the "Related IDs" of each bug report. No threat rating changed because of the BUG-06 severity decision.
 
-| ID | Severity | Status on main | Related threats (risk) | Related targets (score) |
-|---|---|---|---|---|
-| BUG-01 | Low | Still present | TM-MPL-018 (Medium), TM-MPL-022 (Low), TM-MPL-023 (Low) | T06 (4.20); T21 property (i) (2.24) |
-| BUG-02 | Medium | Fixed on main | TM-MPL-006 (Medium), TM-MPL-023 (Low) | C04 (2.80) |
-| BUG-03 | Low | Fixed on main | TM-MPL-013 (Medium), TM-MPL-017 (Medium) | T15 (1.92) |
-| BUG-04 | Low | Still present | TM-MPL-007 (Medium). It fails closed and does not widen TM-MPL-002 (Medium) | T17 (1.92) |
-| BUG-05 | Low | (a) Still present; (b) Still present (likely not a bug) | TM-MPL-023 (Low); (b) also TM-MPL-025 (Medium, provisional), which (b) does not cause | T16 (2.24); (b) also T27 (3.78, provisional) |
-| BUG-06 | High (raised from Low on the owner's decision) | Still present | TM-MPL-009 (High), TM-MPL-010 (High), TM-MPL-003 (Low) | T13 (4.41); T19 (1.92) |
-| BUG-07 | Low | Still present (a and b) | (a) TM-MPL-015 (Low); (b) TM-MPL-023 (Low); TM-MPL-011 (Medium) through T07 | (a) T26 (3.20), T07 property (e) (3.84); (b) C03 (5.60) |
-| BUG-08 | Informational | Still present | TM-MPL-005 (High). Informational; no effect on that rating | C01 property (c) (6.72) |
-| BUG-09 | Informational | Fixed on main | TM-MPL-010 (High). The High rating comes from BUG-06, which is open | T14 property (b) (3.78) |
+| ID | Severity | Status on main | Related threats (risk) | Related targets (score) | Proof status |
+|---|---|---|---|---|---|
+| BUG-01 | Low | Still present | TM-MPL-018 (Medium), TM-MPL-022 (Low), TM-MPL-023 (Low) | T06 (4.20); T21 property (i) (2.24) | None yet |
+| BUG-02 | Medium | Fixed on main | TM-MPL-006 (Medium), TM-MPL-023 (Low) | C04 (2.80) | None yet |
+| BUG-03 | Low | Fixed on main | TM-MPL-013 (Medium), TM-MPL-017 (Medium) | T15 (1.92) | None yet |
+| BUG-04 | Low | Still present | TM-MPL-007 (Medium). It fails closed and does not widen TM-MPL-002 (Medium) | T17 (1.92) | None yet |
+| BUG-05 | Low | (a) Still present; (b) Still present (likely not a bug) | TM-MPL-023 (Low); (b) also TM-MPL-025 (Medium, provisional), which (b) does not cause | T16 (2.24); (b) also T27 (3.78, provisional) | None yet |
+| BUG-06 | High (raised from Low on the owner's decision) | Still present | TM-MPL-009 (High), TM-MPL-010 (High), TM-MPL-003 (Low) | T13 (4.41); T19 (1.92) | None yet |
+| BUG-07 | Low | Still present (a and b) | (a) TM-MPL-015 (Low); (b) TM-MPL-023 (Low); TM-MPL-011 (Medium) through T07 | (a) T26 (3.20), T07 property (e) (3.84); (b) C03 (5.60) | None yet |
+| BUG-08 | Informational | Still present | TM-MPL-005 (High). Informational; no effect on that rating | C01 property (c) (6.72) | C01: Proved (model level, not the shipped code, under stated hypotheses): 40 verified, 0 errors. The collision branch is dead if and only if A_ITER holds, and live if a key repeats |
+| BUG-09 | Informational | Fixed on main | TM-MPL-010 (High). The High rating comes from BUG-06, which is open | T14 property (b) (3.78) | None yet |
 
 ## Suggested meeting agenda
 
@@ -601,6 +601,16 @@ REPRO BUG-08 active is_ok = true, decrypt_only is_ok = true
 REPRO BUG-08 10 custom entries in, 10 prefixed entries out: ["aws-crypto-ec:a", "aws-crypto-ec:aws-crypto-ec:a", "aws-crypto-ec:branch-key-id", ...]
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
 ```
+
+### Formal check (C01)
+A Verus proof of a model of `build_base` and the reconstruction exists: `verus-proofs/c01_ec_roundtrip.rs`. Status: Proved (model level, not the shipped code, under stated hypotheses): 40 verified, 0 errors. It is a proof of a re-typed model, not of the shipped code.
+
+- `theorem_bug08_collision_iff_duplicate`: for a non-empty id and type, `build_base` returns `Err(Collision)` if and only if the key sequence from `custom.iter()` repeats a key.
+- `theorem_bug08_collision_unreachable`: if no key repeats (hypothesis A_ITER), `Collision` is not returned.
+- `lemma_bug08_collision_live_under_duplicates`: if a key repeats, the branch is reachable in the model. So "dead" is a conclusion that depends on A_ITER, not an artifact of the model.
+- `lemma_bug08_prefixed_custom_key_ok`: a custom key that already carries `aws-crypto-ec:` is stored as `aws-crypto-ec:aws-crypto-ec:x` and round-trips; it is not a collision.
+
+Result: the branch is dead if and only if A_ITER holds (`custom.iter()` yields each key once), and live if a key repeats. A_ITER holds for `BTreeMap`, and `EncryptionContext` is a newtype over `BTreeMap<String, String>`, but Verus cannot check it. This note does not change this bug's severity, status, confidence or evidence. Fix option 3 below refers to this proof. At model level it exists, but it does not discharge the branch in the shipped code, because the shipped code is not inside the proof.
 
 ### Fix options
 

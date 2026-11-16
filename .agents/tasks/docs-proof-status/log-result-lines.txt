@@ -1,0 +1,5 @@
+.agents/tasks/verus-proofs-quickwins/logs/c01_ec_roundtrip.log:verification results:: 40 verified, 0 errors
+.agents/tasks/verus-proofs-quickwins/logs/c02_sign_fixed_len.log:verification results:: 21 verified, 0 errors
+.agents/tasks/verus-proofs-quickwins/logs/t02_record_reconstruction.log:verification results:: 21 verified, 1 errors
+.agents/tasks/verus-proofs-t03-t05/logs/t03_resolve_pinned_arn.log:verification results:: 39 verified, 0 errors
+.agents/tasks/verus-proofs-t03-t05/logs/t05_kbkdf_fixed_info.log:verification results:: 33 verified, 0 errors
