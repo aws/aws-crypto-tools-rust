@@ -71,3 +71,12 @@ jobs:
       - name: Build and run C++ facade, example, and integration and local-correctness tests
         if: runner.os == 'Linux'
         run: make test-ci-cpp
+
+      - name: Clippy with only the raw AES keyring
+        run: cargo clippy --lib --no-default-features --features aws-lc-sys -- -D warnings
+
+      - name: Build and run the raw AES example with only the raw AES keyring
+        run: |
+          cargo build --no-default-features --features aws-lc-sys
+          make raw_aes_example CXXFLAGS_COMMON="-Iinclude -std=c++17 -DAWS_ESDK_CPP_HIERARCHICAL_KEYRING=0 -DAWS_ESDK_CPP_STORM_TRACKING_CMC=0"
+          ./raw_aes_keyring_example

@@ -9,8 +9,13 @@
 //! decode end to end.
 
 use super::*;
+use aws_config::{BehaviorVersion, Region, SdkConfig};
+use aws_crypto_mpl::cmc::StormTrackingCmc;
+use aws_crypto_mpl::{aws_config, aws_sdk_dynamodb, aws_sdk_kms};
+use aws_sdk_kms::config::SharedCredentialsProvider;
 use ffi::EsdkAlgorithmSuiteId as F;
 use ffi::EsdkCommitmentPolicy as P;
+use std::time::{Duration, SystemTime};
 
 // Helpers
 //

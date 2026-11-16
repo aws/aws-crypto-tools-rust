@@ -38,13 +38,30 @@ That produces the static library and the cxx-generated C++ sources under
 `target/`, which the `AWS::esdk` CMake target and the `Makefile` example/test
 targets consume.
 
-To use AWS-LC's FIPS module instead, build with:
+### Cargo features
+
+The shim has the same features as the Rust ESDK and passes them through.
+
+| Feature | Default | What it adds | CMake option |
+|---|---|---|---|
+| `aws-lc-sys` | on | AWS-LC as the crypto backend | |
+| `fips` | off | AWS-LC's FIPS module as the crypto backend | `-DESDK_FIPS=ON` |
+| `kms`, `ddb`, `default-aws-sdk-clients` | on | `HierarchicalKeyring`, `KeyStore`, `KmsClient`, `DdbClient`, `AwsSdkClientConfig`, `HttpClient`, `Credentials`, `CryptographicMaterialsCache`, `LocalCmc` | `-DESDK_HIERARCHICAL_KEYRING=OFF` |
+| `rt-tokio` | on | `DefaultCmc`, `StormTrackingCmc` | `-DESDK_STORM_TRACKING_CMC=OFF` |
+
+Turn `kms`, `ddb` and `default-aws-sdk-clients` on or off together.
+With them off, the library has only the raw AES keyring and custom keyrings,
+and does not link the AWS SDK.
+
+For example, a FIPS build with only the raw AES keyring:
 
 ```bash
-cargo build --features fips
+cargo build --no-default-features --features fips
 ```
 
-Through CMake, configure with `-DESDK_FIPS=ON`.
+Code that includes `EncryptionSDK.h` must then define
+`AWS_ESDK_CPP_HIERARCHICAL_KEYRING=0` and `AWS_ESDK_CPP_STORM_TRACKING_CMC=0`.
+The CMake options set both for you.
 
 ## Using it in a CMake project
 

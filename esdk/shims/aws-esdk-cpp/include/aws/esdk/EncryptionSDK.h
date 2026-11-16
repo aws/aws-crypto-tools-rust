@@ -29,6 +29,23 @@
 #include <span>
 #endif
 
+// Which optional parts of the API this build of the library has.
+// Each is 1 unless the library was built without its Cargo features;
+// a build that turns them off must define them as 0 for its callers too.
+// CMake does both from its ESDK_HIERARCHICAL_KEYRING and ESDK_STORM_TRACKING_CMC options.
+//   - AWS_ESDK_CPP_HIERARCHICAL_KEYRING: HierarchicalKeyring and what it uses:
+//     Credentials, HttpClient, AwsSdkClientConfig, KmsClient, DdbClient, KeyStore,
+//     CryptographicMaterialsCache and LocalCmc.
+//     Cargo features `kms`, `ddb` and `default-aws-sdk-clients`.
+//   - AWS_ESDK_CPP_STORM_TRACKING_CMC: DefaultCmc and StormTrackingCmc.
+//     Cargo feature `rt-tokio`, plus the three above.
+#ifndef AWS_ESDK_CPP_HIERARCHICAL_KEYRING
+#define AWS_ESDK_CPP_HIERARCHICAL_KEYRING 1
+#endif
+#ifndef AWS_ESDK_CPP_STORM_TRACKING_CMC
+#define AWS_ESDK_CPP_STORM_TRACKING_CMC 1
+#endif
+
 namespace Aws::Esdk {
 
 // File-wide invariants.
@@ -499,6 +516,7 @@ std::chrono::nanoseconds to_nanoseconds(std::chrono::duration<Rep, Period> d) {
 }
 }  // namespace detail
 
+#if AWS_ESDK_CPP_HIERARCHICAL_KEYRING
 /// Static AWS credentials, such as temporary credentials issued for a single request.
 /// The library never puts the secret access key or session token in an exception message.
 class Credentials {
@@ -634,6 +652,7 @@ public:
              const std::string& kms_arn,
              const KeyStoreOptions& options = {});
 };
+#endif  // AWS_ESDK_CPP_HIERARCHICAL_KEYRING
 
 /// Base Keyring type.
 /// Every concrete keyring must derive from this type.
@@ -664,6 +683,7 @@ public:
     static Keyring adopt(void* raw_handle);
 };
 
+#if AWS_ESDK_CPP_HIERARCHICAL_KEYRING
 /// Base class of the cryptographic materials caches below.
 /// A copy refers to the same cache, so keyrings given copies of one cache share its entries.
 class CryptographicMaterialsCache {
@@ -676,6 +696,7 @@ protected:
         : impl_(std::move(impl)) {}
 };
 
+#if AWS_ESDK_CPP_STORM_TRACKING_CMC
 /// Optional StormTrackingCmc parameters.
 /// A field left unset keeps the ESDK Rust's default.
 class StormTrackingCmcOptions {
@@ -739,6 +760,7 @@ public:
     /// \param options Parameters to change; unset ones keep their defaults.
     explicit StormTrackingCmc(const StormTrackingCmcOptions& options = {});
 };
+#endif  // AWS_ESDK_CPP_STORM_TRACKING_CMC
 
 /// An LRU cache with no storm tracking.
 class LocalCmc : public CryptographicMaterialsCache {
@@ -804,6 +826,7 @@ private:
                         const HierarchicalKeyringOptions& options,
                         Tag);
 };
+#endif  // AWS_ESDK_CPP_HIERARCHICAL_KEYRING
 
 /// Keyring that wraps and unwraps data keys locally with AES-GCM.
 class RawAesKeyring : public Keyring {

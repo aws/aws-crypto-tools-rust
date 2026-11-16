@@ -26,11 +26,26 @@ else()
     list(APPEND ESDK_CARGO_ARGS --release)
 endif()
 
-# Build with AWS-LC's FIPS module instead of the default AWS-LC.
+# Optional parts of the library. Each picks Cargo features,
+# and the matching AWS_ESDK_CPP_* define reaches every target that links AWS::esdk.
 option(ESDK_FIPS "Build the ESDK with AWS-LC's FIPS module" OFF)
-if(ESDK_FIPS)
-    list(APPEND ESDK_CARGO_ARGS --features fips)
+option(ESDK_HIERARCHICAL_KEYRING "Include the hierarchical keyring, key store and AWS SDK clients" ON)
+option(ESDK_STORM_TRACKING_CMC "Include DefaultCmc and StormTrackingCmc (needs ESDK_HIERARCHICAL_KEYRING)" ON)
+if(ESDK_STORM_TRACKING_CMC AND NOT ESDK_HIERARCHICAL_KEYRING)
+    message(FATAL_ERROR "ESDK_STORM_TRACKING_CMC needs ESDK_HIERARCHICAL_KEYRING")
 endif()
+set(ESDK_FEATURES aws-lc-sys)
+if(ESDK_FIPS)
+    set(ESDK_FEATURES fips)
+endif()
+if(ESDK_HIERARCHICAL_KEYRING)
+    list(APPEND ESDK_FEATURES kms ddb default-aws-sdk-clients)
+endif()
+if(ESDK_STORM_TRACKING_CMC)
+    list(APPEND ESDK_FEATURES rt-tokio)
+endif()
+list(JOIN ESDK_FEATURES "," _esdk_feature_list)
+list(APPEND ESDK_CARGO_ARGS --no-default-features --features ${_esdk_feature_list})
 
 # Build the Rust staticlib/cxx-generated source
 execute_process(
@@ -63,6 +78,10 @@ if(APPLE)
         "-framework SystemConfiguration"
     )
 endif()
+target_compile_definitions(aws_esdk_cpp PUBLIC
+    AWS_ESDK_CPP_HIERARCHICAL_KEYRING=$<BOOL:${ESDK_HIERARCHICAL_KEYRING}>
+    AWS_ESDK_CPP_STORM_TRACKING_CMC=$<BOOL:${ESDK_STORM_TRACKING_CMC}>
+)
 add_library(AWS::esdk ALIAS aws_esdk_cpp)
 
 if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)

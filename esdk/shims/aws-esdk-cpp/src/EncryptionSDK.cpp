@@ -213,6 +213,7 @@ auto guard(F&& f) -> decltype(f()) {
     }
 }
 
+#if AWS_ESDK_CPP_HIERARCHICAL_KEYRING
 ::ffi::Duration to_ffi(std::chrono::nanoseconds d, const char* field) {
     if (d.count() < 0) {
         throw ValidationException(std::string(field) + " must not be negative");
@@ -221,6 +222,7 @@ auto guard(F&& f) -> decltype(f()) {
     return ::ffi::Duration{static_cast<std::uint64_t>(secs.count()),
                            static_cast<std::uint32_t>((d - secs).count())};
 }
+#endif  // AWS_ESDK_CPP_HIERARCHICAL_KEYRING
 
 ::ffi::EsdkAlgorithmSuiteId to_ffi(AlgorithmSuiteId a) {
     return static_cast<::ffi::EsdkAlgorithmSuiteId>(static_cast<std::uint16_t>(a));
@@ -240,9 +242,11 @@ auto guard(F&& f) -> decltype(f()) {
 ::ffi::OptU64 to_opt(const std::optional<std::uint64_t>& o) {
     return o ? ::ffi::OptU64{true, *o} : ::ffi::OptU64{false, 0};
 }
+#if AWS_ESDK_CPP_HIERARCHICAL_KEYRING
 ::ffi::OptString to_opt(const std::optional<std::string>& o, const std::string& name) {
     return o ? ::ffi::OptString{true, to_rust_string(*o, name)} : ::ffi::OptString{false, {}};
 }
+#endif  // AWS_ESDK_CPP_HIERARCHICAL_KEYRING
 ::ffi::OptAlgId to_opt(const std::optional<AlgorithmSuiteId>& o) {
     return o ? ::ffi::OptAlgId{true, to_ffi(*o)} : ::ffi::OptAlgId{false, {}};
 }
@@ -307,6 +311,7 @@ Ciphertext make_ciphertext(::rust::Vec<std::uint8_t> buf) {
     return BytesFactory::make<Ciphertext>(std::move(buf));
 }
 
+#if AWS_ESDK_CPP_HIERARCHICAL_KEYRING
 // MPL Client Config
 
 struct HttpClientImpl {
@@ -332,6 +337,7 @@ struct CredentialsAccess {
         return out;
     }
 };
+#endif  // AWS_ESDK_CPP_HIERARCHICAL_KEYRING
 
 // Resources
 
@@ -342,6 +348,7 @@ struct CredentialsAccess {
 // an HKeyring may retain a Key Store and cache, while a raw AES keyring may retain nothing.
 using Retained = std::vector<std::shared_ptr<void>>;
 
+#if AWS_ESDK_CPP_HIERARCHICAL_KEYRING
 struct KmsClientImpl {
     // `retained` must be declared before the handle so its resources are destroyed last.
     // In C++, destructor behavior is declared first -> destroyed last.
@@ -365,7 +372,9 @@ struct KeyStoreImpl {
     KeyStoreImpl(Retained deps, ::rust::Box<::ffi::KeyStore> h)
         : retained(std::move(deps)), handle(std::move(h)) {}
 };
+#endif  // AWS_ESDK_CPP_HIERARCHICAL_KEYRING
 
+#if AWS_ESDK_CPP_HIERARCHICAL_KEYRING
 struct CryptographicMaterialsCacheImpl {
     Retained retained;
     ::rust::Box<::ffi::CryptographicMaterialsCache> handle;
@@ -373,6 +382,7 @@ struct CryptographicMaterialsCacheImpl {
                                     ::rust::Box<::ffi::CryptographicMaterialsCache> h)
         : retained(std::move(deps)), handle(std::move(h)) {}
 };
+#endif  // AWS_ESDK_CPP_HIERARCHICAL_KEYRING
 
 struct KeyringImpl {
     Retained retained;
@@ -397,6 +407,7 @@ struct DecryptStreamImpl {
 
 }  // namespace detail
 
+#if AWS_ESDK_CPP_HIERARCHICAL_KEYRING
 // AwsSdkClientConfig
 
 HttpClient::HttpClient()
@@ -502,9 +513,12 @@ KeyStore::KeyStore(const std::string& table_name,
               if (options.ddb_client_) c.ddb_client = &*options.ddb_client_->impl_->handle;
               return ::ffi::create_keystore(c);
           }))) {}
+#endif  // AWS_ESDK_CPP_HIERARCHICAL_KEYRING
 
+#if AWS_ESDK_CPP_HIERARCHICAL_KEYRING
 // Cryptographic materials caches
 
+#if AWS_ESDK_CPP_STORM_TRACKING_CMC
 namespace detail {
 ::ffi::OptDuration to_opt(const std::optional<std::chrono::nanoseconds>& o, const char* field) {
     return o ? ::ffi::OptDuration{true, to_ffi(*o, field)} : ::ffi::OptDuration{false, {}};
@@ -529,11 +543,13 @@ DefaultCmc::DefaultCmc(std::uint32_t entry_capacity)
     : CryptographicMaterialsCache(std::make_shared<detail::CryptographicMaterialsCacheImpl>(
           detail::Retained{},
           detail::guard([&] { return ::ffi::create_default_cmc(entry_capacity); }))) {}
+#endif  // AWS_ESDK_CPP_STORM_TRACKING_CMC
 
 LocalCmc::LocalCmc(std::uint32_t entry_capacity)
     : CryptographicMaterialsCache(std::make_shared<detail::CryptographicMaterialsCacheImpl>(
           detail::Retained{},
           detail::guard([&] { return ::ffi::create_local_cmc(entry_capacity); }))) {}
+#endif  // AWS_ESDK_CPP_HIERARCHICAL_KEYRING
 
 // Keyrings
 
@@ -546,6 +562,7 @@ Keyring Keyring::adopt(void* raw_handle) {
         ::rust::Box<::ffi::Keyring>::from_raw(static_cast<::ffi::Keyring*>(raw_handle))));
 }
 
+#if AWS_ESDK_CPP_HIERARCHICAL_KEYRING
 HierarchicalKeyring::HierarchicalKeyring(KeyStore key_store,
                                          const std::string& branch_key_id,
                                          std::chrono::nanoseconds ttl,
@@ -564,6 +581,7 @@ HierarchicalKeyring::HierarchicalKeyring(KeyStore key_store,
               if (options.cache_) in.cache = &*options.cache_->impl_->handle;
               return ::ffi::create_hierarchical_keyring(in);
           }))) {}
+#endif  // AWS_ESDK_CPP_HIERARCHICAL_KEYRING
 
 RawAesKeyring::RawAesKeyring(const std::string& key_namespace,
                              const std::string& key_name,
