@@ -35,7 +35,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: aws/aws-crypto-tools-commons
-          ref: lucmcdon/duvet-test-reach
+          ref: lucmcdon/test-server-branch-coverage
           path: commons
           sparse-checkout: test-server-common/tools
 
