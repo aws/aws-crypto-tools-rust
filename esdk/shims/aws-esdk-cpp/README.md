@@ -41,7 +41,7 @@ targets consume.
 To use AWS-LC's FIPS module instead, build with:
 
 ```bash
-cargo build --no-default-features --features fips
+cargo build --features fips
 ```
 
 Through CMake, configure with `-DESDK_FIPS=ON`.

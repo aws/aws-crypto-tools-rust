@@ -15,23 +15,28 @@ readme = "README.md"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [dependencies]
-aws-crypto-mpl = { path = "../../../mpl", default-features = false, features = ["kms", "ddb", "default-aws-sdk-clients", "rt-tokio"] }
+aws-crypto-mpl = { path = "../../../mpl", default-features = false }
 aws-mpl-primitives = { path = "../../../prim", default-features = false }
 cxx = "1.0.202"
 tokio = {version = "1.49", features = ["full"] }
-aws-esdk = { path = "../..", default-features = false, features = ["kms", "ddb", "default-aws-sdk-clients", "rt-tokio"] }
+aws-esdk = { path = "../..", default-features = false }
 aws-smithy-runtime = { version = "1.16", features = ["client", "default-https-client"] }
 aws-smithy-runtime-api = { version = "1.19", features = ["client"] }
 
 [features]
-default = ["aws-lc-sys"]
+# The same features as the Rust ESDK, passed through to it.
+default = ["aws-lc-sys", "kms", "ddb", "default-aws-sdk-clients", "rt-tokio"]
 # The crypto backend: `aws-lc-sys` (the default), or `fips` for AWS-LC's FIPS module.
-# To use AWS-LC FIPS, build with `--no-default-features --features fips`,
+# To use AWS-LC FIPS, build with `--features fips`,
 # or configure CMake with `-DESDK_FIPS=ON`.
-# The ESDK's other features stay on, because the C++ API always offers
-# the AWS KMS keyrings and the key store.
-aws-lc-sys = ["aws-esdk/aws-lc-sys"]
-fips = ["aws-esdk/fips"]
+aws-lc-sys = ["aws-esdk/aws-lc-sys", "aws-crypto-mpl/aws-lc-sys", "aws-mpl-primitives/aws-lc-sys"]
+fips = ["aws-esdk/fips", "aws-crypto-mpl/fips", "aws-mpl-primitives/fips"]
+# The C++ API needs all four of these today. `src/lib.rs` fails the build
+# with a clear message if one is off.
+kms = ["aws-esdk/kms", "aws-crypto-mpl/kms"]
+ddb = ["aws-esdk/ddb", "aws-crypto-mpl/ddb"]
+default-aws-sdk-clients = ["aws-esdk/default-aws-sdk-clients", "aws-crypto-mpl/default-aws-sdk-clients"]
+rt-tokio = ["aws-esdk/rt-tokio", "aws-crypto-mpl/rt-tokio"]
 
 [build-dependencies]
 cxx-build = "1.0.202"

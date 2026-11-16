@@ -133,6 +133,17 @@
 //= spec/shim/shim.md#streaming
 //# If a core library resource or operation supports [streamed](../client-apis/streaming.md) inputs/outputs,
 //# the shim library SHOULD support it as well.
+// The C++ API always offers the AWS KMS keyrings, the key store and the
+// default AWS SDK clients, so it needs these features until that code is
+// gated by feature.
+#[cfg(not(all(
+    feature = "kms",
+    feature = "ddb",
+    feature = "default-aws-sdk-clients",
+    feature = "rt-tokio"
+)))]
+compile_error!("aws-esdk-cpp needs the kms, ddb, default-aws-sdk-clients and rt-tokio features");
+
 use aws_config::{BehaviorVersion, FrameworkMetadata, Region, SdkConfig};
 use aws_crypto_mpl::aws_config;
 use aws_crypto_mpl::cmc::{

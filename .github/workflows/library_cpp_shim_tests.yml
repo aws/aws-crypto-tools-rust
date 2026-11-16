@@ -54,7 +54,7 @@ jobs:
         run: cargo clippy --all-targets -- -D warnings
 
       - name: Clippy with FIPS
-        run: cargo clippy --all-targets --no-default-features --features fips -- -D warnings
+        run: cargo clippy --all-targets --features fips -- -D warnings
 
       - name: Build
         run: cargo build --verbose
