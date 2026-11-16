@@ -173,6 +173,11 @@ jobs:
               ],
               "smithy-conformance": [
                 {"when": "smithy-conformance"}
+              ],
+              "mutation": [
+                {"when": "esdk", "crate": "esdk", "product": "esdk", "server": "esdk/test-server:esdk-test-server"},
+                {"when": "mpl", "crate": "mpl", "product": "mpl", "server": "mpl/test-server:mpl-test-server"},
+                {"when": "prim", "crate": "prim", "product": "primitives", "server": "prim/test-server:primitives-test-server"}
               ]
             }
         run: |
@@ -444,7 +449,7 @@ jobs:
       actions: read
       # The reusable workflow reads this pull request's Test-Server-Override lines.
       pull-requests: read
-    uses: aws/aws-crypto-tools-commons/.github/workflows/duvet-test-reach-reusable.yml@lucmcdon/duvet-test-reach
+    uses: aws/aws-crypto-tools-commons/.github/workflows/duvet-test-reach-reusable.yml@lucmcdon/test-server-branch-coverage
     with:
       runner: *codebuild-linux
       library: ${{ matrix.library }}
@@ -453,6 +458,33 @@ jobs:
       local-tests: ${{ matrix.local-tests }}
       crate: ${{ matrix.crate }}
       artifacts: ${{ matrix.artifacts }}
+    secrets:
+      repo-pat: ${{ secrets.COMMONS_REPO_PAT }}
+
+  # Mutation testing: does some test fail when the library code is changed in small ways?
+  # A pull request mutates only the lines it changes and fails if one of those mutants survives.
+  # A push to main mutates the whole crate and only reports. The daily run skips it.
+  mutation:
+    name: Mutation testing (${{ matrix.crate }})
+    needs: detect
+    if: github.event_name != 'schedule' && fromJSON(needs.detect.outputs.jobs)['mutation'] != null
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.detect.outputs.jobs)['mutation'] }}
+    permissions:
+      contents: read
+      id-token: write
+      # The reusable workflow reads this pull request's Test-Server-Override lines.
+      pull-requests: read
+    uses: aws/aws-crypto-tools-commons/.github/workflows/mutation-rust-reusable.yml@lucmcdon/test-server-branch-coverage
+    with:
+      runner: *codebuild-linux
+      crate: ${{ matrix.crate }}
+      product: ${{ matrix.product }}
+      server: ${{ matrix.server }}
+      commons-ref: lucmcdon/test-server-branch-coverage
+      aws-role-arn: arn:aws:iam::370957321024:role/GitHub-CI-Public-ESDK-Dafny-Role-us-west-2
     secrets:
       repo-pat: ${{ secrets.COMMONS_REPO_PAT }}
 
@@ -537,6 +569,7 @@ jobs:
       - gen-errors
       - license-headers
       - duvet-test-reach
+      - mutation
     runs-on: *codebuild-linux
     steps:
       - name: Check job results
