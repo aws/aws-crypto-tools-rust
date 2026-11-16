@@ -1,0 +1,121 @@
+VT.md:15	MISS	esdk/shims/aws-esdk-cpp/src/lib.rs:2054	-1571`, `:1655` → `:1661`, `into_keyring_handle` `
+VT.md:16	MISS	prim/src/ecdsa.rs:387	c` on the `ecdsa_generate_keypair` error return, `
+VT.md:79	MISS	mpl/src/aws_kms/hierarchical_keyring.rs:734	 → `try_decrypt_edk` → `decrypt_edk_at_version` (`
+VT.md:79	MISS	mpl/src/aws_kms/hierarchical_keyring.rs:751-772	_edk_at_version` (`hierarchical_keyring.rs:734`, `
+VT.md:81	NOFILE	:61	| 16 | 2.88 | T | T10 `compute_aad` (`
+VT.md:93	NOFILE	:129	28 | 1.68 | T | T20 raw-AES provider-info codec (`
+VT.md:151	RANGE	mpl/src/key_store/record.rs:677	authenticated-encryption-context, #record-format (
+VT.md:151	RANGE	mpl/src/key_store/record.rs:690	yption-context, #record-format (:677, create-time 
+VT.md:151	RANGE	mpl/src/key_store/record.rs:692	format (:677, create-time :690, hierarchy-version 
+VT.md:151	RANGE	mpl/src/key_store/record.rs:531	:690, hierarchy-version :692; MUST-fail sentences 
+VT.md:151	RANGE	mpl/src/key_store/record.rs:553	hierarchy-version :692; MUST-fail sentences :531, 
+VT.md:151	RANGE	mpl/src/key_store/record.rs:574	chy-version :692; MUST-fail sentences :531, :553, 
+VT.md:362	ALT	mpl/src/aws_kms/hierarchical_keyring.rs:734	      on_decrypt (
+VT.md:362	ALT	mpl/src/aws_kms/hierarchical_keyring.rs:867	:751-772; per-EDK attempt :764); try_decrypt_edk (
+VT.md:362	RANGE	mpl/src/cmc/storm_tracking.rs:879	ttempt :764); try_decrypt_edk (:867; length guard 
+VT.md:362	RANGE	mpl/src/cmc/storm_tracking.rs:889-894	crypt_edk (:867; length guard :879; version bytes 
+VT.md:363	ALT	mpl/src/aws_kms/hierarchical_keyring.rs:901	      decrypt_edk_at_version (
+VT.md:363	RANGE	mpl/src/cmc/storm_tracking.rs:908	      decrypt_edk_at_version (:901; cache id 
+VT.md:363	RANGE	mpl/src/cmc/storm_tracking.rs:916-924	edk_at_version (:901; cache id :908; cache lookup 
+VT.md:363	ALT	mpl/src/aws_kms/hierarchical_keyring.rs:934-938	p :916-924; key-store read get_branch_key_version 
+VT.md:363	RANGE	mpl/src/cmc/storm_tracking.rs:947-953	y-store read get_branch_key_version :934-938; put 
+VT.md:374	MISS	mpl/tests/test_keyring_memory.rs:100	  coverage_evidence: "test_keyring_memory.rs 
+VT.md:374	MISS	mpl/tests/test_keyring_memory.rs:113	 coverage_evidence: "test_keyring_memory.rs :100, 
+VT.md:398	MISS	prim/src/ecdsa.rs:248	verage_evidence: "Zeroize tests cover types only (
+VT.md:398	MISS	prim/src/ecdsa.rs:228	_evidence: "Zeroize tests cover types only (:248, 
+VT.md:448	MISS	mpl/tests/test_local_cmc.rs:465	 test_decryption_materials.rs; test_local_cmc.rs (
+VT.md:456	MISS	mpl/tests/test_storm_tracking_cmc.rs:388	(33) | 0.8 | Tests encode the regressed contract (
+VT.md:506	ALT	esdk/performance-tests/src/benchmark.rs (+6):137-147	s:26-27`; AWS clients built from request data at `
+VT.md:506	MISS	mpl/test-server/src/handlers.rs:425-430	uilt from request data at `handlers.rs:137-147`, `
+VT.md:511	MISS	esdk/shims/aws-esdk-cpp/include/aws/esdk/EncryptionSDK.h:656-663	aller obligation across the FFI boundary (header `
+VT.md:527	ALT	mpl/tests/test_aws_kms_hierarchical_keyring_integ.rs (+1):131	red `LocalCmc` entries stay resident until read (`
+VT.md:527	MISS	mpl/src/cmc/local.rs:166	ntries stay resident until read (`local.rs:131`, `
+VT.md:527	MISS	prim/src/ecdsa.rs:387	 private-key `Vec` un-wiped on its error return (`
+VT.md:527	MISS	prim/src/ecdsa.rs:391-392	c` un-wiped on its error return (`ecdsa.rs:387`, `
+VT/01-threat-driven.md:18	MISS	esdk/shims/aws-esdk-cpp/src/lib.rs:2054	-1571`, `:1655` → `:1661`, `into_keyring_handle` `
+VT/01-threat-driven.md:36	MISS	mpl/tests/test_keyring_memory.rs:100	ility 0.7 (Likelihood Medium). Coverage gap 0.9: `
+VT/01-threat-driven.md:36	MISS	mpl/tests/test_keyring_memory.rs:113	 0.9: `mpl/tests/test_keyring_memory.rs:100` and `
+VT/01-threat-driven.md:38	ALT	mpl/tests/test_local_cmc.rs:465	wiped; `test_pruning_does_not_evict_outside_tail` 
+VT/01-threat-driven.md:62	MISS	esdk/shims/aws-esdk-cpp/src/lib.rs:1570	 shim (`esdk/shims/aws-esdk-cpp/src/lib.rs:728`, `
+VT/01-threat-driven.md:219	MISS	mpl/src/key_store/kms_ops.rs:172	y required one step later, by decrypt_branch_key (
+VT/01-threat-driven.md:228	RANGE	mpl/src/key_store/kms_ops.rs:677	    #record-format (
+VT/01-threat-driven.md:228	RANGE	mpl/src/key_store/kms_ops.rs:690	"A branch key record MUST include", `create-time` 
+VT/01-threat-driven.md:228	RANGE	mpl/src/key_store/kms_ops.rs:692	include", `create-time` :690, `hierarchy-version` 
+VT/01-threat-driven.md:230	RANGE	mpl/src/key_store/kms_ops.rs:531	    defined fields, this operation MUST fail": 
+VT/01-threat-driven.md:230	RANGE	mpl/src/key_store/kms_ops.rs:553	 defined fields, this operation MUST fail": :531, 
+VT/01-threat-driven.md:230	RANGE	mpl/src/key_store/kms_ops.rs:574	ed fields, this operation MUST fail": :531, :553, 
+VT/01-threat-driven.md:245	MISS	mpl/src/key_store/branch_key_store.rs:1098	    write paths (branch_key_store.rs:711, 
+VT/01-threat-driven.md:245	ALT	esdk/examples/branch_key_id_supplier.rs (+21):77	ey_store.rs:711, :1098; encryption_context.rs:67, 
+VT/01-threat-driven.md:292	ALT	mpl/tests/test_aws_kms_hierarchical_keyring_integ.rs:692	ed here. Discovery also runs on the encrypt path (
+VT/01-threat-driven.md:292	ALT	mpl/tests/test_aws_kms_hierarchical_keyring_integ.rs:801	→ get_active_branch_key, branch_key_store.rs:792, 
+VT/01-threat-driven.md:487	ALT	mpl/tests/test_storm_tracking_cmc.rs:680	oisoning consequence at storm_tracking.rs:333 and 
+VT/01-threat-driven.md:608	MISS	mpl/src/cmc/storm_tracking.rs:734	tin<HierarchicalKeyring> as Keyring>::on_decrypt (
+VT/01-threat-driven.md:610	ALT	mpl/src/aws_kms/hierarchical_keyring.rs:867	      try_decrypt_edk (
+VT/01-threat-driven.md:610	RANGE	mpl/src/cmc/storm_tracking.rs:879	      try_decrypt_edk (:867; length guard 
+VT/01-threat-driven.md:610	RANGE	mpl/src/cmc/storm_tracking.rs:889-894	crypt_edk (:867; length guard :879; version bytes 
+VT/01-threat-driven.md:611	ALT	mpl/src/aws_kms/hierarchical_keyring.rs:901	      decrypt_edk_at_version (
+VT/01-threat-driven.md:611	RANGE	mpl/src/cmc/storm_tracking.rs:908	      decrypt_edk_at_version (:901; cache id 
+VT/01-threat-driven.md:611	RANGE	mpl/src/cmc/storm_tracking.rs:916-924	edk_at_version (:901; cache id :908; cache lookup 
+VT/01-threat-driven.md:611	ALT	mpl/src/aws_kms/hierarchical_keyring.rs:934-938	:916-924; key-store read `get_branch_key_version` 
+VT/01-threat-driven.md:612	RANGE	mpl/src/cmc/storm_tracking.rs:947-953	      put after a successful read 
+VT/01-threat-driven.md:650	RANGE	esdk/src/config.rs:236-249	ws-kms/aws-kms-hierarchical-keyring.md#ondecrypt (
+VT/01-threat-driven.md:657	MISS	mpl/tests/test_aws_kms_hierarchical_keyring.rs:1764	l_keyring.rs:1306) and asserts single-EDK counts (
+VT/01-threat-driven.md:657	MISS	mpl/tests/test_aws_kms_hierarchical_keyring.rs:2192	ng.rs:1306) and asserts single-EDK counts (:1764, 
+VT/01-threat-driven.md:691	RANGE	prim/src/ecdsa.rs:471	ng>::on_decrypt (plaintext buffer `vec![0u8; ..]` 
+VT/01-threat-driven.md:691	RANGE	prim/src/ecdsa.rs:489	.]` :471, aes_decrypt-Err path, wrong-length path 
+VT/01-threat-driven.md:700	ALT	mpl/src/structures/decryption_materials.rs (+1):139	    Vec into the zeroizing SigningKey on success (
+VT/01-threat-driven.md:720	MISS	prim/src/ecdsa.rs:391-392	(ghost_signing_key_vec)   // expected: FAILS (F5, 
+VT/01-threat-driven.md:912	ALT	mpl/tests/test_default_cmm.rs:168-171	:send() checks completeness only, not the policy (
+VT/01-threat-driven.md:915	ALT	mpl/test-server/tests/static_keyring.rs:184	    (default_cmm.rs:97, 
+VT/01-threat-driven.md:915	MISS	esdk/src/materials.rs:130	(default_cmm.rs:97, :184) plus the ESDK re-check (
+VT/01-threat-driven.md:915	MISS	esdk/src/materials.rs:202	ESDK re-check (esdk/src/materials.rs:130 decrypt, 
+VT/01-threat-driven.md:988	MISS	mpl/src/aws_kms/hierarchical_keyring.rs:606	      StormTrackingCmcBuilder::build (
+VT/01-threat-driven.md:988	ALT	esdk/tests/test_error_ux.rs (+1):239	16, :619, :622); StormTrackingCmc::{state_locked (
+VT/01-threat-driven.md:989	ALT	mpl/src/cmc/storm_tracking.rs:264	  key when pruning, :250-255), classify_and_mark (
+VT/01-threat-driven.md:989	ALT	mpl/src/cmc/storm_tracking.rs:313	n-out-full miss returns `Wait { deadline: None }` 
+VT/01-threat-driven.md:990	ALT	mpl/src/cmc/storm_tracking.rs (+1):333	      :322-323; `now + in_flight_ttl` 
+VT/01-threat-driven.md:990	ALT	mpl/src/cmc/storm_tracking.rs:360	23; `now + in_flight_ttl` :333), wait_for_leader (
+VT/01-threat-driven.md:990	ALT	esdk/shims/aws-esdk-cpp/src/lib.rs (+2):378-382	ttl` :333), wait_for_leader (:360; deadline check 
+VT/01-threat-driven.md:990	ALT	esdk/shims/aws-esdk-cpp/src/lib.rs (+1):388	eader (:360; deadline check :378-382; guard taken 
+VT/01-threat-driven.md:990	ALT	mpl/tests/test_storm_tracking_cmc.rs:390-394	ine check :378-382; guard taken :388; leader test 
+VT/01-threat-driven.md:991	ALT	mpl/src/cmc/storm_tracking.rs:729	ark cleared :724-725); Cmc::get_cache_entry impl (
+VT/01-threat-driven.md:992	ALT	mpl/src/cmc/storm_tracking.rs:661	y called under it :739-740); within_grace_period (
+VT/01-threat-driven.md:992	ALT	mpl/src/cmc/storm_tracking.rs:675	ithin_grace_period (:661); within_grace_interval (
+VT/01-threat-driven.md:993	MISS	mpl/src/aws_kms/hierarchical_keyring.rs:934-938	hind: HierarchicalKeyring decrypt_edk_at_version (
+VT/01-threat-driven.md:1015	ALT	mpl/src/cmc/storm_tracking.rs:313	: the fan-out-full miss returns `deadline: None` (
+VT/01-threat-driven.md:1018	ALT	mpl/src/cmc/storm_tracking.rs (+1):333	TO FAIL with BUG-01 (T06): `now + in_flight_ttl` (
+VT/01-threat-driven.md:1019	ALT	mpl/src/cmc/storm_tracking.rs (+1):680	    and `inflight + grace_interval` (
+VT/01-threat-driven.md:1021	ALT	esdk/shims/aws-esdk-cpp/src/lib.rs (+2):248	    Internal "cache lock poisoned" (
+VT/01-threat-driven.md:1029	MISS	mpl/src/aws_kms/hierarchical_keyring.rs:322-323	oint of a same-key get            // FAILS today (
+VT/01-threat-driven.md:1033	MISS	mpl/src/aws_kms/hierarchical_keyring.rs:313	                                  // FAILS today (
+VT/01-threat-driven.md:1225	ALT	esdk/shims/aws-esdk-cpp/src/tests.rs:831	ryption context (hierarchical_keyring.rs:746-748, 
+VT/01-threat-driven.md:1225	ALT	esdk/tests/test_input_builders.rs:198	46-748, :831; with DefaultCmm the merged context, 
+VT/01-threat-driven.md:1225	RANGE	mpl/src/cmm/default_cmm.rs:760	ated until a data key is recovered. The filter at 
+VT/01-threat-driven.md:1285	ALT	mpl/tests/test_key_store_branch_key_store_integ.rs (+1):191	als (branch_key_materials.rs:55) and its builder (
+VT/01-threat-driven.md:1289	MISS	esdk/src/error/generated.rs:271	the NoMatchingDataKey Debug impl, :1596, field at 
+VT/01-threat-driven.md:1331	MISS	esdk/shims/aws-esdk-cpp/src/lib.rs:1287	null check :720; `unsafe { &*ptr }` :728; callers 
+VT/01-threat-driven.md:1331	MISS	esdk/shims/aws-esdk-cpp/src/lib.rs:1331	eck :720; `unsafe { &*ptr }` :728; callers :1287, 
+VT/01-threat-driven.md:1331	MISS	esdk/shims/aws-esdk-cpp/src/lib.rs:1652	0; `unsafe { &*ptr }` :728; callers :1287, :1331, 
+VT/01-threat-driven.md:1331	MISS	esdk/shims/aws-esdk-cpp/src/lib.rs:1942	afe { &*ptr }` :728; callers :1287, :1331, :1652, 
+VT/01-threat-driven.md:1331	MISS	esdk/shims/aws-esdk-cpp/src/lib.rs:1985	*ptr }` :728; callers :1287, :1331, :1652, :1942, 
+VT/01-threat-driven.md:1337	MISS	esdk/shims/aws-esdk-cpp/include/aws/esdk/EncryptionSDK.h:656-663	   include/aws/esdk/EncryptionSDK.h:664, contract 
+VT/01-threat-driven.md:1369	MISS	esdk/shims/aws-esdk-cpp/src/lib.rs:180-204	tom implementations of core-library interfaces\" (
+VT/01-threat-driven.md:1491	MISS	mpl/test-server/src/handlers.rs:137-147	s:26-27`; AWS clients built from request data at `
+VT/01-threat-driven.md:1491	MISS	mpl/test-server/src/handlers.rs:425-430	ta at `mpl/test-server/src/handlers.rs:137-147`, `
+VT/01-threat-driven.md:1513	MISS	esdk/shims/aws-esdk-cpp/include/aws/esdk/EncryptionSDK.h:656-663	internals | Caller obligation across FFI (header `
+VT/02-capability-driven.md:15	MISS	prim/src/ecdsa.rs:387	iped `ecdsa_generate_keypair` private-key `Vec` (`
+VT/02-capability-driven.md:15	MISS	prim/src/ecdsa.rs:391-392	air` private-key `Vec` (`prim/src/ecdsa.rs:387`, `
+VT/02-capability-driven.md:15	MISS	esdk/shims/aws-esdk-cpp/src/lib.rs:1564-1565	ch no C target scopes. T25 row: citations moved (`
+VT/02-capability-driven.md:15	MISS	esdk/shims/aws-esdk-cpp/src/lib.rs:1570-1571	. T25 row: citations moved (`lib.rs:1564-1565` → `
+VT/02-capability-driven.md:23	ALT	mpl/tests/test_storm_tracking_cmc.rs:138	d `grace_interval > in_flight_ttl` (`:622`, spec `
+VT/02-capability-driven.md:459	ALT	mpl/tests/test_aws_kms_hierarchical_keyring_integ.rs (+1):131	red `LocalCmc` entries stay resident until read (`
+VT/02-capability-driven.md:459	MISS	mpl/src/cmc/local.rs:166	resident until read (`mpl/src/cmc/local.rs:131`, `
+VT/02-capability-driven.md:459	MISS	prim/src/ecdsa.rs:391-392	ed on its error return (`prim/src/ecdsa.rs:387`, `
+VT/02-capability-driven.md:464	ALT	mpl/tests/test_storm_tracking_cmc.rs:619	≤ Inflight TTL (`storm_tracking.rs:613`, `:616`, `
+VT/02-capability-driven.md:464	ALT	mpl/tests/test_storm_tracking_cmc.rs:622	ht TTL (`storm_tracking.rs:613`, `:616`, `:619`, `
+VT/02-capability-driven.md:473	ALT	esdk/shims/aws-esdk-cpp/src/tests.rs:728	 `esdk/shims/aws-esdk-cpp/src/lib.rs:715`, deref `
+VT/02-capability-driven.md:474	ALT	mpl/tests/test_builder_getters.rs:751-772	ounded termination) | **T27** | Full | The loop (`
+VT/02-capability-driven.md:474	MISS	mpl/src/aws_kms/hierarchical_keyring.rs:934	rs:751-772`) and the per-version key-store read (`
+VT/02-capability-driven.md:474	MISS	mpl/src/aws_kms/hierarchical_keyring.rs:947	72`) and the per-version key-store read (`:934`, `
+VT/02-capability-driven.md:475	ALT	mpl/test-server/src/wire.rs:67	ey builders, which always write both attributes (`
+VT/02-capability-driven.md:475	ALT	esdk/examples/branch_key_id_supplier.rs (+28):77	ttributes (`key_store/encryption_context.rs:67`, `

@@ -1,9 +1,28 @@
 # Capability-Driven Verus Verification Targets — AWS MPL (native Rust)
 
-> Pipeline artifact — Stage 3, Step 2 of 4 (capability-driven entry path, the Stage 2' sweep). **Refreshed for main `620771c`** (previous version: `a1e23d7`).
-> Inputs: `mpl/src`, `prim/src`, `mpl/tests`, `prim/tests`, `spec/framework/*.md`, `.agents/tasks/pipeline-rerun-620771c/scope.md`, and Step 1 output `docs/verification-targets/01-threat-driven.md`.
+> Pipeline artifact — Stage 3, Step 2 of 4 (capability-driven entry path, the Stage 2' sweep). **Refreshed for HEAD `9955ecd`** (branch `MPL-Verus`; `mpl/` and `prim/` identical to `origin/main` `620771c`; `esdk/` differs from `620771c` only by #188 and #189). The `620771c` refresh (previous version analyzed `a1e23d7`) is kept in §0.
+> Inputs: `mpl/src`, `prim/src`, `mpl/tests`, `prim/tests`, `spec/framework/*.md`, `docs/threat-model.md` (TM-MPL-001..026), `docs/completeness-audit.md`, `.agents/tasks/pipeline-rerun-620771c/scope.md`, `.agents/tasks/docs-sync-9955ecd/scores.md`, and Step 1 output `docs/verification-targets/01-threat-driven.md`.
 > Methodology: `.kiro/agents/ai-verification-pipeline.md` (Stage 2'), `.kiro/agents/verus-capabilities.md`, `.kiro/agents/verification-recommender.md`.
 > Every target has `origin: capability-driven` and a `capability_reference` in place of a threat. Candidates already scoped by Step 1 are listed in §4, not re-issued.
+
+## Refresh (HEAD 9955ecd)
+
+No capability-driven target was added, removed or re-scored. C01 to C08 keep their scores, ranks and YAML (C06 stays retired). `mpl/` and `prim/` did not change since `620771c`, so every `mpl/` and `prim/` citation below still holds; the shim citations moved with #188. The refresh re-ran the sweep over the Step 1 changes (new T27, re-scored T21, wider T25 and T26, the G1 clause in T02) and updated the text that follows them.
+
+| Item | Change in this document |
+|---|---|
+| New capability target | **None.** See "Decision" below. Recorded as R17 in §5 |
+| §4 overlap rows | T21 builder row: states that property (a) is expected FAIL and is a one-day slice of the one-month T21. T26 row: adds the expired `LocalCmc` entries and the un-wiped `ecdsa_generate_keypair` private-key `Vec` (`prim/src/ecdsa.rs:387`, `:391-392`), which no C target scopes. T25 row: citations moved (`lib.rs:1564-1565` → `:1570-1571`, `:1655` → `:1661`) and the type-erased `Keyring::adopt` path is added as the part a Rust-side proof cannot cover. Two new rows: the EDK loop bound (T27, cat 2d) and the G1 clause that a branch key record MUST include `create-time` and `hierarchy-version` (T02, cat 1a) |
+| §4 T21 concurrency row | Notes the added liveness properties (g), (h), (i) |
+| Threat range | Inputs now cite TM-MPL-001..026 (completeness audit G4-1). TM-MPL-026 (test-only loopback servers) has no capability candidate; it is a fully excluded threat in 01 §4 |
+| §5, §6, §7 | R17 added (candidate rejected); a finding line for the T21 builder bounds; accounting recounted (17 overlap rows, 16 rejected candidates) |
+
+**Decision: no capability-driven sibling of T21 for the storm-tracking builder.** The question was whether `StormTrackingCmcBuilder::build` no longer enforcing the spec bounds (Inflight TTL ≤ Grace Period, Grace Interval ≤ Grace Period, "at least 1") justifies a C target. It does not.
+
+1. **The property is already a target.** T21 (a) states the exact `build` Ok/Err characterization, including the missing constraints, marked expected FAIL. The §4 rule is that a candidate already scoped by Step 1 is listed, not re-issued. A sibling would restate the same pure function, spec text and agent.
+2. **What the code enforces against the spec.** The spec requires Grace Interval ≤ Grace Period and Inflight TTL ≤ Grace Period (`spec/framework/storm-tracking-cryptographic-materials-cache.md:136-137`) and at least 1 for each value (`:59`, `:71`, `:92`). `build` checks only `fan_out == 0` (`mpl/src/cmc/storm_tracking.rs:613`), `in_flight_ttl.is_zero()` (`:616`), `sleep.is_zero()` (`:619`) and `grace_interval > in_flight_ttl` (`:622`, spec `:138`). `test_durations_are_stored_exactly` (`mpl/tests/test_storm_tracking_cmc.rs:388`) accepts `grace_period = Duration::ZERO`.
+3. **The bound is not yet well defined.** The spec's own defaults break its ordering (Inflight TTL 20 s, Grace Period 10 s); the code uses 10 s on purpose (`storm_tracking.rs:117-119`). "At least 1" is in the configured time unit, while the code takes a `Duration` and tests accept sub-second values (`test_sub_second_grace_period_is_honored`, `test_storm_tracking_cmc.rs:283`). The owner has to choose the minimum before a proof can state it; T21 (a) keeps it symbolic.
+4. **It would not change the order of work.** With this document's conventions a sibling scores 2 (consequence: a spec-MUST violation that downstream accepts) × 0.9 (tests exist and encode the regressed contract) × 0.7 (caller-chosen configuration) × 2 (opt-in storm-tracking cache) = 2.52. That is far below the 6.0 quick-win threshold. It would also not address BUG-01, which needs upper bounds (T06), not lower bounds.
 
 ## 0. What changed since a1e23d7
 
@@ -437,21 +456,23 @@ The Stage 2' sweep produced each candidate below, but a Step 1 target already sc
 
 | Capability candidate (category) | Step 1 target | Overlap | What the capability view adds |
 |---|---|---|---|
-| Secret buffers wiped on every exit path (cat 3a analogue, no `unsafe` left) | **T26** | Full | Category 3 no longer has an `unsafe` surface in `mpl`/`prim`; the capability view only adds that the `zeroize` crate's derive is TCB. The old T08 overlap row is retired with T08. |
+| Secret buffers wiped on every exit path (cat 3a analogue, no `unsafe` left) | **T26** | Full | Category 3 no longer has an `unsafe` surface in `mpl`/`prim`; the capability view only adds that the `zeroize` crate's derive is TCB. The old T08 overlap row is retired with T08. Two residual sites added to T26 at `9955ecd` fall outside every C target: expired `LocalCmc` entries stay resident until read (`mpl/src/cmc/local.rs:131`, `:166`; C08 and T23 do not scope them) and `ecdsa_generate_keypair` leaves the private-key `Vec` un-wiped on its error return (`prim/src/ecdsa.rs:387`, `:391-392`; C02 does not list `ecdsa_generate_keypair`). |
 | `EncryptionContext::{to_bytes, from_bytes}` canonical codec (cat 1c) | **T15**, **T16** | Full | With BUG-03 fixed, the Vest non-malleability shape is now the expected theorem, not a counterexample. |
 | `record.rs` `to_attribute_map` / `encryption_context_from_item` (cat 1c) | **T01** | Partial | Reverse direction stays in C01(d); both helpers are now `test-utils` only. |
 | `branch_key_materials_from_authenticated_encryption_context` (cat 1a) | **T02** | Full for the decoder | C01 reuses T02's spec. |
 | `SystemTime + Duration` adds (`hierarchical_keyring.rs:702`, `:945`; `storm_tracking.rs:333`, `:680`) (cat 2b) | **T06** | Full | Still the only arithmetic panic sites in `cmc/` besides the new counter code (C08, which uses `checked_add`). Subtraction is total: `within_grace_period` uses `checked_sub` (`storm_tracking.rs:667-668`), `duration_since` mapped with `unwrap_or(Duration::ZERO)`, `prune_tail` uses `min` (`local.rs:167`). |
-| `StormTrackingCmcBuilder::build` constraints; grace formulas (cat 1a/2b) | **T21** | Full | — |
+| `StormTrackingCmcBuilder::build` constraints; grace formulas (cat 1a/2b) | **T21** (a) | Full | Property (a) is expected FAIL: `build` enforces `fan_out ≥ 1`, `in_flight_ttl > 0`, `sleep > 0` and Grace Interval ≤ Inflight TTL (`storm_tracking.rs:613`, `:616`, `:619`, `:622`) but not the spec's Grace Interval ≤ Grace Period, Inflight TTL ≤ Grace Period or "at least 1" bounds. It is a cheap slice (about a day) of the one-month T21 and needs the owner to choose the minimum first. No C sibling: see the Refresh note and R17 |
 | `LocalCmc` capacity and prune (cat 2b) | **T23** | Full | — |
-| Storm-tracking concurrency (cat 4a/4b) | **T21** | Full | Concurrency specialist hand-off unchanged. |
+| Storm-tracking concurrency (cat 4a/4b) | **T21** | Full | Concurrency specialist hand-off unchanged. T21 now also lists (g) a stale in-flight mark never cleared after a failed refresh, (h) a fan-out-full waiter with no deadline (`storm_tracking.rs:313`) and (i) a panic under the state lock that poisons it; all three are expected FAIL and are stated over the pure classify step. |
 | `cache_entry_within_limits` (cat 1a) | **T14** (b) | Full | Truncation note withdrawn (BUG-09 fixed, full `Duration` compare at `:994`). |
 | KBKDF fixed-info (cat 1d) | **T05** | Full | — |
 | `prim::aes_*` caller preconditions (cat 3b) | **T07** | Partial | C03 keeps the unconditional half. |
 | Commitment-policy tables (cat 1a) | **T09** | Partial | C05 covers the rest of the suite table; C07 supplies the keyring-frame lemma. |
 | MPL `.expect` / slice / index sites (cat 2a/2d) | **T16** (and T17 for `parse_arn`) | Full | — |
 | `ecdsa_generate_keypair(..).expect` (`default_cmm.rs:138`) | **T16** | Full | Expected-unprovable (BUG-05a). |
-| Shim raw-handle dereferences (cat 3b) | **T25** | Full | Outside `mpl`/`prim`; same agent. |
+| Shim raw-handle dereferences (cat 3b) | **T25** | Full for the Rust side | Outside `mpl`/`prim`; same agent. Citations at `9955ecd`: `require_handle` `esdk/shims/aws-esdk-cpp/src/lib.rs:715`, deref `:728`, nullable client handles `:1570-1571`, cache handle `:1661` (moved by #188). The type-erased path is also in T25: `into_keyring_handle` (`lib.rs:2059`) returns a non-null unique `Box` (provable), while C++ `Keyring::adopt` (`EncryptionSDK.cpp:541-547`) calls `from_raw` with no null, type or ownership check. That half is a caller obligation outside the proof (01 §4, TM-MPL-024) |
+| Bounded work in the `HierarchicalKeyring::on_decrypt` EDK loop (cat 2d bounded termination) | **T27** | Full | The loop (`hierarchical_keyring.rs:751-772`) and the per-version key-store read (`:934`, `:947`) are the only unbounded-by-constant work on the decrypt path. T27 states key-store calls and iterations as a function of the EDK list (verifies) and the absence of a constant bound (expected FAIL). Provisional until a reproducer for TM-MPL-025 exists |
+| Branch key record MUST include `create-time` and `hierarchy-version`, otherwise the operation MUST fail (cat 1a; completeness audit G1) | **T02** | Full for the decoder | The clause is part of T02's Ok/Err characterization (expected FAIL on read). C01 only covers records produced by the CreateKey builders, which always write both attributes (`key_store/encryption_context.rs:67`, `:77`), so it neither needs nor reuses the clause |
 
 ## 5. Considered and rejected
 
@@ -473,6 +494,7 @@ The Stage 2' sweep produced each candidate below, but a Step 1 target already sc
 | R14 (new) | Builder getter/setter consistency (`mpl/src/builder.rs`, `test_builder_getters.rs`) | Plumbing with no security property; tested. |
 | R15 (new) | Cargo feature-combination equivalence (`kms`, `ddb`, `rt-tokio`, `fips`, …) | Configuration, not a code property; each proof must name its feature set instead. |
 | R16 (new) | Generated error code (`mpl/src/error/generated.rs`, `prim/src/error/generated.rs`) | Generated data types; redaction of error data is in T22. |
+| R17 (new, `9955ecd`) | Capability sibling of T21 (a): `StormTrackingCmcBuilder::build` lower-bound and ordering constraints (Inflight TTL ≤ Grace Period, Grace Interval ≤ Grace Period, "at least 1") | Already target T21 (a), expected FAIL. The bound is undefined until the owner picks the minimum (spec time unit versus `Duration`; the spec's default Inflight TTL breaks its own ordering). A sibling would score 2.52 (2 × 0.9 × 0.7 × 2) and would not address BUG-01. See the Refresh note |
 
 ## 6. Findings recorded, not changed
 
@@ -480,10 +502,11 @@ The Stage 2' sweep produced each candidate below, but a Step 1 target already sc
 - C03: BUG-07(b) `aes_decrypt` guard weaker than its callee; misleading error text (`prim/src/lib.rs:215`, error mapping after the callee).
 - C07: fields not constrained by `check_encryption_transition` (symmetric signing keys; EDK order) should be compared with Dafny `Materials.dfy` by the owner.
 - C04-F1 / C04-F2 from the previous run: **closed** by BUG-02 fix.
+- T21 (a), not a C target: `StormTrackingCmcBuilder::build` no longer enforces the spec's Inflight TTL ≤ Grace Period, Grace Interval ≤ Grace Period or "at least 1" bounds (`storm_tracking.rs:613-622`), and `test_durations_are_stored_exactly` (`test_storm_tracking_cmc.rs:388`) accepts `grace_period = 0`. Owner decision; see R17.
 
 ## 7. Accounting
 
 - **7 active capability-driven targets** (C01–C05, C07, C08) plus **1 retired** (C06). All carry `origin: capability-driven` and a `capability_reference`. Category split: cat 1 ×4 (C01, C04, C05, C07), cat 2 ×3 (C02, C03, C08). No cat 3 or cat 4 target: no `unsafe` remains in `mpl`/`prim`, and concurrency stays with T21.
 - **Routing:** verus-header-parsing-proofs ×4 (C01, C04, C05, C07), verus-zero-panic ×3 (C02, C03, C08).
-- **15 overlap rows** with Step 1 (§4), covering T01, T02, T05, T06, T07, T09, T14, T15, T16, T17, T21, T23, T25, T26.
-- **15 candidates rejected** (R2–R16; R1 withdrawn).
+- **17 overlap rows** with Step 1 (§4), covering T01, T02, T05, T06, T07, T09, T14, T15, T16, T17, T21, T23, T25, T26, T27 (15 distinct targets; T02 and T21 have two rows each).
+- **16 candidates rejected** (R2–R17; R1 withdrawn).

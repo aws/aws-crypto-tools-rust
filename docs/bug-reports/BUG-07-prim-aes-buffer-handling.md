@@ -5,7 +5,9 @@ Summary: (a) `aes_encrypt` appends the plaintext to the caller's output `Vec` be
 - Confidence: Confirmed by test
 - Spec conflict: no
 - Severity: Low. (a) is a secret-hygiene issue in a crate-level API. Every in-repo caller validates key and IV lengths first and drops the buffer on `Err`, so I found no path where the residue is returned or written out. (b) fails closed, and the only effect is a less useful error message.
-- Related IDs: VR-2026-T07 (property (e)), VR-2026-C03; TM-MPL-011
+- Related IDs: (a) VR-2026-T26, VR-2026-T07 (property (e)); TM-MPL-015 (Low). (b) VR-2026-C03; TM-MPL-023 (Low). TM-MPL-011 (Medium) stays listed through T07. Ratings are from `docs/threat-model.md` (HEAD 9955ecd), where (a) is counted in the Low residual of TM-MPL-015; targets are from `docs/verification-targets.md`.
+- Completeness audit mapping (`docs/completeness-audit.md` section 3b): BUG-07(a) -> TM-MPL-015 -> T26, T07; BUG-07(b) -> TM-MPL-023 -> C03.
+- Last cross-checked: HEAD 9955ecd (code == main 620771c for mpl/ and prim/)
 
 ## Status on main (620771c)
 
@@ -72,9 +74,9 @@ No spec requirement; this is robustness / defense-in-depth. The rustdoc for `aes
 - (a) The plaintext copy only matters if a caller keeps or exposes the buffer after `Err`. By code reading:
   - The MPL callers (raw AES keyring, branch key wrap) return through `?` and drop their local buffer. Both pass key and IV lengths that are already validated (raw AES checks the key length in `new` and uses a fresh 12-byte IV; branch key wrap uses a derived 32-byte key and a 12-byte IV), so the `Err` path is practically unreachable for them.
   - The ESDK frame path writes into a local `frame_buf` that's dropped on `Err`. The plaintext there is message plaintext the caller already holds.
-  - Residual concern: the plaintext data key copy in a dropped `Vec` isn't wiped, while `PlaintextDataKey` itself offers `zeroize()` (`mpl/src/structures/algorithm_suite.rs:434`). That's a memory-hygiene gap, not a disclosure path.
+  - Residual concern: the plaintext data key copy in a dropped `Vec` isn't wiped, while `PlaintextDataKey` itself offers `zeroize()` (`mpl/src/structures/algorithm_suite.rs:434` at `a1e23d7`). That's a memory-hygiene gap, not a disclosure path. On current code the manual `zeroize` loop is gone: `PlaintextDataKey` derives `Zeroize` and `ZeroizeOnDrop` (`algorithm_suite.rs:505`), and the un-wiped transient copies of this kind are tracked by VR-2026-T26 under TM-MPL-015.
   - An external caller of `aws-mpl-primitives` that reuses or logs the buffer after `Err` would expose plaintext. The crate describes itself as "Not intended for public consumption" (`prim/Cargo.toml`).
-- (b) No security impact. All callers I checked size the buffer exactly (`raw_aes_keyring.rs:309`, `branch_key_wrap.rs:267`). A mis-sized buffer just produces an error that looks like an authentication failure, which costs debugging time.
+- (b) No security impact. All callers I checked size the buffer exactly (`raw_aes_keyring.rs:309`, `branch_key_wrap.rs:267` at `a1e23d7`; now `raw_aes_keyring.rs:471` and `branch_key_wrap.rs:275`, each `vec![0u8; encrypted_key.len()]`). A mis-sized buffer just produces an error that looks like an authentication failure, which costs debugging time.
 - The Dafny primitives (AtomicPrimitives `AESEncrypt` / `AESDecrypt`) return fresh output values instead of writing into a caller buffer, so this class of issue doesn't come up there (judged by API shape; I didn't check that implementation further).
 
 ## Reproduction / evidence

@@ -5,7 +5,9 @@ Summary: `keystore::encryption_context::build_base` returns `Err` when inserting
 - Confidence: Confirmed by code reading
 - Spec conflict: no
 - Severity: Informational. Behavior is correct for all inputs. The cost is a misleading comment and an untestable branch, which also makes the C01 round-trip proof slightly harder to state.
-- Related IDs: VR-2026-C01 (property (c)); cap:cat1 (1c)
+- Related IDs: VR-2026-C01 (property (c)); cap:cat1 (1c); TM-MPL-005 (High). `docs/threat-model.md` records BUG-08 as informational with no effect on the TM-MPL-005 rating. Ratings are from `docs/threat-model.md` (HEAD 9955ecd); targets are from `docs/verification-targets.md`.
+- Completeness audit mapping (`docs/completeness-audit.md` section 3b): BUG-08 -> TM-MPL-005 -> C01 (c).
+- Last cross-checked: HEAD 9955ecd (code == main 620771c for mpl/ and prim/)
 
 ## Status on main (620771c)
 
@@ -66,7 +68,7 @@ None on behavior. Every accepted custom EC is copied without loss. The effects a
 - The branch can't be covered by tests, and any error-handling expectations built around it are untested.
 - A proof of C01 (c) has to establish the unreachability argument above. That's straightforward, but it's extra proof work for a branch with no purpose.
 
-An existing test, `distinct_non_utf8_custom_ec_keys_do_not_collapse` (`mpl/tests/test_keystore_encryption_context.rs:234`), shows why the strict UTF-8 check matters: lossy decoding would make step 3 non-injective. With the current strict check, that case is rejected before the insert.
+An existing test, `distinct_non_utf8_custom_ec_keys_do_not_collapse` (`mpl/tests/test_keystore_encryption_context.rs:234` at `a1e23d7`), shows why the strict UTF-8 check matters: lossy decoding would make step 3 non-injective. With the current strict check, that case is rejected before the insert. On current code this test no longer exists (`git log -S` finds it only in `538dbd9` and `e9bde48`), because the custom EC is a `BTreeMap<String, String>` and the byte-level case cannot occur. The file is now `mpl/tests/test_key_store_encryption_context.rs`, which covers the prefixing (`custom_ec_keys_are_prefixed_with_aws_crypto_ec`, `:127`) but has no test for the collision `Err`.
 
 ## Reproduction / evidence
 

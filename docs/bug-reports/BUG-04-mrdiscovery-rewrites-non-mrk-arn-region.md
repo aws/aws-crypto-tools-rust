@@ -5,7 +5,9 @@ Summary: With `KmsConfiguration::MrDiscovery { region }`, the branch key store r
 - Confidence: Confirmed by test (in-crate unit test against `resolve_keystore_arn`; the end-to-end KMS failure is inferred and needs AWS)
 - Spec conflict: yes. The spec is internally inconsistent: the configuration section says MRK ARNs only, while the KMS-Decrypt section says the region is replaced unconditionally.
 - Severity: Low. This is a spec-text / cross-runtime divergence. With the default KMS client, a single-Region key outside the configured region is expected to fail in both Rust and Dafny, with different errors. The outcomes differ only when the caller supplies its own KMS client. It fails closed, and there's no wrong-key or confidentiality impact (see Impact).
-- Related IDs: VR-2026-T17; TM-MPL-007
+- Related IDs: VR-2026-T17; TM-MPL-007 (Medium). `docs/threat-model.md` records that this bug fails closed and does not widen TM-MPL-002 (Medium). Ratings are from `docs/threat-model.md` (HEAD 9955ecd); targets are from `docs/verification-targets.md`.
+- Completeness audit mapping (`docs/completeness-audit.md` section 3b): BUG-04 -> TM-MPL-007 -> T17.
+- Last cross-checked: HEAD 9955ecd (code == main 620771c for mpl/ and prim/)
 
 ## Status on main (620771c)
 
@@ -14,7 +16,7 @@ Summary: With `KmsConfiguration::MrDiscovery { region }`, the branch key store r
 - Evidence: the in-crate test, adapted for API changes only, gives 1 passed. The single-Region `us-east-1` ARN is still rewritten to `us-west-2` (`SRK ARN changed by MRDiscovery: true`) (`.agents/tasks/bug-recheck/logs/recheck04.log`).
 - The module moved from `mpl/src/keystore/` to `mpl/src/key_store/` in `e9bde48` (#98), and `resolve_keystore_arn` is now `resolve_key_store_arn`. The logic is unchanged. The KMS-side failure needs AWS and was not run, as before.
 
-Line numbers outside the Status and Location sections refer to `a1e23d7`, where the bug was first found, and are kept as history. Spec line references (for example `branch-key-store.md` lines 168, 204 and 669) were not re-checked, because `main` removed the spec submodule (`6ef7d80`, #91).
+Line numbers outside the Status and Location sections refer to `a1e23d7`, where the bug was first found, and are kept as history. Spec line references (for example `branch-key-store.md` lines 168, 204 and 669) were not re-checked in the 2026-11-10 run, because `main` removed the spec submodule (`6ef7d80`, #91). They were re-read at HEAD 9955ecd in the local `spec/framework/branch-key-store.md` (revision `e8334535`, and `framework/` is unchanged at spec `94c2bfe`): lines 168 and 204 hold the "Any MRK ARN discovered will be changed to this region before use" sentence, and line 669 holds the MRDiscovery `KeyId` sentence.
 
 ## Location
 
@@ -68,10 +70,10 @@ The Dafny MPL follows lines 168/204: `KMSKeystoreOperations.dfy` `replaceRegion`
 ## Impact
 
 - Precondition: an MRDiscovery keystore reads a record whose `kms-arn` is a single-Region key.
-- Default KMS client. Without a caller-supplied client, `BranchKeyStore` builds one in the MRDiscovery region (`branch_key_store.rs:763-771`, `region_from_kms_config`), as the spec's `#kms-client` section requires.
+- Default KMS client. Without a caller-supplied client, `BranchKeyStore` builds one in the MRDiscovery region (`branch_key_store.rs:763-771` at `a1e23d7`, `region_from_kms_config`), as the spec's `#kms-client` section requires. On current code the default clients are built at `branch_key_store.rs:396-405`, and `region_from_kms_config` is at `branch_key_store.rs:1114`, with an `MrDiscovery` arm that returns the configured region (`:1118`).
   - If the single-Region key is in that same region, the rewrite is a no-op and both runtimes behave identically.
   - If it's in another region, Rust sends a non-existent ARN, while Dafny sends the original ARN to a client in a different region. Both are expected to fail at KMS (not tested; needs AWS). Only the error differs.
-- Caller-supplied KMS client (`KeystoreConfig::kms_client`, `config.rs:28`) in the single-Region key's home region. Here Dafny would succeed and Rust would fail. This is the case where observable outcomes diverge. It's an unusual configuration, since it pairs an MRDiscovery region with a client in a different region.
+- Caller-supplied KMS client (`KeystoreConfig::kms_client`, `config.rs:28` at `a1e23d7`; on current code `DynamoDbKeyStoreBuilder::kms_client`, `branch_key_store.rs:322`) in the single-Region key's home region. Here Dafny would succeed and Rust would fail. This is the case where observable outcomes diverge. It's an unusual configuration, since it pairs an MRDiscovery region with a client in a different region.
 - Security: none identified. The rewritten ARN can't name a different existing key: non-MRK key IDs are region-unique UUIDs without the `mrk-` prefix. And `Decrypt` still binds the record's encryption context. The behavior fails closed.
 - Net: the main value of a fix is spec and Dafny parity, plus clearer errors, rather than restoring a commonly used path.
 

@@ -7,7 +7,9 @@ Summary (as found at `a1e23d7`): the hierarchical keyring's per-keyring TTL chec
 - Confidence: Confirmed by test, likely not a bug (it matches the Dafny MPL's whole-second granularity)
 - Spec conflict: no. The spec formula doesn't define a time resolution, and the Dafny reference compares whole seconds (see Expected behavior). A reading with real-valued time would make this a conflict of under one second.
 - Severity: Informational. The overshoot is bounded by 1 s and only occurs with a `Shared` cache whose entries expire later than this keyring's TTL.
-- Related IDs: VR-2026-T14 (property (b)); TM-MPL-010
+- Related IDs: VR-2026-T14 (property (b)); TM-MPL-010 (High). Ratings are from `docs/threat-model.md` (HEAD 9955ecd), where the fix is recorded as a mitigation for TM-MPL-010 (the exact TTL check). The High rating of TM-MPL-010 comes from BUG-06, which is open; targets are from `docs/verification-targets.md`.
+- Completeness audit mapping (`docs/completeness-audit.md` section 3b): BUG-09 (Fixed) -> TM-MPL-010 -> T14.
+- Last cross-checked: HEAD 9955ecd (code == main 620771c for mpl/ and prim/)
 
 ## Status on main (620771c)
 

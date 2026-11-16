@@ -5,10 +5,10 @@
 | Document | MPL Native Rust: Bug Reports for Engineering Discussion |
 | System | AWS Cryptographic Material Providers Library (MPL), native Rust implementation |
 | Repository | aws/aws-crypto-tools-rust, branch `MPL-Verus` |
-| Code reviewed | `main` commit `620771c` (merged into `MPL-Verus` as `c256243`). The bugs were originally found at commit `a1e23d7`. |
+| Code reviewed | `main` commit `620771c` (merged into `MPL-Verus` as `c256243`), cross-checked on `MPL-Verus` HEAD `9955ecd`. `mpl/` and `prim/` are identical in the two. The bugs were originally found at commit `a1e23d7`. |
 | Status | Draft |
-| Date | 2026-11-10 |
-| How this was produced | AI-assisted consolidation of the nine individual bug reports in `docs/bug-reports/` and of the re-check against `main` (`docs/bug-reports/RECHECK-main-620771c.md`). Severities, confidence labels and conclusions are taken from those reports without change. Human review is required before any decision is made on this basis. |
+| Date | 2026-11-15 (bug status re-checked 2026-11-10; cross-references updated at HEAD `9955ecd`) |
+| How this was produced | AI-assisted consolidation of the nine individual bug reports in `docs/bug-reports/` and of the re-check against `main` (`docs/bug-reports/RECHECK-main-620771c.md`). Severities, confidence labels and conclusions are taken from those reports. The one severity that differs from the first edition of this document is BUG-06, which is now High (raised from Low on the owner's decision after the main re-check). Threat and target references follow `docs/threat-model.md` (TM-MPL-001..026), `docs/verification-targets.md` and `docs/completeness-audit.md` as of HEAD `9955ecd`. Human review is required before any decision is made on this basis. |
 
 ## Introduction
 
@@ -20,6 +20,8 @@ On 2026-11-10 all nine findings were re-checked against `main` commit `620771c`,
 - Fixed on `main`: BUG-02, BUG-03 and BUG-09, all in commit `e9bde48` (#98). They are summarized in "Resolved on main" near the end of this document.
 
 The open findings give fix options and questions for discussion rather than a chosen fix.
+
+Update at HEAD `9955ecd`. After the re-check, `main` moved from `620771c` to `5f2dc72` with two esdk-only commits (#188 and #189). `git diff --stat 620771c 5f2dc72 -- mpl prim` is empty, so every status above still holds (proof in the addendum of `docs/bug-reports/RECHECK-main-620771c.md`). Two things changed in this document. First, BUG-06 is now rated High. The severity was raised from Low to High on the owner's decision after the main re-check. The finding, evidence, status and confidence of BUG-06 are unchanged, and no other bug's severity changed. Second, the threat and target references were brought up to date: the threat model now has 26 threats, TM-MPL-009 and TM-MPL-010 (the threats BUG-06 realizes) are High, and the verification targets were refreshed (new target T27 for TM-MPL-025).
 
 About line numbers: file:line locations in the Status and Location parts of each section refer to the current code on `main` `620771c`. Each section also gives the original `a1e23d7` location. Line numbers elsewhere (for example in Impact and Fix options) come from the original reports and refer to `a1e23d7`. Some files were renamed since then; for example, `mpl/src/keystore/` is now `mpl/src/key_store/`.
 
@@ -39,23 +41,39 @@ Full reports, re-check and reproducers:
 | BUG-03 | `EncryptionContext::deserialize` accepts entries not sorted by key | `structures::EncryptionContext` | Low | Confirmed by test | yes | Fixed on main (`e9bde48`, #98) | 8 – Resolved |
 | BUG-04 | MRDiscovery rewrites the region of single-Region (non-MRK) KMS key ARNs | Branch key store (KMS ARN resolution) | Low | Confirmed by test | yes | Still present | 3 – Medium |
 | BUG-05 | (a) Default CMM panics if ECDSA key generation fails; (b) 44–59-byte hierarchical EDK reaches the keystore | Default CMM; hierarchical keyring | Low | (a) Confirmed by code reading; (b) Confirmed by test, likely not a bug | no | (a) Still present; (b) Still present (likely not a bug) | 5 – Low |
-| BUG-06 | Cache-identifier preimage not injective when fields contain NUL | Hierarchical keyring (cache identifier) | Low | Confirmed by test | yes | Still present | 1 – Medium |
+| BUG-06 | Cache-identifier preimage not injective when fields contain NUL | Hierarchical keyring (cache identifier) | High (raised from Low on the owner's decision) | Confirmed by test | yes | Still present | 1 – High |
 | BUG-07 | `prim::aes_encrypt` leaves plaintext in buffer on `Err`; `aes_decrypt` guard weaker than callee | `aws-mpl-primitives` (AES-GCM) | Low | Confirmed by test | no | Still present (a and b) | 4 – Low |
 | BUG-08 | Custom-EC collision `Err` in `build_base` is dead code | Branch key store (encryption context) | Informational | Confirmed by code reading | no | Still present | 6 – Low |
 | BUG-09 | `cache_entry_within_limits` admits entries up to `ttl + 1 s` | Hierarchical keyring (cache TTL) | Informational | Confirmed by test, likely not a bug | no | Fixed on main (`e9bde48`, #98) | 9 – Resolved |
 
 How to read the table:
 
-- Severity, confidence and spec conflict are the values from the original analysis. The re-check did not change them. The BUG-06 section carries a "Severity review suggested" note. Its severity is unchanged.
+- Severity, confidence and spec conflict are the values from the original analysis. The re-check did not change them. The one exception is BUG-06: Severity raised Low -> High on the owner's decision after the main re-check. The BUG-06 section gives the basis and the preconditions.
 - Spec conflict "yes" for BUG-03, BUG-04 and BUG-06 depends on how the spec is read, or on text where the spec contradicts itself. Each section explains which.
 - "Likely not a bug" means the behavior was reproduced but matches the Dafny MPL, or has no practical impact.
-- Discussion priority is a suggested order (1 = first). It weighs spec deviation, cross-runtime divergence and impact, not just severity. The order was revised after the re-check. Open bugs now come first and fixed bugs move to the end. BUG-06 moves to the top, because with BUG-02 fixed it is the open finding with the most direct impact, and the re-check confirmed on `main` that keyring B was served keystore A's branch key. The other open bugs keep their original relative order.
+- Discussion priority is a suggested order (1 = first). It weighs spec deviation, cross-runtime divergence and impact, not just severity. The order was revised after the re-check. Open bugs now come first and fixed bugs move to the end. BUG-06 moves to the top, because with BUG-02 fixed it is the open finding with the most direct impact, the re-check confirmed on `main` that keyring B was served keystore A's branch key, and its severity is now High. The other open bugs keep their original relative order.
+
+## Cross-reference to the threat model and verification targets
+
+Ratings are from `docs/threat-model.md` (TM-MPL-001..026, HEAD `9955ecd`). Target IDs are from `docs/verification-targets.md`. The mapping is the bug to threat to target table in `docs/completeness-audit.md` section 3b, plus the "Related IDs" of each bug report. No threat rating changed because of the BUG-06 severity decision.
+
+| ID | Severity | Status on main | Related threats (risk) | Related targets (score) |
+|---|---|---|---|---|
+| BUG-01 | Low | Still present | TM-MPL-018 (Medium), TM-MPL-022 (Low), TM-MPL-023 (Low) | T06 (4.20); T21 property (i) (2.24) |
+| BUG-02 | Medium | Fixed on main | TM-MPL-006 (Medium), TM-MPL-023 (Low) | C04 (2.80) |
+| BUG-03 | Low | Fixed on main | TM-MPL-013 (Medium), TM-MPL-017 (Medium) | T15 (1.92) |
+| BUG-04 | Low | Still present | TM-MPL-007 (Medium). It fails closed and does not widen TM-MPL-002 (Medium) | T17 (1.92) |
+| BUG-05 | Low | (a) Still present; (b) Still present (likely not a bug) | TM-MPL-023 (Low); (b) also TM-MPL-025 (Medium, provisional), which (b) does not cause | T16 (2.24); (b) also T27 (3.78, provisional) |
+| BUG-06 | High (raised from Low on the owner's decision) | Still present | TM-MPL-009 (High), TM-MPL-010 (High), TM-MPL-003 (Low) | T13 (4.41); T19 (1.92) |
+| BUG-07 | Low | Still present (a and b) | (a) TM-MPL-015 (Low); (b) TM-MPL-023 (Low); TM-MPL-011 (Medium) through T07 | (a) T26 (3.20), T07 property (e) (3.84); (b) C03 (5.60) |
+| BUG-08 | Informational | Still present | TM-MPL-005 (High). Informational; no effect on that rating | C01 property (c) (6.72) |
+| BUG-09 | Informational | Fixed on main | TM-MPL-010 (High). The High rating comes from BUG-06, which is open | T14 property (b) (3.78) |
 
 ## Suggested meeting agenda
 
 | Order | ID | Topic | Decision needed |
 |---|---|---|---|
-| 1 | BUG-06 | Cache-identifier preimage not injective with NUL | Reject NUL in configuration values, or change the preimage via a spec change; whether to revisit the Low severity |
+| 1 | BUG-06 | Cache-identifier preimage not injective with NUL | Reject NUL in configuration values, or change the preimage via a spec change. Severity is High (raised from Low on the owner's decision after the main re-check); TM-MPL-009 and TM-MPL-010 are High |
 | 2 | BUG-01 | TTL / grace / inflight overflow panic | Per-call checked addition (Dafny parity) or construction-time bounds |
 | 3 | BUG-04 | MRDiscovery rewrites non-MRK ARN region | Which spec text is authoritative; align with Dafny |
 | 4 | BUG-07 | `prim` AES buffer handling | Whether `prim` must leave the caller's buffer unchanged on error; fix the misleading decrypt error text |
@@ -76,7 +94,7 @@ Full report: https://github.com/aws/aws-crypto-tools-rust/blob/MPL-Verus/docs/bu
 | Severity | Low |
 | Confidence | Confirmed by test |
 | Spec conflict | no |
-| Related IDs | VR-2026-T06; TM-MPL-018, TM-MPL-022, TM-MPL-023 |
+| Related IDs | VR-2026-T06 (primary), VR-2026-T21 (property (i), panic under the state lock, for BUG-01 b and c); TM-MPL-018 (Medium), TM-MPL-022 (Low), TM-MPL-023 (Low) |
 
 Severity rationale: the trigger is configuration only (trusted application code), and the threshold on Unix is roughly 9.2 × 10^18 s. A "never expire" sentinel such as `u64::MAX` is still a plausible value for an application to pass, and the result is a panic, not an error.
 
@@ -173,7 +191,7 @@ With `KmsConfiguration::MrDiscovery { region }`, the branch key store rewrites t
 | Severity | Low |
 | Confidence | Confirmed by test (in-crate unit test against `resolve_keystore_arn`; the end-to-end KMS failure is inferred and needs AWS) |
 | Spec conflict | yes. The spec is internally inconsistent: the configuration section says MRK ARNs only, while the KMS-Decrypt section says the region is replaced unconditionally. |
-| Related IDs | VR-2026-T17; TM-MPL-007 |
+| Related IDs | VR-2026-T17; TM-MPL-007 (Medium). The threat model records that this bug fails closed and does not widen TM-MPL-002 (Medium) |
 
 Severity rationale: this is a spec-text / cross-runtime divergence. With the default KMS client, a single-Region key outside the configured region is expected to fail in both Rust and Dafny, with different errors. Outcomes differ only when the caller supplies its own KMS client. It fails closed, with no wrong-key or confidentiality impact.
 
@@ -198,7 +216,7 @@ Current code (`main` `620771c`): `mpl/src/key_store/kms_ops.rs:100-103` (the MrD
 152         new_region,
 ```
 
-Originally reported at `a1e23d7`: `mpl/src/keystore/kms_ops.rs:104-107` and `:132-148`; `decrypt_branch_key` at `kms_ops.rs:169`; `version_key` at `branch_key_store.rs:442`. Spec line numbers (168, 204, 669) were not re-checked, because `main` removed the spec submodule.
+Originally reported at `a1e23d7`: `mpl/src/keystore/kms_ops.rs:104-107` and `:132-148`; `decrypt_branch_key` at `kms_ops.rs:169`; `version_key` at `branch_key_store.rs:442`. Spec line numbers (168, 204, 669) were not re-checked in the 2026-11-10 run, because `main` removed the spec submodule. They were re-read at HEAD `9955ecd` in the local `spec/framework/branch-key-store.md`: lines 168 and 204 hold the "Any MRK ARN discovered will be changed to this region before use" sentence, and line 669 holds the MRDiscovery `KeyId` sentence.
 
 ### Expected vs actual behavior
 
@@ -256,7 +274,7 @@ Full report: https://github.com/aws/aws-crypto-tools-rust/blob/MPL-Verus/docs/bu
 | Severity | Low |
 | Confidence | (a) Confirmed by code reading; (b) Confirmed by test for the behavior. Part (b) is likely not a bug: it matches the Dafny MPL and adds no amplification beyond what any EDK of 60 bytes or more already causes. |
 | Spec conflict | no |
-| Related IDs | VR-2026-T16; TM-MPL-023 |
+| Related IDs | VR-2026-T16; TM-MPL-023 (Low). For (b) also TM-MPL-025 (Medium, provisional; target VR-2026-T27, added at HEAD `9955ecd`). The threat model states that (b) is not the cause of TM-MPL-025: a valid-length EDK costs the same key-store read, so (b) only lowers the sender's cost per EDK |
 
 Severity rationale: (a) is a latent panic on a path that should be unreachable unless AWS-LC fails (RNG or self-test failure, allocation failure). (b) costs one keystore round trip per malformed EDK, then fails closed.
 
@@ -327,7 +345,7 @@ Recommendation for (b): fold it into the BUG-02 fix (option 1 here). Otherwise o
 ### Questions for engineers
 
 1. Is a panic acceptable anywhere on the `DefaultCmm` encrypt path, or should all primitive failures surface as `MaterialsError` as in Dafny?
-2. Are there other `.expect` calls on primitive `Result`s considered "cannot fail"? The verification analysis lists `default_cmm.rs:100` (provably unreachable) and `cache_entry_identifier.rs:64`.
+2. Are there other `.expect` calls on primitive `Result`s considered "cannot fail"? The verification analysis lists `default_cmm.rs:100` at `a1e23d7` (now `default_cmm.rs:123`, provably unreachable) and `cache_entry_identifier.rs:64`.
 3. For (b), is matching Dafny's step order a goal, or is rejecting before I/O preferred when the outcome is the same?
 4. If the BUG-02 exact-length check is adopted, should it run before the cache/keystore lookup (which would resolve this item) or inside `unwrap`?
 
@@ -341,18 +359,24 @@ Full report: https://github.com/aws/aws-crypto-tools-rust/blob/MPL-Verus/docs/bu
 
 | Attribute | Value |
 |---|---|
-| Severity | Low |
+| Severity | High (raised from Low on the owner's decision after the main re-check) |
 | Confidence | Confirmed by test |
 | Spec conflict | yes, but the conflict is inside the spec. The code matches the mandated layout exactly, and that layout breaks the spec's own statement that keyrings with different partition IDs "CANNOT share" cache entries. |
-| Related IDs | VR-2026-T13; TM-MPL-009, TM-MPL-010 |
+| Related IDs | VR-2026-T13 (primary), VR-2026-T19 (hierarchical branch key ID binding, for the supplier path); TM-MPL-009 (High), TM-MPL-010 (High), TM-MPL-003 (Low) |
 
-Severity rationale: exploiting this needs a `Shared` cache plus the ability to pick NUL-containing configuration values (partition ID, logical key store name, or branch key ID). If those preconditions hold, the impact is cross-keyring use of branch key materials.
+Severity rationale: the severity is High. Severity raised Low -> High on the owner's decision after the main re-check. It describes the outcome when the preconditions hold. The preconditions are a `Shared` cache plus the ability to pick NUL-containing configuration values (partition ID, logical key store name, or branch key ID). Those values can come from a caller-supplied string or from a branch key ID supplier (TM-MPL-003). If they hold, the impact is cross-keyring use of branch key materials, which the main re-check confirmed end to end. A default configuration does not meet the preconditions. See "Severity decision" in the Status section.
 
 ### Status on main (620771c)
 
 Still present. The test, adapted for API changes only, gives 2 passed. Both identifier collisions are `true` and the no-NUL control is `false`. End to end, with one shared `LocalCmc`, keyring B was served keystore A's branch key: keystore B was never called, and B's EDK unwraps with A's branch key but not with B's own. `cache_entry_identifier.rs` has no commits since `a1e23d7`. Re-checked 2026-11-10.
 
-Severity review suggested: the severity stays Low, because the re-check does not by itself support a change. The end-to-end result on `main` is the same as the original run at `a1e23d7`, and the Low rating was set with that result known. Reviewers may still want to revisit the rating, for two reasons. First, the re-check confirms on current code that the spec's partition boundary can be crossed, letting one tenant's data be wrapped under another tenant's branch key. Second, with BUG-02 fixed, this is the open finding with the most direct confidentiality impact. The preconditions are unchanged.
+Severity decision: Severity raised Low -> High on the owner's decision after the main re-check. The finding, evidence, status and confidence are unchanged. The basis is the evidence only:
+
+- The main re-check showed end to end that, with one shared `LocalCmc`, keyring B was served keystore A's branch key. Keystore B was never called, and B's EDK unwraps with A's branch key but not with B's own.
+- The cache-identifier preimage is not injective when fields contain NUL. Both identifier collisions are `true` on `main` and the no-NUL control is `false`. The code follows the layout the spec mandates, so the conflict is inside the spec.
+- The threat model rates TM-MPL-009 and TM-MPL-010 High (Severity High, Likelihood Medium). BUG-06 realizes both.
+
+The preconditions are unchanged and are not met by a default configuration: a `Shared` cache, plus a NUL-containing partition ID, logical key store name or branch key ID, chosen to line up with the other keyring's fields. They can be reached through a caller-supplied value, or through a branch key ID supplier that returns such a value (TM-MPL-003). With BUG-02 fixed, this is the open finding with the most direct confidentiality impact.
 
 ### Location
 
@@ -387,7 +411,7 @@ Actual:
 ### Impact and preconditions
 
 - Preconditions: the keyrings share one `Cmc` instance (`CacheType::Shared`, same process); at least one keyring's partition ID, logical key store name, or branch key ID contains `0x00` at a position that lines up with the other's fields; both use the same branch key ID suffix (or the equivalent shifted split).
-- Realistic exploitability: low. Values come from application configuration, not message bytes. The realistic case is a multi-tenant application that builds partition IDs or logical names from tenant-supplied strings without rejecting NUL, or a branch key ID supplier returning attacker-influenced strings.
+- Realistic exploitability: low. Values come from application configuration, not message bytes. The realistic case is a multi-tenant application that builds partition IDs or logical names from tenant-supplied strings without rejecting NUL, or a branch key ID supplier returning attacker-influenced strings. This bullet describes how likely the preconditions are in practice. It is not the severity: the High severity is the outcome when they hold, and the threat model rates the likelihood of TM-MPL-009 and TM-MPL-010 Medium.
 - If the preconditions hold: data encrypted for one tenant can be wrapped under a branch key another tenant controls (confidentiality), or a tenant can decrypt using cached materials it has no KMS access to.
 - Default random partition IDs contain `0x00` with roughly 6% probability, but colliding with one is not practical.
 - The Dafny MPL builds the same preimage with no NUL check in `GetActiveCacheId` / `GetVersionCacheId`. Whether the Dafny constructor validates these inputs was not checked.
@@ -433,7 +457,7 @@ Full report: https://github.com/aws/aws-crypto-tools-rust/blob/MPL-Verus/docs/bu
 | Severity | Low |
 | Confidence | Confirmed by test |
 | Spec conflict | no |
-| Related IDs | VR-2026-T07 (property (e)), VR-2026-C03; TM-MPL-011 |
+| Related IDs | (a) VR-2026-T26, VR-2026-T07 (property (e)); TM-MPL-015 (Low). (b) VR-2026-C03; TM-MPL-023 (Low). TM-MPL-011 (Medium) stays listed through T07 |
 
 Severity rationale: (a) is a secret-hygiene issue in a crate-level API. Every in-repo caller validates key and IV lengths first and drops the buffer on `Err`, so no path was found where the residue is returned or written out. (b) fails closed; the only effect is a less useful error message.
 
@@ -474,8 +498,8 @@ Actual:
 
 ### Impact and preconditions
 
-- (a) Matters only if a caller keeps or exposes the buffer after `Err`. By code reading, the MPL callers drop their local buffer and pass pre-validated key and IV lengths, so the `Err` path is practically unreachable for them. The ESDK frame path drops `frame_buf` on `Err`. Residual concern: a plaintext data key copy in a dropped `Vec` is not wiped, while `PlaintextDataKey` offers `zeroize()` (`mpl/src/structures/algorithm_suite.rs:434`); that is a memory-hygiene gap, not a disclosure path. An external caller of `aws-mpl-primitives` that reuses or logs the buffer would expose plaintext; the crate describes itself as "Not intended for public consumption".
-- (b) No security impact. In-repo callers size the buffer exactly (`raw_aes_keyring.rs:309`, `branch_key_wrap.rs:267`). A mis-sized buffer produces an error that looks like an authentication failure.
+- (a) Matters only if a caller keeps or exposes the buffer after `Err`. By code reading, the MPL callers drop their local buffer and pass pre-validated key and IV lengths, so the `Err` path is practically unreachable for them. The ESDK frame path drops `frame_buf` on `Err`. Residual concern: a plaintext data key copy in a dropped `Vec` is not wiped, while `PlaintextDataKey` offers `zeroize()` (`mpl/src/structures/algorithm_suite.rs:434` at `a1e23d7`); that is a memory-hygiene gap, not a disclosure path. On current code the manual `zeroize` loop is gone: `PlaintextDataKey` derives `Zeroize` and `ZeroizeOnDrop` (`algorithm_suite.rs:505`), and un-wiped transient copies of this kind are tracked by VR-2026-T26 under TM-MPL-015. An external caller of `aws-mpl-primitives` that reuses or logs the buffer would expose plaintext; the crate describes itself as "Not intended for public consumption".
+- (b) No security impact. In-repo callers size the buffer exactly (`raw_aes_keyring.rs:309`, `branch_key_wrap.rs:267` at `a1e23d7`; now `raw_aes_keyring.rs:471` and `branch_key_wrap.rs:275`, each `vec![0u8; encrypted_key.len()]`). A mis-sized buffer produces an error that looks like an authentication failure.
 - The Dafny primitives return fresh output values, so this class of issue does not arise there (judged by API shape only).
 
 ### Evidence
@@ -511,7 +535,7 @@ Recommendation: (a) option 1 and (b) option 1. Neither changes the observable su
 ### Questions for engineers
 
 1. Is `aws-mpl-primitives` internal-only (so a documented caller obligation is enough), or should its functions keep the caller's buffer unchanged on error?
-2. Should plaintext copies left in prim scratch buffers be wiped (for example with `zeroize`), consistent with `PlaintextDataKey::zeroize`?
+2. Should plaintext copies left in prim scratch buffers be wiped (for example with `zeroize`), consistent with the zeroize-on-drop that `PlaintextDataKey` now has (`algorithm_suite.rs:505`)?
 3. Is anything relying on `aes_decrypt` accepting an oversized buffer with the result then failing in aws-lc-rs? Nothing was found in-repo.
 
 ## BUG-08: The custom encryption context "collision" error in `build_base` is dead code
@@ -527,7 +551,7 @@ Full report: https://github.com/aws/aws-crypto-tools-rust/blob/MPL-Verus/docs/bu
 | Severity | Informational |
 | Confidence | Confirmed by code reading |
 | Spec conflict | no |
-| Related IDs | VR-2026-C01 (property (c)); cap:cat1 (1c) |
+| Related IDs | VR-2026-C01 (property (c)); cap:cat1 (1c); TM-MPL-005 (High). The threat model records BUG-08 as informational, with no effect on the TM-MPL-005 rating |
 
 Severity rationale: behavior is correct for all inputs. The cost is a misleading comment and an untestable branch, which also makes the C01 round-trip proof slightly harder to state.
 
@@ -566,7 +590,7 @@ Actual (why the insert can never return `Some`). This is the original argument a
 
 ### Impact and preconditions
 
-None on behavior. Every accepted custom EC is copied without loss. The comment points readers to a failure mode that does not exist, the branch cannot be covered by tests, and a proof of C01 (c) has to establish the unreachability argument. The existing test `distinct_non_utf8_custom_ec_keys_do_not_collapse` (`mpl/tests/test_keystore_encryption_context.rs:234`) shows why the strict UTF-8 check matters.
+None on behavior. Every accepted custom EC is copied without loss. The comment points readers to a failure mode that does not exist, the branch cannot be covered by tests, and a proof of C01 (c) has to establish the unreachability argument. The test `distinct_non_utf8_custom_ec_keys_do_not_collapse` (`mpl/tests/test_keystore_encryption_context.rs:234` at `a1e23d7`) showed why the strict UTF-8 check matters. It no longer exists on current code, because the custom EC is a `BTreeMap<String, String>` and the byte-level case cannot occur. The test file is now `mpl/tests/test_key_store_encryption_context.rs`, which covers the prefixing (`custom_ec_keys_are_prefixed_with_aws_crypto_ec`, `:127`) but has no test for the collision `Err`.
 
 ### Evidence
 
@@ -648,9 +672,10 @@ The full reproducer sources are kept on GitHub rather than reproduced here. Each
 
 ## Appendix C: Editor's notes
 
-- Severity, confidence and spec conflict agree between the README index and every individual report. No values were changed by the re-check. The discussion priority was revised after the re-check, as explained under Summary. The README and this document use the same revised order.
-- Status on main agrees with `docs/bug-reports/RECHECK-main-620771c.md` for every bug.
+- Severity, confidence and spec conflict agree between the README index and every individual report. The re-check changed no value. The only later change is BUG-06: Severity raised Low -> High on the owner's decision after the main re-check, shown as High in the summary table, the cross-reference table, the agenda and the BUG-06 section. No other severity changed. The discussion priority was revised after the re-check, as explained under Summary, and the BUG-06 label now reads "1 – High". The README and this document use the same order.
+- Status on main agrees with `docs/bug-reports/RECHECK-main-620771c.md` (including its addendum for HEAD `9955ecd`) for every bug.
+- Threat and target references (Related IDs, the cross-reference table) agree with `docs/threat-model.md` (TM-MPL-001..026), `docs/verification-targets.md` (T27 added; T08 and C06 retired) and `docs/completeness-audit.md` section 3b, and the ratings agree with the threat model's risk matrix. Where a report also lists a threat that section 3b omits (TM-MPL-017 for BUG-03, TM-MPL-022 for BUG-01, TM-MPL-011 for BUG-07), the extra ID comes from the target's own threat references.
 - Confidence: the README uses short labels. For BUG-04, BUG-05 and BUG-09 the individual reports add qualifiers (BUG-04: the end-to-end KMS failure is inferred and needs AWS; BUG-05 (b): matches Dafny and adds no amplification; BUG-09: matches Dafny's whole-second granularity). The per-bug sections use the individual report's wording; the summary table keeps the README's short form. The labels themselves do not conflict.
 - Titles: the summary table uses the README's shorter titles; the section headings use the individual reports' titles. For BUG-05, the README says the short EDK "reaches the keystore" and the report adds "before rejection". The meaning is the same.
 - Code excerpts and test output were trimmed for readability. Elided lines are marked with `...`. In the BUG-04 output, the key UUIDs were shortened to `1234abcd-...`. The full output is in each linked report and in the re-check logs.
-- Revisions: `a1e23d7` is not an ancestor of `main` `620771c`; it is an ancestor of `MPL-Verus` `c256243`, the merge of `main` into `MPL-Verus`. `git diff 620771c c256243 -- mpl prim esdk` is empty, so the code re-checked on `MPL-Verus` is the code on `main`.
+- Revisions: `a1e23d7` is not an ancestor of `main` `620771c`; it is an ancestor of `MPL-Verus` `c256243`, the merge of `main` into `MPL-Verus`. `git diff 620771c c256243 -- mpl prim esdk` is empty, so the code re-checked on `MPL-Verus` is the code on `main`. `main` has since moved to `5f2dc72` with esdk-only commits #188 and #189; `git diff --stat 620771c 5f2dc72 -- mpl prim` is empty.

@@ -158,3 +158,69 @@ Bug-specific changes are listed per bug.
 | BUG-09 | `hierarchical_keyring.rs:620-626` | `hierarchical_keyring.rs:989-995` (fixed) |
 
 Spec references in the original reports (for example `spec/framework/branch-key-store.md:168/204/669` for BUG-04) were not re-checked here. Main removed the spec submodule (`6ef7d80` #91, "resolve the duvet spec from a config, not a submodule").
+
+## Addendum (HEAD 9955ecd)
+
+Added after the snapshot above. Nothing above this heading was changed: the original results, statuses and evidence are as of 2026-11-10. Last cross-checked: HEAD 9955ecd (code == main 620771c for mpl/ and prim/).
+
+### Main moved from 620771c to 5f2dc72
+
+`main` moved from `620771c` to `5f2dc72` with two esdk-only commits: `41f1d51` "fix(esdk): keep the caller's retry config on the C++ shim's DynamoDB clients (#188)" and `5f2dc72` "fix(esdk): link the cxx runtime without searching Cargo's build directory (#189)". Both commits are available locally (`5f2dc72` is an ancestor of `HEAD` and equals `origin/main`), so no fetch was needed. The check that `mpl/` and `prim/` did not change:
+
+```text
+$ git -C /Users/mahnush/Desktop/ESDK-Rust-Verus/MPL/esdk-native-mpl diff --stat 620771c 5f2dc72 -- mpl prim
+$
+```
+
+The output is empty. For reference, the same range without the path filter changes 8 files, all under `esdk/shims/aws-esdk-cpp/`:
+
+```text
+$ git diff --stat 620771c 5f2dc72
+ esdk/shims/aws-esdk-cpp/CMakeLists.txt             |  12 --
+ esdk/shims/aws-esdk-cpp/Makefile                   |   3 +-
+ esdk/shims/aws-esdk-cpp/performance-tests/Makefile |   2 -
+ esdk/shims/aws-esdk-cpp/src/lib.rs                 |   8 +-
+ esdk/shims/aws-esdk-cpp/test-server/Cargo.lock     | 151 +++++++++++++++++++++
+ esdk/shims/aws-esdk-cpp/test-server/Cargo.toml     |   1 +
+ esdk/shims/aws-esdk-cpp/test-server/build.rs       |  21 +--
+ esdk/shims/aws-esdk-cpp/test-server/src/lib.rs     |   4 +
+ 8 files changed, 165 insertions(+), 37 deletions(-)
+```
+
+`git diff --stat 620771c HEAD -- mpl prim` (HEAD 9955ecd) is empty as well. The nine findings are in `mpl/` and `prim/`, so all statuses in this document remain valid: still present BUG-01, BUG-04, BUG-05(a), BUG-05(b), BUG-06, BUG-07, BUG-08; fixed BUG-02, BUG-03, BUG-09. No reproducer was re-run for this addendum, because the code under test did not change.
+
+### Current threat and target IDs
+
+IDs and ratings are from `docs/threat-model.md` (TM-MPL-001..026, HEAD 9955ecd) and `docs/verification-targets.md`; the bug to threat to target mapping is `docs/completeness-audit.md` section 3b.
+
+| Bug | Status | Threats (rating) | Targets |
+|---|---|---|---|
+| BUG-01 | Still present | TM-MPL-018 (Medium), TM-MPL-022 (Low), TM-MPL-023 (Low) | T06; T21 (i) |
+| BUG-02 | Fixed | TM-MPL-006 (Medium), TM-MPL-023 (Low) | C04 |
+| BUG-03 | Fixed | TM-MPL-013 (Medium), TM-MPL-017 (Medium) | T15 |
+| BUG-04 | Still present | TM-MPL-007 (Medium) | T17 |
+| BUG-05 (a) | Still present | TM-MPL-023 (Low) | T16 (expected unprovable) |
+| BUG-05 (b) | Still present (likely not a bug) | TM-MPL-023 (Low), TM-MPL-025 (Medium, provisional) | T16; T27 (provisional) |
+| BUG-06 | Still present | TM-MPL-009 (High), TM-MPL-010 (High), TM-MPL-003 (Low) | T13; T19 |
+| BUG-07 (a) | Still present | TM-MPL-015 (Low) | T26; T07 (e) |
+| BUG-07 (b) | Still present | TM-MPL-023 (Low) | C03 |
+| BUG-08 | Still present (informational) | TM-MPL-005 (High) | C01 (c) |
+| BUG-09 | Fixed | TM-MPL-010 (High) | T14 |
+
+Notes: TM-MPL-025 and T27 did not exist when this snapshot was taken. The threat model states that BUG-05(b) is not the cause of TM-MPL-025, because a valid-length EDK costs the same key-store read. The threat model also records, for BUG-01 (b) and (c), that the panic happens while the storm-tracking state mutex is held, so one panic poisons that cache instance (`storm_tracking.rs:333`, `:680`); this is part of the cross-reference to T21 (i) and does not change the BUG-01 status above.
+
+### Line numbers
+
+Every `file:line` citation in this snapshot was re-read against the working tree at HEAD 9955ecd (by script and by reading the lines). None has drifted. One citation is imprecise and is corrected here without changing the snapshot: for BUG-07 the table gives the `Err` returns of `aes_encrypt` as `prim/src/lib.rs:187-192`. The key check (`:187`), the nonce check (`:188-189`) and the seal (`:192-194`) end at `:194`, so the range is `:187-194`. The code is unchanged.
+
+Spec line references: the snapshot did not re-check them. At HEAD 9955ecd the three references of BUG-04 (`spec/framework/branch-key-store.md` lines 168, 204 and 669) were re-read in the local spec copy (`e8334535`) and still hold the sentences the BUG-04 report quotes. The other reports cite spec sections by anchor, not by line.
+
+### BUG-06 severity decision
+
+BUG-06 severity raised Low -> High on the owner's decision after this re-check; the re-check results above are unchanged. The basis is the evidence in this document only:
+
+- End to end, with one shared `LocalCmc`, keyring B was served keystore A's branch key: keystore B was never called, and B's EDK unwraps with A's branch key but not with B's own (the BUG-06 section above).
+- The cache-identifier preimage is not injective when fields contain NUL: both identifier collisions are `true` and the control is `false`. The code follows the layout the spec mandates, so the conflict is inside the spec.
+- The threat model rates TM-MPL-009 and TM-MPL-010 High (Severity High, Likelihood Medium).
+
+Preconditions, stated as in the BUG-06 report: a `Shared` cache, plus a NUL-containing partition ID, logical key store name or branch key ID chosen to line up with the other keyring's fields. These values can come from a caller-supplied string or from a branch key ID supplier. A default configuration does not meet them. The BUG-06 report has the full text and the unchanged evidence.

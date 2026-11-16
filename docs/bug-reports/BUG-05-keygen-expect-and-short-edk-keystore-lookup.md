@@ -7,7 +7,9 @@ Summary: (a) `DefaultCmm::get_encryption_materials` calls `.expect` on the `Resu
 - Severity: Low.
   - (a) is a latent panic on a path that should be unreachable unless AWS-LC fails (RNG or self-test failure, allocation failure).
   - (b) costs one keystore round trip per malformed EDK, then fails closed.
-- Related IDs: VR-2026-T16; TM-MPL-023
+- Related IDs: VR-2026-T16; TM-MPL-023 (Low). For (b) also TM-MPL-025 (Medium, provisional; target VR-2026-T27, added at HEAD 9955ecd). `docs/threat-model.md` states that (b) is not the cause of TM-MPL-025: a valid-length EDK costs the same key-store read, so (b) only lowers the sender's cost per EDK. Ratings are from `docs/threat-model.md` (HEAD 9955ecd); targets are from `docs/verification-targets.md`.
+- Completeness audit mapping (`docs/completeness-audit.md` section 3b): BUG-05(a) -> TM-MPL-023 -> T16 (expected unprovable); BUG-05(b) -> TM-MPL-023, 025 -> T16, and TM-MPL-025 is the sender-controlled EDK-count threat that T27 now covers.
+- Last cross-checked: HEAD 9955ecd (code == main 620771c for mpl/ and prim/)
 
 ## Status on main (620771c)
 
@@ -141,6 +143,6 @@ Recommendation for (b): fold it into the BUG-02 fix (option 1 here). Otherwise o
 ## Questions for the engineers
 
 1. Is a panic acceptable anywhere on the `DefaultCmm` encrypt path (for example by a policy treating entropy failure as fatal), or should all primitive failures surface as `MaterialsError` as in Dafny?
-2. Are there other `.expect` calls on primitive `Result`s that the team considers "cannot fail"? The verification analysis lists `default_cmm.rs:100` (provably unreachable) and `cache_entry_identifier.rs:64`.
+2. Are there other `.expect` calls on primitive `Result`s that the team considers "cannot fail"? The verification analysis lists `default_cmm.rs:100` at `a1e23d7` (now `default_cmm.rs:123`, provably unreachable) and `cache_entry_identifier.rs:64`.
 3. For (b), is matching Dafny's step order a goal, or is rejecting before I/O preferred when the outcome is the same?
 4. If the BUG-02 exact-length check is adopted, should it run before the cache/keystore lookup (which would resolve this item) or inside `unwrap`?

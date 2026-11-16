@@ -36,7 +36,7 @@ Method: each of TM-MPL-001..024 was re-derived from the code and spec (likelihoo
 | TM-MPL-026 | n/a | **Low** (Medium × Low) | New: four loopback test servers have no authentication. The MPL one builds AWS clients from request-chosen regions, tables and KMS ARNs, using ambient credentials. Test-only, not published | `mpl/test-server/src/main.rs:26-27`; `mpl/test-server/src/handlers.rs:137-147`, `:425-430`; `mpl/test-server/Cargo.toml:6` |
 | TM-MPL-018 | Medium | Medium (kept) | Re-derived. Two liveness gaps (stale in-flight mark, no-deadline waiter) and a BUG-01 effect (panic under the state lock poisons it) were added. If a reproducer shows the stale-mark wedge, severity could be High, but at Likelihood Low the risk stays Medium (High × Low). No change without a reproducer | `storm_tracking.rs:249-255`, `:322-323`, `:313`, `:333`, `:680`, `:739-740` |
 | TM-MPL-024 | Medium | Medium (kept) | Re-derived. New sub-surface (`Keyring::adopt` takes a type-erased `void*` and wraps it with `from_raw`, with no check). Same boundary, same actor, same owner. Neither #188 nor #189 changed a handle or lifetime path | `esdk/shims/aws-esdk-cpp/src/lib.rs:728`, `:1570-1571`, `:1661`, `:2059-2066`; `src/EncryptionSDK.cpp:541-547`; `include/aws/esdk/EncryptionSDK.h:656-664` |
-| TM-MPL-009 / 010 | High | High (kept) | Re-derived from `cache_entry_identifier.rs:42-60` (unchanged) and BUG-06. Likelihood stays Medium. The bug report rates BUG-06 as Low; see the note at the end of this document | RECHECK BUG-06; `cache_entry_identifier.rs:35-60` |
+| TM-MPL-009 / 010 | High | High (kept) | Re-derived from `cache_entry_identifier.rs:42-60` (unchanged) and BUG-06. Likelihood stays Medium. The bug report now rates BUG-06 High, consistent with this row; see the note at the end of this document | RECHECK BUG-06; `cache_entry_identifier.rs:35-60` |
 | TM-MPL-015 | Low | Low (kept) | New residuals found (cache residency beyond the TTL; `SignatureKeyPair` private key in a plain `Vec` on one error path). Both need TA4 (already inside the process), so the likelihood does not change | `cmc/local.rs:69`, `:131`, `:166`; `prim/src/ecdsa.rs:324-326`, `:387`, `:391-392` |
 
 ### Corrected (previous version → now)
@@ -350,7 +350,7 @@ Attack (BUG-06, confirmed on main):
 
 Nothing checks the inputs. The partition id is the caller's raw bytes (`hierarchical_keyring.rs:596`). The default random 16-byte UUID can contain `0x00` (`:626`). The logical name is used as the key store returns it (`:600-605`). The bkid comes from config or a supplier. The only post-hit guard is the material-kind check (`:1000`). Severity High (cross-tenant use of a branch key: B's data becomes decryptable by holders of key store A's access, and not by B's own key store). Likelihood **Medium**. Risk **High**.
 
-**Second pass: re-derived, kept at High.** `cache_entry_identifier.rs` is unchanged since a1e23d7, and RECHECK BUG-06 still shows 2 passed with key store B called 0 times. The version field cannot be a NUL vector, because it is rendered as hex digits and hyphens (`hierarchical_keyring.rs:894`); the vectors are the partition id, the logical name and the bkid. What remains is a configuration precondition that the MPL does not check: a shared cache, plus NUL-containing values from tenant names, from a user `KeyStore`'s logical name, or from an EC-driven supplier. The Medium likelihood rates the multi-tenant shared-cache deployment that the spec's Partition ID guidance is written for. Reviewers who judge NUL-containing tenant input unrealistic can return this to Medium risk. Fix: reject `0x00` in these fields, or length-prefix them. Length-prefixing needs a spec change and breaks cross-runtime cache-id compatibility. Coverage: hierarchical tests cover cache-id separation (`mpl/tests/test_aws_kms_hierarchical_keyring.rs`, per scope) but have no NUL case. See the note at the end of this document on the BUG-06 severity mismatch.
+**Second pass: re-derived, kept at High.** `cache_entry_identifier.rs` is unchanged since a1e23d7, and RECHECK BUG-06 still shows 2 passed with key store B called 0 times. The version field cannot be a NUL vector, because it is rendered as hex digits and hyphens (`hierarchical_keyring.rs:894`); the vectors are the partition id, the logical name and the bkid. What remains is a configuration precondition that the MPL does not check: a shared cache, plus NUL-containing values from tenant names, from a user `KeyStore`'s logical name, or from an EC-driven supplier. The Medium likelihood rates the multi-tenant shared-cache deployment that the spec's Partition ID guidance is written for. Reviewers who judge NUL-containing tenant input unrealistic can return this to Medium risk. Fix: reject `0x00` in these fields, or length-prefix them. Length-prefixing needs a spec change and breaks cross-runtime cache-id compatibility. Coverage: hierarchical tests cover cache-id separation (`mpl/tests/test_aws_kms_hierarchical_keyring.rs`, per scope) but have no NUL case. See the note at the end of this document on the BUG-06 severity in the bug report.
 
 **TM-MPL-010 (I/E): Shared-cache confusion.** Attack: two keyrings that should be isolated share cache entries, so one reuses branch-key materials it could not fetch itself. Mitigations:
 - The default partition id is a fresh random v4 UUID (`hierarchical_keyring.rs:626`), so keyrings are isolated by default.
@@ -650,4 +650,27 @@ Basis changes since the last Stage 3 run (`docs/verification-targets.md`, T01..T
 | T04, T07, T10, T11, T12, T15, T17, T18, T20, T23, T24, C01..C08 | Unchanged | No |
 | **No target yet** | TM-MPL-025 (bounded work per decrypt; recommend a new target and two reproducers) and TM-MPL-026 (test-only; no target needed) | Add a candidate for TM-MPL-025 |
 
-Note: BUG-06 is rated Low in `docs/bug-reports/` (severity Low, discussion priority 1), while TM-MPL-009 and TM-MPL-010 are High here because this model rates the multi-tenant shared-cache deployment. The bug report was not edited.
+### Resolution (HEAD `9955ecd`)
+
+The table above is kept as written (history). The refresh of `docs/verification-targets.md` and `docs/verification-targets/01-threat-driven.md` applied it as follows. "Rank" is the rank in the combined list in `docs/verification-targets.md` section 1. No threat rating changed.
+
+| Target | Applied | Resulting ID and score | Where |
+|---|---|---|---|
+| T25 | Yes | T25, 1.44 (unchanged, rank 30). Citations moved; `Keyring::adopt` added to the scope | `verification-targets.md:15`; `01-threat-driven.md:18` |
+| T21 | Yes | T21, 1.96 → 2.24 (rank 23). Coverage gap 0.7 → 0.8; properties (g), (h), (i) added | `verification-targets.md:14`; `01-threat-driven.md:17` |
+| T06 | Yes (note) | T06, 4.20 (unchanged, rank 11) | `verification-targets.md:18`; `01-threat-driven.md:21` |
+| T14 | Yes (property wording) | T14, 3.78 (unchanged, rank 13) | `verification-targets.md:18`; `01-threat-driven.md:22` |
+| T13 | No change needed | T13, 4.41 (rank 9) | `verification-targets.md:74` |
+| T19 | Yes (scope note) | T19, 1.92 (unchanged, rank 27) | `verification-targets.md:18`; `01-threat-driven.md:23` |
+| T22 | Yes | T22, 1.60 (unchanged, rank 29) | `verification-targets.md:18`; `01-threat-driven.md:24` |
+| T26 | Yes | T26, 3.20 (unchanged, rank 15). Sites F4 and F5 added | `verification-targets.md:16`; `01-threat-driven.md:19` |
+| T01, T02, T03 | Note only (rollback is a non-goal) | T01 8.96, T02 6.72, T03 5.12, all unchanged | `verification-targets.md:17`, `:18`; `01-threat-driven.md:20`, `:26` |
+| T05, T09, T16, others | T09: scope note. The rest: no change | T09 2.56; T05 4.32; T16 2.24 | `verification-targets.md:18`; `01-threat-driven.md:25` |
+| TM-MPL-025 (no target yet) | Yes: new target | **T27**, 3.78 (rank 14; rank 10 among the threat-driven targets). Provisional, because TM-MPL-025 is unconfirmed | `verification-targets.md:13`, `:79`; `01-threat-driven.md:16`, `:96` |
+| TM-MPL-026 (no target needed) | Yes: recorded as fully excluded | No target. Row in the out-of-scope tables | `verification-targets.md:506`; `01-threat-driven.md:1491` |
+
+Result: 33 active targets (was 32), 26 threat-driven and 7 capability-driven; T08 and C06 stay retired. The targets documents now count TM-MPL-001..026.
+
+The completeness audit (`docs/completeness-audit.md`) found no missed threat. It found one small spec-clause gap (G1, applied to T02), one editorial error (G2) and one editorial staleness (G4-1); none changes a rating or adds a threat.
+
+Note: the bug report for BUG-06 (`docs/bug-reports/`) now rates BUG-06 High. It was raised from Low on the owner's decision after the main re-check, so it is consistent with TM-MPL-009 and TM-MPL-010 (High) here. No threat rating changed because of this.

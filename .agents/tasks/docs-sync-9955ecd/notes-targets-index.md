@@ -1,0 +1,14 @@
+# Notes: Stage 3 refresh of 02-capability-driven.md and verification-targets.md (HEAD 9955ecd)
+
+Nothing was committed or pushed. Modified (uncommitted): `docs/verification-targets.md`, `docs/verification-targets/02-capability-driven.md` (and 01 from the previous step). `git diff --quiet HEAD -- mpl prim esdk docs/bug-reports docs/spec-security-analysis.md docs/threat-model.md docs/completeness-audit.md docs/verification-targets/04-validation.md` succeeded (no change). No authentication errors occurred.
+
+## Decisions
+- 02: no capability-driven sibling added for the storm-tracking builder bounds. Reason (in 02 Refresh section and R17): already T21 (a); bound undefined until the owner chooses the minimum; sibling would score 2 x 0.9 x 0.7 x 2 = 2.52. C01..C08 unchanged; C06 stays retired.
+- 02 edits: Refresh section; overlap rows for T21 (build, concurrency), T26 (F4/F5), T25 (new lines, adopt), new rows T27 and T02/G1 (17 rows); R17; finding line; accounting recounted (17 overlap rows, 16 rejected). Inputs cite TM-MPL-001..026.
+- Index: Refresh section at top; header; new ID T27; section 1 re-sorted (33 active, T27 rank 14, T26 15, T21 23 at 2.24, T25 30, C08 33); YAML adds T27 and updates T02, T26, T25 (13 blocks); section 3 adds T27, T21 0.8, T25/T26/T02 text; section 4 STRIDE 26 threats (DoS 4, EoP 10; 23 targeted, 3 excluded); section 5 text; section 6 rewritten with TM-MPL-026 fully excluded and 025/024/005/015/018 rows; section 7 new findings.
+- Not edited: `04-validation.md` (describes the 620771c run; outside this step's scope).
+
+## Checks run
+- `python3 check_scores.py`: yaml blocks 01=27, 02=8, merged=13; PROBLEMS: none (all 33 active products recompute; merged section 1 rank order, section 3 gaps and YAML ranks agree).
+- `python3 check_citations.py` (saved as `now-citations.txt`; baseline `baseline-citations.txt`): non-OK counts rose for the two docs because the script resolves bare `:LINE` and bare `lib.rs` against the wrong file (for example `mpl/src/lib.rs`, `record.rs` for spec lines). I did not rely on it for new citations. Every new citation was read with `sed -n` on HEAD and matched: `lib.rs` 715, 728, 1570, 1571, 1661, 2059; `EncryptionSDK.cpp` 541-547; `EncryptionSDK.h` 656-664; `ecdsa.rs` 387, 391-392; `local.rs` 69, 131, 166; `hierarchical_keyring.rs` 734, 751-772, 867, 879, 889-894, 901, 908, 916-924, 934-938, 947-953; `storm_tracking.rs` 313, 613, 616, 619, 622, 117-119; `test_storm_tracking_cmc.rs` 283, 388; `test_keyring_memory.rs` 100, 113; `test_local_cmc.rs` 465; `tests.rs` 715, 1624; `test-server` `main.rs` 26-27, `handlers.rs` 137-147, 425-430, `Cargo.toml` `publish = false`; `encryption_context.rs` 67, 77; spec `branch-key-store.md` 531, 553, 574, 677, 690, 692; `storm-tracking-cryptographic-materials-cache.md` 59, 71, 92, 136-138.
+- `grep` for `001..024`, `T01..T26`, `32 active`, `25 threat`, `1564`, `:1655`, `:2054`: remaining hits are intentional "was/moved from" history text.

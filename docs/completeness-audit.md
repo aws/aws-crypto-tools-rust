@@ -144,7 +144,7 @@ Bug and threat-target sweeps:
 - BUG-02, BUG-07(b), BUG-08 map only to capability targets (C04, C03, C01) with no `threat_references`: allowed by design (`02-capability-driven.md:6`); the threat link exists in `threat-model.md:80-94`.
 - BUG-02, BUG-03, BUG-09 are fixed on main and each keeps a regression target (C04, T15, T14).
 - Bug reports cite TM IDs that differ from the threat-model map (BUG-07 cites 011; BUG-03 cites 013 and 017; BUG-01 adds 022; BUG-02 and BUG-08 cite none): old-report inconsistencies; every cited ID exists, and `threat-model.md:80-94` is the current mapping.
-- BUG-06 Low in the bug report vs TM-MPL-009/010 High: explained at `threat-model.md:653`.
+- BUG-06 was rated Low in the bug report when this audit ran, against TM-MPL-009/010 High: resolved, because the owner raised BUG-06 from Low to High after the main re-check (see section 7).
 - Capability targets with empty `threat_references`; C06's block mentioning TM-MPL-010 (retired, ID exists); T08 and C06 appearing only in retirement rows: not dangling.
 - The §4 STRIDE table of `verification-targets.md` counting 24 threats: same staleness as G4-1 and the known TM-MPL-025 item; fixed by the same edit.
 
@@ -207,3 +207,17 @@ A second agent re-checked this report with shell access (grep, sed, git, small s
 - `git status --short` shows only `?? .agents/tasks/audit-light/` and `?? docs/completeness-audit.md`.
 
 **Weakest existing coverage seen** (no change requested): T01 as the only target for the read side of the key-store record (no completeness check, G1); T21 and T26 (known stale); TM-MPL-008 and TM-MPL-014, each backed by a single target (T09, T05).
+
+## 7. Resolution status
+
+Added after the targets refresh at HEAD `9955ecd`. The findings above are unchanged; this section records what was done about them. Line numbers refer to the working tree at that refresh.
+
+| Item | Status | Where |
+|---|---|---|
+| G1 (record MUST include `create-time` and `hierarchy-version`) | Applied to T02. No new target and no new threat. Expected FAIL against current code | `docs/verification-targets/01-threat-driven.md`: refresh table `:20`, ranked summary `:88`, T02 property text `:197-199`, formal spec `:211` (`// G1: FAILS today`), trace `:228`, coverage evidence `:235`, evidence `:241`. `docs/verification-targets.md`: refresh table `:17`, ranked summary `:67`, T02 YAML `:145`, `:151`, `:153`, coverage table `:435`, findings `:529` |
+| G2 (default suite id `00 14` should be `00 78`) | Fixed in commit `9955ecd` | Commit `9955ecd` (`threat-model.md`, `spec-security-analysis.md`) |
+| G4-1 (targets documents cite TM-MPL-001..024 and omit TM-MPL-026) | Applied in the targets documents. Threat range is now 001..026 and TM-MPL-026 has a "fully excluded" row | `verification-targets.md`: header `:4`, refresh `:9`, `:26`, STRIDE table `:468-482` (26 threats), section 6 row for TM-MPL-026 `:506`. `01-threat-driven.md`: header `:4`, `:10`, section 4 row for TM-MPL-026 `:1491`, accounting `:1557`, `:1559` |
+| BUG-06 severity | Aligned. The bug report now rates BUG-06 High, consistent with TM-MPL-009 and TM-MPL-010 (High). This was the owner's decision: raised from Low after the main re-check | `docs/threat-model.md` closing note; `docs/bug-reports/BUG-06-cache-identifier-not-injective-with-nul.md` ("Severity decision"), `docs/bug-reports/README.md`, the addendum of `docs/bug-reports/RECHECK-main-620771c.md` and both `docs/chorus/` editions |
+| TM-MPL-025 (the "known item" in sections 2, 3b and 3c) | Applied. New target T27 (3.78, provisional); no threat rating changed | `docs/verification-targets.md` section 1 (rank 14) and `docs/verification-targets/01-threat-driven.md`; the bug reports now name T27 for BUG-05(b) |
+
+The one statement in this audit that labelled BUG-06 as "Low in the bug report" is the bullet in section 4 (bug and threat-target sweeps). It was reworded to point to this section, because it is a severity label for the bug report. The BUG-06 row in section 3b gives no severity and was not changed. Section 2 and section 6 do not mention the BUG-06 severity.
