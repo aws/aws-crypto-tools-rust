@@ -3,6 +3,11 @@
 
 #![doc = include_str!("../README.md")]
 #![cfg_attr(docsrs, feature(doc_cfg))]
+// Verus builds only (cargo-verus sets `verus_keep_ghost`): the ghost-only
+// `AsRef` trait proxy in `aws_lc_specs` needs `PointeeSized`, which Verus must
+// see so it can name `aws_lc_rs::aead::Aad<A: AsRef<[u8]>>`. Mirrors how vstd
+// gates its std specs. Stable `cargo build` never enables this feature.
+#![cfg_attr(verus_keep_ghost, feature(sized_hierarchy))]
 #![warn(
     absolute_paths_not_starting_with_crate,
     deprecated_in_future,
@@ -62,6 +67,7 @@
 
 pub mod error;
 
+mod aws_lc_specs;
 mod ecdsa;
 pub use ecdsa::*;
 mod hkdf;
@@ -128,7 +134,8 @@ fn err<T>(s: String) -> Result<T, Error> {
 /// Returns an [`Error`] if the system random number generator fails to
 /// produce the requested number of bytes.
 pub fn generate_random_bytes(bytes: &mut [u8]) -> Result<(), Error> {
-    rand::fill(bytes)
+    // Verified core (VR-013(d)): totality, `bytes` keeps its length.
+    fill_random_core(bytes)
         .map_err(|_| serr(format!("could not generate {} random bytes", bytes.len())))?;
     Ok(())
 }
@@ -178,9 +185,17 @@ verus! {
 /// Verus proves both facts; no index operation here can be out of bounds. The
 /// AES-GCM crypto itself is not in scope — the returned slice is handed to the
 /// `aws-lc-rs` seal in the [`aes_encrypt`] adapter, outside `verus!`.
+///
+/// VR-014 (BUG-07(a)) adds two conjuncts, labeled below: the returned tail
+/// holds the plaintext, and the final buffer is the old buffer followed by
+/// the final contents of the tail.
 fn aes_encrypt_extend_core<'a>(cipher_text: &'a mut Vec<u8>, message: &[u8]) -> (slice: &'a mut [u8])
     ensures
         slice@.len() == message@.len(),
+        // VR-014 (BUG-07(a)): the tail holds the plaintext.
+        slice@ == message@,
+        // VR-014 (BUG-07(a)): the old contents stay as the prefix, the tail follows.
+        final(cipher_text)@ == old(cipher_text)@ + final(slice)@,
 {
     let old_size = cipher_text.len();
     cipher_text.extend_from_slice(message);
@@ -221,6 +236,270 @@ fn aes_decrypt_len_ok(plain_text_len: usize, cipher_text_len: usize) -> (r: Resu
     }
 }
 
+/// An output buffer did not have the exact length the guard required. Kept
+/// inside `verus!` so the crate [`Error`] never enters the verified region;
+/// `want_len` is the exact value the guard compared against, so the adapter
+/// reports that value in its message. Shared by [`digest_core`],
+/// `digest_finish_core` (in `ecdsa.rs`) and [`hmac_core`].
+struct OutLenMismatch {
+    /// The length the guard required.
+    want_len: usize,
+}
+
+/// The verified core of [`digest`] (VR-013(a), pipeline target VR-2026-C03).
+///
+/// Returns `Err` unless `out.len()` equals the algorithm's output length, and
+/// only then computes the digest and copies it. Verus proves the copy is in
+/// bounds: the guard pins `out.len()` to `output_len()`, and the trusted
+/// length fact A2 (see `aws_lc_specs`) pins the digest to the same length, so
+/// vstd's `copy_from_slice` precondition holds. On `Err`, `out` is unchanged.
+fn digest_core(
+    digest_alg: &'static aws_lc_rs::digest::Algorithm,
+    data: &[u8],
+    out: &mut [u8],
+) -> (r: Result<(), OutLenMismatch>)
+    ensures
+        (r is Ok) <==> old(out)@.len() == aws_lc_specs::spec_digest_output_len(digest_alg),
+        r matches Err(e) ==> e.want_len == aws_lc_specs::spec_digest_output_len(digest_alg) && final(out)@
+            == old(out)@,
+        r is Ok ==> final(out)@.len() == old(out)@.len(),
+{
+    let want_len = digest_alg.output_len();
+    if out.len() != want_len {
+        return Err(OutLenMismatch { want_len });
+    }
+    let d = aws_lc_rs::digest::digest(digest_alg, data);
+    out.copy_from_slice(d.as_ref());
+    Ok(())
+}
+
+/// The verified core of [`hmac`] (VR-013(f), pipeline target VR-2026-C03).
+///
+/// Returns `Err` unless `out.len()` equals the tag length of `hmac_alg`, and
+/// only then signs and copies. `want_len` comes from `hmac_alg.tag_len()`,
+/// the tag length of the algorithm that signs, so the trusted length fact A8
+/// (see `aws_lc_specs`) ties the tag to the guarded length and Verus proves
+/// the copy in bounds. On `Err`, `out` is unchanged.
+fn hmac_core(
+    hmac_alg: aws_lc_rs::hmac::Algorithm,
+    key: &[u8],
+    msg: &[u8],
+    out: &mut [u8],
+) -> (r: Result<(), OutLenMismatch>)
+    ensures
+        (r is Ok) <==> old(out)@.len() == aws_lc_specs::spec_hmac_tag_len(hmac_alg),
+        r matches Err(e) ==> e.want_len == aws_lc_specs::spec_hmac_tag_len(hmac_alg) && final(out)@
+            == old(out)@,
+        r is Ok ==> final(out)@.len() == old(out)@.len(),
+{
+    let want_len = hmac_alg.tag_len();
+    if out.len() != want_len {
+        return Err(OutLenMismatch { want_len });
+    }
+    let s_key = aws_lc_rs::hmac::Key::new(hmac_alg, key);
+    let tag = aws_lc_rs::hmac::sign(&s_key, msg);
+    out.copy_from_slice(tag.as_ref());
+    Ok(())
+}
+
+/// Why [`kbkdf_core`] failed. Kept inside `verus!` so the crate [`Error`]
+/// never enters the verified region.
+enum KbkdfCoreError {
+    /// The linked `aws-lc-rs` does not provide the algorithm.
+    Unavailable,
+    /// The `aws-lc-rs` derivation rejected the inputs.
+    DerivationFailed,
+}
+
+/// The verified core of [`kbkdf_ctr_hmac`] (VR-013(c), pipeline target
+/// VR-2026-C03): the wrapper's own logic. The algorithm lookup maps `None` to
+/// `Unavailable` and nothing else does; a derivation failure maps to
+/// `DerivationFailed`; there is no panic path in the wrapper. `okm` keeps its
+/// length. The derivation itself is `aws-lc-rs` and is not verified.
+fn kbkdf_core(
+    alg_id: aws_lc_rs::kdf::KbkdfCtrHmacAlgorithmId,
+    ikm: &[u8],
+    info: &[u8],
+    okm: &mut [u8],
+) -> (r: Result<(), KbkdfCoreError>)
+    ensures
+        (r matches Err(KbkdfCoreError::Unavailable)) <==> !aws_lc_specs::spec_kbkdf_available(alg_id),
+        r is Ok ==> aws_lc_specs::spec_kbkdf_available(alg_id),
+        final(okm)@.len() == old(okm)@.len(),
+{
+    let Some(algorithm) = aws_lc_rs::kdf::get_kbkdf_ctr_hmac_algorithm(alg_id) else {
+        return Err(KbkdfCoreError::Unavailable);
+    };
+    match aws_lc_rs::kdf::kbkdf_ctr_hmac(algorithm, ikm, info, okm) {
+        Ok(()) => Ok(()),
+        Err(_) => Err(KbkdfCoreError::DerivationFailed),
+    }
+}
+
+/// Why [`fill_random_core`] failed. Kept inside `verus!` so the crate
+/// [`Error`] never enters the verified region.
+enum RandFillError {
+    /// The system random number generator failed.
+    Failed,
+}
+
+/// The verified core of [`generate_random_bytes`] (VR-013(d), pipeline
+/// target VR-2026-C03). Totality only: no `requires`, so Verus's panic check
+/// covers the wrapper for every input. No functional property (randomness)
+/// is claimed.
+fn fill_random_core(bytes: &mut [u8]) -> (r: Result<(), RandFillError>)
+    ensures
+        final(bytes)@.len() == old(bytes)@.len(),
+{
+    match rand::fill(bytes) {
+        Ok(()) => Ok(()),
+        Err(_) => Err(RandFillError::Failed),
+    }
+}
+
+/// The verified core of [`constant_time_equal`] (VR-013(e), pipeline target
+/// VR-2026-C03). Totality, and the result is exactly the `Ok`-ness of the
+/// `aws-lc-rs` comparison (A13). Whether `Ok` means equal, and the timing
+/// behavior, are third-party semantics and are not claimed.
+fn ct_equal_core(a: &[u8], b: &[u8]) -> (r: bool)
+    ensures
+        r == aws_lc_specs::spec_slices_equal_ok(a@, b@),
+{
+    aws_lc_rs::constant_time::verify_slices_are_equal(a, b).is_ok()
+}
+
+/// Why [`aes_encrypt_core`] failed. Kept inside `verus!` so the crate
+/// [`Error`] never enters the verified region.
+enum AesEncryptCoreError {
+    /// `UnboundKey::new` rejected the key.
+    InvalidKey,
+    /// `Nonce::try_assume_unique_for_key` rejected the IV.
+    InvalidNonce,
+    /// The seal failed.
+    SealFailed,
+}
+
+/// The verified core of [`aes_encrypt`] (VR-014(a), pipeline target
+/// VR-2026-C03, BUG-07(a)). The order of operations is the shipped order:
+/// extend with the plaintext first, then key, nonce and seal, then append
+/// the tag.
+///
+/// Proved buffer effects (`o` = old buffer, `m` = message):
+///
+/// - key or nonce rejected: the buffer is exactly `o ++ m`, i.e. the
+///   plaintext stays appended (BUG-07(a));
+/// - seal failed: length `|o| + |m|`, prefix `o` unchanged (the tail bytes
+///   are whatever the seal left; A18 says nothing about them);
+/// - `Ok`: length `|o| + |m| + 16`, prefix `o` unchanged, and the tag is
+///   appended after the ciphertext (the `+ 16` rests on A19).
+///
+/// No crypto property is proven.
+fn aes_encrypt_core(
+    alg: &'static aws_lc_rs::aead::Algorithm,
+    iv: &[u8],
+    key: &[u8],
+    message: &[u8],
+    aad: &[u8],
+    cipher_text: &mut Vec<u8>,
+) -> (r: Result<(), AesEncryptCoreError>)
+    ensures
+        (r matches Err(AesEncryptCoreError::InvalidKey) || r matches Err(
+            AesEncryptCoreError::InvalidNonce,
+        )) ==> final(cipher_text)@ == old(cipher_text)@ + message@,
+        r matches Err(AesEncryptCoreError::SealFailed) ==> final(cipher_text)@.len() == old(
+            cipher_text,
+        )@.len() + message@.len() && final(cipher_text)@.subrange(0, old(cipher_text)@.len() as int)
+            == old(cipher_text)@,
+        r is Ok ==> final(cipher_text)@.len() == old(cipher_text)@.len() + message@.len() + 16
+            && final(cipher_text)@.subrange(0, old(cipher_text)@.len() as int) == old(
+            cipher_text,
+        )@,
+{
+    let ghost o = cipher_text@;
+    // Verified core (VR-006 + VR-014): extend with `message` and hand back the
+    // in-bounds tail slice of exactly `message.len()` bytes for the seal.
+    let cipher_slice = aes_encrypt_extend_core(cipher_text, message);
+    let Ok(key) = UnboundKey::new(alg, key) else {
+        return Err(AesEncryptCoreError::InvalidKey);
+    };
+    let Ok(nonce) = Nonce::try_assume_unique_for_key(iv) else {
+        return Err(AesEncryptCoreError::InvalidNonce);
+    };
+    let key = LessSafeKey::new(key);
+    let aad = Aad::from(aad);
+    let Ok(tag) = key.seal_in_place_separate_tag(nonce, aad, cipher_slice) else {
+        return Err(AesEncryptCoreError::SealFailed);
+    };
+    let ghost ct = cipher_slice@;
+    let tag_bytes: &[u8] = tag.as_ref();
+    cipher_text.extend_from_slice(tag_bytes);
+    // The tag is appended after the ciphertext.
+    assert(cipher_text@ =~= o + ct + tag_bytes@);
+    Ok(())
+}
+
+/// Why [`aes_decrypt_core`] failed. Kept inside `verus!` so the crate
+/// [`Error`] never enters the verified region.
+enum AesDecryptCoreError {
+    /// `aes_decrypt_len_ok` (VR-006) rejected the buffer: shorter than the ciphertext.
+    PlainTooShort,
+    /// `UnboundKey::new` rejected the key.
+    InvalidKey,
+    /// `Nonce::try_assume_unique_for_key` rejected the IV.
+    InvalidNonce,
+    /// `open_separate_gather` failed.
+    Open,
+}
+
+/// The verified core of [`aes_decrypt`] (VR-014(b), pipeline target
+/// VR-2026-C03, BUG-07(b)). Calls the VR-006 guard `aes_decrypt_len_ok`
+/// first, then the key, nonce and open, in the shipped order.
+///
+/// The first two `ensures` hold only under the LABELED ASSUMPTION A-OPEN
+/// (A20 in `aws_lc_specs`): that `open_separate_gather` returns `Ok` only
+/// when `out_plaintext` and `in_ciphertext` have equal lengths. The callee's
+/// behavior is assumed, not proved. Relative to A-OPEN:
+///
+/// - `Ok` implies `|plain_text| == |cipher_text|`;
+/// - BUG-07(b) observation: a buffer longer than the ciphertext passes the
+///   prim guard (never `PlainTooShort`) and never yields `Ok`; it ends in a
+///   callee-side `Err`, which the adapter reports as "authentication tag did
+///   not match" when it is the open that fails.
+///
+/// `plain_text` keeps its length on every path.
+fn aes_decrypt_core(
+    alg: &'static aws_lc_rs::aead::Algorithm,
+    key: &[u8],
+    cipher_text: &[u8],
+    auth_tag: &[u8],
+    iv: &[u8],
+    aad: &[u8],
+    plain_text: &mut [u8],
+) -> (r: Result<(), AesDecryptCoreError>)
+    ensures
+        r is Ok ==> old(plain_text)@.len() == cipher_text@.len(),
+        old(plain_text)@.len() > cipher_text@.len() ==> (r is Err && !(r matches Err(
+            AesDecryptCoreError::PlainTooShort,
+        ))),
+        final(plain_text)@.len() == old(plain_text)@.len(),
+{
+    if aes_decrypt_len_ok(plain_text.len(), cipher_text.len()).is_err() {
+        return Err(AesDecryptCoreError::PlainTooShort);
+    }
+    let Ok(key) = UnboundKey::new(alg, key) else {
+        return Err(AesDecryptCoreError::InvalidKey);
+    };
+    let Ok(nonce) = Nonce::try_assume_unique_for_key(iv) else {
+        return Err(AesDecryptCoreError::InvalidNonce);
+    };
+    let key = LessSafeKey::new(key);
+    let aad = Aad::from(aad);
+    match key.open_separate_gather(nonce, aad, cipher_text, auth_tag, plain_text) {
+        Ok(()) => Ok(()),
+        Err(_) => Err(AesDecryptCoreError::Open),
+    }
+}
+
 } // verus!
 
 /// Encrypt message with AES GCM
@@ -248,20 +527,18 @@ pub fn aes_encrypt(
     aad: &[u8],
     cipher_text: &mut Vec<u8>,
 ) -> Result<(), Error> {
-    let alg = get_aes_alg(alg);
-    // Verified core: extend with `message` and hand back the in-bounds tail
-    // slice of exactly `message.len()` bytes for the seal to overwrite.
-    let cipher_slice = aes_encrypt_extend_core(cipher_text, message);
-    let key = UnboundKey::new(alg, key).map_err(|_| serr("invalid AES-GCM key".to_owned()))?;
-    let nonce = Nonce::try_assume_unique_for_key(iv)
-        .map_err(|_| serr("invalid AES-GCM nonce".to_owned()))?;
-    let key = LessSafeKey::new(key);
-    let aad = Aad::from(aad);
-    let tag = key
-        .seal_in_place_separate_tag(nonce, aad, cipher_slice)
-        .map_err(|_| serr("AES-GCM encryption failed".to_owned()))?;
-    cipher_text.extend_from_slice(tag.as_ref());
-    Ok(())
+    // Verified core (VR-006 + VR-014(a)): the buffer effects on every path,
+    // in the shipped order of operations.
+    aes_encrypt_core(get_aes_alg(alg), iv, key, message, aad, cipher_text).map_err(|e| {
+        serr(
+            match e {
+                AesEncryptCoreError::InvalidKey => "invalid AES-GCM key",
+                AesEncryptCoreError::InvalidNonce => "invalid AES-GCM nonce",
+                AesEncryptCoreError::SealFailed => "AES-GCM encryption failed",
+            }
+            .to_owned(),
+        )
+    })
 }
 
 /// Decrypt message with AES GCM
@@ -289,23 +566,26 @@ pub fn aes_decrypt(
     aad: &[u8],
     plain_text: &mut [u8],
 ) -> Result<(), Error> {
-    // Verified core: reject an under-sized plaintext buffer before the gather.
-    if aes_decrypt_len_ok(plain_text.len(), cipher_text.len()).is_err() {
-        return err(format!(
+    // Verified core (VR-006 guard first, then VR-014(b) under A-OPEN).
+    match aes_decrypt_core(
+        get_aes_alg(alg),
+        key,
+        cipher_text,
+        auth_tag,
+        iv,
+        aad,
+        plain_text,
+    ) {
+        Ok(()) => Ok(()),
+        Err(AesDecryptCoreError::PlainTooShort) => err(format!(
             "plaintext buffer of {} bytes is shorter than the {} byte ciphertext",
             plain_text.len(),
             cipher_text.len()
-        ));
+        )),
+        Err(AesDecryptCoreError::InvalidKey) => err("invalid AES-GCM key".to_owned()),
+        Err(AesDecryptCoreError::InvalidNonce) => err("invalid AES-GCM nonce".to_owned()),
+        Err(AesDecryptCoreError::Open) => err("authentication tag did not match".to_owned()),
     }
-    let alg = get_aes_alg(alg);
-    let key = UnboundKey::new(alg, key).map_err(|_| serr("invalid AES-GCM key".to_owned()))?;
-    let nonce = Nonce::try_assume_unique_for_key(iv)
-        .map_err(|_| serr("invalid AES-GCM nonce".to_owned()))?;
-    let key = LessSafeKey::new(key);
-    let aad = Aad::from(aad);
-    key.open_separate_gather(nonce, aad, cipher_text, auth_tag, plain_text)
-        .map_err(|_| serr("authentication tag did not match".to_owned()))?;
-    Ok(())
 }
 
 /// Calculate HMAC into `out`.
@@ -318,24 +598,23 @@ pub fn aes_decrypt(
 /// bytes for `alg`.
 pub fn hmac(alg: DigestAlg, key: &[u8], msg: &[u8], out: &mut [u8]) -> Result<(), Error> {
     use aws_lc_rs::hmac;
-    // An HMAC tag is the length of its underlying digest. Taken from the
-    // algorithm rather than DigestAlg::output_len so the check is
-    // authoritative: a disagreement between the two surfaces as an error
-    // here instead of a panic in copy_from_slice below.
-    let want_len = get_digest_alg(alg).output_len();
-    if out.len() != want_len {
-        return err(format!(
-            "output buffer of {} bytes does not match the {want_len} byte {alg:?} output",
-            out.len()
-        ));
-    }
     let hmac_alg = match alg {
         DigestAlg::Sha256 => hmac::HMAC_SHA256,
         DigestAlg::Sha384 => hmac::HMAC_SHA384,
         DigestAlg::Sha512 => hmac::HMAC_SHA512,
     };
-    let s_key = hmac::Key::new(hmac_alg, key);
-    out.copy_from_slice(hmac::sign(&s_key, msg).as_ref());
+    // The verified `hmac_core` (VR-013(f)) takes the required length from
+    // `hmac_alg.tag_len()`, the tag length of the algorithm that signs, so
+    // the guard and the copy agree by construction: a disagreement surfaces
+    // as an error, never a panic in copy_from_slice. In aws-lc-rs 1.18.1
+    // `tag_len()` is the underlying digest's `output_len`, the value this
+    // check used before, so the accepted lengths and messages are unchanged.
+    if let Err(OutLenMismatch { want_len }) = hmac_core(hmac_alg, key, msg, out) {
+        return err(format!(
+            "output buffer of {} bytes does not match the {want_len} byte {alg:?} output",
+            out.len()
+        ));
+    }
     Ok(())
 }
 /// Return a digest of `data` using the selected algorithm, written into
@@ -350,24 +629,24 @@ pub fn hmac(alg: DigestAlg, key: &[u8], msg: &[u8], out: &mut [u8]) -> Result<()
 pub fn digest(alg: DigestAlg, data: &[u8], out: &mut [u8]) -> Result<(), Error> {
     // Length taken from the algorithm rather than DigestAlg::output_len so
     // the check is authoritative: a disagreement between the two surfaces
-    // as an error here instead of a panic in copy_from_slice below.
-    let digest_alg = get_digest_alg(alg);
-    if out.len() != digest_alg.output_len() {
+    // as an error here instead of a panic in copy_from_slice. The guard and
+    // the copy live in the verified `digest_core` (VR-013(a)).
+    if let Err(e) = digest_core(get_digest_alg(alg), data, out) {
         return err(format!(
             "output buffer of {} bytes does not match the {} byte {:?} output",
             out.len(),
-            digest_alg.output_len(),
+            e.want_len,
             alg
         ));
     }
-    out.copy_from_slice(aws_lc_rs::digest::digest(digest_alg, data).as_ref());
     Ok(())
 }
 
 /// Compare in constant time
 #[must_use]
 pub fn constant_time_equal(a: &[u8], b: &[u8]) -> bool {
-    aws_lc_rs::constant_time::verify_slices_are_equal(a, b).is_ok()
+    // Verified core (VR-013(e)): totality only; the comparison is aws-lc-rs.
+    ct_equal_core(a, b)
 }
 
 /// KBKDF in counter mode with HMAC as the PRF (NIST SP 800-108 §4.1).
@@ -399,9 +678,11 @@ pub fn kbkdf_ctr_hmac(
         DigestAlg::Sha384 => aws_lc_rs::kdf::KbkdfCtrHmacAlgorithmId::Sha384,
         DigestAlg::Sha512 => aws_lc_rs::kdf::KbkdfCtrHmacAlgorithmId::Sha512,
     };
-    let algorithm = aws_lc_rs::kdf::get_kbkdf_ctr_hmac_algorithm(alg_id)
-        .ok_or_else(|| serr(format!("KBKDF-CTR-HMAC-{alg:?} algorithm is unavailable")))?;
-    aws_lc_rs::kdf::kbkdf_ctr_hmac(algorithm, ikm, info, okm)
-        .map_err(|_| serr("KBKDF-CTR-HMAC derivation failed".to_owned()))?;
-    Ok(())
+    // Verified core (VR-013(c)): the lookup and error mapping, no panic path.
+    kbkdf_core(alg_id, ikm, info, okm).map_err(|e| match e {
+        KbkdfCoreError::Unavailable => {
+            serr(format!("KBKDF-CTR-HMAC-{alg:?} algorithm is unavailable"))
+        }
+        KbkdfCoreError::DerivationFailed => serr("KBKDF-CTR-HMAC derivation failed".to_owned()),
+    })
 }

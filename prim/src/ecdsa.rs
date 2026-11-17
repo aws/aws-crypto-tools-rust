@@ -82,14 +82,14 @@ impl DigestContext {
     /// Returns an [`Error`] if `out` is not exactly
     /// [`DigestContext::output_len`] bytes.
     pub fn finish(self, out: &mut [u8]) -> Result<(), Error> {
-        let want_len = self.output_len();
-        if out.len() != want_len {
+        // The guard and the copy live in the verified `digest_finish_core`
+        // (VR-013(b)); `out` is unchanged on Err.
+        if let Err(crate::OutLenMismatch { want_len }) = digest_finish_core(self.context, out) {
             return err(format!(
                 "output buffer of {} bytes does not match the {want_len} byte digest",
                 out.len()
             ));
         }
-        out.copy_from_slice(self.context.finish().as_ref());
         Ok(())
     }
 
@@ -181,6 +181,35 @@ pub assume_specification<T: Copy>[ <[T]>::copy_from_slice ](dst: &mut [T], src: 
         old(dst)@.len() == src@.len(),
     ensures
         final(dst)@ == src@;
+
+/// The verified core of [`DigestContext::finish`] (VR-013(b), pipeline
+/// target VR-2026-C03).
+///
+/// Returns `Err` unless `out.len()` equals the context's output length, and
+/// only then finalizes the digest and copies it. Verus proves the copy is in
+/// bounds from the guard and the trusted length fact A5 (see
+/// `aws_lc_specs`). Panic freedom of the finalize itself rests on A5: the
+/// aws-lc-rs `expect("EVP_DigestFinal failed")` is trusted unreachable. On
+/// `Err`, `out` is unchanged and the context is dropped without finalizing,
+/// as before.
+fn digest_finish_core(
+    context: aws_lc_rs::digest::Context,
+    out: &mut [u8],
+) -> (r: Result<(), crate::OutLenMismatch>)
+    ensures
+        (r is Ok) <==> old(out)@.len() == crate::aws_lc_specs::spec_context_output_len(&context),
+        r matches Err(e) ==> e.want_len == crate::aws_lc_specs::spec_context_output_len(&context)
+            && final(out)@ == old(out)@,
+        r is Ok ==> final(out)@.len() == old(out)@.len(),
+{
+    let want_len = context.algorithm().output_len();
+    if out.len() != want_len {
+        return Err(crate::OutLenMismatch { want_len });
+    }
+    let d = context.finish();
+    out.copy_from_slice(d.as_ref());
+    Ok(())
+}
 
 /// Maximum number of signing attempts made while looking for a DER
 /// signature of the canonical length (see [`sign_fixed_len`]).
