@@ -605,10 +605,48 @@ length must match the provided `in_ciphertext`", `aead.rs:~806`) and
   (pinned by `aes_decrypt_buffer_length_cases`). Under A-OPEN, the VR-006 guard
   is not what makes `Ok` imply equal lengths.
 
-**FOLLOW-UP (not this task):** whether BUG-07(a) matters depends on what the
-`aes_*` callers do with the buffer after an `Err`: mpl `raw_aes_keyring.rs`
-and `branch_key_wrap.rs` (2 call sites each) and esdk (2 + 5). Not reviewed
-here.
+**ESDK impact of BUG-07 (reviewed at `43b9ff77`; code reading over VR-014,
+not a Verus proof of the call sites).** esdk reaches prim AES only through
+`secret::seal` / `secret::open` (`esdk/src/secret.rs`), from 2 seal and 5 open
+call sites.
+
+- **BUG-07(a): harmless in esdk today; latent hazard only.**
+  - Frame seal (`body_encrypt.rs` `construct_frame`): the seal's `?` returns
+    before `write_to_sink` and before the signature-digest write, and the
+    scratch `frame_buf` is dropped. It is also cleared at the start of each
+    frame. Nothing from a failed frame reaches the output, the digest, the
+    return value or the error text.
+  - Header-tag seal (`encrypt.rs` `build_header_auth_tag`): seals an empty
+    plaintext, so nothing is appended.
+  - Streaming encrypt writes a frame only after its seal returns `Ok`.
+  - The failure paths are also unreachable given esdk's inputs (key length
+    and IV length come from the suite that selects the AES variant;
+    `check_v2_key_lengths`, `identity_kdf_key_len_ok` and `iv_seq_core` are
+    Verus-proven; the suite-table/aws-lc-rs length match is not). That is an
+    argument, not a proof. The no-escape conclusion does **not** depend on it:
+    it depends on the seal-before-write order in `construct_frame`. A refactor
+    that writes or reuses `frame_buf` on an error path would make (a) real.
+  - Severity: confidentiality, Informational/Low; likelihood negligible.
+- **BUG-07(b): unreachable from esdk.** All 5 open sites size the plaintext
+  buffer exactly to the ciphertext (header-auth and empty final frame are
+  0/0; non-empty final frame and non-framed body are equal by construction;
+  regular frames use `frame_length_usize` on both sides, via `read_into_vec`
+  over the proven `next_chunk_end`). A mis-sized buffer would fail closed with
+  a misleading "authentication tag did not match" message (availability only,
+  relative to A-OPEN).
+- **Tests:** no esdk test exercises either error path; the BUG-07 behavior is
+  covered only by the prim tests.
+- **Recommendations (not implemented).** For prim owners: build the key and
+  nonce before the extend; `truncate(old_size)` on seal `Err` so every `Err`
+  leaves the buffer unchanged (a provable contract); tighten the decrypt guard
+  to `plain_text.len() != cipher_text.len()`. For esdk (optional, defense in
+  depth): document the "write only after `seal` returns `Ok`" invariant at the
+  `construct_frame` Sink write, optionally clear `frame_buf` on the seal `Err`
+  arm, and optionally add a small verified sizing core for the open sites so
+  (b)'s unreachability is proven rather than argued.
+
+**FOLLOW-UP (still open):** the mpl `aes_*` callers (`raw_aes_keyring.rs` and
+`branch_key_wrap.rs`, 2 call sites each) have not been reviewed for BUG-07(a).
 
 **New build attributes (for PR #103 reviewers).** Verus cannot name
 `aws_lc_rs::aead::Aad<A: AsRef<[u8]>>`, which the seal and open specs (A17,
