@@ -645,8 +645,39 @@ call sites.
   arm, and optionally add a small verified sizing core for the open sites so
   (b)'s unreachability is proven rather than argued.
 
-**FOLLOW-UP (still open):** the mpl `aes_*` callers (`raw_aes_keyring.rs` and
-`branch_key_wrap.rs`, 2 call sites each) have not been reviewed for BUG-07(a).
+**MPL impact of BUG-07 (reviewed at `2d229377`; code reading over VR-014 —
+mpl is not Verus-enabled, so no mpl-side proof).** mpl calls prim AES at 4
+sites: encrypt at `raw_aes_keyring.rs` `wrap_data_key` and
+`branch_key_wrap.rs` `wrap`; decrypt at `raw_aes_keyring.rs` `on_decrypt` and
+`branch_key_wrap.rs` `unwrap`. At every site the plaintext is a **data key**.
+
+- **BUG-07(a): harmless today (no API escape); latent hazard.**
+  - Both encrypt sites return with `?` before the encrypted data key is built,
+    and the buffer is dropped. The data key cannot reach an EDK, a returned
+    value or an error message.
+  - The buffer is a plain `Vec<u8>`, **not zeroized**. If a key/nonce error
+    fired, an un-wiped copy of the plaintext data key would remain in freed
+    heap memory. mpl otherwise wipes keys, so this rates higher than in esdk.
+  - Today the failure cannot fire: `wrap` fixes the key (32 bytes) and IV
+    (12 bytes) by type; the raw AES keyring relies on the wrapping-key length
+    check in `RawAesKeyringBuilder::build` (`raw_aes_keyring.rs:369-378`,
+    pinned by a test). **The "no key residue in practice" conclusion depends on
+    that check**; the no-API-escape conclusion does not.
+  - Severity: confidentiality, Low; likelihood negligible.
+- **BUG-07(b): unreachable from mpl.** Both decrypt sites size the plaintext
+  buffer exactly from the same ciphertext slice (relative to A-OPEN).
+- **Tests:** no mpl test exercises either error path.
+- **Recommendations (not implemented).** prim: build the key and nonce before
+  the extend (removes the data-key copy at both mpl encrypt sites), truncate and
+  optionally zeroize on seal `Err`. mpl (defense in depth): hold the encrypt
+  buffers as `Zeroizing<Vec<u8>>`; treat the `build` length check as
+  security-relevant and comment it.
+- **Separate finding, outside BUG-07:** in `raw_aes_keyring.rs` `on_decrypt`,
+  when a successfully decrypted key has the wrong length, the loop `continue`s
+  and drops that **authenticated plaintext data key without wiping it**. Both
+  decrypt buffers (`raw_aes_keyring.rs:471`, `branch_key_wrap.rs:275`) are plain
+  `Vec<u8>`. Recommendation: hold them as `Zeroizing<Vec<u8>>` (and optionally
+  have `unwrap` return `PlaintextDataKey`).
 
 **New build attributes (for PR #103 reviewers).** Verus cannot name
 `aws_lc_rs::aead::Aad<A: AsRef<[u8]>>`, which the seal and open specs (A17,
