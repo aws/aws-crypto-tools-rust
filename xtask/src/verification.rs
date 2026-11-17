@@ -2,32 +2,20 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! Builds `docs/verification-status.json`, which the Verification page of the
-//! Crypto Tools dashboard shows.
+//! Crypto Tools dashboard shows. The page has three parts, and this file holds
+//! the data for each:
 //!
-//! Each target's levels come from the Levels column of the target table in
-//! `docs/verus-proofs-report.md`. Its other facts (property, score, origin,
-//! threats, files) come from the YAML blocks in
-//! `docs/verification-recommendations.md`. The YAML `status` field is known to
-//! lag behind the report, so it is never used as the level. When it disagrees
-//! with the report, the target gets a `drift` note instead.
-//!
-//! The verified counts come from running Verus at generation time. A run that
-//! cannot produce a count is written as unavailable, never as an old number.
+//! - status: whether every Verus run passed, from running Verus now;
+//! - count: how many fns and lines of each crate Verus checks, from
+//!   [`crate::proof_coverage`];
+//! - claims: the plain sentences in `docs/verification-claims.toml`, each
+//!   checked against the code here so a claim cannot outlive its proof.
 
 use std::collections::BTreeMap;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
-/// The levels, strongest first. A target part is never shown as a higher
-/// level than the one the report gives it.
-pub const LEVELS: [(&str, &str); 6] = [
-    ("in_crate", "Verus proof of shipped code"),
-    ("model_only", "Verus proof of a model, not shipped code"),
-    ("compiler_lint", "Rust privacy and clippy, not Verus"),
-    ("trusted", "Assumed, not proven"),
-    ("deferred", "Target exists, not proven now"),
-    ("not_started", "No proof yet"),
-];
+use crate::proof_coverage::FileCoverage;
 
 #[derive(Debug, Serialize)]
 pub struct Status {
@@ -35,13 +23,43 @@ pub struct Status {
     pub commit: String,
     pub verus: String,
     pub snapshot_note: &'static str,
-    pub levels: BTreeMap<&'static str, &'static str>,
     pub counts: Vec<Count>,
-    pub targets: Vec<Target>,
+    pub crates: Vec<CrateSummary>,
+    pub claims: Vec<Claim>,
+    /// Fns inside `verus!` that no claim names, as `path::name`.
+    pub undescribed: Vec<String>,
     /// What each line kind means, keyed as in [`crate::proof_coverage::KINDS`].
     pub line_kinds: BTreeMap<&'static str, &'static str>,
-    /// Every `.rs` file under the Verus-enabled crates' `src/`, by path.
-    pub files: Vec<crate::proof_coverage::FileCoverage>,
+    pub files: Vec<FileCoverage>,
+}
+
+/// One Verus command and what each of its runs verified.
+#[derive(Debug, Serialize)]
+pub struct Count {
+    pub name: String,
+    pub cmd: String,
+    /// `None` when the command ran but no result could be read from it.
+    pub runs: Option<Vec<Run>>,
+    /// Why `runs` is `None`.
+    pub unavailable: Option<String>,
+}
+
+#[derive(Debug, PartialEq, Eq, Serialize)]
+pub struct Run {
+    pub label: String,
+    pub verified: u64,
+    pub errors: u64,
+}
+
+/// How much of one crate Verus checks. Only fns that ship count: spec and
+/// proof fns are not compiled into the library.
+#[derive(Debug, PartialEq, Eq, Serialize)]
+pub struct CrateSummary {
+    pub name: String,
+    pub fns_checked: usize,
+    pub fns_shipped: usize,
+    pub lines_checked: usize,
+    pub lines_shipped: usize,
 }
 
 /// What the dashboard says for each line kind.
@@ -63,283 +81,179 @@ pub const LINE_KINDS: [(&str, &str); 6] = [
     ("unverified", "A fn outside verus!: Verus does not check it"),
 ];
 
-/// One Verus command and what each of its runs verified.
-#[derive(Debug, Serialize)]
-pub struct Count {
-    pub name: String,
-    pub cmd: String,
-    /// `None` when the command ran but no result could be read from it.
-    pub runs: Option<Vec<Run>>,
-    /// Why `runs` is `None`.
-    pub unavailable: Option<String>,
-}
+const CHECKED: [&str; 2] = ["proven", "no_panic"];
+const SHIPPED: [&str; 4] = ["proven", "no_panic", "trusted", "unverified"];
 
-#[derive(Debug, PartialEq, Eq, Serialize)]
-pub struct Run {
-    pub label: String,
-    pub verified: u64,
-    pub errors: u64,
-}
-
-#[derive(Debug, Serialize)]
-pub struct Target {
-    pub id: String,
-    pub title: String,
-    pub origin: String,
-    pub score: Option<f64>,
-    pub property: Option<String>,
-    pub agent: Option<String>,
-    pub files: Vec<String>,
-    pub threats: Vec<Threat>,
-    pub parts: Vec<Part>,
-    pub status: String,
-    pub residual: String,
-    pub yaml_status: Option<String>,
-    pub drift: Option<String>,
-}
-
-#[derive(Debug, PartialEq, Eq, Serialize)]
-pub struct Part {
-    pub level: String,
-    pub what: String,
-}
-
-#[derive(Debug, PartialEq, Eq, Serialize)]
-pub struct Threat {
-    pub id: String,
-    pub category: String,
-    pub description: String,
-}
-
-/// One row of the report's target table.
-#[derive(Debug)]
-pub struct ReportRow {
-    pub id: String,
-    pub title: String,
-    pub parts: Vec<Part>,
-    pub status: String,
-    pub residual: String,
-}
-
-/// One `recommendation:` block of the recommendations YAML.
-#[derive(Debug, Default)]
-pub struct Recommendation {
-    pub id: String,
-    pub origin: Option<String>,
-    pub status: Option<String>,
-    pub score: Option<f64>,
-    pub property: Option<String>,
-    pub agent: Option<String>,
-    pub files: Vec<String>,
-    pub threats: Vec<Threat>,
-}
-
-/// Reads the target table: the table whose header starts with
-/// `| Target | Levels |`. Rows that are not a `VR-` target are skipped.
-pub fn parse_report(text: &str) -> Result<Vec<ReportRow>, String> {
-    let mut lines = text
-        .lines()
-        .skip_while(|l| !l.starts_with("| Target | Levels |"));
-    if lines.next().is_none() {
-        return Err("the report has no `| Target | Levels |` table".to_owned());
-    }
-    let mut rows = Vec::new();
-    for line in lines.skip(1).take_while(|l| l.starts_with('|')) {
-        let cells: Vec<&str> = line.trim_matches('|').split(" | ").map(str::trim).collect();
-        let [target, levels, status, residual] = cells.as_slice() else {
-            return Err(format!("a target table row does not have 4 cells: {line}"));
-        };
-        let Some((id, title)) = target.split_once(' ') else {
-            continue;
-        };
-        if !id.starts_with("VR-") {
-            continue;
+pub fn crate_summaries(files: &[FileCoverage]) -> Vec<CrateSummary> {
+    let mut by_crate: BTreeMap<&str, CrateSummary> = BTreeMap::new();
+    for f in files {
+        let name = f.path.split('/').next().unwrap_or_default();
+        let s = by_crate.entry(name).or_insert_with(|| CrateSummary {
+            name: name.to_owned(),
+            fns_checked: 0,
+            fns_shipped: 0,
+            lines_checked: 0,
+            lines_shipped: 0,
+        });
+        for x in &f.fns {
+            s.fns_checked += usize::from(CHECKED.contains(&x.kind));
+            s.fns_shipped += usize::from(SHIPPED.contains(&x.kind));
         }
-        rows.push(ReportRow {
-            id: id.to_owned(),
-            title: title.to_owned(),
-            parts: parse_levels(id, levels)?,
-            status: (*status).to_owned(),
-            residual: (*residual).to_owned(),
+        s.lines_checked += CHECKED.iter().map(|k| f.counts[k]).sum::<usize>();
+        s.lines_shipped += SHIPPED.iter().map(|k| f.counts[k]).sum::<usize>();
+    }
+    by_crate.into_values().collect()
+}
+
+/// `docs/verification-claims.toml`.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ClaimsFile {
+    #[serde(rename = "claim")]
+    pub claims: Vec<ClaimSpec>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ClaimSpec {
+    pub area: String,
+    pub mark: Mark,
+    pub text: String,
+    #[serde(default)]
+    pub fns: Vec<String>,
+    #[serde(default)]
+    pub files: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Mark {
+    /// Verus proves it about shipped code.
+    Proven,
+    /// Verus proves it about a copy of the code in `verification/`.
+    Model,
+    /// The proofs rely on it; no tool checks it.
+    Assumed,
+}
+
+#[derive(Debug, Serialize)]
+pub struct Claim {
+    pub area: String,
+    pub mark: Mark,
+    pub text: String,
+    pub places: Vec<Place>,
+}
+
+/// Where a claim is proven: a fn in shipped code, or a model file.
+#[derive(Debug, PartialEq, Eq, Serialize)]
+pub struct Place {
+    pub path: String,
+    pub name: Option<String>,
+    pub first: Option<usize>,
+    pub last: Option<usize>,
+}
+
+/// Checks each claim against the code and fills in where its fns are.
+/// `model_files` are the proof files `make -C verification verify` verified
+/// with no errors.
+pub fn resolve_claims(
+    file: ClaimsFile,
+    files: &[FileCoverage],
+    model_files: &[String],
+) -> Result<(Vec<Claim>, Vec<String>), String> {
+    let mut named = std::collections::BTreeSet::new();
+    let mut claims = Vec::new();
+    for c in file.claims {
+        let what = format!("claim \"{}\"", c.text);
+        let places = match c.mark {
+            Mark::Proven => {
+                if c.fns.is_empty() || !c.files.is_empty() {
+                    return Err(format!("{what}: a proven claim names fns and no files"));
+                }
+                c.fns
+                    .iter()
+                    .map(|id| {
+                        let (path, name) = id
+                            .rsplit_once("::")
+                            .ok_or_else(|| format!("{what}: `{id}` is not `path::name`"))?;
+                        let f = files
+                            .iter()
+                            .find(|f| f.path == path)
+                            .ok_or_else(|| format!("{what}: no file {path}"))?;
+                        let found: Vec<_> = f.fns.iter().filter(|x| x.name == name).collect();
+                        if found.is_empty() {
+                            return Err(format!("{what}: no fn {name} in {path}"));
+                        }
+                        if let Some(x) = found
+                            .iter()
+                            .find(|x| !matches!(x.kind, "proven" | "no_panic" | "ghost"))
+                        {
+                            return Err(format!(
+                                "{what}: {path}::{name} is {}, not inside verus!",
+                                x.kind
+                            ));
+                        }
+                        named.insert(id.clone());
+                        Ok(Place {
+                            path: path.to_owned(),
+                            name: Some(name.to_owned()),
+                            first: Some(found[0].first),
+                            last: Some(found[0].last),
+                        })
+                    })
+                    .collect::<Result<Vec<_>, String>>()?
+            }
+            Mark::Model => {
+                if c.files.is_empty() || !c.fns.is_empty() {
+                    return Err(format!("{what}: a model claim names files and no fns"));
+                }
+                c.files
+                    .iter()
+                    .map(|path| {
+                        let base = path.strip_prefix("verification/").unwrap_or(path);
+                        if !model_files.iter().any(|m| m == base) {
+                            return Err(format!(
+                                "{what}: {path} did not pass make -C verification verify"
+                            ));
+                        }
+                        Ok(Place {
+                            path: path.clone(),
+                            name: None,
+                            first: None,
+                            last: None,
+                        })
+                    })
+                    .collect::<Result<Vec<_>, String>>()?
+            }
+            Mark::Assumed => {
+                if !c.fns.is_empty() || !c.files.is_empty() {
+                    return Err(format!("{what}: an assumed claim names nothing"));
+                }
+                Vec::new()
+            }
+        };
+        claims.push(Claim {
+            area: c.area,
+            mark: c.mark,
+            text: c.text,
+            places,
         });
     }
-    Ok(rows)
-}
-
-/// Reads one Levels cell, `level: what; level: what`.
-pub fn parse_levels(id: &str, cell: &str) -> Result<Vec<Part>, String> {
-    let parts = cell
-        .split(';')
-        .map(|part| {
-            let (level, what) = part
-                .split_once(':')
-                .ok_or_else(|| format!("{id}: Levels part `{part}` has no `level:`"))?;
-            let level = level.trim();
-            if !LEVELS.iter().any(|(key, _)| *key == level) {
-                return Err(format!("{id}: `{level}` is not a level"));
-            }
-            Ok(Part {
-                level: level.to_owned(),
-                what: what.trim().to_owned(),
-            })
+    // Exec fns a reader should know about. Spec and proof fns only support
+    // other proofs, so they need no claim of their own.
+    let undescribed = files
+        .iter()
+        .flat_map(|f| {
+            f.fns
+                .iter()
+                .filter(|x| CHECKED.contains(&x.kind))
+                .map(move |x| format!("{}::{}", f.path, x.name))
         })
-        .collect::<Result<Vec<_>, _>>()?;
-    if parts.is_empty() {
-        return Err(format!("{id}: the Levels cell is empty"));
-    }
-    Ok(parts)
-}
-
-/// Reads every `recommendation:` block in the recommendations doc. The blocks
-/// repeat the same top-level key, so they are not one valid YAML document;
-/// this reads only the fields the dashboard shows, line by line.
-pub fn parse_recommendations(text: &str) -> Vec<Recommendation> {
-    let mut recs: Vec<Recommendation> = Vec::new();
-    let mut section = "";
-    for line in text.lines() {
-        if line == "recommendation:" {
-            recs.push(Recommendation::default());
-            continue;
-        }
-        let Some(rec) = recs.last_mut() else {
-            continue;
-        };
-        if let Some(field) = line.strip_prefix("  ").filter(|l| !l.starts_with(' ')) {
-            let Some((key, value)) = field.split_once(':') else {
-                continue;
-            };
-            section = key;
-            let value = scalar(value);
-            match key {
-                "id" => rec.id = short_id(&value),
-                "origin" => rec.origin = Some(value),
-                "status" => rec.status = Some(value),
-                "priority_score" => rec.score = value.parse().ok(),
-                "property" => rec.property = Some(value),
-                "agent" => rec.agent = Some(value),
-                _ => {}
-            }
-        } else if section == "target"
-            && let Some(value) = line.trim_start().strip_prefix("file:")
-        {
-            rec.files = source_paths(value);
-        } else if section == "threat_references"
-            && let Some(threat) = line.trim_start().strip_prefix("- {").and_then(flow_threat)
-        {
-            rec.threats.push(threat);
-        }
-    }
-    recs
-}
-
-/// `VR-2026-001` in the YAML is `VR-001` in the report.
-fn short_id(id: &str) -> String {
-    match id.strip_prefix("VR-2026-") {
-        Some(n) => format!("VR-{n}"),
-        None => id.to_owned(),
-    }
-}
-
-/// A plain YAML value: the text inside quotes, or the text before a `#` comment.
-fn scalar(value: &str) -> String {
-    let value = value.trim();
-    if let Some(quoted) = value.strip_prefix('"') {
-        return quoted.split('"').next().unwrap_or_default().to_owned();
-    }
-    value
-        .split(" #")
-        .next()
-        .unwrap_or_default()
-        .trim()
-        .to_owned()
-}
-
-/// The repository paths in a `file:` value, which can be prose such as
-/// `esdk/src/secret.rs (confinement module); callers in esdk/src/...`.
-fn source_paths(value: &str) -> Vec<String> {
-    value
-        .split(|c: char| c.is_whitespace() || c == ',' || c == ';' || c == '(' || c == ')')
-        .filter(|w| {
-            w.ends_with(".rs")
-                && ["esdk/", "prim/", "mpl/", "verification/"]
-                    .iter()
-                    .any(|dir| w.starts_with(dir))
-        })
-        .map(str::to_owned)
-        .collect()
-}
-
-/// `{ id: E3, category: Tampering, description: "..." }` without its `- {`.
-/// The `(none)` entry of a capability-driven target is not a threat.
-fn flow_threat(entry: &str) -> Option<Threat> {
-    let id = scalar(entry.split_once("id:")?.1.split(',').next()?);
-    let category = scalar(
-        entry
-            .split_once("category:")?
-            .1
-            .split(", description:")
-            .next()?,
-    );
-    let description = scalar(entry.split_once("description:")?.1.trim_end_matches('}'));
-    (id != "(none)").then_some(Threat {
-        id,
-        category,
-        description,
-    })
-}
-
-/// Joins the report rows with their recommendations, in report order.
-pub fn targets(rows: Vec<ReportRow>, recs: Vec<Recommendation>) -> Vec<Target> {
-    let mut recs: BTreeMap<String, Recommendation> =
-        recs.into_iter().map(|r| (r.id.clone(), r)).collect();
-    rows.into_iter()
-        .map(|row| {
-            let rec = recs.remove(&row.id);
-            let drift = drift(&row.parts, rec.as_ref());
-            let rec = rec.unwrap_or_default();
-            Target {
-                origin: match rec.origin.as_deref() {
-                    Some(o) if o.starts_with("capability") => "capability".to_owned(),
-                    _ => "threat".to_owned(),
-                },
-                id: row.id,
-                title: row.title,
-                score: rec.score,
-                property: rec.property,
-                agent: rec.agent,
-                files: rec.files,
-                threats: rec.threats,
-                parts: row.parts,
-                status: row.status,
-                residual: row.residual,
-                yaml_status: rec.status,
-                drift,
-            }
-        })
-        .collect()
-}
-
-/// A note when the YAML status names a level the report does not give the
-/// target, or when the target has no YAML block.
-fn drift(parts: &[Part], rec: Option<&Recommendation>) -> Option<String> {
-    let Some(rec) = rec else {
-        return Some("No recommendation in verification-recommendations.md.".to_owned());
-    };
-    let status = rec.status.as_deref()?;
-    // The YAML status words are free-form, such as `partly_in_crate` or
-    // `deferred_model_of_removed_code`. The first level each one names is the
-    // level it claims. `deferred` is checked before `model_only` because a
-    // deferred target can still have an old model.
-    let claimed = ["in_crate", "deferred", "model_only", "not_started"]
+        .filter(|id| !named.contains(id))
+        .collect::<std::collections::BTreeSet<_>>()
         .into_iter()
-        .find(|level| status.contains(level))?;
-    let report: Vec<&str> = parts.iter().map(|p| p.level.as_str()).collect();
-    (!report.contains(&claimed)).then(|| {
-        format!(
-            "verification-recommendations.md says `{status}`, but the report gives {}.",
-            report.join(", ")
-        )
-    })
+        .collect();
+    Ok((claims, undescribed))
 }
 
 /// The `verification results:: N verified, M errors` lines that Verus prints

@@ -1,0 +1,235 @@
+# What the Verus proofs show, one plain sentence per claim. The Verification
+# page of the Crypto Tools dashboard lists these claims.
+#
+# `cargo xtask verification-status` checks every claim against the code:
+# - a `proven` claim names fns as `path::name`, and each one must be inside a
+#   `verus!` block of that file;
+# - a `model` claim names proof files in `verification/`, and each one must
+#   pass `make -C verification verify`;
+# - an `assumed` claim names nothing. It is a fact the proofs rely on that no
+#   tool checks.
+# Generation fails when a claim names a fn or file that does not exist, or a
+# fn outside `verus!`, so a claim cannot outlive its proof.
+#
+# Add a claim when a proof lands. A fn inside `verus!` that no claim names is
+# listed on the page as not described.
+
+# ---- Message header ----
+
+[[claim]]
+area = "Message header"
+mark = "proven"
+text = "The version, message type and content type bytes are accepted only when they hold a valid value."
+fns = [
+  "esdk/src/message/header_types.rs::msg_format_version_from_u8",
+  "esdk/src/message/header_types.rs::classify_version_byte",
+  "esdk/src/message/header_types.rs::msg_type_from_u8",
+  "esdk/src/message/header_types.rs::content_type_from_u8",
+]
+
+[[claim]]
+area = "Message header"
+mark = "proven"
+text = "A message with no encrypted data keys, or more than the configured maximum, is rejected."
+fns = ["esdk/src/message/header.rs::edk_count_check"]
+
+[[claim]]
+area = "Message header"
+mark = "proven"
+text = "A V1 header is rejected unless its reserved bytes are zero and its IV length matches the algorithm suite."
+fns = [
+  "esdk/src/message/v1_header_body.rs::reserved_bytes_ok",
+  "esdk/src/message/v1_header_body.rs::iv_len_matches",
+]
+
+[[claim]]
+area = "Message header"
+mark = "proven"
+text = "Decrypt accepts the key commitment only when it equals the derived value and has the right length."
+fns = ["esdk/src/message/header.rs::suite_data_check"]
+
+[[claim]]
+area = "Message header"
+mark = "model"
+text = "No frame is decrypted before the key commitment check passes."
+files = ["verification/commitment_ordering_proofs.rs"]
+
+[[claim]]
+area = "Message header"
+mark = "model"
+text = "No frame is decrypted before the header's authentication tag is verified."
+files = ["verification/header_auth_ordering_proofs.rs"]
+
+[[claim]]
+area = "Message header"
+mark = "model"
+text = "The loops that read the header fields and the encrypted data key list never panic and reject bad input."
+files = ["verification/io_stream_aligned.rs"]
+
+# ---- Reading and writing numbers and lengths ----
+
+[[claim]]
+area = "Numbers and lengths"
+mark = "proven"
+text = "Big-endian numbers are read and written correctly, and reading a written number gives back the same number."
+fns = [
+  "esdk/src/message/serialize_functions.rs::be_u16",
+  "esdk/src/message/serialize_functions.rs::be_u32",
+  "esdk/src/message/serialize_functions.rs::be_u64",
+  "esdk/src/message/serialize_functions.rs::low_byte",
+  "esdk/src/message/serialize_functions.rs::u32_to_be",
+  "esdk/src/message/serialize_functions.rs::u64_to_be",
+  "esdk/src/message/serialize_functions.rs::lemma_u32_round_trip",
+  "esdk/src/message/serialize_functions.rs::lemma_u64_round_trip",
+]
+
+[[claim]]
+area = "Numbers and lengths"
+mark = "proven"
+text = "A length field over its limit is rejected before anything is read, and long fields are read at most 1 MiB at a time."
+fns = [
+  "esdk/src/message/serialize_functions.rs::bounded_len_u32",
+  "esdk/src/message/serialize_functions.rs::bounded_len_u64",
+  "esdk/src/message/serialize_functions.rs::next_chunk_end",
+]
+
+# ---- Frames ----
+
+[[claim]]
+area = "Frames"
+mark = "proven"
+text = "Decrypt accepts frames only in order 1, 2, 3, ... with no gaps or repeats, and the frame counter never overflows."
+fns = [
+  "esdk/src/message/body/body_decrypt.rs::next_expected_frame",
+  "esdk/src/message/body/body_decrypt.rs::final_frame_seq_ok",
+  "esdk/src/message/body/body_decrypt.rs::lemma_accepts_run",
+  "esdk/src/message/body/body_decrypt.rs::lemma_frames_start_at_1",
+]
+
+[[claim]]
+area = "Frames"
+mark = "proven"
+text = "Each frame's associated data and IV are built exactly as the message format says."
+fns = [
+  "esdk/src/message/body/body_aad.rs::body_aad_core",
+  "esdk/src/message/body/body_aad.rs::iv_seq_core",
+  "esdk/src/message/body/body_aad.rs::body_aad_content_type_string",
+]
+
+[[claim]]
+area = "Frames"
+mark = "proven"
+text = "Each frame's sequence number, IV and length are written in the order the message format says."
+fns = [
+  "esdk/src/message/body/body_encrypt.rs::write_frame_prefix",
+  "esdk/src/message/body/body_encrypt.rs::lemma_endframe_bytes",
+]
+
+[[claim]]
+area = "Frames"
+mark = "model"
+text = "Each frame's ciphertext and tag are appended in the layout the message format says."
+files = ["verification/frame_layout_proofs.rs"]
+
+# ---- Keys ----
+
+[[claim]]
+area = "Keys"
+mark = "proven"
+text = "Key derivation accepts only the key and message ID lengths the algorithm suite allows."
+fns = [
+  "esdk/src/key_derivation.rs::identity_kdf_key_len_ok",
+  "esdk/src/key_derivation.rs::check_v2_key_lengths",
+]
+
+[[claim]]
+area = "Keys"
+mark = "proven"
+text = "The key commitment bytes written to or compared with the header are an exact copy of the committed value."
+fns = [
+  "esdk/src/secret.rs::as_suite_data",
+  "esdk/src/secret.rs::from_commitment",
+  "esdk/src/secret.rs::into_vec",
+  "esdk/src/secret.rs::copy_vec",
+]
+
+[[claim]]
+area = "Keys"
+mark = "proven"
+text = "New key buffers start as all zeros of the right length."
+fns = [
+  "esdk/src/secret.rs::zeroed",
+  "esdk/src/secret.rs::zero_vec",
+  "esdk/src/secret.rs::len",
+]
+
+# ---- Primitives ----
+
+[[claim]]
+area = "Primitives"
+mark = "proven"
+text = "AES-GCM encrypt and decrypt never index past a buffer, and decrypt rejects an output buffer shorter than the ciphertext."
+fns = [
+  "prim/src/lib.rs::aes_encrypt_extend_core",
+  "prim/src/lib.rs::aes_decrypt_len_ok",
+  "prim/src/lib.rs::aes_decrypt_core",
+]
+
+[[claim]]
+area = "Primitives"
+mark = "proven"
+text = "AES-GCM encrypt leaves the output buffer in a known state on success and on each error."
+fns = ["prim/src/lib.rs::aes_encrypt_core"]
+
+[[claim]]
+area = "Primitives"
+mark = "proven"
+text = "Digest and HMAC reject a wrong-size output buffer and leave it unchanged."
+fns = [
+  "prim/src/lib.rs::digest_core",
+  "prim/src/ecdsa.rs::digest_finish_core",
+  "prim/src/lib.rs::hmac_core",
+]
+
+[[claim]]
+area = "Primitives"
+mark = "proven"
+text = "HKDF accepts only 16, 24 or 32 byte keys, and its default salt never runs past its buffer."
+fns = [
+  "prim/src/hkdf.rs::hkdf_key_len_ok",
+  "prim/src/hkdf.rs::salt_size_core",
+  "prim/src/hkdf.rs::no_salt_slice_core",
+]
+
+[[claim]]
+area = "Primitives"
+mark = "proven"
+text = "ECDSA signing retries a bounded number of times and writes a signature of exactly the expected length."
+fns = ["prim/src/ecdsa.rs::sign_fixed_len_core"]
+
+[[claim]]
+area = "Primitives"
+mark = "proven"
+text = "KBKDF, random byte generation and constant-time compare never panic."
+fns = [
+  "prim/src/lib.rs::kbkdf_core",
+  "prim/src/lib.rs::fill_random_core",
+  "prim/src/lib.rs::ct_equal_core",
+]
+
+# ---- What the proofs rely on ----
+
+[[claim]]
+area = "Not proven"
+mark = "assumed"
+text = "The async encrypt and decrypt code calls the proven checks, in the right order."
+
+[[claim]]
+area = "Not proven"
+mark = "assumed"
+text = "AES-GCM, HKDF, HMAC, ECDSA and random bytes from aws-lc-rs are correct."
+
+[[claim]]
+area = "Not proven"
+mark = "assumed"
+text = "Comparisons of secret values run in constant time."

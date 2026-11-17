@@ -86,9 +86,7 @@ are the recurring drift sources in this repo:
 3. **A proof was added, moved in-crate, or superseded.** A model-only property
    became an in-crate proof (as VR-006/008/009-prim-half did when Verus was
    enabled in `prim`), or a new proof file appeared. → status table rows
-   (model-only → in-crate) and their Levels column, the per-file proofs table,
-   the verified counts. Then run `cargo xtask verification-status` to refresh
-   `docs/verification-status.json`.
+   (model-only → in-crate), the per-file proofs table, the verified counts.
 4. **A target's honest scope shifted.** New trusted boundaries, a declassification,
    or a property proven on a model rather than shipped code (VR-001 (b),
    VR-002). → the proven-vs-trusted split; make sure nothing now **overclaims**.

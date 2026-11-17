@@ -88,11 +88,12 @@ const CRATE_RUNS: [&str; 2] = [
 
 fn verification_status() -> Result<(), String> {
     let root = repo_root();
-    let read = |path: &str| {
-        std::fs::read_to_string(root.join(path)).map_err(|e| format!("could not read {path}: {e}"))
-    };
-    let rows = verification::parse_report(&read("docs/verus-proofs-report.md")?)?;
-    let recs = verification::parse_recommendations(&read("docs/verification-recommendations.md")?);
+    let claims_path = "docs/verification-claims.toml";
+    let claims_text = std::fs::read_to_string(root.join(claims_path))
+        .map_err(|e| format!("could not read {claims_path}: {e}"))?;
+    let claims_file: verification::ClaimsFile =
+        toml::from_str(&claims_text).map_err(|e| format!("{claims_path}: {e}"))?;
+    let files = proof_files(&root)?;
 
     let counts = vec![
         crate_count(&root, "esdk", "aws-esdk", "make -C esdk verus"),
@@ -104,17 +105,29 @@ fn verification_status() -> Result<(), String> {
             eprintln!("warning: no {} count: {why}", c.name);
         }
     }
+    let passed_models: Vec<String> = counts
+        .iter()
+        .filter(|c| c.name == "verification_models")
+        .flat_map(|c| c.runs.iter().flatten())
+        .filter(|r| r.errors == 0)
+        .map(|r| r.label.clone())
+        .collect();
+    let (claims, undescribed) = verification::resolve_claims(claims_file, &files, &passed_models)?;
+    for id in &undescribed {
+        eprintln!("note: {id} is inside verus! but no claim in {claims_path} names it");
+    }
 
     let status = verification::Status {
         generated: command_line(&root, "date", &["-u", "+%Y-%m-%dT%H:%M:%SZ"])?,
         commit: command_line(&root, "git", &["rev-parse", "HEAD"])?,
         verus: verus_version(),
         snapshot_note: "Counts come from one Verus run at generation time. Run `cargo xtask verification-status` again to refresh them.",
-        levels: verification::LEVELS.into_iter().collect(),
         counts,
-        targets: verification::targets(rows, recs),
+        crates: verification::crate_summaries(&files),
+        claims,
+        undescribed,
         line_kinds: verification::LINE_KINDS.into_iter().collect(),
-        files: proof_files(&root)?,
+        files,
     };
     let path = "docs/verification-status.json";
     let json = serde_json::to_string_pretty(&status).map_err(|e| e.to_string())? + "\n";

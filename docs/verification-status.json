@@ -1,16 +1,8 @@
 {
-  "generated": "2026-11-17T22:34:33Z",
-  "commit": "564aac78c0fbc43fcad29cff95bcea8ea4db6d58",
+  "generated": "2026-11-17T23:00:57Z",
+  "commit": "6f842510e1b4f939737bea5c2a635469b80db389",
   "verus": "0.2026.07.12.0b42f4c",
   "snapshot_note": "Counts come from one Verus run at generation time. Run `cargo xtask verification-status` again to refresh them.",
-  "levels": {
-    "compiler_lint": "Rust privacy and clippy, not Verus",
-    "deferred": "Target exists, not proven now",
-    "in_crate": "Verus proof of shipped code",
-    "model_only": "Verus proof of a model, not shipped code",
-    "not_started": "No proof yet",
-    "trusted": "Assumed, not proven"
-  },
   "counts": [
     {
       "name": "esdk",
@@ -109,464 +101,528 @@
       "unavailable": null
     }
   ],
-  "targets": [
+  "crates": [
     {
-      "id": "VR-001",
-      "title": "key commitment verification",
-      "origin": "threat",
-      "score": 16.0,
-      "property": "The derived commit key MUST equal the header's algorithm suite data (commit key), compared in constant time, before any frame is decrypted.",
-      "agent": "verus-header-parsing-proofs",
-      "files": [
-        "esdk/src/message/header.rs"
-      ],
-      "threats": [
-        {
-          "id": "E3",
-          "category": "Elevation of Privilege",
-          "description": "Non-committing / mismatched commit key multi-plaintext attack"
-        },
-        {
-          "id": "T8",
-          "category": "Tampering",
-          "description": "Commit key manipulation"
-        }
-      ],
-      "parts": [
-        {
-          "level": "in_crate",
-          "what": "decision (a)"
-        },
-        {
-          "level": "model_only",
-          "what": "ordering (b)"
-        },
-        {
-          "level": "trusted",
-          "what": "constant time (c)"
-        }
-      ],
-      "status": "**partly in-crate + model only**. Property (a), the accept/reject **decision** (`esdk/src/message/header.rs`, `suite_data_check`), is verified in-crate — `validate_suite_data` accepts **iff** the header suite data equals the derived commit key **and** the committed length agrees, rejecting commitment-first otherwise; obligation mutation-tested. Property (b), the **ordering** (commitment validation before frame decryption), is now proven **model only** (`verification/commitment_ordering_proofs.rs`) on a model of the decrypt pipeline — same status as VR-002",
-      "residual": "**not Verus-proven, trusted by design**: (c) *constant time* — the timing of `aws_lc_rs::constant_time::verify_slices_are_equal` is an aws-lc-rs API contract (Verus does not model timing). For (b): the model is **not** a proof about the shipped async `decrypt_steps`; what stays trusted is that `decrypt_steps` is the real pipeline and that the async frame loop runs after the synchronous commitment step returns (an in-place / typestate Stage 2 proof over the shipped path was deliberately not taken). The derived commit key bytes and the comparison FFI stay at the trusted boundary",
-      "yaml_status": "not_started",
-      "drift": "verification-recommendations.md says `not_started`, but the report gives in_crate, model_only, trusted."
+      "name": "esdk",
+      "fns_checked": 35,
+      "fns_shipped": 654,
+      "lines_checked": 432,
+      "lines_shipped": 5606
     },
     {
-      "id": "VR-003",
-      "title": "header parsing safety",
-      "origin": "threat",
-      "score": 10.8,
-      "property": "Malformed header input returns Err and never panics; only spec-supported version/content-type/message-type bytes are accepted; over-limit length fields are rejected before sizing any read/allocation.",
-      "agent": "verus-header-parsing-proofs",
-      "files": [
-        "esdk/src/message/header_types.rs"
-      ],
-      "threats": [
-        {
-          "id": "D3",
-          "category": "Denial of Service",
-          "description": "Malformed header → parser panic/loop"
-        },
-        {
-          "id": "D1",
-          "category": "Denial of Service",
-          "description": "Over-large length field → allocation/DoS"
-        },
-        {
-          "id": "T1",
-          "category": "Tampering",
-          "description": "Version/content-type downgrade via a bogus byte"
-        }
-      ],
-      "parts": [
-        {
-          "level": "in_crate",
-          "what": "header field decisions"
-        },
-        {
-          "level": "model_only",
-          "what": "header and EDK list loops"
-        }
-      ],
-      "status": "**in-crate**: big-endian decoding, bounded readers, header-field decisions, the 0x41 Base64 hint (`classify_version_byte`), reserved bytes, IV length, EDK count. **Model only**: the fixed-field header loop and EDK list loop (`io_stream_aligned.rs`)",
-      "residual": "the async readers over `dyn Source` (unverified glue); the EC sub-parser model is obsolete (parsing is in MPL)",
-      "yaml_status": "partly_in_crate",
-      "drift": null
-    },
-    {
-      "id": "VR-004",
-      "title": "frame sequence validation",
-      "origin": "threat",
-      "score": 9.6,
-      "property": "Frame sequence numbers MUST be strictly sequential starting at 1 (no gaps, repeats, or reordering); the expected-frame counter MUST NOT overflow; the final frame MUST match the expected sequence number.",
-      "agent": "verus-header-parsing-proofs",
-      "files": [
-        "esdk/src/message/body/body_decrypt.rs"
-      ],
-      "threats": [
-        {
-          "id": "T2",
-          "category": "Tampering",
-          "description": "Frame reordering or deletion"
-        },
-        {
-          "id": "T3",
-          "category": "Tampering",
-          "description": "Cross-message splicing (sequence half; AAD message-id binding is the other half — VR-005)"
-        },
-        {
-          "id": "D2",
-          "category": "Denial of Service",
-          "description": "Frame-count bounds (<= 2^32 - 1)"
-        }
-      ],
-      "parts": [
-        {
-          "level": "in_crate",
-          "what": "sequence checks"
-        }
-      ],
-      "status": "**in-crate**: regular-frame step (`next_expected_frame`), final-frame check (`final_frame_seq_ok`), sequential-run and start-at-1 lemmas",
-      "residual": "the async loop that threads `expected_frame` (unverified glue)",
-      "yaml_status": "in_crate_checks",
-      "drift": null
-    },
-    {
-      "id": "VR-005",
-      "title": "frame construction/serialization",
-      "origin": "threat",
-      "score": 9.0,
-      "property": "Frame iteration and slicing stay in-bounds; no panic during frame construction / body serialization; the assembled frame has exactly the spec fields in order.",
-      "agent": "verus-zero-panic",
-      "files": [
-        "esdk/src/message/body/body_encrypt.rs"
-      ],
-      "threats": [
-        {
-          "id": "T2",
-          "category": "Tampering",
-          "description": "Frame reordering/deletion (seq field + final-frame sentinel)"
-        },
-        {
-          "id": "T3",
-          "category": "Tampering",
-          "description": "Cross-message frame splicing (AAD binds message id)"
-        },
-        {
-          "id": "D2",
-          "category": "Denial of Service",
-          "description": "Frame count/size bounds"
-        }
-      ],
-      "parts": [
-        {
-          "level": "in_crate",
-          "what": "AAD, IV and frame prefix"
-        },
-        {
-          "level": "model_only",
-          "what": "ct and tag append"
-        }
-      ],
-      "status": "**in-crate**: body AAD layout (`body_aad_core`), IV (`iv_seq_core`), frame prefix layout (`write_frame_prefix`). **Model only**: the `ct ‖ tag` append (`frame_layout_proofs.rs`)",
-      "residual": "`aes_encrypt` (FFI) output and the `dyn Sink` / `DigestWriter` release",
-      "yaml_status": "partly_in_crate",
-      "drift": null
-    },
-    {
-      "id": "VR-002",
-      "title": "header auth tag ordering",
-      "origin": "threat",
-      "score": 12.0,
-      "property": "The header authentication tag MUST be verified before any data frame is decrypted, on every decrypt path (framed, non-framed, streaming).",
-      "agent": "verus-header-parsing-proofs",
-      "files": [
-        "esdk/src/decrypt.rs"
-      ],
-      "threats": [
-        {
-          "id": "T1",
-          "category": "Tampering",
-          "description": "Header modification / algorithm-suite downgrade"
-        },
-        {
-          "id": "T6",
-          "category": "Tampering",
-          "description": "Auth tag truncation or modification"
-        }
-      ],
-      "parts": [
-        {
-          "level": "model_only",
-          "what": "tag check before body decrypt"
-        }
-      ],
-      "status": "**model only** (`header_auth_ordering_proofs.rs`, re-audited against `decrypt_steps`): body decrypt unreachable without a verified header tag",
-      "residual": "not in-crate: the order is in an async fn and the tag check is aws-lc-rs FFI",
-      "yaml_status": "model_only",
-      "drift": null
-    },
-    {
-      "id": "VR-006",
-      "title": "AES-GCM panic freedom",
-      "origin": "threat",
-      "score": 9.0,
-      "property": "AES-GCM encrypt/decrypt never panic for any input; all buffer slicing (cipher_slice, tag append, plaintext gather) is in-bounds.",
-      "agent": "verus-zero-panic",
-      "files": [
-        "prim/src/lib.rs"
-      ],
-      "threats": [
-        {
-          "id": "D1",
-          "category": "Denial of Service",
-          "description": "Crafted input causing a crash during crypto"
-        }
-      ],
-      "parts": [
-        {
-          "level": "in_crate",
-          "what": "buffer bounds"
-        },
-        {
-          "level": "trusted",
-          "what": "key and IV checks, crypto"
-        }
-      ],
-      "status": "**in-crate** (`prim/src/lib.rs`, T2): `aes_encrypt_extend_core` proves the encrypt slice (`cipher_text[old_size..]`) is always in bounds and exactly `message.len()` bytes; `aes_decrypt_len_ok` proves the decrypt plaintext-vs-ciphertext length precondition that rejects an under-sized output buffer before the gather",
-      "residual": "**not** Verus-proven: the AES-GCM key length (16/24/32) and the IV validity — enforced inside `aws-lc-rs` (`UnboundKey::new` / `Nonce::try_assume_unique_for_key` return `Err`), a trusted boundary; and the crypto itself (aws-lc-rs `seal`/`open`, FFI)",
-      "yaml_status": "model_only_non_ffi",
-      "drift": "verification-recommendations.md says `model_only_non_ffi`, but the report gives in_crate, trusted."
-    },
-    {
-      "id": "VR-008",
-      "title": "ECDSA fixed-length signing",
-      "origin": "threat",
-      "score": null,
-      "property": null,
-      "agent": null,
-      "files": [],
-      "threats": [],
-      "parts": [
-        {
-          "level": "in_crate",
-          "what": "retry loop and copy bounds"
-        },
-        {
-          "level": "trusted",
-          "what": "signing"
-        }
-      ],
-      "status": "**in-crate** (`prim/src/ecdsa.rs`, `sign_fixed_len_core` inside `verus!`): the bounded `MAX_SIGN_ATTEMPTS` retry loop terminates (`decreases MAX_SIGN_ATTEMPTS - attempt`) and the guarded `copy_from_slice` is proven in bounds (tied to `check_sig_len`)",
-      "residual": "the `aws-lc-rs` signing closure and `Signature` type are the trusted boundary; the thin `sign_fixed_len` adapter builds the `Error`; no crypto property is proven",
-      "yaml_status": null,
-      "drift": "No recommendation in verification-recommendations.md."
-    },
-    {
-      "id": "VR-007",
-      "title": "EDK count validation",
-      "origin": "threat",
-      "score": 8.0,
-      "property": "EDK count MUST be > 0 and ≤ the configured maximum, and this MUST be enforced during header parsing before any keyring/KMS call.",
-      "agent": "verus-header-parsing-proofs",
-      "files": [
-        "esdk/src/message/header.rs"
-      ],
-      "threats": [
-        {
-          "id": "D1",
-          "category": "Denial of Service",
-          "description": "Excessive EDKs → KMS-call flood"
-        }
-      ],
-      "parts": [
-        {
-          "level": "in_crate",
-          "what": "count check"
-        }
-      ],
-      "status": "**in-crate**: count-check logic (`edk_count_check`)",
-      "residual": "the \"before any KMS call\" ordering (caller-side in `decrypt.rs`)",
-      "yaml_status": "in_crate_logic",
-      "drift": null
-    },
-    {
-      "id": "VR-009",
-      "title": "HKDF / key-derivation lengths",
-      "origin": "threat",
-      "score": 6.4,
-      "property": "Key-derivation length checks and output-buffer sizing are total (no panic, no overflow) and accept exactly the lengths the spec allows.",
-      "agent": "verus-zero-panic",
-      "files": [
-        "esdk/src/key_derivation.rs"
-      ],
-      "threats": [],
-      "parts": [
-        {
-          "level": "in_crate",
-          "what": "key lengths and salt slice"
-        },
-        {
-          "level": "trusted",
-          "what": "HKDF crypto"
-        }
-      ],
-      "status": "**both halves in-crate**. esdk half (`esdk/src/key_derivation.rs`): the V1 identity-KDF key-length check (`identity_kdf_key_len_ok`) and the V2 KDF / message-ID / key-length checks that size the derived encryption key (`check_v2_key_lengths`), total and accept iff the checks pass; `derive_keys` dispatches on the verified `msg_format_version_from_u8`. prim half (`prim/src/hkdf.rs`, T3): the `{16, 24, 32}` key-length decision (`hkdf_key_len_ok`), total and correct against `okm.len()`, and the no-salt slice bound (`salt_size_core` `<= MAX_SALT_SIZE`, `no_salt_slice_core` in bounds)",
-      "residual": "**prim half trust boundary**: the aws-lc-rs HKDF crypto and the extract/expand/fill results (incl. their `Err`), reached through the adapters outside `verus!`. In esdk, unverified: buffer sizes read directly from MPL getters (V1 output, V2 commit key), the V1 salt table `digest_length`, the `debug_assert!`s",
-      "yaml_status": "both_halves_in_crate",
-      "drift": null
-    },
-    {
-      "id": "VR-011",
-      "title": "data-key non-disclosure",
-      "origin": "threat",
-      "score": 4.8,
-      "property": "During encrypt and decrypt, the plaintext data key and the derived message encryption key are never written directly to the output stream or returned to the caller. They reach the output only through AES-GCM (the message key is its key input) or, for the data key, after the keyring has encrypted it into an EDK. The data key is also the input of the key derivation (HKDF or the identity KDF). The V2 commitment value is derived from the data key but is public by spec: the message header carries it as suite data. It is a declassification, not a leak. Key lengths are public.",
-      "agent": "unassigned",
-      "files": [
-        "esdk/src/secret.rs",
-        "esdk/src/key_derivation.rs"
-      ],
-      "threats": [
-        {
-          "id": "I1",
-          "category": "Information Disclosure",
-          "description": "Plaintext data key leaked (here: through the output stream or a return value)"
-        },
-        {
-          "id": "I5",
-          "category": "Information Disclosure",
-          "description": "Key material persists after use (here: handed back to the caller so it outlives the operation)"
-        },
-        {
-          "id": "S3",
-          "category": "Spoofing",
-          "description": "Malicious keyring — bounds the guarantee: a keyring/CMM receives the key by design, so VR-011 cannot protect against one"
-        }
-      ],
-      "parts": [
-        {
-          "level": "compiler_lint",
-          "what": "key confinement"
-        },
-        {
-          "level": "in_crate",
-          "what": "accessors and declassification"
-        }
-      ],
-      "status": "**confinement** to `esdk/src/secret.rs`, compiler- and clippy-checked (not Verus); **Verus**: the secret types' accessors and the commitment-value declassification",
-      "residual": "not Verus-proven overall: the encrypt/decrypt flow (plan step 7), the TB-A adapters, aws-lc-rs, keyrings/CMMs and mpl key types are trusted; the PRK hand-off in `key_derivation.rs` is grep-checked only",
-      "yaml_status": "confinement_in_crate",
-      "drift": null
-    },
-    {
-      "id": "VR-010",
-      "title": "key-material zeroization",
-      "origin": "threat",
-      "score": 6.0,
-      "property": "The zeroization loop stays within the Vec's allocation, and the secret buffer is fully zeroed (no key bytes remain).",
-      "agent": "verus-unsafe-ffi-safety",
-      "files": [
-        "mpl/src/structures/algorithm_suite.rs"
-      ],
-      "threats": [
-        {
-          "id": "I1",
-          "category": "Information Disclosure",
-          "description": "Plaintext data key leaked from memory"
-        },
-        {
-          "id": "I5",
-          "category": "Information Disclosure",
-          "description": "Key material persists after use"
-        }
-      ],
-      "parts": [
-        {
-          "level": "deferred",
-          "what": "model of removed code"
-        }
-      ],
-      "status": "model only; unchanged, deferred (out of scope for this work)",
-      "residual": "the modeled `write_volatile` loop was removed in `a864ad87`; current zeroization (`#[derive(Zeroize, ZeroizeOnDrop)]`) is not verified",
-      "yaml_status": "deferred_model_of_removed_code",
-      "drift": null
-    },
-    {
-      "id": "VR-012",
-      "title": "big-endian codec round-trip",
-      "origin": "capability",
-      "score": 4.0,
-      "property": "The verified big-endian encoders and decoders are exact inverses (decode-after-encode is the identity). For every u32 x, if b@ == spec_u32_to_be(x) then spec_be_u32(b) == x as int; for every u64 x, if b@ == spec_u64_to_be(x) then spec_be_u64(b) == x as int. Encoders exist only for u32 and u64, so the round-trip covers those two pairs. u16 has a decoder (be_u16 / spec_be_u16) but no encoder, so there is no u16 round-trip.",
-      "agent": "verus-header-parsing-proofs",
-      "files": [
-        "esdk/src/message/serialize_functions.rs"
-      ],
-      "threats": [],
-      "parts": [
-        {
-          "level": "in_crate",
-          "what": "u32 and u64 round trip"
-        }
-      ],
-      "status": "**in-crate** (`esdk/src/message/serialize_functions.rs`): `lemma_u32_round_trip` and `lemma_u64_round_trip` prove the verified big-endian encoders and decoders are **exact inverses** for `u32` and `u64` — `spec_be_u32(b) == x` when `b@ == spec_u32_to_be(x)`, and the `u64` analogue; mutation-tested. Capability-driven (category 1c), couples the two spec fns each previously verified only against their own side",
-      "residual": "a functional-correctness lemma about the **codec** only; it says nothing about the async readers/writers (`read_*`/`write_*`) that call the exec helpers. No `u16` round-trip: `u16` has a decoder (`be_u16`) but no encoder. That the exec fns equal std's `from_be_bytes`/`to_be_bytes` rests on their own ensures and the in-module tests, not on these lemmas",
-      "yaml_status": "in_crate",
-      "drift": null
-    },
-    {
-      "id": "VR-013",
-      "title": "prim wrapper length contracts (pipeline target VR-2026-C03)",
-      "origin": "capability",
-      "score": 5.6,
-      "property": "The prim wrappers never panic and keep exact length contracts: digest / DigestContext::finish / hmac return Err unless out.len() equals the algorithm's output (tag) length, leave out unchanged on Err, and copy only after the guard; kbkdf_ctr_hmac maps a missing algorithm to its Unavailable error and a derivation failure to its derivation error, with no panic path; generate_random_bytes and constant_time_equal are total.",
-      "agent": "verus-zero-panic",
-      "files": [
-        "prim/src/lib.rs",
-        "prim/src/ecdsa.rs"
-      ],
-      "threats": [],
-      "parts": [
-        {
-          "level": "in_crate",
-          "what": "length contracts"
-        },
-        {
-          "level": "trusted",
-          "what": "aws-lc-rs lengths (A1-A13)"
-        }
-      ],
-      "status": "**in-crate** (`prim/src/lib.rs`, `prim/src/ecdsa.rs`): `digest`, `DigestContext::finish` and `hmac` return `Err` unless the buffer has the algorithm's exact length, leave `out` unchanged on `Err`, and copy only after the guard (proven in bounds); `kbkdf_ctr_hmac`'s lookup / error mapping has no panic path; `generate_random_bytes` and `constant_time_equal` are total",
-      "residual": "**trusted (TCB A1–A13):** the aws-lc-rs output lengths (A2, A5, A8), no-panic of every listed call (incl. the documented `Context::finish` `expect`, F4), and A13 determinism. Not proven: output bytes, constant-time equality semantics and timing. F3: the `Unavailable` branch is dead with aws-lc-rs 1.18.1",
-      "yaml_status": "in_crate",
-      "drift": null
-    },
-    {
-      "id": "VR-014",
-      "title": "AES buffer effects (pipeline target VR-2026-C03, BUG-07)",
-      "origin": "capability",
-      "score": 5.6,
-      "property": "aes_encrypt: on a key or nonce Err the caller's buffer is exactly old ++ message; on a seal Err its length is old + |message| with the prefix unchanged; on Ok it is old ++ ct ++ tag (length old + |message| + 16). aes_decrypt, relative to the labeled assumption A-OPEN: Ok implies |plain_text| == |cipher_text|; a buffer longer than the ciphertext passes the prim guard and ends in a callee-side Err.",
-      "agent": "verus-zero-panic",
-      "files": [
-        "prim/src/lib.rs"
-      ],
-      "threats": [],
-      "parts": [
-        {
-          "level": "in_crate",
-          "what": "BUG-07(a) buffer effects"
-        },
-        {
-          "level": "trusted",
-          "what": "A-OPEN and tag length"
-        }
-      ],
-      "status": "**in-crate** (`prim/src/lib.rs`): BUG-07(a) **proved** — `aes_encrypt` leaves exactly `old ++ message` on a key/nonce `Err`, `old_len + |message|` with prefix unchanged on a seal `Err`, and `old ++ ct ++ tag` (+16) on `Ok`. BUG-07(b) **recorded under A-OPEN** — a decrypt buffer longer than the ciphertext passes the guard and can only end in a callee-side `Err`",
-      "residual": "**assumed, not proven:** A-OPEN (A20), the 16-byte tag (A19), no-panic of the AES calls. Not proven: crypto, ciphertext/tag bytes, tail bytes after a seal failure. FOLLOW-UP: what the `aes_*` callers do with the buffer after an `Err` (mpl 2 + 2, esdk 2 + 5). BUG-07 itself is not fixed",
-      "yaml_status": "in_crate",
-      "drift": null
+      "name": "prim",
+      "fns_checked": 15,
+      "fns_shipped": 184,
+      "lines_checked": 254,
+      "lines_shipped": 1528
     }
+  ],
+  "claims": [
+    {
+      "area": "Message header",
+      "mark": "proven",
+      "text": "The version, message type and content type bytes are accepted only when they hold a valid value.",
+      "places": [
+        {
+          "path": "esdk/src/message/header_types.rs",
+          "name": "msg_format_version_from_u8",
+          "first": 27,
+          "last": 44
+        },
+        {
+          "path": "esdk/src/message/header_types.rs",
+          "name": "classify_version_byte",
+          "first": 59,
+          "last": 74
+        },
+        {
+          "path": "esdk/src/message/header_types.rs",
+          "name": "msg_type_from_u8",
+          "first": 87,
+          "last": 97
+        },
+        {
+          "path": "esdk/src/message/header_types.rs",
+          "name": "content_type_from_u8",
+          "first": 110,
+          "last": 121
+        }
+      ]
+    },
+    {
+      "area": "Message header",
+      "mark": "proven",
+      "text": "A message with no encrypted data keys, or more than the configured maximum, is rejected.",
+      "places": [
+        {
+          "path": "esdk/src/message/header.rs",
+          "name": "edk_count_check",
+          "first": 35,
+          "last": 53
+        }
+      ]
+    },
+    {
+      "area": "Message header",
+      "mark": "proven",
+      "text": "A V1 header is rejected unless its reserved bytes are zero and its IV length matches the algorithm suite.",
+      "places": [
+        {
+          "path": "esdk/src/message/v1_header_body.rs",
+          "name": "reserved_bytes_ok",
+          "first": 27,
+          "last": 32
+        },
+        {
+          "path": "esdk/src/message/v1_header_body.rs",
+          "name": "iv_len_matches",
+          "first": 35,
+          "last": 40
+        }
+      ]
+    },
+    {
+      "area": "Message header",
+      "mark": "proven",
+      "text": "Decrypt accepts the key commitment only when it equals the derived value and has the right length.",
+      "places": [
+        {
+          "path": "esdk/src/message/header.rs",
+          "name": "suite_data_check",
+          "first": 86,
+          "last": 112
+        }
+      ]
+    },
+    {
+      "area": "Message header",
+      "mark": "model",
+      "text": "No frame is decrypted before the key commitment check passes.",
+      "places": [
+        {
+          "path": "verification/commitment_ordering_proofs.rs",
+          "name": null,
+          "first": null,
+          "last": null
+        }
+      ]
+    },
+    {
+      "area": "Message header",
+      "mark": "model",
+      "text": "No frame is decrypted before the header's authentication tag is verified.",
+      "places": [
+        {
+          "path": "verification/header_auth_ordering_proofs.rs",
+          "name": null,
+          "first": null,
+          "last": null
+        }
+      ]
+    },
+    {
+      "area": "Message header",
+      "mark": "model",
+      "text": "The loops that read the header fields and the encrypted data key list never panic and reject bad input.",
+      "places": [
+        {
+          "path": "verification/io_stream_aligned.rs",
+          "name": null,
+          "first": null,
+          "last": null
+        }
+      ]
+    },
+    {
+      "area": "Numbers and lengths",
+      "mark": "proven",
+      "text": "Big-endian numbers are read and written correctly, and reading a written number gives back the same number.",
+      "places": [
+        {
+          "path": "esdk/src/message/serialize_functions.rs",
+          "name": "be_u16",
+          "first": 37,
+          "last": 42
+        },
+        {
+          "path": "esdk/src/message/serialize_functions.rs",
+          "name": "be_u32",
+          "first": 45,
+          "last": 51
+        },
+        {
+          "path": "esdk/src/message/serialize_functions.rs",
+          "name": "be_u64",
+          "first": 54,
+          "last": 62
+        },
+        {
+          "path": "esdk/src/message/serialize_functions.rs",
+          "name": "low_byte",
+          "first": 98,
+          "last": 112
+        },
+        {
+          "path": "esdk/src/message/serialize_functions.rs",
+          "name": "u32_to_be",
+          "first": 116,
+          "last": 129
+        },
+        {
+          "path": "esdk/src/message/serialize_functions.rs",
+          "name": "u64_to_be",
+          "first": 133,
+          "last": 149
+        },
+        {
+          "path": "esdk/src/message/serialize_functions.rs",
+          "name": "lemma_u32_round_trip",
+          "first": 160,
+          "last": 172
+        },
+        {
+          "path": "esdk/src/message/serialize_functions.rs",
+          "name": "lemma_u64_round_trip",
+          "first": 180,
+          "last": 223
+        }
+      ]
+    },
+    {
+      "area": "Numbers and lengths",
+      "mark": "proven",
+      "text": "A length field over its limit is rejected before anything is read, and long fields are read at most 1 MiB at a time.",
+      "places": [
+        {
+          "path": "esdk/src/message/serialize_functions.rs",
+          "name": "bounded_len_u32",
+          "first": 259,
+          "last": 274
+        },
+        {
+          "path": "esdk/src/message/serialize_functions.rs",
+          "name": "bounded_len_u64",
+          "first": 277,
+          "last": 292
+        },
+        {
+          "path": "esdk/src/message/serialize_functions.rs",
+          "name": "next_chunk_end",
+          "first": 232,
+          "last": 245
+        }
+      ]
+    },
+    {
+      "area": "Frames",
+      "mark": "proven",
+      "text": "Decrypt accepts frames only in order 1, 2, 3, ... with no gaps or repeats, and the frame counter never overflows.",
+      "places": [
+        {
+          "path": "esdk/src/message/body/body_decrypt.rs",
+          "name": "next_expected_frame",
+          "first": 32,
+          "last": 43
+        },
+        {
+          "path": "esdk/src/message/body/body_decrypt.rs",
+          "name": "final_frame_seq_ok",
+          "first": 46,
+          "last": 51
+        },
+        {
+          "path": "esdk/src/message/body/body_decrypt.rs",
+          "name": "lemma_accepts_run",
+          "first": 89,
+          "last": 106
+        },
+        {
+          "path": "esdk/src/message/body/body_decrypt.rs",
+          "name": "lemma_frames_start_at_1",
+          "first": 111,
+          "last": 120
+        }
+      ]
+    },
+    {
+      "area": "Frames",
+      "mark": "proven",
+      "text": "Each frame's associated data and IV are built exactly as the message format says.",
+      "places": [
+        {
+          "path": "esdk/src/message/body/body_aad.rs",
+          "name": "body_aad_core",
+          "first": 100,
+          "last": 151
+        },
+        {
+          "path": "esdk/src/message/body/body_aad.rs",
+          "name": "iv_seq_core",
+          "first": 79,
+          "last": 96
+        },
+        {
+          "path": "esdk/src/message/body/body_aad.rs",
+          "name": "body_aad_content_type_string",
+          "first": 66,
+          "last": 75
+        }
+      ]
+    },
+    {
+      "area": "Frames",
+      "mark": "proven",
+      "text": "Each frame's sequence number, IV and length are written in the order the message format says.",
+      "places": [
+        {
+          "path": "esdk/src/message/body/body_encrypt.rs",
+          "name": "write_frame_prefix",
+          "first": 47,
+          "last": 150
+        },
+        {
+          "path": "esdk/src/message/body/body_encrypt.rs",
+          "name": "lemma_endframe_bytes",
+          "first": 37,
+          "last": 42
+        }
+      ]
+    },
+    {
+      "area": "Frames",
+      "mark": "model",
+      "text": "Each frame's ciphertext and tag are appended in the layout the message format says.",
+      "places": [
+        {
+          "path": "verification/frame_layout_proofs.rs",
+          "name": null,
+          "first": null,
+          "last": null
+        }
+      ]
+    },
+    {
+      "area": "Keys",
+      "mark": "proven",
+      "text": "Key derivation accepts only the key and message ID lengths the algorithm suite allows.",
+      "places": [
+        {
+          "path": "esdk/src/key_derivation.rs",
+          "name": "identity_kdf_key_len_ok",
+          "first": 31,
+          "last": 36
+        },
+        {
+          "path": "esdk/src/key_derivation.rs",
+          "name": "check_v2_key_lengths",
+          "first": 45,
+          "last": 79
+        }
+      ]
+    },
+    {
+      "area": "Keys",
+      "mark": "proven",
+      "text": "The key commitment bytes written to or compared with the header are an exact copy of the committed value.",
+      "places": [
+        {
+          "path": "esdk/src/secret.rs",
+          "name": "as_suite_data",
+          "first": 169,
+          "last": 174
+        },
+        {
+          "path": "esdk/src/secret.rs",
+          "name": "from_commitment",
+          "first": 205,
+          "last": 211
+        },
+        {
+          "path": "esdk/src/secret.rs",
+          "name": "into_vec",
+          "first": 222,
+          "last": 227
+        },
+        {
+          "path": "esdk/src/secret.rs",
+          "name": "copy_vec",
+          "first": 251,
+          "last": 269
+        }
+      ]
+    },
+    {
+      "area": "Keys",
+      "mark": "proven",
+      "text": "New key buffers start as all zeros of the right length.",
+      "places": [
+        {
+          "path": "esdk/src/secret.rs",
+          "name": "zeroed",
+          "first": 123,
+          "last": 128
+        },
+        {
+          "path": "esdk/src/secret.rs",
+          "name": "zero_vec",
+          "first": 231,
+          "last": 248
+        },
+        {
+          "path": "esdk/src/secret.rs",
+          "name": "len",
+          "first": 96,
+          "last": 101
+        }
+      ]
+    },
+    {
+      "area": "Primitives",
+      "mark": "proven",
+      "text": "AES-GCM encrypt and decrypt never index past a buffer, and decrypt rejects an output buffer shorter than the ciphertext.",
+      "places": [
+        {
+          "path": "prim/src/lib.rs",
+          "name": "aes_encrypt_extend_core",
+          "first": 192,
+          "last": 208
+        },
+        {
+          "path": "prim/src/lib.rs",
+          "name": "aes_decrypt_len_ok",
+          "first": 227,
+          "last": 237
+        },
+        {
+          "path": "prim/src/lib.rs",
+          "name": "aes_decrypt_core",
+          "first": 470,
+          "last": 501
+        }
+      ]
+    },
+    {
+      "area": "Primitives",
+      "mark": "proven",
+      "text": "AES-GCM encrypt leaves the output buffer in a known state on success and on each error.",
+      "places": [
+        {
+          "path": "prim/src/lib.rs",
+          "name": "aes_encrypt_core",
+          "first": 397,
+          "last": 439
+        }
+      ]
+    },
+    {
+      "area": "Primitives",
+      "mark": "proven",
+      "text": "Digest and HMAC reject a wrong-size output buffer and leave it unchanged.",
+      "places": [
+        {
+          "path": "prim/src/lib.rs",
+          "name": "digest_core",
+          "first": 256,
+          "last": 274
+        },
+        {
+          "path": "prim/src/ecdsa.rs",
+          "name": "digest_finish_core",
+          "first": 195,
+          "last": 212
+        },
+        {
+          "path": "prim/src/lib.rs",
+          "name": "hmac_core",
+          "first": 283,
+          "last": 303
+        }
+      ]
+    },
+    {
+      "area": "Primitives",
+      "mark": "proven",
+      "text": "HKDF accepts only 16, 24 or 32 byte keys, and its default salt never runs past its buffer.",
+      "places": [
+        {
+          "path": "prim/src/hkdf.rs",
+          "name": "hkdf_key_len_ok",
+          "first": 83,
+          "last": 97
+        },
+        {
+          "path": "prim/src/hkdf.rs",
+          "name": "salt_size_core",
+          "first": 103,
+          "last": 115
+        },
+        {
+          "path": "prim/src/hkdf.rs",
+          "name": "no_salt_slice_core",
+          "first": 127,
+          "last": 143
+        }
+      ]
+    },
+    {
+      "area": "Primitives",
+      "mark": "proven",
+      "text": "ECDSA signing retries a bounded number of times and writes a signature of exactly the expected length.",
+      "places": [
+        {
+          "path": "prim/src/ecdsa.rs",
+          "name": "sign_fixed_len_core",
+          "first": 270,
+          "last": 306
+        }
+      ]
+    },
+    {
+      "area": "Primitives",
+      "mark": "proven",
+      "text": "KBKDF, random byte generation and constant-time compare never panic.",
+      "places": [
+        {
+          "path": "prim/src/lib.rs",
+          "name": "kbkdf_core",
+          "first": 319,
+          "last": 337
+        },
+        {
+          "path": "prim/src/lib.rs",
+          "name": "fill_random_core",
+          "first": 350,
+          "last": 358
+        },
+        {
+          "path": "prim/src/lib.rs",
+          "name": "ct_equal_core",
+          "first": 364,
+          "last": 369
+        }
+      ]
+    },
+    {
+      "area": "Not proven",
+      "mark": "assumed",
+      "text": "The async encrypt and decrypt code calls the proven checks, in the right order.",
+      "places": []
+    },
+    {
+      "area": "Not proven",
+      "mark": "assumed",
+      "text": "AES-GCM, HKDF, HMAC, ECDSA and random bytes from aws-lc-rs are correct.",
+      "places": []
+    },
+    {
+      "area": "Not proven",
+      "mark": "assumed",
+      "text": "Comparisons of secret values run in constant time.",
+      "places": []
+    }
+  ],
+  "undescribed": [
+    "prim/src/aws_lc_specs.rs::as_ref"
   ],
   "line_kinds": {
     "ghost": "spec or proof fn: rules and proofs, not compiled into the library",
