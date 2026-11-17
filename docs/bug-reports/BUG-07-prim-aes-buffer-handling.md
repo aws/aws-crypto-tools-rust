@@ -163,3 +163,89 @@ Recommendation: (a) option 1 and (b) option 1. Neither changes the observable su
 1. Is `aws-mpl-primitives` considered internal-only (so a documented caller obligation is enough), or should its functions keep the caller's buffer unchanged on error?
 2. Should plaintext copies left in prim scratch buffers be wiped (for example with `zeroize`), consistent with `PlaintextDataKey::zeroize`?
 3. Is anything relying on `aes_decrypt` accepting an oversized buffer with the result then failing in aws-lc-rs? I found nothing in-repo.
+
+## Impact on callers (from Mahnush_Verus)
+
+Source: Finding 1 from the `Mahnush_Verus` branch (aws/aws-crypto-tools-rust, tip `2d229377`, PR #103), copied here as text. Nothing was merged. This section does not change this report's severity, status, confidence or evidence. Quoted text is the other branch's wording. Every file:line below was re-found by function name on `MPL-Verus` (HEAD `e3abf2d`; `mpl/` and `prim/` identical to `main` `620771c`). The four mpl files involved are identical on both branches; the esdk files and `prim/src/lib.rs` differ. Per-claim check: `.agents/tasks/bug-docs-from-mahnush/claims.md`.
+
+### What Mahnush_Verus states as proved (VR-014, in-crate Verus in its `prim/src/lib.rs`)
+
+- BUG-07(a): "PROVED". Reported: on a key or nonce `Err` the buffer is exactly `old ++ message`; on a seal `Err` its length is `old + |message|` with prefix `old`; on `Ok` it is "`old ++ ciphertext ++ 16-byte tag`".
+- BUG-07(b): "RECORDED, not proved". The guard `plain_text.len() < cipher_text.len()` is weaker than the equality check in aws-lc-rs `open_separate_gather`. This is stated relative to the labeled assumption A-OPEN, which the finding says matches aws-lc-rs 1.18.1 `src/aead/unbound_key.rs:139-142`. In the local aws-lc-rs 1.18.1 source the check is `if in_ciphertext_len != out_plaintext_len` at `:140`, returning `Err` at `:141`; the cited range `:139-142` covers the comment through the closing brace.
+
+This proof exists only on `Mahnush_Verus`. `prim` on `MPL-Verus` has no Verus annotations, and mpl is not Verus-enabled on either branch.
+
+Cross-check at `2d229377` (`git show 2d229377:prim/src/lib.rs`; details in `.agents/tasks/bug-docs-from-mahnush/crosscheck.md`). `prim/src` did not change between `43b9ff7`, which our earlier review read, and `2d229377`. The `ensures` of `aes_encrypt_core` (`prim/src/lib.rs:405-416` there) are:
+
+```rust
+(r matches Err(AesEncryptCoreError::InvalidKey) || r matches Err(
+    AesEncryptCoreError::InvalidNonce,
+)) ==> final(cipher_text)@ == old(cipher_text)@ + message@,
+r matches Err(AesEncryptCoreError::SealFailed) ==> final(cipher_text)@.len() == old(
+    cipher_text,
+)@.len() + message@.len() && final(cipher_text)@.subrange(0, old(cipher_text)@.len() as int)
+    == old(cipher_text)@,
+r is Ok ==> final(cipher_text)@.len() == old(cipher_text)@.len() + message@.len() + 16
+    && final(cipher_text)@.subrange(0, old(cipher_text)@.len() as int) == old(
+    cipher_text,
+)@,
+```
+
+- Key or nonce `Err`: exported postcondition, as stated.
+- Seal `Err`: exported postcondition, as stated (length and prefix only). The length relies on trusted assumption A18. The doc comment says the tail bytes "are whatever the seal left".
+- `Ok`: the exported postcondition gives the length `old + |message| + 16` and the prefix `old`. The "ciphertext, then tag" order is an in-body `assert(cipher_text@ =~= o + ct + tag_bytes@)` (`:437`), which is not part of the contract. The `+ 16` rests on trusted assumption A19 ("TRUSTED length").
+
+Reviewer note: for the `Ok` case, "PROVED" is stronger than the exported postcondition. Callers can rely on the length and the prefix. The tag order is checked only inside the function, under A18 and A19. The two `Err` statements match the postconditions, and they are the ones that matter for BUG-07(a).
+
+### ESDK impact (code reading over VR-014)
+
+Paths: 2 encrypt and 5 decrypt sites. On `Mahnush_Verus` they go through `secret::seal` and `secret::open` (`esdk/src/secret.rs`). `MPL-Verus` has no such module, and the same seven sites call `aes_encrypt` / `aes_decrypt` directly:
+
+- Encrypt: `construct_frame` (`esdk/src/message/body/body_encrypt.rs:31`, call at `:244`) and `build_header_auth_tag` (`esdk/src/encrypt.rs:750`, call at `:776`).
+- Decrypt: `step_verify_header` (`esdk/src/decrypt.rs:554`), `read_and_decrypt_framed_message_body` (`esdk/src/message/body/body_decrypt.rs:279`, `:300`, `:469`) and `read_and_decrypt_non_framed_message_body` (`:652`).
+
+Reported, and confirmed on our code:
+
+- (a) "Harmless today; latent hazard." In `construct_frame` the seal's `?` returns before the Sink write (`write_to_sink`, `:268`) and the signature-digest write (`:277`). The scratch `frame_buf` is local to `encrypt_and_serialize_body` (`:302`) and is dropped when the error propagates. The header-tag seal uses an empty plaintext (`&[]`, `encrypt.rs:786`). The plaintext is user data, not key material. Reported severity: confidentiality, Informational/Low; likelihood negligible. This rests on the seal-before-write order in `construct_frame`.
+- (b) "Unreachable." All five decrypt sites size the output exactly: two pass an empty ciphertext and `&mut []` (`decrypt.rs:586`, `body_decrypt.rs:289`), and the others use `result.resize(enc_content.len(), 0)` (`:296`), `result.resize(frame_length_usize, 0)` after reading `frame_length_usize` bytes (`:391-392`), and `enc_content.clone()` (`:647`).
+
+### MPL impact (code reading over VR-014; no mpl-side proof)
+
+Four sites, each handling a plaintext data key:
+
+- Encrypt: `RawAesKeyring::wrap_data_key` (`mpl/src/keyring/raw_aes_keyring.rs:146`, call at `:163`) and `branch_key_wrap::wrap` (`mpl/src/aws_kms/branch_key_wrap.rs:157`, call at `:199`).
+- Decrypt: `RawAesKeyring::on_decrypt` (`raw_aes_keyring.rs:422`, call at `:472`) and `branch_key_wrap::unwrap` (`branch_key_wrap.rs:230`, call at `:276`).
+
+Reported, and confirmed on our code:
+
+- (a) "Harmless today (no API escape); latent hazard."
+  - Both encrypt sites return with `?` before the encrypted data key is built (`raw_aes_keyring.rs:171-177`, EDK built from `:179`; `branch_key_wrap.rs:207`), and the buffer is dropped. The data key cannot reach an EDK, a returned value or an error message: the error wraps only prim's fixed error text.
+  - The buffer is a plain `Vec<u8>` and is not zeroized (`raw_aes_keyring.rs:162`; `branch_key_wrap.rs:192-196`, which already holds salt, IV and version). If a key or nonce error fired, an un-wiped copy of the plaintext data key would remain in freed heap memory.
+  - Today the failure cannot fire. `wrap` fixes the key at 32 bytes and the IV at 12 bytes by type (`Zeroizing<[u8; DERIVED_KEY_LEN]>`, `:125`, `DERIVED_KEY_LEN = 32` at `:36`; `[0u8; IV_LEN]`, `:169`, `IV_LEN = 12` at `:24`). The raw AES keyring relies on the wrapping-key length check in `RawAesKeyringBuilder::build` (`raw_aes_keyring.rs:350`, check at `:369-379`), which is pinned by `test_build_rejects_wrapping_key_length_mismatch` (`mpl/tests/test_raw_aes_keyring.rs:732`). Its IV is `vec![0u8; IV_LENGTH]` with `IV_LENGTH = 12` (`:151`, `:31`), so it is fixed by construction rather than by type. "The 'no key residue in practice' conclusion depends on that check. The no-API-escape conclusion does not."
+  - Reported severity: confidentiality, Low ("higher than esdk because the residue is key material"). Likelihood negligible.
+- (b) "Unreachable." Both decrypt sites size the buffer exactly from the same ciphertext slice (`raw_aes_keyring.rs:467-471`; `branch_key_wrap.rs:259`, `:275`).
+
+A separate zeroization issue found at the `on_decrypt` site is not part of BUG-07. It is recorded as [BUG-10](BUG-10-raw-aes-on-decrypt-unwiped-data-key.md).
+
+### Tests
+
+Reported: no esdk or mpl test exercises the `aes_encrypt` error path after the extend, or a wrong-size decrypt buffer; only the prim tests cover BUG-07 behavior. On `MPL-Verus`: confirmed for mpl and esdk. The only esdk test call (`esdk/tests/test_custom_keyring.rs:47`, `:108`) is a success path with an exact-size buffer. The prim tests that pin the buffer contents (`prim/tests/test_wrapper_contracts.rs`) exist only on `Mahnush_Verus`. Our `prim/tests/test_aes.rs` reaches the bad-key, bad-IV and too-short Err paths (`:154`, `:170`, `:138`) but checks only the error kind. The BUG-07 reproducer above was a temporary, untracked test.
+
+### Recommendations from Mahnush_Verus (not implemented)
+
+prim:
+
+1. Build the `UnboundKey` and `Nonce` before the extend, so key and nonce errors leave the buffer unchanged. This removes the data-key copy at both mpl encrypt sites, and the finding calls it "the fix that matters most".
+2. On seal `Err`, `truncate(old_size)`, optionally zeroizing the tail first. Every `Err` then leaves the buffer unchanged, which gives `aes_encrypt` a contract Verus can prove.
+3. Tighten the decrypt guard to `plain_text.len() != cipher_text.len()` with a descriptive error, so a sizing bug no longer reports "authentication tag did not match".
+
+Items 1 and 2 together are fix option (a) 1 above; item 3 is fix option (b) 1.
+
+mpl (defense in depth):
+
+1. Hold the encrypt buffers in `wrap_data_key` and `wrap` as `Zeroizing<Vec<u8>>`, or zeroize them on the `Err` arm. Both files already import `zeroize::Zeroizing` (`raw_aes_keyring.rs:15`, `branch_key_wrap.rs:16`).
+2. Treat the `RawAesKeyringBuilder::build` wrapping-key length check as security-relevant, and add a comment saying it also keeps prim's post-extend error path unreachable.
+
+esdk (optional): document the "write only after `seal` returns `Ok`" rule at the `construct_frame` Sink write (`body_encrypt.rs:268` on `MPL-Verus`).
+
+Last cross-checked (this section): `MPL-Verus` HEAD `e3abf2d` against `Mahnush_Verus` `2d229377`.

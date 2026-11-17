@@ -5,18 +5,18 @@
 | Document | MPL Native Rust: Bug Reports for Engineering Discussion |
 | System | AWS Cryptographic Material Providers Library (MPL), native Rust implementation |
 | Repository | aws/aws-crypto-tools-rust, branch `MPL-Verus` |
-| Code reviewed | `main` commit `620771c` (merged into `MPL-Verus` as `c256243`), cross-checked on `MPL-Verus` HEAD `9955ecd`. `mpl/` and `prim/` are identical in the two. The bugs were originally found at commit `a1e23d7`. |
+| Code reviewed | `main` commit `620771c` (merged into `MPL-Verus` as `c256243`), cross-checked on `MPL-Verus` HEAD `9955ecd`. `mpl/` and `prim/` are identical in the two. BUG-01 to BUG-09 were originally found at commit `a1e23d7`. BUG-10 and the BUG-07 caller-impact part come from the `Mahnush_Verus` branch (tip `2d229377`, PR #103) and were checked on `MPL-Verus` HEAD `e3abf2d` (same `mpl/` and `prim/`). |
 | Status | Draft |
-| Date | 2026-11-15 (bug status re-checked 2026-11-10; cross-references updated at HEAD `9955ecd`) |
-| How this was produced | AI-assisted consolidation of the nine individual bug reports in `docs/bug-reports/` and of the re-check against `main` (`docs/bug-reports/RECHECK-main-620771c.md`). Severities, confidence labels and conclusions are taken from those reports. The one severity that differs from the first edition of this document is BUG-06, which is now High (raised from Low on the owner's decision after the main re-check). Threat and target references follow `docs/threat-model.md` (TM-MPL-001..026), `docs/verification-targets.md` and `docs/completeness-audit.md` as of HEAD `9955ecd`. Human review is required before any decision is made on this basis. |
+| Date | 2026-11-17 (bug status re-checked 2026-11-10; cross-references updated at HEAD `9955ecd`; BUG-10 and BUG-07 caller impact added 2026-11-17) |
+| How this was produced | AI-assisted consolidation of the ten individual bug reports in `docs/bug-reports/` and of the re-check against `main` (`docs/bug-reports/RECHECK-main-620771c.md`). Severities, confidence labels and conclusions are taken from those reports. The one severity that differs from the first edition of this document is BUG-06, which is now High (raised from Low on the owner's decision after the main re-check). Threat and target references follow `docs/threat-model.md` (TM-MPL-001..026), `docs/verification-targets.md` and `docs/completeness-audit.md` as of HEAD `9955ecd`. Human review is required before any decision is made on this basis. |
 
 ## Introduction
 
-These nine findings came out of the Verus verification-target analysis of the MPL native Rust implementation. Each one is a likely defect, or an observation that needs a decision, found while stating provable properties. They were first found and reproduced at commit `a1e23d7`, using temporary, untracked tests. No code was changed.
+These ten findings came out of the Verus verification-target analysis of the MPL native Rust implementation. Each one is a likely defect, or an observation that needs a decision, found while stating provable properties. BUG-01 to BUG-09 were first found and reproduced at commit `a1e23d7`, using temporary, untracked tests. BUG-10 was added on 2026-11-17 from the `Mahnush_Verus` branch (tip `2d229377`, PR #103), where it was found by code reading while reviewing the mpl callers for BUG-07; it was re-checked on `MPL-Verus` by code reading. The same branch also contributed a caller-impact section for BUG-07. No code was changed.
 
-On 2026-11-10 all nine findings were re-checked against `main` commit `620771c`, which is merged into `MPL-Verus` as `c256243` with identical code. Where the public API had changed, the reproducers were adapted for API changes only, keeping the same inputs and observations. The result:
+On 2026-11-10 the nine findings that existed then (BUG-01 to BUG-09) were re-checked against `main` commit `620771c`, which is merged into `MPL-Verus` as `c256243` with identical code. Where the public API had changed, the reproducers were adapted for API changes only, keeping the same inputs and observations. The result:
 
-- Still present on `main`: BUG-01, BUG-04, BUG-05 (a) and (b), BUG-06, BUG-07 (a) and (b), BUG-08. BUG-05 (b) is still likely not a bug.
+- Still present on `main`: BUG-01, BUG-04, BUG-05 (a) and (b), BUG-06, BUG-07 (a) and (b), BUG-08, and BUG-10 (by code reading, 2026-11-17). BUG-05 (b) is still likely not a bug.
 - Fixed on `main`: BUG-02, BUG-03 and BUG-09, all in commit `e9bde48` (#98). They are summarized in "Resolved on main" near the end of this document.
 
 The open findings give fix options and questions for discussion rather than a chosen fix.
@@ -37,21 +37,22 @@ Full reports, re-check and reproducers:
 | ID | Title | Component | Severity | Confidence | Spec conflict | Status on main (620771c) | Discussion priority |
 |---|---|---|---|---|---|---|---|
 | BUG-01 | Large accepted TTL / grace / inflight values overflow `SystemTime + Duration` and panic | Hierarchical keyring; StormTracking CMC | Low | Confirmed by test | no | Still present | 2 – Medium |
-| BUG-02 | Plaintext data key length not enforced (hierarchical OnDecrypt and materials constructors) | Hierarchical keyring; materials structures | Medium | Confirmed by test | yes | Fixed on main (`e9bde48`, #98) | 7 – Resolved |
-| BUG-03 | `EncryptionContext::deserialize` accepts entries not sorted by key | `structures::EncryptionContext` | Low | Confirmed by test | yes | Fixed on main (`e9bde48`, #98) | 8 – Resolved |
+| BUG-02 | Plaintext data key length not enforced (hierarchical OnDecrypt and materials constructors) | Hierarchical keyring; materials structures | Medium | Confirmed by test | yes | Fixed on main (`e9bde48`, #98) | 8 – Resolved |
+| BUG-03 | `EncryptionContext::deserialize` accepts entries not sorted by key | `structures::EncryptionContext` | Low | Confirmed by test | yes | Fixed on main (`e9bde48`, #98) | 9 – Resolved |
 | BUG-04 | MRDiscovery rewrites the region of single-Region (non-MRK) KMS key ARNs | Branch key store (KMS ARN resolution) | Low | Confirmed by test | yes | Still present | 3 – Medium |
 | BUG-05 | (a) Default CMM panics if ECDSA key generation fails; (b) 44–59-byte hierarchical EDK reaches the keystore | Default CMM; hierarchical keyring | Low | (a) Confirmed by code reading; (b) Confirmed by test, likely not a bug | no | (a) Still present; (b) Still present (likely not a bug) | 5 – Low |
 | BUG-06 | Cache-identifier preimage not injective when fields contain NUL | Hierarchical keyring (cache identifier) | High (raised from Low on the owner's decision) | Confirmed by test | yes | Still present | 1 – High |
 | BUG-07 | `prim::aes_encrypt` leaves plaintext in buffer on `Err`; `aes_decrypt` guard weaker than callee | `aws-mpl-primitives` (AES-GCM) | Low | Confirmed by test | no | Still present (a and b) | 4 – Low |
-| BUG-08 | Custom-EC collision `Err` in `build_base` is dead code | Branch key store (encryption context) | Informational | Confirmed by code reading | no | Still present | 6 – Low |
-| BUG-09 | `cache_entry_within_limits` admits entries up to `ttl + 1 s` | Hierarchical keyring (cache TTL) | Informational | Confirmed by test, likely not a bug | no | Fixed on main (`e9bde48`, #98) | 9 – Resolved |
+| BUG-08 | Custom-EC collision `Err` in `build_base` is dead code | Branch key store (encryption context) | Informational | Confirmed by code reading | no | Still present | 7 – Low |
+| BUG-09 | `cache_entry_within_limits` admits entries up to `ttl + 1 s` | Hierarchical keyring (cache TTL) | Informational | Confirmed by test, likely not a bug | no | Fixed on main (`e9bde48`, #98) | 10 – Resolved |
+| BUG-10 | Raw AES `on_decrypt` drops an authenticated data key un-wiped when its length is wrong | Raw AES keyring | Low | Confirmed by code reading | no | Still present | 6 – Low |
 
 How to read the table:
 
 - Severity, confidence and spec conflict are the values from the original analysis. The re-check did not change them. The one exception is BUG-06: Severity raised Low -> High on the owner's decision after the main re-check. The BUG-06 section gives the basis and the preconditions.
 - Spec conflict "yes" for BUG-03, BUG-04 and BUG-06 depends on how the spec is read, or on text where the spec contradicts itself. Each section explains which.
 - "Likely not a bug" means the behavior was reproduced but matches the Dafny MPL, or has no practical impact.
-- Discussion priority is a suggested order (1 = first). It weighs spec deviation, cross-runtime divergence and impact, not just severity. The order was revised after the re-check. Open bugs now come first and fixed bugs move to the end. BUG-06 moves to the top, because with BUG-02 fixed it is the open finding with the most direct impact, the re-check confirmed on `main` that keyring B was served keystore A's branch key, and its severity is now High. The other open bugs keep their original relative order.
+- Discussion priority is a suggested order (1 = first). It weighs spec deviation, cross-runtime divergence and impact, not just severity. The order was revised after the re-check. Open bugs now come first and fixed bugs move to the end. BUG-06 moves to the top, because with BUG-02 fixed it is the open finding with the most direct impact, the re-check confirmed on `main` that keyring B was served keystore A's branch key, and its severity is now High. The other open bugs keep their original relative order. BUG-10 is placed at 6, after the other Low open bugs and before the Informational BUG-08, because it is Low, rests on code reading only, and needs both an authenticating wrong-length EDK and access to process memory; BUG-08 and the fixed bugs move down by one.
 
 ## Cross-reference to the threat model and verification targets
 
@@ -68,6 +69,7 @@ Ratings are from `docs/threat-model.md` (TM-MPL-001..026, HEAD `9955ecd`). Targe
 | BUG-07 | Low | Still present (a and b) | (a) TM-MPL-015 (Low); (b) TM-MPL-023 (Low); TM-MPL-011 (Medium) through T07 | (a) T26 (3.20), T07 property (e) (3.84); (b) C03 (5.60) | None yet |
 | BUG-08 | Informational | Still present | TM-MPL-005 (High). Informational; no effect on that rating | C01 property (c) (6.72) | C01: Proved (model level, not the shipped code, under stated hypotheses): 40 verified, 0 errors. The collision branch is dead if and only if A_ITER holds, and live if a key repeats |
 | BUG-09 | Informational | Fixed on main | TM-MPL-010 (High). The High rating comes from BUG-06, which is open | T14 property (b) (3.78) | None yet |
+| BUG-10 | Low | Still present | TM-MPL-015 (Low). The threat model already lists this site as a residual | T26 (3.20); its property already names this site as an expected FAIL (F1) | None yet |
 
 ## Suggested meeting agenda
 
@@ -76,10 +78,11 @@ Ratings are from `docs/threat-model.md` (TM-MPL-001..026, HEAD `9955ecd`). Targe
 | 1 | BUG-06 | Cache-identifier preimage not injective with NUL | Reject NUL in configuration values, or change the preimage via a spec change. Severity is High (raised from Low on the owner's decision after the main re-check); TM-MPL-009 and TM-MPL-010 are High |
 | 2 | BUG-01 | TTL / grace / inflight overflow panic | Per-call checked addition (Dafny parity) or construction-time bounds |
 | 3 | BUG-04 | MRDiscovery rewrites non-MRK ARN region | Which spec text is authoritative; align with Dafny |
-| 4 | BUG-07 | `prim` AES buffer handling | Whether `prim` must leave the caller's buffer unchanged on error; fix the misleading decrypt error text |
+| 4 | BUG-07 | `prim` AES buffer handling | Whether `prim` must leave the caller's buffer unchanged on error; fix the misleading decrypt error text; the mpl defense-in-depth items from the caller-impact part |
 | 5 | BUG-05 | Default CMM keygen `.expect`; short EDK keystore lookup | Propagate the keygen error; add a pre-lookup length check for (b) or leave as is |
-| 6 | BUG-08 | Dead collision branch in `build_base` | Comment fix only, or debug assertion |
-| 7 | BUG-02, BUG-03, BUG-09 | Fixed on `main` (`e9bde48`, #98) | None required. Optional: the remaining cross-runtime parity questions in "Resolved on main" |
+| 6 | BUG-10 | Raw AES `on_decrypt` un-wiped data key on the wrong-length path | Hold the decrypt buffers as `Zeroizing`; whether `unwrap` should return `PlaintextDataKey` |
+| 7 | BUG-08 | Dead collision branch in `build_base` | Comment fix only, or debug assertion |
+| 8 | BUG-02, BUG-03, BUG-09 | Fixed on `main` (`e9bde48`, #98) | None required. Optional: the remaining cross-runtime parity questions in "Resolved on main" |
 
 ## BUG-01: Large accepted TTL / grace / inflight values overflow `SystemTime + Duration` and panic
 
@@ -538,6 +541,18 @@ Recommendation: (a) option 1 and (b) option 1. Neither changes the observable su
 2. Should plaintext copies left in prim scratch buffers be wiped (for example with `zeroize`), consistent with the zeroize-on-drop that `PlaintextDataKey` now has (`algorithm_suite.rs:505`)?
 3. Is anything relying on `aes_decrypt` accepting an oversized buffer with the result then failing in aws-lc-rs? Nothing was found in-repo.
 
+### Impact on callers (from Mahnush_Verus)
+
+This part comes from the `Mahnush_Verus` branch (tip `2d229377`, PR #103), Finding 1, and is copied as text; nothing was merged. It does not change BUG-07's severity, status, confidence or evidence. The full text, with every site re-found on `MPL-Verus`, is in the BUG-07 report, section "Impact on callers (from Mahnush_Verus)".
+
+- Proof status on the other branch: BUG-07(a) is reported as "PROVED" by in-crate Verus in that branch's `prim/src/lib.rs` (VR-014). BUG-07(b) is "RECORDED, not proved", relative to the labeled assumption A-OPEN on aws-lc-rs `open_separate_gather`. `prim` on `MPL-Verus` has no Verus annotations, so "None yet" in the cross-reference table still applies to this branch, and mpl is not Verus-enabled on either branch.
+- Cross-check at `2d229377`: the exported postconditions of `aes_encrypt_core` match the finding for key or nonce `Err` (buffer is exactly `old ++ message`) and for seal `Err` (length `old + |message|`, prefix `old`). For `Ok` they state only the length `old + |message| + 16` and the prefix `old`. The "ciphertext, then tag" order is an in-body `assert`, not a postcondition, and the `+ 16` rests on trusted assumption A19. Reviewer note: for `Ok`, "PROVED" is stronger than the exported contract.
+- ESDK, by code reading: (a) is harmless today but a latent hazard. In `construct_frame` the seal's `?` returns before the Sink write and the signature-digest write (`esdk/src/message/body/body_encrypt.rs:244`, `:268`, `:277`), the header-tag seal has an empty plaintext (`esdk/src/encrypt.rs:786`), and the plaintext is user data. Reported severity: Informational/Low. (b) is unreachable: all five decrypt sites size the output exactly. On `MPL-Verus` these seven sites call prim directly; the `secret::seal` / `secret::open` wrapper exists only on `Mahnush_Verus`.
+- MPL, by code reading: four sites handle a plaintext data key (`wrap_data_key`, `raw_aes_keyring.rs:163`; `wrap`, `branch_key_wrap.rs:199`; `on_decrypt`, `raw_aes_keyring.rs:472`; `unwrap`, `branch_key_wrap.rs:276`). For (a), both encrypt sites return with `?` before the EDK is built, so the key cannot escape through the API, but the dropped buffer is a plain `Vec<u8>`. A key or nonce error cannot fire today: `wrap` fixes the key and IV lengths by type, and the raw AES keyring relies on the wrapping-key length check in `RawAesKeyringBuilder::build` (`raw_aes_keyring.rs:369-379`, pinned by `mpl/tests/test_raw_aes_keyring.rs:732`). Reported severity: Low, because the residue would be key material. (b) is unreachable at both decrypt sites.
+- Tests: no mpl or esdk test reaches the post-extend error path or a wrong-size decrypt buffer.
+- Recommendations (not implemented): in prim, build the key and nonce before the extend (the most important fix), truncate on seal `Err`, and use an equality guard in `aes_decrypt`. These match fix options (a) 1 and (b) 1 above. In mpl, hold the encrypt buffers as `Zeroizing<Vec<u8>>` and comment the `build` length check as security-relevant. In esdk (optional), document the write-after-seal rule at the `construct_frame` Sink write.
+- A separate zeroization issue at the `on_decrypt` site is recorded as BUG-10.
+
 ## BUG-08: The custom encryption context "collision" error in `build_base` is dead code
 
 Full report: https://github.com/aws/aws-crypto-tools-rust/blob/MPL-Verus/docs/bug-reports/BUG-08-build-base-collision-branch-unreachable.md
@@ -626,6 +641,73 @@ Recommendation: option 1 (comment fix only). If the C01 proof is pursued, option
 2. Do you prefer to keep an unreachable runtime check as defense-in-depth, or replace it with a debug assertion?
 3. Should the base attribute names be asserted (at compile time or in a test) never to start with `aws-crypto-ec:`?
 
+## BUG-10: `RawAesKeyring::on_decrypt` drops an authenticated plaintext data key without wiping it when its length is wrong
+
+Full report: https://github.com/aws/aws-crypto-tools-rust/blob/MPL-Verus/docs/bug-reports/BUG-10-raw-aes-on-decrypt-unwiped-data-key.md
+
+### Summary
+
+In the raw AES keyring's EDK loop, the decrypt buffer is a plain `Vec<u8>`. When `aes_decrypt` succeeds but the recovered key has the wrong length for the algorithm suite, the loop `continue`s and the authenticated data key is dropped without being zeroized. On the success path the buffer moves into `PlaintextDataKey`, which is `ZeroizeOnDrop`. Found on the `Mahnush_Verus` branch (tip `2d229377`, PR #103) while reviewing the mpl decrypt sites for BUG-07, and recorded separately because it is not part of BUG-07.
+
+| Attribute | Value |
+|---|---|
+| Severity | Low (confidentiality) |
+| Confidence | Confirmed by code reading (no reproducer, no proof; mpl is not Verus-enabled) |
+| Spec conflict | no |
+| Related IDs | VR-2026-T26; TM-MPL-015 (Low) |
+
+Severity rationale: a decrypted data key can stay in freed heap memory. Reading it needs access to the process memory, and mpl otherwise zeroizes key material.
+
+### Status on main (620771c)
+
+Still present, by code reading on `MPL-Verus` HEAD `e3abf2d` (`mpl/` identical to `main` `620771c`). Checked 2026-11-17. The two mpl files involved are identical on `Mahnush_Verus` `2d229377`.
+
+### Location
+
+`RawAesKeyring::on_decrypt` (`mpl/src/keyring/raw_aes_keyring.rs:422`): buffer at `:471`, wrong-length `continue` at `:489-494`, success move into `PlaintextDataKey` at `:497`.
+
+```rust
+471             let mut plaintext_dk = vec![0u8; encrypted_key.len()];
+...
+489             if plaintext_dk.len() != expected_dk_len {
+...
+494                 continue;
+...
+497             let materials = materials.add_data_key(PlaintextDataKey::new(plaintext_dk))?;
+```
+
+Related: `branch_key_wrap::unwrap` (`mpl/src/aws_kms/branch_key_wrap.rs:230`) holds its buffer as a plain `Vec<u8>` (`:275`) and returns it bare; the hierarchical keyring wraps it in `PlaintextDataKey` at `hierarchical_keyring.rs:767`. On our code the value is moved there without a copy, and a wrong-length key is rejected only after it is inside `PlaintextDataKey`, so the hierarchical path has no un-wiped wrong-length copy.
+
+### Expected vs actual behavior
+
+Expected: no spec requirement; this is defense-in-depth. T26's property is that every buffer that held key plaintext is wiped or moved into a `ZeroizeOnDrop` owner on every exit path.
+
+Actual: on the wrong-length path, `plaintext_dk` goes out of scope as a plain `Vec<u8>` and its heap allocation is freed with the authenticated key bytes in it. Whether aws-lc-rs leaves bytes in the buffer when the decrypt fails (the other `continue`, `:472-487`) was not checked.
+
+### Impact and preconditions
+
+- Precondition: an EDK that authenticates under the wrapping key and encryption context but decrypts to a key whose length does not match the suite. The raw AES AAD is the serialized encryption context only (`:436-439`), so the EDK does not bind the suite. Whether the ESDK passes a header with a mismatched suite to the keyring was not traced.
+- Effect: one un-wiped data-key copy in freed heap memory per such EDK; decryption of that EDK fails.
+- Already in scope: `docs/threat-model.md` lists this buffer on the AES-error and wrong-length paths (`raw_aes_keyring.rs:471`, `:489`) and the bare `unwrap` `Vec` as TM-MPL-015 residuals, and T26 expects to fail on both (its F1 and F3). No bug report existed for it before.
+
+### Evidence
+
+Confidence: Confirmed by code reading only, on `MPL-Verus`, matching the evidence level of the original finding.
+
+### Fix options
+
+1. Hold the decrypt buffers in `on_decrypt` and `unwrap` as `Zeroizing<Vec<u8>>`, moving the bytes into `PlaintextDataKey` on success. Covers every exit path; no change in behavior or errors. This is the Mahnush_Verus recommendation.
+2. In addition, have `unwrap` return `PlaintextDataKey` instead of a bare `Vec<u8>` (optional part of the recommendation). Changes an internal signature that the `test-utils` feature re-exports.
+3. Zeroize `plaintext_dk` before each `continue`. Smallest diff, but easy to miss on a future exit path.
+
+Recommendation: option 1, with option 2 if the signature change is acceptable. Neither is implemented.
+
+### Questions for engineers
+
+1. Should the wrong-length check move before the decrypt (an exact-length check on the EDK ciphertext), so no wrong-length key is produced? The same question is open for the hierarchical keyring under BUG-02.
+2. Is the raw AES keyring meant to bind the algorithm suite, or is that left to the ESDK header authentication?
+3. Should T26's expected-FAIL list cite this report for its F1?
+
 ## Resolved on main
 
 These three findings are fixed on `main` `620771c`, all in commit `e9bde48` "feat(esdk): retarget the ESDK and C++ shim onto the native Rust MPL (#98)". The re-check on 2026-11-10 ran each reproducer, adapted for API changes only, and the printed observations show the fixed behavior. The full original analysis is kept as history in each report (links in Appendix B).
@@ -647,7 +729,7 @@ Questions that may still be relevant:
 
 ## Appendix A: Reproducers
 
-The full reproducer sources are kept on GitHub rather than reproduced here. Each was a temporary, untracked test, copied into the tree for the run and removed afterwards. The original reproducers were written against commit `a1e23d7` (logs under `.agents/tasks/bug-reports/logs/`). For the re-check on `main` `620771c`, every reproducer except BUG-07 was adapted for API changes only, keeping the same inputs and observations (logs under `.agents/tasks/bug-recheck/logs/`). BUG-05 (a) and the code-reading half of BUG-08 have no runnable reproducer.
+The full reproducer sources are kept on GitHub rather than reproduced here. Each was a temporary, untracked test, copied into the tree for the run and removed afterwards. The original reproducers were written against commit `a1e23d7` (logs under `.agents/tasks/bug-reports/logs/`). For the re-check on `main` `620771c`, every reproducer except BUG-07 was adapted for API changes only, keeping the same inputs and observations (logs under `.agents/tasks/bug-recheck/logs/`). BUG-05 (a), the code-reading half of BUG-08 and BUG-10 have no runnable reproducer.
 
 - Original reproducers: https://github.com/aws/aws-crypto-tools-rust/tree/MPL-Verus/.agents/tasks/bug-reports/reproducers
 - Adapted reproducers: https://github.com/aws/aws-crypto-tools-rust/tree/MPL-Verus/.agents/tasks/bug-recheck/reproducers
@@ -679,11 +761,13 @@ The full reproducer sources are kept on GitHub rather than reproduced here. Each
 | BUG-07 | [BUG-07-prim-aes-buffer-handling.md](https://github.com/aws/aws-crypto-tools-rust/blob/MPL-Verus/docs/bug-reports/BUG-07-prim-aes-buffer-handling.md) |
 | BUG-08 | [BUG-08-build-base-collision-branch-unreachable.md](https://github.com/aws/aws-crypto-tools-rust/blob/MPL-Verus/docs/bug-reports/BUG-08-build-base-collision-branch-unreachable.md) |
 | BUG-09 | [BUG-09-cache-ttl-check-whole-second-truncation.md](https://github.com/aws/aws-crypto-tools-rust/blob/MPL-Verus/docs/bug-reports/BUG-09-cache-ttl-check-whole-second-truncation.md) |
+| BUG-10 | [BUG-10-raw-aes-on-decrypt-unwiped-data-key.md](https://github.com/aws/aws-crypto-tools-rust/blob/MPL-Verus/docs/bug-reports/BUG-10-raw-aes-on-decrypt-unwiped-data-key.md) |
 
 ## Appendix C: Editor's notes
 
 - Severity, confidence and spec conflict agree between the README index and every individual report. The re-check changed no value. The only later change is BUG-06: Severity raised Low -> High on the owner's decision after the main re-check, shown as High in the summary table, the cross-reference table, the agenda and the BUG-06 section. No other severity changed. The discussion priority was revised after the re-check, as explained under Summary, and the BUG-06 label now reads "1 – High". The README and this document use the same order.
-- Status on main agrees with `docs/bug-reports/RECHECK-main-620771c.md` (including its addendum for HEAD `9955ecd`) for every bug.
+- Status on main agrees with `docs/bug-reports/RECHECK-main-620771c.md` (including its addendum for HEAD `9955ecd`) for BUG-01 to BUG-09. BUG-10 is newer than the re-check; its status comes from code reading on `MPL-Verus` HEAD `e3abf2d`, where `mpl/` is identical to `620771c`.
+- BUG-10 and the BUG-07 caller-impact part are copied as text from `Mahnush_Verus` `2d229377` (PR #103), with the evidence levels as stated there: "PROVED" and "RECORDED, not proved" refer to that branch's in-crate prim proof, and everything about mpl and esdk callers is code reading. Every file:line was re-found by function name on `MPL-Verus`. BUG-10 is not in `docs/completeness-audit.md` section 3b, which predates it; its IDs come from TM-MPL-015 and T26. No other bug's severity, status, confidence or evidence changed.
 - Threat and target references (Related IDs, the cross-reference table) agree with `docs/threat-model.md` (TM-MPL-001..026), `docs/verification-targets.md` (T27 added; T08 and C06 retired) and `docs/completeness-audit.md` section 3b, and the ratings agree with the threat model's risk matrix. Where a report also lists a threat that section 3b omits (TM-MPL-017 for BUG-03, TM-MPL-022 for BUG-01, TM-MPL-011 for BUG-07), the extra ID comes from the target's own threat references.
 - Confidence: the README uses short labels. For BUG-04, BUG-05 and BUG-09 the individual reports add qualifiers (BUG-04: the end-to-end KMS failure is inferred and needs AWS; BUG-05 (b): matches Dafny and adds no amplification; BUG-09: matches Dafny's whole-second granularity). The per-bug sections use the individual report's wording; the summary table keeps the README's short form. The labels themselves do not conflict.
 - Titles: the summary table uses the README's shorter titles; the section headings use the individual reports' titles. For BUG-05, the README says the short EDK "reaches the keystore" and the report adds "before rejection". The meaning is the same.
