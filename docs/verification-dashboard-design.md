@@ -1,8 +1,8 @@
 # ESDK Verification Dashboard — Design
 
-**Status:** proposed. A working throwaway prototype exists at
-`.agents/tasks/dashboard-proto/` (`gen_dashboard.py`, `verification-status.json`,
-`dashboard.html`); this doc describes the production version to build from it.
+**Status:** built. `cargo xtask verification-status` writes
+`docs/verification-status.json`, and the Verification page of the Crypto Tools
+dashboard (`dashboard/verification/` in `aws/aws-crypto-tools-commons`) shows it.
 
 ## 1. Purpose
 
@@ -58,47 +58,60 @@ A two-stage static pipeline. No runtime component.
 
 ```
 docs/*.md  +  live `make … verus/verify`
-        │  (generator reads + runs)
+        │  (cargo xtask verification-status)
         ▼
-verification-status.json      ← structured intermediate (the "API")
-        │  (renderer)
+docs/verification-status.json      ← structured intermediate (the "API")
+        │  (fetched by the browser)
         ▼
-verification-dashboard.html   ← self-contained, open in any browser
+Crypto Tools dashboard, Verification page (aws-crypto-tools-commons)
 ```
 
 ### 4.1 The intermediate: `verification-status.json`
 
 A single structured file, the contract between extraction and rendering. The
-dashboard HTML reads **only** this — it never parses prose. Shape (from the
-prototype):
+dashboard page reads **only** this — it never parses prose. Shape:
 
 ```json
 {
-  "generated": "<iso timestamp>",
-  "snapshot_note": "Counts are a snapshot; re-read from make … verus/verify.",
-  "counts": {
-    "esdk":   {"verified": 69, "errors": 0, "cmd": "make -C esdk verus"},
-    "prim":   {"verified": 10, "errors": 0, "cmd": "make -C prim verus"},
-    "verification_models": {"verified": 78, "errors": 0, "files": 11,
-                            "cmd": "make -C verification verify"}
-  },
-  "levels": { "in_crate": "In-crate proof", "model_only": "Model-only", … },
+  "generated": "2026-11-17T20:45:49Z",
+  "commit": "<HEAD when generated>",
+  "verus": "0.2026.07.12.0b42f4c",
+  "snapshot_note": "Counts come from one Verus run at generation time. …",
+  "levels": { "in_crate": "Verus proof of shipped code", … },
+  "counts": [
+    { "name": "esdk", "cmd": "make -C esdk verus", "unavailable": null,
+      "runs": [ { "label": "default features", "verified": 69, "errors": 0 }, … ] },
+    { "name": "verification_models", "cmd": "make -C verification verify",
+      "unavailable": null,
+      "runs": [ { "label": "body_aad_proofs.rs", "verified": 4, "errors": 0 }, … ] }
+  ],
   "targets": [
     {
       "id": "VR-001",
-      "origin": "threat",          // "threat" | "capability"
-      "level": "in_crate",         // the honesty-ladder key
+      "title": "key commitment verification",
+      "origin": "threat",
       "score": 16.0,
       "property": "…",
-      "evidence": "esdk/src/message/header.rs (suite_data_check)",
-      "threats": "T8/E3 commitment; Invisible Salamanders",
-      "notes": "(a) decision in-crate; (b) ordering MODEL-ONLY …; (c) constant-time TRUSTED"
+      "agent": "verus-header-parsing-proofs",
+      "files": ["esdk/src/message/header.rs"],
+      "threats": [ { "id": "E3", "category": "Elevation of Privilege", "description": "…" } ],
+      "parts": [
+        { "level": "in_crate", "what": "decision (a)" },
+        { "level": "model_only", "what": "ordering (b)" },
+        { "level": "trusted", "what": "constant time (c)" }
+      ],
+      "status": "<the report's Status cell>",
+      "residual": "<the report's Residual cell>",
+      "yaml_status": "not_started",
+      "drift": "verification-recommendations.md says `not_started`, but the report gives in_crate, model_only, trusted."
     }
   ]
 }
 ```
 
-Keeping this as a committed artifact gives three things: the HTML stays dumb,
+A count with `runs: null` could not be read, and `unavailable` says why.
+
+Keeping this as a committed artifact gives three things: the page stays dumb,
 the data is diffable in review, and other tools (CI badges, future pages) can
 consume it.
 
@@ -112,8 +125,9 @@ A script that produces `verification-status.json` by combining:
    results:: N verified, M errors` lines. `touch esdk/src/lib.rs` /
    `prim/src/lib.rs` first to defeat the cache. These are the tile numbers and
    the proof of "0 errors."
-2. **Targets + levels** — the per-target status is taken from
-   `docs/verus-proofs-report.md` (the authoritative current table), **not** the
+2. **Targets + levels** — the per-target levels are taken from the Levels
+   column of the target table in `docs/verus-proofs-report.md` (the
+   authoritative current table), **not** the
    `status:` fields in the YAML blocks of `docs/verification-recommendations.md`,
    which are known to lag (the pipeline re-derivation found VR-001 still marked
    `not_started` there). Property, score, agent, `origin`, and threat links come
@@ -128,43 +142,43 @@ source, and it **flags any target whose YAML status disagrees with the report**
 rather than silently picking one (this is the same drift the
 `ai-verification-update` agent catches).
 
-Implementation: a Rust `xtask` subcommand (the repo already has an `xtask`
-crate) is the best fit — it runs in the repo's own toolchain, can shell out to
-the `make` targets, and needs no extra language runtime in CI. A standalone
-Python script (as the prototype is) is the cheaper alternative if `xtask`
-integration is not wanted.
+Implementation: the `verification-status` subcommand of the repo's `xtask`
+crate. It runs in the repo's own toolchain and shells out to the `make` targets.
 
 ### 4.3 The renderer
 
-Emits a **self-contained** `verification-dashboard.html`: inline CSS and JS, no
-external assets, no network. Opens by double-click. Contents:
+The Verification page of the Crypto Tools dashboard
+(`dashboard/verification/index.html` in `aws/aws-crypto-tools-commons`). Like
+the dashboard's other pages, it reads `docs/verification-status.json` from this
+repo through the GitHub API in the browser, from `main` or from a pasted PR.
+Contents:
 
-- **Header:** generation timestamp + the snapshot caveat.
-- **Count tiles:** esdk / prim / verification-models, each showing `N verified,
-  0 errors` and the command that produced it.
-- **Level tiles:** how many targets sit at each level.
-- **Origin filter:** All / Threat-driven / **Capability-driven** buttons.
-- **Target table:** one row per target — id, origin badge, linked threat(s),
-  property, colour-coded **level chip**, evidence file, score, honest notes
-  (where a target splits across levels, the split is spelled out here).
-- **Footer:** restates the ladder and the snapshot caveat.
+- **Header:** generation time, commit, Verus version and the snapshot caveat.
+- **Count cards:** esdk / prim / verification models, each showing `N verified,
+  M errors`, the command that produced it, and each run.
+- **Level legend:** how many targets have a part at each level.
+- **Origin filter:** All / Threat-driven / Capability-driven.
+- **Target matrix:** one row per target, one column per level. A cell names the
+  part of the target proven at that level, so a split target shows its split.
+- **Threat matrix:** one row per threat, showing which targets back it at each
+  level.
+- **Detail pane:** property, status, residual scope, files, threats and any
+  YAML drift note for the clicked target.
 
 ## 5. Where it lives and how it runs
 
-- Output: `docs/verification-dashboard.html` + `docs/verification-status.json`
-  (co-located with the other verification docs).
-- Trigger: `make dashboard` (a new target that runs the generator). Regenerate
-  on demand; the HTML and JSON are committed so a reader needs no toolchain.
-- Later, optional: hook the generator into the `ai-verification-update` drift
-  flow (so a status refresh updates the dashboard) and/or a CI job. The CI hook
-  depends on PR #103 Q2 (whether the Verus toolchain runs in CI); until that is
-  decided, the dashboard is regenerated locally.
+- Output: `docs/verification-status.json`, committed so the dashboard can read
+  it with no toolchain.
+- Trigger: `cargo xtask verification-status`, run locally with Verus installed
+  at `~/verus` (the version the report names).
+- Later, optional: a CI job. It depends on PR #103 Q2 (whether the Verus
+  toolchain runs in CI); until that is decided, the JSON is regenerated locally.
 
 ## 6. Honesty and staleness rules
 
 - Every count is from a **live run** at generation time, cited with its command;
   never inferred from code, never hand-edited in the JSON.
-- The JSON records `generated` and a snapshot note; the HTML shows both. The
+- The JSON records `generated` and a snapshot note; the page shows both. The
   dashboard never implies the numbers are live.
 - If the generator cannot run the `make` targets (no Verus toolchain), it must
   **fail or clearly mark counts as unavailable**, not fall back to stale numbers.
@@ -176,24 +190,8 @@ external assets, no network. Opens by double-click. Contents:
 
 ## 7. Open questions
 
-1. **Generator language:** Rust `xtask` subcommand (fits the repo build, no
-   extra runtime) vs a standalone Python script (cheaper, matches the
-   prototype). Recommend `xtask` for the production version.
-2. **Commit the generated HTML/JSON, or generate-on-demand only?** Committing
-   lets readers open it with no toolchain; it also adds generated files to the
-   repo (the same concern as the `.docx` twins, PR #103 Q4). Recommend
-   committing both, since a dashboard nobody can open is useless.
-3. **CI integration** — tied to PR #103 Q2. Defer until that is answered.
-4. **Scope of the target metadata** — is the current column set (origin,
+1. **CI integration** — tied to PR #103 Q2. Defer until that is answered.
+2. **Scope of the target metadata** — is the current column set (origin,
    threats, property, level, evidence, score, notes) sufficient, or should it
    also show per-file verified counts, the responsible agent, or the Duvet/spec
    reference?
-
-## 8. Build plan
-
-The prototype proves the shape; the production version is a multi-file build
-(generator + status schema + HTML renderer + `make dashboard` target) and
-warrants the full plan → implement → review loop, run in a worktree (the
-standing default for this project). The throwaway prototype in
-`.agents/tasks/dashboard-proto/` is the reference for the rendered layout and
-the JSON schema, and is discarded once the production version lands.

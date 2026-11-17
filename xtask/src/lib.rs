@@ -2,6 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! Generates each library's error types from `errors.toml`.
+//!
+//! [`verification`] builds `docs/verification-status.json`.
+
+pub mod verification;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
