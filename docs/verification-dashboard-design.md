@@ -160,8 +160,12 @@ Contents:
 - **Origin filter:** All / Threat-driven / Capability-driven.
 - **Target matrix:** one row per target, one column per level. A cell names the
   part of the target proven at that level, so a split target shows its split.
-- **Threat matrix:** one row per threat, showing which targets back it at each
-  level.
+- **By file:** for each `.rs` file under `esdk/src` and `prim/src`, how many
+  fn lines Verus checks. `xtask/src/proof_coverage.rs` reads which code is
+  inside `verus!` and sorts each line into proven (has `requires`/`ensures`),
+  no panic only, spec and proof, trusted (`external_body`,
+  `assume_specification`) or not checked. Click a file to see its source with
+  each line colored. This is read from the source, not from running tests.
 - **Detail pane:** property, status, residual scope, files, threats and any
   YAML drift note for the clicked target.
 

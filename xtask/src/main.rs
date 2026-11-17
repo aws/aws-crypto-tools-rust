@@ -113,11 +113,50 @@ fn verification_status() -> Result<(), String> {
         levels: verification::LEVELS.into_iter().collect(),
         counts,
         targets: verification::targets(rows, recs),
+        line_kinds: verification::LINE_KINDS.into_iter().collect(),
+        files: proof_files(&root)?,
     };
     let path = "docs/verification-status.json";
     let json = serde_json::to_string_pretty(&status).map_err(|e| e.to_string())? + "\n";
     std::fs::write(root.join(path), json).map_err(|e| format!("could not write {path}: {e}"))?;
     println!("wrote {path}");
+    Ok(())
+}
+
+/// The crates `make verus` verifies. Verus checks only their `src/`.
+const VERUS_CRATES: [&str; 2] = ["esdk", "prim"];
+
+fn proof_files(root: &Path) -> Result<Vec<xtask::proof_coverage::FileCoverage>, String> {
+    let mut paths = Vec::new();
+    for krate in VERUS_CRATES {
+        rust_files(&root.join(krate).join("src"), &mut paths)?;
+    }
+    paths.sort();
+    paths
+        .into_iter()
+        .map(|path| {
+            let src = std::fs::read_to_string(&path)
+                .map_err(|e| format!("could not read {}: {e}", path.display()))?;
+            let rel = path.strip_prefix(root).map_err(|e| e.to_string())?;
+            Ok(xtask::proof_coverage::file_coverage(
+                &rel.to_string_lossy(),
+                &src,
+            ))
+        })
+        .collect()
+}
+
+fn rust_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), String> {
+    let entries =
+        std::fs::read_dir(dir).map_err(|e| format!("could not read {}: {e}", dir.display()))?;
+    for entry in entries {
+        let path = entry.map_err(|e| e.to_string())?.path();
+        if path.is_dir() {
+            rust_files(&path, out)?;
+        } else if path.extension().is_some_and(|x| x == "rs") {
+            out.push(path);
+        }
+    }
     Ok(())
 }
 

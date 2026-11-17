@@ -38,7 +38,30 @@ pub struct Status {
     pub levels: BTreeMap<&'static str, &'static str>,
     pub counts: Vec<Count>,
     pub targets: Vec<Target>,
+    /// What each line kind means, keyed as in [`crate::proof_coverage::KINDS`].
+    pub line_kinds: BTreeMap<&'static str, &'static str>,
+    /// Every `.rs` file under the Verus-enabled crates' `src/`, by path.
+    pub files: Vec<crate::proof_coverage::FileCoverage>,
 }
+
+/// What the dashboard says for each line kind.
+pub const LINE_KINDS: [(&str, &str); 6] = [
+    ("proven", "Verus proves its requires/ensures and no panic"),
+    (
+        "no_panic",
+        "In verus! with no requires/ensures: Verus proves only no panic",
+    ),
+    (
+        "ghost",
+        "spec or proof fn: rules and proofs, not compiled into the library",
+    ),
+    (
+        "trusted",
+        "external_body or assume_specification: assumed, not checked",
+    ),
+    ("verus_item", "A type or constant inside verus!"),
+    ("unverified", "A fn outside verus!: Verus does not check it"),
+];
 
 /// One Verus command and what each of its runs verified.
 #[derive(Debug, Serialize)]
