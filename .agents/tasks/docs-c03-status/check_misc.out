@@ -1,0 +1,18 @@
+check4 02 C01 True True True
+check4 02 C02 True True True
+check4 02 C03 True True True
+check4 02 C07 True True True
+check4 02 C04 True True True
+check4 02 C05 True True True
+check4 02 C08 True True True
+check4 merged C01 True True True
+check4 merged C02 True True True
+check4 merged C03 True True True
+check4 merged C07 True True True
+check7 HEAD ids: {'01': ['T01', 'T02', 'T03', 'T04', 'T05', 'T06', 'T07', 'T08', 'T09', 'T10', 'T11', 'T12', 'T13', 'T14', 'T15', 'T16', 'T17', 'T18', 'T19', 'T20', 'T21', 'T22', 'T23', 'T24', 'T25', 'T26', 'T27'], '02': ['C01', 'C02', 'C03', 'C04', 'C05', 'C06', 'C07', 'C08']}
+check7 01 removed vs HEAD: [] added vs HEAD: []
+check7 02 removed vs HEAD: [] added vs HEAD: []
+check7 retired block present 01 T08 True True
+check7 retired block present 02 C06 True True
+check9 merged blocks: 13 origins: {'threat-driven': ['T01', 'T02', 'T03', 'T04', 'T05', 'T13', 'T25', 'T26', 'T27'], 'capability-driven': ['C01', 'C02', 'C03', 'C07']}
+PROBLEMS: none

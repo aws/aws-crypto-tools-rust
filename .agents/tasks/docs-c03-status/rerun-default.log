@@ -1,0 +1,30 @@
+   Compiling proc-macro2 v1.0.107
+   Compiling libc v0.2.190
+   Compiling unicode-ident v1.0.26
+   Compiling quote v1.0.47
+   Compiling find-msvc-tools v0.1.14
+   Compiling shlex v2.0.1
+   Compiling autocfg v1.5.1
+   Compiling pkg-config v0.3.34
+   Compiling fs_extra v1.3.0
+   Compiling dunce v1.0.5
+   Compiling verus_prettyplease v0.0.0-2026-05-31-0205
+   Compiling hashbrown v0.12.3
+   Compiling vstd v0.0.0-2026-06-14-0213
+   Compiling aws-lc-rs v1.18.1
+    Checking verus_builtin v0.0.0-2026-05-17-0151
+    Checking zeroize v1.9.1
+   Compiling indexmap v1.9.3
+   Compiling verus_syn v0.0.0-2026-05-31-0205
+   Compiling syn v2.0.119
+   Compiling jobserver v0.1.35
+   Compiling cc v1.6.0
+   Compiling cmake v0.1.58
+   Compiling aws-lc-sys v0.45.0
+   Compiling synstructure v0.13.2
+   Compiling verus_state_machines_macros v0.0.0-2026-06-14-0213
+   Compiling verus_builtin_macros v0.0.0-2026-06-14-0213
+verification results:: 1858 verified, 0 errors
+    Checking aws-mpl-primitives v0.1.0 (/private/tmp/c03-status-check/prim)
+verification results:: 18 verified, 0 errors
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 24.44s

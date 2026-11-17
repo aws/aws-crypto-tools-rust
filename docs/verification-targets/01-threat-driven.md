@@ -41,7 +41,7 @@ Other edits: section 2 ranks and counts (26 active targets; T27 is inserted at r
 
 ## Proofs written (HEAD d288750)
 
-This file covers T02, T03 and T05; C01 and C02 are in `02-capability-driven.md`. Five targets have a Verus proof in `verus-proofs/` (HEAD `d288750`; run again with `~/verus/verus verus-proofs/<file>.rs` from the repo root, Verus 0.2026.07.12.0b42f4c). Each is a proof about a hand-written, re-typed model of the shipped Rust. None verifies the shipped code: the code is not inside `verus!`, is not compiled by Verus, and nothing detects a later edit to `mpl/` or `prim/`. The link between model and code is a correspondence table in each file header, reviewed by a human. Read every status as: the logic of the model is machine-checked; the model's fidelity to the code is audited, not checked. Sources: `verus-proofs/README.md` (T02, C01, C02) and `verus-proofs/README-t03-t05.md` (T03, T05).
+This file covers T02, T03 and T05; C01 and C02 are in `02-capability-driven.md`. Five targets have a Verus proof in `verus-proofs/` (HEAD `d288750`; run again with `~/verus/verus verus-proofs/<file>.rs` from the repo root, Verus 0.2026.07.12.0b42f4c). Each is a proof about a hand-written, re-typed model of the shipped Rust. None verifies the shipped code: the code is not inside `verus!`, is not compiled by Verus, and nothing detects a later edit to `mpl/` or `prim/`. The link between model and code is a correspondence table in each file header, reviewed by a human. Read every status as: the logic of the model is machine-checked; the model's fidelity to the code is audited, not checked. Sources: `verus-proofs/README.md` (T02, C01, C02) and `verus-proofs/README-t03-t05.md` (T03, T05). C03 is recorded in `02-capability-driven.md` and the merged document: it is partly proved in-crate on branch `Mahnush_Verus` (not on this branch), a different kind of status from the model-level proofs here. For T26 this file now records BUG-10 and the BUG-07(a) caller impact (T26 YAML and section 7). Scores are unchanged.
 
 | Target | Proof file | Result line (re-run) | Status | Assumptions |
 |---|---|---|---|---|
@@ -92,7 +92,7 @@ Retired threats: none (threat model: "Retired: none"). No active target cites re
 - **No `unsafe` in `mpl/src` or `prim/src`.** `\bunsafe\b` has no match (the lint name `unsafe_op_in_unsafe_fn` at `prim/src/lib.rs:33` is one identifier). The only `unsafe` reaching MPL objects is in the C++ shim (`esdk/shims/aws-esdk-cpp/src/lib.rs:728`, `:1570`, `:1571`, `:1661`; at `620771c` the last three were `:1564`, `:1565`, `:1655`, moved by #188), which is T25. The shim also has a type-erased ownership transfer that is not an `unsafe` block in the Rust source: `into_keyring_handle` calls the safe `Box::into_raw` (`lib.rs:2059-2066`) and C++ `Keyring::adopt` calls `rust::Box::from_raw` (`EncryptionSDK.cpp:541-547`). It is also in T25.
 - **No raw C FFI in `mpl`/`prim`.** `prim` still calls aws-lc-rs only through its safe API.
 - **Duvet:** one annotation block in `mpl/`/`prim/` (`mpl/src/cmc/entry.rs:201-205`, `cryptographic-materials-cache.md#usage-metadata`, `type=implication`). No Duvet config covers MPL sources, so it is not checked. Coverage gaps below are justified by named tests only. Tests lower a gap but never close it.
-- **Bugs:** open BUG-01, 04, 05(a), 05(b), 06, 07(a/b), 08. Fixed BUG-02, 03, 09 (`e9bde48`).
+- **Bugs:** open BUG-01, 04, 05(a), 05(b), 06, 07(a/b), 08, 10 (BUG-10 added after the audit, by code reading). Fixed BUG-02, 03, 09 (`e9bde48`).
 - **CVE-2026-6550 / GHSA-v638-38fc-rhfv is verified** by the threat model ([GitHub advisory](https://github.com/advisories/GHSA-v638-38fc-rhfv), [NVD](https://nvd.nist.gov/vuln/detail/CVE-2026-6550), [AWS bulletin 2026-017-aws](https://aws.amazon.com/security/security-bulletins/2026-017-aws/)). It concerns a shared caching CMM in the Python ESDK. This repo has no caching CMM (`mpl/src/cmm/` = `default_cmm.rs`, `fluent_builders.rs`, `mod.rs`, `types.rs`), so it does not raise any feasibility score here. It is recorded as a future-work note on T14. Content was rephrased for compliance with licensing restrictions.
 
 ## 1. Scoring conventions (applied uniformly)
@@ -794,6 +794,15 @@ recommendation:
     product: "2 × 1.0 × 0.4 × 4 = 3.20"
   quick_win: false
   proof_status: "None yet"
+  related_bugs:
+    - {bug: BUG-10, severity: Low, evidence: "code reading, no proof (mpl is not Verus-enabled)", threat: TM-MPL-015, target: T26, note: "RawAesKeyring::on_decrypt drops an authenticated plaintext data key un-wiped on the wrong-length path (site F1); branch_key_wrap::unwrap holds a plain Vec<u8> (site F3)"}
+    - {bug: "BUG-07(a)", evidence: "prim-side facts proved in-crate on Mahnush_Verus (C03, VR-014); caller impact is code reading", threat: TM-MPL-015, target: "T26 (F2)", note: "callers wrap_data_key and branch_key_wrap::wrap drop the plaintext data key un-wiped on an aes_encrypt Err; cannot fire today"}
+  scope_note: >
+    Scope note only; no property, score, coverage gap, feasibility or severity changed. BUG-10 is the bug report for site F1's wrong-length continue
+    (raw_aes_keyring.rs:489-494: an authenticated plaintext data key is dropped un-wiped, while the success path at :497 moves the buffer into PlaintextDataKey)
+    and for F3's branch_key_wrap::unwrap buffer (:275, a bare Vec<u8> is returned). The BUG-07(a) caller impact names one caller that the function list above does not:
+    branch_key_wrap::wrap (branch_key_wrap.rs:157, aes_encrypt call :199); wrap_data_key (raw_aes_keyring.rs:163) is already in F2. The failure cannot fire today:
+    key and IV sizes are fixed by type in wrap, and the raw-AES wrapping-key length is checked at RawAesKeyringBuilder::build (raw_aes_keyring.rs:369-379).
   dependencies: []
 ```
 
@@ -1583,7 +1592,7 @@ recommendation:
 | C4 | `lib.rs:2037-2054` annotates `spec/shim/shim.md#adopting-custom-implementations` | `spec/shim/shim.md` has no heading of that name. The text is under "Custom implementations of core-library interfaces" (`:180-204`; "MUST adopt each at most once; the shim does not detect violations" is `:203-204`) | T25 cites the spec section by its heading and records the annotation's anchor. A Duvet anchor mismatch is a shim owner item, not a target change |
 | C5 | TM-MPL-021 second pass cites `prim/src/error.rs:406-409` for the `Debug` of `DataKeyInfo` | `:406-409` is the doc comment and the `struct KeyProviderInfo` line (`:408`); the `Debug` impl is at `:410`, and `DataKeyInfo` is at `:378` | T22 cites the impl lines. Substance unchanged |
 
-New / still-open findings recorded in targets and **not changed** (owner decisions): T06 (BUG-01), T13 (BUG-06), T17 (BUG-04), T16 (BUG-05a/b), T21 (storm-tracking spec ordering regressed; stale in-flight mark; waiter with no deadline; panic under the state lock), T26 (BUG-07a, unwiped decrypt buffers, expired cache entries resident until read, unwiped ECDSA private-key `Vec` on an error path), T27 (no bound on key-store calls per decrypt; unconfirmed), T02 (G1: `create-time` and `hierarchy-version` not required on read), T25 (no check in C++ `Keyring::adopt`), C01(c) (BUG-08 dead branch).
+New / still-open findings recorded in targets and **not changed** (owner decisions): T06 (BUG-01), T13 (BUG-06), T17 (BUG-04), T16 (BUG-05a/b), T21 (storm-tracking spec ordering regressed; stale in-flight mark; waiter with no deadline; panic under the state lock), T26 (BUG-07a, unwiped decrypt buffers, BUG-10 (raw-AES `on_decrypt` wrong-length path, code reading), expired cache entries resident until read, unwiped ECDSA private-key `Vec` on an error path), T27 (no bound on key-store calls per decrypt; unconfirmed), T02 (G1: `create-time` and `hierarchy-version` not required on read), T25 (no check in C++ `Keyring::adopt`), C01(c) (BUG-08 dead branch).
 
 ## 6. Accounting — every threat mapped
 
@@ -1617,3 +1626,13 @@ New / still-open findings recorded in targets and **not changed** (owner decisio
 | TM-MPL-026 | Medium / Low | — | **Fully excluded** (test-only) |
 
 Totals: **26 active threat-driven targets** (T01–T07, T09–T27) plus **1 retired** (T08). All 26 threat IDs TM-MPL-001..026 are accounted for: 23 have at least one active target (001..018, 021..025), 3 are fully excluded (019, 020, 026), 1 is fully targeted (017), 22 carry partial exclusions (every targeted threat except 017). No active target cites a retired threat (there are none) or retired code.
+
+## 7. Proof status and bug records added at HEAD b94c871
+
+Added after the `9955ecd` refresh. No score, rank, coverage gap, feasibility, severity or quick-win changed.
+
+- **C03 (in `02-capability-driven.md`).** Partly proved in-crate on branch `Mahnush_Verus` as VR-013 and VR-014 (the shipped prim code; not on this branch): `verification results:: 18 verified, 0 errors` at `8d6381e`. Status string: Partly proved (in-crate, on the shipped prim code, on branch Mahnush_Verus, not on this branch, under trusted aws-lc-rs assumptions A1-A20): 18 verified, 0 errors. This is a different qualifier from the model-level proofs in this file (T02, T03, T05: "model level, not the shipped code"). C03 cites no threat, so no threat row here changed.
+- **C02.** Proved at model level (unchanged); partly superseded by VR-008 (in-crate, `Mahnush_Verus`): the retry bound, termination and guarded copy. It is not a duplicate. Details in `02-capability-driven.md`.
+- **BUG-10 -> TM-MPL-015 -> T26.** BUG-10 (Low, code reading, added 2026-11-17) is the bug report for T26's site F1 wrong-length path (`raw_aes_keyring.rs:489-494`) and for F3 (`branch_key_wrap::unwrap`, `:275`). It is recorded in T26's `related_bugs` and `scope_note`. T26's score (3.20), rank, gap and the TM-MPL-015 rating are unchanged, and its proof status is still "None yet". The completeness audit's section 3b predates BUG-10.
+- **BUG-07(a) caller impact -> T26 (F2), T07.** The plaintext data key can stay in the caller's buffer after an `aes_encrypt` `Err` at `wrap_data_key` and `branch_key_wrap::wrap`. Code reading; it cannot fire today. The prim-side facts are proved only on `Mahnush_Verus` (C03, VR-014).
+- **Open bugs.** BUG-01, 04, 05(a), 05(b), 06, 07(a/b), 08 and 10. Fixed: BUG-02, 03, 09.

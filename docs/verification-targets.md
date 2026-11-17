@@ -2,7 +2,7 @@
 
 > Pipeline artifact — Stage 3, Step 3 of 4 (merge, rank, assemble). **Refreshed for HEAD `9955ecd`** (branch `MPL-Verus`; `mpl/` and `prim/` identical to `origin/main` `620771c`; `esdk/` differs from `620771c` only by #188 and #189). The `620771c` refresh (previous version analyzed `a1e23d7`) is kept in §0.1.
 > Inputs: `docs/verification-targets/01-threat-driven.md` (VR-2026-T01..T27), `docs/verification-targets/02-capability-driven.md` (VR-2026-C01..C08), `docs/threat-model.md` (TM-MPL-001..026), `docs/spec-security-analysis.md`, `docs/completeness-audit.md`, `docs/bug-reports/RECHECK-main-620771c.md`, `.agents/tasks/pipeline-rerun-620771c/scope.md`, `.agents/tasks/docs-sync-9955ecd/scores.md`, `.kiro/agents/verification-recommender.md`.
-> Full per-target YAML lives in the two intermediate files. This document is the consolidated, ranked view. Validation: `docs/verification-targets/04-validation.md`.
+> Full per-target YAML lives in the two intermediate files. This document is the consolidated, ranked view. Validation: `docs/verification-targets/04-validation.md`. Proof-status record updated at HEAD `b94c871` (adds C03, which is partly proved in-crate on branch `Mahnush_Verus` and not on this branch, the C02 / VR-008 relation and BUG-10): no score, rank, coverage gap, feasibility, severity or quick-win changed.
 
 ## Refresh (HEAD 9955ecd)
 
@@ -28,7 +28,7 @@ Other effects:
 
 ## Proofs written (HEAD d288750)
 
-Five targets have a Verus proof in `verus-proofs/` (HEAD `d288750`; run again with `~/verus/verus verus-proofs/<file>.rs` from the repo root, Verus 0.2026.07.12.0b42f4c). Each is a proof about a hand-written, re-typed model of the shipped Rust. None verifies the shipped code: the code is not inside `verus!`, is not compiled by Verus, and nothing detects a later edit to `mpl/` or `prim/`. The link between model and code is a correspondence table in each file header, reviewed by a human. Read every status as: the logic of the model is machine-checked; the model's fidelity to the code is audited, not checked. Sources: `verus-proofs/README.md` (T02, C01, C02) and `verus-proofs/README-t03-t05.md` (T03, T05).
+Five targets have a Verus proof in `verus-proofs/` (HEAD `d288750`; run again with `~/verus/verus verus-proofs/<file>.rs` from the repo root, Verus 0.2026.07.12.0b42f4c). Each is a proof about a hand-written, re-typed model of the shipped Rust. None verifies the shipped code: the code is not inside `verus!`, is not compiled by Verus, and nothing detects a later edit to `mpl/` or `prim/`. The link between model and code is a correspondence table in each file header, reviewed by a human. Read every status as: the logic of the model is machine-checked; the model's fidelity to the code is audited, not checked. Sources: `verus-proofs/README.md` (T02, C01, C02) and `verus-proofs/README-t03-t05.md` (T03, T05). This section also records C03, which has a different kind of status: in-crate, on the shipped prim code, on branch `Mahnush_Verus`, not on this branch (subsection "C03: in-crate proof on branch Mahnush_Verus" below). The wording of this paragraph applies to the five proofs in the table.
 
 | Target | Proof file | Result line (re-run) | Status | Assumptions |
 |---|---|---|---|---|
@@ -45,8 +45,65 @@ Canonical status strings (the same text is in each YAML `proof_status` field and
 - C02: Proved (model level, not the shipped code, under stated hypotheses): 21 verified, 0 errors
 - T03: Proved (model level, not the shipped code, under stated hypotheses): 39 verified, 0 errors
 - T05: Proved (model level, not the shipped code, under stated hypotheses): 33 verified, 0 errors
+- C03: Partly proved (in-crate, on the shipped prim code, on branch Mahnush_Verus, not on this branch, under trusted aws-lc-rs assumptions A1-A20): 18 verified, 0 errors
+- C02, relation added (the C02 status string above is unchanged): Partly superseded by VR-008 (in-crate, on the shipped prim code, on branch Mahnush_Verus, not on this branch): retry bound, termination, guarded copy
 
-**Scores are unchanged.** Scores, ranks, coverage gaps, feasibility, severity and the quick-wins list in this document record the pre-proof prioritization and were not changed by these proofs. A model-level proof is not a proof of the shipped code, and re-scoring would be arbitrary. Coverage gaps will be recalculated when a proof is linked to the shipped code (for example with `cargo verus` on the crate, or by moving the logic into `verus!`).
+**Scores are unchanged.** Scores, ranks, coverage gaps, feasibility, severity and the quick-wins list in this document record the pre-proof prioritization and were not changed by these proofs. A model-level proof is not a proof of the shipped code, and re-scoring would be arbitrary. Coverage gaps will be recalculated when a proof is linked to the shipped code (for example with `cargo verus` on the crate, or by moving the logic into `verus!`). The same holds for C03: its proof is on `Mahnush_Verus`, not on this branch, so C03 stays at 5.60, rank 5, coverage gap 0.7, and is still not a quick win.
+
+### C03: in-crate proof on branch Mahnush_Verus (not on this branch)
+
+C03 (`prim::{hmac, digest, aes_encrypt, aes_decrypt, hkdf*, kbkdf_ctr_hmac}`, `DigestContext::finish`) has a different kind of proof from the five above. Verus checks the real prim code, not a re-typed model. The proof lives on branch `Mahnush_Verus` of aws/aws-crypto-tools-rust (PR #103) as VR-013 and VR-014. It is **not on this branch**: `prim/` here equals `main` `620771c` and has no Verus annotation. Nothing from `Mahnush_Verus` was merged, checked out or modified; it was read with `git fetch` and `git show` and re-run in a detached worktree under `/tmp` that was removed afterwards. Read no status in this subsection as saying that the code on `MPL-Verus` is verified.
+
+| Field | Value |
+|---|---|
+| Status | Partly proved (in-crate, on the shipped prim code, on branch Mahnush_Verus, not on this branch, under trusted aws-lc-rs assumptions A1-A20): 18 verified, 0 errors |
+| Commits | `ed4a81e` ("feat(prim): verus proofs for C03 wrappers (VR-013, VR-014)") and `43b9ff7` ("docs(verus): record VR-013 / VR-014 (pipeline target VR-2026-C03, BUG-07)"). Tip read for this record: `8d6381e`. The later commits `2d22937` and `8d6381e` change docs only, and no commit after `43b9ff7` touches `prim/` |
+| Result line | `verification results:: 18 verified, 0 errors` (crate aws-mpl-primitives) |
+| Re-run | At `8d6381e`, from `prim/`, with `PATH="$HOME/verus:$PATH"`: `cargo verus verify` (default features) and `cargo verus verify --no-default-features --features aws-lc-sys`. Both exit 0 and both print the line above. Our earlier review gave the same count at `43b9ff7`. The default-feature run also prints `1858 verified, 0 errors` for the vstd dependency; that line is not a C03 result |
+| What 18 counts | Every verified function of the prim crate on that branch (VR-006, VR-008, VR-009 prim half, VR-013, VR-014), not only C03. The base `6b51de8` gave 10, so VR-013 and VR-014 added 8. Verus counts verification obligations (functions), not properties |
+| Review | Our read-only review at `43b9ff7` (`.agents/tasks/review-vr013-vr014/report.md`): verdict "Consistent with gaps". At `43b9ff7` it found prim tests (92 tests and 8 doc-tests) and clippy passing, and byte-identical behavior against the base on 1443 transcript lines (differential run on aws-lc-rs 1.19.0, not the locked 1.18.1). Those runs were not repeated at `8d6381e`; nothing under `prim/` changed |
+| Not run | FIPS build, test and Verus runs (cmake is missing; the base fails the same way) and the literal `make verus` (the equivalent `cargo verus` runs were done) |
+
+What the proof states (all in `verus!` in the shipped crate; names are the verified cores that the public functions call):
+
+| Shipped function | Core on `Mahnush_Verus` | Proved (Verus, in-crate) |
+|---|---|---|
+| `hmac` | `hmac_core` (VR-013) | `Ok` iff the output buffer has the tag length; on `Err` the buffer is unchanged; the copy happens only after the guard and in bounds |
+| `digest` | `digest_core` (VR-013) | Same, against the digest output length |
+| `DigestContext::finish` | `digest_finish_core` (VR-013) | Same, against the context's output length |
+| `kbkdf_ctr_hmac` | `kbkdf_core` (VR-013) | `Err(Unavailable)` iff the algorithm lookup returns `None`; output length kept. Wrapper logic only |
+| `generate_random_bytes` | `fill_random_core` (VR-013) | Totality; length kept. Adds little beyond A12 |
+| `constant_time_equal` | `ct_equal_core` (VR-013) | Totality; the result is the `Ok`-ness of the aws-lc-rs comparison. Restates A13; no equality-semantics or timing claim |
+| `aes_encrypt` | `aes_encrypt_core` (VR-014) | BUG-07(a), exported postconditions: key or nonce `Err` leaves exactly `old ++ message`; seal `Err` keeps the length `old + len(message)` and the prefix `old`; `Ok` gives length `old + len(message) + 16` with prefix `old` |
+| `aes_decrypt` | `aes_decrypt_core` (VR-014) | BUG-07(b), under assumption A20: `Ok` implies `len(plain) == len(cipher)`; a longer plaintext buffer ends in `Err` that is not `PlainTooShort` |
+
+Trusted base. 20 `assume_specification` entries (A1 to A20) in `prim/src/aws_lc_specs.rs` about aws-lc-rs digest, HMAC, KBKDF, random, constant-time and AEAD calls; 15 opaque `external_body` types; 8 uninterpreted spec functions; one ghost-only `AsRef` trait proxy (it needs `#![cfg_attr(verus_keep_ghost, feature(sized_hierarchy))]` and a `[lints.rust] unexpected_cfgs` entry). There is no `assume`, `admit`, `#[verifier::external]` function or `unsafe`, and no `requires` was added. No `assume_specification` carries a `requires`, so every aws-lc-rs call is assumed not to panic. Our review judged A1 to A20 TRUE against the aws-lc-rs 1.18.1 source (aws-lc-sys 0.45.0); the no-panic part of A5, A7 and A8 holds only if the underlying C calls succeed; the FIPS C side (aws-lc-fips-sys) was not read. A20 is the labeled assumption for BUG-07(b).
+
+Gaps (what the status "partly" means):
+
+- `hkdf` and `hkdf_expand` "`Ok` implies `len(okm)` in 16, 24 or 32" and "no listed function panics for any argument" are not proved end to end. VR-009 proves only the decision functions (`hkdf_key_len_ok`, `salt_size_core`, `no_salt_slice_core`); `Salt::new`, `extract`, `expand`, `fill` and `get_len` are unmodeled.
+- `DigestContext::digest` (used by `ecdsa_sign_digest` and `ecdsa_verify_context`) calls `finish`, which can `expect`. That call is unmodeled; A5's no-panic is trusted only inside `digest_finish_core`.
+- Adapters outside `verus!` are unproved: the `format!` error messages, `get_aes_alg`, `get_digest_alg`, the `DigestAlg` to `KbkdfCtrHmacAlgorithmId` match, and the "authentication tag did not match" text of `aes_decrypt`.
+- `constant_time_equal` and `generate_random_bytes`: the proofs add little beyond the assumptions A13 and A12.
+- BUG-07(a): the key/nonce `Err` buffer (`old ++ message`) and the seal-`Err` length and prefix are exported postconditions. The `Ok`-case order `old ++ ciphertext ++ tag` is an in-body `assert`, not exported, and the `+ 16` relies on A19. The tail bytes after a seal `Err` are not described (A18 says nothing about bytes).
+- BUG-07(b) is assumption-relative (A20 matches aws-lc-rs 1.18.1 `open_separate_gather`'s equality check), not proved.
+- Not covered: zeroization (the proof says nothing about wiping), `DigestContext::new`, `new_from_ecdsa`, `update`, `output_len`, the ECDSA wrappers (`check_sig_len`, `ecdsa_sign*`, `ecdsa_verify*`, `ecdsa_generate_keypair`, which belong to C02) and the hand-maintained tables `DigestAlg::output_len` and `AesGcm::key_length`.
+
+Wording note. The documents on `Mahnush_Verus` call C03 "in-crate" without "partly" and, in places, call the `Ok`-case order proved. Our review recommended wording fixes there. This record uses "partly" and "in-body assert".
+
+### Cross-branch status (MPL-Verus and Mahnush_Verus)
+
+The two branches have diverged (merge base `5f2dc72`; 20 commits only on `MPL-Verus`, 47 only on `Mahnush_Verus` at `8d6381e`). Nothing was merged. `mpl/` source files are identical on both (only the `Cargo.lock` files differ); `prim/` and `esdk/` differ.
+
+| Item | On `MPL-Verus` (this branch) | On `Mahnush_Verus` (`8d6381e`) |
+|---|---|---|
+| T02, C01, T03, T05 | Proofs of models in `verus-proofs/` (model level, not the shipped code) | No `verus-proofs/` directory |
+| C02 | Proof of a model (21 verified, 0 errors) | VR-008: the retry bound, termination and guarded copy are proved on the real loop (`sign_fixed_len_core`). C02 is partly superseded |
+| C03 | No Verus in `prim/`; no proof | Partly proved in-crate as VR-013 and VR-014 |
+| VR-006 (AES-GCM buffer bounds), VR-009 prim half (`hkdf` decision functions) | Not present | In-crate in `prim/` |
+| Other `esdk` in-crate proofs | Not present | In-crate (69 verified in `esdk/` at `43b9ff7`); not examined for this record |
+
+C02 and VR-008. The retry bound (at most 128 attempts), termination and the guarded `copy_from_slice` of `sign_fixed_len` are also proved on the real loop on `Mahnush_Verus` as VR-008. So that content of C02 is superseded. C02 is not a duplicate and is not demoted. It remains the only statement of T1 as a postcondition (at most 128 closure calls), T3 (no partial write: `Err` leaves the buffer unchanged, `Ok` writes one whole candidate), T4 (which `Err` exits exist), T5 (`check_sig_len`), T6 (the `ecdsa_sign*` wrong-length contract) and the three non-vacuity witnesses. VR-008 has no `ensures`, and `check_sig_len` and `ecdsa_sign*` are outside `verus!` there. Recorded status of C02: Proved at model level (unchanged); partly superseded by VR-008 (in-crate, `Mahnush_Verus`).
 
 ### Findings from the proofs
 
@@ -56,12 +113,18 @@ Canonical status strings (the same text is in each YAML `proof_status` field and
 - **F1 (T05).** The spec does not state the KBKDF fixed-info layout `"aws-kms-hierarchy" || 0x00 || salt(16) || 00 00 01 00` (38 bytes, 32-byte output). This is a spec gap, not a code defect.
 - **BUG-08 (C01).** The collision `Err` branch in `build_base` is dead if and only if A_ITER holds (a `BTreeMap` yields each key once), and live if a key repeats. Model level.
 - **C02 assumption.** The no-partial-write claim relies on vstd's own `assume_specification` for `<[T]>::copy_from_slice`, listed in the proof's TCB.
+- **BUG-07(a), prim side (C03, VR-014; not on this branch).** On `Mahnush_Verus` Verus proves that `aes_encrypt` appends the plaintext to the caller's buffer before the key, nonce or seal can fail: a key or nonce `Err` leaves exactly `old ++ message`, and a seal `Err` keeps the length `old + len(message)` and the prefix `old`. The `Ok`-case order `old ++ ciphertext ++ tag` is an in-body assert and the `+ 16` relies on A19. BUG-07(b) is recorded relative to A20, not proved.
+- **BUG-07 caller impact (code reading, no proof; see the BUG-07 report, "Impact on callers").** mpl calls `aes_encrypt` at `RawAesKeyring::wrap_data_key` (`raw_aes_keyring.rs:163`) and `branch_key_wrap::wrap` (`branch_key_wrap.rs:199`) with a plaintext data key in a plain `Vec<u8>`. After a key or nonce `Err` the key stays in that buffer (proved in prim by VR-014 on `Mahnush_Verus`, not on this branch), and the caller drops it un-wiped (code reading). It cannot reach an EDK, a return value or an error message. The failure cannot fire today: key and IV sizes are fixed by type in `wrap`, and the raw-AES wrapping-key length is checked at `RawAesKeyringBuilder::build` (`raw_aes_keyring.rs:369-379`). Severity Low (confidentiality). In the ESDK frame scratch buffer the plaintext is user data (Informational/Low). BUG-07(b) is unreachable from in-repo callers, which size the plaintext buffer exactly. VR-014 says what prim leaves in the buffer; what the callers do with it is outside C03 and belongs to T26 (F2).
+- **BUG-10 (new, Low, code reading).** `RawAesKeyring::on_decrypt` (`raw_aes_keyring.rs:471`, wrong-length `continue` at `:489-494`) drops an authenticated plaintext data key un-wiped, and `branch_key_wrap::unwrap` (`:275`) holds a plain `Vec<u8>` and returns it bare. It maps to TM-MPL-015 and T26 (sites F1 and F3, already listed as known residuals; no score changed). It is not part of BUG-07, it is not proved, and C03 does not cover it: the proof is of prim, and these buffers are in mpl.
+- **C02 versus VR-008.** See "Cross-branch status": C02 is partly superseded, not a duplicate.
 
 ### Next steps for the proofs
 
 - Link each proof to the shipped code (`cargo verus` on the crate, or move the logic into `verus!`), then recalculate its coverage gap.
 - Owner decisions: enforce `create-time` and `hierarchy-version` on a read path (G1); state the KBKDF fixed-info layout in the spec (F1); decide whether config validation should reject ARNs with empty parts (O2).
 - Add a CI step that runs the proof files and fails on any change to the result lines (T02 is expected to show `1 errors` until G1 is fixed).
+- C03: decide how the in-crate prim proofs reach this branch (merge or port `prim/` and add Verus to the build). Not done, and an owner decision. Until then every C03 statement in these documents is about `Mahnush_Verus`, not about the code here.
+- C03 on `Mahnush_Verus`: the wording and test fixes recommended by our review (`.agents/tasks/review-vr013-vr014/report.md`, "Recommended fixes") are for the owner of that branch.
 
 ## 0. Methodology notes
 
@@ -71,7 +134,7 @@ Canonical status strings (the same text is in each YAML `proof_status` field and
 - **Combined tie-break.** Score descending, then higher severity, then origin (T before C), then target ID.
 - **No `unsafe` in `mpl/src` or `prim/src`** (`\bunsafe\b` has no match). The old `PlaintextDataKey::zeroize` loop is gone, so T08 is retired. The only `unsafe` that reaches MPL objects is in the C++ shim (T25).
 - **Duvet**: one annotation block (`mpl/src/cmc/entry.rs:201-205`), not checked by any config. Gaps are justified by named tests; tests never close a gap.
-- **Bugs**: open BUG-01, 04, 05(a), 05(b), 06, 07(a/b), 08; fixed BUG-02, 03, 09.
+- **Bugs**: open BUG-01, 04, 05(a), 05(b), 06, 07(a/b), 08, 10 (BUG-10 added after the audit, by code reading); fixed BUG-02, 03, 09.
 - **CVE-2026-6550 / GHSA-v638-38fc-rhfv is verified** (threat model). It concerns a shared caching CMM; the repo has none, so no score depends on it. Future-work note on T14. Content was rephrased for compliance with licensing restrictions.
 - **IDs are stable.** Retired targets keep their IDs and are listed, not deleted. New IDs: T25, T26, C07, C08 (at `620771c`) and T27 (at `9955ecd`).
 - **No source changes.** Findings that need a behavior change are listed in §7.
@@ -103,8 +166,8 @@ History of the `620771c` refresh. Scores and ranks in this table are as of that 
 | 1 | 8.96 | T | T01 key-store auth-EC builders (`kms_ops.rs:49`, `branch_key_store.rs:132`, `:1089`, `:1141`) | Write-time EC == KMS-AAD EC == reconstruction EC | verus-header-parsing-proofs | TM-MPL-005, TM-MPL-002 | 2 weeks | None yet |
 | 2 | 6.72 | T | T02 `record::branch_key_materials_from_authenticated_encryption_context` (`record.rs:95`) | Exact Ok/Err characterization, including the spec clause that a record MUST include `create-time` and `hierarchy-version` (expected FAIL, G1) | verus-header-parsing-proofs | TM-MPL-005 | 1 week | Partly proved (model level, not the shipped code, under stated hypotheses): 21 verified, 1 errors |
 | 3 | 6.72 | C | C01 `key_store/encryption_context.rs` builders ∘ `record.rs` reconstruction | Round trip on (id, version, custom EC); collision branch dead (BUG-08) | verus-header-parsing-proofs | cap:cat1 (1c) | 1 week | Proved (model level, not the shipped code, under stated hypotheses): 40 verified, 0 errors |
-| 4 | 6.40 | C | C02 `prim::ecdsa` `sign_fixed_len` (`ecdsa.rs:180`) and callers | ≤ 128 attempts; no panic; no partial write | verus-zero-panic | cap:cat2 (2d) | 1 week | Proved (model level, not the shipped code, under stated hypotheses): 21 verified, 0 errors |
-| 5 | 5.60 | C | C03 `prim::{hmac, digest, aes_encrypt, aes_decrypt, hkdf*, kbkdf_ctr_hmac}`, `DigestContext::finish` | No panic; exact length contract | verus-zero-panic | cap:cat2 (2a/2d) | 1 week | None yet |
+| 4 | 6.40 | C | C02 `prim::ecdsa` `sign_fixed_len` (`ecdsa.rs:180`) and callers | ≤ 128 attempts; no panic; no partial write | verus-zero-panic | cap:cat2 (2d) | 1 week | Proved (model level, not the shipped code, under stated hypotheses): 21 verified, 0 errors. Partly superseded by VR-008 (in-crate, on the shipped prim code, on branch Mahnush_Verus, not on this branch): retry bound, termination, guarded copy |
+| 5 | 5.60 | C | C03 `prim::{hmac, digest, aes_encrypt, aes_decrypt, hkdf*, kbkdf_ctr_hmac}`, `DigestContext::finish` | No panic; exact length contract | verus-zero-panic | cap:cat2 (2a/2d) | 1 week | Partly proved (in-crate, on the shipped prim code, on branch Mahnush_Verus, not on this branch, under trusted aws-lc-rs assumptions A1-A20): 18 verified, 0 errors |
 | 6 | 5.12 | T | T03 `kms_ops::resolve_key_store_arn` pinned modes (`kms_ops.rs:88`) | KeyId is always the configured ARN | verus-header-parsing-proofs | TM-MPL-002 | 1 day | Proved (model level, not the shipped code, under stated hypotheses): 39 verified, 0 errors |
 | 7 | 5.04 | C | C07 `materials_checks` transitions + `send()` wiring | Keyring may only add PDK/EDKs; every `send()` checks | verus-header-parsing-proofs | cap:cat1 (1a/1b) | 1 week | None yet |
 | 8 | 4.48 | T | T04 `branch_key_wrap::wrap` (`:157`) | Fresh salt + IV per call; 60+n layout | verus-unsafe-ffi-safety | TM-MPL-012 | 1 week | None yet |
@@ -245,6 +308,7 @@ recommendation:
   quick_win: true
   proof_status: "Proved (model level, not the shipped code, under stated hypotheses): 21 verified, 0 errors"
   proof_file: verus-proofs/c02_sign_fixed_len.rs
+  proof_note: "Partly superseded by VR-008 (in-crate, on the shipped prim code, on branch Mahnush_Verus, not on this branch): the retry bound (at most 128 attempts), termination and the guarded copy_from_slice are also proved on the real loop (sign_fixed_len_core). This target stays the only statement of T1 as a postcondition (at most 128 closure calls), T3 (no partial write: Err leaves the buffer unchanged, Ok writes one whole candidate), T4 (which Err exits exist), T5 (check_sig_len), T6 (ecdsa_sign* wrong-length contract) and the three non-vacuity witnesses. The status above is unchanged. It is not a duplicate and is not demoted."
   dependencies: []
 ```
 
@@ -269,7 +333,20 @@ recommendation:
   coverage_evidence: "prim/tests negative-length tests; no wrong-length finish buffer, no over-long aes_decrypt buffer."
   scoring: {severity: 2, coverage_gap: 0.7, feasibility: 1.0, blast_radius: 4, product: "2 × 0.7 × 1.0 × 4 = 5.60"}
   quick_win: false
-  proof_status: "None yet"
+  proof_status: "Partly proved (in-crate, on the shipped prim code, on branch Mahnush_Verus, not on this branch, under trusted aws-lc-rs assumptions A1-A20): 18 verified, 0 errors"
+  proof_location: "Branch Mahnush_Verus of aws/aws-crypto-tools-rust (PR #103), VR-013 (hmac_core, digest_core, digest_finish_core, kbkdf_core, fill_random_core, ct_equal_core) and VR-014 (BUG-07 buffer facts in aes_encrypt_core, aes_decrypt_core). NOT on MPL-Verus: prim/ here equals main 620771c and has no Verus annotation. Commits ed4a81e (feat) and 43b9ff7 (docs); tip read 8d6381e (the later commits change docs only)."
+  proof_result: "verification results:: 18 verified, 0 errors (aws-mpl-primitives), from `cargo verus verify` (default features) and `cargo verus verify --no-default-features --features aws-lc-sys` in prim/, re-run at 8d6381e; same count at 43b9ff7 in our earlier review. 18 counts every verified function in the prim crate on that branch (VR-006, VR-008, VR-009 prim half, VR-013, VR-014); the base 6b51de8 gave 10."
+  proof_trusted_base: "20 assume_specification (A1-A20) about aws-lc-rs in prim/src/aws_lc_specs.rs, each assumed not to panic; no assume, admit, external fn or unsafe. All judged TRUE for aws-lc-rs 1.18.1 by our review; the FIPS C side is unchecked."
+  proof_not_covered: >
+    hkdf and hkdf_expand "Ok implies len(okm) in {16, 24, 32}" and "no listed function panics" end to end (VR-009 proves only the decision functions);
+    DigestContext::digest's call to finish; adapters outside verus! (format! messages, get_aes_alg, the DigestAlg to KbkdfCtrHmacAlgorithmId match);
+    constant_time_equal and generate_random_bytes add little beyond assumptions A13 and A12; BUG-07(a): key/nonce Err buffer = old ++ message and seal-Err length and prefix
+    are exported ensures, but the Ok-case order "old ++ ciphertext ++ tag" is an in-body assert and +16 relies on A19, and seal-Err tail bytes are not described;
+    BUG-07(b) is assumption-relative (A20, A-OPEN), not proved; nothing about zeroization.
+  related_bugs:
+    - {bug: "BUG-07(a)", evidence: "prim-side buffer facts proved in-crate on Mahnush_Verus (VR-014); caller impact is code reading", threat: TM-MPL-015, target: "T26 (F2), T07 (e)"}
+    - {bug: "BUG-07(b)", evidence: "recorded, relative to assumption A20, not proved", threat: TM-MPL-023, target: C03}
+    - {bug: BUG-10, evidence: "code reading", threat: TM-MPL-015, target: T26, note: "not part of C03: the buffers are in mpl, not prim"}
   dependencies: []
 ```
 
@@ -452,6 +529,15 @@ recommendation:
   scoring: {severity: 2, coverage_gap: 1.0, feasibility: 0.4, blast_radius: 4, product: "2 × 1.0 × 0.4 × 4 = 3.20"}
   quick_win: false
   proof_status: "None yet"
+  related_bugs:
+    - {bug: BUG-10, severity: Low, evidence: "code reading, no proof (mpl is not Verus-enabled)", threat: TM-MPL-015, target: T26, note: "RawAesKeyring::on_decrypt drops an authenticated plaintext data key un-wiped on the wrong-length path (site F1); branch_key_wrap::unwrap holds a plain Vec<u8> (site F3)"}
+    - {bug: "BUG-07(a)", evidence: "prim-side facts proved in-crate on Mahnush_Verus (C03, VR-014); caller impact is code reading", threat: TM-MPL-015, target: "T26 (F2)", note: "callers wrap_data_key and branch_key_wrap::wrap drop the plaintext data key un-wiped on an aes_encrypt Err; cannot fire today"}
+  scope_note: >
+    Scope note only; no property, score, coverage gap, feasibility or severity changed. BUG-10 is the bug report for site F1's wrong-length continue
+    (raw_aes_keyring.rs:489-494: an authenticated plaintext data key is dropped un-wiped, while the success path at :497 moves the buffer into PlaintextDataKey)
+    and for F3's branch_key_wrap::unwrap buffer (:275, a bare Vec<u8> is returned). The BUG-07(a) caller impact names one caller that the function list above does not:
+    branch_key_wrap::wrap (branch_key_wrap.rs:157, aes_encrypt call :199); wrap_data_key (raw_aes_keyring.rs:163) is already in F2. The failure cannot fire today:
+    key and IV sizes are fixed by type in wrap, and the raw-AES wrapping-key length is checked at RawAesKeyringBuilder::build (raw_aes_keyring.rs:369-379).
   dependencies: []
 ```
 
@@ -482,7 +568,7 @@ recommendation:
 
 ## 3. Coverage-gap analysis
 
-No Verus proof of the shipped code exists for any target. Five targets (T02, C01, C02, T03, T05) have a proof of a model, listed in "Proofs written"; the coverage gaps below are the pre-proof values and were not recalculated. Files are under `mpl/tests/` unless prefixed. "integ" = live-AWS.
+No Verus proof of the shipped code exists on this branch for any target. Five targets (T02, C01, C02, T03, T05) have a proof of a model, listed in "Proofs written". C03 is partly proved in-crate on branch `Mahnush_Verus`, which is not this branch (see "Proofs written"). The coverage gaps below are the pre-proof values and were not recalculated, including C03's 0.7 and C02's 0.8. Files are under `mpl/tests/` unless prefixed. "integ" = live-AWS.
 
 | Target | Existing tests | Gap | Justification |
 |---|---|---|---|
@@ -522,7 +608,7 @@ No Verus proof of the shipped code exists for any target. Five targets (T02, C01
 
 ## 4. Risk summary by STRIDE category
 
-From `docs/threat-model.md` §7 (TM-MPL-025 listed under Denial of Service; TM-MPL-024 and TM-MPL-026 under Elevation of Privilege). "Verified" is 0: it counts threats whose target is proved against the shipped code, and the five proofs in "Proofs written" are model level.
+From `docs/threat-model.md` §7 (TM-MPL-025 listed under Denial of Service; TM-MPL-024 and TM-MPL-026 under Elevation of Privilege). "Verified" is 0: it counts threats whose target is proved against the shipped code of `MPL-Verus`. The five proofs in "Proofs written" are model level, and the in-crate C03 proof is on `Mahnush_Verus` (C03 is a capability target and cites no threat).
 
 | Category | Threats | Verified | With target | Fully excluded | Targets | Top-priority target |
 |---|---|---|---|---|---|---|
@@ -546,7 +632,7 @@ Capability-driven targets by closest category (advisory): Tampering/integrity �
 | 3 | VR-2026-C01 EC builder ∘ reconstruction | 6.72 | 1 week | C |
 | 4 | VR-2026-C02 ECDSA bounded retry | 6.40 | 1 week | C |
 
-Unchanged by the `9955ecd` refresh and by the proofs in "Proofs written" (T02 partly proved, C01 and C02 proved, all at model level and not the shipped code; the list is not re-scored). T01 (8.96) needs 2 weeks. The new T27 (3.78) and the re-scored T21 (2.24) are below the threshold; T26 (3.20, 2 weeks) and T25 (1.44) also stay out. Cheap targets below threshold: T03 (5.12, 1 day), T05 (4.32, 1 day), C05 (2.40, 1 day).
+Unchanged by the `9955ecd` refresh and by the proofs in "Proofs written" (T02 partly proved, C01 and C02 proved, all at model level and not the shipped code; the list is not re-scored). T01 (8.96) needs 2 weeks. The new T27 (3.78) and the re-scored T21 (2.24) are below the threshold; T26 (3.20, 2 weeks) and T25 (1.44) also stay out. Cheap targets below threshold: T03 (5.12, 1 day), T05 (4.32, 1 day), C05 (2.40, 1 day). C03 (5.60) is not a quick win, and its partly proved in-crate status on `Mahnush_Verus` does not change the list.
 
 ## 6. Out of scope / not Verus-provable
 
@@ -579,11 +665,11 @@ Each needs an owner decision.
 - T17 (BUG-04): MRDiscovery rewrites the region of non-MRK ARNs (fails closed).
 - T21: `StormTrackingCmcBuilder::build` no longer enforces Grace Interval ≤ Grace Period, Inflight TTL ≤ Grace Period, or minimums (a). Also open: a failed leader's in-flight mark is never cleared (g), a waiter blocked by a full fan-out has no deadline (`storm_tracking.rs:313`) (h), and a panic under the state lock poisons it (i).
 - T16 (BUG-05a/b): `default_cmm.rs:138` `.expect` on ECDSA keygen; 44–59-byte EDK costs one key-store lookup.
-- T26 (BUG-07a): `prim::aes_encrypt` leaves plaintext in the caller's buffer on `Err`; raw-AES decrypt buffer not wiped on error paths. Also: expired `LocalCmc` entries stay resident until read (`local.rs:131`, `:166`), and `ecdsa_generate_keypair` leaves the private-key `Vec` un-wiped on its error return (`ecdsa.rs:387`, `:391-392`).
+- T26 (BUG-07a): `prim::aes_encrypt` leaves plaintext in the caller's buffer on `Err`; raw-AES decrypt buffer not wiped on error paths. Also: expired `LocalCmc` entries stay resident until read (`local.rs:131`, `:166`), and `ecdsa_generate_keypair` leaves the private-key `Vec` un-wiped on its error return (`ecdsa.rs:387`, `:391-392`). BUG-10 (Low, code reading, maps to TM-MPL-015 and T26): `RawAesKeyring::on_decrypt` drops an authenticated plaintext data key un-wiped when its length is wrong (`raw_aes_keyring.rs:489-494`), and `branch_key_wrap::unwrap` holds a plain `Vec<u8>` (`:275`). The BUG-07(a) caller impact (the data key in the caller's buffer after an `aes_encrypt` `Err`) is code reading and cannot fire today.
 - T27 (TM-MPL-025, unconfirmed): no bound on key-store calls per decrypt; the EDK count and versions are chosen by the ciphertext sender.
 - T02 (G1): `create-time` and `hierarchy-version` are not required on any read path, although the spec says a record MUST include them. Confirmed by the T02 proof at model level: the code accepts a record without them (`lemma_g1_code_ignores_fields`, `lemma_g1_witness_accepted_without_fields`; the spec property fails as `lemma_g1_spec_soundness_FAILS`).
 - T25: C++ `Keyring::adopt` has no null, type or ownership check (`EncryptionSDK.cpp:541-547`).
-- C03 (BUG-07b): `aes_decrypt` guard weaker than its callee; misleading error text.
+- C03 (BUG-07b): `aes_decrypt` guard weaker than its callee; misleading error text. Recorded, not proved: the VR-014 core states it relative to A20 on `Mahnush_Verus`. The BUG-07(a) prim-side buffer facts are proved there (partly proved, not on this branch); their caller impact is tracked in T26.
 - C01(c) (BUG-08): dead collision `Err` in `build_base`. The C01 proof (model level) shows it is dead if and only if A_ITER holds, and live if a key repeats.
 - T03 (O1, O2): O1 two byte-identical alias ARNs fail the code's MRK match, where the spec text matches (documented deviation, unreachable for any configuration `build()` accepts). O2 the ARN-validity model accepts empty partition, region and account, which is looser than the spec; no effect on the T03 property. Found by the T03 proof at model level.
 - T05 (F1): the spec does not state the KBKDF fixed-info layout. A spec gap found by the T05 proof at model level, not a code defect.

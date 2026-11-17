@@ -1,0 +1,10 @@
+threat-model ids: 26 TM-MPL-001 TM-MPL-026 headings: 0
+merged distinct refs: 26 unknown (not in threat-model): []
+01 distinct refs: 26 unknown (not in threat-model): []
+02 distinct refs: 7 unknown (not in threat-model): []
+YAML threat_references not in threat model: []
+threats with >=1 Active threat-driven target (01 YAML): 23
+threats without an Active 01 target: ['TM-MPL-019', 'TM-MPL-020', 'TM-MPL-026']
+  TM-MPL-019 -> mentioned in: ['01', 'merged']
+  TM-MPL-020 -> mentioned in: ['01', 'merged']
+  TM-MPL-026 -> mentioned in: ['01', '02', 'merged']

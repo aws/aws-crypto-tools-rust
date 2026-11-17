@@ -92,6 +92,7 @@ Considered and **not** added in that pass (status as of this pass):
 | BUG-07(b) `aes_decrypt` guard weaker than callee | Open | TM-MPL-023 | None | none |
 | BUG-08 dead collision branch | Open (informational) | TM-MPL-005 | None | none |
 | BUG-09 TTL admits ttl + 1 s | **Fixed** | TM-MPL-010 | Mitigation added | none |
+| BUG-10 raw-AES `on_decrypt` drops an authenticated data key un-wiped when its length is wrong | Open (code reading; added 2026-11-17) | TM-MPL-015 | None; inside the Low residual (the site was already listed there) | none |
 
 ## 1. Executive Summary
 
@@ -377,10 +378,10 @@ Severity High, Likelihood **Medium**, Risk **High**. BUG-06 (TM-MPL-009) is a co
 - No `unsafe` code in `mpl/src` or `prim/src`.
 
 Residual exposures that remain:
-- The raw-AES decrypt buffer on the AES-error and wrong-length paths (`raw_aes_keyring.rs:471`, `:489`).
-- The `Vec` returned by `branch_key_wrap::unwrap` before it is wrapped in `PlaintextDataKey`.
+- The raw-AES decrypt buffer on the AES-error and wrong-length paths (`raw_aes_keyring.rs:471`, `:489`). The wrong-length path (an authenticated data key dropped un-wiped) is recorded as BUG-10 (Low, code reading; `docs/bug-reports/BUG-10-raw-aes-on-decrypt-unwiped-data-key.md`). Target T26.
+- The `Vec` returned by `branch_key_wrap::unwrap` before it is wrapped in `PlaintextDataKey` (a plain `Vec<u8>`, `branch_key_wrap.rs:275`). Also part of BUG-10 (code reading).
 - The KMS SDK response `Blob` that holds the plaintext branch key (`key_store/kms_ops.rs:207`).
-- BUG-07(a): `prim::aes_encrypt` copies the plaintext into the output buffer before the key and nonce checks that can return `Err` (`prim/src/lib.rs:185-188`). The MPL callers then drop that buffer without wiping it.
+- BUG-07(a): `prim::aes_encrypt` copies the plaintext into the output buffer before the key and nonce checks that can return `Err` (`prim/src/lib.rs:185-188`). The MPL callers then drop that buffer without wiping it. Caller impact (code reading; the prim-side facts are proved in-crate only on `Mahnush_Verus`, VR-014): the callers are `wrap_data_key` (`raw_aes_keyring.rs:163`) and `branch_key_wrap::wrap` (`:199`). The key cannot leave through the API, and the failure cannot fire today, because key and IV sizes are fixed by type and the raw-AES wrapping-key length is checked at `RawAesKeyringBuilder::build` (`:369-379`). Low, confidentiality.
 - Copies left behind when a `Vec` reallocates.
 - By design, the cache holds plaintext branch keys for the TTL.
 
@@ -660,14 +661,14 @@ The table above is kept as written (history). The refresh of `docs/verification-
 | T21 | Yes | T21, 1.96 → 2.24 (rank 23). Coverage gap 0.7 → 0.8; properties (g), (h), (i) added | `verification-targets.md:14`; `01-threat-driven.md:17` |
 | T06 | Yes (note) | T06, 4.20 (unchanged, rank 11) | `verification-targets.md:18`; `01-threat-driven.md:21` |
 | T14 | Yes (property wording) | T14, 3.78 (unchanged, rank 13) | `verification-targets.md:18`; `01-threat-driven.md:22` |
-| T13 | No change needed | T13, 4.41 (rank 9) | `verification-targets.md:111` |
+| T13 | No change needed | T13, 4.41 (rank 9) | `verification-targets.md:174` |
 | T19 | Yes (scope note) | T19, 1.92 (unchanged, rank 27) | `verification-targets.md:18`; `01-threat-driven.md:23` |
 | T22 | Yes | T22, 1.60 (unchanged, rank 29) | `verification-targets.md:18`; `01-threat-driven.md:24` |
 | T26 | Yes | T26, 3.20 (unchanged, rank 15). Sites F4 and F5 added | `verification-targets.md:16`; `01-threat-driven.md:19` |
 | T01, T02, T03 | Note only (rollback is a non-goal) | T01 8.96, T02 6.72, T03 5.12, all unchanged | `verification-targets.md:17`, `:18`; `01-threat-driven.md:20`, `:26` |
 | T05, T09, T16, others | T09: scope note. The rest: no change | T09 2.56; T05 4.32; T16 2.24 | `verification-targets.md:18`; `01-threat-driven.md:25` |
-| TM-MPL-025 (no target yet) | Yes: new target | **T27**, 3.78 (rank 14; rank 10 among the threat-driven targets). Provisional, because TM-MPL-025 is unconfirmed | `verification-targets.md:13`, `:116`; `01-threat-driven.md:16`, `:126` |
-| TM-MPL-026 (no target needed) | Yes: recorded as fully excluded | No target. Row in the out-of-scope tables | `verification-targets.md:561`; `01-threat-driven.md:1551` |
+| TM-MPL-025 (no target yet) | Yes: new target | **T27**, 3.78 (rank 14; rank 10 among the threat-driven targets). Provisional, because TM-MPL-025 is unconfirmed | `verification-targets.md:13`, `:179`; `01-threat-driven.md:16`, `:126` |
+| TM-MPL-026 (no target needed) | Yes: recorded as fully excluded | No target. Row in the out-of-scope tables | `verification-targets.md:647`; `01-threat-driven.md:1560` |
 
 Result: 33 active targets (was 32), 26 threat-driven and 7 capability-driven; T08 and C06 stay retired. The targets documents now count TM-MPL-001..026.
 
@@ -677,7 +678,7 @@ Note: the bug report for BUG-06 (`docs/bug-reports/`) now rates BUG-06 High. It 
 
 ### Proof status (HEAD `d288750`)
 
-Five Verus proofs exist in `verus-proofs/` (see `verus-proofs/README.md` and `README-t03-t05.md`). Each proves a hand-written, re-typed model of the shipped Rust. None verifies the shipped code, and nothing detects a later edit to `mpl/` or `prim/`. A model-level proof reduces uncertainty about the logic, not about the shipped code. No threat rating and no threat ID changed.
+Five Verus proofs exist in `verus-proofs/` (see `verus-proofs/README.md` and `README-t03-t05.md`). Each proves a hand-written, re-typed model of the shipped Rust. None verifies the shipped code, and nothing detects a later edit to `mpl/` or `prim/`. A model-level proof reduces uncertainty about the logic, not about the shipped code. No threat rating and no threat ID changed. A sixth target, C03 (the prim wrappers, VR-013 and VR-014), has a different kind of proof: in-crate, on the shipped prim code, on branch `Mahnush_Verus`, which is **not this branch**. Its rows below carry that qualifier, not the model-level one. VR-014 concerns buffer effects only, so C03 says nothing about IV uniqueness (TM-MPL-011). C02 is also partly superseded by VR-008 on that branch (see the C02 row).
 
 | Threat | Target | Proof status | Finding | Not shown |
 |---|---|---|---|---|
@@ -687,5 +688,8 @@ Five Verus proofs exist in `verus-proofs/` (see `verus-proofs/README.md` and `RE
 | TM-MPL-005 | C01 | Proved (model level, not the shipped code, under stated hypotheses): 40 verified, 0 errors | BUG-08 collision `Err` is dead if and only if A_ITER holds; live if a key repeats | The DynamoDB read and write (A_DDB, A_NAME) |
 | TM-MPL-005 | T01 | None yet | | The KMS leg |
 | TM-MPL-014 | T05 | Proved (model level, not the shipped code, under stated hypotheses): 33 verified, 0 errors | F1: the spec does not state the fixed-info layout (spec gap, not a code defect) | That the derived key is correct (the KBKDF output is uninterpreted) |
-| none (capability 2d) | C02 | Proved (model level, not the shipped code, under stated hypotheses): 21 verified, 0 errors | At most 128 signing attempts, no panic, no partial write. Relies on vstd's own `assume_specification` for `copy_from_slice` | Nonce randomness; panics inside aws-lc-rs |
-| TM-MPL-015 and all other threats | | None yet | | |
+| none (capability 2d) | C02 | Proved (model level, not the shipped code, under stated hypotheses): 21 verified, 0 errors. Also partly superseded by VR-008 (in-crate, on the shipped prim code, on branch Mahnush_Verus, not on this branch): retry bound, termination, guarded copy | At most 128 signing attempts, no panic, no partial write. Relies on vstd's own `assume_specification` for `copy_from_slice`. On `Mahnush_Verus` VR-008 proves the bound, termination and guarded copy on the real loop; C02 stays the only statement of no partial write (`Err` leaves the buffer unchanged), the exact `Err` exits, `check_sig_len` and the `ecdsa_sign*` wrong-length contract | Nonce randomness; panics inside aws-lc-rs |
+| TM-MPL-015 | C03 (VR-014, BUG-07(a)) | Partly proved (in-crate, on the shipped prim code, on branch Mahnush_Verus, not on this branch, under trusted aws-lc-rs assumptions A1-A20): 18 verified, 0 errors | In prim on `Mahnush_Verus`: a key or nonce `Err` of `aes_encrypt` leaves exactly `old ++ message` (the plaintext) in the caller's buffer, and a seal `Err` keeps the length `old + len(message)` and the prefix `old` (exported postconditions). The proof says nothing about wiping. The mpl callers `wrap_data_key` and `branch_key_wrap::wrap` drop that buffer un-wiped (code reading), and the failure cannot fire today | Zeroization; the mpl callers (mpl is not Verus-enabled); the `Ok`-case order `old ++ ciphertext ++ tag` (in-body assert) and the seal-`Err` tail bytes; the FIPS backend |
+| TM-MPL-015 | T26 (BUG-10, BUG-07(a) caller impact) | None yet | BUG-10 recorded (Low, code reading): `RawAesKeyring::on_decrypt` drops an authenticated plaintext data key un-wiped on the wrong-length path, and `branch_key_wrap::unwrap` holds a plain `Vec<u8>` | Everything: there is no proof, the evidence is code reading |
+| TM-MPL-023 | C03 (placed here only through BUG-07(b); C03 itself cites no threat) | Partly proved (in-crate, on the shipped prim code, on branch Mahnush_Verus, not on this branch, under trusted aws-lc-rs assumptions A1-A20): 18 verified, 0 errors | In prim on `Mahnush_Verus` (VR-014): BUG-07(b) relative to the labeled assumption A20 (`aes_decrypt` accepts a longer plaintext buffer and then `Err`s in the callee), recorded, not proved. The other VR-013 results (`hmac`, `digest` and `DigestContext::finish` return `Err` unless the output buffer has the exact length and copy only after that guard; the `kbkdf_ctr_hmac` wrapper decision) are capability results of C03 and are not attached to a threat | `hkdf` and `hkdf_expand` output-length contract and "no listed function panics" end to end; `DigestContext::digest`'s call to `finish`; adapters outside `verus!`; panics inside aws-lc-rs (A1 to A20 are trusted; the FIPS C side is unchecked) |
+| All other threats | | None yet | | |

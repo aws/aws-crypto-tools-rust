@@ -7,7 +7,7 @@
 | Repository | aws/aws-crypto-tools-rust, branch MPL-Verus |
 | Code reviewed | `main` commit `620771c` (`mpl/`, `prim/`), reviewed on branch `MPL-Verus` HEAD `9955ecd`. `mpl/` and `prim/` are identical in the two. `main` has since moved to `5f2dc72` with esdk-only commits (#188, #189). The previous edition of this document covered `a1e23d7`. |
 | Status | Draft |
-| Date | 2026-11-15 |
+| Date | 2026-11-15 (proof status, C03 and BUG-10 cross-references updated 2026-11-17) |
 | Threat IDs | TM-MPL-001 to TM-MPL-026 |
 | Source document | `docs/threat-model.md` (second pass, analyzed at HEAD `851977d`; re-read against HEAD `9955ecd`) |
 
@@ -19,6 +19,7 @@ Changes since the previous edition (`a1e23d7`, TM-MPL-001..023):
 - Three ratings changed. TM-MPL-009 and TM-MPL-010 rose from Medium to High (Likelihood Low to Medium), because the main re-check confirmed BUG-06 end to end. TM-MPL-015 fell from Medium to Low (Severity High to Medium), because zeroize-on-drop now covers every long-lived secret type.
 - The advisory CVE-2026-6550 / GHSA-v638-38fc-rhfv is now verified. It concerns the AWS Encryption SDK for Python and does not apply to this code (section 6, TM-MPL-008).
 - Bug status was re-checked against `main`: BUG-02, BUG-03 and BUG-09 are fixed; the other six bugs are open. BUG-06 is rated High (section 7).
+- Added later (2026-11-17): BUG-10 (a raw-AES keyring path drops an authenticated plaintext data key un-wiped; Low, code reading; TM-MPL-015, target T26) and the caller impact of BUG-07 (code reading). Target C03 is partly proved in-crate on branch `Mahnush_Verus`, which is not this branch, and C02 is partly superseded by VR-008 there (section 7). No threat rating, score or rank changed.
 
 ## 1. Executive summary
 
@@ -30,8 +31,8 @@ Headline numbers (recounted from `docs/threat-model.md`, Appendix: Threat Risk M
 - Risk ratings: 3 High, 14 Medium, 9 Low.
 - Severity ratings: 5 Critical, 9 High, 10 Medium, 2 Low.
 - Likelihood ratings: 19 Low, 7 Medium, 0 High.
-- 23 of 26 threats have at least one Verus verification target; 3 (TM-MPL-019, TM-MPL-020, TM-MPL-026) have none because no provable code property exists. There are 33 active targets (26 threat-driven, 7 capability-driven). The targets are recommendations. Five of them have a Verus proof of a model of the code (T02 partly, C01, C02, T03, T05; see section 7). None verifies the shipped code, and no score changed.
-- 9 bug reports exist (BUG-01 to BUG-09), 11 items when BUG-05 and BUG-07 are split into (a) and (b). All 9 link to at least one threat. On `main` `620771c` (re-checked 2026-11-10, with no change in `mpl/` or `prim/` since): open are BUG-01, BUG-04, BUG-05 (a) and (b), BUG-06, BUG-07 (a) and (b), BUG-08; fixed are BUG-02, BUG-03 and BUG-09 (commit `e9bde48`, #98).
+- 23 of 26 threats have at least one Verus verification target; 3 (TM-MPL-019, TM-MPL-020, TM-MPL-026) have none because no provable code property exists. There are 33 active targets (26 threat-driven, 7 capability-driven). The targets are recommendations. Five of them have a Verus proof of a model of the code (T02 partly, C01, C02, T03, T05; see section 7). None of those verifies the shipped code, and no score changed. A sixth, C03, is partly proved in-crate on the shipped prim code, but on branch `Mahnush_Verus`, not on this branch (section 7); nothing on this branch is verified.
+- 10 bug reports exist (BUG-01 to BUG-10), 12 items when BUG-05 and BUG-07 are split into (a) and (b). All 10 link to at least one threat. On `main` `620771c` (re-checked 2026-11-10, with no change in `mpl/` or `prim/` since): open are BUG-01, BUG-04, BUG-05 (a) and (b), BUG-06, BUG-07 (a) and (b), BUG-08, and BUG-10 (added 2026-11-17, by code reading on `MPL-Verus`; `mpl/` is identical to `620771c`); fixed are BUG-02, BUG-03 and BUG-09 (commit `e9bde48`, #98).
 
 Risk matrix. Rows are severity, columns are likelihood. Each cell gives the number of threats and the resulting risk. The rule is the one used in `docs/threat-model.md`.
 
@@ -316,7 +317,7 @@ TM-MPL-015: Secret material not zeroized or kept past its use.
 
 - Attack: a memory adversary (TA4) reads freed heap, swap or core dumps that still hold key bytes.
 - Mitigation: zeroize-on-drop covers every long-lived secret type: `PlaintextDataKey`, `SigningKey` and `SymmetricSigningKey` (`mpl/src/structures/algorithm_suite.rs:505`, `:571`, `:655`), `BranchKeyMaterials` and `BeaconKeyMaterials` with their builders (`branch_key_materials.rs:205-219`, `beacon_key_materials.rs:221-235`), and the raw-AES wrapping key (`raw_aes_keyring.rs:72-78`). The derived branch key is `Zeroizing` (`branch_key_wrap.rs:135`). `mpl/src` and `prim/src` contain no `unsafe` code.
-- Residual: transient and error-path copies remain: the raw-AES decrypt buffer on error paths (`raw_aes_keyring.rs:471`, `:489`), the `Vec` returned by `branch_key_wrap::unwrap`, the KMS SDK response `Blob` (`kms_ops.rs:207`), and BUG-07(a) (`prim/src/lib.rs:185-188`: `aes_encrypt` leaves plaintext in the caller's buffer on `Err`). By design, the cache holds plaintext branch keys for the TTL.
+- Residual: transient and error-path copies remain: the raw-AES decrypt buffer on error paths (`raw_aes_keyring.rs:471`, `:489`; the wrong-length path is recorded as BUG-10, Low, code reading), the `Vec` returned by `branch_key_wrap::unwrap` (also BUG-10), the KMS SDK response `Blob` (`kms_ops.rs:207`), and BUG-07(a) (`prim/src/lib.rs:185-188`: `aes_encrypt` leaves plaintext in the caller's buffer on `Err`; the callers `wrap_data_key` and `branch_key_wrap::wrap` drop it un-wiped, which cannot fire today, by code reading). By design, the cache holds plaintext branch keys for the TTL.
 - Second pass: (1) residency can exceed the TTL. `LocalCmc` drops an expired entry only when it is read, when it falls in the pruned tail, or when it is evicted at capacity (`cmc/local.rs:69`, `:131`, `:166`), so an entry nobody reads stays in memory in plaintext. (2) `ecdsa_generate_keypair` holds the private key DER in a plain `Vec` inside `SignatureKeyPair`, which is not zeroizing (`prim/src/ecdsa.rs:324-326`, `:387`); on the length-check error path (`:391-392`) it is dropped without a wipe. Both residuals need TA4, who is already inside the process, so the likelihood stays Low. The risk fell from Medium to Low since the previous edition (Severity High to Medium).
 
 TM-MPL-021: Secret leakage through Debug, errors or logging.
@@ -422,7 +423,7 @@ TM-MPL-026: Unauthenticated loopback test servers (new).
 
 Sources. Threat ratings are from `docs/threat-model.md`. Target IDs and scores are from `docs/verification-targets.md` (section 1, refreshed at HEAD `9955ecd`) and the per-threat accounting in `docs/verification-targets/01-threat-driven.md` section 6. Bug mappings come from the "Related IDs" field of each `docs/bug-reports/BUG-*.md` report and the bug to threat to target table in `docs/completeness-audit.md` section 3b. A dash means no mapping is stated. Scores use the formula Severity x Coverage gap x Feasibility x Blast radius; a higher score means a higher verification priority. Retired targets T08 (the unsafe zeroize loop, code removed) and C06 (grace-versus-TTL integer division, code removed) are not used by any threat. T27 and the refreshed T21, T25 and T26 are included.
 
-Bug status is from `docs/bug-reports/RECHECK-main-620771c.md` (including its addendum for HEAD `9955ecd`) and `docs/bug-reports/README.md`. Open: BUG-01, BUG-04, BUG-05 (a and b), BUG-06, BUG-07 (a and b), BUG-08. Fixed on `main` by `e9bde48` (#98): BUG-02, BUG-03, BUG-09.
+Bug status is from `docs/bug-reports/RECHECK-main-620771c.md` (including its addendum for HEAD `9955ecd`) and `docs/bug-reports/README.md`. Open: BUG-01, BUG-04, BUG-05 (a and b), BUG-06, BUG-07 (a and b), BUG-08, BUG-10 (by code reading). Fixed on `main` by `e9bde48` (#98): BUG-02, BUG-03, BUG-09.
 
 | Threat (risk) | Verification targets (score) | Related bugs | Proof status |
 |---|---|---|---|
@@ -440,7 +441,7 @@ Bug status is from `docs/bug-reports/RECHECK-main-620771c.md` (including its add
 | TM-MPL-012 (Medium) | T04 (4.48) | - | None yet |
 | TM-MPL-013 (Medium) | T10 (2.88), T15 (1.92) | BUG-03 (fixed) | None yet |
 | TM-MPL-014 (Medium) | T05 (4.32) | - | T05: Proved (model level, not the shipped code, under stated hypotheses): 33 verified, 0 errors |
-| TM-MPL-015 (Low) | T26 (3.20) | BUG-07 (a) (open) | None yet |
+| TM-MPL-015 (Low) | T26 (3.20) | BUG-07 (a) (open), BUG-10 (open, code reading) | T26: None yet. C03 (VR-014, BUG-07(a)): Partly proved (in-crate, on the shipped prim code, on branch Mahnush_Verus, not on this branch, under trusted aws-lc-rs assumptions A1-A20): 18 verified, 0 errors |
 | TM-MPL-016 (Low) | T18 (1.92) | - | None yet |
 | TM-MPL-017 (Medium) | T12 (2.88), T15 (1.92) | BUG-03 (fixed) | None yet |
 | TM-MPL-018 (Medium) | T21 (2.24), T06 (4.20), T27 (3.78) | BUG-01 (open) | None yet |
@@ -448,12 +449,13 @@ Bug status is from `docs/bug-reports/RECHECK-main-620771c.md` (including its add
 | TM-MPL-020 (Low) | - (fully excluded: operational audit control) | - | n/a |
 | TM-MPL-021 (Low) | T22 (1.60) | - | None yet |
 | TM-MPL-022 (Low) | T23 (1.26), T06 (4.20) | BUG-01 (open) | None yet |
-| TM-MPL-023 (Low) | T16 (2.24), T20 (1.68), T06 (4.20) | BUG-01, BUG-05 (a and b), BUG-07 (b) (open); BUG-02 (fixed) | None yet |
+| TM-MPL-023 (Low) | T16 (2.24), T20 (1.68), T06 (4.20) | BUG-01, BUG-05 (a and b), BUG-07 (b) (open); BUG-02 (fixed) | T16, T20, T06: None yet. C03 (VR-014, BUG-07(b) link only; C03 cites no threat): Partly proved (in-crate, on the shipped prim code, on branch Mahnush_Verus, not on this branch, under trusted aws-lc-rs assumptions A1-A20): 18 verified, 0 errors |
 | TM-MPL-024 (Medium) | T25 (1.44) | - | None yet |
 | TM-MPL-025 (Medium, provisional) | T27 (3.78) | BUG-05 (b) is related, not the cause | None yet |
 | TM-MPL-026 (Low) | - (fully excluded: test-only, no target needed) | - | n/a |
 
-Proof status. Five Verus proofs exist in `verus-proofs/` (`verus-proofs/README.md`, `verus-proofs/README-t03-t05.md`). Each proves a re-typed model of the shipped Rust, not the shipped code. They reduce uncertainty about the logic, not about the shipped code. No rating, score or rank changed, and coverage gaps will be recalculated when a proof is linked to the shipped code. C02 (Proved (model level, not the shipped code, under stated hypotheses): 21 verified, 0 errors) is a capability target and has no threat ID.
+Proof status. Five Verus proofs exist in `verus-proofs/` (`verus-proofs/README.md`, `verus-proofs/README-t03-t05.md`). Each proves a re-typed model of the shipped Rust, not the shipped code. They reduce uncertainty about the logic, not about the shipped code. No rating, score or rank changed, and coverage gaps will be recalculated when a proof is linked to the shipped code. C02 (Proved (model level, not the shipped code, under stated hypotheses): 21 verified, 0 errors) is a capability target and has no threat ID. C02 is also partly superseded by VR-008 (in-crate, on the shipped prim code, on branch Mahnush_Verus, not on this branch): retry bound, termination, guarded copy; it is not a duplicate and is not demoted.
+C03 has a different kind of proof: in-crate, on the shipped prim code, on branch `Mahnush_Verus` (aws/aws-crypto-tools-rust, PR #103, VR-013 and VR-014), not on this branch. Status: Partly proved (in-crate, on the shipped prim code, on branch Mahnush_Verus, not on this branch, under trusted aws-lc-rs assumptions A1-A20): 18 verified, 0 errors. Re-run at `8d6381e` with `cargo verus verify` (both feature sets): `verification results:: 18 verified, 0 errors` for the prim crate, the same count as at `43b9ff7`. The 18 counts every verified function of the prim crate on that branch, not only C03. C03 cites no threat ID; its rows above are placed only by the bug to threat links (BUG-07(a) to TM-MPL-015, BUG-07(b) to TM-MPL-023); the other VR-013 results are not attached to a threat. It says nothing about IV uniqueness (TM-MPL-011).
 
 - G1 confirmed formally (T02, TM-MPL-005): the code accepts a branch-key record that lacks `create-time` and `hierarchy-version`; the spec says a record MUST include them. The code is more permissive than the spec, never stricter.
 - O1 DEV-ALIAS (T03, TM-MPL-004): two byte-identical alias ARNs fail the code's MRK match where the spec text matches. A documented deviation, unreachable for a configuration `build()` accepts.
@@ -461,10 +463,12 @@ Proof status. Five Verus proofs exist in `verus-proofs/` (`verus-proofs/README.m
 - F1 (T05, TM-MPL-014): the spec does not state the KBKDF fixed-info layout. A spec gap, not a code defect.
 - BUG-08 (C01): the collision `Err` in `build_base` is dead if and only if A_ITER holds (a `BTreeMap` yields each key once), and live if a key repeats.
 - C02 relies on vstd's own `assume_specification` for `copy_from_slice`.
+- C03 gaps (not on this branch): `hkdf` and `hkdf_expand` output-length contract and "no listed function panics" are not proved end to end; `DigestContext::digest`'s call to `finish` is unmodeled; adapters outside `verus!` are unproved; `constant_time_equal` and `generate_random_bytes` add little beyond assumptions A13 and A12. BUG-07(a): the key or nonce `Err` buffer (`old ++ message`) and the seal-`Err` length and prefix are exported postconditions, but the `Ok`-case order `old ++ ciphertext ++ tag` is an in-body assert and the `+ 16` relies on A19. BUG-07(b) is relative to the labeled assumption A20, not proved. The trusted base is 20 `assume_specification` entries (A1 to A20) about aws-lc-rs, judged true for 1.18.1 by our review; the FIPS C side is unchecked.
+- BUG-10 (TM-MPL-015, T26): `RawAesKeyring::on_decrypt` drops an authenticated plaintext data key un-wiped when its length is wrong, and `branch_key_wrap::unwrap` holds a plain `Vec<u8>`. Low, code reading, not proved; not covered by C03.
 
 The refreshed targets since the previous edition: T27 is new (3.78, rank 14; provisional because TM-MPL-025 is unconfirmed). T21 rose from 1.96 to 2.24 (coverage gap 0.7 to 0.8; three liveness properties added). T25 stays 1.44 with citations moved and `Keyring::adopt` added to its scope. T26 stays 3.20 with two sites added (expired `LocalCmc` entries, the un-wiped key `Vec` on the ECDSA error path). T13 (4.41) and T14 (3.78) were re-scored at the `620771c` refresh when TM-MPL-009 and TM-MPL-010 moved to Likelihood Medium. There are 33 active targets: 26 threat-driven (T01 to T07, T09 to T27) and 7 capability-driven (C01 to C05, C07, C08).
 
-Bugs and the capability targets that reference them. BUG-02 (fixed) relates to VR-2026-C04, BUG-07 (b) to VR-2026-C03 and BUG-08 to VR-2026-C01 (c). Capability targets carry no threat ID; the threat links above come from the bug reports and the completeness audit.
+Bugs and the capability targets that reference them. BUG-02 (fixed) relates to VR-2026-C04, BUG-07 (b) to VR-2026-C03 and BUG-08 to VR-2026-C01 (c). BUG-07 (a) and BUG-10 map to TM-MPL-015 and T26 (BUG-07 (a) also to T07); the prim-side facts of BUG-07 (a) are what C03 proves on `Mahnush_Verus`. Capability targets carry no threat ID; the threat links above come from the bug reports and the completeness audit.
 
 Bug summary for reference (from `docs/bug-reports/README.md`; status from `docs/bug-reports/RECHECK-main-620771c.md`):
 
@@ -479,6 +483,7 @@ Bug summary for reference (from `docs/bug-reports/README.md`; status from `docs/
 | BUG-07 | `prim::aes_encrypt` leaves plaintext in buffer on `Err`; `aes_decrypt` guard weaker than callee | Low | (a) TM-MPL-015 (Low); (b) TM-MPL-023 (Low); TM-MPL-011 (Medium) through T07 | Still present (a and b) |
 | BUG-08 | Custom-EC collision `Err` in `build_base` is dead code | Informational | TM-MPL-005 (High) | Still present |
 | BUG-09 | `cache_entry_within_limits` admits entries up to `ttl + 1 s` | Informational | TM-MPL-010 (High) | Fixed on main (`e9bde48`, #98) |
+| BUG-10 | Raw AES `on_decrypt` drops an authenticated data key un-wiped when its length is wrong | Low | TM-MPL-015 (Low) | Still present (code reading) |
 
 BUG-06 and the threat ratings. BUG-06 is rated High. The severity was raised Low to High on the owner's decision after the main re-check. It is consistent with TM-MPL-009 and TM-MPL-010 (both High), which BUG-06 realizes. The preconditions are not met by a default configuration: a shared cache plus a NUL-containing partition id, logical key store name or branch key id, reachable through a caller-supplied value or a branch key id supplier. No threat rating changed because of the BUG-06 decision.
 
@@ -578,10 +583,10 @@ These notes record differences between sources, or editorial choices. In every c
 3. Likelihood and risk source. Where source section 8 gives a likelihood or risk, it matches the risk matrix appendix. The register, the risk grid and the counts in section 1 were recounted from the matrix, not copied from the previous edition.
 4. Revisions. The source second pass was written at HEAD `851977d`. This edition was checked against the working tree at HEAD `9955ecd`. `mpl/` and `prim/` are unchanged between `620771c` and `9955ecd`, and `main` moved from `620771c` to `5f2dc72` through esdk-only commits (#188, #189), as recorded in the addendum of `docs/bug-reports/RECHECK-main-620771c.md`. The previous edition of this document covered `a1e23d7`, before `main` was merged into `MPL-Verus`.
 5. Provisional and static findings. TM-MPL-025 is provisional. The liveness findings under TM-MPL-018, the rollback residual under TM-MPL-005 and the existence oracle under TM-MPL-003 come from reading the code, not from a run. TM-MPL-025 and the liveness findings are labeled static reasoning in the source. A reproducer is recommended before TM-MPL-025 is treated as confirmed.
-6. Bug-to-threat links. All nine bugs now map to a threat. BUG-02 and BUG-08, which the previous edition listed as unlinked, map through the bug reports' Related IDs and `docs/completeness-audit.md` section 3b (BUG-02 to TM-MPL-006 and 023, BUG-08 to TM-MPL-005). BUG-07 links to TM-MPL-011 only through target T07. The mapping from a bug to a threat does not change that threat's rating, except that BUG-06 is the confirmed realization of TM-MPL-009 and TM-MPL-010.
+6. Bug-to-threat links. All ten bugs now map to a threat. BUG-10 maps to TM-MPL-015 (and target T26) through its own report; `docs/completeness-audit.md` section 3b predates it. BUG-02 and BUG-08, which the previous edition listed as unlinked, map through the bug reports' Related IDs and `docs/completeness-audit.md` section 3b (BUG-02 to TM-MPL-006 and 023, BUG-08 to TM-MPL-005). BUG-07 links to TM-MPL-011 only through target T07. The mapping from a bug to a threat does not change that threat's rating, except that BUG-06 is the confirmed realization of TM-MPL-009 and TM-MPL-010.
 7. BUG-06 severity. The bug reports rate BUG-06 High. The severity was raised from Low to High on the owner's decision after the main re-check. The finding, evidence, status and confidence are unchanged. Every bug table in this document shows High.
 8. Advisory verification. The previous edition marked CVE-2026-6550 / GHSA-v638-38fc-rhfv as unverified. It has since been verified against the GitHub Advisory Database. It concerns a caching CMM in the AWS Encryption SDK for Python and does not apply to this code.
-9. Targets. Target IDs and scores come from `docs/verification-targets.md` as refreshed at HEAD `9955ecd`. T08 and C06 are retired and appear nowhere in the cross-reference. Five targets (T02, C01, C02, T03, T05) have a Verus proof of a model of the code, listed in section 7; scores and ranks are the pre-proof values and were not changed.
+9. Targets. Target IDs and scores come from `docs/verification-targets.md` as refreshed at HEAD `9955ecd`. T08 and C06 are retired and appear nowhere in the cross-reference. Five targets (T02, C01, C02, T03, T05) have a Verus proof of a model of the code, listed in section 7; C03 is partly proved in-crate on branch `Mahnush_Verus`, which is not this branch. Scores and ranks are the pre-proof values and were not changed.
 10. Citations. File and line citations were copied from `docs/threat-model.md`, which re-checked them against the working tree at HEAD `9955ecd`, and were re-run mechanically against the working tree for this edition. Line numbers refer to the current code on `main` `620771c`.
 
 ## Appendix B. Threat risk matrix and rating history
