@@ -127,7 +127,7 @@ care about is the **second** `verification results::` line.
 
 ```
 make -C esdk verus          →  aws-esdk:            69 verified, 0 errors  (both feature sets)
-make -C prim verus          →  aws-mpl-primitives:  10 verified, 0 errors  (both feature sets)
+make -C prim verus          →  aws-mpl-primitives:  18 verified, 0 errors  (both feature sets)
 make -C verification verify →  11 files:            78 verified, 0 errors  total
 ```
 

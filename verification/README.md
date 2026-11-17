@@ -70,7 +70,64 @@ definitions. `derive_keys` dispatches on the verified
 `msg_format_version_from_u8` (V1 iff the suite's version byte is 1, V2 iff 2,
 an error otherwise).
 
-### VR-009 (HKDF / key-derivation lengths): esdk half proven, prim half not
+## In-crate proofs (shipped `prim` code)
+
+Shipped `aws-mpl-primitives` (`prim`) code is verified in place too.
+`prim/Cargo.toml` sets `[package.metadata.verus] verify = true` and pins the
+same `vstd` as esdk. Run from the repo root:
+
+```bash
+make -C prim verus
+```
+
+It runs `cargo verus verify` on default features and again with
+`--no-default-features --features aws-lc-sys`. Current output (the
+`aws-mpl-primitives` line, both runs; `make -C esdk verus` prints the same
+line before its esdk line):
+
+```
+verification results:: 18 verified, 0 errors
+verification results:: 18 verified, 0 errors
+```
+
+Each core is inside a `verus!` block and is the single definition the
+shipped public fn calls; the public fns are thin unverified adapters that own
+the `DigestAlg` / `AesGcm` dispatch, `format!` and the crate `Error`.
+
+| File | Fn | Property proven | Target |
+|---|---|---|---|
+| `prim/src/ecdsa.rs` | `sign_fixed_len_core` | The signing retry loop terminates (`decreases MAX_SIGN_ATTEMPTS - attempt`); the guarded `copy_from_slice` is in bounds. Already proven. | VR-008 |
+| `prim/src/lib.rs` | `aes_encrypt_extend_core` | The tail slice is in range and exactly `message.len()` bytes (VR-006). New VR-014 conjuncts: the tail holds the plaintext, and the final buffer is the old buffer followed by the tail. | VR-006, VR-014(a) |
+| `prim/src/lib.rs` | `aes_decrypt_len_ok` | `Ok` iff `plain_text_len >= cipher_text_len`. Already proven. | VR-006 |
+| `prim/src/hkdf.rs` | `hkdf_key_len_ok`, `salt_size_core`, `no_salt_slice_core` | HKDF key length `{16, 24, 32}`, default salt size `<= 64`, no-salt slice in bounds. Already proven. | VR-009 prim half |
+| `prim/src/lib.rs` | `digest_core` (called by `digest`) | `Ok` iff `out.len()` is the algorithm's output length; `out` unchanged on `Err`; copy only after the guard, in bounds. | VR-013(a) |
+| `prim/src/ecdsa.rs` | `digest_finish_core` (called by `DigestContext::finish`) | Same, against the context's output length. | VR-013(b) |
+| `prim/src/lib.rs` | `kbkdf_core` (called by `kbkdf_ctr_hmac`) | `Err(Unavailable)` iff the algorithm lookup returns `None`; derivation failure maps to `DerivationFailed`; no panic path. | VR-013(c) |
+| `prim/src/lib.rs` | `fill_random_core` (called by `generate_random_bytes`) | Totality only. | VR-013(d) |
+| `prim/src/lib.rs` | `ct_equal_core` (called by `constant_time_equal`) | Totality; result is the `Ok`-ness of the aws-lc-rs comparison (no claim about equality semantics or timing). | VR-013(e) |
+| `prim/src/lib.rs` | `hmac_core` (called by `hmac`) | `Ok` iff `out.len()` is the HMAC tag length; `out` unchanged on `Err`; copy only after the guard, in bounds. | VR-013(f) |
+| `prim/src/lib.rs` | `aes_encrypt_core` (called by `aes_encrypt`) | Key/nonce `Err` ⇒ buffer is exactly `old ++ message` (BUG-07(a)); seal `Err` ⇒ length `old + |message|`, prefix kept; `Ok` ⇒ `old ++ ct ++ tag`, length `old + |message| + 16`. | VR-014(a) |
+| `prim/src/lib.rs` | `aes_decrypt_core` (called by `aes_decrypt`) | Under the labeled assumption A-OPEN: `Ok` ⇒ `|plain_text| == |cipher_text|`; a longer buffer passes the guard and ends in a callee-side `Err` (BUG-07(b), recorded, not a proof of aws-lc-rs). | VR-014(b) |
+
+VR-013 and VR-014 implement pipeline target VR-2026-C03 (MPL-Verus
+`docs/verification-targets/02-capability-driven.md`) and the BUG-07 buffer
+facts (MPL-Verus `docs/bug-reports/BUG-07-prim-aes-buffer-handling.md`). The
+aws-lc-rs calls they make are specified, not verified, in
+`prim/src/aws_lc_specs.rs`; the full TCB list (A1–A20, including the trusted
+output lengths, no-panic of every call, and A-OPEN) is in
+`docs/verus-proofs-report.md` under "VR-013 / VR-014 TCB". OOM is out of scope.
+
+**Nightly-only attribute (for PR #103 reviewers).** `prim/src/lib.rs` has
+`#![cfg_attr(verus_keep_ghost, feature(sized_hierarchy))]` and
+`prim/Cargo.toml` has `[lints.rust] unexpected_cfgs = { level = "warn",
+check-cfg = ['cfg(verus_keep_ghost)'] }`. Both serve one ghost-only
+`#[cfg(verus_keep_ghost)]` `AsRef` trait proxy, without which Verus cannot name
+`aws_lc_rs::aead::Aad<A: AsRef<[u8]>>`. They only take effect in Verus builds;
+stable `cargo build` / `cargo test` never enable `sized_hierarchy`, and no exec
+code is gated. This interacts with the planned vstd feature-gating (PR #103
+open question 1, approach B): gate them the same way when that lands.
+
+### VR-009 (HKDF / key-derivation lengths): esdk half (prim half: see the prim section)
 
 Proven in-crate: the length checks in `esdk/src/key_derivation.rs` listed
 above. They are total (no panic; they do no arithmetic, so no overflow), and
@@ -81,10 +138,10 @@ lengths from the MPL `AlgorithmSuite` and the slices, call the cores, build the
 `Error`s (same kinds and messages as before), allocate the buffers and call
 HKDF. Not proven:
 
-- **The prim side** (`prim/src/hkdf.rs`, including `get_len`, and the
-  aws-lc-rs `hkdf` / `hkdf_extract` / `hkdf_expand`). Verus is not enabled in
-  `prim`, by decision. The HKDF primitive, including its output-length limit,
-  is a trust boundary.
+- **The aws-lc-rs HKDF** (`hkdf` / `hkdf_extract` / `hkdf_expand`). The prim
+  half's Rust-side checks are now proven in-crate (see "In-crate proofs
+  (shipped `prim` code)" above); the HKDF primitive, including its
+  output-length limit, is a trust boundary.
 - **Buffer sizes read straight from the suite.** The V1 output length
   (`encryption_key_length()`) and the V2 commit-key length
   (`algorithm_suite_data_length()`) are MPL getters used directly by

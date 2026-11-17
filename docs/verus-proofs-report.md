@@ -102,6 +102,25 @@ make -C verification verify
 > `esdk/src/key_derivation.rs`, prim in `prim/src/hkdf.rs`), each with its own
 > trusted boundary; and all three prim panic-point targets (VR-006, VR-008,
 > VR-009 prim half) are now in-crate. See "VR-009" under "In-crate proofs".
+>
+> **Update (branch `verus-prim-c03`):** pipeline target VR-2026-C03 ("prim
+> wrappers never panic and keep exact length contracts", from `origin/MPL-Verus`
+> `docs/verification-targets/02-capability-driven.md`) is in-crate as
+> **VR-013** (`digest`, `DigestContext::finish`, `kbkdf_ctr_hmac`,
+> `generate_random_bytes`, `constant_time_equal`, `hmac`) and **VR-014**
+> (`aes_encrypt` / `aes_decrypt` buffer facts from BUG-07, `origin/MPL-Verus`
+> `docs/bug-reports/BUG-07-prim-aes-buffer-handling.md`):
+> **18 verified, 0 errors** on both feature sets (10 before, +8 cores). The
+> aws-lc-rs calls now sit inside the verified cores behind explicit
+> `assume_specification`s in a new TCB module, `prim/src/aws_lc_specs.rs` (the
+> TCB list is under "VR-013 / VR-014 TCB"). **New build attributes for PR #103
+> reviewers:** `#![cfg_attr(verus_keep_ghost, feature(sized_hierarchy))]` in
+> `prim/src/lib.rs` (a nightly-only feature, enabled only in Verus builds) and a
+> `[lints.rust] unexpected_cfgs = { level = "warn", check-cfg =
+> ['cfg(verus_keep_ghost)'] }` entry in `prim/Cargo.toml`. They exist for one
+> ghost-only `#[cfg(verus_keep_ghost)]` `AsRef` trait proxy, without which
+> Verus cannot name `aws_lc_rs::aead::Aad<A: AsRef<[u8]>>`. See "VR-014
+> in-crate". Nothing here duplicates VR-006, VR-008 or VR-009.
 
 > **Update (branch `verus-vr001`):** VR-001 (key commitment) is now **partly
 > in-crate**. The accept/reject *decision* of `validate_suite_data`
@@ -483,6 +502,177 @@ and the prim half (`prim/src/hkdf.rs`: `hkdf_key_len_ok`, `salt_size_core`,
 (the esdk MPL getters / the aws-lc-rs HKDF). With T3, all three prim
 panic-point targets — VR-006, VR-008 and the VR-009 prim half — are in-crate.
 
+### VR-013 in-crate (`aws-mpl-primitives`, `prim/src/lib.rs`, `prim/src/ecdsa.rs`)
+
+Pipeline target **VR-2026-C03** (prim wrappers never panic and keep exact
+length contracts), non-AES part. Six verified cores inside `verus!`, each the
+single definition the shipped wrapper calls; each public fn is a thin adapter
+outside `verus!` that owns the `DigestAlg` dispatch, `format!` and the crate
+`Error`. No `assume`, `admit`, `external_body` on exec/proof fns, `external`,
+or `#[cfg(not(verus_keep_ghost))]`. The error types the cores return
+(`OutLenMismatch`, `KbkdfCoreError`, `RandFillError`) are declared inside
+`verus!`. Runtime behavior is unchanged: same accepted lengths, same error
+order, byte-identical messages (pinned by `prim/tests/test_wrapper_contracts.rs`,
+which passed on the unchanged code before the refactor).
+
+Output (default features, then `--no-default-features --features aws-lc-sys`),
+the `aws-mpl-primitives` line, covering VR-006, VR-008, VR-009 prim half,
+VR-013 and VR-014:
+
+```
+verification results:: 18 verified, 0 errors
+verification results:: 18 verified, 0 errors
+```
+
+| Fn | File | What Verus checks | Target |
+|----|------|-------------------|--------|
+| `digest_core` | `prim/src/lib.rs` | `Ok` iff `out.len() == output_len(alg)`; on `Err`, `want_len` is that length and `out` is unchanged; the `copy_from_slice` runs only after the guard and is proven in bounds (A2) | VR-013(a) |
+| `digest_finish_core` | `prim/src/ecdsa.rs` | same three facts against the context's output length; copy in bounds (A5) | VR-013(b) |
+| `kbkdf_core` | `prim/src/lib.rs` | `Err(Unavailable)` iff the lookup returns `None`; `Ok` only when available; a derivation failure maps to `DerivationFailed`; `okm` keeps its length; no panic path | VR-013(c) |
+| `fill_random_core` | `prim/src/lib.rs` | totality (no `requires`, Verus's panic check covers every input); `bytes` keeps its length | VR-013(d) |
+| `ct_equal_core` | `prim/src/lib.rs` | totality; the result is exactly the `Ok`-ness of `verify_slices_are_equal` (A13) | VR-013(e) |
+| `hmac_core` | `prim/src/lib.rs` | `Ok` iff `out.len() == tag_len(hmac_alg)`; on `Err`, `want_len` is that length and `out` is unchanged; copy in bounds (A8) | VR-013(f) |
+
+**Value source in `hmac`.** The old code took `want_len` from
+`get_digest_alg(alg).output_len()` and relied on `hmac::sign` producing that
+many bytes, a link the model cannot see. `hmac_core` takes it from
+`hmac_alg.tag_len()`, the tag length of the algorithm that signs. In
+aws-lc-rs 1.18.1 these are the same value (`HMAC_SHA256 =
+Algorithm(&digest::SHA256)`, `tag_len()` returns `digest_algorithm().output_len`,
+`hmac.rs:131-153`), so accepted lengths and messages are unchanged.
+
+**What is proven (VR-013):** the guards, the error mapping, and panic freedom
+of the wrapper logic, given the TCB below; the exact-length contracts of
+`digest`, `DigestContext::finish` and `hmac` (`Ok` iff the buffer has the
+algorithm's length, `out` untouched on `Err`, copy in bounds).
+
+**What is NOT proven (VR-013):** the digest, HMAC, KBKDF and RNG output bytes;
+that `constant_time_equal` returning `true` means the slices are equal, and its
+timing (third-party semantics; A13 only says the result is a function of the
+two byte sequences); that the aws-lc-rs calls do not panic (trusted, see TCB).
+`generate_random_bytes` is totality only.
+
+**Findings (VR-013):**
+
+- **F3:** the `Unavailable` branch of `kbkdf_ctr_hmac` is dead with aws-lc-rs
+  1.18.1 (`kdf/kbkdf.rs:38-49` always returns `Some`). It is not encoded in
+  the spec (A10 makes no such claim), so the proof stays valid if a later
+  aws-lc-rs returns `None`.
+- **F4:** `DigestContext::finish`'s wrapper has no panic path, but panic
+  freedom is still conditional on A5: aws-lc-rs documents that
+  `Context::finish` panics if the digest cannot be finalized
+  (`expect("EVP_DigestFinal failed")`, `digest.rs:131-137`).
+
+### VR-014 in-crate (`aws-mpl-primitives`, `prim/src/lib.rs`)
+
+Pipeline target **VR-2026-C03**, AES part, and **BUG-07** (MPL-Verus
+`docs/bug-reports/BUG-07-prim-aes-buffer-handling.md`). These are new results
+next to VR-006, not a re-proof of it: VR-006's `aes_encrypt_extend_core` slice
+fact and `aes_decrypt_len_ok` iff are unchanged; the extend core gains two
+labeled conjuncts, and two new cores, `aes_encrypt_core` and
+`aes_decrypt_core`, call the VR-006 cores first. BUG-07 is **not fixed**; the
+plaintext residue stays exactly as shipped.
+
+| Fn | File | What Verus checks | Target |
+|----|------|-------------------|--------|
+| `aes_encrypt_extend_core` (two new conjuncts) | `prim/src/lib.rs` | the returned tail holds the plaintext (`slice@ == message@`), and `final(cipher_text)@ == old(cipher_text)@ + final(slice)@` | VR-014(a) |
+| `aes_encrypt_core` | `prim/src/lib.rs` | with `o` = old buffer, `m` = message: key or nonce rejected ⇒ buffer is exactly `o ++ m`; seal failed ⇒ length `|o| + |m|`, prefix `o`; `Ok` ⇒ length `|o| + |m| + 16`, prefix `o`, and (in-body assert) `buffer == o ++ ct ++ tag`, the tag appended after the ciphertext | VR-014(a), BUG-07(a) **proved** |
+| `aes_decrypt_core` | `prim/src/lib.rs` | relative to **A-OPEN**: `Ok` ⇒ `|plain_text| == |cipher_text|`; `|plain_text| > |cipher_text|` ⇒ `Err` and never `PlainTooShort`; on every path `plain_text` keeps its length | VR-014(b), BUG-07(b) **recorded under A-OPEN** |
+
+**What is proven (VR-014):** (a) the exact `Vec` effects of `aes_encrypt` on
+every path, in the shipped order (extend first, then key, nonce, seal, tag
+append). (b) Under the labeled assumption A-OPEN, that a decrypt buffer longer
+than the ciphertext passes the prim guard and can only end in a callee-side
+`Err`.
+
+**What is NOT proven (VR-014):** the AES-GCM crypto, the ciphertext and tag
+bytes, the tail bytes after a seal failure (A18 leaves them unspecified), and
+the aws-lc-rs `open_separate_gather` contract itself. A-OPEN is an
+**assumption** taken from the aws-lc-rs 1.18.1 doc ("The `out_plaintext`
+length must match the provided `in_ciphertext`", `aead.rs:~806`) and
+`unbound_key.rs:136-139`; the callee's behavior is assumed, not proved.
+
+**Findings (VR-014):**
+
+- **F1 (BUG-07(a), proved):** when the key or nonce check fails, the caller's
+  `cipher_text` is exactly `old ++ message`, i.e. the plaintext stays appended
+  (`len = old_len + message.len()`). When the seal fails, the length is
+  `old_len + message.len()` and the prefix is unchanged.
+- **F2 (BUG-07(b), recorded under A-OPEN):** the prim guard
+  `plain_text.len() < cipher_text.len()` is weaker than the callee's check. A
+  buffer of `ct + 1` or `ct + 16` bytes passes the guard and is then rejected by
+  aws-lc-rs; the wrapper reports it as "authentication tag did not match"
+  (pinned by `aes_decrypt_buffer_length_cases`). Under A-OPEN, the VR-006 guard
+  is not what makes `Ok` imply equal lengths.
+
+**FOLLOW-UP (not this task):** whether BUG-07(a) matters depends on what the
+`aes_*` callers do with the buffer after an `Err`: mpl `raw_aes_keyring.rs`
+and `branch_key_wrap.rs` (2 call sites each) and esdk (2 + 5). Not reviewed
+here.
+
+**New build attributes (for PR #103 reviewers).** Verus cannot name
+`aws_lc_rs::aead::Aad<A: AsRef<[u8]>>`, which the seal and open specs (A17,
+A18, A20) need. The errors, in order: "`aws_lc_rs::aead::Aad` is not
+supported"; with a type spec, "cannot find trait `T34_AsRef`"; with a plain
+`AsRef` trait spec, "external_trait_specification trait bound mismatch",
+fixable only with the unstable `core::marker::PointeeSized`. The boundary,
+approved by the user, is the smallest that works:
+
+- a ghost-only `ExAsRef` trait proxy in `prim/src/aws_lc_specs.rs`, under
+  `#[cfg(verus_keep_ghost)]` (mirrors how vstd gates its `std_specs`);
+- `#![cfg_attr(verus_keep_ghost, feature(sized_hierarchy))]` in
+  `prim/src/lib.rs`, a nightly-only feature enabled only when cargo-verus sets
+  `verus_keep_ghost`;
+- `[lints.rust] unexpected_cfgs = { level = "warn", check-cfg =
+  ['cfg(verus_keep_ghost)'] }` in `prim/Cargo.toml`, so rustc's cfg check
+  accepts the name.
+
+No exec code is gated, hidden or altered by the cfg. The stable
+`cargo build -v` of prim passes only `--check-cfg 'cfg(verus_keep_ghost)'`,
+never `--cfg verus_keep_ghost`, so `sized_hierarchy` is not enabled there;
+`cargo build`, `cargo test` and `cargo clippy` stay on stable. This interacts
+with the future vstd feature-gating work (PR #103 open question 1, approach B):
+if vstd and the `verus!` items become feature-gated, this cfg_attr and the
+proxy must be gated the same way.
+
+### VR-013 / VR-014 TCB (`prim/src/aws_lc_specs.rs`)
+
+Naming-only entries introduce a symbol and claim nothing. TRUSTED entries are
+real assumptions about aws-lc-rs 1.18.1. No entry has a `requires`, so **every
+listed call is trusted not to panic**. Allocation failure / OOM
+(`extend_from_slice`, `Vec` growth) is out of scope. Reused unchanged from
+VR-008 (`prim/src/ecdsa.rs`): `ExSignature`, `Signature::as_ref`,
+`<[T]>::copy_from_slice` (vstd spec restated verbatim).
+
+| Id | Item | `ensures` | Kind / source |
+|---|---|---|---|
+| T-ty | opaque types: `digest::{Algorithm, Digest, Context}`, `hmac::{Algorithm, Key, Tag}`, `kdf::{KbkdfCtrHmacAlgorithm, KbkdfCtrHmacAlgorithmId}`, `error::Unspecified`, `aead::{Algorithm, UnboundKey, Nonce, LessSafeKey, Aad<A>, Tag}` | (none) | naming |
+| T-AsRef | `ExAsRef`, an `external_trait_specification` for `core::convert::AsRef`, under `#[cfg(verus_keep_ghost)]` | (none; signature only) | naming. Exists only so Verus can name `Aad<A: AsRef<[u8]>>`; needs `feature(sized_hierarchy)` in Verus builds |
+| T-uf | `uninterp spec fn`s: `spec_digest_output_len`, `spec_digest_len`, `spec_context_output_len`, `spec_hmac_tag_len`, `spec_hmac_key_alg`, `spec_hmac_tag_bytes_len`, `spec_kbkdf_available`, `spec_slices_equal_ok` | — | naming |
+| A1 | `digest::Algorithm::output_len` | `n == spec_digest_output_len(a)` | naming |
+| A2 | `digest::digest(alg, data)` | `spec_digest_len(&d) == spec_digest_output_len(alg)` | **TRUSTED length** (`digest.rs:194-201`) |
+| A3 | `<Digest as AsRef<[u8]>>::as_ref` | `s@.len() == spec_digest_len(d)` | naming |
+| A4 | `digest::Context::algorithm` | `spec_digest_output_len(r) == spec_context_output_len(c)` | naming |
+| A5 | `digest::Context::finish` | `spec_digest_len(&d) == spec_context_output_len(&c)` | **TRUSTED length + TRUSTED no-panic** (`digest.rs:131-137`, documented `expect`) |
+| A6 | `hmac::Algorithm::tag_len` | `n == spec_hmac_tag_len(*a)` | naming |
+| A7 | `hmac::Key::new(alg, key)` | `spec_hmac_key_alg(&k) == alg` | naming |
+| A8 | `hmac::sign(key, data)` | `spec_hmac_tag_bytes_len(&t) == spec_hmac_tag_len(spec_hmac_key_alg(key))` | **TRUSTED length** (tag length == algorithm tag length) |
+| A9 | `<hmac::Tag as AsRef<[u8]>>::as_ref` | `s@.len() == spec_hmac_tag_bytes_len(t)` | naming |
+| A10 | `kdf::get_kbkdf_ctr_hmac_algorithm(id)` | `(r is Some) <==> spec_kbkdf_available(id)` | naming (no claim it is always `Some`; F3) |
+| A11 | `kdf::kbkdf_ctr_hmac(alg, secret, info, output)` | `final(output)@.len() == old(output)@.len()` | Rust type fact |
+| A12 | `rand::fill(dest)` | `final(dest)@.len() == old(dest)@.len()` | Rust type fact |
+| A13 | `constant_time::verify_slices_are_equal(a, b)` | `(r is Ok) == spec_slices_equal_ok(a@, b@)` | **TRUSTED determinism only** (no claim `Ok` means equal; nothing about timing) |
+| A14–A17 | `UnboundKey::new`, `Nonce::try_assume_unique_for_key`, `LessSafeKey::new`, `Aad::<A>::from` | (none) | no-panic only |
+| A18 | `LessSafeKey::seal_in_place_separate_tag::<A>` | `final(in_out)@.len() == old(in_out)@.len()` | Rust type fact (nothing about the bytes) |
+| A19 | `<aead::Tag as AsRef<[u8]>>::as_ref` | `s@.len() == 16` | **TRUSTED length (AEAD-TAG-16)** (`aead.rs:1069-1074`) |
+| A20 | `LessSafeKey::open_separate_gather::<A>` | `(r is Ok) ==> in_ciphertext@.len() == old(out_plaintext)@.len()`; `final(out_plaintext)@.len() == old(out_plaintext)@.len()` | **LABELED ASSUMPTION A-OPEN** (`aead.rs:~806`, `unbound_key.rs:136-139`). Not proven |
+
+The length-preservation clauses (A11, A12, A18, A20 second clause) restate a
+Rust type fact (a `&mut [u8]` cannot change length); the core `ensures` that
+repeat them (`okm`, `bytes`, `plain_text` keep their length) carry no
+independent evidence beyond that.
+
+
 **Properties that stay model-only, and why:**
 
 | Property | Model | Why it is not in-crate |
@@ -532,6 +722,8 @@ panic-point targets — VR-006, VR-008 and the VR-009 prim half — are in-crate
 | VR-011 data-key non-disclosure | **confinement** to `esdk/src/secret.rs`, compiler- and clippy-checked (not Verus); **Verus**: the secret types' accessors and the commitment-value declassification | not Verus-proven overall: the encrypt/decrypt flow (plan step 7), the TB-A adapters, aws-lc-rs, keyrings/CMMs and mpl key types are trusted; the PRK hand-off in `key_derivation.rs` is grep-checked only |
 | VR-010 key-material zeroization | model only; unchanged, deferred (out of scope for this work) | the modeled `write_volatile` loop was removed in `a864ad87`; current zeroization (`#[derive(Zeroize, ZeroizeOnDrop)]`) is not verified |
 | VR-012 big-endian codec round-trip | **in-crate** (`esdk/src/message/serialize_functions.rs`): `lemma_u32_round_trip` and `lemma_u64_round_trip` prove the verified big-endian encoders and decoders are **exact inverses** for `u32` and `u64` — `spec_be_u32(b) == x` when `b@ == spec_u32_to_be(x)`, and the `u64` analogue; mutation-tested. Capability-driven (category 1c), couples the two spec fns each previously verified only against their own side | a functional-correctness lemma about the **codec** only; it says nothing about the async readers/writers (`read_*`/`write_*`) that call the exec helpers. No `u16` round-trip: `u16` has a decoder (`be_u16`) but no encoder. That the exec fns equal std's `from_be_bytes`/`to_be_bytes` rests on their own ensures and the in-module tests, not on these lemmas |
+| VR-013 prim wrapper length contracts (pipeline target VR-2026-C03) | **in-crate** (`prim/src/lib.rs`, `prim/src/ecdsa.rs`): `digest`, `DigestContext::finish` and `hmac` return `Err` unless the buffer has the algorithm's exact length, leave `out` unchanged on `Err`, and copy only after the guard (proven in bounds); `kbkdf_ctr_hmac`'s lookup / error mapping has no panic path; `generate_random_bytes` and `constant_time_equal` are total | **trusted (TCB A1–A13):** the aws-lc-rs output lengths (A2, A5, A8), no-panic of every listed call (incl. the documented `Context::finish` `expect`, F4), and A13 determinism. Not proven: output bytes, constant-time equality semantics and timing. F3: the `Unavailable` branch is dead with aws-lc-rs 1.18.1 |
+| VR-014 AES buffer effects (pipeline target VR-2026-C03, BUG-07) | **in-crate** (`prim/src/lib.rs`): BUG-07(a) **proved** — `aes_encrypt` leaves exactly `old ++ message` on a key/nonce `Err`, `old_len + |message|` with prefix unchanged on a seal `Err`, and `old ++ ct ++ tag` (+16) on `Ok`. BUG-07(b) **recorded under A-OPEN** — a decrypt buffer longer than the ciphertext passes the guard and can only end in a callee-side `Err` | **assumed, not proven:** A-OPEN (A20), the 16-byte tag (A19), no-panic of the AES calls. Not proven: crypto, ciphertext/tag bytes, tail bytes after a seal failure. FOLLOW-UP: what the `aes_*` callers do with the buffer after an `Err` (mpl 2 + 2, esdk 2 + 5). BUG-07 itself is not fixed |
 | Infra: I/O seam | `esdk` is Verus-buildable; sync `verus!` cores are verified in-crate behind the async `Source`/`Tee` adapters (see "In-crate proofs") | the async adapters themselves stay unverified glue |
 
 ---
@@ -559,6 +751,8 @@ Load-bearing proofs were checked by mutating the code and confirming Verus
 - **key-commitment decision (`suite_data_check`, VR-001 property a):** dropping the committed-length check (accepting whenever the bytes match) → the `Ok <==> (… && commit_len == expected@.len())` and `Err(LengthMismatch) <==>` postconditions fail; inverting the commitment branch (accepting when the bytes differ) → the `Ok`, `Err(CommitmentMismatch)` and `Err(LengthMismatch)` postconditions fail. Both confirm the decision is genuinely constrained, not tautological.
 - **key-commitment ordering (`commitment_ordering_proofs.rs`, VR-001 property b):** letting `verify` reach `Verified` without the accept condition (returning `Verified` unconditionally) → the `verify` `(next == Verified) <==> commitment_accepts(…)` and `(next == Unverified) <==> !commitment_accepts(…)` postconditions fail; and, with a forbidden `decrypt_frame(HeaderState::Unverified)` call added, removing the `requires state == Verified` guard flips that call from *precondition not satisfied* to passing — so with the guard in place the forbidden call is rejected. Both confirm the ordering is genuinely constrained, not tautological.
 - **big-endian codec round-trip (`lemma_u32_round_trip` / `lemma_u64_round_trip`, VR-012):** mutating the decoder `spec_be_u32` (changing the `b[3]` term to `b[3] * 2`) → `lemma_u32_round_trip`'s `spec_be_u32(b) == x as int` postcondition fails (67 verified, 2 errors; the other error is `be_u32`'s own ensures, also tied to the decoder spec); mutating `spec_be_u64` (adding `+ 1` to the `b[7]` term) → `lemma_u64_round_trip`'s postcondition fails (67 verified, 2 errors), then reverted. Both confirm the lemmas genuinely couple the encoder and decoder spec fns and are not a restatement of one side against itself.
+- **prim wrapper length contracts (VR-013, pipeline target VR-2026-C03):** removing the length guard in `digest_core`, `digest_finish_core` or `hmac_core` → `precondition not satisfied` on `copy_from_slice` plus the `Ok <==>` / `Err` postconditions fail; changing `!=` to `<` in the `digest_core` / `digest_finish_core` guard → the `Ok <==>` postcondition and the copy precondition fail; reporting `want_len: 0` → the `e.want_len` postcondition fails; taking `hmac`'s `want_len` from a constant `32` → the postconditions and the copy precondition fail; swapping `Unavailable` / `DerivationFailed` in `kbkdf_core` → its postconditions fail; injecting `let _x = bytes[0];` into `fill_random_core` → `index in bounds` precondition not met (the panic check covers the core); `.is_ok()` → `.is_err()` in `ct_equal_core` → the postcondition fails. Each run: `17 verified, 1 errors`, then reverted.
+- **AES buffer effects (VR-014, BUG-07):** moving `aes_encrypt_extend_core` after the nonce check (the BUG-07 fix option 1 shape) → the key/nonce `== o + m` postcondition fails; appending `message` instead of the tag → the "tag after ciphertext" assert fails; clearing the buffer on seal failure → the seal-failure postcondition fails; dropping either new extend-core conjunct → the `aes_encrypt_core` postconditions fail; pushing a byte before `old_size` or flipping the first tail byte in the extend core → the matching new conjunct fails; replacing the decrypt guard with `plain_text.len() != cipher_text.len()` (the BUG-07 fix shape) → the observation postcondition fails; dropping A-OPEN's `Ok ==>` ensures from A20 → both decrypt postconditions fail, which shows the BUG-07(b) result rests only on A-OPEN. Each run: `17 verified, 1 errors`, then reverted. Full log: `.agents/tasks/verus-prim-c03/logs/mutations.md` (M1–M19).
 
 ---
 
@@ -586,8 +780,12 @@ documented std-`from_utf8` boundary above), which the invariants forbid. What
 *is* proven in-crate for these functions is the Rust-side decision and
 buffer/slice safety around the FFI call: VR-006 (AES-GCM buffer bounds),
 VR-008 (the ECDSA retry loop and copy) and VR-009 prim half (the HKDF
-`{16, 24, 32}` key-length decision and the no-salt slice bound). The crypto
-and the FFI results stay the trusted boundary.
+`{16, 24, 32}` key-length decision and the no-salt slice bound), plus VR-013
+(the digest / HMAC / KBKDF / RNG / constant-time wrapper guards) and VR-014
+(the AES `Vec` effects, BUG-07). VR-013/VR-014 call the FFI from inside
+`verus!` through `assume_specification`s, never `external_body`; their
+trusted facts are listed in "VR-013 / VR-014 TCB". The crypto and the FFI
+results stay the trusted boundary.
 
 ---
 

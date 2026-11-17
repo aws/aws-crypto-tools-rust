@@ -41,6 +41,22 @@
 > says nothing about the async readers/writers that call the exec helpers. Encoders exist only for
 > `u32` and `u64`, so the round-trip covers those pairs; `u16` has a decoder (`be_u16`) only.
 >
+> **Revision note (branch `verus-prim-c03`, based on `Mahnush_Verus` at `6b51de80`):** VR-013 and
+> VR-014 are added and proven in-crate in `prim`. They implement pipeline target **VR-2026-C03**
+> (MPL-Verus `docs/verification-targets/02-capability-driven.md`: "prim wrappers never panic and
+> keep exact length contracts") and the BUG-07 buffer facts (MPL-Verus
+> `docs/bug-reports/BUG-07-prim-aes-buffer-handling.md`). VR-013 covers `digest`,
+> `DigestContext::finish`, `kbkdf_ctr_hmac`, `generate_random_bytes`, `constant_time_equal` and
+> `hmac`; VR-014 covers the `aes_encrypt` / `aes_decrypt` `Vec` effects. `make -C prim verus`:
+> **18 verified, 0 errors** on both feature sets (was 10). The aws-lc-rs calls are specified, not
+> verified, in `prim/src/aws_lc_specs.rs` (TCB list in `docs/verus-proofs-report.md`). C03's
+> `hkdf*` functions are covered by the existing VR-009 prim half and are not re-proven. Numbering:
+> MPL-Verus uses `VR-2026-Cxx` / `VR-2026-Txx` ids only, so VR-013/014 do not collide; "C03" is
+> always written as `VR-2026-C03` here so it is not misread as `VR-2026-013`. New build
+> attributes: `#![cfg_attr(verus_keep_ghost, feature(sized_hierarchy))]` in `prim/src/lib.rs` and a
+> `[lints.rust] unexpected_cfgs` check-cfg entry in `prim/Cargo.toml`, both for a ghost-only
+> `AsRef` trait proxy (see "VR-014 in-crate" in the report).
+>
 > **Earlier re-analysis note (baseline `d8c1c3d`, kept as history):** the baseline before that
 > (`88157eaf`) described a *different* codebase: an `AwsEncryptionSDK/runtimes/rust/src/` layout with
 > Dafny-transpiled code (`implementation_from_dafny.rs`), files
@@ -77,8 +93,10 @@ capability-driven functional-correctness lemma (category 1c) about the message c
   `aes_gcm_bounds_proofs.rs` is kept as superseded history.)
 - **In-crate in `prim`:** VR-006 (AES-GCM buffer safety, `prim/src/lib.rs`), VR-008 (ECDSA
   `sign_fixed_len`, `prim/src/ecdsa.rs`) and the prim half of VR-009 (HKDF length/slice safety,
-  `prim/src/hkdf.rs`) are proven in-crate since Verus was enabled in `prim` (`make -C prim verus`:
-  10 verified, 0 errors on both feature sets).
+  `prim/src/hkdf.rs`) are proven in-crate since Verus was enabled in `prim`; VR-013 (prim wrapper
+  length contracts) and VR-014 (AES buffer effects, BUG-07) were added for pipeline target
+  VR-2026-C03 (`make -C prim verus`: 18 verified, 0 errors on both feature sets; 10 before
+  VR-013/014).
 - **Partly in-crate:** VR-001 (branch `verus-vr001`) — the key-commitment *decision* (property a) is Verus-proven in-crate; its *ordering* (property b) is now proven **model only** (`commitment_ordering_proofs.rs`), not over the shipped decrypt path; constant time (property c) stays trusted (see below).
 
 **Highest-risk findings:**
@@ -229,6 +247,8 @@ set during the model work and were not rescored for the in-crate work.
 | 10 | **6.0** | Key-material zeroization | **Model only, deferred.** `zeroize_proofs.rs` models a hand-written `write_volatile` loop that was removed in `a864ad87`; zeroization now comes from `#[derive(Zeroize, ZeroizeOnDrop)]` on `PlaintextDataKey`, `SigningKey` and `SymmetricSigningKey`. The model is unchanged and no longer describes the code | Secret key bytes are zeroed on drop | `verus-unsafe-ffi-safety` | `mpl/src/structures/algorithm_suite.rs` | 1 week | No |
 | 11 | **4.8** | Data-key non-disclosure *(information flow)* | **Confinement in-crate (compiler/lint-checked, not Verus)** on branch `vr011-confinement`: key bytes are readable only in `esdk/src/secret.rs`. **Verus** covers only the secret types' accessors and the commitment-value declassification. Trusted: the nine TB-A adapters in `secret.rs`, aws-lc-rs, keyrings/CMMs. Not done: a verified encrypt/decrypt flow | During encrypt and decrypt, the plaintext data key and the derived message encryption key are never written directly to the output stream or returned to the caller. They reach the output only through AES-GCM (the message key as its key input) or, for the data key, after the keyring has encrypted it into an EDK. The V2 commitment value is derived from the data key but is public by spec (header suite data); it is a declassification. Out of scope: keyrings/CMMs, mpl key types and accessors, whether AES-GCM/HKDF outputs reveal the key (aws-lc-rs), the ECDSA signing key, and the `test-internals` feature. **Sequencing:** builds on the in-crate Verus setup (Option A, in place for `esdk`) | unassigned (information-flow) | `esdk/src/encrypt.rs`, `esdk/src/decrypt.rs`, `esdk/src/key_derivation.rs`, `esdk/src/message/body/*`, `mpl/src/structures/{algorithm_suite,encryption_materials,decryption_materials}.rs` | 3–4 weeks | No |
 | 12 | **4.0** | Big-endian codec round-trip *(capability-driven, category 1c)* | **In-crate** (branch `verus-vr012`): `lemma_u32_round_trip` and `lemma_u64_round_trip` in `serialize_functions.rs` are verified (`make -C esdk verus`: 69 verified, 0 errors on both feature sets; mutation-tested). Couples the previously independent encoder/decoder spec fns | The verified big-endian encoders and decoders are exact inverses for `u32` and `u64`: decoding the bytes `u32_to_be(x)`/`u64_to_be(x)` produce recovers `x` (`spec_be_u32(b) == x` when `b@ == spec_u32_to_be(x)`, and the `u64` analogue). A functional-correctness lemma about the codec only — not about the async readers/writers. `u16` has a decoder (`be_u16`) but no encoder, so no `u16` round-trip | `verus-header-parsing-proofs` | `esdk/src/message/serialize_functions.rs` | ~1 day | No |
+| 13 | **5.6** | prim wrapper length contracts *(capability-driven, pipeline target VR-2026-C03)* | **In-crate** (branch `verus-prim-c03`): `digest_core`, `digest_finish_core`, `kbkdf_core`, `fill_random_core`, `ct_equal_core`, `hmac_core` (`make -C prim verus`: 18 verified, 0 errors; mutation-tested). Trusted: aws-lc-rs output lengths and no-panic (TCB A1–A13) | `digest`, `DigestContext::finish`, `hmac`: `Err` unless the buffer has the algorithm's exact length, `out` unchanged on `Err`, copy only after the guard. `kbkdf_ctr_hmac`: lookup / error mapping, no panic path. `generate_random_bytes`, `constant_time_equal`: total | `verus-zero-panic` | `prim/src/lib.rs`, `prim/src/ecdsa.rs` | ~1 week | No |
+| 14 | **5.6** | AES buffer effects, BUG-07 *(capability-driven, pipeline target VR-2026-C03)* | **In-crate** (branch `verus-prim-c03`): `aes_encrypt_core`, `aes_decrypt_core`, two new conjuncts on `aes_encrypt_extend_core`. BUG-07(a) proved; BUG-07(b) recorded under the labeled assumption A-OPEN | `aes_encrypt`: key/nonce `Err` leaves exactly `old ++ message`; seal `Err` keeps length `old + |message|` and the prefix; `Ok` gives `old ++ ct ++ tag`. `aes_decrypt` (under A-OPEN): `Ok` ⇒ equal lengths; a longer buffer passes the guard and ends in a callee `Err` | `verus-zero-panic` | `prim/src/lib.rs` | ~1 week | No |
 
 ---
 
@@ -248,11 +268,18 @@ set during the model work and were not rescored for the in-crate work.
 | 10 | Zeroization | 3 (High) | 1.0 | 0.5 | 4 | **6.0** |
 | 11 | Data-key non-disclosure | 4 (Critical) | 1.0 | 0.3 | 4 | **4.8** |
 | 12 | Big-endian codec round-trip | 2 (Medium) | 1.0 | 1.0 | 2 | **4.0** |
+| 13 | prim wrapper length contracts (VR-2026-C03) | 2 (Medium) | 0.7 | 1.0 | 4 | **5.6** |
+| 14 | AES buffer effects, BUG-07 (VR-2026-C03) | 2 (Medium) | 0.7 | 1.0 | 4 | **5.6** |
 
 VR-012 scoring notes: capability-driven (category 1c), not threat-derived. Severity 2 because a
 codec inverse bug would be a correctness defect in header (de)serialization rather than a direct
 security bypass; the decoders are already used on the shipped path. Feasibility 1.0 — self-contained
 pure arithmetic over existing spec fns, no async or FFI. Blast radius 2 (the codec helpers only).
+
+VR-013 / VR-014 scoring notes: the factors are pipeline target VR-2026-C03's (MPL-Verus
+`docs/verification-targets/02-capability-driven.md`): severity 2 (panic or fail-closed availability
+loss), gap 0.7, feasibility 1.0 (must hold for every argument of a public fn), blast radius 4
+(`prim` is shared by mpl and esdk). Both targets share C03's score, 5.6.
 
 VR-011 scoring notes: Severity 4 because a disclosed data key decrypts the whole message (I1 is
 rated "Critical (if exploited)" in the threat model). Feasibility 0.3 because Verus has no built-in
@@ -899,6 +926,81 @@ recommendation:
   scoring: { severity: 2, coverage_gap: 1.0, feasibility: 1.0, blast_radius: 2 }
   quick_win: false
   dependencies: [ "In-crate big-endian codec (spec_be_u32/u64, spec_u32/u64_to_be) — already verified in serialize_functions.rs" ]
+recommendation:
+  id: VR-2026-013
+  rank: 13
+  priority_score: 5.6
+  origin: capability-driven
+  pipeline_target: VR-2026-C03   # MPL-Verus docs/verification-targets/02-capability-driven.md
+  bug_reference: BUG-07          # the BUG-07 facts themselves are VR-2026-014
+  status: in_crate   # branch verus-prim-c03; mutation-tested
+  target:
+    library: aws-mpl-primitives
+    file: prim/src/lib.rs, prim/src/ecdsa.rs
+    function: digest (digest_core), DigestContext::finish (digest_finish_core), kbkdf_ctr_hmac (kbkdf_core), generate_random_bytes (fill_random_core), constant_time_equal (ct_equal_core), hmac (hmac_core)
+  property: "The prim wrappers never panic and keep exact length contracts: digest / DigestContext::finish / hmac return Err unless out.len() equals the algorithm's output (tag) length, leave out unchanged on Err, and copy only after the guard; kbkdf_ctr_hmac maps a missing algorithm to its Unavailable error and a derivation failure to its derivation error, with no panic path; generate_random_bytes and constant_time_equal are total."
+  approach: |
+    Core + adapter (VR-006/008/009 pattern). Each core is inside verus! and is the single
+    definition the public fn calls; the adapter owns the DigestAlg dispatch, format! and Error.
+    The aws-lc-rs calls are inside the cores behind assume_specifications in
+    prim/src/aws_lc_specs.rs. hmac's required length comes from hmac_alg.tag_len() (same value
+    as before in aws-lc-rs 1.18.1). Runtime behavior unchanged (tests/test_wrapper_contracts.rs).
+  enforcement:
+    verus_proven:   # make -C prim verus: 18 verified, 0 errors on both feature sets (was 10)
+      - "digest_core / digest_finish_core / hmac_core: (r is Ok) <==> old(out)@.len() == algorithm length; Err ==> e.want_len == that length && out unchanged; copy_from_slice in bounds"
+      - "kbkdf_core: Err(Unavailable) <==> !spec_kbkdf_available(id); Ok ==> available; okm keeps its length"
+      - "fill_random_core, ct_equal_core: total (no requires); ct_equal_core result == spec_slices_equal_ok(a@, b@)"
+      - "mutations M1-M10 (guard removal, != -> <, wrong want_len, constant 32, variant swap, bytes[0], is_ok -> is_err) each fail; reverted"
+    not_verus_proven:
+      - "output bytes of digest / HMAC / KBKDF / RNG; that constant_time_equal == true means equal, and its timing; no-panic of the aws-lc-rs calls (TCB A1-A13, trusted); OOM out of scope"
+  tcb: [T-ty, T-uf, A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11, A12, A13]
+  findings:
+    - "F3: the Unavailable branch of kbkdf_ctr_hmac is dead with aws-lc-rs 1.18.1 (not encoded in the spec)"
+    - "F4: DigestContext::finish panic freedom is conditional on A5 (documented aws-lc-rs expect)"
+  tool: Verus
+  agent: verus-zero-panic
+  coverage_gap: 0.7
+  scoring: { severity: 2, coverage_gap: 0.7, feasibility: 1.0, blast_radius: 4 }
+  quick_win: false
+  dependencies: [ "Verus enabled in prim (make -C prim verus)" ]
+recommendation:
+  id: VR-2026-014
+  rank: 14
+  priority_score: 5.6
+  origin: capability-driven
+  pipeline_target: VR-2026-C03   # MPL-Verus docs/verification-targets/02-capability-driven.md
+  bug_reference: BUG-07          # MPL-Verus docs/bug-reports/BUG-07-prim-aes-buffer-handling.md
+  status: in_crate   # branch verus-prim-c03; BUG-07(a) proved, BUG-07(b) recorded under A-OPEN
+  target:
+    library: aws-mpl-primitives
+    file: prim/src/lib.rs
+    function: aes_encrypt (aes_encrypt_core, aes_encrypt_extend_core new conjuncts), aes_decrypt (aes_decrypt_core)
+  property: "aes_encrypt: on a key or nonce Err the caller's buffer is exactly old ++ message; on a seal Err its length is old + |message| with the prefix unchanged; on Ok it is old ++ ct ++ tag (length old + |message| + 16). aes_decrypt, relative to the labeled assumption A-OPEN: Ok implies |plain_text| == |cipher_text|; a buffer longer than the ciphertext passes the prim guard and ends in a callee-side Err."
+  approach: |
+    New results next to VR-006 (VR-006's facts unchanged). aes_encrypt_core / aes_decrypt_core
+    run the shipped order (extend first, then key, nonce, seal/open). BUG-07 is not fixed. Needs a
+    ghost-only #[cfg(verus_keep_ghost)] AsRef trait proxy, #![cfg_attr(verus_keep_ghost,
+    feature(sized_hierarchy))] in prim/src/lib.rs and a [lints.rust] unexpected_cfgs check-cfg
+    entry in prim/Cargo.toml, so Verus can name aws_lc_rs::aead::Aad<A: AsRef<[u8]>>.
+  enforcement:
+    verus_proven:   # make -C prim verus: 18 verified, 0 errors on both feature sets
+      - "aes_encrypt_extend_core (new): slice@ == message@; final(cipher_text)@ == old(cipher_text)@ + final(slice)@"
+      - "aes_encrypt_core: key/nonce Err ==> final == old ++ message; seal Err ==> len old + |m|, prefix old; Ok ==> len old + |m| + 16, prefix old, buffer == old ++ ct ++ tag"
+      - "aes_decrypt_core (under A-OPEN): Ok ==> |pt| == |ct|; |pt| > |ct| ==> Err and not PlainTooShort; plain_text keeps its length"
+      - "mutations M11-M19 (extend after nonce, append message for tag, clear on seal Err, drop each new conjunct, push before old_size, flip tail byte, decrypt guard -> !=, drop A-OPEN) each fail; reverted"
+    not_verus_proven:
+      - "A-OPEN itself (the aws-lc-rs open_separate_gather contract) is assumed, not proved; the 16-byte tag (A19) is trusted; AES-GCM crypto, ciphertext/tag bytes and tail bytes after a seal failure are not modeled; OOM out of scope"
+  tcb: [T-ty, T-AsRef, A14, A15, A16, A17, A18, A19, A20]
+  findings:
+    - "F1 (BUG-07(a), proved): plaintext stays appended to the caller's Vec on a key/nonce Err"
+    - "F2 (BUG-07(b), under A-OPEN): ct+1 / ct+16 buffers pass the guard and are rejected by aws-lc-rs, reported as 'authentication tag did not match'"
+  follow_up: "Not this task: whether BUG-07(a) matters depends on what the aes_* callers do with the buffer after an Err (mpl raw_aes_keyring.rs and branch_key_wrap.rs, 2 each; esdk 2 + 5)"
+  tool: Verus
+  agent: verus-zero-panic
+  coverage_gap: 0.7
+  scoring: { severity: 2, coverage_gap: 0.7, feasibility: 1.0, blast_radius: 4 }
+  quick_win: false
+  dependencies: [ "VR-006 in-crate (aes_encrypt_extend_core, aes_decrypt_len_ok)" ]
 ```
 
 ---
@@ -955,6 +1057,13 @@ end to end.
   0 errors on both feature sets, 36 exec fns and 5 proof fns; mutation-tested). A
   functional-correctness lemma about the codec only; it says nothing about the async readers/writers.
   `u16` has a decoder but no encoder, so there is no `u16` round-trip.
+- VR-013 / VR-014, pipeline target VR-2026-C03 (branch `verus-prim-c03`): the prim wrapper length
+  contracts (`digest`, `DigestContext::finish`, `hmac`), the `kbkdf_ctr_hmac` error mapping, the
+  totality of `generate_random_bytes` / `constant_time_equal`, and the BUG-07 `aes_*` buffer facts
+  are verified in-crate (`make -C prim verus`: 18 verified, 0 errors on both feature sets;
+  mutation-tested). BUG-07(a) is proved; BUG-07(b) is recorded under the labeled assumption A-OPEN.
+  BUG-07 is not fixed. Follow-up, not done: check what the `aes_*` callers in mpl and esdk do with
+  the buffer after an `Err`.
 - Commitment-policy enforcement is implemented in code (not a verification item; listed because
   earlier revisions flagged the legacy stub).
 - VR-001, property (a) (branch `verus-vr001`): the key-commitment accept/reject **decision** in
