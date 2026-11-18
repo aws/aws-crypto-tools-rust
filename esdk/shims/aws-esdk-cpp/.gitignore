@@ -8,6 +8,7 @@ Cargo.lock
 /handling_errors_example
 /test_esdk
 /test_concurrency
+/test_fork
 /test_resource_leaks
 
 # Object files / archives

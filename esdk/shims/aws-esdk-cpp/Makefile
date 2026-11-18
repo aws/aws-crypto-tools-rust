@@ -93,6 +93,11 @@ test_concurrency: tests/test_concurrency.cpp tests/esdk_test_support.h include/a
 		$(CXXFLAGS_COMMON) $(LINK_LIBS) \
 		-o test_concurrency
 
+test_fork: tests/test_fork.cpp include/aws/esdk/EncryptionSDK.h src/lib.rs $(STATICLIB)
+	$(CXX) tests/test_fork.cpp \
+		$(CXXFLAGS_COMMON) $(LINK_LIBS) \
+		-o test_fork
+
 test_resource_leaks: tests/test_resource_leaks.cpp tests/esdk_test_support.h include/aws/esdk/EncryptionSDK.h src/lib.rs $(STATICLIB)
 	$(CXX) tests/test_resource_leaks.cpp \
 		$(CXXFLAGS_COMMON) $(LINK_LIBS) \
@@ -115,7 +120,7 @@ clippy:
 # and the test binaries.
 build-tests:
 	cargo build
-	$(MAKE) example raw_aes_example handling_errors_example per_request_credentials_example zero_copy_example shared_cache_example set_algorithm_suite_example set_commitment_policy_example custom_keyring_example streaming_example streaming_chunks_example enum_parity test_esdk adopt_keyring_test test_concurrency test_resource_leaks
+	$(MAKE) example raw_aes_example handling_errors_example per_request_credentials_example zero_copy_example shared_cache_example set_algorithm_suite_example set_commitment_policy_example custom_keyring_example streaming_example streaming_chunks_example enum_parity test_esdk adopt_keyring_test test_concurrency test_fork test_resource_leaks
 
 # Set LOCAL_ONLY=--local-only to skip integration tests that needs creds.
 # When it is empty, a missing ESDK_TEST_* credential is a hard failure.
@@ -137,6 +142,7 @@ run-cpp:
 	LD_LIBRARY_PATH="$(CURDIR)/$(PROFILE_DIR)" ./test_esdk $(LOCAL_ONLY)
 	LD_LIBRARY_PATH="$(CURDIR)/$(PROFILE_DIR)" ./adopt_keyring_test
 	LD_LIBRARY_PATH="$(CURDIR)/$(PROFILE_DIR)" ./test_concurrency $(LOCAL_ONLY)
+	LD_LIBRARY_PATH="$(CURDIR)/$(PROFILE_DIR)" ./test_fork
 	LD_LIBRARY_PATH="$(CURDIR)/$(PROFILE_DIR)" ./test_resource_leaks $(LOCAL_ONLY) $(NON_LINUX)
 
 # Full local suite without credentials

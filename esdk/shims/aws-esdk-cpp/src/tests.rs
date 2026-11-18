@@ -1020,6 +1020,7 @@ fn create_keystore_forwards_id_and_grant_tokens() {
 
     let unset = create_keystore(&keystore_config_with_clients(&kms, &ddb)).expect("key store");
     let info = TOKIO_RUNTIME
+        .get()
         .block_on(unset.inner.get_key_store_info().send())
         .expect("info");
     assert!(info.grant_tokens().is_empty());
@@ -1032,6 +1033,7 @@ fn create_keystore_forwards_id_and_grant_tokens() {
     cfg.grant_tokens = vec!["g1".to_string(), "g2".to_string()];
     let store = create_keystore(&cfg).expect("key store");
     let info = TOKIO_RUNTIME
+        .get()
         .block_on(store.inner.get_key_store_info().send())
         .expect("info");
     assert_eq!(info.key_store_id(), "the-id");
@@ -1352,7 +1354,7 @@ fn shim_framework_metadata_is_valid() {
 
 #[test]
 fn create_sdk_config_defers_retry_when_unset() {
-    let default_ref = TOKIO_RUNTIME.block_on(aws_config::load_defaults(
+    let default_ref = TOKIO_RUNTIME.get().block_on(aws_config::load_defaults(
         aws_config::BehaviorVersion::latest(),
     ));
     let sdk = create_sdk_config(&unset_client_config(), None).expect("build sdk config");
@@ -1471,7 +1473,9 @@ fn kms_signing(client: &MplKmsClient) -> SigningHeaders {
         .to_builder()
         .interceptor(capture.clone())
         .build();
-    let result = TOKIO_RUNTIME.block_on(aws_sdk_kms::Client::from_conf(config).list_keys().send());
+    let result = TOKIO_RUNTIME
+        .get()
+        .block_on(aws_sdk_kms::Client::from_conf(config).list_keys().send());
     assert!(result.is_err(), "the interceptor stops every request");
     capture.take()
 }
@@ -1484,7 +1488,7 @@ fn ddb_signing(client: &MplDdbClient) -> SigningHeaders {
         .to_builder()
         .interceptor(capture.clone())
         .build();
-    let result = TOKIO_RUNTIME.block_on(
+    let result = TOKIO_RUNTIME.get().block_on(
         aws_sdk_dynamodb::Client::from_conf(config)
             .list_tables()
             .send(),
@@ -1738,7 +1742,9 @@ fn kms_sent_headers(client: &MplKmsClient) -> Vec<(String, String)> {
         .to_builder()
         .interceptor(capture.clone())
         .build();
-    let result = TOKIO_RUNTIME.block_on(aws_sdk_kms::Client::from_conf(config).list_keys().send());
+    let result = TOKIO_RUNTIME
+        .get()
+        .block_on(aws_sdk_kms::Client::from_conf(config).list_keys().send());
     assert!(result.is_err(), "the interceptor stops every request");
     capture.0.lock().unwrap().clone()
 }
@@ -1839,12 +1845,13 @@ fn connection_counting_server() -> (String, std::sync::Arc<std::sync::atomic::At
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     let listener = TOKIO_RUNTIME
+        .get()
         .block_on(tokio::net::TcpListener::bind("127.0.0.1:0"))
         .expect("bind");
     let url = format!("http://{}", listener.local_addr().expect("local addr"));
     let accepted = std::sync::Arc::new(AtomicUsize::new(0));
     let counter = accepted.clone();
-    TOKIO_RUNTIME.spawn(async move {
+    TOKIO_RUNTIME.get().spawn(async move {
         loop {
             let Ok((mut socket, _)) = listener.accept().await else { return };
             counter.fetch_add(1, Ordering::SeqCst);
@@ -1900,10 +1907,11 @@ fn pointed_at(client: &MplKmsClient, url: &str) -> aws_sdk_kms::Client {
 
 fn list_keys(client: &aws_sdk_kms::Client) {
     TOKIO_RUNTIME
+        .get()
         .block_on(client.list_keys().send())
         .expect("list_keys against the local server");
     // Wait for the connection to return to the pool so the next request reuses it.
-    TOKIO_RUNTIME.block_on(async {
+    TOKIO_RUNTIME.get().block_on(async {
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     });
 }
