@@ -1944,3 +1944,32 @@ fn clients_without_a_shared_http_client_use_their_own_connections() {
 
     assert_eq!(accepted.load(std::sync::atomic::Ordering::SeqCst), 2);
 }
+
+// Threads that race on the first use all get the value of the one that stored first.
+#[test]
+fn per_process_gives_every_thread_one_value() {
+    static BUILT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    static VALUE: PerProcess<usize> = PerProcess::new(|| {
+        // Slow enough that every thread builds a value before any stores one.
+        std::thread::sleep(Duration::from_millis(50));
+        BUILT.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+    });
+    let start = std::sync::Barrier::new(8);
+    let values: Vec<&usize> = std::thread::scope(|scope| {
+        let handles: Vec<_> = (0..8)
+            .map(|_| {
+                scope.spawn(|| {
+                    start.wait();
+                    VALUE.get()
+                })
+            })
+            .collect();
+        handles.into_iter().map(|h| h.join().unwrap()).collect()
+    });
+    assert!(
+        BUILT.load(std::sync::atomic::Ordering::SeqCst) > 1,
+        "no thread lost the race"
+    );
+    assert!(values.iter().all(|v| std::ptr::eq(*v, values[0])));
+    assert!(std::ptr::eq(VALUE.get(), values[0]));
+}
