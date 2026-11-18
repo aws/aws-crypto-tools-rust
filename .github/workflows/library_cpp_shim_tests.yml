@@ -71,7 +71,6 @@ jobs:
           --exclude-features default
           --mutually-exclusive-features aws-lc-sys,fips
           --at-least-one-of aws-lc-sys,fips
-          --group-features kms,ddb,default-aws-sdk-clients
           -- -D warnings
 
       - name: Build

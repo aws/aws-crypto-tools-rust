@@ -41,17 +41,20 @@ targets consume.
 ### Cargo features
 
 The shim has the same features as the Rust ESDK and passes them through.
+Each has a CMake option of the same name, such as `-DESDK_FEATURE_KMS=OFF`.
 
-| Feature | Default | What it adds | CMake option |
-|---|---|---|---|
-| `aws-lc-sys` | on | AWS-LC as the crypto backend | |
-| `fips` | off | AWS-LC's FIPS module as the crypto backend | `-DESDK_FIPS=ON` |
-| `kms`, `ddb`, `default-aws-sdk-clients` | on | `HierarchicalKeyring`, `KeyStore`, `KmsClient`, `DdbClient`, `AwsSdkClientConfig`, `HttpClient`, `Credentials`, `CryptographicMaterialsCache`, `LocalCmc` | `-DESDK_HIERARCHICAL_KEYRING=OFF` |
-| `rt-tokio` | on | `DefaultCmc`, `StormTrackingCmc` | `-DESDK_STORM_TRACKING_CMC=OFF` |
+| Feature | Default | What it adds to the C++ API |
+|---|---|---|
+| `aws-lc-sys` | on | AWS-LC as the crypto backend |
+| `fips` | off | AWS-LC's FIPS module as the crypto backend |
+| `kms` | on | `KmsClient`, `AwsSdkClientConfig`, `HttpClient`, `Credentials` |
+| `ddb` | on | `DdbClient`, `AwsSdkClientConfig`, `HttpClient`, `Credentials` |
+| `kms` and `ddb` | on | `KeyStore`, `HierarchicalKeyring` |
+| `default-aws-sdk-clients` | on | nothing; `kms` and `ddb` turn it on |
+| `rt-tokio` | on | `DefaultCmc`, `StormTrackingCmc` |
 
-Turn `kms`, `ddb` and `default-aws-sdk-clients` on or off together.
-With them off, the library has only the raw AES keyring and custom keyrings,
-and does not link the AWS SDK.
+`CryptographicMaterialsCache`, `LocalCmc` and the raw AES keyring need no feature.
+With `kms` and `ddb` off, the library does not link the AWS SDK.
 
 For example, a FIPS build with only the raw AES keyring:
 
@@ -60,9 +63,9 @@ cargo build --no-default-features --features fips
 ```
 
 The build writes `aws/esdk/Config.h` next to the library, in
-`target/<profile>/include`, and `EncryptionSDK.h` includes it. It sets
-`AWS_ESDK_CPP_HIERARCHICAL_KEYRING` and `AWS_ESDK_CPP_STORM_TRACKING_CMC` to
-match the features, so the header shows only what the library has.
+`target/<profile>/include`, and `EncryptionSDK.h` includes it. It defines
+`AWS_ESDK_CPP_KMS`, `AWS_ESDK_CPP_DDB` and `AWS_ESDK_CPP_RT_TOKIO` as 1 or 0
+to match the features, so the header shows only what the library has.
 Code that includes `EncryptionSDK.h` needs both `include` and
 `target/<profile>/include` on its include path. The `AWS::esdk` CMake target
 adds both.

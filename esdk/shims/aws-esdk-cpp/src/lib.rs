@@ -134,18 +134,6 @@
 //# If a core library resource or operation supports [streamed](../client-apis/streaming.md) inputs/outputs,
 //# the shim library SHOULD support it as well.
 
-// The C++ API's hierarchical keyring needs the AWS KMS client, the DynamoDB
-// client, and the default AWS SDK clients the shim builds them with.
-// So the shim offers all three features together or none of them,
-// and the code below checks only `kms` to mean all three.
-#[cfg(not(any(
-    all(feature = "kms", feature = "ddb", feature = "default-aws-sdk-clients"),
-    not(any(feature = "kms", feature = "ddb", feature = "default-aws-sdk-clients"))
-)))]
-compile_error!(
-    "aws-esdk-cpp needs the kms, ddb and default-aws-sdk-clients features all on or all off"
-);
-
 use aws_crypto_mpl::keyring::{RawAesKeyring, SharedKeyring};
 use aws_crypto_mpl::types::{EsdkAlgorithmSuiteId, EsdkCommitmentPolicy};
 use aws_esdk::Client;
@@ -154,10 +142,12 @@ use aws_esdk::types::SignedStreaming;
 use std::num::NonZeroU32;
 use std::sync::LazyLock;
 
-#[cfg(feature = "kms")]
-mod hierarchical_keyring;
-#[cfg(feature = "kms")]
-use hierarchical_keyring::*;
+#[cfg(any(feature = "kms", feature = "ddb"))]
+mod aws_sdk;
+#[cfg(any(feature = "kms", feature = "ddb"))]
+use aws_sdk::*;
+mod cache;
+use cache::*;
 
 // ESDK Rust's methods are all async. This runtime runs those async methods for C++ users.
 static TOKIO_RUNTIME: LazyLock<tokio::runtime::Runtime> = LazyLock::new(|| {
@@ -182,7 +172,7 @@ mod ffi {
         set: bool,
         value: u64,
     }
-    #[cfg(feature = "kms")]
+    #[cfg(any(feature = "kms", feature = "ddb"))]
     struct OptString {
         set: bool,
         value: String,
@@ -199,7 +189,7 @@ mod ffi {
         set: bool,
         value: SignedStreaming,
     }
-    #[cfg(feature = "kms")]
+    #[cfg(feature = "rt-tokio")]
     struct OptDuration {
         set: bool,
         value: Duration,
@@ -330,14 +320,14 @@ mod ffi {
         pub plaintext: Vec<u8>,
     }
 
-    #[cfg(feature = "kms")]
+    #[cfg(any(feature = "kms", feature = "ddb"))]
     struct RetryConfig {
         /// false selects standard mode, which is also the AWS SDK default.
         mode_adaptive: bool,
         max_attempts: OptU32,
     }
 
-    #[cfg(feature = "kms")]
+    #[cfg(any(feature = "kms", feature = "ddb"))]
     struct Credentials {
         access_key_id: String,
         secret_access_key: String,
@@ -346,7 +336,7 @@ mod ffi {
         expiration: OptDuration,
     }
 
-    #[cfg(feature = "kms")]
+    #[cfg(any(feature = "kms", feature = "ddb"))]
     struct OptCredentials {
         set: bool,
         value: Credentials,
@@ -358,14 +348,14 @@ mod ffi {
         value: String,
     }
 
-    #[cfg(feature = "kms")]
+    #[cfg(any(feature = "kms", feature = "ddb"))]
     struct MplAwsClientConfig {
         region: OptString,
         retry: RetryConfig,
         credentials: OptCredentials,
     }
 
-    #[cfg(feature = "kms")]
+    #[cfg(all(feature = "kms", feature = "ddb"))]
     enum KmsConfigurationType {
         Unset,
         KmsKeyArn,
@@ -374,7 +364,7 @@ mod ffi {
         MrDiscovery,
     }
 
-    #[cfg(feature = "kms")]
+    #[cfg(all(feature = "kms", feature = "ddb"))]
     struct KeyStoreConfig {
         ddb_table_name: String,
         kms_configuration_type: KmsConfigurationType,
@@ -388,7 +378,7 @@ mod ffi {
 
     /// Storm-tracking cache settings.
     /// An unset field keeps the core ESDK's default.
-    #[cfg(all(feature = "kms", feature = "rt-tokio"))]
+    #[cfg(feature = "rt-tokio")]
     struct StormTrackingCmcOptions {
         entry_capacity: OptU32,
         entry_pruning_tail_size: OptU32,
@@ -401,14 +391,14 @@ mod ffi {
 
     // cxx has no mapping for std::chrono or std::time::Duration.
     // These are Duration's own fields, so the bridge picks no unit and covers Duration's full range.
-    #[cfg(feature = "kms")]
+    #[cfg(feature = "rt-tokio")]
     #[derive(Clone, Copy)]
     struct Duration {
         secs: u64,
         nanos: u32,
     }
 
-    #[cfg(feature = "kms")]
+    #[cfg(all(feature = "kms", feature = "ddb"))]
     struct HierarchicalKeyringInput {
         branch_key_id: String,
         key_store: *const KeyStore,
@@ -438,45 +428,43 @@ mod ffi {
     extern "Rust" {
         // No delete_* functions: C++ holds each resource as a rust::Box, whose
         // destructor runs cxx's generated drop glue and drops the Rust Box.
-        #[cfg(feature = "kms")]
+        #[cfg(feature = "ddb")]
         type MplDdbClient;
-        #[cfg(feature = "kms")]
+        #[cfg(feature = "ddb")]
         fn create_ddb_client(value: &MplAwsClientConfig) -> Result<Box<MplDdbClient>>;
-        #[cfg(feature = "kms")]
+        #[cfg(feature = "ddb")]
         fn create_ddb_client_with_http_client(
             value: &MplAwsClientConfig,
             http_client: &HttpClient,
         ) -> Result<Box<MplDdbClient>>;
-        #[cfg(feature = "kms")]
+        #[cfg(feature = "ddb")]
         fn ddb_client_with_credentials(
             base: &MplDdbClient,
             credentials: &Credentials,
         ) -> Result<Box<MplDdbClient>>;
 
-        #[cfg(feature = "kms")]
+        #[cfg(all(feature = "kms", feature = "ddb"))]
         type KeyStore;
-        #[cfg(feature = "kms")]
+        #[cfg(all(feature = "kms", feature = "ddb"))]
         fn create_keystore(value: &KeyStoreConfig) -> Result<Box<KeyStore>>;
 
-        #[cfg(feature = "kms")]
         type CryptographicMaterialsCache;
-        #[cfg(all(feature = "kms", feature = "rt-tokio"))]
+        #[cfg(feature = "rt-tokio")]
         fn create_storm_tracking_cmc(
             options: &StormTrackingCmcOptions,
         ) -> Result<Box<CryptographicMaterialsCache>>;
-        #[cfg(all(feature = "kms", feature = "rt-tokio"))]
+        #[cfg(feature = "rt-tokio")]
         fn create_default_cmc(entry_capacity: u32) -> Result<Box<CryptographicMaterialsCache>>;
-        #[cfg(feature = "kms")]
         fn create_local_cmc(entry_capacity: u32) -> Result<Box<CryptographicMaterialsCache>>;
 
         type Keyring;
-        #[cfg(feature = "kms")]
+        #[cfg(all(feature = "kms", feature = "ddb"))]
         fn create_hierarchical_keyring(value: &HierarchicalKeyringInput) -> Result<Box<Keyring>>;
         fn create_raw_aes_keyring(value: &RawAesKeyringInput) -> Result<Box<Keyring>>;
 
-        #[cfg(feature = "kms")]
+        #[cfg(any(feature = "kms", feature = "ddb"))]
         type HttpClient;
-        #[cfg(feature = "kms")]
+        #[cfg(any(feature = "kms", feature = "ddb"))]
         fn create_http_client() -> Result<Box<HttpClient>>;
 
         #[cfg(feature = "kms")]
@@ -529,12 +517,12 @@ macro_rules! opt_to_option {
 opt_to_option!(
     OptU32 => u32,
     OptU64 => u64,
-    #[cfg(feature = "kms")]
+    #[cfg(any(feature = "kms", feature = "ddb"))]
     OptString => String,
     OptAlgId => ffi::EsdkAlgorithmSuiteId,
     OptCommitmentPolicy => ffi::EsdkCommitmentPolicy,
     OptSignedStreaming => ffi::SignedStreaming,
-    #[cfg(feature = "kms")]
+    #[cfg(feature = "rt-tokio")]
     OptDuration => ffi::Duration,
 );
 
@@ -1492,6 +1480,24 @@ pub fn into_keyring_handle(
     .cast()
 }
 
-// The tests use the hierarchical keyring and the storm-tracking cache throughout.
-#[cfg(all(test, feature = "kms", feature = "rt-tokio"))]
+#[cfg(feature = "rt-tokio")]
+/// Converts a bridge duration to a `Duration`.
+fn from_ffi_duration(
+    d: ffi::Duration,
+    field: &str,
+    op: &str,
+) -> Result<std::time::Duration, String> {
+    std::time::Duration::from_secs(d.secs)
+        .checked_add(std::time::Duration::from_nanos(u64::from(d.nanos)))
+        .ok_or_else(|| {
+            shim_err(
+                ffi::ShimErrorKind::Validation,
+                op,
+                format!("{field} is out of range"),
+            )
+        })
+}
+
+// The tests use the hierarchical keyring throughout.
+#[cfg(all(test, feature = "kms", feature = "ddb"))]
 mod tests;

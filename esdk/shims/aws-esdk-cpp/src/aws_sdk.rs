@@ -1,31 +1,33 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! The hierarchical keyring and everything it needs: the AWS SDK clients,
-//! their configuration, the key store, and the caches.
-//! `lib.rs` builds this module only with the `kms`, `ddb` and
-//! `default-aws-sdk-clients` features.
+//! The AWS SDK clients and their configuration, the key store, and the hierarchical keyring.
+//! `lib.rs` builds it with the `kms` or `ddb` feature,
+//! and each item here needs the features on it.
 
 use super::*;
-use aws_config::{BehaviorVersion, FrameworkMetadata, Region, SdkConfig};
+use aws_config::BehaviorVersion;
+use aws_config::identity::IdentityCache;
+use aws_config::{FrameworkMetadata, Region, SdkConfig};
+use aws_credential_types::Credentials;
+use aws_credential_types::provider::SharedCredentialsProvider;
 use aws_crypto_mpl::aws_config;
-#[cfg(feature = "rt-tokio")]
-use aws_crypto_mpl::cmc::{DefaultCmc, StormTrackingCmc, StormTrackingCmcBuilder};
-use aws_crypto_mpl::cmc::{LocalCmc, SharedCmc};
+#[cfg(feature = "ddb")]
+use aws_crypto_mpl::aws_sdk_dynamodb;
+#[cfg(feature = "kms")]
+use aws_crypto_mpl::aws_sdk_kms;
+#[cfg(all(feature = "kms", feature = "ddb"))]
 use aws_crypto_mpl::key_store::DynamoDbKeyStore;
+#[cfg(all(feature = "kms", feature = "ddb"))]
 use aws_crypto_mpl::key_store::types::{Discovery, KmsConfiguration, MrDiscovery};
+#[cfg(all(feature = "kms", feature = "ddb"))]
 use aws_crypto_mpl::keyring::HierarchicalKeyring;
-use aws_crypto_mpl::{aws_sdk_dynamodb, aws_sdk_kms};
-use aws_sdk_kms::config::{IdentityCache, SharedCredentialsProvider, SharedHttpClient};
 use aws_smithy_runtime::client::defaults::default_http_client_plugin_v2;
+use aws_smithy_runtime_api::client::http::SharedHttpClient;
 use aws_smithy_runtime_api::client::runtime_components::RuntimeComponentsBuilder;
 use aws_smithy_runtime_api::client::runtime_plugin::RuntimePlugin;
 use std::sync::LazyLock;
-use std::time::{Duration, SystemTime};
-
-pub(super) struct CryptographicMaterialsCache {
-    pub(super) inner: SharedCmc,
-}
+use std::time::SystemTime;
 
 impl ffi::OptCredentials {
     /// `Some(&value)` when `set` is true, else `None`.
@@ -39,17 +41,21 @@ pub(super) struct HttpClient {
     pub(super) inner: SharedHttpClient,
 }
 
+#[cfg(feature = "kms")]
 pub(super) struct MplKmsClient {
     pub(super) inner: aws_sdk_kms::Client,
 }
+#[cfg(feature = "ddb")]
 pub(super) struct MplDdbClient {
     pub(super) inner: aws_sdk_dynamodb::Client,
 }
 
+#[cfg(all(feature = "kms", feature = "ddb"))]
 pub(super) struct KeyStore {
     pub(super) inner: DynamoDbKeyStore,
 }
 
+#[cfg(all(feature = "kms", feature = "ddb"))]
 // Create an ESDK Rust Key Store KmsConfiguration value from the given FFI KmsConfiguration value
 pub(super) fn make_kms_config(
     kind: ffi::KmsConfigurationType,
@@ -160,7 +166,7 @@ pub(super) fn with_shim_user_agent(loaded: SdkConfig) -> SdkConfig {
 pub(super) fn credentials_target_to_core(
     input: &ffi::Credentials,
     operation: &str,
-) -> Result<aws_sdk_kms::config::Credentials, String> {
+) -> Result<Credentials, String> {
     // Messages name the empty field only; they never carry credential values.
     for (field, value) in [
         ("access key id", &input.access_key_id),
@@ -188,7 +194,7 @@ pub(super) fn credentials_target_to_core(
             Some(expiration)
         }
     };
-    Ok(aws_sdk_kms::config::Credentials::new(
+    Ok(Credentials::new(
         input.access_key_id.as_str(),
         input.secret_access_key.as_str(),
         input.session_token.to_option(),
@@ -242,6 +248,7 @@ pub(super) fn create_sdk_config(
     Ok(builder.build())
 }
 
+#[cfg(feature = "kms")]
 //= spec/shim/esdk-shim.md#create-kms-client
 //# - The shim MUST provide an operation that creates a KMS service client backed by
 //# the core ESDK.
@@ -251,6 +258,7 @@ pub(super) fn create_kms_client(
     kms_client(input, None)
 }
 
+#[cfg(feature = "kms")]
 pub(super) fn create_kms_client_with_http_client(
     input: &ffi::MplAwsClientConfig,
     http_client: &HttpClient,
@@ -258,6 +266,7 @@ pub(super) fn create_kms_client_with_http_client(
     kms_client(input, Some(http_client))
 }
 
+#[cfg(feature = "kms")]
 pub(super) fn kms_client(
     input: &ffi::MplAwsClientConfig,
     http_client: Option<&HttpClient>,
@@ -271,6 +280,7 @@ pub(super) fn kms_client(
     }))
 }
 
+#[cfg(feature = "ddb")]
 //= spec/shim/esdk-shim.md#create-dynamodb-client
 //# - The shim MUST provide an operation that creates a DynamoDB service client
 //# backed by the core ESDK.
@@ -280,6 +290,7 @@ pub(super) fn create_ddb_client(
     ddb_client(input, None)
 }
 
+#[cfg(feature = "ddb")]
 pub(super) fn create_ddb_client_with_http_client(
     input: &ffi::MplAwsClientConfig,
     http_client: &HttpClient,
@@ -287,6 +298,7 @@ pub(super) fn create_ddb_client_with_http_client(
     ddb_client(input, Some(http_client))
 }
 
+#[cfg(feature = "ddb")]
 pub(super) fn ddb_client(
     input: &ffi::MplAwsClientConfig,
     http_client: Option<&HttpClient>,
@@ -315,6 +327,7 @@ pub(super) fn create_http_client() -> Result<Box<HttpClient>, String> {
 // A derived client keeps the base client's configuration and HTTP client.
 // See create_sdk_config for why static credentials skip the identity cache.
 
+#[cfg(feature = "kms")]
 pub(super) fn kms_client_with_credentials(
     base: &MplKmsClient,
     credentials: &ffi::Credentials,
@@ -332,6 +345,7 @@ pub(super) fn kms_client_with_credentials(
     }))
 }
 
+#[cfg(feature = "kms")]
 pub(super) fn kms_client_with_headers(
     base: &MplKmsClient,
     headers: Vec<ffi::HttpHeader>,
@@ -378,10 +392,12 @@ pub(super) fn kms_client_with_headers(
     }))
 }
 
+#[cfg(feature = "kms")]
 /// Adds fixed headers to every request.
 #[derive(Debug)]
 pub(super) struct RequestHeaders(pub(super) Vec<(String, String)>);
 
+#[cfg(feature = "kms")]
 impl aws_sdk_kms::config::Intercept for RequestHeaders {
     fn name(&self) -> &'static str {
         "RequestHeaders"
@@ -402,6 +418,7 @@ impl aws_sdk_kms::config::Intercept for RequestHeaders {
     }
 }
 
+#[cfg(feature = "ddb")]
 pub(super) fn ddb_client_with_credentials(
     base: &MplDdbClient,
     credentials: &ffi::Credentials,
@@ -419,6 +436,7 @@ pub(super) fn ddb_client_with_credentials(
     }))
 }
 
+#[cfg(all(feature = "kms", feature = "ddb"))]
 //= spec/shim/esdk-shim.md#create-key-store
 //# - The shim MUST provide an operation that creates a key store backed by the core ESDK.
 pub(super) fn create_keystore(input: &ffi::KeyStoreConfig) -> Result<Box<KeyStore>, String> {
@@ -456,11 +474,13 @@ pub(super) fn create_keystore(input: &ffi::KeyStoreConfig) -> Result<Box<KeyStor
     Ok(Box::new(KeyStore { inner }))
 }
 
+#[cfg(all(feature = "kms", feature = "ddb"))]
 /// An empty target list means no grant tokens were supplied.
 pub(super) fn non_empty(tokens: &[String]) -> Option<Vec<String>> {
     (!tokens.is_empty()).then(|| tokens.to_vec())
 }
 
+#[cfg(all(feature = "kms", feature = "ddb"))]
 //= spec/shim/esdk-shim.md#create-hierarchical-keyring
 //# - The shim MUST provide an operation that creates a hierarchical keyring backed
 //# by the core ESDK.
@@ -514,129 +534,5 @@ pub(super) fn create_hierarchical_keyring(
 
     Ok(Box::new(Keyring {
         inner: SharedKeyring::new(keyring),
-    }))
-}
-
-/// Converts a bridge duration to a `Duration`.
-pub(super) fn from_ffi_duration(
-    d: ffi::Duration,
-    field: &str,
-    op: &str,
-) -> Result<Duration, String> {
-    Duration::from_secs(d.secs)
-        .checked_add(Duration::from_nanos(u64::from(d.nanos)))
-        .ok_or_else(|| {
-            shim_err(
-                ffi::ShimErrorKind::Validation,
-                op,
-                format!("{field} is out of range"),
-            )
-        })
-}
-
-pub(super) fn cache_count(field: &str, v: u32, op: &str) -> Result<usize, String> {
-    i32::try_from(v)
-        .ok()
-        .and_then(|bounded| usize::try_from(bounded).ok())
-        .ok_or_else(|| {
-            shim_err(
-                ffi::ShimErrorKind::Validation,
-                op,
-                format!("{field} {v} exceeds the bridge's supported maximum"),
-            )
-        })
-}
-
-/// Apply each set option to `builder`.
-#[cfg(feature = "rt-tokio")]
-pub(super) fn apply_storm_tracking_options(
-    builder: StormTrackingCmcBuilder,
-    options: &ffi::StormTrackingCmcOptions,
-) -> Result<StormTrackingCmcBuilder, String> {
-    let op = "create_storm_tracking_cmc";
-    let count = |field: &str, v: Option<u32>| -> Result<Option<usize>, String> {
-        v.map(|v| cache_count(field, v, op)).transpose()
-    };
-    let duration = |field: &str, d: Option<ffi::Duration>| -> Result<Option<Duration>, String> {
-        d.map(|d| from_ffi_duration(d, field, op)).transpose()
-    };
-    Ok(builder
-        .set_entry_capacity(count("entry_capacity", options.entry_capacity.to_option())?)
-        .set_entry_pruning_tail_size(count(
-            "entry_pruning_tail_size",
-            options.entry_pruning_tail_size.to_option(),
-        )?)
-        .set_grace_period(duration("grace_period", options.grace_period.to_option())?)
-        .set_grace_interval(duration(
-            "grace_interval",
-            options.grace_interval.to_option(),
-        )?)
-        .set_fan_out(count("fan_out", options.fan_out.to_option())?)
-        .set_in_flight_ttl(duration(
-            "in_flight_ttl",
-            options.in_flight_ttl.to_option(),
-        )?)
-        .set_sleep(duration("sleep", options.sleep.to_option())?))
-}
-
-//= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
-//= reason=Each cache kind has its own create_* function, so the target selects a kind by calling that kind's function.
-//# - The shim MUST provide an operation that creates a cryptographic materials
-//# cache of a target-selected kind, backed by the core ESDK.
-//
-//= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
-//= type=implication
-//= reason=The cache kinds are the create_* functions the bridge exports, so a kind the bridge does not export cannot be requested.
-//# - The shim MUST return an error when the target cache kind is not a supported
-//# value.
-//
-//= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
-//= type=exception
-//= reason=Will be added in the future
-//# - The shim MUST support creating a cache that performs no caching.
-//
-//= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
-//# - The shim MUST support creating a storm tracking cache.
-#[cfg(feature = "rt-tokio")]
-pub(super) fn create_storm_tracking_cmc(
-    options: &ffi::StormTrackingCmcOptions,
-) -> Result<Box<CryptographicMaterialsCache>, String> {
-    //= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
-    //# - Creating a cryptographic materials cache MUST provide the target-supplied
-    //# cache type, with its values, to the core ESDK.
-    let cache = apply_storm_tracking_options(StormTrackingCmc::builder(), options)?
-        .build()
-        .map_err(core_err)?;
-    Ok(Box::new(CryptographicMaterialsCache {
-        inner: SharedCmc::new(cache),
-    }))
-}
-
-//= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
-//# - The shim MUST support creating a default cache.
-#[cfg(feature = "rt-tokio")]
-pub(super) fn create_default_cmc(
-    entry_capacity: u32,
-) -> Result<Box<CryptographicMaterialsCache>, String> {
-    let op = "create_default_cmc";
-    let cache = DefaultCmc::builder()
-        .entry_capacity(cache_count("entry_capacity", entry_capacity, op)?)
-        .build()
-        .map_err(core_err)?;
-    Ok(Box::new(CryptographicMaterialsCache {
-        inner: SharedCmc::new(cache),
-    }))
-}
-
-pub(super) fn create_local_cmc(
-    entry_capacity: u32,
-) -> Result<Box<CryptographicMaterialsCache>, String> {
-    let op = "create_local_cmc";
-    let cache = LocalCmc::builder()
-        .entry_capacity(cache_count("entry_capacity", entry_capacity, op)?)
-        .build()
-        .map_err(core_err)?;
-    Ok(Box::new(CryptographicMaterialsCache {
-        inner: SharedCmc::new(cache),
     }))
 }
