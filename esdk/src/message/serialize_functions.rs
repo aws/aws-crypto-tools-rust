@@ -61,15 +61,10 @@ pub(crate) fn be_u64(b: [u8; 8]) -> (r: u64)
         + u64::from(b[7])
 }
 
-// Big-endian encoders exist for u32 and u64 only, while decoders exist for
-// u16/u32/u64. This asymmetry is by design, not a missing function: `write_u16`
-// (like `write_u32`/`write_u8`) encodes via `to_be_bytes()` directly, so u16
-// serialization needs no hand-written encoder. These `*_to_be` spec/exec
-// encoders were added only where a *proof* must reason about a field's bytes
-// (the body AAD's u32 sequence number and u64 content length), hence u32/u64.
-// Consequently the VR-012 round-trip lemmas below cover the u32/u64 pairs; u16
-// is decoder-only. A `u16_to_be` + round-trip would be proof-coverage
-// completeness, not a bug fix.
+// There is no `u16_to_be`, on purpose. The `write_*` functions encode with
+// `to_be_bytes()`. The encoders below exist only because the body AAD proofs
+// need to reason about the bytes of a u32 sequence number and a u64 content
+// length, and vstd does not model `to_be_bytes()`. No proof needs u16 bytes.
 /// The four big-endian bytes of `x` (what `x.to_be_bytes()` returns).
 pub(crate) open spec fn spec_u32_to_be(x: u32) -> Seq<u8> {
     seq![
@@ -148,15 +143,7 @@ pub(crate) fn u64_to_be(x: u64) -> (r: [u8; 8])
     r
 }
 
-/// VR-012: the big-endian `u32` codec is round-trip exact.
-///
-/// `b` holds the four bytes the encoder produces for `x`
-/// (the hypothesis `b@ == spec_u32_to_be(x)` is what `u32_to_be(x)` guarantees
-/// about its returned array). The lemma proves the decoder recovers `x`:
-/// `spec_be_u32(b) == x as int`, i.e. decode-after-encode is the identity on
-/// every `u32`. This genuinely couples the two spec functions — it is false if
-/// either `spec_u32_to_be` or `spec_be_u32` is altered — rather than restating
-/// one in terms of itself.
+/// Decoding the bytes that `u32_to_be(x)` returns gives back `x` (VR-012).
 pub(crate) proof fn lemma_u32_round_trip(x: u32, b: [u8; 4])
     requires
         b@ == spec_u32_to_be(x),
@@ -171,12 +158,7 @@ pub(crate) proof fn lemma_u32_round_trip(x: u32, b: [u8; 4])
     // Z3 closes the positional-value sum from these four facts.
 }
 
-/// VR-012: the big-endian `u64` codec is round-trip exact.
-///
-/// As `lemma_u32_round_trip`, for the `u64` encoder/decoder pair:
-/// given `b@ == spec_u64_to_be(x)`, the decoder recovers `x`
-/// (`spec_be_u64(b) == x as int`). Decode-after-encode is the identity on every
-/// `u64`, and the equality couples `spec_u64_to_be` with `spec_be_u64`.
+/// Decoding the bytes that `u64_to_be(x)` returns gives back `x` (VR-012).
 pub(crate) proof fn lemma_u64_round_trip(x: u64, b: [u8; 8])
     requires
         b@ == spec_u64_to_be(x),

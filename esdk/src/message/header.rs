@@ -61,28 +61,21 @@ pub(crate) enum SuiteDataError {
     LengthMismatch,
 }
 
-/// The verified accept/reject decision for key-commitment validation (VR-001,
-/// property (a)). The result is `Ok` exactly when the header's suite data
-/// equals the derived (expected) suite data **and** the suite's committed
-/// length agrees with the expected length; otherwise it rejects, commitment
-/// first.
+/// Decide whether the header's key commitment is valid (VR-001).
 ///
-/// `bytes_equal` is the outcome of the slice comparison, which the
-/// `validate_suite_data` adapter performs at the trusted boundary with
-/// `aws_lc_rs::constant_time::verify_slices_are_equal`. The `requires` ties
-/// `bytes_equal` to real `Seq<u8>` equality of the two buffers, so the
-/// `ensures` constrains the decision against the actual byte sequences and
-/// lengths, not against an opaque flag:
+/// Returns `Ok` only when the header's suite data equals the expected commit
+/// key and the suite's commit length equals the expected length. A byte
+/// mismatch is reported before a length mismatch.
 ///
-/// - `Ok` iff `header@ == expected@` and `commit_len == expected.len()`;
-/// - `Err(CommitmentMismatch)` iff `header@ != expected@` (checked first);
-/// - `Err(LengthMismatch)` iff `header@ == expected@` but the lengths disagree.
+/// `bytes_equal` is the result of comparing `header` and `expected` with
+/// `aws_lc_rs::constant_time::verify_slices_are_equal` in
+/// `validate_suite_data`. The `requires` says it is true exactly when the two
+/// byte sequences are equal.
 ///
-/// NOT proven here, and trusted/structural by design:
-/// - constant time: the timing behavior of `verify_slices_are_equal` is an
-///   aws-lc-rs API contract; Verus does not model timing;
-/// - ordering (validation before frame decryption): enforced by call-site
-///   structure and code review, not by this proof.
+/// This proof does not cover:
+/// - constant-time comparison, which comes from aws-lc-rs;
+/// - checking the commitment before decrypting any frame, which depends on
+///   where callers invoke it.
 pub(crate) fn suite_data_check(
     bytes_equal: bool,
     header: &[u8],
