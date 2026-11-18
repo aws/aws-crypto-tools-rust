@@ -26,24 +26,7 @@ async fn main() {
         .unwrap_or_else(|e| panic!("failed to bind {addr}: {e}"));
     eprintln!("listening at http://127.0.0.1:{port}");
     axum::serve(listener, router)
-        .with_graceful_shutdown(stop_signal())
+        .with_graceful_shutdown(test_server_control::shutdown_signal())
         .await
         .expect("server error");
-}
-
-/// Resolves on SIGTERM or Ctrl-C. The orchestrator stops servers with
-/// SIGTERM; returning from `main` instead of dying on the signal lets a
-/// coverage-instrumented build write its profile at exit.
-async fn stop_signal() {
-    #[cfg(unix)]
-    {
-        let mut term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-            .expect("failed to listen for SIGTERM");
-        tokio::select! {
-            _ = term.recv() => {}
-            _ = tokio::signal::ctrl_c() => {}
-        }
-    }
-    #[cfg(not(unix))]
-    tokio::signal::ctrl_c().await.ok();
 }

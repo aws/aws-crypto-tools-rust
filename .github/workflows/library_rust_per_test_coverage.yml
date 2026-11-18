@@ -1,16 +1,15 @@
-# Record which library lines each of a project's own tests runs, for the duvet
-# test reach check.
+# Record which library lines each of a project's own tests runs, for the duvet test reach check.
 #
-# A push or a nightly run records every test. A pull request records only the
-# tests whose duvet test annotations it changes, or whose cited code it
-# changes, and records nothing when there are none.
+# A push or a nightly run records every test.
+# A pull request records only the tests whose duvet test annotations or cited code it changes,
+# and records nothing when there are none.
 name: Library Rust Per-Test Coverage
 
 on:
   workflow_call:
     inputs:
       project:
-        description: "Project subdirectory to measure (e.g. mpl, esdk)."
+        description: "Project subdirectory to measure (esdk or mpl)."
         required: true
         type: string
       crate:
@@ -92,18 +91,7 @@ jobs:
           role-session-name: RustPerTestCoverage
           special-characters-workaround: "true"
 
-      # build `prim` without `all-features`; otherwise it tests with FIPS.
-      - name: Choose feature flags
-        if: env.PER_TEST_RUN == 'true'
-        run: |
-          if [ '${{ inputs.project }}' = 'prim' ]; then
-            echo "FEATURE_FLAGS=" >> "$GITHUB_ENV"
-          else
-            echo "FEATURE_FLAGS=--all-features" >> "$GITHUB_ENV"
-          fi
-
-      # nextest runs each test in its own process, and the runner gives each
-      # one its own profile file.
+      # nextest runs each test in its own process, and the runner gives each one its own profile file.
       - name: Record the lines each test runs
         if: env.PER_TEST_RUN == 'true'
         working-directory: ${{ inputs.project }}
@@ -113,7 +101,7 @@ jobs:
           PER_TEST_COVERAGE_DIR: ${{ runner.temp }}/per-test-raw
           PER_TEST_REPOSITORY: ${{ github.repository }}
           PER_TEST_ROOT: ${{ github.workspace }}
-        run: cargo llvm-cov nextest $FEATURE_FLAGS --workspace --no-report --no-fail-fast -E "$PER_TEST_FILTER"
+        run: cargo llvm-cov nextest --all-features --workspace --no-report --no-fail-fast -E "$PER_TEST_FILTER"
 
       - name: Write the per-test line coverage
         if: env.PER_TEST_RUN == 'true'

@@ -407,7 +407,6 @@ jobs:
   local-per-test-coverage:
     name: Per-test coverage (${{ matrix.project }})
     needs: detect
-    if: needs.detect.result == 'success'
     strategy:
       fail-fast: false
       matrix:
