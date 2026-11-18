@@ -2,11 +2,13 @@
 
 ## About this document
 
-- This is a short summary of the threat model for the Amazon Web Services (AWS) Cryptographic Material Providers Library (MPL).
+- This is a plain-language summary of the threat model for the Amazon Web Services (AWS) Cryptographic Material Providers Library (MPL).
 - It is written for executives and application security (AppSec) reviewers.
 - The full threat model is `docs/mpl-threat-model.md` (26 threats). The bug list is `docs/mpl-bug-reports/README.md` (10 bugs). This summary restates them in plain words. If they differ, the full documents are correct.
+- This summary carries all of the full model's system overview, assets, actors, trust boundaries, data flows and threat list. It leaves out the per-threat analysis, which stays in the full model.
 - Code state: branch MPL-Verus. The library code (`mpl/` and `prim/`) is identical to upstream main.
 - Exploit steps and code locations are left out on purpose. They are in the full model.
+- IDs match the full model so reviewers can trace each item: assets A1 to A14, threat actors TA1 to TA9, trust boundaries TB1 to TB9, threats TM-MPL-001 to TM-MPL-026, and bugs BUG-01 to BUG-10.
 
 ## Summary
 
@@ -39,38 +41,263 @@ The MPL makes, wraps and caches the keys that the AWS Encryption SDK (ESDK) and 
 
 The seven open bugs are: one High (BUG-06), five Low and one Informational.
 
-## What this library does and what we protect
+## What this library does
 
-The MPL creates and protects the data keys used to encrypt data. It does not encrypt messages itself. Callers are the ESDK, a C++ shim, and other AWS encryption clients outside this repository.
+The MPL creates and protects the data keys used to encrypt data. It does not encrypt messages itself. Its security rests on six things. Keys are wrapped with the Advanced Encryption Standard (AES). New keys are derived from branch keys. AWS Key Management Service (KMS) is the root of trust. Amazon DynamoDB stores key records in a way that shows tampering. An in-memory cache reduces KMS calls. The cryptographic materials manager enforces strict rules for choosing algorithms.
 
-**Main parts.**
+### Who calls it
 
-- **Keyrings.** The raw Advanced Encryption Standard (AES) keyring wraps data keys with a local key. It uses AES in Galois/Counter Mode (AES-GCM) with a fresh initialization vector (IV) for each wrap. The IV must never repeat under one key. The hierarchical keyring wraps data keys with branch keys kept in a key store.
-- **Cryptographic materials manager (CMM).** The default CMM picks the algorithm suite, applies the commitment policy and creates signing keys.
-- **Key store.** It reads and writes branch key records in Amazon DynamoDB.
-- **Cache.** It keeps branch keys in memory for a time limit, so fewer calls go to AWS Key Management Service (KMS).
-- **Crypto wrapper.** It wraps the aws-lc-rs crypto library for encryption, key derivation, signing and random numbers.
+- The ESDK in this repository.
+- A C++ shim, which is a thin layer that lets C++ programs use the Rust library.
+- Other AWS encryption clients outside this repository: the AWS Database Encryption SDK and the Amazon Simple Storage Service (S3) Encryption Client.
 
-**Where AWS services fit.** KMS is the root of trust for branch keys. DynamoDB stores the branch key records. We do not trust DynamoDB for integrity. KMS checks each record, so tampering is detected.
+### Main parts
 
-**Flow when the hierarchical keyring encrypts.**
+- **Cryptographic materials manager (CMM).** The caller asks the CMM for keys and settings, called materials. The default CMM picks the algorithm suite and applies the commitment policy. It creates a signing key when the suite signs messages. On decrypt, it merges the encryption context that the caller supplies again (the reproduced context).
+- **CMM front end.** Every CMM call goes through a front-end step. That step checks that the materials the CMM returns are complete.
+- **Keyrings.** A keyring wraps and unwraps data keys. A wrapped data key is called an encrypted data key (EDK). EDKs are stored in the message. Every keyring call goes through a front-end step that checks the change from the materials before the call to the materials after it.
+- **Raw AES keyring.** It wraps data keys with a local AES key. The mode is Galois/Counter Mode (AES-GCM), which also detects tampering. Each wrap uses a fresh initialization vector (IV). The IV must never repeat under one key. The local wrapping key is wiped from memory when it is dropped.
+- **Hierarchical keyring.** It wraps data keys with keys derived from branch keys kept in a key store. Each branch key has an identifier (ID) and versions.
+- **Branch key wrap.** For each wrap, the hierarchical keyring derives a one-time key from the branch key. It uses a key-based key derivation function (KBKDF) with a fresh salt. It then wraps the data key with AES-256-GCM. The one-time key is wiped after use.
+- **Key store.** The DynamoDB key store reads and writes branch key records in a DynamoDB table. It asks KMS to decrypt each record. It sends the record's fields to KMS as additional authenticated data (AAD), so KMS checks them.
+- **Cache.** It keeps branch keys in memory for a time limit, so fewer calls go to KMS. The default cache adds storm tracking on top of a local cache. Storm tracking limits how many refreshes of the same key run at once.
+- **Crypto wrapper.** The `prim` package (aws-mpl-primitives) wraps the aws-lc-rs crypto library. It offers AES-GCM, KBKDF, hashing, random numbers and constant-time comparison. It also offers the hash-based key derivation function (HKDF) and hash-based message authentication codes (HMAC). It signs with the Elliptic Curve Digital Signature Algorithm (ECDSA).
+- **aws-lc-rs.** The crypto library itself. It calls C code through a foreign function interface (FFI). It can use a standard build or a build validated under the Federal Information Processing Standards (FIPS).
+- **No unsafe code.** The `mpl/` and `prim/` code contains no `unsafe` Rust. aws-lc-rs is reached only through the safe wrappers in `prim`.
+- **C++ shim handles.** C++ code reaches MPL objects through raw pointers called handles. Most are borrowed and checked for null. One function adopts an untyped keyring pointer and does not check it.
 
-- The caller asks the CMM for encryption materials.
-- The CMM checks the algorithm suite and commitment policy, then calls the keyring.
-- The keyring looks up the branch key in the cache. On a miss, it reads the record from DynamoDB and asks KMS to decrypt it.
-- The keyring derives a one-time key from the branch key and wraps the data key with it.
-- The result is an encrypted data key (EDK) that goes into the message.
+### Where KMS and DynamoDB fit
 
-On decrypt, the EDKs come from the message. The sender of that message is not trusted.
+- KMS is the root of trust for branch keys and beacon keys. Beacon keys are the root keys for searchable encryption.
+- KMS keys are named by Amazon Resource Names (ARNs). This document calls them key names.
+- DynamoDB stores the branch key records. We do not trust DynamoDB for integrity.
+- KMS checks every field of a record when it decrypts it. So a changed record fails, and tampering is detected.
+- This check does not prove a record is the newest one. An older genuine record still passes (TM-MPL-005).
 
-**What we protect.**
+### Trust statement
 
-- Data keys (the keys that encrypt the message data).
-- Branch keys and beacon keys, including the copies held in the cache.
-- The raw AES wrapping key.
-- Signing keys, which use the Elliptic Curve Digital Signature Algorithm (ECDSA).
-- Branch key records stored in DynamoDB (integrity).
-- The encryption context and the algorithm suite and commitment policy settings (integrity).
+- The process, the local AES wrapping key and the in-process cache are trusted.
+- KMS is the trusted root of trust for branch keys and beacon keys.
+- DynamoDB is not trusted for integrity. The KMS check makes its records show tampering, but not prove freshness (TM-MPL-005).
+- aws-lc-rs is reached only through the safe wrappers in `prim`.
+- Key stores, caches and branch key ID suppliers written by users are trusted code. The MPL does not check their results (TB7).
+- C++ callers reach MPL objects through raw handles in the shim (TB8).
+- The sender of a ciphertext is not trusted. That sender controls the inputs on the decrypt side (TB1, and the table of attacker-controlled inputs below).
+
+### System diagram
+
+The diagram restates the full model's overview in plain labels.
+
+```
+        Caller (ESDK, C++ shim, Database Encryption SDK, S3 Encryption Client)
+                                    |
+                  request encryption or decryption materials
+                                    v
+  +-------------------------------------------------------------------+
+  | CMM front end: checks the returned materials are complete         |
+  |   Default CMM: commitment policy and algorithm suite,             |
+  |   ECDSA signing key creation, reproduced context merge            |
+  +-------------------------------------------------------------------+
+                                    |  keyring encrypt or decrypt call
+                                    v
+  +-------------------------------------------------------------------+
+  | Keyring front end: checks each materials change (before, after)   |
+  |   Raw AES keyring                    Hierarchical keyring         |
+  +-------------------------------------------------------------------+
+        |                                  |                   |
+   AES-GCM (prim)                    Shared cache          Key store
+   local wrapping key                default = storm       (DynamoDB key store)
+   (wiped on drop)                   tracking over a        |              |
+                                     local cache          AWS KMS      Amazon DynamoDB
+                                     (in process)         (context     (branch key
+                                          |                as AAD)      records)
+                  branch key wrap (KBKDF + AES-256-GCM, derived key wiped)
+                                          |
+                           prim crypto wrapper (aws-mpl-primitives)
+      AES-GCM, KBKDF, HKDF, HMAC, ECDSA, hashing, random numbers, constant-time compare
+                                          |
+         aws-lc-rs (standard or FIPS build) through FFI; no unsafe Rust in mpl/ or prim/
+
+  C++ callers --> C++ shim --> keyrings, caches, key stores and AWS clients
+      borrowed raw handles (null checked), adopted untyped keyring pointer (not checked)
+```
+
+## What we protect
+
+The MPL protects secret keys from disclosure and protects key records and settings from silent change. The table lists every asset in the full model.
+
+| ID | Asset | What it is | Protection needed | Notes |
+|---|---|---|---|---|
+| A1 | Plaintext data keys | The keys that encrypt the message data | Confidentiality | Wiped on drop. The length must match the algorithm suite. |
+| A2 | Branch keys (32 bytes) | The root of the derived-key hierarchy | Confidentiality | Cached in the process for the time limit. Kept longer if the entry is not read again (TM-MPL-015). Wiped on drop. |
+| A3 | Derived branch keys (32 bytes) | One-time AES-256-GCM keys, one per wrap or unwrap | Confidentiality | Wiped after use. |
+| A4 | Raw AES wrapping key | A long-lived local secret | Confidentiality | Wiped on drop. |
+| A5 | ECDSA signing key | Created for each encryption with a signing suite | Confidentiality and integrity | Wiped on drop. |
+| A6 | Beacon keys | The root key for searchable encryption | Confidentiality | Wiped on drop. |
+| A7 | Branch key records in DynamoDB | The wrapped key, its KMS key name and its context fields | Integrity | KMS binding shows tampering. No freshness guarantee. |
+| A8 | Encryption context and AAD | Values bound to a ciphertext | Integrity | Binds the ciphertext to its context. Must survive the round trip. |
+| A9 | Algorithm suite ID and commitment policy | The settings that pick the algorithms | Integrity | Decide whether key commitment is required. |
+| A10 | Cache entries | Branch key materials plus creation and expiry times | Confidentiality, integrity and availability | Held in the process. Found by a cache ID built with the Secure Hash Algorithm (SHA-384). |
+| A11 | KMS grant tokens and key names | Settings | Integrity | Decide which KMS key authorizes operations. |
+| A12 | Output of the secure random number generator | IVs, salts, data keys and the partition ID | Integrity | Comes from the random byte function in `prim`. |
+| A13 | Ambient AWS credentials | The credentials already present on a developer or continuous integration (CI) host | Confidentiality and integrity | Used by the loopback test servers (TM-MPL-026). |
+| A14 | Key store read capacity and request time on decrypt | Database reads and latency | Availability | Spent for each EDK on decrypt (TM-MPL-025). |
+
+**How the assets tie to the top risks.**
+
+- The cache mix-up exposes branch keys (A2) through cache entries (A10).
+- Record rollback affects the integrity of the branch key records (A7).
+- Unbounded decrypt work spends key store read capacity and request time (A14).
+- The test servers can misuse the ambient AWS credentials of a host (A13).
+- Every secret key asset (A1 to A6) is wiped on drop. Short-lived copies can remain (TM-MPL-015).
+
+## Who could attack it
+
+The most important threat actors are the database tamperer (TA1), a co-tenant sharing a cache (TA3) and the sender of a ciphertext (TA8).
+
+**Legitimate actors.**
+
+| Actor | Role |
+|---|---|
+| Application caller | Asks the MPL for encryption and decryption materials. |
+| AWS KMS | The root of trust. Decrypts branch key records and checks their fields. |
+| Amazon DynamoDB | Stores branch key records. |
+| Operators | Configure the key store and the keyrings. |
+
+**Threat actors.**
+
+| ID | Actor | What they can do |
+|---|---|---|
+| TA1 | DynamoDB tamperer | Can read and write the branch key table, but cannot use the KMS keys. The exception is an actor who also controls a KMS key whose policy admits the application role (TM-MPL-002). |
+| TA2 | Malicious or confused caller | On encrypt, controls the encryption context, the reproduced context, the algorithm suite ID and the inputs to the branch key ID supplier. Its decrypt-side powers are listed under TA8. |
+| TA3 | Co-tenant sharing a cache | Can influence its own partition ID, logical key store name or branch key ID. For example, these values may be built from a tenant name. |
+| TA4 | In-process memory attacker | Reads freed memory, core dumps or swap space. This is an attacker who has already broken in, or who reads memory chips after power-off (a cold-boot attack). |
+| TA5 | Network attacker | Sits between the MPL and KMS or DynamoDB. Transport Layer Security (TLS) is assumed, so what is left is a downgrade or denial of service. |
+| TA6 | Supply chain attacker | Targets the libraries the MPL depends on: aws-lc-rs, uuid, lru, zeroize and the AWS SDK libraries. |
+| TA7 | C++ caller of the shim | Passes handles that are dangling, forged or adopted twice. This can be a bug or hostile code in the same process (TM-MPL-024). |
+| TA8 | Ciphertext sender | Anyone who can give the service a message to decrypt, or change a stored message. Not authenticated. Controls the inputs listed below. |
+| TA9 | Local process on a developer or CI host | Can connect to the loopback address 127.0.0.1 (TM-MPL-026). |
+
+**What the ciphertext sender (TA8) controls on decrypt.**
+
+- The message's encryption context.
+- The number of EDKs. A message can hold up to 65,535. The ESDK sets no limit by default.
+- For each EDK: the provider ID, the provider info and the ciphertext. The ciphertext includes the 16 bytes that name the branch key version. They start at byte 28.
+- The algorithm suite ID.
+
+## Trust boundaries
+
+A trust boundary is a place where data passes between parties that trust each other differently. The weakest boundaries are these. TB1 has no limit on EDK count on decrypt. TB4 has a cache ID that is not unique. TB7 does not check user components. TB8 does not check the adopted handle. TB9 has no authentication.
+
+| ID | Boundary | What crosses it | Controls today |
+|---|---|---|---|
+| TB1 | Caller or ciphertext sender to the MPL interface | Materials requests, encryption context, EDKs, algorithm suite ID | CMM checks, reserved-key checks, commitment policy, and materials checks on every call. On decrypt, nothing in the MPL limits the EDK count (TM-MPL-025). |
+| TB2 | MPL to AWS KMS | Calls to create a data key without plaintext, re-encrypt and decrypt | KMS authentication, the context sent as AAD, a limit on allowed key names, grant tokens. |
+| TB3 | MPL to DynamoDB | Single-item reads and multi-item write transactions | The KMS binding makes records show tampering. Writes are conditional. Reads are not strongly consistent. |
+| TB4 | Keyring to the in-process cache | Storing and reading cache entries | A SHA-384 cache ID (not unique when fields contain zero bytes, BUG-06), an exact time limit check, a check of the entry kind. |
+| TB5 | `mpl` and `prim` to aws-lc-rs through FFI | AES-GCM, key derivation, ECDSA and random number calls | Safe wrappers in `prim`, length checks, and the aws-lc-rs nonce type that is meant to be used only once. |
+| TB6 | Process memory to the operating system | Freed memory, swap space, core dumps | Secret types are wiped on drop. Debug output hides secrets. Short-lived copies remain (TM-MPL-015). |
+| TB7 | MPL to components written by users | Key stores, caches, branch key ID suppliers, user keyrings and user CMMs | Keyring and CMM output is checked by the front-end step. Key store, cache and supplier output is not checked. Only the kind of a cache entry is checked. |
+| TB8 | C++ code to the shim to the MPL | Raw handles to keyrings, key stores, caches and SDK clients (borrowed), and an untyped keyring pointer (adopted) | Null checks on borrowed handles only. No checks on the adopted pointer. |
+| TB9 | Loopback client to a test server to the MPL | Requests in Concise Binary Object Representation (CBOR) on 127.0.0.1 that build keyrings and AWS clients | Bound to the loopback address only. No authentication. Not published. |
+
+### Inputs an attacker controls at each boundary
+
+Most attacker-controlled inputs have a check. The gaps are the EDK count on decrypt and zero bytes in cache ID fields. The outputs of user components, the adopted C++ pointer and the test server requests are not checked either.
+
+| Boundary | Input the attacker controls | Where it is used | Check today | Threats |
+|---|---|---|---|---|
+| TB1 (decrypt) | Message encryption context (keys and values) | Context decoding, AAD, and the supplier input | Strict text, order and duplicate checks. Empty keys are accepted. | TM-MPL-013, TM-MPL-017, TM-MPL-003 |
+| TB1 (decrypt) | Algorithm suite ID | The default CMM's decrypt allow list, and an ESDK check before the CMM | Policy tables | TM-MPL-006, TM-MPL-008 |
+| TB1 (decrypt) | EDK count, provider ID, provider info | The hierarchical keyring's EDK filter, and the raw AES keyring's EDK selection | Provider ID and info must match. No limit on count unless the ESDK is configured with one. | TM-MPL-025, TM-MPL-023 |
+| TB1 (decrypt) | EDK ciphertext length and content, including the 16 version bytes | EDK decryption and branch key unwrap | Length at least 44 bytes, then at least 60. The version is turned into standard universally unique identifier (UUID) text, so it cannot hold a zero byte. | TM-MPL-023, TM-MPL-025 |
+| TB1 (encrypt) | Encryption context, partition ID, supplier output, requested suite | The cache ID, and the reserved-key check | No zero-byte check. No length limit. | TM-MPL-009, TM-MPL-010, TM-MPL-006 |
+| TB1 (decrypt) | Reproduced encryption context | The reproduced context merge | Keys present in both must have equal values. | TM-MPL-017 |
+| TB2 | Plaintext branch key length, error text | The 32-byte length check, and error sorting | KMS is trusted. | TM-MPL-005, TM-MPL-023 |
+| TB3 | Any field of a record, including the KMS key name and the wrapped key | Record parsing, the authenticated context, and key name resolution | Strict field types. KMS checks every field. The record's key name is trusted only in discovery mode. | TM-MPL-002, TM-MPL-005, TM-MPL-007 |
+| TB4 and TB7 | The cache entry returned for an ID, the key store result, the supplier's ID | Cache reads, key store results, supplier results | Entry kind check only | TM-MPL-009, TM-MPL-010 |
+| TB8 | Handle values, ownership, the thread that frees them | Handle borrowing and keyring adoption in the shim | Null check on borrow only | TM-MPL-024 |
+| TB9 | Region, table name, KMS key name, wrapping key, time limit | The MPL test server's request handlers | None | TM-MPL-026 |
+
+## How data moves
+
+On encrypt, the caller's context drives the choice of branch key and is bound into every wrapped key. On decrypt, the message sender controls the EDKs, and each matching EDK can cause one key store read. Both flows use the hierarchical keyring, which is the keyring with the most moving parts.
+
+### Encrypt with the hierarchical keyring
+
+1. The caller passes an encryption context and asks the CMM for encryption materials.
+2. The default CMM picks the algorithm suite. It uses the policy default, or the requested suite if the commitment policy allows it for encrypt.
+3. The CMM rejects context keys that are reserved for the library. For a signing suite it creates an ECDSA signing key. If key creation fails, the program crashes (BUG-05(a)).
+4. The CMM calls the keyring. The keyring finds the branch key ID. The ID is either fixed in the settings or comes from the supplier, which reads the encryption context.
+5. The keyring builds the cache ID. The ID is a SHA-384 hash of fixed tags, the partition ID, the logical key store name and the branch key ID, joined by zero bytes. This ID is not unique when a field contains a zero byte (BUG-06).
+6. If the cache holds an entry for that ID and its age is within the time limit, the keyring uses it and skips to step 9.
+7. On a cache miss, the key store reads the active branch key record from DynamoDB. It asks KMS to decrypt the record and sends the record's fields as AAD. In discovery mode, the KMS key used is the one named in the record (TM-MPL-002).
+8. The keyring stores the branch key in the cache. The expiry is the current time plus the time limit. That addition is not checked, so a very large time limit crashes the program (BUG-01).
+9. The keyring wraps the data key. It derives a one-time key from the branch key with KBKDF and a fresh salt. The one-time key is wiped after use. It then encrypts the data key with AES-256-GCM, a fresh IV and AAD. The AAD holds a fixed label, the branch key ID, the version and the encryption context.
+10. The result is an EDK. Its provider ID is "aws-kms-hierarchy". Its provider info is the branch key ID. Its ciphertext holds the salt, the IV, the version, the wrapped key and the authentication tag.
+11. The keyring front end checks the change in materials. The CMM front end checks that the final materials are complete.
+
+```
+caller context --> CMM: get encryption materials
+     | Default CMM: suite = policy default or requested suite (allowed for encrypt)
+     | reserved key check; ECDSA signing key creation (crashes on failure, BUG-05(a))
+     v
+Keyring: on encrypt
+     | branch key ID = fixed setting, or supplier(context)
+     | cache ID = SHA-384(tags, partition ID, logical name, branch key ID),
+     |            fields joined by zero bytes                              (BUG-06)
+cache hit (age <= time limit)? -- yes --> branch key wrap
+     | no                                         ^
+     v                                            | KBKDF(salt) -> one-time key (wiped)
+Key store: get active branch key                  | AES-256-GCM(IV, AAD = label,
+     | KMS decrypt(record, record fields as AAD)  |   branch key ID, version, context)
+     v                                            | (in discovery mode the KMS key is
+put in cache (expiry = now + time limit,          |  the record's own, TM-MPL-002)
+    addition not checked, BUG-01) ----------------+
+     v
+EDK { provider ID = "aws-kms-hierarchy", provider info = branch key ID,
+      ciphertext = salt, IV, version, wrapped key, tag }
+     | keyring front end: check the change; CMM front end: check complete
+```
+
+### Decrypt with the hierarchical keyring
+
+1. The caller passes the EDKs from the message and the reproduced encryption context. It asks the CMM for decryption materials.
+2. The CMM checks that the commitment policy allows the algorithm suite for decrypt. It merges the reproduced context and sets up the signature verification key.
+3. The CMM calls the keyring. The keyring keeps only EDKs whose provider ID matches, whose provider info is valid UTF-8 text (the standard text encoding), and whose branch key ID equals the configured one.
+4. The keyring tries the matching EDKs one after another. For each one:
+   1. It requires at least 44 bytes of ciphertext. It reads the version from the 16 bytes that start at byte 28. The full 60-byte length check comes later (BUG-05(b)).
+   2. It builds the cache ID. This ID is a SHA-384 hash of fixed tags, the partition ID, the logical key store name, the branch key ID and the version, joined by zero bytes.
+   3. It uses a cache entry within the time limit, or asks the key store for that branch key version. A failed key store read is not cached. The in-progress mark for that key stays set (TM-MPL-025).
+   4. It unwraps the data key. It requires at least 60 bytes. It derives the one-time key with KBKDF and the salt, then opens the AES-256-GCM ciphertext with the IV and AAD.
+5. The keyring adds the data key, after checking its length. The keyring front end checks the change in materials. The CMM front end checks that the final materials are complete.
+
+```
+EDKs + reproduced context --> CMM: decrypt materials
+     | suite allowed for decrypt; merge reproduced context; verification key
+     v
+Keyring: on decrypt (filter: provider ID, UTF-8 provider info, branch key ID equal)
+     | for each matching EDK, one after another:
+     |   length >= 44 -> version = 16 bytes from byte 28  (60-byte check later, BUG-05(b))
+     |   cache ID = SHA-384(tags, partition ID, logical name, branch key ID, version),
+     |              fields joined by zero bytes
+     |   cache hit (age <= time limit) or key store: get branch key version
+     |      (a failed read is not cached; the in-progress mark stays, TM-MPL-025)
+     |   branch key unwrap: length >= 60; KBKDF(salt) -> AES-256-GCM open(IV, AAD)
+     v
+add data key (length checked) -> keyring front end check -> CMM front end check
+```
+
+### What to notice in these flows
+
+- The cache ID in step 5 of encrypt and step 4.2 of decrypt is where the cache mix-up starts (TM-MPL-009, TM-MPL-010, BUG-06).
+- The key store read in step 7 of encrypt accepts the active record it reads. Nothing checks that it is the latest one. An older genuine record still passes the KMS check (TM-MPL-005).
+- On decrypt, each matching EDK can cost one DynamoDB read. The reads run one after another. A message can hold up to 65,535 EDKs.
+- This decrypt work happens before the message header is authenticated. So a stored message can be made slow by adding bogus EDKs to it (TM-MPL-025).
+- A 44-byte EDK ciphertext is enough to cause a key store read, because the 60-byte check comes later (BUG-05(b)).
+- The front-end checks at the end of both flows run on every call. They catch a keyring or CMM that returns incomplete or changed materials.
+
+The full model has no separate diagram for key store writes. Key creation and rotation appear in the threats TM-MPL-005 and TM-MPL-016.
 
 ## What we checked and what we did not
 
@@ -78,11 +305,8 @@ On decrypt, the EDKs come from the message. The sender of that message is not tr
 
 **Key assumptions.**
 
-- Network traffic to KMS and DynamoDB is protected by Transport Layer Security (TLS).
-- The process, the local AES wrapping key and the in-process cache are trusted.
-- KMS is the trusted root of trust. DynamoDB is not trusted for integrity.
-- Key stores, caches and branch key suppliers written by users are trusted code. The MPL does not check their results.
-- The sender of a ciphertext is not trusted.
+- The trust statement in "What this library does" lists what is trusted and what is not.
+- Network traffic to KMS and DynamoDB is protected by TLS (TA5).
 
 **Out of scope.**
 
@@ -98,16 +322,16 @@ Five items follow. They are the High threats, plus Medium threats that have an o
 ### 1. Cache mix-up between keyrings
 
 - **What could go wrong.** Two keyrings that share a cache can end up with the same cache entry name when a name field contains a zero byte. One keyring then uses the other's branch key. Data of one tenant can become readable by holders of the other tenant's key store access.
-- **Who is affected.** Services that share a cache and take tenant names from outside input.
+- **Who is affected.** Services that share a cache and take tenant names from outside input (TA3).
 - **Rating.** High. Likelihood Medium.
-- **Protects us today.** The default cache partition identifier (ID) is random. Sharing is opt-in. The cache returns only branch key entries. Entries past their time limit are fetched again.
+- **Protects us today.** The default cache partition ID is random. Sharing is opt-in. The cache returns only branch key entries. Entries past their time limit are fetched again.
 - **Still open.** Nothing rejects zero bytes in the name fields. BUG-06 is open.
 - **What is being done.** Two fix options are written down. Rejecting zero bytes is a code change. Adding length prefixes needs a spec change and breaks cache ID compatibility with other implementations. No owner or date is recorded.
 - **IDs.** TM-MPL-009, TM-MPL-010. BUG-06.
 
 ### 2. Swapped or replayed branch key records
 
-- **What could go wrong.** A person with write access to the DynamoDB table could put an older genuine active record back. The keyring then encrypts under an older branch key version. No key is disclosed, but key rotation is undone. Nothing detects this.
+- **What could go wrong.** A person with write access to the DynamoDB table (TA1) could put an older genuine active record back. The keyring then encrypts under an older branch key version. No key is disclosed, but key rotation is undone. Nothing detects this.
 - **Rating.** High. Likelihood Medium.
 - **Protects us today.** Every record field is bound into the KMS encryption context. A record cannot be moved to another branch key ID or version without failing the KMS check.
 - **Still open.** There is no freshness check. Key stores written by users are not checked. A record that lacks the creation time and hierarchy version fields is accepted, with low impact.
@@ -115,7 +339,7 @@ Five items follow. They are the High threats, plus Medium threats that have an o
 
 ### 3. Stalls and crashes in cache refresh
 
-- **What could go wrong.** The cache feature that limits parallel key refreshes (storm tracking) can stall. A failed refresh can leave a stale in-progress mark, so later requests for the same key get throttling errors for a time. A very large configured time value makes the code crash and breaks that cache for as long as it lives.
+- **What could go wrong.** Storm tracking can stall. A failed refresh can leave a stale in-progress mark, so later requests for the same key get throttling errors for a time. A very large configured time value makes the code crash and breaks that cache for as long as it lives.
 - **Rating.** Medium. Likelihood Medium.
 - **Protects us today.** Parallel refreshes are limited. A damaged lock returns an error instead of a crash. The cache is written before the in-progress mark is cleared.
 - **Still open.** Setting validation does not enforce the spec's ordering of time values. The stalls were found by code reading and were not run. BUG-01 is open.
@@ -123,7 +347,7 @@ Five items follow. They are the High threats, plus Medium threats that have an o
 
 ### 4. Unbounded work when decrypting a message (unconfirmed)
 
-- **What could go wrong.** The sender of a message controls how many EDKs it holds and which key versions they name. Each EDK can cause one DynamoDB read. One message can slow requests and use up read capacity. No secret is exposed.
+- **What could go wrong.** The sender of a message (TA8) controls how many EDKs it holds and which key versions they name. Each EDK can cause one DynamoDB read. One message can slow requests and use up read capacity (A14). No secret is exposed.
 - **Rating.** Medium. Likelihood Medium. This threat is provisional and unconfirmed. The first effect follows from the code. The others need a test.
 - **Protects us today.** Only EDKs that name the configured key are tried. Failed lookups cannot push good entries out of the cache. A memory growth problem is fixed.
 - **Still open.** There is no default cap on EDK count, no short-term caching of failures and no overall deadline.
@@ -170,6 +394,78 @@ Five items follow. They are the High threats, plus Medium threats that have an o
 | TM-MPL-026 | Test servers let any local process use the host's AWS credentials | Low | Partly mitigated |
 
 **Status words.** Mitigated: a safeguard is in the code and no known gap needs action. Partly mitigated: a safeguard exists, but an open bug, a known gap or a user action remains. Open: the main problem has no fix yet. A gap in proof coverage alone does not change the status (see How sure are we).
+
+## Threats by type (STRIDE)
+
+The full model sorts each threat into one STRIDE category and names the part of the code it affects. Elevation of privilege has the most threats (ten). Repudiation has one. Ratings and status are in "All threats at a glance".
+
+### Spoofing
+
+Spoofing means pretending to be another party or key. All three threats here concern which key is used.
+
+| Number | Threat in plain words | Component |
+|---|---|---|
+| TM-MPL-001 | The raw AES keyring makes an EDK whose provider ID pretends to be an AWS KMS keyring. | Raw AES keyring builder |
+| TM-MPL-002 | A forged branch key record decrypts under a KMS key the attacker influences, so the wrong key is trusted. | Key store step that asks KMS to decrypt a branch key |
+| TM-MPL-003 | A malicious branch key ID supplier, or supplier input taken from the message, returns a branch key ID the attacker chose. | Hierarchical keyring branch key ID lookup, and the branch key ID supplier |
+
+### Tampering
+
+Tampering means changing data or settings without being caught. These threats cover key names, key records and the encryption context.
+
+| Number | Threat in plain words | Component |
+|---|---|---|
+| TM-MPL-004 | The key name and multi-Region key (MRK) matching rules accept a key name that should not match. | Multi-Region key matching, and the key name compatibility check |
+| TM-MPL-005 | A key record is swapped for a valid record of another branch key ID or version, or an older active record is replayed. | DynamoDB key store, its KMS calls, and record parsing |
+| TM-MPL-013 | The AAD for branch key wrap and unwrap is built inconsistently, which breaks the binding to the context. | AAD construction in branch key wrap |
+| TM-MPL-016 | A race during key rotation bypasses the conditional write and overwrites the active record. | Branch key rotation in the DynamoDB key store |
+| TM-MPL-017 | The merge of the encryption context with the reproduced context lets an attacker drop or change bound values. | Reproduced context merge in the default CMM |
+
+### Repudiation
+
+Repudiation means an action cannot be traced to who did it. The one threat here concerns the audit trail.
+
+| Number | Threat in plain words | Component |
+|---|---|---|
+| TM-MPL-020 | Nothing ties an MPL operation to the KMS and DynamoDB calls it caused. | Key store and keyrings |
+
+### Information disclosure
+
+Information disclosure means secrets reach someone who should not see them. These threats cover memory, error text and the shared cache.
+
+| Number | Threat in plain words | Component |
+|---|---|---|
+| TM-MPL-015 | Secret material (branch keys, data keys, derived keys, the wrapping key) is not wiped, or is kept after its use. | Materials structures, branch key wrap, raw AES keyring, `prim`, and the local cache |
+| TM-MPL-021 | Secret bytes or attacker-supplied text leak through debug output, error text or logs. | Materials structures and the error model |
+| TM-MPL-010 | A shared cache serves branch key materials to a keyring that should not have them. | Cache ID construction and the hierarchical keyring |
+
+### Denial of service
+
+Denial of service means making the service slow or unavailable. These threats cover the cache, bad input and the decrypt path.
+
+| Number | Threat in plain words | Component |
+|---|---|---|
+| TM-MPL-018 | A wrong storm tracking setting or a logic error causes a rush of refreshes, a deadlock, in-progress time limit failures, a stuck stale mark or a crash. | Storm tracking cache |
+| TM-MPL-022 | The cache fills up or keeps pushing out entries, which forces a storm of KMS calls and throttling. | Local cache and default cache |
+| TM-MPL-023 | A malformed EDK or ciphertext, or an extreme setting, causes a crash or resource blow-up instead of an error. | Branch key unwrap, keyrings, and the default CMM |
+| TM-MPL-025 | The EDK count and branch key versions chosen by the sender drive key store reads, in-progress slots and elapsed time. This threat is provisional and unconfirmed. | Hierarchical keyring decrypt, and the storm tracking cache |
+
+### Elevation of privilege
+
+Elevation of privilege means gaining access or power that was not granted. This group covers weak crypto use, wrong keys and unsafe boundaries.
+
+| Number | Threat in plain words | Component |
+|---|---|---|
+| TM-MPL-006 | An attacker forces a weaker algorithm suite or bypasses the commitment policy. | Default CMM, commitment policy, and materials checks |
+| TM-MPL-007 | Discovery or multi-Region discovery settings decrypt a record under an alias or a key in a Region the attacker chose. | Key store resolution of the record's key name |
+| TM-MPL-009 | Two cache IDs collide, so the cache returns the wrong branch key materials. | Cache ID construction |
+| TM-MPL-011 | The raw AES keyring uses the same AES-GCM IV twice. | Raw AES keyring wrap, and AES encryption in `prim` |
+| TM-MPL-012 | Branch key wrap uses the same salt and IV twice through a random collision. | Branch key wrap |
+| TM-MPL-014 | The KBKDF input layout or output length is wrong, which weakens branch key derivation. | Branch key derivation |
+| TM-MPL-008 | A non-committing suite is used where key commitment is expected. This enables the known attack called Invisible Salamanders. | Commitment policy and the default CMM |
+| TM-MPL-019 | No spec-to-code tracing (the Duvet tool) is set up for the MPL, so a spec "MUST" can quietly stop being met. | Whole library |
+| TM-MPL-024 | The C++ shim reads or adopts a handle to an MPL object that is dangling, forged or owned twice. | C++ shim (the boundary) |
+| TM-MPL-026 | A loopback test server without authentication uses the host's AWS credentials for any local process. | MPL test server and the three other test servers |
 
 ## What already protects us
 
@@ -246,7 +542,7 @@ No owners or dates are named in the source. Every item below is "Owner: to be as
 
 ## Where to read more
 
-- `docs/mpl-threat-model.md`: the full threat model with per-threat analysis, residual risks, recommendations and the risk matrix.
+- `docs/mpl-threat-model.md`: the full threat model. Sections 2 to 7 hold the overview, assets, actors, trust boundaries, data flows and threat list that this summary restates. Sections 8 to 11 hold the per-threat analysis, design notes, residual risks and recommendations. The appendix holds the risk matrix.
 - `docs/mpl-bug-reports/README.md`: the bug list with severity, confidence and status. The folder `docs/mpl-bug-reports/` holds one report per bug.
 - `docs/mpl-verification-targets.md`: the plan for formal proofs and what each one would show.
 
@@ -254,24 +550,72 @@ No owners or dates are named in the source. Every item below is "Owner: to be as
 
 | Term | Meaning |
 |---|---|
+| AAD | Additional authenticated data. Data that is not encrypted but is checked on decrypt. A change makes decrypt fail. |
 | AES-GCM | Advanced Encryption Standard in Galois/Counter Mode. A standard way to encrypt data and detect tampering. |
 | Algorithm suite | A named set of crypto algorithms used to encrypt a message. |
+| Alias | A short, changeable name that points to a KMS key. |
+| ARN | Amazon Resource Name. The full name of an AWS resource, such as a KMS key. Called a key name in this document. |
+| aws-lc-rs | The Rust crypto library the MPL uses. |
+| Beacon key | A root key for searchable encryption, protected by KMS. |
 | Branch key | A key kept in the key store. Data keys are wrapped under keys derived from it. |
+| Branch key ID supplier | Code that picks the branch key ID for a request, often from the encryption context. |
 | Branch key record | The stored form of a branch key in DynamoDB, protected by KMS. |
 | Cache | In-memory store of branch keys for a time limit, to reduce KMS calls. |
+| Cache ID | The SHA-384 hash that names a cache entry. |
+| CBOR | Concise Binary Object Representation. A compact binary data format used by the test servers. |
+| CI | Continuous integration. Automated build and test hosts. |
 | CMM | Cryptographic materials manager. Chooses the algorithm suite and gets key material from a keyring. |
+| Cold-boot attack | Reading secrets from memory chips shortly after a machine is powered off. |
 | Commitment policy | A setting that says whether messages must use key commitment. |
+| Conditional write | A database write that succeeds only if the stored data is still as expected. |
+| Constant-time comparison | A comparison whose run time does not depend on the secret values compared. |
+| Core dump | A file with a copy of a process's memory, written when it crashes. |
 | Data key | The key that encrypts the message data. |
+| Discovery mode | A key store setting that uses the KMS key named in each record instead of a configured key. Multi-Region discovery mode also changes the key's Region. |
+| Duvet | A tool that traces spec requirements to the code that meets them. |
 | DynamoDB | Amazon DynamoDB. The database that holds branch key records. |
+| ECDSA | Elliptic Curve Digital Signature Algorithm. Used to sign messages. |
 | EDK | Encrypted data key. A data key wrapped by a keyring, stored in the message. |
 | Encryption context | Extra named values bound to a ciphertext. Decrypt fails if they differ. |
+| Fail closed | On an error, refuse the operation instead of continuing. |
+| FFI | Foreign function interface. The way Rust code calls C code. |
+| FIPS | Federal Information Processing Standards. A United States government standard for crypto modules. |
+| Front-end step | The common call path that every CMM or keyring call goes through. It runs the materials checks. |
+| Grant token | A KMS value that gives temporary permission to use a key. |
+| Handle | A raw pointer that C++ code holds to an MPL object. |
+| HKDF | Hash-based key derivation function. |
+| HMAC | Hash-based message authentication code. |
+| Hierarchical keyring | A keyring that wraps data keys with keys derived from branch keys. |
+| IAM | AWS Identity and Access Management. Controls who may use which AWS resource. |
+| In-progress mark | The note storm tracking keeps while a key refresh is running. |
+| Invisible Salamanders | A known attack where one ciphertext decrypts to two different messages under two keys. Key commitment stops it. |
 | IV, nonce | Initialization vector. A value that must be unique for every encryption under one key. |
+| KBKDF | Key-based key derivation function. Makes new keys from an existing key. |
 | Key commitment | A property that makes a ciphertext decrypt under only one key. |
 | Key store | The MPL part that creates and reads branch key records. |
-| KMS | AWS Key Management Service. The root of trust for branch keys. |
 | Keyring | A component that wraps and unwraps data keys. |
+| KMS | AWS Key Management Service. The root of trust for branch keys. |
+| Logical key store name | A name for a key store that is bound into its records and its cache IDs. |
+| Loopback | The network address 127.0.0.1, which only the same machine can reach. |
+| MRK | Multi-Region key. A KMS key with copies in several Regions under related names. |
+| Partition ID | A value in the cache ID that keeps one user's cache entries apart from another's. |
+| Provider ID, provider info | Fields of an EDK that say which keyring made it and which key it used. |
+| Raw AES keyring | A keyring that wraps data keys with a local AES key. |
+| Reproduced context | The encryption context the caller supplies again on decrypt. |
+| SHA-384 | Secure Hash Algorithm with a 384-bit output. |
+| Shim | A thin layer that lets code in one language use a library written in another. |
+| Signing suite | An algorithm suite that signs each message with ECDSA. |
+| Storm tracking | A cache feature that limits parallel refreshes of the same key. |
+| Strongly consistent read | A database read that always returns the latest write. |
 | STRIDE | A list of threat types: Spoofing, Tampering, Repudiation, Information disclosure, Denial of service, Elevation of privilege. |
+| Supply chain attack | An attack through a library or tool that the software depends on. |
+| Swap | Disk space the operating system uses to hold memory pages. |
+| Time limit | How long a cache entry may be used. Also called time to live. |
+| TLS | Transport Layer Security. Protects network traffic. |
+| UTF-8 | The standard way to store text as bytes. |
+| UUID | Universally unique identifier. A standard 128-bit ID format. |
 | Wrapping key | A key used to encrypt (wrap) another key. |
+| Zero byte | A byte with the value 0. |
 | Zeroize | Overwrite secret data in memory with zeros when it is no longer needed. |
 
 ## Appendix B: Threat table in AWS template form
