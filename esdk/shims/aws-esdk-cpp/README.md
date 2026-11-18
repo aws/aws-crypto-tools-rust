@@ -62,10 +62,8 @@ For example, a FIPS build with only the raw AES keyring:
 cargo build --no-default-features --features fips
 ```
 
-The build writes `aws/esdk/Config.h` into `target/<profile>/include`.
-`EncryptionSDK.h` includes it, so it shows only what the library has.
-Code that includes `EncryptionSDK.h` needs `target/<profile>/include` on its
-include path. The `AWS::esdk` CMake target adds it.
+Without CMake, a build with non-default features must also put
+`target/<profile>/include` on the include path.
 
 ## Using it in a CMake project
 
