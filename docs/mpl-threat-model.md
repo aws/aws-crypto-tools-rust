@@ -7,7 +7,7 @@
 > - **Status:** Draft for verification prioritization.
 > - **Scope:** `mpl/` (key management) built on `prim/` (safe aws-lc-rs wrappers). Message-format concerns (ESDK) are OUT OF SCOPE. The ESDK and the C++ shim appear only as callers.
 > - **Methodology:** STRIDE with likelihood × impact risk rating (matrix in the appendix). Each threat has a stable ID `TM-MPL-NNN` referenced by the verification-recommender. IDs are never renumbered or deleted; a threat that no longer applies is marked Retired.
-> - **Inputs:** `docs/spec-security-analysis.md` (Stage 1, second pass), `.agents/tasks/pipeline-pass2/{scope.md,stage1-notes.md}`, `.agents/tasks/pipeline-rerun-620771c/`, `docs/bug-reports/RECHECK-main-620771c.md`, `docs/bug-reports/README.md`.
+> - **Inputs:** `docs/mpl-spec-security-analysis.md` (Stage 1, second pass), `.agents/tasks/pipeline-pass2/{scope.md,stage1-notes.md}`, `.agents/tasks/pipeline-rerun-620771c/`, `docs/mpl-bug-reports/RECHECK-main-620771c.md`, `docs/mpl-bug-reports/README.md`.
 >
 > **Note on Duvet:** `main` has no Duvet config for the MPL. The only configs are `esdk/.duvet/config.toml` and `esdk/shims/aws-esdk-cpp/.duvet/config.toml`. The ESDK config lists `spec/framework/transitive-requirements.md` (`esdk/.duvet/config.toml:37`, ESDK-level HKDF/ECDSA text) and no MPL framework document. `mpl/` and `prim/` contain exactly one annotation block (`mpl/src/cmc/entry.rs:201-204`, `cryptographic-materials-cache.md#usage-metadata`, `type=implication`), which CI does not check. Mitigations below cite code locations and spec sections directly. The gap is tracked as TM-MPL-019.
 >
@@ -378,7 +378,7 @@ Severity High, Likelihood **Medium**, Risk **High**. BUG-06 (TM-MPL-009) is a co
 - No `unsafe` code in `mpl/src` or `prim/src`.
 
 Residual exposures that remain:
-- The raw-AES decrypt buffer on the AES-error and wrong-length paths (`raw_aes_keyring.rs:471`, `:489`). The wrong-length path (an authenticated data key dropped un-wiped) is recorded as BUG-10 (Low, code reading; `docs/bug-reports/BUG-10-raw-aes-on-decrypt-unwiped-data-key.md`). Target T26.
+- The raw-AES decrypt buffer on the AES-error and wrong-length paths (`raw_aes_keyring.rs:471`, `:489`). The wrong-length path (an authenticated data key dropped un-wiped) is recorded as BUG-10 (Low, code reading; `docs/mpl-bug-reports/BUG-10-raw-aes-on-decrypt-unwiped-data-key.md`). Target T26.
 - The `Vec` returned by `branch_key_wrap::unwrap` before it is wrapped in `PlaintextDataKey` (a plain `Vec<u8>`, `branch_key_wrap.rs:275`). Also part of BUG-10 (code reading).
 - The KMS SDK response `Blob` that holds the plaintext branch key (`key_store/kms_ops.rs:207`).
 - BUG-07(a): `prim::aes_encrypt` copies the plaintext into the output buffer before the key and nonce checks that can return `Err` (`prim/src/lib.rs:185-188`). The MPL callers then drop that buffer without wiping it. Caller impact (code reading; the prim-side facts are proved in-crate only on `Mahnush_Verus`, VR-014): the callers are `wrap_data_key` (`raw_aes_keyring.rs:163`) and `branch_key_wrap::wrap` (`:199`). The key cannot leave through the API, and the failure cannot fire today, because key and IV sizes are fixed by type and the raw-AES wrapping-key length is checked at `RawAesKeyringBuilder::build` (`:369-379`). Low, confidentiality.
@@ -582,7 +582,7 @@ Operational practices:
 
 - spec/framework (local copy; MPL-relevant sections identical to remote `master` as of the setup step, `94c2bfe`, per scope): algorithm-suites.md, commitment-policy.md, branch-key-store.md (#discovery, #mrdiscovery, KeyId rule, #logical-keystore-name), cmm-interface.md, default-cmm.md, structures.md, keyring-interface.md, raw-aes-keyring.md, aws-kms/aws-kms-hierarchical-keyring.md (cache-id formulas, #partition-id, #logical-key-store-name, Appendix B), aws-kms/aws-kms-mrk-match-for-decrypt.md, cryptographic-materials-cache.md, local-cryptographic-materials-cache.md, storm-tracking-cryptographic-materials-cache.md (FanOut, Inflight TTL, Consistency). Shim: spec/shim/shim.md#handles-and-lifetimes, #adopting-custom-implementations.
 - Code: `mpl/src/{keyring/{raw_aes_keyring,fluent_builders}.rs, aws_kms/{hierarchical_keyring,branch_key_wrap,mrk_match,cache_entry_identifier,user_agent}.rs, key_store/{branch_key_store,kms_ops,kms_config,record,encryption_context,client_impl}.rs, cmm/{default_cmm,fluent_builders}.rs, cmc/{local,storm_tracking,default,entry,mod}.rs, structures/{algorithm_suite,materials_checks,commitment_policy,encryption_context,branch_key_materials,beacon_key_materials,encrypted_data_key}.rs, error/generated.rs, shared.rs}`, `prim/src/{lib,ecdsa,error}.rs`, `esdk/src/{materials,decrypt,config}.rs`, `esdk/shims/aws-esdk-cpp/{src/lib.rs,src/EncryptionSDK.cpp,include/aws/esdk/EncryptionSDK.h,build.rs,CMakeLists.txt,Makefile}`, `mpl/test-server/src/{main,handlers}.rs`.
-- Pipeline inputs: `docs/spec-security-analysis.md`; `docs/bug-reports/RECHECK-main-620771c.md`; `docs/bug-reports/README.md`; `docs/bug-reports/BUG-01..BUG-09`; `.agents/tasks/pipeline-pass2/{scope.md,stage1-notes.md,stage2-notes.md}`; `.agents/tasks/pipeline-rerun-620771c/{scope.md,stage2-notes.md}`.
+- Pipeline inputs: `docs/mpl-spec-security-analysis.md`; `docs/mpl-bug-reports/RECHECK-main-620771c.md`; `docs/mpl-bug-reports/README.md`; `docs/mpl-bug-reports/BUG-01..BUG-09`; `.agents/tasks/pipeline-pass2/{scope.md,stage1-notes.md,stage2-notes.md}`; `.agents/tasks/pipeline-rerun-620771c/{scope.md,stage2-notes.md}`.
 - CVE-2026-6550 / GHSA-v638-38fc-rhfv (verified; ESDK for Python caching CMM; not applicable to this code): [GitHub Advisory Database](https://github.com/advisories/GHSA-v638-38fc-rhfv), [aws-encryption-sdk-python advisory](https://github.com/aws/aws-encryption-sdk-python/security/advisories/GHSA-v638-38fc-rhfv), [NVD](https://nvd.nist.gov/vuln/detail/CVE-2026-6550), [AWS Security Bulletin 2026-017-aws](https://aws.amazon.com/security/security-bulletins/2026-017-aws/). Summary: in the ESDK for Python, a shared caching CMM could serve non-committing materials across differing commitment policies. Content was rephrased for compliance with licensing restrictions.
 - Invisible Salamanders / encryptment: Dodis, Grubbs, Ristenpart, Woodage, IACR ePrint 2019/016 (https://eprint.iacr.org/2019/016). Content was rephrased for compliance with licensing restrictions.
 - AWS KMS key-derivation construction: Gueron, RWC 2018.
@@ -632,7 +632,7 @@ Retired: none.
 
 ## Impact on verification targets
 
-Basis changes since the last Stage 3 run (`docs/verification-targets.md`, T01..T26 and C01..C08), so that the orchestrator can decide whether to refresh Stage 3. No existing threat rating changed, so no target's score input changed through a rating; the items below are changes of evidence, scope or citation.
+Basis changes since the last Stage 3 run (`docs/mpl-verification-targets.md`, T01..T26 and C01..C08), so that the orchestrator can decide whether to refresh Stage 3. No existing threat rating changed, so no target's score input changed through a rating; the items below are changes of evidence, scope or citation.
 
 | Target | Basis changed | Refresh? |
 |---|---|---|
@@ -653,28 +653,28 @@ Basis changes since the last Stage 3 run (`docs/verification-targets.md`, T01..T
 
 ### Resolution (HEAD `9955ecd`)
 
-The table above is kept as written (history). The refresh of `docs/verification-targets.md` and `docs/verification-targets/01-threat-driven.md` applied it as follows. "Rank" is the rank in the combined list in `docs/verification-targets.md` section 1. No threat rating changed.
+The table above is kept as written (history). The refresh of `docs/mpl-verification-targets.md` and `docs/mpl-verification-targets/01-threat-driven.md` applied it as follows. "Rank" is the rank in the combined list in `docs/mpl-verification-targets.md` section 1. No threat rating changed.
 
 | Target | Applied | Resulting ID and score | Where |
 |---|---|---|---|
-| T25 | Yes | T25, 1.44 (unchanged, rank 30). Citations moved; `Keyring::adopt` added to the scope | `verification-targets.md:15`; `01-threat-driven.md:18` |
-| T21 | Yes | T21, 1.96 → 2.24 (rank 23). Coverage gap 0.7 → 0.8; properties (g), (h), (i) added | `verification-targets.md:14`; `01-threat-driven.md:17` |
-| T06 | Yes (note) | T06, 4.20 (unchanged, rank 11) | `verification-targets.md:18`; `01-threat-driven.md:21` |
-| T14 | Yes (property wording) | T14, 3.78 (unchanged, rank 13) | `verification-targets.md:18`; `01-threat-driven.md:22` |
-| T13 | No change needed | T13, 4.41 (rank 9) | `verification-targets.md:174` |
-| T19 | Yes (scope note) | T19, 1.92 (unchanged, rank 27) | `verification-targets.md:18`; `01-threat-driven.md:23` |
-| T22 | Yes | T22, 1.60 (unchanged, rank 29) | `verification-targets.md:18`; `01-threat-driven.md:24` |
-| T26 | Yes | T26, 3.20 (unchanged, rank 15). Sites F4 and F5 added | `verification-targets.md:16`; `01-threat-driven.md:19` |
-| T01, T02, T03 | Note only (rollback is a non-goal) | T01 8.96, T02 6.72, T03 5.12, all unchanged | `verification-targets.md:17`, `:18`; `01-threat-driven.md:20`, `:26` |
-| T05, T09, T16, others | T09: scope note. The rest: no change | T09 2.56; T05 4.32; T16 2.24 | `verification-targets.md:18`; `01-threat-driven.md:25` |
-| TM-MPL-025 (no target yet) | Yes: new target | **T27**, 3.78 (rank 14; rank 10 among the threat-driven targets). Provisional, because TM-MPL-025 is unconfirmed | `verification-targets.md:13`, `:179`; `01-threat-driven.md:16`, `:126` |
-| TM-MPL-026 (no target needed) | Yes: recorded as fully excluded | No target. Row in the out-of-scope tables | `verification-targets.md:647`; `01-threat-driven.md:1560` |
+| T25 | Yes | T25, 1.44 (unchanged, rank 30). Citations moved; `Keyring::adopt` added to the scope | `mpl-verification-targets.md:15`; `01-threat-driven.md:18` |
+| T21 | Yes | T21, 1.96 → 2.24 (rank 23). Coverage gap 0.7 → 0.8; properties (g), (h), (i) added | `mpl-verification-targets.md:14`; `01-threat-driven.md:17` |
+| T06 | Yes (note) | T06, 4.20 (unchanged, rank 11) | `mpl-verification-targets.md:18`; `01-threat-driven.md:21` |
+| T14 | Yes (property wording) | T14, 3.78 (unchanged, rank 13) | `mpl-verification-targets.md:18`; `01-threat-driven.md:22` |
+| T13 | No change needed | T13, 4.41 (rank 9) | `mpl-verification-targets.md:174` |
+| T19 | Yes (scope note) | T19, 1.92 (unchanged, rank 27) | `mpl-verification-targets.md:18`; `01-threat-driven.md:23` |
+| T22 | Yes | T22, 1.60 (unchanged, rank 29) | `mpl-verification-targets.md:18`; `01-threat-driven.md:24` |
+| T26 | Yes | T26, 3.20 (unchanged, rank 15). Sites F4 and F5 added | `mpl-verification-targets.md:16`; `01-threat-driven.md:19` |
+| T01, T02, T03 | Note only (rollback is a non-goal) | T01 8.96, T02 6.72, T03 5.12, all unchanged | `mpl-verification-targets.md:17`, `:18`; `01-threat-driven.md:20`, `:26` |
+| T05, T09, T16, others | T09: scope note. The rest: no change | T09 2.56; T05 4.32; T16 2.24 | `mpl-verification-targets.md:18`; `01-threat-driven.md:25` |
+| TM-MPL-025 (no target yet) | Yes: new target | **T27**, 3.78 (rank 14; rank 10 among the threat-driven targets). Provisional, because TM-MPL-025 is unconfirmed | `mpl-verification-targets.md:13`, `:179`; `01-threat-driven.md:16`, `:126` |
+| TM-MPL-026 (no target needed) | Yes: recorded as fully excluded | No target. Row in the out-of-scope tables | `mpl-verification-targets.md:647`; `01-threat-driven.md:1560` |
 
 Result: 33 active targets (was 32), 26 threat-driven and 7 capability-driven; T08 and C06 stay retired. The targets documents now count TM-MPL-001..026.
 
-The completeness audit (`docs/completeness-audit.md`) found no missed threat. It found one small spec-clause gap (G1, applied to T02), one editorial error (G2) and one editorial staleness (G4-1); none changes a rating or adds a threat.
+The completeness audit (`docs/mpl-completeness-audit.md`) found no missed threat. It found one small spec-clause gap (G1, applied to T02), one editorial error (G2) and one editorial staleness (G4-1); none changes a rating or adds a threat.
 
-Note: the bug report for BUG-06 (`docs/bug-reports/`) now rates BUG-06 High. It was raised from Low on the owner's decision after the main re-check, so it is consistent with TM-MPL-009 and TM-MPL-010 (High) here. No threat rating changed because of this.
+Note: the bug report for BUG-06 (`docs/mpl-bug-reports/`) now rates BUG-06 High. It was raised from Low on the owner's decision after the main re-check, so it is consistent with TM-MPL-009 and TM-MPL-010 (High) here. No threat rating changed because of this.
 
 ### Proof status (HEAD `d288750`)
 

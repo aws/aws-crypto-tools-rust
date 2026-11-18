@@ -2,7 +2,7 @@
 """Checks 4, 7, 9: capability_reference present; ID stability vs HEAD; merged YAML block count and origins."""
 import re, os, subprocess
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-P = {"01": "docs/verification-targets/01-threat-driven.md", "02": "docs/verification-targets/02-capability-driven.md", "merged": "docs/verification-targets.md"}
+P = {"01": "docs/mpl-verification-targets/01-threat-driven.md", "02": "docs/mpl-verification-targets/02-capability-driven.md", "merged": "docs/mpl-verification-targets.md"}
 def blocks(text):
     out = {}
     for b in re.finditer(r"```yaml\n(.*?)```", text, re.S):
@@ -10,7 +10,11 @@ def blocks(text):
         if m: out[m.group(1)] = blk
     return out
 now = {k: blocks(open(os.path.join(ROOT, p)).read()) for k, p in P.items()}
-head = {k: blocks(subprocess.run(["git", "-C", ROOT, "show", "HEAD:" + p], capture_output=True, text=True).stdout) for k, p in P.items()}
+def _show(p):
+    o = subprocess.run(["git", "-C", ROOT, "show", "HEAD:" + p], capture_output=True, text=True).stdout
+    # before the docs/mpl-* rename is committed, HEAD still has the old path
+    return o or subprocess.run(["git", "-C", ROOT, "show", "HEAD:" + p.replace("docs/mpl-", "docs/", 1)], capture_output=True, text=True).stdout
+head = {k: blocks(_show(p)) for k, p in P.items()}
 bad = []
 # check 4
 for k in ("02", "merged"):

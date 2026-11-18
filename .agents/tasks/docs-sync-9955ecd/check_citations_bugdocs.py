@@ -13,7 +13,7 @@ import os, re, subprocess, sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 import glob
-DOCS = sorted(os.path.relpath(p, ROOT) for p in glob.glob(os.path.join(ROOT, "docs/bug-reports/*.md"))) + ["docs/spec-security-analysis.md"]
+DOCS = sorted(os.path.relpath(p, ROOT) for p in glob.glob(os.path.join(ROOT, "docs/mpl-bug-reports/*.md"))) + ["docs/mpl-spec-security-analysis.md"]
 W = int(os.environ.get("W", "4"))
 
 files = subprocess.run(["git", "-C", ROOT, "ls-files", "mpl", "prim", "esdk"],

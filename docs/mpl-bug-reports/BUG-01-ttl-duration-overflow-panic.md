@@ -5,8 +5,8 @@ Summary: `HierarchicalKeyring` and `StormTrackingCmc` accept arbitrarily large t
 - Confidence: Confirmed by test
 - Spec conflict: no
 - Severity: Low. The trigger is configuration only (trusted application code), and the threshold on Unix is roughly 9.2 × 10^18 s. Still, a "never expire" sentinel such as `u64::MAX` is a plausible thing for an application to pass, and the result is a panic, not an error.
-- Related IDs: VR-2026-T06 (primary), VR-2026-T21 (property (i), panic under the state lock, for BUG-01 b and c); TM-MPL-018 (Medium), TM-MPL-022 (Low), TM-MPL-023 (Low). Ratings are from `docs/threat-model.md` (HEAD 9955ecd); targets are from `docs/verification-targets.md`.
-- Completeness audit mapping (`docs/completeness-audit.md` section 3b): BUG-01 -> TM-MPL-018, 023 -> T06.
+- Related IDs: VR-2026-T06 (primary), VR-2026-T21 (property (i), panic under the state lock, for BUG-01 b and c); TM-MPL-018 (Medium), TM-MPL-022 (Low), TM-MPL-023 (Low). Ratings are from `docs/mpl-threat-model.md` (HEAD 9955ecd); targets are from `docs/mpl-verification-targets.md`.
+- Completeness audit mapping (`docs/mpl-completeness-audit.md` section 3b): BUG-01 -> TM-MPL-018, 023 -> T06.
 - Last cross-checked: HEAD 9955ecd (code == main 620771c for mpl/ and prim/)
 
 ## Status on main (620771c)

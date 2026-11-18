@@ -27,7 +27,7 @@ All agents share:
 - The same MPL specification source at `spec/framework/` (via the `spec/` submodule)
 - The same Duvet annotations in `mpl/src/**/*.rs` and `mpl/tests/**/*.rs` (requirement → code/test map)
 - The same project implementation in `mpl/src/` (the MPL) and `prim/src/` (crypto primitives)
-- The same threat model at `docs/threat-model.md`
+- The same threat model at `docs/mpl-threat-model.md`
 
 ## Your Primary Goal
 
@@ -77,7 +77,7 @@ Map each verification target to the correct Verus agent based on what is being p
 ## Process
 
 1. **Gather Targets from BOTH entry paths:**
-   - **Threat-driven:** Read `docs/threat-model.md` and extract all identified threats with their severity, likelihood, and existing mitigations.
+   - **Threat-driven:** Read `docs/mpl-threat-model.md` and extract all identified threats with their severity, likelihood, and existing mitigations.
    - **Capability-driven:** Run the Stage 2' sweep from `ai-verification-pipeline.md` using `verus-capabilities.md` — enumerate provable properties in `mpl/src`/`prim/src` that are worth proving independent of any threat (total panic-freedom of `prim`, `zeroize` soundness, codec round-trips, cache-arithmetic safety). These become targets even when no threat references them.
    Produce a single combined target list; tag each target `threat-driven` or `capability-driven`.
 

@@ -4,7 +4,7 @@ Active threat-driven YAML blocks in 01, and vs the threat model's STRIDE letters
 import re, os, collections
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 rd = lambda p: open(os.path.join(ROOT, p)).read()
-d01 = rd("docs/verification-targets/01-threat-driven.md"); dm = rd("docs/verification-targets.md"); tm = rd("docs/threat-model.md")
+d01 = rd("docs/mpl-verification-targets/01-threat-driven.md"); dm = rd("docs/mpl-verification-targets.md"); tm = rd("docs/mpl-threat-model.md")
 score = {}
 t2 = collections.defaultdict(set)
 for b in re.finditer(r"```yaml\n(.*?)```", d01, re.S):

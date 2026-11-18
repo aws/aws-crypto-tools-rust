@@ -1,6 +1,6 @@
 # Re-check of BUG-01 .. BUG-09 against main 620771c
 
-- What was re-checked: the nine findings in `docs/bug-reports/BUG-01..BUG-09` (summary in `docs/bug-reports/README.md`).
+- What was re-checked: the nine findings in `docs/mpl-bug-reports/BUG-01..BUG-09` (summary in `docs/mpl-bug-reports/README.md`).
 - Old code: `a1e23d7` (where the bugs were found and reproduced; branch `aws-crypto-rust/esdk-native-mpl`).
 - Current code: `c256243` on branch `MPL-Verus` (merge of main). Its code is identical to `origin/main` `620771c`.
 - Note: `a1e23d7` is not an ancestor of `620771c`. "Commits since a1e23d7" below means `git log a1e23d7..HEAD -- <file>`, which lists the main commits not in `a1e23d7`.
@@ -191,7 +191,7 @@ $ git diff --stat 620771c 5f2dc72
 
 ### Current threat and target IDs
 
-IDs and ratings are from `docs/threat-model.md` (TM-MPL-001..026, HEAD 9955ecd) and `docs/verification-targets.md`; the bug to threat to target mapping is `docs/completeness-audit.md` section 3b.
+IDs and ratings are from `docs/mpl-threat-model.md` (TM-MPL-001..026, HEAD 9955ecd) and `docs/mpl-verification-targets.md`; the bug to threat to target mapping is `docs/mpl-completeness-audit.md` section 3b.
 
 | Bug | Status | Threats (rating) | Targets |
 |---|---|---|---|

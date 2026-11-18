@@ -7,8 +7,8 @@ Summary (as found at `a1e23d7`): `HierarchicalKeyring::on_decrypt` returned what
 - Confidence: Confirmed by test
 - Spec conflict: yes
 - Severity: Medium. This is a spec MUST deviation and a divergence from the Dafny MPL, which checks length in both places. Producing a wrong-length EDK needs the branch key, or a custom CMM/keyring supplying the PDK. Downstream ESDK checks catch it for identity-KDF and V2 (committing) suites, but by code reading not for V1 HKDF suites in release builds.
-- Related IDs: VR-2026-C04 (C04-F1 = keyring OnDecrypt, C04-F2 = materials constructors); cap:cat1 (1a); TM-MPL-006 (Medium), TM-MPL-023 (Low). Ratings are from `docs/threat-model.md` (HEAD 9955ecd), where the fix is recorded as a mitigation for both threats and no rating changed; targets are from `docs/verification-targets.md`.
-- Completeness audit mapping (`docs/completeness-audit.md` section 3b): BUG-02 (Fixed) -> TM-MPL-006, 023 -> C04.
+- Related IDs: VR-2026-C04 (C04-F1 = keyring OnDecrypt, C04-F2 = materials constructors); cap:cat1 (1a); TM-MPL-006 (Medium), TM-MPL-023 (Low). Ratings are from `docs/mpl-threat-model.md` (HEAD 9955ecd), where the fix is recorded as a mitigation for both threats and no rating changed; targets are from `docs/mpl-verification-targets.md`.
+- Completeness audit mapping (`docs/mpl-completeness-audit.md` section 3b): BUG-02 (Fixed) -> TM-MPL-006, 023 -> C04.
 - Last cross-checked: HEAD 9955ecd (code == main 620771c for mpl/ and prim/)
 
 ## Status on main (620771c)

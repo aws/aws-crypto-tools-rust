@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Consistency check of docs/chorus/*.md against docs/threat-model.md, docs/verification-targets.md,
+"""Consistency check of docs/chorus/*.md against docs/mpl-threat-model.md, docs/mpl-verification-targets.md,
 bug-reports README. Checks: register ratings, counts, target scores, bug severity (BUG-06 High), no Low for BUG-06,
 mitigation of CVE wording, banned formats (HTML, emoji, mermaid, footnotes)."""
 import os, re, collections
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 rd = lambda p: open(os.path.join(ROOT, p)).read()
-tm = rd("docs/threat-model.md"); vt = rd("docs/verification-targets.md")
+tm = rd("docs/mpl-threat-model.md"); vt = rd("docs/mpl-verification-targets.md")
 ct = rd("docs/chorus/MPL-Threat-Model.md"); cb = rd("docs/chorus/MPL-Bug-Reports.md")
 prob = 0
 def bad(*a):
@@ -88,7 +88,7 @@ if "| BUG-06 | Cache-identifier preimage not injective when fields contain NUL |
 if "Severity | High (raised from Low" not in cb: bad("BUG-06 attr row")
 if "1 | BUG-06" not in cb: bad("agenda order")
 # bug severities vs README
-readme = rd("docs/bug-reports/README.md")
+readme = rd("docs/mpl-bug-reports/README.md")
 sev = {}
 for m in re.finditer(r"^\| \[(BUG-\d\d)\]\([^)]*\) \| .*? \| .*? \| (High \(raised[^|]*|Low|Medium|Informational) \|", readme, re.M):
     sev[m.group(1)] = m.group(2).split(" (")[0]

@@ -11,12 +11,12 @@ import os, re, subprocess
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 DOCS = [
-    "docs/spec-security-analysis.md",
-    "docs/threat-model.md",
-    "docs/verification-targets.md",
-    "docs/verification-targets/01-threat-driven.md",
-    "docs/verification-targets/02-capability-driven.md",
-    "docs/verification-targets/04-validation.md",
+    "docs/mpl-spec-security-analysis.md",
+    "docs/mpl-threat-model.md",
+    "docs/mpl-verification-targets.md",
+    "docs/mpl-verification-targets/01-threat-driven.md",
+    "docs/mpl-verification-targets/02-capability-driven.md",
+    "docs/mpl-verification-targets/04-validation.md",
 ]
 files = [f for f in subprocess.run(["git", "-C", ROOT, "ls-files", "mpl", "prim", "esdk"],
          capture_output=True, text=True).stdout.split() if f.endswith(".rs")]

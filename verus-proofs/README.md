@@ -221,7 +221,7 @@ The branch returns `Err(Collision)` if and only if `custom.iter()` repeats a key
 | `c01_ec_roundtrip.rs` | VR-2026-C01 | capability 1c | Builder and reconstruction round trip; BUG-08 |
 | `c02_sign_fixed_len.rs` | VR-2026-C02 | capability 2d | Bounded retry, no panic, no partial write in `sign_fixed_len` |
 
-The orchestrator records proof status in `docs/verification-targets*.md` after review. This README does not edit those files.
+The orchestrator records proof status in `docs/mpl-verification-targets*.md` after review. This README does not edit those files.
 
 ## Next steps
 

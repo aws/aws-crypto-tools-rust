@@ -5,7 +5,7 @@ import re, os
 from decimal import Decimal
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 rd = lambda p: open(os.path.join(ROOT, p)).read()
-P = {"01": "docs/verification-targets/01-threat-driven.md", "02": "docs/verification-targets/02-capability-driven.md", "merged": "docs/verification-targets.md"}
+P = {"01": "docs/mpl-verification-targets/01-threat-driven.md", "02": "docs/mpl-verification-targets/02-capability-driven.md", "merged": "docs/mpl-verification-targets.md"}
 T = {k: rd(p) for k, p in P.items()}
 blocks = {}
 for k in P:

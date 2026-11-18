@@ -1,13 +1,13 @@
 # Threat-Driven Verus Verification Targets — AWS MPL (native Rust)
 
 > Pipeline artifact — Stage 3, Step 1 of 4 (threat-driven entry path). **Refreshed for HEAD `9955ecd`** (branch `MPL-Verus`; `mpl/` and `prim/` identical to `origin/main` `620771c`; `esdk/` differs from `620771c` only by #188 and #189). The refresh for main `620771c` (previous version analyzed `a1e23d7`) is kept in section 0.
-> Inputs: `docs/threat-model.md` (TM-MPL-001..026, second pass at `851977d`), `docs/spec-security-analysis.md`, `docs/completeness-audit.md`, `docs/bug-reports/RECHECK-main-620771c.md`, `.agents/tasks/pipeline-rerun-620771c/scope.md`, `mpl/src`, `prim/src`, `mpl/tests`, `prim/tests`, `esdk/shims/aws-esdk-cpp/src`.
+> Inputs: `docs/mpl-threat-model.md` (TM-MPL-001..026, second pass at `851977d`), `docs/mpl-spec-security-analysis.md`, `docs/mpl-completeness-audit.md`, `docs/mpl-bug-reports/RECHECK-main-620771c.md`, `.agents/tasks/pipeline-rerun-620771c/scope.md`, `mpl/src`, `prim/src`, `mpl/tests`, `prim/tests`, `esdk/shims/aws-esdk-cpp/src`.
 > Methodology: `.kiro/agents/verification-recommender.md`, `.kiro/agents/ai-verification-pipeline.md`, `.kiro/agents/verus-capabilities.md`.
 > Every target has `origin: threat-driven`. At `620771c` every `file:line` was re-checked (see `.agents/tasks/pipeline-rerun-620771c/stage3-notes.md`). In the `9955ecd` refresh every `file:line` that was added or moved was re-checked on HEAD with `sed` / `grep` (see `.agents/tasks/docs-sync-9955ecd/notes-targets-threat-driven.md`). Older `mpl/` and `prim/` citations still hold because those trees are unchanged.
 
 ## Refresh (HEAD 9955ecd)
 
-This refresh applies the "Impact on verification targets" list of `docs/threat-model.md` (second pass, TM-MPL-001..026) and the results of `docs/completeness-audit.md` (no missed threat; one gap G1; editorial item G4-1). No threat rating changed and `mpl/`, `prim/` did not change, so no score moved because of code. Scores moved only where the evidence for a property changed. Target IDs are stable; T08 and C06 stay retired.
+This refresh applies the "Impact on verification targets" list of `docs/mpl-threat-model.md` (second pass, TM-MPL-001..026) and the results of `docs/mpl-completeness-audit.md` (no missed threat; one gap G1; editorial item G4-1). No threat rating changed and `mpl/`, `prim/` did not change, so no score moved because of code. Scores moved only where the evidence for a property changed. Target IDs are stable; T08 and C06 stay retired.
 
 ### What changed
 
@@ -779,7 +779,7 @@ recommendation:
   rationale: |
     Replaces retired T08. The long-lived secret types now zeroize on drop, so TM-MPL-015 was lowered to
     Medium/Low; what remains is exactly these transient sites (threat model §8 TM-MPL-015 residuals,
-    spec-security-analysis.md). Verus does not model Drop natively, so the proof needs ghost "secret /
+    mpl-spec-security-analysis.md). Verus does not model Drop natively, so the proof needs ghost "secret /
     wiped" state over local buffers; that is why the effort is 2 weeks. Fixes (Zeroizing buffers;
     truncate or wipe the output on aes_encrypt Err) change behavior and are owner decisions.
     Second pass (TM-MPL-015, rating Low unchanged): F4 and F5 were added; the score does not change because the
@@ -1557,7 +1557,7 @@ recommendation:
 |---|---|---|---|
 | TM-MPL-019 | **Fully excluded** | Missing Duvet coverage (1 annotation, no MPL config); spec floats on `master` (#91) | Process / traceability tooling; no code property |
 | TM-MPL-020 | **Fully excluded** | No audit binding between MPL operations and KMS/DDB calls | Operational control (CloudTrail; user agent `AwsCryptographicMPL-Rust/<version>` at `aws_kms/user_agent.rs:16-19`) |
-| TM-MPL-026 | **Fully excluded** | Unauthenticated loopback test servers use ambient AWS credentials for any local process (`mpl/test-server/src/main.rs:26-27`, `prim/test-server/src/main.rs:23-24`, `esdk/test-server/src/main.rs:26-27`, `esdk/shims/aws-esdk-cpp/test-server/src/main.rs:26-27`; AWS clients built from request data at `mpl/test-server/src/handlers.rs:137-147`, `:425-430`) | Test-only code, not published (`publish = false`, line 6 of each `Cargo.toml`), bound to `127.0.0.1`. Risk Low (Medium × Low). It is an operational control (run the servers only on development hosts without production credentials, `threat-model.md` recommendations), not a property of the library; no target needed |
+| TM-MPL-026 | **Fully excluded** | Unauthenticated loopback test servers use ambient AWS credentials for any local process (`mpl/test-server/src/main.rs:26-27`, `prim/test-server/src/main.rs:23-24`, `esdk/test-server/src/main.rs:26-27`, `esdk/shims/aws-esdk-cpp/test-server/src/main.rs:26-27`; AWS clients built from request data at `mpl/test-server/src/handlers.rs:137-147`, `:425-430`) | Test-only code, not published (`publish = false`, line 6 of each `Cargo.toml`), bound to `127.0.0.1`. Risk Low (Medium × Low). It is an operational control (run the servers only on development hosts without production credentials, `mpl-threat-model.md` recommendations), not a property of the library; no target needed |
 | TM-MPL-001 | Partial (→ T24, T20) | Downstream case-insensitive provider-id trust | Other components |
 | TM-MPL-002 | Partial (→ T03, T01) | KMS key policy / grants; KMS enforcing EC-as-AAD; Discovery trusting the record ARN | External service; configuration |
 | TM-MPL-003 | Partial (→ T19) | Correctness of a caller-supplied `BranchKeyIdSupplier` | Caller code |

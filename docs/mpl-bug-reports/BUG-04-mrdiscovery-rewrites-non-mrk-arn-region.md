@@ -5,8 +5,8 @@ Summary: With `KmsConfiguration::MrDiscovery { region }`, the branch key store r
 - Confidence: Confirmed by test (in-crate unit test against `resolve_keystore_arn`; the end-to-end KMS failure is inferred and needs AWS)
 - Spec conflict: yes. The spec is internally inconsistent: the configuration section says MRK ARNs only, while the KMS-Decrypt section says the region is replaced unconditionally.
 - Severity: Low. This is a spec-text / cross-runtime divergence. With the default KMS client, a single-Region key outside the configured region is expected to fail in both Rust and Dafny, with different errors. The outcomes differ only when the caller supplies its own KMS client. It fails closed, and there's no wrong-key or confidentiality impact (see Impact).
-- Related IDs: VR-2026-T17; TM-MPL-007 (Medium). `docs/threat-model.md` records that this bug fails closed and does not widen TM-MPL-002 (Medium). Ratings are from `docs/threat-model.md` (HEAD 9955ecd); targets are from `docs/verification-targets.md`.
-- Completeness audit mapping (`docs/completeness-audit.md` section 3b): BUG-04 -> TM-MPL-007 -> T17.
+- Related IDs: VR-2026-T17; TM-MPL-007 (Medium). `docs/mpl-threat-model.md` records that this bug fails closed and does not widen TM-MPL-002 (Medium). Ratings are from `docs/mpl-threat-model.md` (HEAD 9955ecd); targets are from `docs/mpl-verification-targets.md`.
+- Completeness audit mapping (`docs/mpl-completeness-audit.md` section 3b): BUG-04 -> TM-MPL-007 -> T17.
 - Last cross-checked: HEAD 9955ecd (code == main 620771c for mpl/ and prim/)
 
 ## Status on main (620771c)

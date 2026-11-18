@@ -5,8 +5,8 @@ Summary: `build_cache_identifier` joins the partition ID, logical key store name
 - Confidence: Confirmed by test
 - Spec conflict: yes, but the conflict is inside the spec. The code matches the mandated layout in Appendix A exactly, and that layout breaks the spec's own statement that keyrings with different partition IDs "CANNOT share" cache entries.
 - Severity: High. Severity raised Low -> High on the owner's decision after the main re-check. This applies to the outcome when the preconditions hold. The preconditions are a `Shared` cache plus the ability to pick NUL-containing configuration values (partition ID, logical key store name, or branch key ID). Those values can come from a caller-supplied string or from a branch key ID supplier. If they hold, the impact is cross-keyring use of branch key materials, which the main re-check confirmed end to end. See "Severity decision" below.
-- Related IDs: VR-2026-T13 (primary), VR-2026-T19 (hierarchical branch key ID binding, for the supplier path); TM-MPL-009 (High), TM-MPL-010 (High), TM-MPL-003 (Low). Ratings are from `docs/threat-model.md` (HEAD 9955ecd); targets are from `docs/verification-targets.md`.
-- Completeness audit mapping (`docs/completeness-audit.md` section 3b): BUG-06 -> TM-MPL-009, 010, 003 -> T13, T19.
+- Related IDs: VR-2026-T13 (primary), VR-2026-T19 (hierarchical branch key ID binding, for the supplier path); TM-MPL-009 (High), TM-MPL-010 (High), TM-MPL-003 (Low). Ratings are from `docs/mpl-threat-model.md` (HEAD 9955ecd); targets are from `docs/mpl-verification-targets.md`.
+- Completeness audit mapping (`docs/mpl-completeness-audit.md` section 3b): BUG-06 -> TM-MPL-009, 010, 003 -> T13, T19.
 - Last cross-checked: HEAD 9955ecd (code == main 620771c for mpl/ and prim/)
 
 ## Status on main (620771c)

@@ -7,8 +7,8 @@ Summary (as found at `a1e23d7`): `mpl::structures::EncryptionContext::deserializ
 - Confidence: Confirmed by test
 - Spec conflict: yes. The spec's MUST describes the serialized form; whether a decoder must reject non-conforming input is an interpretation (see Expected behavior).
 - Severity: Low. No production caller of this function exists in this repository: the ESDK header path uses its own parser, `esdk/src/message/encryption_context.rs::read_canonical_ec`. The function is public API, though, so external callers may rely on it.
-- Related IDs: VR-2026-T15; TM-MPL-013 (Medium), TM-MPL-017 (Medium). Ratings are from `docs/threat-model.md` (HEAD 9955ecd), where the fix is recorded as a mitigation for TM-MPL-013 and no rating changed; targets are from `docs/verification-targets.md`.
-- Completeness audit mapping (`docs/completeness-audit.md` section 3b): BUG-03 (Fixed) -> TM-MPL-013 -> T15.
+- Related IDs: VR-2026-T15; TM-MPL-013 (Medium), TM-MPL-017 (Medium). Ratings are from `docs/mpl-threat-model.md` (HEAD 9955ecd), where the fix is recorded as a mitigation for TM-MPL-013 and no rating changed; targets are from `docs/mpl-verification-targets.md`.
+- Completeness audit mapping (`docs/mpl-completeness-audit.md` section 3b): BUG-03 (Fixed) -> TM-MPL-013 -> T15.
 - Last cross-checked: HEAD 9955ecd (code == main 620771c for mpl/ and prim/)
 
 ## Status on main (620771c)

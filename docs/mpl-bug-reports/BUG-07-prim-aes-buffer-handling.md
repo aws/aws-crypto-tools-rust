@@ -5,8 +5,8 @@ Summary: (a) `aes_encrypt` appends the plaintext to the caller's output `Vec` be
 - Confidence: Confirmed by test
 - Spec conflict: no
 - Severity: Low. (a) is a secret-hygiene issue in a crate-level API. Every in-repo caller validates key and IV lengths first and drops the buffer on `Err`, so I found no path where the residue is returned or written out. (b) fails closed, and the only effect is a less useful error message.
-- Related IDs: (a) VR-2026-T26, VR-2026-T07 (property (e)); TM-MPL-015 (Low). (b) VR-2026-C03; TM-MPL-023 (Low). TM-MPL-011 (Medium) stays listed through T07. Ratings are from `docs/threat-model.md` (HEAD 9955ecd), where (a) is counted in the Low residual of TM-MPL-015; targets are from `docs/verification-targets.md`.
-- Completeness audit mapping (`docs/completeness-audit.md` section 3b): BUG-07(a) -> TM-MPL-015 -> T26, T07; BUG-07(b) -> TM-MPL-023 -> C03.
+- Related IDs: (a) VR-2026-T26, VR-2026-T07 (property (e)); TM-MPL-015 (Low). (b) VR-2026-C03; TM-MPL-023 (Low). TM-MPL-011 (Medium) stays listed through T07. Ratings are from `docs/mpl-threat-model.md` (HEAD 9955ecd), where (a) is counted in the Low residual of TM-MPL-015; targets are from `docs/mpl-verification-targets.md`.
+- Completeness audit mapping (`docs/mpl-completeness-audit.md` section 3b): BUG-07(a) -> TM-MPL-015 -> T26, T07; BUG-07(b) -> TM-MPL-023 -> C03.
 - Last cross-checked: HEAD 9955ecd (code == main 620771c for mpl/ and prim/)
 
 ## Status on main (620771c)

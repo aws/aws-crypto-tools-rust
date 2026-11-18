@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""Check (a): threat references in the three targets docs vs docs/threat-model.md, and coverage of TM-MPL-001..026.
+"""Check (a): threat references in the three targets docs vs docs/mpl-threat-model.md, and coverage of TM-MPL-001..026.
 A threat is 'accounted for' when it appears in a YAML threat_references list of an Active target (01) or in an
 out-of-scope / excluded row. Prints sets so a reviewer can read them."""
 import re, os, collections
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 rd = lambda p: open(os.path.join(ROOT, p)).read()
-tm = rd("docs/threat-model.md")
+tm = rd("docs/mpl-threat-model.md")
 tm_ids = sorted(set(re.findall(r"TM-MPL-\d{3}", tm)))
 heads = sorted(set(re.findall(r"^#{2,4}\s+(TM-MPL-\d{3})", tm, re.M)))
 print("threat-model ids:", len(tm_ids), tm_ids[0], tm_ids[-1], "headings:", len(heads))
-D = {"merged": "docs/verification-targets.md", "01": "docs/verification-targets/01-threat-driven.md", "02": "docs/verification-targets/02-capability-driven.md"}
+D = {"merged": "docs/mpl-verification-targets.md", "01": "docs/mpl-verification-targets/01-threat-driven.md", "02": "docs/mpl-verification-targets/02-capability-driven.md"}
 allref = collections.defaultdict(set)
 for k, p in D.items():
     t = rd(p)

@@ -14,11 +14,14 @@ RES = {"T02": "21 verified, 1 errors", "C01": "40 verified, 0 errors", "C02": "2
 PS = {k: f"{'Partly proved' if k == 'T02' else 'Proved'} ({Q}): {v}" for k, v in RES.items()}
 FILES = {"T02": "t02_record_reconstruction", "C01": "c01_ec_roundtrip", "C02": "c02_sign_fixed_len",
          "T03": "t03_resolve_pinned_arn", "T05": "t05_kbkdf_fixed_info"}
-T = {"merged": "docs/verification-targets.md", "01": "docs/verification-targets/01-threat-driven.md",
-     "02": "docs/verification-targets/02-capability-driven.md"}
+T = {"merged": "docs/mpl-verification-targets.md", "01": "docs/mpl-verification-targets/01-threat-driven.md",
+     "02": "docs/mpl-verification-targets/02-capability-driven.md"}
 problems = []
 def read(p): return open(os.path.join(ROOT, p)).read()
-def head(p): return subprocess.run(["git", "-C", ROOT, "show", "HEAD:" + p], capture_output=True, text=True).stdout
+def head(p):
+    o = subprocess.run(["git", "-C", ROOT, "show", "HEAD:" + p], capture_output=True, text=True).stdout
+    # after the docs/mpl-* rename the old HEAD path may be the one that exists
+    return o or subprocess.run(["git", "-C", ROOT, "show", "HEAD:" + p.replace("docs/mpl-", "docs/", 1)], capture_output=True, text=True).stdout
 
 # 1 canonical strings in targets docs
 need = {"merged": ["T02", "C01", "C02", "T03", "T05"], "01": ["T02", "T03", "T05"], "02": ["C01", "C02"]}
@@ -68,11 +71,11 @@ for k, p in T.items():
     print(f"{k}: ranked rows with Proof status column: {stripped_ok}; YAML blocks: {len(ny)}")
 
 # 3 any 'N verified, M errors' in docs must be a real line
-DOCS = [T["merged"], T["01"], T["02"], "docs/verification-targets/04-validation.md", "docs/threat-model.md",
-        "docs/completeness-audit.md", "docs/spec-security-analysis.md", "docs/chorus/MPL-Threat-Model.md",
-        "docs/chorus/MPL-Bug-Reports.md", "docs/bug-reports/README.md"]
+DOCS = [T["merged"], T["01"], T["02"], "docs/mpl-verification-targets/04-validation.md", "docs/mpl-threat-model.md",
+        "docs/mpl-completeness-audit.md", "docs/mpl-spec-security-analysis.md", "docs/chorus/MPL-Threat-Model.md",
+        "docs/chorus/MPL-Bug-Reports.md", "docs/mpl-bug-reports/README.md"]
 import glob
-DOCS += [os.path.relpath(p, ROOT) for p in glob.glob(os.path.join(ROOT, "docs/bug-reports/BUG-*.md"))]
+DOCS += [os.path.relpath(p, ROOT) for p in glob.glob(os.path.join(ROOT, "docs/mpl-bug-reports/BUG-*.md"))]
 valid = set(RES.values())
 for p in DOCS:
     if not os.path.exists(os.path.join(ROOT, p)):
@@ -91,12 +94,12 @@ for p in DOCS:
 # 3b required canonical status per document
 import glob as _g
 REQ = {
-    "docs/threat-model.md": ["T02", "C01", "C02", "T03", "T05"],
+    "docs/mpl-threat-model.md": ["T02", "C01", "C02", "T03", "T05"],
     "docs/chorus/MPL-Threat-Model.md": ["T02", "C01", "C02", "T03", "T05"],
-    "docs/completeness-audit.md": ["T02"],
-    "docs/spec-security-analysis.md": ["T02", "T03", "T05"],
+    "docs/mpl-completeness-audit.md": ["T02"],
+    "docs/mpl-spec-security-analysis.md": ["T02", "T03", "T05"],
     "docs/chorus/MPL-Bug-Reports.md": ["C01"],
-    "docs/bug-reports/BUG-08-build-base-collision-branch-unreachable.md": ["C01"],
+    "docs/mpl-bug-reports/BUG-08-build-base-collision-branch-unreachable.md": ["C01"],
 }
 for p, ids in REQ.items():
     t = read(p)
@@ -105,15 +108,15 @@ for p, ids in REQ.items():
             problems.append(f"{p}: canonical status string for {i} missing")
 # findings present
 FIND = {
-    "docs/threat-model.md": ["G1", "O1", "O2", "F1", "A_ITER"],
+    "docs/mpl-threat-model.md": ["G1", "O1", "O2", "F1", "A_ITER"],
     "docs/chorus/MPL-Threat-Model.md": ["G1", "O1", "O2", "F1", "A_ITER"],
-    "docs/completeness-audit.md": ["Confirmed formally by the T02 proof"],
-    "docs/spec-security-analysis.md": ["G1", "O1", "O2", "F1"],
+    "docs/mpl-completeness-audit.md": ["Confirmed formally by the T02 proof"],
+    "docs/mpl-spec-security-analysis.md": ["G1", "O1", "O2", "F1"],
     "docs/chorus/MPL-Bug-Reports.md": ["A_ITER", "Formal check (C01)"],
-    "docs/bug-reports/BUG-08-build-base-collision-branch-unreachable.md": ["A_ITER", "Formal check (C01)"],
-    "docs/verification-targets.md": ["G1", "O1", "O2", "F1", "A_ITER", "copy_from_slice"],
-    "docs/verification-targets/01-threat-driven.md": ["G1", "O1", "O2", "F1"],
-    "docs/verification-targets/02-capability-driven.md": ["A_ITER", "copy_from_slice"],
+    "docs/mpl-bug-reports/BUG-08-build-base-collision-branch-unreachable.md": ["A_ITER", "Formal check (C01)"],
+    "docs/mpl-verification-targets.md": ["G1", "O1", "O2", "F1", "A_ITER", "copy_from_slice"],
+    "docs/mpl-verification-targets/01-threat-driven.md": ["G1", "O1", "O2", "F1"],
+    "docs/mpl-verification-targets/02-capability-driven.md": ["A_ITER", "copy_from_slice"],
 }
 for p, keys in FIND.items():
     t = read(p)
@@ -122,7 +125,7 @@ for p, keys in FIND.items():
             problems.append(f"{p}: finding marker '{k}' missing")
 # format: no html tags / emoji / footnotes / unbalanced fences in changed md
 import subprocess as _sp
-changed = [l[3:] for l in _sp.run(["git", "-C", ROOT, "status", "--short"], capture_output=True, text=True).stdout.split("\n") if l.strip().endswith(".md") and l[3:].startswith("docs/")]
+changed = [l[3:].split(" -> ")[-1] for l in _sp.run(["git", "-C", ROOT, "status", "--short"], capture_output=True, text=True).stdout.split("\n") if l.strip().endswith(".md") and l[3:].split(" -> ")[-1].startswith("docs/")]
 for p in changed:
     t = read(p)
     if t.count("```") % 2:
@@ -159,13 +162,13 @@ if "--rerun" in sys.argv:
             problems.append(f"{i}: re-run gives {got}, expected {RES[i]}")
 
 # 5 diff guard
-r = subprocess.run(["git", "-C", ROOT, "diff", "--quiet", "HEAD", "--", "mpl", "prim", "esdk", "verus-proofs", "docs/bug-reports/RECHECK-main-620771c.md"])
+r = subprocess.run(["git", "-C", ROOT, "diff", "--quiet", "HEAD", "--", "mpl", "prim", "esdk", "verus-proofs", "docs/mpl-bug-reports/RECHECK-main-620771c.md"])
 print("git diff --quiet HEAD -- mpl prim esdk verus-proofs RECHECK: exit", r.returncode)
 if r.returncode:
     problems.append("forbidden paths changed")
 st = subprocess.run(["git", "-C", ROOT, "status", "--short"], capture_output=True, text=True).stdout.split("\n")
 for l in st:
-    if l.strip() and not (l[3:].startswith("docs/") or l[3:].startswith(".agents/tasks/docs-proof-status")):
+    if l.strip() and not (l[3:].split(" -> ")[-1].startswith("docs/") or l[3:].startswith(".agents/tasks/docs-proof-status")):
         problems.append(f"status outside docs/ and notes: {l}")
 print("PROBLEMS:" if problems else "PROBLEMS: none")
 for p in problems:

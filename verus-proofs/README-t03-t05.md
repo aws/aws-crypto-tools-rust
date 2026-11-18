@@ -166,7 +166,7 @@ To close the gap you need all of:
 |---|---|---|---|
 | `t03_resolve_pinned_arn.rs` | VR-2026-T03 | TM-MPL-002 | Pinned modes return the configured ARN as KMS `KeyId`; compat Ok/Err |
 | `t05_kbkdf_fixed_info.rs` | VR-2026-T05 | TM-MPL-014 | KBKDF fixed-info layout and derivation inputs |
-The orchestrator records proof status in `docs/verification-targets*.md` after review. This README does not edit those files.
+The orchestrator records proof status in `docs/mpl-verification-targets*.md` after review. This README does not edit those files.
 ## Next steps
 1. Review the two correspondence tables against the code. They are the only link between model and code.
 2. Spec: add the fixed-info layout to `aws-kms-hierarchical-keyring.md` (F1). Consider tying `256` to `DERIVED_KEY_LEN` (F2) and adding a known-answer test for `derive_branch_key` or a wrap ciphertext (F3).

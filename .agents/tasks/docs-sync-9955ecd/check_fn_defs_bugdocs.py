@@ -11,7 +11,7 @@ import os, re, subprocess
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 import glob
-DOCS = sorted(os.path.relpath(p, ROOT) for p in glob.glob(os.path.join(ROOT, "docs/bug-reports/*.md"))) + ["docs/spec-security-analysis.md"]
+DOCS = sorted(os.path.relpath(p, ROOT) for p in glob.glob(os.path.join(ROOT, "docs/mpl-bug-reports/*.md"))) + ["docs/mpl-spec-security-analysis.md"]
 files = [f for f in subprocess.run(["git", "-C", ROOT, "ls-files", "mpl", "prim", "esdk"],
          capture_output=True, text=True).stdout.split() if f.endswith(".rs")]
 defs = {}

@@ -13,12 +13,12 @@ import os, re, subprocess, sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 DOCS = [
-    "docs/spec-security-analysis.md",
-    "docs/threat-model.md",
-    "docs/verification-targets.md",
-    "docs/verification-targets/01-threat-driven.md",
-    "docs/verification-targets/02-capability-driven.md",
-    "docs/verification-targets/04-validation.md",
+    "docs/mpl-spec-security-analysis.md",
+    "docs/mpl-threat-model.md",
+    "docs/mpl-verification-targets.md",
+    "docs/mpl-verification-targets/01-threat-driven.md",
+    "docs/mpl-verification-targets/02-capability-driven.md",
+    "docs/mpl-verification-targets/04-validation.md",
 ]
 W = int(os.environ.get("W", "4"))
 

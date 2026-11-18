@@ -11,9 +11,9 @@ from decimal import Decimal, ROUND_HALF_UP
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 D = {
-    "merged": "docs/verification-targets.md",
-    "01": "docs/verification-targets/01-threat-driven.md",
-    "02": "docs/verification-targets/02-capability-driven.md",
+    "merged": "docs/mpl-verification-targets.md",
+    "01": "docs/mpl-verification-targets/01-threat-driven.md",
+    "02": "docs/mpl-verification-targets/02-capability-driven.md",
 }
 problems = []
 blocks = {k: {} for k in D}

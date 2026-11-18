@@ -5,8 +5,8 @@ Summary: `keystore::encryption_context::build_base` returns `Err` when inserting
 - Confidence: Confirmed by code reading
 - Spec conflict: no
 - Severity: Informational. Behavior is correct for all inputs. The cost is a misleading comment and an untestable branch, which also makes the C01 round-trip proof slightly harder to state.
-- Related IDs: VR-2026-C01 (property (c)); cap:cat1 (1c); TM-MPL-005 (High). `docs/threat-model.md` records BUG-08 as informational with no effect on the TM-MPL-005 rating. Ratings are from `docs/threat-model.md` (HEAD 9955ecd); targets are from `docs/verification-targets.md`.
-- Completeness audit mapping (`docs/completeness-audit.md` section 3b): BUG-08 -> TM-MPL-005 -> C01 (c).
+- Related IDs: VR-2026-C01 (property (c)); cap:cat1 (1c); TM-MPL-005 (High). `docs/mpl-threat-model.md` records BUG-08 as informational with no effect on the TM-MPL-005 rating. Ratings are from `docs/mpl-threat-model.md` (HEAD 9955ecd); targets are from `docs/mpl-verification-targets.md`.
+- Completeness audit mapping (`docs/mpl-completeness-audit.md` section 3b): BUG-08 -> TM-MPL-005 -> C01 (c).
 - Last cross-checked: HEAD 9955ecd (code == main 620771c for mpl/ and prim/)
 
 ## Status on main (620771c)

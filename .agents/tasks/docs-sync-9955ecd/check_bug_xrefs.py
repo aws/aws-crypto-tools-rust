@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
-"""Check threat IDs + ratings and target IDs written in docs/bug-reports/*.md against
-docs/threat-model.md (Appendix: Threat Risk Matrix, last column) and docs/verification-targets.md."""
+"""Check threat IDs + ratings and target IDs written in docs/mpl-bug-reports/*.md against
+docs/mpl-threat-model.md (Appendix: Threat Risk Matrix, last column) and docs/mpl-verification-targets.md."""
 import re, os, glob
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 rd = lambda p: open(os.path.join(ROOT, p)).read()
-tm = rd("docs/threat-model.md")
+tm = rd("docs/mpl-threat-model.md")
 risk = {}
 for m in re.finditer(r"^\| (TM-MPL-\d{3}) \| [A-Z/]+ \| \w+ \| \w+ \| [^|]+ \| [^|]+ \| \**(\w+)\** \|", tm, re.M):
     risk[m.group(1)] = m.group(2)
 print("risk rows:", len(risk))
-vt = rd("docs/verification-targets.md")
+vt = rd("docs/mpl-verification-targets.md")
 targets = set(re.findall(r"\b([TC]\d\d)\b", vt))
 bad = 0
-docs = sorted(glob.glob(os.path.join(ROOT, "docs/bug-reports/*.md"))) + [os.path.join(ROOT, "docs/spec-security-analysis.md")]
+docs = sorted(glob.glob(os.path.join(ROOT, "docs/mpl-bug-reports/*.md"))) + [os.path.join(ROOT, "docs/mpl-spec-security-analysis.md")]
 for d in docs:
     name = os.path.basename(d)
     for ln, line in enumerate(open(d), 1):

@@ -3,7 +3,7 @@
 Lines that describe history (old scores: 'was', '->', '→', 'Old', 'a1e23d7', '620771c', '0.1') are listed separately."""
 import re, os
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-P = ["docs/verification-targets.md", "docs/verification-targets/01-threat-driven.md", "docs/verification-targets/02-capability-driven.md"]
+P = ["docs/mpl-verification-targets.md", "docs/mpl-verification-targets/01-threat-driven.md", "docs/mpl-verification-targets/02-capability-driven.md"]
 sc = {}
 for p in P[1:]:
     t = open(os.path.join(ROOT, p)).read()

@@ -1,8 +1,8 @@
 # Validation Report: MPL Verus Verification Targets (HEAD 9955ecd)
 
 > Pipeline artifact. Stage 3, Step 4 of 4 (validation). Re-run for branch `MPL-Verus` at HEAD `9955ecd`. The previous version of this file described the `620771c` run. Extended in the C03 status update (the commit on top of HEAD `b94c871`) with the checks for the C03 status record (section "C03 status checks"); the 18 checks and the proof-status addendum below are kept unchanged.
-> Reviewed: `docs/verification-targets.md`, `docs/verification-targets/01-threat-driven.md`, `docs/verification-targets/02-capability-driven.md`, as they stand in the working tree (uncommitted edits on top of HEAD).
-> Checked against: `docs/threat-model.md` (TM-MPL-001..026), `mpl/src`, `prim/src`, `mpl/tests`, `prim/tests`, `esdk/` (shim and `esdk/src`), and the local `spec/` checkout.
+> Reviewed: `docs/mpl-verification-targets.md`, `docs/mpl-verification-targets/01-threat-driven.md`, `docs/mpl-verification-targets/02-capability-driven.md`, as they stand in the working tree (uncommitted edits on top of HEAD).
+> Checked against: `docs/mpl-threat-model.md` (TM-MPL-001..026), `mpl/src`, `prim/src`, `mpl/tests`, `prim/tests`, `esdk/` (shim and `esdk/src`), and the local `spec/` checkout.
 > How the checks were run: a shell was available. Checks used `git`, `grep`, `sed -n`, `ctx.py` and Python scripts kept in `.agents/tasks/docs-sync-9955ecd/` (named per check below). For the 18 checks at `9955ecd` nothing was built and no Verus proof was run. The addendum "Proof-status checks (HEAD `d288750`)" below re-ran the five proofs in `verus-proofs/`. No file under `mpl/`, `prim/` or `esdk/` was written.
 > Scope of the claims below: 18 checks were run (the 15 rows of the previous report, numbered 1, 1b and 2 to 14, plus 15, 16 and 17). One defect was found and fixed (see "Fixes made"). Limits of the evidence are in "Open items".
 
@@ -74,7 +74,7 @@ Method and command. `python3 check_threat_refs.py`, then `python3 check_stride_m
 
 Results.
 
-- `docs/threat-model.md` has 26 distinct IDs, TM-MPL-001 to TM-MPL-026. Distinct TM references: merged 26, 01 26, 02 5. References not found in the threat model: none, in the prose and in every YAML `threat_references`.
+- `docs/mpl-threat-model.md` has 26 distinct IDs, TM-MPL-001 to TM-MPL-026. Distinct TM references: merged 26, 01 26, 02 5. References not found in the threat model: none, in the prose and in every YAML `threat_references`.
 - 23 threats have at least one active threat-driven target in 01 (001 to 018 and 021 to 025). Three have none and are listed as fully excluded: TM-MPL-019 and TM-MPL-020 (01 section 4, section 6, merged section 6) and TM-MPL-026 (the same three places, marked test-only). 23 + 3 = 26.
 - TM-MPL-017 is the only threat with no exclusion; the other 22 targeted threats carry a partial exclusion. This matches merged section 4.
 - Defect found by the cross-check: T27 cites TM-MPL-018 as a secondary threat in its YAML (01 and merged), but the TM-MPL-018 rows in 01 section 6, 01 section 4 and merged section 6 named only T21 and T06. Fixed (see "Fixes made"). After the fix `check_stride_map.py` reports 0 problems: every threat's target list in 01 section 6 equals the set of active YAML blocks that cite it.
@@ -148,7 +148,7 @@ Covered under check 17. T27 (3.78) and T21 (2.24) are below the threshold; T26 (
 
 ### 11. Bug-status-driven changes
 
-Method. Compared the statuses in `docs/bug-reports/RECHECK-main-620771c.md` (BUG-02, 03 and 09 fixed on main; BUG-01, 04, 05(a), 05(b), 06, 07, 08 still present) with the three docs by `grep`.
+Method. Compared the statuses in `docs/mpl-bug-reports/RECHECK-main-620771c.md` (BUG-02, 03 and 09 fixed on main; BUG-01, 04, 05(a), 05(b), 06, 07, 08 still present) with the three docs by `grep`.
 
 Result. No line cites BUG-02 or BUG-09 as an expected failure. BUG-03 appears with "FAIL" wording only to say the counterexample is gone (01 lines 54, 1103; 02 line 460). The merged and 01 bug lists say: open BUG-01, 04, 05(a), 05(b), 06, 07(a/b), 08; fixed BUG-02, 03, 09. The open bugs are still cited as expected failures in T06, T17, T16, T13, T26, C03, C01.
 
@@ -169,12 +169,12 @@ Commands and results.
 ```
 git diff --quiet HEAD -- mpl prim esdk            # exit 0 (no uncommitted code change)
 git diff --quiet 620771c HEAD -- mpl prim         # exit 0 (mpl and prim identical to origin/main 620771c)
-git status --short                                # M docs/verification-targets.md, 01-threat-driven.md, 02-capability-driven.md;
+git status --short                                # M docs/mpl-verification-targets.md, 01-threat-driven.md, 02-capability-driven.md;
                                                   # ?? .agents/tasks/docs-sync-9955ecd/ (before this report was rewritten)
-git status --short -- docs/bug-reports docs/spec-security-analysis.md    # empty
+git status --short -- docs/mpl-bug-reports docs/mpl-spec-security-analysis.md    # empty
 ```
 
-This step edited the three targets docs (one fix), rewrote this file, and wrote scratch files under `.agents/tasks/docs-sync-9955ecd/`. Nothing was committed or pushed. `docs/bug-reports/*` and `docs/spec-security-analysis.md` were not touched.
+This step edited the three targets docs (one fix), rewrote this file, and wrote scratch files under `.agents/tasks/docs-sync-9955ecd/`. Nothing was committed or pushed. `docs/mpl-bug-reports/*` and `docs/mpl-spec-security-analysis.md` were not touched.
 
 Format checks on the three docs and this file: no diagram blocks, no footnote markers, no HTML tags outside code spans and fenced blocks, balanced code fences, no emoji.
 
@@ -183,8 +183,8 @@ Format checks on the three docs and this file: no diagram blocks, no footnote ma
 1. TM-MPL-018 mapping (found by checks 2, 15 and 17). T27's YAML cites TM-MPL-018 as a secondary threat, but three places listed only T21 and T06 for it. Changed:
    - `01-threat-driven.md` section 6 row TM-MPL-018: `T21, T06` to `T21, T06, T27`.
    - `01-threat-driven.md` section 4 row TM-MPL-018: `Partial (→ T21, T06)` to `Partial (→ T21, T06, T27)`.
-   - `verification-targets.md` section 6 bullet: `TM-MPL-018 (→ T21, T06)` to `TM-MPL-018 (→ T21, T06, T27)`.
-2. Change lists made to match. `verification-targets.md` line 27 now says that the TM-MPL-018 partial-exclusion line names T27 and that this file was rewritten for `9955ecd` (18 checks, one mapping fix); before, it said this file still described the `620771c` run. `01-threat-driven.md` line 28 now says the TM-MPL-018 rows name T27.
+   - `mpl-verification-targets.md` section 6 bullet: `TM-MPL-018 (→ T21, T06)` to `TM-MPL-018 (→ T21, T06, T27)`.
+2. Change lists made to match. `mpl-verification-targets.md` line 27 now says that the TM-MPL-018 partial-exclusion line names T27 and that this file was rewritten for `9955ecd` (18 checks, one mapping fix); before, it said this file still described the `620771c` run. `01-threat-driven.md` line 28 now says the TM-MPL-018 rows name T27.
 
 No score, rank, ID or citation changed. After the fix every script above was re-run: `check_scores.py`, `check_extras.py`, `check_misc.py` and `check_ratings.py` report no problem, `check_stride_map.py` reports 0 problems (it reported 1 before), and `manual_expect.py` passes 97 of 97.
 
@@ -200,7 +200,7 @@ Added when the proof status of T02, C01, C02, T03 and T05 was recorded in the ta
 | P4 | Status wording is identical across documents | PASS | The canonical status string of each target appears the required number of times in the targets documents (YAML field, table cell, list), and in the threat model, the Chorus threat model, the audit, the spec analysis, the BUG-08 report and the Chorus bug reports. Every `N verified, M errors` mention in the changed documents is one of the five real result lines. A result line never appears without the qualifier "model level, not the shipped code" |
 | P5 | Findings recorded | PASS | G1, O1, O2, F1, the BUG-08 condition (dead if and only if A_ITER) and the C02 `copy_from_slice` assumption appear in the targets documents; G1, O1, O2, F1 and BUG-08 in the threat model and the Chorus threat model; G1 in the audit; G1, O1, O2 and F1 in the spec analysis; BUG-08 in its report and the Chorus bug reports |
 | P6 | Citations | PASS | `check_citations.py` and `check_fn_defs.py` compared with the same run on HEAD: the number of citation rows is equal (2091), no new non-OK row except two table-cell line references in the threat model that moved with the new section (they were already in the unresolved class), and the def-mismatch count is equal (113). Five line references to the targets documents in the threat model Resolution table, and the G1 and G4-1 rows of the audit table, were updated to the new line numbers and checked by a line-map script |
-| P7 | Docs-only rule | PASS | `git diff --quiet HEAD -- mpl prim esdk verus-proofs docs/bug-reports/RECHECK-main-620771c.md` exits 0. `git status --short` shows only files under `docs/` and `.agents/tasks/docs-proof-status/`. Nothing was committed or pushed |
+| P7 | Docs-only rule | PASS | `git diff --quiet HEAD -- mpl prim esdk verus-proofs docs/mpl-bug-reports/RECHECK-main-620771c.md` exits 0. `git status --short` shows only files under `docs/` and `.agents/tasks/docs-proof-status/`. Nothing was committed or pushed |
 | P8 | Chorus editions regenerated | PASS | `pandoc docs/chorus/MPL-Threat-Model.md -o docs/chorus/MPL-Threat-Model.docx` and the same for `MPL-Bug-Reports`: both exit 0, both files exist and are non-empty, and `pandoc X.docx -t plain \| head` shows the document title |
 | P9 | Format | PASS | In the changed Markdown files: no HTML tags outside code, no diagram blocks, no footnote markers, no emoji, balanced code fences |
 
@@ -208,7 +208,7 @@ Limits. The proofs are of re-typed models; these checks show that the documents 
 
 ## C03 status checks (C03 status update on top of HEAD `b94c871`)
 
-Added when the status of target C03 (in-crate on branch `Mahnush_Verus`, VR-013 and VR-014), the C02 / VR-008 relation and BUG-10 were recorded in the targets documents, `docs/threat-model.md`, `docs/completeness-audit.md` and `docs/chorus/MPL-Threat-Model.{md,docx}`. The 18 checks above and P1 to P9 are unchanged. Scripts and outputs are in `.agents/tasks/docs-c03-status/`: `check_c03_status.py` (output `check_c03_status.out`), `rank_score_diff.sh` (outputs `rank-score.head.txt`, `rank-score.now.txt`, `rank-score.diff`), `rerun.md` and the two `rerun-*.log` files, plus the `docs-sync-9955ecd` checkers.
+Added when the status of target C03 (in-crate on branch `Mahnush_Verus`, VR-013 and VR-014), the C02 / VR-008 relation and BUG-10 were recorded in the targets documents, `docs/mpl-threat-model.md`, `docs/mpl-completeness-audit.md` and `docs/chorus/MPL-Threat-Model.{md,docx}`. The 18 checks above and P1 to P9 are unchanged. Scripts and outputs are in `.agents/tasks/docs-c03-status/`: `check_c03_status.py` (output `check_c03_status.out`), `rank_score_diff.sh` (outputs `rank-score.head.txt`, `rank-score.now.txt`, `rank-score.diff`), `rerun.md` and the two `rerun-*.log` files, plus the `docs-sync-9955ecd` checkers.
 
 | # | Check | Result | Short evidence |
 |---|---|---|---|
@@ -220,7 +220,7 @@ Added when the status of target C03 (in-crate on branch `Mahnush_Verus`, VR-013 
 | C6 | BUG-10 -> TM-MPL-015 -> T26 recorded consistently | PASS | T26 YAML `related_bugs` and `scope_note` in 01 and the merged document (T26 `proof_status` still "None yet", score 3.20); C03 YAML `related_bugs` names BUG-07(a), BUG-07(b) and BUG-10; the threat model (TM-MPL-015 residual exposures, bug to threat table, proof-status rows), the audit (section 7) and the Chorus threat model (headline counts, TM-MPL-015, cross-reference table, bug table, note 6) name BUG-10. The bug count in the Chorus threat model is now ten (it said nine) |
 | C7 | Line numbers cited into the targets documents still resolve | PASS | The targets documents gained lines, so 22 citations in the threat model (resolution table) and 26 in the audit (section 7) were checked with a line map against HEAD (same content at the new line) and the moved ones (13 distinct line numbers) were updated (merged `:104 -> :167`, `:111 -> :174`, `:116 -> :179`, `:183 -> :246`, `:189 -> :252`, `:191 -> :254`, `:490 -> :576`, `:523-537 -> :609-623`, `:561 -> :647`, `:584 -> :670`; 01 `:1551 -> :1560`, `:1617 -> :1626`, `:1619 -> :1628`). Lines 747 to 750 of `01-threat-driven.md` (cited by the BUG-10 report) are identical to HEAD, so that report was not touched |
 | C8 | New file:line citations into `mpl/` and `prim/` | PASS | 12 checked by pattern on the line: `raw_aes_keyring.rs` `:163`, `:369`, `:379`, `:471`, `:489`, `:494`, `:497`; `branch_key_wrap.rs` `:157`, `:199`, `:230`, `:275`; `prim/src/lib.rs:215`. The citation scripts of `docs-sync-9955ecd` report new NOID / MISS / ALT rows for these (26 new non-OK keys over 1111 at HEAD) because they resolve a bare function name against another file; each was read. `check_fn_defs_v2.py` adds 15 DEF-MISMATCH rows, all call sites cited against a definition (the class already described under check 1). Nothing on `Mahnush_Verus` is cited by line number; function names are used because the scripts resolve every `file:line` against this tree |
-| C9 | Docs-only rule | PASS | `git diff --quiet HEAD -- mpl prim esdk verus-proofs docs/bug-reports docs/spec-security-analysis.md docs/chorus/MPL-Bug-Reports.md docs/chorus/MPL-Bug-Reports.docx` exits 0. `git status --short`: modified `docs/verification-targets.md`, `docs/verification-targets/` (01, 02, 04), `docs/threat-model.md`, `docs/completeness-audit.md`, `docs/chorus/MPL-Threat-Model.{md,docx}`; untracked `.agents/tasks/docs-c03-status/`. Branch `MPL-Verus`, HEAD `b94c871`. `origin/Mahnush_Verus` was only fetched (a new remote-tracking ref); no merge, checkout or modification; the re-run worktree was removed. Nothing committed or pushed |
+| C9 | Docs-only rule | PASS | `git diff --quiet HEAD -- mpl prim esdk verus-proofs docs/mpl-bug-reports docs/mpl-spec-security-analysis.md docs/chorus/MPL-Bug-Reports.md docs/chorus/MPL-Bug-Reports.docx` exits 0. `git status --short`: modified `docs/mpl-verification-targets.md`, `docs/mpl-verification-targets/` (01, 02, 04), `docs/mpl-threat-model.md`, `docs/mpl-completeness-audit.md`, `docs/chorus/MPL-Threat-Model.{md,docx}`; untracked `.agents/tasks/docs-c03-status/`. Branch `MPL-Verus`, HEAD `b94c871`. `origin/Mahnush_Verus` was only fetched (a new remote-tracking ref); no merge, checkout or modification; the re-run worktree was removed. Nothing committed or pushed |
 | C10 | Format and the Chorus edition | PASS | In the changed Markdown files: no HTML outside code, no emoji, no diagram block, no footnote marker, balanced fences, no new table with a wrong column count. `pandoc docs/chorus/MPL-Threat-Model.md -o docs/chorus/MPL-Threat-Model.docx` exits 0; the file is non-empty (50 KB) and `pandoc docs/chorus/MPL-Threat-Model.docx -t plain \| head` shows the title "MPL Threat Model: AWS Cryptographic Material Providers Library (native Rust)" |
 
 Limits. The model-level proofs were not re-run in this step. The C03 re-run was done by the previous workflow step and is recorded in `rerun.md`; the prim tests, clippy and the 1443-line differential run are from our review at `43b9ff7` and were not repeated at `8d6381e`. No FIPS run exists. The check that "partly" is the right word rests on the review report (the gaps), not on a new reading of the proof sources. These checks show that the documents record the proofs and bugs consistently; they do not show that the code on this branch has any of the proved properties.

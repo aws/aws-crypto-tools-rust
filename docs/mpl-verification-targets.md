@@ -1,12 +1,12 @@
 # Verus Verification Targets — AWS Cryptographic Material Providers Library (native Rust)
 
 > Pipeline artifact — Stage 3, Step 3 of 4 (merge, rank, assemble). **Refreshed for HEAD `9955ecd`** (branch `MPL-Verus`; `mpl/` and `prim/` identical to `origin/main` `620771c`; `esdk/` differs from `620771c` only by #188 and #189). The `620771c` refresh (previous version analyzed `a1e23d7`) is kept in §0.1.
-> Inputs: `docs/verification-targets/01-threat-driven.md` (VR-2026-T01..T27), `docs/verification-targets/02-capability-driven.md` (VR-2026-C01..C08), `docs/threat-model.md` (TM-MPL-001..026), `docs/spec-security-analysis.md`, `docs/completeness-audit.md`, `docs/bug-reports/RECHECK-main-620771c.md`, `.agents/tasks/pipeline-rerun-620771c/scope.md`, `.agents/tasks/docs-sync-9955ecd/scores.md`, `.kiro/agents/verification-recommender.md`.
-> Full per-target YAML lives in the two intermediate files. This document is the consolidated, ranked view. Validation: `docs/verification-targets/04-validation.md`. Proof-status record updated at HEAD `b94c871` (adds C03, which is partly proved in-crate on branch `Mahnush_Verus` and not on this branch, the C02 / VR-008 relation and BUG-10): no score, rank, coverage gap, feasibility, severity or quick-win changed.
+> Inputs: `docs/mpl-verification-targets/01-threat-driven.md` (VR-2026-T01..T27), `docs/mpl-verification-targets/02-capability-driven.md` (VR-2026-C01..C08), `docs/mpl-threat-model.md` (TM-MPL-001..026), `docs/mpl-spec-security-analysis.md`, `docs/mpl-completeness-audit.md`, `docs/mpl-bug-reports/RECHECK-main-620771c.md`, `.agents/tasks/pipeline-rerun-620771c/scope.md`, `.agents/tasks/docs-sync-9955ecd/scores.md`, `.kiro/agents/verification-recommender.md`.
+> Full per-target YAML lives in the two intermediate files. This document is the consolidated, ranked view. Validation: `docs/mpl-verification-targets/04-validation.md`. Proof-status record updated at HEAD `b94c871` (adds C03, which is partly proved in-crate on branch `Mahnush_Verus` and not on this branch, the C02 / VR-008 relation and BUG-10): no score, rank, coverage gap, feasibility, severity or quick-win changed.
 
 ## Refresh (HEAD 9955ecd)
 
-This refresh applies the "Impact on verification targets" list of `docs/threat-model.md` (second pass, TM-MPL-001..026) and `docs/completeness-audit.md` (no missed threat; gap G1; editorial item G4-1). No threat rating changed and `mpl/` and `prim/` did not change, so a score moved only where the evidence for a property changed. IDs are stable; T08 and C06 stay retired. Per-target arithmetic is in `01-threat-driven.md` (Refresh section) and the capability decision is in `02-capability-driven.md` (Refresh section).
+This refresh applies the "Impact on verification targets" list of `docs/mpl-threat-model.md` (second pass, TM-MPL-001..026) and `docs/mpl-completeness-audit.md` (no missed threat; gap G1; editorial item G4-1). No threat rating changed and `mpl/` and `prim/` did not change, so a score moved only where the evidence for a property changed. IDs are stable; T08 and C06 stay retired. Per-target arithmetic is in `01-threat-driven.md` (Refresh section) and the capability decision is in `02-capability-driven.md` (Refresh section).
 
 | ID | Kind | Old score (rank) | New score (rank) | Arithmetic and change |
 |---|---|---|---|---|
@@ -608,7 +608,7 @@ No Verus proof of the shipped code exists on this branch for any target. Five ta
 
 ## 4. Risk summary by STRIDE category
 
-From `docs/threat-model.md` §7 (TM-MPL-025 listed under Denial of Service; TM-MPL-024 and TM-MPL-026 under Elevation of Privilege). "Verified" is 0: it counts threats whose target is proved against the shipped code of `MPL-Verus`. The five proofs in "Proofs written" are model level, and the in-crate C03 proof is on `Mahnush_Verus` (C03 is a capability target and cites no threat).
+From `docs/mpl-threat-model.md` §7 (TM-MPL-025 listed under Denial of Service; TM-MPL-024 and TM-MPL-026 under Elevation of Privilege). "Verified" is 0: it counts threats whose target is proved against the shipped code of `MPL-Verus`. The five proofs in "Proofs written" are model level, and the in-crate C03 proof is on `Mahnush_Verus` (C03 is a capability target and cites no threat).
 
 | Category | Threats | Verified | With target | Fully excluded | Targets | Top-priority target |
 |---|---|---|---|---|---|---|

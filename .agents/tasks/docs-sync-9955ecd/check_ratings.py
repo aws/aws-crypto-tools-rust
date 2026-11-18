@@ -4,13 +4,13 @@ of every active threat-driven target (primary threat = first threat_references i
 import re, os
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 rd = lambda p: open(os.path.join(ROOT, p)).read()
-tm = rd("docs/threat-model.md")
+tm = rd("docs/mpl-threat-model.md")
 R = {}
 for m in re.finditer(r"^\| (TM-MPL-\d{3}) \| ([A-Z/]+) \| \**(\w+)\** \| \**(\w+)\** \|", tm, re.M):
     R[m.group(1)] = (m.group(3), m.group(4))
 print("appendix rows:", len(R))
 bad = 0
-doc01 = rd("docs/verification-targets/01-threat-driven.md")
+doc01 = rd("docs/mpl-verification-targets/01-threat-driven.md")
 sec6 = doc01[doc01.index("## 6. Accounting"):]
 for m in re.finditer(r"^\| (TM-MPL-\d{3}) \| \**(\w+)\**(?: / | /\s*)\**(\w+)\**", sec6, re.M):
     if R.get(m.group(1)) != (m.group(2), m.group(3)):
@@ -18,7 +18,7 @@ for m in re.finditer(r"^\| (TM-MPL-\d{3}) \| \**(\w+)\**(?: / | /\s*)\**(\w+)\**
 SEV = {"Critical": 4, "High": 3, "Medium": 2, "Low": 1}
 LIK = {"Low": 0.4, "Medium": 0.7, "High": 1.0}
 n = 0
-for k, p in (("01", "docs/verification-targets/01-threat-driven.md"), ("merged", "docs/verification-targets.md")):
+for k, p in (("01", "docs/mpl-verification-targets/01-threat-driven.md"), ("merged", "docs/mpl-verification-targets.md")):
     for b in re.finditer(r"```yaml\n(.*?)```", rd(p), re.S):
         blk = b.group(1)
         idm = re.search(r"\bid:\s*VR-2026-(T\d+)", blk)
