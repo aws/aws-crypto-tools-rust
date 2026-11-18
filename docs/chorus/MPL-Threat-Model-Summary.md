@@ -3,7 +3,6 @@
 ## About this document
 
 - This is a plain-language summary of the threat model for the Amazon Web Services (AWS) Cryptographic Material Providers Library (MPL).
-- It is written for executives and application security (AppSec) reviewers.
 - The full threat model is `docs/mpl-threat-model.md` (26 threats). The bug list is `docs/mpl-bug-reports/README.md` (10 bugs). This summary restates them in plain words. If they differ, the full documents are correct.
 - This summary carries all of the full model's system overview, assets, actors, trust boundaries, data flows and threat list. It leaves out the per-threat analysis, which stays in the full model.
 - Code state: branch MPL-Verus. The library code (`mpl/` and `prim/`) is identical to upstream main.
@@ -23,13 +22,6 @@ The MPL makes, wraps and caches the keys that the AWS Encryption SDK (ESDK) and 
 - Stalls and crashes in cache refresh.
 - Unbounded work when decrypting a message (unconfirmed).
 - Wrong-Region key lookups in discovery mode.
-
-**Decisions we need.**
-
-- Choose how to fix BUG-06 and assign an owner.
-- Decide whether to bound the work done per decrypted message, after the risk is confirmed by a test.
-- Decide whether users of shared caches must be told now.
-- Decide whether to add automatic spec-to-code tracing for the MPL (TM-MPL-019).
 
 | Count | High | Medium | Low | Total |
 |---|---|---|---|---|
