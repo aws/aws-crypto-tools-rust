@@ -307,13 +307,8 @@ pub(super) fn ddb_client(
 }
 
 pub(super) fn create_http_client() -> Result<Box<HttpClient>, String> {
-    let inner = default_http_client().ok_or_else(|| {
-        shim_err(
-            ffi::ShimErrorKind::Internal,
-            "create HTTP client",
-            "no default HTTP client is available",
-        )
-    })?;
+    // The shim always turns on aws-smithy-runtime's default-https-client feature.
+    let inner = default_http_client().expect("default-https-client is on");
     Ok(Box::new(HttpClient { inner }))
 }
 
@@ -385,7 +380,7 @@ pub(super) fn kms_client_with_headers(
 
 /// Adds fixed headers to every request.
 #[derive(Debug)]
-struct RequestHeaders(Vec<(String, String)>);
+pub(super) struct RequestHeaders(pub(super) Vec<(String, String)>);
 
 impl aws_sdk_kms::config::Intercept for RequestHeaders {
     fn name(&self) -> &'static str {
@@ -540,20 +535,16 @@ pub(super) fn from_ffi_duration(
 }
 
 pub(super) fn cache_count(field: &str, v: u32, op: &str) -> Result<usize, String> {
-    let bounded = i32::try_from(v).map_err(|_| {
-        shim_err(
-            ffi::ShimErrorKind::Validation,
-            op,
-            format!("{field} {v} exceeds the bridge's supported maximum"),
-        )
-    })?;
-    usize::try_from(bounded).map_err(|_| {
-        shim_err(
-            ffi::ShimErrorKind::Validation,
-            op,
-            format!("{field} {v} does not fit in usize"),
-        )
-    })
+    i32::try_from(v)
+        .ok()
+        .and_then(|bounded| usize::try_from(bounded).ok())
+        .ok_or_else(|| {
+            shim_err(
+                ffi::ShimErrorKind::Validation,
+                op,
+                format!("{field} {v} exceeds the bridge's supported maximum"),
+            )
+        })
 }
 
 /// Apply each set option to `builder`.

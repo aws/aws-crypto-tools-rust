@@ -1372,6 +1372,23 @@ fn create_sdk_config_defers_retry_when_unset() {
 }
 
 #[test]
+fn adaptive_mode_alone_sets_an_adaptive_retry_config() {
+    let config = make_retry_config(&ffi::RetryConfig {
+        mode_adaptive: true,
+        max_attempts: unset_u32(),
+    })
+    .expect("a retry config");
+    assert_eq!(
+        config.mode(),
+        aws_config::retry::RetryConfig::adaptive().mode()
+    );
+    assert_eq!(
+        config.max_attempts(),
+        aws_config::retry::RetryConfig::adaptive().max_attempts()
+    );
+}
+
+#[test]
 fn create_sdk_config_applies_every_field() {
     let mut cfg = unset_client_config();
     cfg.region = ffi::OptString {
@@ -1835,6 +1852,12 @@ fn kms_client_with_headers_rejects_invalid_headers() {
             "{err}"
         );
     }
+}
+
+#[test]
+fn the_request_headers_interceptor_is_named() {
+    use aws_sdk_kms::config::Intercept;
+    assert_eq!(RequestHeaders(Vec::new()).name(), "RequestHeaders");
 }
 
 // A local HTTP/1.1 server that answers every KMS request with an empty `ListKeys` result
