@@ -136,7 +136,8 @@
 
 // The C++ API's hierarchical keyring needs the AWS KMS client, the DynamoDB
 // client, and the default AWS SDK clients the shim builds them with.
-// So the shim offers all three features together or none of them.
+// So the shim offers all three features together or none of them,
+// and the code below checks only `kms` to mean all three.
 #[cfg(not(any(
     all(feature = "kms", feature = "ddb", feature = "default-aws-sdk-clients"),
     not(any(feature = "kms", feature = "ddb", feature = "default-aws-sdk-clients"))
@@ -153,9 +154,9 @@ use aws_esdk::types::SignedStreaming;
 use std::num::NonZeroU32;
 use std::sync::LazyLock;
 
-#[cfg(all(feature = "kms", feature = "ddb", feature = "default-aws-sdk-clients"))]
+#[cfg(feature = "kms")]
 mod hierarchical_keyring;
-#[cfg(all(feature = "kms", feature = "ddb", feature = "default-aws-sdk-clients"))]
+#[cfg(feature = "kms")]
 use hierarchical_keyring::*;
 
 // ESDK Rust's methods are all async. This runtime runs those async methods for C++ users.
@@ -181,7 +182,7 @@ mod ffi {
         set: bool,
         value: u64,
     }
-    #[cfg(all(feature = "kms", feature = "ddb", feature = "default-aws-sdk-clients"))]
+    #[cfg(feature = "kms")]
     struct OptString {
         set: bool,
         value: String,
@@ -198,7 +199,7 @@ mod ffi {
         set: bool,
         value: SignedStreaming,
     }
-    #[cfg(all(feature = "kms", feature = "ddb", feature = "default-aws-sdk-clients"))]
+    #[cfg(feature = "kms")]
     struct OptDuration {
         set: bool,
         value: Duration,
@@ -329,14 +330,14 @@ mod ffi {
         pub plaintext: Vec<u8>,
     }
 
-    #[cfg(all(feature = "kms", feature = "ddb", feature = "default-aws-sdk-clients"))]
+    #[cfg(feature = "kms")]
     struct RetryConfig {
         /// false selects standard mode, which is also the AWS SDK default.
         mode_adaptive: bool,
         max_attempts: OptU32,
     }
 
-    #[cfg(all(feature = "kms", feature = "ddb", feature = "default-aws-sdk-clients"))]
+    #[cfg(feature = "kms")]
     struct Credentials {
         access_key_id: String,
         secret_access_key: String,
@@ -345,26 +346,26 @@ mod ffi {
         expiration: OptDuration,
     }
 
-    #[cfg(all(feature = "kms", feature = "ddb", feature = "default-aws-sdk-clients"))]
+    #[cfg(feature = "kms")]
     struct OptCredentials {
         set: bool,
         value: Credentials,
     }
 
-    #[cfg(all(feature = "kms", feature = "ddb", feature = "default-aws-sdk-clients"))]
+    #[cfg(feature = "kms")]
     struct HttpHeader {
         name: String,
         value: String,
     }
 
-    #[cfg(all(feature = "kms", feature = "ddb", feature = "default-aws-sdk-clients"))]
+    #[cfg(feature = "kms")]
     struct MplAwsClientConfig {
         region: OptString,
         retry: RetryConfig,
         credentials: OptCredentials,
     }
 
-    #[cfg(all(feature = "kms", feature = "ddb", feature = "default-aws-sdk-clients"))]
+    #[cfg(feature = "kms")]
     enum KmsConfigurationType {
         Unset,
         KmsKeyArn,
@@ -373,7 +374,7 @@ mod ffi {
         MrDiscovery,
     }
 
-    #[cfg(all(feature = "kms", feature = "ddb", feature = "default-aws-sdk-clients"))]
+    #[cfg(feature = "kms")]
     struct KeyStoreConfig {
         ddb_table_name: String,
         kms_configuration_type: KmsConfigurationType,
@@ -387,12 +388,7 @@ mod ffi {
 
     /// Storm-tracking cache settings.
     /// An unset field keeps the core ESDK's default.
-    #[cfg(all(
-        feature = "kms",
-        feature = "ddb",
-        feature = "default-aws-sdk-clients",
-        feature = "rt-tokio"
-    ))]
+    #[cfg(all(feature = "kms", feature = "rt-tokio"))]
     struct StormTrackingCmcOptions {
         entry_capacity: OptU32,
         entry_pruning_tail_size: OptU32,
@@ -405,14 +401,14 @@ mod ffi {
 
     // cxx has no mapping for std::chrono or std::time::Duration.
     // These are Duration's own fields, so the bridge picks no unit and covers Duration's full range.
-    #[cfg(all(feature = "kms", feature = "ddb", feature = "default-aws-sdk-clients"))]
+    #[cfg(feature = "kms")]
     #[derive(Clone, Copy)]
     struct Duration {
         secs: u64,
         nanos: u32,
     }
 
-    #[cfg(all(feature = "kms", feature = "ddb", feature = "default-aws-sdk-clients"))]
+    #[cfg(feature = "kms")]
     struct HierarchicalKeyringInput {
         branch_key_id: String,
         key_store: *const KeyStore,
@@ -442,72 +438,62 @@ mod ffi {
     extern "Rust" {
         // No delete_* functions: C++ holds each resource as a rust::Box, whose
         // destructor runs cxx's generated drop glue and drops the Rust Box.
-        #[cfg(all(feature = "kms", feature = "ddb", feature = "default-aws-sdk-clients"))]
+        #[cfg(feature = "kms")]
         type MplDdbClient;
-        #[cfg(all(feature = "kms", feature = "ddb", feature = "default-aws-sdk-clients"))]
+        #[cfg(feature = "kms")]
         fn create_ddb_client(value: &MplAwsClientConfig) -> Result<Box<MplDdbClient>>;
-        #[cfg(all(feature = "kms", feature = "ddb", feature = "default-aws-sdk-clients"))]
+        #[cfg(feature = "kms")]
         fn create_ddb_client_with_http_client(
             value: &MplAwsClientConfig,
             http_client: &HttpClient,
         ) -> Result<Box<MplDdbClient>>;
-        #[cfg(all(feature = "kms", feature = "ddb", feature = "default-aws-sdk-clients"))]
+        #[cfg(feature = "kms")]
         fn ddb_client_with_credentials(
             base: &MplDdbClient,
             credentials: &Credentials,
         ) -> Result<Box<MplDdbClient>>;
 
-        #[cfg(all(feature = "kms", feature = "ddb", feature = "default-aws-sdk-clients"))]
+        #[cfg(feature = "kms")]
         type KeyStore;
-        #[cfg(all(feature = "kms", feature = "ddb", feature = "default-aws-sdk-clients"))]
+        #[cfg(feature = "kms")]
         fn create_keystore(value: &KeyStoreConfig) -> Result<Box<KeyStore>>;
 
-        #[cfg(all(feature = "kms", feature = "ddb", feature = "default-aws-sdk-clients"))]
+        #[cfg(feature = "kms")]
         type CryptographicMaterialsCache;
-        #[cfg(all(
-            feature = "kms",
-            feature = "ddb",
-            feature = "default-aws-sdk-clients",
-            feature = "rt-tokio"
-        ))]
+        #[cfg(all(feature = "kms", feature = "rt-tokio"))]
         fn create_storm_tracking_cmc(
             options: &StormTrackingCmcOptions,
         ) -> Result<Box<CryptographicMaterialsCache>>;
-        #[cfg(all(
-            feature = "kms",
-            feature = "ddb",
-            feature = "default-aws-sdk-clients",
-            feature = "rt-tokio"
-        ))]
+        #[cfg(all(feature = "kms", feature = "rt-tokio"))]
         fn create_default_cmc(entry_capacity: u32) -> Result<Box<CryptographicMaterialsCache>>;
-        #[cfg(all(feature = "kms", feature = "ddb", feature = "default-aws-sdk-clients"))]
+        #[cfg(feature = "kms")]
         fn create_local_cmc(entry_capacity: u32) -> Result<Box<CryptographicMaterialsCache>>;
 
         type Keyring;
-        #[cfg(all(feature = "kms", feature = "ddb", feature = "default-aws-sdk-clients"))]
+        #[cfg(feature = "kms")]
         fn create_hierarchical_keyring(value: &HierarchicalKeyringInput) -> Result<Box<Keyring>>;
         fn create_raw_aes_keyring(value: &RawAesKeyringInput) -> Result<Box<Keyring>>;
 
-        #[cfg(all(feature = "kms", feature = "ddb", feature = "default-aws-sdk-clients"))]
+        #[cfg(feature = "kms")]
         type HttpClient;
-        #[cfg(all(feature = "kms", feature = "ddb", feature = "default-aws-sdk-clients"))]
+        #[cfg(feature = "kms")]
         fn create_http_client() -> Result<Box<HttpClient>>;
 
-        #[cfg(all(feature = "kms", feature = "ddb", feature = "default-aws-sdk-clients"))]
+        #[cfg(feature = "kms")]
         type MplKmsClient;
-        #[cfg(all(feature = "kms", feature = "ddb", feature = "default-aws-sdk-clients"))]
+        #[cfg(feature = "kms")]
         fn create_kms_client(value: &MplAwsClientConfig) -> Result<Box<MplKmsClient>>;
-        #[cfg(all(feature = "kms", feature = "ddb", feature = "default-aws-sdk-clients"))]
+        #[cfg(feature = "kms")]
         fn create_kms_client_with_http_client(
             value: &MplAwsClientConfig,
             http_client: &HttpClient,
         ) -> Result<Box<MplKmsClient>>;
-        #[cfg(all(feature = "kms", feature = "ddb", feature = "default-aws-sdk-clients"))]
+        #[cfg(feature = "kms")]
         fn kms_client_with_credentials(
             base: &MplKmsClient,
             credentials: &Credentials,
         ) -> Result<Box<MplKmsClient>>;
-        #[cfg(all(feature = "kms", feature = "ddb", feature = "default-aws-sdk-clients"))]
+        #[cfg(feature = "kms")]
         fn kms_client_with_headers(
             base: &MplKmsClient,
             headers: Vec<HttpHeader>,
@@ -543,12 +529,12 @@ macro_rules! opt_to_option {
 opt_to_option!(
     OptU32 => u32,
     OptU64 => u64,
-    #[cfg(all(feature = "kms", feature = "ddb", feature = "default-aws-sdk-clients"))]
+    #[cfg(feature = "kms")]
     OptString => String,
     OptAlgId => ffi::EsdkAlgorithmSuiteId,
     OptCommitmentPolicy => ffi::EsdkCommitmentPolicy,
     OptSignedStreaming => ffi::SignedStreaming,
-    #[cfg(all(feature = "kms", feature = "ddb", feature = "default-aws-sdk-clients"))]
+    #[cfg(feature = "kms")]
     OptDuration => ffi::Duration,
 );
 
@@ -1506,5 +1492,6 @@ pub fn into_keyring_handle(
     .cast()
 }
 
-#[cfg(test)]
+// The tests use the hierarchical keyring and the storm-tracking cache throughout.
+#[cfg(all(test, feature = "kms", feature = "rt-tokio"))]
 mod tests;

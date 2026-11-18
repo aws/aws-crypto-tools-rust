@@ -21,7 +21,7 @@ endif
 benchmark: benchmark.cpp benchmark_support.h $(STATICLIB)
 	g++ benchmark.cpp \
 		$(STATICLIB) \
-		-I$(SHIM_DIR)/include \
+		-I$(SHIM_DIR)/include -I$(TARGET_DIR)/$(PROFILE)/include \
 		-lpthread -ldl $(PLATFORM_LIBS) \
 		-std=c++17 -O2 \
 		-o benchmark

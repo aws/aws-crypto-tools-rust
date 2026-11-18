@@ -26,8 +26,7 @@ else()
     list(APPEND ESDK_CARGO_ARGS --release)
 endif()
 
-# Optional parts of the library. Each picks Cargo features,
-# and the matching AWS_ESDK_CPP_* define reaches every target that links AWS::esdk.
+# Optional parts of the library. Each picks Cargo features.
 option(ESDK_FIPS "Build the ESDK with AWS-LC's FIPS module" OFF)
 option(ESDK_HIERARCHICAL_KEYRING "Include the hierarchical keyring, key store and AWS SDK clients" ON)
 option(ESDK_STORM_TRACKING_CMC "Include DefaultCmc and StormTrackingCmc (needs ESDK_HIERARCHICAL_KEYRING)" ON)
@@ -64,6 +63,7 @@ set(ESDK_BRIDGE_CC ${ESDK_TARGET_DIR}/cxxbridge/aws-esdk-cpp/src/lib.rs.cc)
 add_library(aws_esdk_cpp STATIC ${ESDK_BRIDGE_CC})
 target_include_directories(aws_esdk_cpp PUBLIC
     ${ESDK_ROOT}/include
+    ${ESDK_TARGET_DIR}/${ESDK_PROFILE}/include
     ${ESDK_TARGET_DIR}/cxxbridge
 )
 target_link_libraries(aws_esdk_cpp PUBLIC
@@ -78,10 +78,6 @@ if(APPLE)
         "-framework SystemConfiguration"
     )
 endif()
-target_compile_definitions(aws_esdk_cpp PUBLIC
-    AWS_ESDK_CPP_HIERARCHICAL_KEYRING=$<BOOL:${ESDK_HIERARCHICAL_KEYRING}>
-    AWS_ESDK_CPP_STORM_TRACKING_CMC=$<BOOL:${ESDK_STORM_TRACKING_CMC}>
-)
 add_library(AWS::esdk ALIAS aws_esdk_cpp)
 
 if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)

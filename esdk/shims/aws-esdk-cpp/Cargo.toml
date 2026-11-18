@@ -27,8 +27,6 @@ aws-smithy-runtime-api = { version = "1.19", features = ["client"], optional = t
 # The same features as the Rust ESDK, passed through to it.
 default = ["aws-lc-sys", "kms", "ddb", "default-aws-sdk-clients", "rt-tokio"]
 # The crypto backend: `aws-lc-sys` (the default), or `fips` for AWS-LC's FIPS module.
-# To use AWS-LC FIPS, build with `--features fips`,
-# or configure CMake with `-DESDK_FIPS=ON`.
 aws-lc-sys = ["aws-esdk/aws-lc-sys", "aws-crypto-mpl/aws-lc-sys", "aws-mpl-primitives/aws-lc-sys"]
 fips = ["aws-esdk/fips", "aws-crypto-mpl/fips", "aws-mpl-primitives/fips"]
 # The C++ API's KmsClient, DdbClient, KeyStore and HierarchicalKeyring.

@@ -59,9 +59,13 @@ For example, a FIPS build with only the raw AES keyring:
 cargo build --no-default-features --features fips
 ```
 
-Code that includes `EncryptionSDK.h` must then define
-`AWS_ESDK_CPP_HIERARCHICAL_KEYRING=0` and `AWS_ESDK_CPP_STORM_TRACKING_CMC=0`.
-The CMake options set both for you.
+The build writes `aws/esdk/Config.h` next to the library, in
+`target/<profile>/include`, and `EncryptionSDK.h` includes it. It sets
+`AWS_ESDK_CPP_HIERARCHICAL_KEYRING` and `AWS_ESDK_CPP_STORM_TRACKING_CMC` to
+match the features, so the header shows only what the library has.
+Code that includes `EncryptionSDK.h` needs both `include` and
+`target/<profile>/include` on its include path. The `AWS::esdk` CMake target
+adds both.
 
 ## Using it in a CMake project
 

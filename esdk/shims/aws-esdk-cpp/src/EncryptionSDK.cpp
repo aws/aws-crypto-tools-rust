@@ -372,9 +372,7 @@ struct KeyStoreImpl {
     KeyStoreImpl(Retained deps, ::rust::Box<::ffi::KeyStore> h)
         : retained(std::move(deps)), handle(std::move(h)) {}
 };
-#endif  // AWS_ESDK_CPP_HIERARCHICAL_KEYRING
 
-#if AWS_ESDK_CPP_HIERARCHICAL_KEYRING
 struct CryptographicMaterialsCacheImpl {
     Retained retained;
     ::rust::Box<::ffi::CryptographicMaterialsCache> handle;
@@ -513,9 +511,7 @@ KeyStore::KeyStore(const std::string& table_name,
               if (options.ddb_client_) c.ddb_client = &*options.ddb_client_->impl_->handle;
               return ::ffi::create_keystore(c);
           }))) {}
-#endif  // AWS_ESDK_CPP_HIERARCHICAL_KEYRING
 
-#if AWS_ESDK_CPP_HIERARCHICAL_KEYRING
 // Cryptographic materials caches
 
 #if AWS_ESDK_CPP_STORM_TRACKING_CMC

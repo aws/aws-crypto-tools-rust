@@ -62,6 +62,18 @@ jobs:
       - name: Clippy with FIPS
         run: cargo clippy --all-targets --features fips -- -D warnings
 
+      - name: Install cargo-hack
+        uses: taiki-e/install-action@cargo-hack
+
+      - name: Clippy every feature combination
+        run: >-
+          cargo hack clippy --lib --feature-powerset --no-dev-deps
+          --exclude-features default
+          --mutually-exclusive-features aws-lc-sys,fips
+          --at-least-one-of aws-lc-sys,fips
+          --group-features kms,ddb,default-aws-sdk-clients
+          -- -D warnings
+
       - name: Build
         run: cargo build --verbose
 
@@ -72,11 +84,8 @@ jobs:
         if: runner.os == 'Linux'
         run: make test-ci-cpp
 
-      - name: Clippy with only the raw AES keyring
-        run: cargo clippy --lib --no-default-features --features aws-lc-sys -- -D warnings
-
       - name: Build and run the raw AES example with only the raw AES keyring
         run: |
           cargo build --no-default-features --features aws-lc-sys
-          make raw_aes_example CXXFLAGS_COMMON="-Iinclude -std=c++17 -DAWS_ESDK_CPP_HIERARCHICAL_KEYRING=0 -DAWS_ESDK_CPP_STORM_TRACKING_CMC=0"
+          make raw_aes_example
           ./raw_aes_keyring_example
