@@ -1,5 +1,5 @@
 ---
-name: verification-recommender
+name: mpl-verification-recommender
 description: Analyzes the threat model and specification to produce a prioritized list of formal verification targets. Uses the prioritization formula (Severity × Coverage_Gap × Feasibility × Blast_Radius) to rank what should be proven first, maps each target to the appropriate Verus agent, and outputs actionable verification recommendations with traceability back to threats and spec requirements.
 tools: ["read", "write", "web"]
 ---
@@ -12,15 +12,15 @@ This agent is the **decision-making layer** that connects threat analysis to pro
 
 ```
 ┌──────────────────┐     ┌──────────────────────────┐     ┌─────────────────────────┐
-│ threat-model-    │     │ verification-recommender │     │ Verus proof agents      │
+│ threat-model-    │     │ mpl-verification-recommender │     │ Verus proof agents      │
 │ generator        │ ──► │ (this agent)             │ ──► │ • verus-header-parsing  │
-│                  │     │                          │     │ • verus-zero-panic      │
-│ spec-analyzer    │ ──► │ Prioritize & assign      │     │ • verus-unsafe-ffi      │
+│                  │     │                          │     │ • mpl-verus-zero-panic      │
+│ mpl-spec-analyzer    │ ──► │ Prioritize & assign      │     │ • verus-unsafe-ffi      │
 └──────────────────┘     └──────────────────────────┘     └─────────────────────────┘
 ```
 
 Pipeline position: **Step 3 of the AI-Driven Formal Verification Pipeline**  
-Reference: `.kiro/agents/ai-verification-pipeline.md`
+Reference: `.kiro/agents/mpl-ai-verification-pipeline.md`
 
 All agents share:
 - The same Verus toolchain at `~/verus/verus`
@@ -66,24 +66,24 @@ Map each verification target to the correct Verus agent based on what is being p
 
 | Property Category | Assigned Agent | When to Use |
 |------------------|----------------|-------------|
-| Parsing / deserialization correctness | `verus-header-parsing-proofs` | Proving a branch-key record / cache-entry identifier / encryption-context decode returns the correct Result |
-| Serialization round-trip fidelity | `verus-header-parsing-proofs` | Proving encode∘decode is the identity for records / canonical encryption context |
-| Functional correctness (algorithm) | `verus-header-parsing-proofs` | Proving suite selection, MRK matching, or KBKDF fixed-info matches the spec for valid input |
-| Panic freedom (no crashes) | `verus-zero-panic` | Proving all code paths in `prim` crypto and MPL length/index handling return without panic |
-| Length/bounds preconditions on crypto calls | `verus-zero-panic` | Proving `copy_from_slice` / slicing / arithmetic in `prim` and callers stays in bounds |
-| Secret-material memory safety | `verus-unsafe-ffi-safety` | Proving the `PlaintextDataKey::zeroize` unsafe volatile-write loop is in-bounds and leaves no residual key |
-| aws-lc-rs safe-wrapper preconditions | `verus-unsafe-ffi-safety` | Proving key/nonce/output length invariants hold before calling `aes_encrypt`/`hmac`/`ecdsa_sign` so they never error |
+| Parsing / deserialization correctness | `mpl-verus-header-parsing-proofs` | Proving a branch-key record / cache-entry identifier / encryption-context decode returns the correct Result |
+| Serialization round-trip fidelity | `mpl-verus-header-parsing-proofs` | Proving encode∘decode is the identity for records / canonical encryption context |
+| Functional correctness (algorithm) | `mpl-verus-header-parsing-proofs` | Proving suite selection, MRK matching, or KBKDF fixed-info matches the spec for valid input |
+| Panic freedom (no crashes) | `mpl-verus-zero-panic` | Proving all code paths in `prim` crypto and MPL length/index handling return without panic |
+| Length/bounds preconditions on crypto calls | `mpl-verus-zero-panic` | Proving `copy_from_slice` / slicing / arithmetic in `prim` and callers stays in bounds |
+| Secret-material memory safety | `mpl-verus-unsafe-ffi-safety` | Proving the `PlaintextDataKey::zeroize` unsafe volatile-write loop is in-bounds and leaves no residual key |
+| aws-lc-rs safe-wrapper preconditions | `mpl-verus-unsafe-ffi-safety` | Proving key/nonce/output length invariants hold before calling `aes_encrypt`/`hmac`/`ecdsa_sign` so they never error |
 
 ## Process
 
 1. **Gather Targets from BOTH entry paths:**
    - **Threat-driven:** Read `docs/mpl-threat-model.md` and extract all identified threats with their severity, likelihood, and existing mitigations.
-   - **Capability-driven:** Run the Stage 2' sweep from `ai-verification-pipeline.md` using `verus-capabilities.md` — enumerate provable properties in `mpl/src`/`prim/src` that are worth proving independent of any threat (total panic-freedom of `prim`, `zeroize` soundness, codec round-trips, cache-arithmetic safety). These become targets even when no threat references them.
+   - **Capability-driven:** Run the Stage 2' sweep from `mpl-ai-verification-pipeline.md` using `mpl-verus-capabilities.md` — enumerate provable properties in `mpl/src`/`prim/src` that are worth proving independent of any threat (total panic-freedom of `prim`, `zeroize` soundness, codec round-trips, cache-arithmetic safety). These become targets even when no threat references them.
    Produce a single combined target list; tag each target `threat-driven` or `capability-driven`.
 
-2. **Read the Pipeline Methodology:** Read `.kiro/agents/ai-verification-pipeline.md` to understand the scoring framework and output format requirements.
+2. **Read the Pipeline Methodology:** Read `.kiro/agents/mpl-ai-verification-pipeline.md` to understand the scoring framework and output format requirements.
 
-2a. **Triage Provability:** Consult `.kiro/agents/verus-capabilities.md` to confirm each candidate target is genuinely Verus-provable **and** present in this repo, pick its proof category (functional correctness / zero-panic / low-level & unsafe / concurrency), and route it to the right proof agent. Drop any target the capability map flags as out-of-scope (cryptographic hardness, external-service policy, probabilistic secrecy, raw-FFI that does not exist here) — record it as out-of-scope with the reason rather than scoring it.
+2a. **Triage Provability:** Consult `.kiro/agents/mpl-verus-capabilities.md` to confirm each candidate target is genuinely Verus-provable **and** present in this repo, pick its proof category (functional correctness / zero-panic / low-level & unsafe / concurrency), and route it to the right proof agent. Drop any target the capability map flags as out-of-scope (cryptographic hardness, external-service policy, probabilistic secrecy, raw-FFI that does not exist here) — record it as out-of-scope with the reason rather than scoring it.
 
 3. **Assess Coverage Gaps:** For each threat, determine what verification already exists:
    - Verus proofs already written (coverage gap = 0)
@@ -117,9 +117,9 @@ The `Origin` column is `T` (threat-driven, with the threat id in `Ref`) or `C` (
 ```markdown
 | Rank | Score | Origin | Target | Property | Agent | Ref | Effort |
 |------|-------|--------|--------|----------|-------|-----|--------|
-| 1 | 12.0 | T | branch_key_wrap | AAD binds branch-key-id + version | verus-header-parsing-proofs | TM-MPL-007 | 2 weeks |
-| 2 | 8.0 | C | prim::{hmac,digest,aes_decrypt} | No panic on any input | verus-zero-panic | cap:cat2 | 1 week |
-| 3 | 7.5 | C | PlaintextDataKey::zeroize | In-bounds writes, no residual secret | verus-unsafe-ffi-safety | cap:cat3 | 1 week |
+| 1 | 12.0 | T | branch_key_wrap | AAD binds branch-key-id + version | mpl-verus-header-parsing-proofs | TM-MPL-007 | 2 weeks |
+| 2 | 8.0 | C | prim::{hmac,digest,aes_decrypt} | No panic on any input | mpl-verus-zero-panic | cap:cat2 | 1 week |
+| 3 | 7.5 | C | PlaintextDataKey::zeroize | In-bounds writes, no residual secret | mpl-verus-unsafe-ffi-safety | cap:cat3 | 1 week |
 | ... | ... | ... | ... | ... | ... | ... | ... |
 ```
 
@@ -140,7 +140,7 @@ recommendation:
   property: "The wrapping AAD MUST bind the branch-key-id and version, so a persisted record cannot be substituted for another"
   formal_spec: "∀ record: unwrap(record) succeeds → aad(record) binds (branch_key_id, version)"
   tool: Verus
-  agent: verus-header-parsing-proofs
+  agent: mpl-verus-header-parsing-proofs
   estimated_effort: 2 engineer-weeks
   threat_references:
     - id: TM-MPL-007
@@ -181,11 +181,11 @@ recommendation:
   property: "For all inputs these functions return Ok/Err and never panic; the length-checked copy_from_slice is total"
   formal_spec: "∀ inputs: !panics(hmac(..)) ∧ !panics(digest(..)) ∧ !panics(aes_decrypt(..))"
   tool: Verus
-  agent: verus-zero-panic
+  agent: mpl-verus-zero-panic
   estimated_effort: 1 week
   threat_references: []          # baseline assurance — no specific threat
   capability_reference:
-    category: 2                  # Zero-Panic Guarantees (see verus-capabilities.md)
+    category: 2                  # Zero-Panic Guarantees (see mpl-verus-capabilities.md)
     invariant: "no reachable panic path in the prim crypto wrappers"
   trace_to_spec: "supports structures.md length requirements; baseline assurance, no single clause"
   coverage_gap: 1.0

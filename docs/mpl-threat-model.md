@@ -1,12 +1,12 @@
 # Threat Model: AWS Cryptographic Material Providers Library (MPL)
 
-> Pipeline artifact, Stage 2 (Threat Modeling), **second pass**. Produced by the `threat-model-generator` agent against the `esdk-native-mpl` working tree at HEAD `851977d` (branch `MPL-Verus`).
+> Pipeline artifact, Stage 2 (Threat Modeling), **second pass**. Produced by the `mpl-threat-model-generator` agent against the `esdk-native-mpl` working tree at HEAD `851977d` (branch `MPL-Verus`).
 >
 > - **Code analyzed:** `mpl/` and `prim/` are unchanged since `620771c`. `.agents/tasks/pipeline-pass2/scope.md` records that `git diff 620771c 5f2dc72` touches only `esdk/shims/aws-esdk-cpp/` (#188 `41f1d51`, #189 `5f2dc72`). This step had no shell, so `git` was not re-run. Earlier versions of this document analyzed `a1e23d7` and then `620771c`.
 > - **Citation method:** every current `file:line` below was re-checked in this step. Single lines come from workspace grep match lines (a grep context line is numbered one too high, so only match lines were used) or from `read_file` offsets counted by hand (`offset N` shows line `N+1` first). Ranges end on lines that were counted. Details and the corrections found are in `.agents/tasks/pipeline-pass2/stage2-notes.md`.
 > - **Status:** Draft for verification prioritization.
 > - **Scope:** `mpl/` (key management) built on `prim/` (safe aws-lc-rs wrappers). Message-format concerns (ESDK) are OUT OF SCOPE. The ESDK and the C++ shim appear only as callers.
-> - **Methodology:** STRIDE with likelihood × impact risk rating (matrix in the appendix). Each threat has a stable ID `TM-MPL-NNN` referenced by the verification-recommender. IDs are never renumbered or deleted; a threat that no longer applies is marked Retired.
+> - **Methodology:** STRIDE with likelihood × impact risk rating (matrix in the appendix). Each threat has a stable ID `TM-MPL-NNN` referenced by the mpl-verification-recommender. IDs are never renumbered or deleted; a threat that no longer applies is marked Retired.
 > - **Inputs:** `docs/mpl-spec-security-analysis.md` (Stage 1, second pass), `.agents/tasks/pipeline-pass2/{scope.md,stage1-notes.md}`, `.agents/tasks/pipeline-rerun-620771c/`, `docs/mpl-bug-reports/RECHECK-main-620771c.md`, `docs/mpl-bug-reports/README.md`.
 >
 > **Note on Duvet:** `main` has no Duvet config for the MPL. The only configs are `esdk/.duvet/config.toml` and `esdk/shims/aws-esdk-cpp/.duvet/config.toml`. The ESDK config lists `spec/framework/transitive-requirements.md` (`esdk/.duvet/config.toml:37`, ESDK-level HKDF/ECDSA text) and no MPL framework document. `mpl/` and `prim/` contain exactly one annotation block (`mpl/src/cmc/entry.rs:201-204`, `cryptographic-materials-cache.md#usage-metadata`, `type=implication`), which CI does not check. Mitigations below cite code locations and spec sections directly. The gap is tracked as TM-MPL-019.

@@ -1,5 +1,5 @@
 ---
-name: spec-analyzer
+name: mpl-spec-analyzer
 description: Analyzes project specification documents, design docs, and architecture to extract security-relevant properties like data flows, trust boundaries, cryptographic operations, and key management patterns. Use this agent as a precursor to threat modeling or security review.
 tools: ["read", "write", "web"]
 ---

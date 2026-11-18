@@ -1,5 +1,5 @@
 ---
-name: verus
+name: mpl-verus
 description: Write, run, and debug Verus formal verification proofs for Rust code. Use when verifying Rust functions with requires/ensures contracts, proving absence of panics or arithmetic overflow, proving array/slice bounds safety, modeling byte buffers as Seq<u8>, writing proof functions and lemmas, verifying unsafe FFI code, or when encountering Verus verification errors. Covers spec/proof/exec function modes, vstd, and the ~/verus/verus CLI.
 ---
 
@@ -23,7 +23,7 @@ These rules are non-negotiable. Violating any of them produces proofs that are u
 
 6. **NEVER delete or comment out a failing `assert`, `invariant`, or `ensures` to get a green result.** If you cannot prove it, leave it failing and explain why.
 
-7. **NEVER mark `unsafe` FFI code as `external_body` and call it "verified."** Wrapping unsafe code to hide it from Verus is the opposite of proving its safety. Model the FFI contract explicitly (see `verus-unsafe-ffi-safety` agent) or state clearly that it remains unverified.
+7. **NEVER mark `unsafe` FFI code as `external_body` and call it "verified."** Wrapping unsafe code to hide it from Verus is the opposite of proving its safety. Model the FFI contract explicitly (see `mpl-verus-unsafe-ffi-safety` agent) or state clearly that it remains unverified.
 
 8. **ALWAYS preserve the meaning of the code.** Proof annotations (`spec`, `proof`, `requires`, `ensures`, `invariant`, `assert`) are ghost and must not change runtime behavior. Never alter executable logic solely to make verification easier without confirming the behavior is still correct.
 
@@ -288,4 +288,4 @@ Use `assert(expr);` liberally to probe what the verifier knows at each point. Ve
 
 - Verus Guide: https://verus-lang.github.io/verus/guide/
 - Verus repo: https://github.com/verus-lang/verus
-- Related project agents: `.kiro/agents/verus-header-parsing-proofs.md`, `.kiro/agents/verus-zero-panic.md`, `.kiro/agents/verus-unsafe-ffi-safety.md`
+- Related project agents: `.kiro/agents/mpl-verus-header-parsing-proofs.md`, `.kiro/agents/mpl-verus-zero-panic.md`, `.kiro/agents/mpl-verus-unsafe-ffi-safety.md`

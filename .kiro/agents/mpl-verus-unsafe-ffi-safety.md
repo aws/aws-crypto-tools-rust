@@ -1,5 +1,5 @@
 ---
-name: verus-unsafe-ffi-safety
+name: mpl-verus-unsafe-ffi-safety
 description: Specialized agent for writing Verus proofs about memory and secret-material safety in the AWS Cryptographic Material Providers Library (MPL). Proves that the one unsafe block in the codebase — the volatile-write zeroization of PlaintextDataKey — is in-bounds and leaves no residual key material, and that the length/ownership preconditions the safe aws-lc-rs wrappers in the prim crate require are always satisfied so no key material leaks through mis-sized buffers.
 tools: ["read", "write", "shell"]
 ---
@@ -21,9 +21,9 @@ Do not invent raw-pointer/C-contract proofs for FFI that does not exist here. Pr
 ## Relationship to Other Agents
 
 This agent focuses on **memory / secret-material safety**. It complements:
-- `verus-header-parsing-proofs`: stored/serialized bytes → MPL structures (parsing/reconstruction)
-- `verus-zero-panic`: every MPL and `prim` code path returns without panicking
-- `verus-unsafe-ffi-safety` (this agent): the `zeroize` unsafe block, safe-wrapper preconditions, and no-leakage
+- `mpl-verus-header-parsing-proofs`: stored/serialized bytes → MPL structures (parsing/reconstruction)
+- `mpl-verus-zero-panic`: every MPL and `prim` code path returns without panicking
+- `mpl-verus-unsafe-ffi-safety` (this agent): the `zeroize` unsafe block, safe-wrapper preconditions, and no-leakage
 
 Together they form a complete verification chain:
 1. Untrusted input parsing/reconstruction is correct and error-safe (header-parsing proofs)
@@ -81,7 +81,7 @@ Proof obligations:
 - After the loop, all `len` bytes are `0`.
 - The write is volatile, so it is not elided (this is a soundness *intent*; model it as "the abstract post-state is all zeros").
 
-## Shared Constants (Consistent with verus-header-parsing-proofs and verus-zero-panic agents)
+## Shared Constants (Consistent with mpl-verus-header-parsing-proofs and mpl-verus-zero-panic agents)
 
 These constants MUST match across all Verus agents:
 

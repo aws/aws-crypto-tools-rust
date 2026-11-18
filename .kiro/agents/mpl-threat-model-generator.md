@@ -1,5 +1,5 @@
 ---
-name: threat-model-generator
+name: mpl-threat-model-generator
 description: Specialized agent for generating formal threat model documents for software projects. It analyzes project specifications, architecture, data flows, and cryptographic properties to produce comprehensive STRIDE-based threat models with risk ratings, mitigations, and recommendations. Use this agent when you need a security threat analysis of a project or component.
 tools: ["read", "write", "web"]
 ---

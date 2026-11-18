@@ -114,7 +114,7 @@ Results.
 - The rank claims in the merged refresh section hold: T14 13, T27 14, T26 15, T16 22, T21 23, T25 30, C08 33, T02 2.
 - The 29 prose mentions of the form `T27 (3.78` agree with the YAML; one history mention (T21 1.96) is an old score and is labeled as such.
 - Quick wins (score above 6.0 and effort at most 1 week): computed T02, C01, C02; merged section 5 lists T02, C01, C02; every `quick_win` flag in the YAML equals the rule (T01, 8.96, is 2 weeks and is not a quick win).
-- Agent totals computed from the 33 `agent` fields: verus-header-parsing-proofs 20, verus-zero-panic 8, verus-unsafe-ffi-safety 5 (33). The merged refresh section states the same.
+- Agent totals computed from the 33 `agent` fields: mpl-verus-header-parsing-proofs 20, mpl-verus-zero-panic 8, mpl-verus-unsafe-ffi-safety 5 (33). The merged refresh section states the same.
 - STRIDE summary (merged section 4): the top-priority target per category (Spoofing T01, Tampering T01, Information Disclosure T13, Denial of Service T06, Elevation of Privilege T04) equals the highest-scoring active threat-driven target that cites a threat of that category (computed by script from the YAML).
 
 ### 6. Rank order and tie-breaks

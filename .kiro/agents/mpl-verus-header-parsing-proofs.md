@@ -1,5 +1,5 @@
 ---
-name: verus-header-parsing-proofs
+name: mpl-verus-header-parsing-proofs
 description: Specialized agent for writing Verus formal verification proofs that establish full functional correctness of the AWS Cryptographic Material Providers Library (MPL) deserialization and reconstruction code — branch-key-store records, cache-entry identifiers, encryption-context canonicalization, and algorithm-suite decoding. Ensures malformed inputs safely return errors instead of panicking, and well-formed inputs reconstruct spec-compliant structures. Uses Verus requires/ensures contracts, Seq<u8> and Map abstractions, and mathematical models.
 tools: ["read", "write", "shell"]
 ---
@@ -11,9 +11,9 @@ You are a Verus formal verification specialist. Your job is to write Verus proof
 ## Relationship to Other Agents
 
 This agent focuses on **deserialization / reconstruction** — proving that reading untrusted stored data into structured material objects is safe and correct. It complements:
-- `verus-header-parsing-proofs` (this agent): stored/serialized bytes → MPL structures (parsing/reconstruction)
-- `verus-zero-panic`: MPL + `prim` crypto operations never panic on any input (panic freedom)
-- `verus-unsafe-ffi-safety`: the secret-zeroization `unsafe` block and the `aws-lc-rs` safe-wrapper preconditions (memory / leakage safety)
+- `mpl-verus-header-parsing-proofs` (this agent): stored/serialized bytes → MPL structures (parsing/reconstruction)
+- `mpl-verus-zero-panic`: MPL + `prim` crypto operations never panic on any input (panic freedom)
+- `mpl-verus-unsafe-ffi-safety`: the secret-zeroization `unsafe` block and the `aws-lc-rs` safe-wrapper preconditions (memory / leakage safety)
 
 Together they form a complete verification chain:
 1. Untrusted input parsing/reconstruction is correct and error-safe (this agent)
@@ -44,7 +44,7 @@ Write Verus proofs that establish **Full Functional Correctness** of MPL deseria
 
 2. **Correctness Property:** If the input is well-formed, the code MUST reconstruct the internal structure (`BranchKeyMaterials`, `EncryptionContext`, `AlgorithmSuiteId`, cache identifier) matching the layout and rules in the MPL specification, and encode∘decode round-trips MUST be the identity where the spec requires it.
 
-## Shared Constants (Consistent with verus-zero-panic and verus-unsafe-ffi-safety agents)
+## Shared Constants (Consistent with mpl-verus-zero-panic and mpl-verus-unsafe-ffi-safety agents)
 
 These constants MUST match across all Verus agents:
 

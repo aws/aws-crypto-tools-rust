@@ -1,6 +1,6 @@
 ---
-name: ai-verification-pipeline
-description: Reference methodology for the AI-driven formal verification pipeline. Defines the three-stage approach (Specification Ingestion → Threat Modeling → Verification Targets) used by all agents in this folder. Not an executable agent — serves as the shared methodology document that threat-model-generator, spec-analyzer, and Verus proof agents follow.
+name: mpl-ai-verification-pipeline
+description: Reference methodology for the AI-driven formal verification pipeline. Defines the three-stage approach (Specification Ingestion → Threat Modeling → Verification Targets) used by all agents in this folder. Not an executable agent — serves as the shared methodology document that mpl-threat-model-generator, mpl-spec-analyzer, and Verus proof agents follow.
 tools: ["read", "web"]
 ---
 
@@ -36,11 +36,11 @@ There are **two entry paths** into verification targets, which merge at Step 3:
         │                    CAPABILITY-DRIVEN PATH                 │
         └────────────────────────────────────────────────────────► │
              Step 2': Capability-Driven Target Discovery ───────────┘
-             (verus-capabilities sweeps the code for provable
+             (mpl-verus-capabilities sweeps the code for provable
               properties independent of any specific threat)
 ```
 
-**Threat-driven** targets answer "what attack are we defending against?" — they start from a threat and find the code to prove. **Capability-driven** targets answer "what can we cheaply prove here that is worth proving regardless of a named threat?" — they start from Verus's capabilities (`verus-capabilities`) and the code, and hold as baseline assurance. Both feed the same Step-3 scoring and the same proof agents.
+**Threat-driven** targets answer "what attack are we defending against?" — they start from a threat and find the code to prove. **Capability-driven** targets answer "what can we cheaply prove here that is worth proving regardless of a named threat?" — they start from Verus's capabilities (`mpl-verus-capabilities`) and the code, and hold as baseline assurance. Both feed the same Step-3 scoring and the same proof agents.
 
 ## Design Principles
 
@@ -151,14 +151,14 @@ This stage runs **in parallel** with threat modeling, not after it. It exists be
 
 ### Where these targets come from
 
-Driven by `verus-capabilities`, not by the threat model. Sweep the code and the capability map for provable properties:
+Driven by `mpl-verus-capabilities`, not by the threat model. Sweep the code and the capability map for provable properties:
 
-1. **Enumerate provable surfaces** using the four Verus categories in `verus-capabilities.md`:
+1. **Enumerate provable surfaces** using the four Verus categories in `mpl-verus-capabilities.md`:
    - *Functional correctness:* codec round-trips (`keystore/record.rs`, `keystore/encryption_context.rs`), suite-table correctness, KBKDF fixed-info layout
    - *Zero-panic:* every `prim` crypto call, every `copy_from_slice`/`try_into`/slice/index/arithmetic site in `mpl/src` and `prim/src`
    - *Low-level & unsafe:* the `PlaintextDataKey::zeroize` block; aws-lc-rs safe-wrapper preconditions
    - *Concurrency:* the storm-tracking cache single-inflight invariant
-2. **Filter with the decision aid** in `verus-capabilities.md`: keep only properties that are Verus-provable **and** present in this repo; discard crypto-hardness, external-service, and probabilistic properties.
+2. **Filter with the decision aid** in `mpl-verus-capabilities.md`: keep only properties that are Verus-provable **and** present in this repo; discard crypto-hardness, external-service, and probabilistic properties.
 3. **Prefer quick wins and blast radius:** a single zero-panic proof over a `prim` function protects every MPL caller of it. These are cheap, high-coverage, and worth doing even with no threat attached.
 
 ### How capability-driven targets are justified
@@ -236,7 +236,7 @@ recommendation:
   property: "For all inputs, these functions return Ok/Err and never panic (the length-checked copy_from_slice is total)"
   formal_spec: "∀ inputs: !panics(hmac(..)) ∧ !panics(digest(..)) ∧ !panics(aes_decrypt(..))"
   tool: Verus
-  agent: verus-zero-panic
+  agent: mpl-verus-zero-panic
   estimated_effort: 1 week
   origin: capability-driven
   capability_reference:
@@ -258,7 +258,7 @@ recommendation:
 
 The pipeline runs continuously:
 - On spec change: New requirements trigger STRIDE re-analysis
-- On code change: Modified functions re-evaluated against the threat model **and** re-swept by `verus-capabilities` for newly-introduced provable surfaces (new `unsafe`, new indexing/arithmetic, new codec)
+- On code change: Modified functions re-evaluated against the threat model **and** re-swept by `mpl-verus-capabilities` for newly-introduced provable surfaces (new `unsafe`, new indexing/arithmetic, new codec)
 - On new CVE: Emerging attack patterns update feasibility scores
 - On proof completion: Coverage gaps recalculated, next target promoted — from either the threat-driven or capability-driven queue
 
@@ -266,13 +266,13 @@ The pipeline runs continuously:
 
 | Pipeline Stage | Agent | Role |
 |---------------|-------|------|
-| Step 1: Specification Ingestion | `spec-analyzer` | Extract security properties from `spec/framework` + Duvet annotations |
-| Step 2: Threat Modeling | `threat-model-generator` | STRIDE + attack trees for the MPL |
-| Step 3: Prioritization | `verification-recommender` | Score and assign targets to the Verus agents |
-| Step 3 (reference) | `verus-capabilities` | Decide whether a property is Verus-provable in this repo, pick the proof category, and route to the right proof agent |
-| Step 3a: Parsing/Serialization Proofs | `verus-header-parsing-proofs` | Prove correctness of MPL record/identifier/encryption-context (de)serialization |
-| Step 3b: Zero-Panic Proofs | `verus-zero-panic` | Prove absence of panics in `prim` crypto and MPL length/index handling |
-| Step 3c: Memory/Secret Safety Proofs | `verus-unsafe-ffi-safety` | Prove the `zeroize` unsafe block and aws-lc-rs safe-wrapper preconditions |
+| Step 1: Specification Ingestion | `mpl-spec-analyzer` | Extract security properties from `spec/framework` + Duvet annotations |
+| Step 2: Threat Modeling | `mpl-threat-model-generator` | STRIDE + attack trees for the MPL |
+| Step 3: Prioritization | `mpl-verification-recommender` | Score and assign targets to the Verus agents |
+| Step 3 (reference) | `mpl-verus-capabilities` | Decide whether a property is Verus-provable in this repo, pick the proof category, and route to the right proof agent |
+| Step 3a: Parsing/Serialization Proofs | `mpl-verus-header-parsing-proofs` | Prove correctness of MPL record/identifier/encryption-context (de)serialization |
+| Step 3b: Zero-Panic Proofs | `mpl-verus-zero-panic` | Prove absence of panics in `prim` crypto and MPL length/index handling |
+| Step 3c: Memory/Secret Safety Proofs | `mpl-verus-unsafe-ffi-safety` | Prove the `zeroize` unsafe block and aws-lc-rs safe-wrapper preconditions |
 
 ## Output Checklist
 

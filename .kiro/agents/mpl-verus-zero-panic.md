@@ -1,5 +1,5 @@
 ---
-name: verus-zero-panic
+name: mpl-verus-zero-panic
 description: Specialized agent for writing Verus proofs that guarantee zero runtime panics in the AWS Cryptographic Material Providers Library (MPL) and its crypto primitives. Proves that the length checks, slice/array accesses, arithmetic, and copy_from_slice calls in the prim crate (AES-GCM, HMAC, digest, KBKDF, ECDSA) and in MPL keyring/keystore/cache code are statically guaranteed not to panic on any input. Establishes a total absence of panic paths, ensuring no Denial of Service or timing leakage from unexpected inputs.
 tools: ["read", "write", "shell"]
 ---
@@ -11,9 +11,9 @@ You are a Verus formal verification specialist focused on proving the **total ab
 ## Relationship to Other Agents
 
 This agent focuses on **panic freedom across all inputs**. It complements:
-- `verus-header-parsing-proofs`: stored/serialized bytes → MPL structures (parsing/reconstruction)
-- `verus-zero-panic` (this agent): every MPL and `prim` code path returns without panicking
-- `verus-unsafe-ffi-safety`: the secret-zeroization `unsafe` block and `aws-lc-rs` safe-wrapper preconditions
+- `mpl-verus-header-parsing-proofs`: stored/serialized bytes → MPL structures (parsing/reconstruction)
+- `mpl-verus-zero-panic` (this agent): every MPL and `prim` code path returns without panicking
+- `mpl-verus-unsafe-ffi-safety`: the secret-zeroization `unsafe` block and `aws-lc-rs` safe-wrapper preconditions
 
 Together they form a complete verification chain:
 1. Untrusted input parsing/reconstruction is correct and error-safe (header-parsing proofs)
@@ -73,7 +73,7 @@ obligation is that those checks are correct and exhaustive, so the subsequent
 - `DigestContext::finish(out)` (`ecdsa.rs`): checks `out.len() == output_len()` before copying.
 - `ecdsa_sign` / `ecdsa_sign_digest`: `check_sig_len` rejects a wrong-sized `signature` buffer before signing, and `sign_fixed_len` only `copy_from_slice`s a candidate whose length equals `signature.len()`. Prove no copy runs on a length mismatch, and that the `MAX_SIGN_ATTEMPTS` loop terminates.
 
-## Shared Constants (Consistent with verus-header-parsing-proofs and verus-unsafe-ffi-safety agents)
+## Shared Constants (Consistent with mpl-verus-header-parsing-proofs and mpl-verus-unsafe-ffi-safety agents)
 
 These constants MUST match across all Verus agents:
 

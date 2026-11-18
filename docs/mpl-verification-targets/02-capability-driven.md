@@ -2,7 +2,7 @@
 
 > Pipeline artifact — Stage 3, Step 2 of 4 (capability-driven entry path, the Stage 2' sweep). **Refreshed for HEAD `9955ecd`** (branch `MPL-Verus`; `mpl/` and `prim/` identical to `origin/main` `620771c`; `esdk/` differs from `620771c` only by #188 and #189). The `620771c` refresh (previous version analyzed `a1e23d7`) is kept in §0.
 > Inputs: `mpl/src`, `prim/src`, `mpl/tests`, `prim/tests`, `spec/framework/*.md`, `docs/mpl-threat-model.md` (TM-MPL-001..026), `docs/mpl-completeness-audit.md`, `.agents/tasks/pipeline-rerun-620771c/scope.md`, `.agents/tasks/docs-sync-9955ecd/scores.md`, and Step 1 output `docs/mpl-verification-targets/01-threat-driven.md`.
-> Methodology: `.kiro/agents/ai-verification-pipeline.md` (Stage 2'), `.kiro/agents/verus-capabilities.md`, `.kiro/agents/verification-recommender.md`.
+> Methodology: `.kiro/agents/mpl-ai-verification-pipeline.md` (Stage 2'), `.kiro/agents/mpl-verus-capabilities.md`, `.kiro/agents/mpl-verification-recommender.md`.
 > Every target has `origin: capability-driven` and a `capability_reference` in place of a threat. Candidates already scoped by Step 1 are listed in §4, not re-issued.
 
 ## Refresh (HEAD 9955ecd)
@@ -103,13 +103,13 @@ Ties: higher severity, then higher feasibility, then ID. Quick win: score > 6.0 
 
 | Rank | ID | Score | Origin | Target | Property | Agent | Ref | Effort | Proof status |
 |---|---|---|---|---|---|---|---|---|---|
-| 1 | VR-2026-C01 | 6.72 | C | `key_store/encryption_context.rs` builders ∘ `key_store/record.rs` reconstruction | CreateKey ECs reconstruct to exactly (id, version, custom EC); collision branch dead (BUG-08); record→EC→record inverse | verus-header-parsing-proofs | cap:cat1 (1c) | 1 week (quick win) | Proved (model level, not the shipped code, under stated hypotheses): 40 verified, 0 errors |
-| 2 | VR-2026-C02 | 6.40 | C | `prim::ecdsa` `sign_fixed_len`, `check_sig_len`, `ecdsa_sign*`, `ecdsa_verify*` | ≤ 128 `sign_once` calls; no panic; buffer written only with an exact-length candidate | verus-zero-panic | cap:cat2 (2d) | 1 week (quick win) | Proved (model level, not the shipped code, under stated hypotheses): 21 verified, 0 errors. Partly superseded by VR-008 (in-crate, on the shipped prim code, on branch Mahnush_Verus, not on this branch): retry bound, termination, guarded copy |
-| 3 | VR-2026-C03 | 5.60 | C | `prim::{hmac, digest, aes_encrypt, aes_decrypt, hkdf*, kbkdf_ctr_hmac}`, `DigestContext::finish` | No panic on any input; exact Ok/Err length contract | verus-zero-panic | cap:cat2 (2a/2d) | 1 week | Partly proved (in-crate, on the shipped prim code, on branch Mahnush_Verus, not on this branch, under trusted aws-lc-rs assumptions A1-A20): 18 verified, 0 errors |
-| 4 | VR-2026-C07 | 5.04 | C | `materials_checks::{check_encryption_transition, check_decryption_transition, check_*_materials_complete}` + `send()` wiring | Transition accepted iff the keyring only added a PDK (when absent) and EDKs; every fluent `send()` runs the check | verus-header-parsing-proofs | cap:cat1 (1a/1b) | 1 week | None yet |
-| 5 | VR-2026-C04 | 2.80 | C | PDK length invariant (`check_data_key_length`, `add_data_key` ×2, materials `build` ×2, keyring producers) | Every materials PDK has the suite's `encryption_key_length` (expected to VERIFY) | verus-header-parsing-proofs | cap:cat1 (1a) | 1 week | None yet |
-| 6 | VR-2026-C05 | 2.40 | C | `AlgorithmSuiteId::specification`, `id_bytes`, `verification_key_length` | Suite table refines spec; ids injective, never `00 00`; cross-crate length agreement | verus-header-parsing-proofs | cap:cat1 (1a) | 1 day | None yet |
-| 7 | VR-2026-C08 | 0.96 | C | `CacheEntry::record_use` + `Cmc::update_usage_metadata` impls | Counters never wrap; both change together or neither; overflow deletes the entry | verus-zero-panic | cap:cat2 (2b) | 1 day | None yet |
+| 1 | VR-2026-C01 | 6.72 | C | `key_store/encryption_context.rs` builders ∘ `key_store/record.rs` reconstruction | CreateKey ECs reconstruct to exactly (id, version, custom EC); collision branch dead (BUG-08); record→EC→record inverse | mpl-verus-header-parsing-proofs | cap:cat1 (1c) | 1 week (quick win) | Proved (model level, not the shipped code, under stated hypotheses): 40 verified, 0 errors |
+| 2 | VR-2026-C02 | 6.40 | C | `prim::ecdsa` `sign_fixed_len`, `check_sig_len`, `ecdsa_sign*`, `ecdsa_verify*` | ≤ 128 `sign_once` calls; no panic; buffer written only with an exact-length candidate | mpl-verus-zero-panic | cap:cat2 (2d) | 1 week (quick win) | Proved (model level, not the shipped code, under stated hypotheses): 21 verified, 0 errors. Partly superseded by VR-008 (in-crate, on the shipped prim code, on branch Mahnush_Verus, not on this branch): retry bound, termination, guarded copy |
+| 3 | VR-2026-C03 | 5.60 | C | `prim::{hmac, digest, aes_encrypt, aes_decrypt, hkdf*, kbkdf_ctr_hmac}`, `DigestContext::finish` | No panic on any input; exact Ok/Err length contract | mpl-verus-zero-panic | cap:cat2 (2a/2d) | 1 week | Partly proved (in-crate, on the shipped prim code, on branch Mahnush_Verus, not on this branch, under trusted aws-lc-rs assumptions A1-A20): 18 verified, 0 errors |
+| 4 | VR-2026-C07 | 5.04 | C | `materials_checks::{check_encryption_transition, check_decryption_transition, check_*_materials_complete}` + `send()` wiring | Transition accepted iff the keyring only added a PDK (when absent) and EDKs; every fluent `send()` runs the check | mpl-verus-header-parsing-proofs | cap:cat1 (1a/1b) | 1 week | None yet |
+| 5 | VR-2026-C04 | 2.80 | C | PDK length invariant (`check_data_key_length`, `add_data_key` ×2, materials `build` ×2, keyring producers) | Every materials PDK has the suite's `encryption_key_length` (expected to VERIFY) | mpl-verus-header-parsing-proofs | cap:cat1 (1a) | 1 week | None yet |
+| 6 | VR-2026-C05 | 2.40 | C | `AlgorithmSuiteId::specification`, `id_bytes`, `verification_key_length` | Suite table refines spec; ids injective, never `00 00`; cross-crate length agreement | mpl-verus-header-parsing-proofs | cap:cat1 (1a) | 1 day | None yet |
+| 7 | VR-2026-C08 | 0.96 | C | `CacheEntry::record_use` + `Cmc::update_usage_metadata` impls | Counters never wrap; both change together or neither; overflow deletes the entry | mpl-verus-zero-panic | cap:cat2 (2b) | 1 day | None yet |
 | — | VR-2026-C06 | Retired | C | ~~`HierarchicalKeyring::new` grace-vs-TTL integer division~~ | — | — | — | — | None (retired) |
 
 Quick wins: **C01**, **C02**.
@@ -151,7 +151,7 @@ recommendation:
     proof fn record_reverse(r, n) ensures (to_attribute_map(&encryption_context_from_item(&r, n), r.enc) == r)
                                      <==> (!r.attributes@.contains_key("tablename"@) && !r.attributes@.contains_key("enc"@))
   tool: Verus
-  agent: verus-header-parsing-proofs
+  agent: mpl-verus-header-parsing-proofs
   estimated_effort: 1 week
   threat_references: []
   capability_reference:
@@ -207,7 +207,7 @@ recommendation:
     fn check_sig_len(alg, s) -> (r) ensures r.is_Ok() <==> s@.len() == signature_len(alg)
     fn ecdsa_verify(alg, key, msg, sig) -> (r) ensures r.is_Ok()
   tool: Verus
-  agent: verus-zero-panic
+  agent: mpl-verus-zero-panic
   estimated_effort: 1 week
   threat_references: []
   capability_reference:
@@ -253,7 +253,7 @@ recommendation:
     fn aes_encrypt(alg, iv, key, msg, aad, ct) -> (r) ensures r.is_Ok() ==> ct@.len() == old(ct)@.len() + msg@.len() + 16
     fn aes_decrypt(alg, key, ct, tag, iv, aad, pt) -> (r) ensures r.is_Ok() ==> pt@.len() == ct@.len()
   tool: Verus
-  agent: verus-zero-panic
+  agent: mpl-verus-zero-panic
   estimated_effort: 1 week
   threat_references: []
   capability_reference:
@@ -326,7 +326,7 @@ recommendation:
     // wiring (pure fragment of the async send()):
     ensures send_result.is_Ok() ==> valid_enc_transition(before@, output.materials@)
   tool: Verus
-  agent: verus-header-parsing-proofs
+  agent: mpl-verus-header-parsing-proofs
   estimated_effort: 1 week
   threat_references: []
   capability_reference:
@@ -384,7 +384,7 @@ recommendation:
     fn add_data_key(self, k, ..) -> (r) requires pdk_ok(self) ensures r matches Ok(m) ==> pdk_ok(m)
     fn generate_random_data_key(s) -> (r) ensures r matches Ok(k) ==> k@.len() == s.encryption_key_length()
   tool: Verus
-  agent: verus-header-parsing-proofs
+  agent: mpl-verus-header-parsing-proofs
   estimated_effort: 1 week
   threat_references: []
   capability_reference:
@@ -431,7 +431,7 @@ recommendation:
     proof fn ids_injective(a, b) requires a.id_bytes() == b.id_bytes() ensures a == b
     proof fn vk_len_matches_prim(a) ensures a.specification().verification_key_length() == a.specification().asymmetric_signature_algorithm().map(prim_field_size)
   tool: Verus
-  agent: verus-header-parsing-proofs
+  agent: mpl-verus-header-parsing-proofs
   estimated_effort: 1 day
   threat_references: []
   capability_reference:
@@ -475,7 +475,7 @@ recommendation:
       ensures !r ==> self.usage@ == old(self).usage@ && (old.messages_used == u64::MAX || old.bytes_used + bytes > u64::MAX)
     fn update_usage_metadata(&self, input) -> (r) ensures entry_deleted(input.identifier) <==> ghost_record_use_returned_false
   tool: Verus
-  agent: verus-zero-panic
+  agent: mpl-verus-zero-panic
   estimated_effort: 1 day
   threat_references: []
   capability_reference:
@@ -575,6 +575,6 @@ The Stage 2' sweep produced each candidate below, but a Step 1 target already sc
 ## 7. Accounting
 
 - **7 active capability-driven targets** (C01–C05, C07, C08) plus **1 retired** (C06). All carry `origin: capability-driven` and a `capability_reference`. Category split: cat 1 ×4 (C01, C04, C05, C07), cat 2 ×3 (C02, C03, C08). No cat 3 or cat 4 target: no `unsafe` remains in `mpl`/`prim`, and concurrency stays with T21.
-- **Routing:** verus-header-parsing-proofs ×4 (C01, C04, C05, C07), verus-zero-panic ×3 (C02, C03, C08).
+- **Routing:** mpl-verus-header-parsing-proofs ×4 (C01, C04, C05, C07), mpl-verus-zero-panic ×3 (C02, C03, C08).
 - **17 overlap rows** with Step 1 (§4), covering T01, T02, T05, T06, T07, T09, T14, T15, T16, T17, T21, T23, T25, T26, T27 (15 distinct targets; T02 and T21 have two rows each).
 - **16 candidates rejected** (R2–R17; R1 withdrawn).

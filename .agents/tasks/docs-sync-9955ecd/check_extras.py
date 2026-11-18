@@ -40,10 +40,10 @@ for k in ("01", "02"):
 ag = {}
 for t, r in src.items(): ag[r["agent"]] = ag.get(r["agent"], 0) + 1
 print("agent totals:", ag, "total", sum(ag.values()))
-mt = re.search(r"verus-header-parsing-proofs ×(\d+), verus-zero-panic ×(\d+)[^,]*, verus-unsafe-ffi-safety ×(\d+)", T["merged"])
+mt = re.search(r"mpl-verus-header-parsing-proofs ×(\d+), mpl-verus-zero-panic ×(\d+)[^,]*, mpl-verus-unsafe-ffi-safety ×(\d+)", T["merged"])
 if mt: 
     got = tuple(int(x) for x in mt.groups())
-    exp = (ag.get("verus-header-parsing-proofs", 0), ag.get("verus-zero-panic", 0), ag.get("verus-unsafe-ffi-safety", 0))
+    exp = (ag.get("mpl-verus-header-parsing-proofs", 0), ag.get("mpl-verus-zero-panic", 0), ag.get("mpl-verus-unsafe-ffi-safety", 0))
     print("merged refresh agent claim", got, "computed", exp)
     if got != exp: bad.append("agent totals differ")
 sec1 = T["merged"].split("## 1. Combined ranked summary")[1].split("## 2.")[0]
