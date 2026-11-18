@@ -43,7 +43,7 @@ targets consume.
 The shim has the same features as the Rust ESDK and passes them through.
 Each has a CMake option of the same name, such as `-DESDK_FEATURE_KMS=OFF`.
 
-| Feature | Default | What it adds to the C++ API |
+| Feature | Default | What it adds |
 |---|---|---|
 | `aws-lc-sys` | on | AWS-LC as the crypto backend |
 | `fips` | off | AWS-LC's FIPS module as the crypto backend |
@@ -62,13 +62,10 @@ For example, a FIPS build with only the raw AES keyring:
 cargo build --no-default-features --features fips
 ```
 
-The build writes `aws/esdk/Config.h` next to the library, in
-`target/<profile>/include`, and `EncryptionSDK.h` includes it. It defines
-`AWS_ESDK_CPP_KMS`, `AWS_ESDK_CPP_DDB` and `AWS_ESDK_CPP_RT_TOKIO` as 1 or 0
-to match the features, so the header shows only what the library has.
-Code that includes `EncryptionSDK.h` needs both `include` and
-`target/<profile>/include` on its include path. The `AWS::esdk` CMake target
-adds both.
+The build writes `aws/esdk/Config.h` into `target/<profile>/include`.
+`EncryptionSDK.h` includes it, so it shows only what the library has.
+Code that includes `EncryptionSDK.h` needs `target/<profile>/include` on its
+include path. The `AWS::esdk` CMake target adds it.
 
 ## Using it in a CMake project
 

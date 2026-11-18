@@ -31,10 +31,9 @@ default = ["aws-lc-sys", "kms", "ddb", "default-aws-sdk-clients", "rt-tokio"]
 aws-lc-sys = ["aws-esdk/aws-lc-sys", "aws-crypto-mpl/aws-lc-sys", "aws-mpl-primitives/aws-lc-sys"]
 fips = ["aws-esdk/fips", "aws-crypto-mpl/fips", "aws-mpl-primitives/fips"]
 # The C++ API builds its own AWS SDK clients, so `kms` and `ddb` turn on `default-aws-sdk-clients`.
-# `kms` and `ddb` together add the KeyStore and the HierarchicalKeyring.
 kms = ["aws-esdk/kms", "aws-crypto-mpl/kms", "default-aws-sdk-clients"]
 ddb = ["aws-esdk/ddb", "aws-crypto-mpl/ddb", "default-aws-sdk-clients"]
-# Like the MPL's feature of the same name, this turns on `rt-tokio`.
+# Turns on `rt-tokio`, as the MPL's feature does.
 default-aws-sdk-clients = [
     "aws-esdk/default-aws-sdk-clients",
     "aws-crypto-mpl/default-aws-sdk-clients",

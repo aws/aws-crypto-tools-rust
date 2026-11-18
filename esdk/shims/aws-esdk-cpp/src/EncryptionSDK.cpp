@@ -213,7 +213,6 @@ auto guard(F&& f) -> decltype(f()) {
     }
 }
 
-#if AWS_ESDK_CPP_RT_TOKIO
 ::ffi::Duration to_ffi(std::chrono::nanoseconds d, const char* field) {
     if (d.count() < 0) {
         throw ValidationException(std::string(field) + " must not be negative");
@@ -222,7 +221,6 @@ auto guard(F&& f) -> decltype(f()) {
     return ::ffi::Duration{static_cast<std::uint64_t>(secs.count()),
                            static_cast<std::uint32_t>((d - secs).count())};
 }
-#endif  // AWS_ESDK_CPP_RT_TOKIO
 
 ::ffi::EsdkAlgorithmSuiteId to_ffi(AlgorithmSuiteId a) {
     return static_cast<::ffi::EsdkAlgorithmSuiteId>(static_cast<std::uint16_t>(a));
@@ -242,11 +240,9 @@ auto guard(F&& f) -> decltype(f()) {
 ::ffi::OptU64 to_opt(const std::optional<std::uint64_t>& o) {
     return o ? ::ffi::OptU64{true, *o} : ::ffi::OptU64{false, 0};
 }
-#if AWS_ESDK_CPP_KMS || AWS_ESDK_CPP_DDB
 ::ffi::OptString to_opt(const std::optional<std::string>& o, const std::string& name) {
     return o ? ::ffi::OptString{true, to_rust_string(*o, name)} : ::ffi::OptString{false, {}};
 }
-#endif  // AWS_ESDK_CPP_KMS || AWS_ESDK_CPP_DDB
 ::ffi::OptAlgId to_opt(const std::optional<AlgorithmSuiteId>& o) {
     return o ? ::ffi::OptAlgId{true, to_ffi(*o)} : ::ffi::OptAlgId{false, {}};
 }

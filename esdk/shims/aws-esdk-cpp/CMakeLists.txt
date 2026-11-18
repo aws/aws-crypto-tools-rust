@@ -26,7 +26,7 @@ else()
     list(APPEND ESDK_CARGO_ARGS --release)
 endif()
 
-# One option per Cargo feature: ESDK_FEATURE_KMS turns on `kms`, and so on.
+# One option per Cargo feature. ESDK_FEATURE_KMS turns on `kms`, and so on.
 option(ESDK_FEATURE_FIPS "Use AWS-LC's FIPS module instead of AWS-LC" OFF)
 option(ESDK_FEATURE_KMS "Cargo feature kms" ON)
 option(ESDK_FEATURE_DDB "Cargo feature ddb" ON)
