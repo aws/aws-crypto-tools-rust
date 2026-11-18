@@ -72,12 +72,14 @@ This document identifies **12 prioritized verification targets** derived from th
 ESDK threat model (`docs/threat-model.md`). Targets VR-001..VR-011 are threat-derived; VR-012 is a
 capability-driven functional-correctness lemma (category 1c) about the message codec.
 
-**Status at `4396173f` (VR-012 branch):**
-- **In-crate (shipped code):** `make -C esdk verus` reports **`69 verified, 0 errors`** (default
-  features and `--no-default-features --features aws-lc-sys`) over 36 exec fns and 5 proof fns in
-  `esdk/src/message/`, `esdk/src/key_derivation.rs` and `esdk/src/secret.rs` (it was 59 at
-  `4396173f` before VR-012, and 57 before VR-011). These cover the synchronous decision and layout
-  cores of VR-001 (a), VR-003, VR-004, VR-005 and VR-007, the esdk half of VR-009 (key-derivation
+**Status at branch `vr001b-vr002-stage2` (VR-001 (b) and VR-002 tokens):**
+- **In-crate (shipped code):** `make -C esdk verus` reports **`73 verified, 0 errors`** (default
+  features and `--no-default-features --features aws-lc-sys`) over 39 exec fns and 6 proof fns in
+  `esdk/src/message/`, `esdk/src/key_derivation.rs`, `esdk/src/secret.rs` and
+  `esdk/src/decrypt_gate.rs` (it was 69 before the decrypt tokens, 59 at `4396173f` before VR-012,
+  and 57 before VR-011). These cover the synchronous decision and layout
+  cores of VR-001 (a), VR-003, VR-004, VR-005 and VR-007, the decrypt-order tokens of VR-001 (b)
+  and VR-002, the esdk half of VR-009 (key-derivation
   length checks; the prim half is not proven), the secret-type accessors of VR-011, and the
   big-endian codec round-trip of VR-012 (`lemma_u32_round_trip`, `lemma_u64_round_trip` in
   `serialize_functions.rs`). The async readers, loops and orchestration around them are unverified
@@ -86,22 +88,23 @@ capability-driven functional-correctness lemma (category 1c) about the message c
   read the bytes of the plaintext data key or of the derived message key (Rust privacy, plus a
   clippy `disallowed-methods` rule on the mpl data-key accessors).
 - **Model only:** `make -C verification verify` reports 78 verified, 0 errors over 11 standalone
-  files. VR-002 (header-auth ordering), VR-001 property (b) (key-commitment ordering,
-  `commitment_ordering_proofs.rs`), the EDK list loop, the frame `ct ‖ tag` append and VR-010
-  (zeroization) are checked only in these models, which import nothing from the crates and can
-  drift from them. (VR-006's AES-GCM buffer bounds are now proven in-crate in `prim/src/lib.rs`;
-  `aes_gcm_bounds_proofs.rs` is kept as superseded history.)
+  files. The EDK list loop, the frame `ct ‖ tag` append and VR-010 (zeroization) are checked
+  only in these models, which import nothing from the crates and can drift from them. (VR-006's
+  AES-GCM buffer bounds are now proven in-crate in `prim/src/lib.rs`, and VR-001 (b) and VR-002
+  in `esdk/src/decrypt_gate.rs`; `aes_gcm_bounds_proofs.rs`, `commitment_ordering_proofs.rs` and
+  `header_auth_ordering_proofs.rs` are kept as superseded history.)
 - **In-crate in `prim`:** VR-006 (AES-GCM buffer safety, `prim/src/lib.rs`), VR-008 (ECDSA
   `sign_fixed_len`, `prim/src/ecdsa.rs`) and the prim half of VR-009 (HKDF length/slice safety,
   `prim/src/hkdf.rs`) are proven in-crate since Verus was enabled in `prim`; VR-013 (prim wrapper
   length contracts) and VR-014 (AES buffer effects, BUG-07) were added for pipeline target
   VR-2026-C03 (`make -C prim verus`: 18 verified, 0 errors on both feature sets; 10 before
   VR-013/014).
-- **Partly in-crate:** VR-001 (branch `verus-vr001`) — the key-commitment *decision* (property a) is Verus-proven in-crate; its *ordering* (property b) is now proven **model only** (`commitment_ordering_proofs.rs`), not over the shipped decrypt path; constant time (property c) stays trusted (see below).
+- **Decrypt order, in-crate (branch `vr001b-vr002-stage2`):** VR-001 (b) and VR-002 use two tokens in `esdk/src/decrypt_gate.rs`. Verus proves each token is created only when its check passed (`CommitmentAccepted`: the commitment check passed or the suite does not commit; `HeaderVerified`: the header tag verified, made only from a `CommitmentAccepted`). The compiler enforces the order: only `decrypt_gate` can build a token, and `step_decrypt_body` cannot be called without a `&HeaderVerified`. Trusted: the unverified callers pass the real check results, aws-lc-rs AES-GCM accepts only a valid tag, frames are decrypted only through `step_decrypt_body` (grep-checked), and a token is not tied to one message. The standalone models no longer back these properties.
+- **VR-001 overall:** the key-commitment *decision* (property a) and *ordering* (property b) are in-crate; constant time (property c) stays trusted (see below).
 
 **Highest-risk findings:**
-- **Key commitment verification** (Score: 16.0, partly in-crate — branch `verus-vr001`) — The accept/reject **decision** is now Verus-proven in shipped code: `validate_suite_data` (`esdk/src/message/header.rs`) drives the verified core `suite_data_check`, which accepts **iff** the header suite data equals the derived commit key **and** the committed length agrees, rejecting commitment-first otherwise (mutation-tested; `make -C esdk verus`: 59 verified, 0 errors). **Not Verus-proven, trusted by design:** the comparison's *constant-time* execution (an `aws_lc_rs::constant_time::verify_slices_are_equal` API contract — Verus does not model timing). The *ordering* that this validation runs before frame decryption (property b) is now proven **model only** (`verification/commitment_ordering_proofs.rs`), on a model of the decrypt pipeline — **not** over the shipped async `decrypt_steps`; what stays trusted is that `decrypt_steps` is the real pipeline and that the async frame loop runs after the synchronous commitment step returns (an in-place / typestate Stage 2 proof was deliberately not taken). CVE-2020-8897 demonstrated this exact attack class; the decision is now proven correct, the ordering is proven on a model, while its constant-time execution remains trusted. The commitment-policy checks (`CommitmentPolicy::allows_for_encrypt`/`_decrypt`, called from `esdk/src/encrypt.rs`, `decrypt.rs`, `materials.rs` and `mpl/src/cmm/default_cmm.rs`) are implemented but unproven. (History: at `d8c1c3d` the legacy shim's policy checks were stubs returning `Ok(())`.)
-- **Header authentication tag ordering** (Score: 12.0, model only) — The verify-before-decrypt ordering is proven over a model of the decrypt pipeline, not over the shipped async `decrypt_steps`.
+- **Key commitment verification** (Score: 16.0, partly in-crate — branch `verus-vr001`) — The accept/reject **decision** is now Verus-proven in shipped code: `validate_suite_data` (`esdk/src/message/header.rs`) drives the verified core `suite_data_check`, which accepts **iff** the header suite data equals the derived commit key **and** the committed length agrees, rejecting commitment-first otherwise (mutation-tested; `make -C esdk verus`: 59 verified, 0 errors). **Not Verus-proven, trusted by design:** the comparison's *constant-time* execution (an `aws_lc_rs::constant_time::verify_slices_are_equal` API contract — Verus does not model timing). The *ordering* that this validation runs and passes before frame decryption (property b) is now in-crate: `commitment_gate` (`esdk/src/decrypt_gate.rs`) returns a `CommitmentAccepted` token only when `suite_data_check` accepts (Verus-proven), and the compiler stops `step_decrypt_body` from running without a `HeaderVerified`, which is made only from that token. Trusted for (b): the unverified callers pass the real comparison result and `has_commitment` value, and frames are decrypted only through `step_decrypt_body` (grep-checked). The model `commitment_ordering_proofs.rs` is superseded. CVE-2020-8897 demonstrated this exact attack class; the decision and the ordering are now proven in shipped code, while its constant-time execution remains trusted. The commitment-policy checks (`CommitmentPolicy::allows_for_encrypt`/`_decrypt`, called from `esdk/src/encrypt.rs`, `decrypt.rs`, `materials.rs` and `mpl/src/cmm/default_cmm.rs`) are implemented but unproven. (History: at `d8c1c3d` the legacy shim's policy checks were stubs returning `Ok(())`.)
+- **Header authentication tag ordering** (Score: 12.0, in-crate) — `header_auth_gate` (`esdk/src/decrypt_gate.rs`) returns a `HeaderVerified` token only when the header `secret::open` returned `Ok` (Verus-proven), and the compiler stops `step_decrypt_body` from running without it. Trusted: `step_verify_header` passes the real `open` result, aws-lc-rs AES-GCM accepts only a valid tag, and frames are decrypted only through `step_decrypt_body`. The model `header_auth_ordering_proofs.rs` is superseded.
 - **Header / EDK parsing safety** (Score: 10.8, partly in-crate) — The field decisions, big-endian decoding, bounded readers and EDK count check are verified in-crate; the async readers over `dyn Source` and the EDK list loop are not.
 
 **Correction of the prior (`88157eaf`) report's top findings:** the "ECDH FFI (~40 unsafe blocks)"
@@ -191,20 +194,17 @@ no longer exist. Current status per file (from `verification/README.md`):
 | `frame_sequence_proofs.rs` | 5 verified, 0 errors | VR-004 | Superseded in-crate (`next_expected_frame`, `final_frame_seq_ok`, the two lemmas); the async loop threading is unverified glue |
 | `io_stream_model.rs` | 8 verified, 0 errors | infra | Possibly stale (models the removed `SafeRead`/`SafeWrite` readers) |
 | `io_stream_aligned.rs` | 24 verified, 0 errors | infra + VR-003/004/005 | Readers, header-field, EDK-count and sequence checks superseded in-crate. Model only: the EDK list loop (`read_edks`). Obsolete: the encryption-context sub-parser (parsing moved to MPL `EncryptionContext::from_bytes`) |
-| `header_auth_ordering_proofs.rs` | 5 verified, 0 errors | VR-002 | Model only; re-audited against `decrypt_steps` (`esdk/src/decrypt.rs`) and matches |
-| `commitment_ordering_proofs.rs` | 7 verified, 0 errors | VR-001 (b) | Model only; models the commit-before-frame ordering in `decrypt_steps` as a `HeaderState { Unverified, Verified }` machine; the modeled decision mirrors `suite_data_check`. **Not** a proof about the shipped async decrypt path |
+| `header_auth_ordering_proofs.rs` | 5 verified, 0 errors | VR-002 | Superseded in-crate (`HeaderVerified` token, `esdk/src/decrypt_gate.rs`); kept as history |
+| `commitment_ordering_proofs.rs` | 7 verified, 0 errors | VR-001 (b) | Superseded in-crate (`CommitmentAccepted` token, `esdk/src/decrypt_gate.rs`); kept as history. It modeled the commit-before-frame order as a `HeaderState { Unverified, Verified }` machine |
 | `aes_gcm_bounds_proofs.rs` | 3 verified, 0 errors | VR-006 | Model only; re-audited against `prim/src/lib.rs` and matches |
 | **Total** | **78 verified, 0 errors** | | |
 
 **Why the model-only properties are not in-crate** (from `docs/verus-proofs-report.md`):
-- **VR-002 header-auth ordering:** the order is the sequence of `.await?` calls in the async
-  `decrypt_steps`, and "verified" is the `Result` of the aws-lc-rs tag check. Verus cannot verify
-  async fns, and a sync core would only prove `Ok ⇒ Ok`.
-- **VR-001 (b) key-commitment ordering:** same reason as VR-002 — the order lives in the async
-  `decrypt_steps`. The commitment check runs in the synchronous `?`-chained step 2 and completes
-  before the async frame loop (step 4); the model proves a frame is unreachable without an
-  accepting commitment check. It is a standalone model, not a proof about `esdk/src/decrypt.rs`;
-  an in-place / typestate (Stage 2) proof was deliberately not taken.
+- **VR-002 and VR-001 (b) (decrypt order):** no longer model-only. Verus cannot verify the async
+  `decrypt_steps`, so the order is now carried by tokens instead: Verus proves the tokens in
+  `esdk/src/decrypt_gate.rs` are created only when their check passed, and the compiler enforces
+  that `step_decrypt_body` cannot be called without a `&HeaderVerified`. The two models are kept
+  as history.
 - **EDK list loop:** the count decision is in-crate; what is left is a `for` loop of `.await?`
   reads over `dyn Source` plus the MPL `EncryptedDataKey` builder, with no sync decision logic left
   to extract.
@@ -220,8 +220,8 @@ no longer exist. Current status per file (from `verification/README.md`):
 - `edk_count_proofs.rs` models the EDK slice as a generic `&[T]` (the function reads only `is_empty()`/`len()`) and the error payload as `()`.
 - `zeroize_proofs.rs` proves the equivalent safe indexed-write loop (Verus's `Vec` model exposes no `PointsTo` tokens); the `volatile` / `ptr.add(i)` equivalence was argued informally. The code it modeled has since been removed.
 - `frame_layout_proofs.rs` models `aes_encrypt` by its length contract; the ciphertext values (FFI) and the trait-object release are out of scope.
-- `header_auth_ordering_proofs.rs` models the tag check as a boolean `tag_ok`; the cryptographic soundness of the check is delegated to aws-lc-rs.
-- `commitment_ordering_proofs.rs` models the commitment comparison as a boolean `bytes_equal` tied to `Seq<u8>` equality (mirroring `suite_data_check`); the constant-time property of the comparison is delegated to aws-lc-rs, and the ordering is proven over a model of `decrypt_steps`, not over the shipped async path.
+- `header_auth_ordering_proofs.rs` (superseded) models the tag check as a boolean `tag_ok`; the cryptographic soundness of the check is delegated to aws-lc-rs.
+- `commitment_ordering_proofs.rs` (superseded) models the commitment comparison as a boolean `bytes_equal` tied to `Seq<u8>` equality (mirroring `suite_data_check`); the constant-time property of the comparison is delegated to aws-lc-rs.
 - `io_stream_aligned.rs` has the project's only `#[verifier::external_body]`: `utf8_check` around `std::str::from_utf8`, a trusted boundary in the (now obsolete) encryption-context sub-parser model.
 
 ---
@@ -235,8 +235,8 @@ set during the model work and were not rescored for the in-crate work.
 
 | Rank | Score | Target | Status at `2fb844fa` | Property | Agent | File | Effort | Quick Win |
 |------|-------|--------|----------------------|----------|-------|------|--------|-----------|
-| 1 | **16.0** | Key commitment verification | **Partly in-crate** — (a) decision in-crate (`suite_data_check`); (b) ordering model-only (`commitment_ordering_proofs.rs`); (c) constant-time trusted (aws-lc-rs) | Derived commit key == header suite data (constant-time) before ANY frame decryption | `verus-header-parsing-proofs` | `esdk/src/message/header.rs` (`validate_suite_data`), `esdk/src/key_derivation.rs` (`derive_key_v2`) | 2 weeks | No |
-| 2 | **12.0** | Header auth tag ordering | **Model only** (`header_auth_ordering_proofs.rs`) | Header tag verified before frame processing in ALL paths. The model proves body decrypt is unreachable without a verified header tag. Not in-crate: the order lives in the async `decrypt_steps` and the tag check is aws-lc-rs | `verus-header-parsing-proofs` | `esdk/src/decrypt.rs`, `esdk/src/message/header_auth.rs` | 2 weeks | No |
+| 1 | **16.0** | Key commitment verification | **In-crate for (a) and (b)** — (a) decision in-crate (`suite_data_check`); (b) ordering in-crate (`CommitmentAccepted` token, `decrypt_gate.rs`: Verus proves the token is created only on success, the compiler enforces the order); (c) constant-time trusted (aws-lc-rs) | Derived commit key == header suite data (constant-time) before ANY frame decryption | `verus-header-parsing-proofs` | `esdk/src/message/header.rs` (`validate_suite_data`), `esdk/src/key_derivation.rs` (`derive_key_v2`) | 2 weeks | No |
+| 2 | **12.0** | Header auth tag ordering | **In-crate** (`HeaderVerified` token, `decrypt_gate.rs`: Verus proves the token is created only when the tag verified; the compiler enforces that `step_decrypt_body` needs it). Model `header_auth_ordering_proofs.rs` superseded | Header tag verified before frame processing in ALL paths. Trusted: the real `open` result is passed in, aws-lc-rs accepts only a valid tag, frames are decrypted only through `step_decrypt_body` | `verus-header-parsing-proofs` | `esdk/src/decrypt.rs`, `esdk/src/message/header_auth.rs` | 2 weeks | No |
 | 3 | **10.8** | Header body parsing safety | **Partly in-crate.** In-crate: big-endian decoding, bounded readers, chunked-read bounds, header-field decisions, 0x41 hint, reserved bytes, IV length. Model only: the fixed-field header loop and EDK list loop. Unverified glue: the async readers over `dyn Source`. Obsolete model: encryption-context parser (now in MPL) | Malformed input returns `Err`, never panics; fields stay in-bounds | `verus-header-parsing-proofs` | `esdk/src/message/header_types.rs`, `serialize_functions.rs`, `encrypted_data_keys.rs`, `encryption_context.rs`, `{v1,v2}_header_body.rs` | 2 weeks | No |
 | 4 | **9.6** | Frame sequence validation | **In-crate** for the checks: `next_expected_frame`, `final_frame_seq_ok`, start-at-1 and sequential-run lemmas. Unverified glue: the async loop that threads `expected_frame` | Sequential numbers enforced, no gaps/reordering; final frame correct | `verus-header-parsing-proofs` | `esdk/src/message/body/body_decrypt.rs` | 2 weeks | No |
 | 5 | **9.0** | Frame construction / body serialization | **Partly in-crate.** In-crate: body AAD (`body_aad_core`), IV (`iv_seq_core`), frame prefix (`write_frame_prefix`). Model only: the `ct ‖ tag` append. Out of scope: ciphertext values (FFI), the `dyn Sink` / `DigestWriter` release | Frame iteration and slicing stay in-bounds; no panic | `verus-zero-panic` | `esdk/src/message/body/body_encrypt.rs`, `body/body_aad.rs`, `body/body_decrypt.rs` | 1 week | **Yes** |
@@ -301,7 +301,7 @@ dependency path. (History: at `d8c1c3d` the ESDK linked an external Dafny-transp
 | Area | Verification at `5ea2a804` | Gap | Files |
 |------|---------------------------|-----|-------|
 | Key commitment verification | **None** | Critical | `esdk/src/message/header.rs` (`validate_suite_data`), `esdk/src/key_derivation.rs` (`derive_key_v2`) |
-| Header auth tag ordering | **Model only** (VR-002) | High (shipped async order unproven) | `esdk/src/decrypt.rs`, `esdk/src/message/header_auth.rs` |
+| Header auth tag ordering | **In-crate** (VR-002, `HeaderVerified` token; order compiler-enforced) | Low (callers, aws-lc-rs and "frames only via `step_decrypt_body`" trusted) | `esdk/src/decrypt.rs`, `esdk/src/message/header_auth.rs` |
 | Header / EDK parsing | **In-crate** decision cores; **model only** EDK list loop; async readers unverified | Medium | `esdk/src/message/header.rs`, `header_types.rs`, `v1_header_body.rs`, `v2_header_body.rs`, `encrypted_data_keys.rs`, `serialize_functions.rs` |
 | Frame sequence validation | **In-crate** checks and lemmas; async loop unverified | Low–Medium | `esdk/src/message/body/body_decrypt.rs` |
 | Frame construction / body ser | **In-crate** AAD, IV and prefix layout; **model only** `ct ‖ tag` | Medium | `esdk/src/message/body/body_encrypt.rs`, `body/body_aad.rs` |
@@ -418,7 +418,7 @@ recommendation:
     - { id: T8, category: Tampering, description: "Commit key manipulation" }
   trace_to_spec: "spec/client-apis/decrypt.md §Get the decryption materials; spec/client-apis/key-derivation.md#hkdf-commit-key"
   coverage_gap: 1.0
-  status: not_started
+  status: in_crate_a_and_b   # branch vr001b-vr002-stage2; (a) suite_data_check, (b) CommitmentAccepted token in esdk/src/decrypt_gate.rs; (c) constant time trusted (aws-lc-rs)
   rationale: |
     Critical elevation-of-privilege threat (CVE-2020-8897 class). The Rust-level control is the
     constant-time compare in validate_suite_data (constant_time::verify_slices_are_equal) and the
@@ -449,16 +449,17 @@ recommendation:
     - { id: T6, category: Tampering, description: "Auth tag truncation or modification" }
   trace_to_spec: "spec/client-apis/decrypt.md §Verify the header; spec/data-format/message-header.md#header-authentication"
   coverage_gap: 0.3   # was 1.0; the control-flow ordering (verify-before-decrypt) now Verus-verified in the model
-  status: model_only   # at 5ea2a804; not in-crate
-  not_in_crate_because: "the order is the sequence of .await? calls in the async decrypt_steps (esdk/src/decrypt.rs) and 'verified' is the Result of the aws-lc-rs tag check; Verus cannot verify async fns, and a sync core would only prove Ok => Ok. Re-audited: the current order (parse, materials, verify header, decrypt body, verify signature, release last frame) matches the model."
+  status: in_crate   # branch vr001b-vr002-stage2; HeaderVerified token in esdk/src/decrypt_gate.rs
+  in_crate_how: "Verus proves header_auth_gate returns a HeaderVerified token only when the header secret::open returned Ok (and passes the error through unchanged otherwise). The compiler enforces the order: only decrypt_gate can build a token (private field), and step_decrypt_body takes a &HeaderVerified, so it cannot be called before the tag verified. HeaderVerified is made only from a CommitmentAccepted, so it also implies VR-001 (b)."
   verified:
-    - "internal_decrypt modeled as a phase state machine (Start -> HeaderParsed -> MaterialsReady -> HeaderVerified -> BodyDecrypted -> SignatureVerified)"
-    - "step_decrypt_body requires phase == HeaderVerified; only producer of that phase is a successful step_verify_header (requires tag_ok)"
-    - "pipeline: reaching BodyDecrypted/SignatureVerified implies tag_ok; !tag_ok => body never decrypted (halts)"
-    - "file: verification/header_auth_ordering_proofs.rs (5 verified, 0 errors); genuineness mutation-tested (jumping past header verify fails the precondition)"
+    - "esdk/src/decrypt_gate.rs: header_auth_gate ensures (r is Ok) <==> (open_result is Ok); on Err the same error value is returned"
+    - "make -C esdk verus: 73 verified, 0 errors on both feature sets (69 before)"
+    - "mutation-tested: returning a token when open failed -> Verus postcondition fails; calling step_decrypt_body without step_verify_header -> E0425; building HeaderVerified in decrypt.rs -> E0451"
+    - "superseded model, kept as history: verification/header_auth_ordering_proofs.rs (5 verified, 0 errors)"
   remaining:
-    - "the AES-GCM tag check itself (aws-lc-rs FFI) — modeled as a boolean tag_ok"
-    - "binding the phase model to the shipped async decrypt_steps (blocked: async)"
+    - "trusted: step_verify_header passes the real secret::open result; aws-lc-rs AES-GCM accepts only a valid tag"
+    - "trusted: frames are decrypted only through step_decrypt_body (grep-checked, not compiler-enforced); a token is not tied to one message"
+    - "deleting the &HeaderVerified parameter still compiles; only review catches it"
   rationale: |
     The ORDERING guarantee — no frame is decrypted unless the header tag verified first — is now
     machine-checked as a control-flow property: body decryption is reachable only from the
@@ -870,7 +871,7 @@ recommendation:
     (make -C esdk verus: 40 verified at 5ea2a804; 45 after VR-009; 57 after VR-011 steps 2-6).
     Remaining, not done: plan step 7, a verified encrypt/decrypt flow over a requires-only effects
     trait with a ghost event trace. It would prove that every sink write is public and would also
-    give the VR-002 and VR-007 ordering facts in shipped code. Plan step 8 (Verus in mpl) is not
+    give the VR-007 ordering fact in shipped code (VR-002 is now in-crate through the decrypt tokens). Plan step 8 (Verus in mpl) is not
     planned (D1).
   rationale: |
     This is the property behind the claim "there is no way to extract a data key to pass it along
@@ -1013,8 +1014,8 @@ end to end.
 
 | Category | Threats | Verified (partial) | Top Target |
 |----------|---------|--------------------|------------|
-| Elevation of Privilege | 5 | **0** | Key commitment verification (VR-001, partly in-crate: the decision (a) is Verus-proven in-crate; the ordering (b) is proven model only; constant time (c) is trusted) |
-| Tampering | 8 | **2** | Frame sequence checks (VR-004, in-crate) and body AAD binding (VR-005, in-crate); header auth ordering (VR-002) in the model only |
+| Elevation of Privilege | 5 | **0** | Key commitment verification (VR-001: the decision (a) is Verus-proven in-crate; the ordering (b) is in-crate, with the token Verus-proven to be created only on success and the order compiler-enforced; constant time (c) is trusted) |
+| Tampering | 8 | **2** | Frame sequence checks (VR-004, in-crate) and body AAD binding (VR-005, in-crate); header auth ordering (VR-002, in-crate: token Verus-proven, order compiler-enforced) |
 | Denial of Service | 5 | **3** | Header-field decisions and bounded readers (VR-003, in-crate) + EDK count (VR-007, in-crate); AES-GCM buffer bounds (VR-006, in-crate in `prim`) |
 | Information Disclosure | 6 | **0** | Zeroization (VR-010): the model covers removed code and is deferred. VR-011: esdk confines the data key and message key to `esdk/src/secret.rs` (compiler/lint-checked, not Verus; branch `vr011-confinement`) |
 | Spoofing | 4 | **0** | Frame sequence / ECDSA signature (VR-004, VR-008) |
@@ -1080,22 +1081,27 @@ end to end.
   decision (mirroring `suite_data_check`) that accepts; both obligations are mutation-tested. This
   is a standalone model with the same status as VR-002 — **not** a proof about the shipped async
   `decrypt_steps`. What stays trusted: that `decrypt_steps` is the real pipeline and that the async
-  frame loop runs after the synchronous commitment step returns. An in-place / typestate (Stage 2)
-  proof over the shipped path was deliberately not taken.
+  frame loop runs after the synchronous commitment step returns. (Superseded by the next item.)
+- VR-001, property (b) and VR-002 (branch `vr001b-vr002-stage2`): both decrypt-order properties
+  are in-crate, using two tokens in `esdk/src/decrypt_gate.rs` (`make -C esdk verus`: 73 verified,
+  0 errors on both feature sets, 39 exec fns and 6 proof fns). Verus proves `CommitmentAccepted` is
+  created only when the commitment check passed (or the suite does not commit) and `HeaderVerified`
+  only when the header tag verified, using up a `CommitmentAccepted`. The compiler enforces the
+  order: only `decrypt_gate` can build a token, and `step_decrypt_body` takes a `&HeaderVerified`.
+  Trusted: the unverified callers pass the real check results, aws-lc-rs, frames are decrypted only
+  through `step_decrypt_body` (grep-checked), and a token is not tied to one message. The models
+  `commitment_ordering_proofs.rs` and `header_auth_ordering_proofs.rs` are superseded and kept as
+  history; these properties no longer depend on them.
 
 **Remaining, in priority order:**
-1. **VR-001 property (c), and (b) in shipped code** — the decision (property a) is in-crate and the
-   *ordering* (property b) is now proven **model only** (`verification/commitment_ordering_proofs.rs`,
-   same status as VR-002). What is left is **not** Verus-provable here: the *constant-time* comparison
-   (property c) is an aws-lc-rs API contract (Verus does not model timing); and an **in-place /
-   typestate (Stage 2)** proof of the ordering over the shipped async `decrypt_steps` (over
-   `dyn Source`), which would remove the trust that `decrypt_steps` is the real pipeline — deliberately
-   not taken in this work.
+1. **VR-001 property (c)** — the decision (property a) and the ordering (property b) are in-crate.
+   What is left is **not** Verus-provable here: the *constant-time* comparison (property c) is an
+   aws-lc-rs API contract (Verus does not model timing).
 2. **VR-007 call ordering** — that the EDK count check runs before any keyring/KMS call. This
-   lives in the async decrypt orchestration (`esdk/src/decrypt.rs`), so it is blocked the same way
-   as VR-002.
-3. **VR-002 in shipped code** — blocked: the order is a sequence of `.await?` calls in an async
-   fn. Stays model only unless the orchestration gains a synchronous state machine.
+   lives in the async decrypt orchestration (`esdk/src/decrypt.rs`); the token approach used for
+   VR-002 could apply here too, but it is not done.
+3. **VR-002 in shipped code** — done (see above): the `HeaderVerified` token is Verus-proven to be
+   created only on success, and the compiler enforces that frames are decrypted only after it.
 4. **VR-006 in shipped code** — done. Verus was subsequently enabled in `prim`
    (`aws-mpl-primitives`), and the AES-GCM buffer safety is now proven in-crate in
    `prim/src/lib.rs`. The standalone `aes_gcm_bounds_proofs.rs` is kept as superseded history.
@@ -1111,7 +1117,7 @@ end to end.
    accessors and the commitment declassification. The public mpl accessors were excluded from
    scope (D2 option A). Remaining, optional: plan step 7, a verified encrypt/decrypt flow with a
    ghost event trace, which would be the first Verus proof over the flow itself and would also
-   close the VR-002 and VR-007 ordering gaps in shipped code. Smaller follow-ups: keep the HKDF
+   close the VR-007 ordering gap in shipped code. Smaller follow-ups: keep the HKDF
    PRK inside `secret.rs` (today `key_derivation.rs` holds it), and make the PRK and
    prim-import confinement lint-checked rather than grep-checked.
 8. **Continuous:** re-score after each proof. Keep the standalone models; when shipped code they

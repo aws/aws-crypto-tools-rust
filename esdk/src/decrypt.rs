@@ -5,6 +5,7 @@
 //! obtains decryption materials from a keyring/CMM, derives the data key,
 //! and decrypts the plaintext (handling both framed and nonframed formats).
 
+use crate::decrypt_gate::{self, CommitmentAccepted, HeaderVerified};
 use crate::error::{Error, Kind, err, val_err};
 use crate::key_derivation;
 use crate::materials;
@@ -265,7 +266,7 @@ async fn decrypt_steps(
     //= spec/client-apis/decrypt.md#behavior
     //= type=implication
     //# - Decrypt operation Step 2 MUST be [Get the decryption materials](#get-the-decryption-materials)
-    let state = step_get_decryption_materials(
+    let (state, commitment) = step_get_decryption_materials(
         ciphertext,
         &header_body,
         raw_header,
@@ -303,12 +304,18 @@ async fn decrypt_steps(
     //= spec/client-apis/decrypt.md#behavior
     //= type=implication
     //# - Decrypt operation Step 3 MUST be [Verify the header](#verify-the-header)
-    let mut state = step_verify_header(state)?;
+    //
+    // `step_verify_header` uses up the `CommitmentAccepted` token from step 2
+    // and returns a `HeaderVerified` token only if the header tag verified.
+    // `step_decrypt_body` needs that token, so the compiler stops frames from
+    // being decrypted before both checks pass (VR-001 (b), VR-002).
+    let (mut state, header_verified) = step_verify_header(state, commitment)?;
 
     //= spec/client-apis/decrypt.md#behavior
     //= type=implication
     //# - Decrypt operation Step 4 MUST be [Decrypt the message body](#decrypt-the-message-body)
-    let last_frame = step_decrypt_body(ciphertext, plaintext, &mut state, &mode).await?;
+    let last_frame =
+        step_decrypt_body(ciphertext, plaintext, &mut state, &mode, &header_verified).await?;
 
     //= spec/client-apis/decrypt.md#behavior
     //= type=implication
@@ -396,7 +403,7 @@ async fn step_get_decryption_materials(
     encryption_context: &EncryptionContext,
     commitment_policy: CommitmentPolicy,
     mut sig_digest: DigestWriter,
-) -> Result<DecryptState, Error> {
+) -> Result<(DecryptState, CommitmentAccepted), Error> {
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
     //# The CMM used MUST be the input CMM, if supplied.
     //
@@ -486,24 +493,31 @@ async fn step_get_decryption_materials(
     //# If the [algorithm suite](../framework/algorithm-suites.md#algorithm-suites-encryption-key-derivation-settings) supports [key commitment](../framework/algorithm-suites.md#key-commitment)
     //# then the [commit key](../framework/algorithm-suites.md#commit-key) MUST be derived from the plaintext data key
     //# using the [commit key derivation](../framework/algorithm-suites.md#algorithm-suites-commit-key-derivation-settings).
-    if v2_header_body::has_commitment(&suite) {
-        //= spec/client-apis/decrypt.md#get-the-decryption-materials
-        //# The derived commit key MUST equal the commit key stored in the message header.
-        header::validate_suite_data(
-            &suite,
-            header_body,
-            derived_data_keys
-                .commitment_key
-                .as_ref()
-                .ok_or_else(|| {
-                    err(
-                        Kind::Internal,
-                        "derived key material must contain a commitment key for HKDF commitment",
-                    )
-                })?
-                .as_suite_data(),
-        )?;
-    }
+    //
+    // Either way this yields a `CommitmentAccepted` token, which is created
+    // only when the suite does not commit or the commitment check passed.
+    let suite_commits = v2_header_body::has_commitment(&suite);
+    let commitment = match decrypt_gate::commitment_not_required(suite_commits) {
+        Some(not_required) => not_required,
+        None => {
+            //= spec/client-apis/decrypt.md#get-the-decryption-materials
+            //# The derived commit key MUST equal the commit key stored in the message header.
+            header::validate_suite_data(
+                &suite,
+                header_body,
+                derived_data_keys
+                    .commitment_key
+                    .as_ref()
+                    .ok_or_else(|| {
+                        err(
+                            Kind::Internal,
+                            "derived key material must contain a commitment key for HKDF commitment",
+                        )
+                    })?
+                    .as_suite_data(),
+            )?
+        }
+    };
 
     let header_encryption_context = header_body.encryption_context().clone();
     let encryption_context_to_only_authenticate = build_encryption_context_to_only_authenticate(
@@ -519,17 +533,23 @@ async fn step_get_decryption_materials(
         header_auth,
     };
 
-    Ok(DecryptState {
-        header,
-        dec_mat,
-        derived_data_keys,
-        sig_digest,
-        encryption_context_to_only_authenticate,
-    })
+    Ok((
+        DecryptState {
+            header,
+            dec_mat,
+            derived_data_keys,
+            sig_digest,
+            encryption_context_to_only_authenticate,
+        },
+        commitment,
+    ))
 }
 
 // Step 3: Verify the header
-fn step_verify_header(state: DecryptState) -> Result<DecryptState, Error> {
+fn step_verify_header(
+    state: DecryptState,
+    commitment: CommitmentAccepted,
+) -> Result<(DecryptState, HeaderVerified), Error> {
     //= spec/client-apis/decrypt.md#verify-the-header
     //# The encryption context to only authenticate MUST be the [encryption context](../framework/structures.md#encryption-context)
     //# in the [decryption materials](../framework/structures.md#decryption-materials)
@@ -585,10 +605,13 @@ fn step_verify_header(state: DecryptState) -> Result<DecryptState, Error> {
 
     //= spec/client-apis/decrypt.md#verify-the-header
     //# If this tag verification fails, this operation MUST immediately halt and fail.
-    maybe_header_auth
+    //
+    // `header_auth_gate` returns a `HeaderVerified` token only if the tag
+    // verified, and otherwise passes the error through unchanged.
+    let header_verified = decrypt_gate::header_auth_gate(commitment, maybe_header_auth)
         .map_err(|e| Error::from_prim("the header authentication tag did not verify", e))?;
 
-    Ok(state)
+    Ok((state, header_verified))
 }
 
 // Step 4: Decrypt the message body
@@ -597,6 +620,10 @@ async fn step_decrypt_body(
     plaintext: &mut dyn Sink,
     state: &mut DecryptState,
     mode: &DecryptMode,
+    // Proof that the key commitment was accepted and the header tag verified.
+    // Only `decrypt_gate` can create one, so this step cannot run before both
+    // checks pass.
+    _header_verified: &HeaderVerified,
 ) -> Result<Vec<u8>, Error> {
     //= spec/client-apis/decrypt.md#decrypt-the-message-body
     //= type=implication

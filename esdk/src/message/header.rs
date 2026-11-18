@@ -12,6 +12,7 @@ use super::v2_header_body::{
     commit_key_length, has_commitment, read_v2_header_body, write_v2_header_body,
 };
 use super::{DigestWriter, Error, header_auth, ser_err, serialize_functions};
+use crate::decrypt_gate::{CommitmentAccepted, commitment_gate};
 use crate::error::{Kind, err, val_err};
 use crate::shapes::{EncryptionContext, Sink, Source, Tee};
 use aws_crypto_mpl::types::AlgorithmSuite;
@@ -74,8 +75,10 @@ pub(crate) enum SuiteDataError {
 ///
 /// This proof does not cover:
 /// - constant-time comparison, which comes from aws-lc-rs;
-/// - checking the commitment before decrypting any frame, which depends on
-///   where callers invoke it.
+/// - checking the commitment before decrypting any frame. That order is
+///   covered by the tokens in `crate::decrypt_gate` (VR-001 property (b)):
+///   `commitment_gate` wraps this function and returns a token only on `Ok`,
+///   and the compiler stops frame decryption from running without it.
 pub(crate) fn suite_data_check(
     bytes_equal: bool,
     header: &[u8],
@@ -297,7 +300,7 @@ pub(crate) fn validate_suite_data(
     suite: &AlgorithmSuite,
     header_body: &HeaderBody,
     expected_suite_data: &[u8],
-) -> Result<(), Error> {
+) -> Result<CommitmentAccepted, Error> {
     let header_suite_data = header_body.suite_data();
 
     //= spec/framework/transitive-requirements.md#hkdf-commit-key
@@ -318,15 +321,18 @@ pub(crate) fn validate_suite_data(
     //
     // `suite_data_check` is the verified decision (VR-001 property (a)): it
     // accepts iff the commitment matches and the committed length agrees, and
-    // rejects commitment-first otherwise. This adapter owns the crate `Error`
-    // type and maps each rejection to the message it previously produced.
-    match suite_data_check(
+    // rejects commitment-first otherwise. `commitment_gate` runs it and, only
+    // when it accepts, returns the `CommitmentAccepted` token that frame
+    // decryption needs (VR-001 property (b)). This adapter owns the crate
+    // `Error` type and maps each rejection to the message it previously
+    // produced.
+    match commitment_gate(
         bytes_equal,
         header_suite_data,
         expected_suite_data,
         commit_key_length(suite),
     ) {
-        Ok(()) => Ok(()),
+        Ok(accepted) => Ok(accepted),
         Err(SuiteDataError::CommitmentMismatch) => Err(err(
             Kind::Cryptographic,
             "the key commitment in the message header does not match the derived commit key",

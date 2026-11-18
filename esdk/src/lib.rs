@@ -199,6 +199,7 @@ mod builder;
 pub mod client;
 pub mod config;
 mod decrypt;
+pub(crate) mod decrypt_gate;
 mod encrypt;
 pub mod error;
 pub mod operation;
