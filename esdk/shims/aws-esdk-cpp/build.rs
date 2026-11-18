@@ -1,7 +1,8 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-use std::path::PathBuf;
+use std::ffi::OsStr;
+use std::path::{Path, PathBuf};
 
 /// Whether Cargo turned on this feature of this crate.
 fn feature_on(feature: &str) -> bool {
@@ -16,13 +17,15 @@ fn main() {
 
     // EncryptionSDK.h includes aws/esdk/Config.h, which says which optional
     // parts of the C++ API this build has, so the header always matches the library.
-    // It goes next to the library, in <target>/<profile>/include,
-    // because OUT_DIR is <target>/<profile>/build/<crate>-<hash>/out.
+    // It goes next to the library, in <target>/<profile>/include.
+    // OUT_DIR is <target>/<profile>/build/<crate>-<hash>/out before Rust 1.100,
+    // and <target>/<profile>/build/<crate>/<hash>/out from 1.100 on.
     let out_dir = PathBuf::from(std::env::var_os("OUT_DIR").expect("OUT_DIR"));
     let include_dir = out_dir
         .ancestors()
-        .nth(3)
-        .expect("OUT_DIR is inside the target directory")
+        .find(|dir| dir.file_name() == Some(OsStr::new("build")))
+        .and_then(Path::parent)
+        .expect("OUT_DIR is inside <target>/<profile>/build")
         .join("include");
     let config_h = include_dir.join("aws/esdk/Config.h");
     let config = format!(
