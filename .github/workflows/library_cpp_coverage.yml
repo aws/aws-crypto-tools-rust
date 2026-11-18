@@ -88,5 +88,8 @@ jobs:
           done < <(sed -n 's|^SF:||p' "$lcov" | sort -u)
           exit "$missing"
 
+      # Moved lines are not new code, so they are left out of the diff.
       - name: Enforce 100% patch coverage
-        run: diff-cover 'esdk/shims/aws-esdk-cpp/lcov.info' --compare-branch 'origin/${{ github.base_ref }}' --fail-under 100
+        run: |
+          python3 .github/scripts/diff_without_moved_lines.py 'origin/${{ github.base_ref }}' > patch.diff
+          diff-cover 'esdk/shims/aws-esdk-cpp/lcov.info' --diff-file patch.diff --fail-under 100
