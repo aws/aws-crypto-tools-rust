@@ -386,32 +386,32 @@ pub(crate) async fn read_and_decrypt_framed_message_body(
                 secret::open(
                     alg_suite,
                     key,
-                    &enc_content,
+                    secret::open_buffers(&enc_content, Vec::new()),
                     //= spec/data-format/message-body.md#final-frame-authentication-tag
                     //= reason=auth_tag is passed to aes_decrypt which uses it to authenticate the final frame
                     //# It MUST be used to authenticate the final frame.
                     &auth_tag,
                     &iv,
                     &aad,
-                    &mut [],
                 )?;
             } else {
                 // write previous frame's data, now that we know we have another frame.
                 if expected_frame != START_SEQUENCE_NUMBER {
                     release_previous_frame(w, &result, fail_if_multi_frame).await?;
                 }
-                result.resize(enc_content.len(), 0);
                 //= spec/client-apis/decrypt.md#decrypt-the-message-body
                 //= reason=`?` propagates aes_decrypt errors, halting decryption immediately
                 //# If this decryption fails, this operation MUST immediately halt and fail.
-                secret::open(
+                //
+                // `open_buffers` resizes the reused `result` buffer to the
+                // ciphertext length (VR-016).
+                result = secret::open(
                     alg_suite,
                     key,
-                    &enc_content,
+                    secret::open_buffers(&enc_content, core::mem::take(&mut result)),
                     &auth_tag,
                     &iv,
                     &aad,
-                    &mut result,
                 )?;
             }
 
@@ -500,7 +500,6 @@ pub(crate) async fn read_and_decrypt_framed_message_body(
         //= reason=read_into_vec fills a Vec<u8>; the bytes are not reinterpreted as any other type
         //# The encrypted content MUST be interpreted as bytes.
         read_into_vec(ciphertext, frame_length_usize, &mut enc_content, sig_digest).await?;
-        result.resize(frame_length_usize, 0);
 
         // Authentication Tag
 
@@ -577,7 +576,7 @@ pub(crate) async fn read_and_decrypt_framed_message_body(
         //= spec/client-apis/decrypt.md#decrypt-the-message-body
         //= reason=`?` propagates aes_decrypt errors, halting decryption immediately
         //# If this decryption fails, this operation MUST immediately halt and fail.
-        secret::open(
+        result = secret::open(
             alg_suite,
             //= spec/client-apis/decrypt.md#decrypt-the-message-body
             //= reason=key is the derived data key passed from step_decrypt_body
@@ -586,7 +585,10 @@ pub(crate) async fn read_and_decrypt_framed_message_body(
             //= spec/client-apis/decrypt.md#decrypt-the-message-body
             //= reason=enc_content is the encrypted content deserialized from the frame
             //# - The ciphertext MUST be the encrypted content deserialized from the frame or body.
-            &enc_content,
+            //
+            // `open_buffers` resizes the reused `result` buffer to the
+            // ciphertext length (VR-016).
+            secret::open_buffers(&enc_content, core::mem::take(&mut result)),
             //= spec/client-apis/decrypt.md#decrypt-the-message-body
             //= reason=auth_tag is the authentication tag deserialized from the frame
             //# - The tag MUST be the authentication tag deserialized from the frame or body.
@@ -597,7 +599,6 @@ pub(crate) async fn read_and_decrypt_framed_message_body(
             //# padded to the [IV length](../data-format/message-header.md#iv-length) with 0.
             &iv,
             &aad,
-            &mut result,
         )?;
     }
 }
@@ -755,12 +756,10 @@ pub(crate) async fn read_and_decrypt_non_framed_message_body(
         &mut aad,
     );
 
-    let mut result: Vec<u8> = enc_content.clone();
-
     //= spec/client-apis/decrypt.md#nonframed-message-body-decryption
     //= reason=`?` propagates aes_decrypt errors, halting decryption immediately
     //# If this decryption fails, this operation MUST immediately halt and fail.
-    secret::open(
+    let result = secret::open(
         get_alg_suite(&header.suite)?,
         //= spec/client-apis/decrypt.md#nonframed-message-body-decryption
         //# - The cipherkey MUST be the derived data key.
@@ -772,11 +771,13 @@ pub(crate) async fn read_and_decrypt_non_framed_message_body(
         //= spec/client-apis/decrypt.md#decrypt-the-message-body
         //= reason=enc_content is passed as the ciphertext input to aes_decrypt
         //# - The ciphertext MUST be the encrypted content deserialized from the frame or body.
-        &enc_content,
+        //
+        // The plaintext buffer starts as a copy of the ciphertext, as before;
+        // `open_buffers` keeps it at the ciphertext length (VR-016).
+        secret::open_buffers(&enc_content, enc_content.clone()),
         &auth_tag,
         &iv,
         &aad,
-        result.as_mut(),
     )?;
 
     Ok(result)

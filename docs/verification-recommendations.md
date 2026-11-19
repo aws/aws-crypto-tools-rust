@@ -72,7 +72,23 @@ This document identifies **12 prioritized verification targets** derived from th
 ESDK threat model (`docs/threat-model.md`). Targets VR-001..VR-011 are threat-derived; VR-012 is a
 capability-driven functional-correctness lemma (category 1c) about the message codec. VR-013 and
 VR-014 (prim, capability-driven) and VR-015 (threat-driven, R3: final plaintext held until the
-signature verifies) were added later.
+signature verifies) were added later, then VR-016 (esdk decrypt buffer sizing, which makes
+BUG-07(b) unreachable from esdk) and VR-015 (b) (the signature-presence check as a token).
+
+**Update at branch `sizing-and-sigpresence`:** `make -C esdk verus` reports **`81 verified, 0
+errors`** on both feature sets (45 exec fns, 8 proof fns; up from 77).
+- **VR-016 (new):** `secret::open` takes only an `OpenBuffers`, built only by the verified
+  `secret::open_buffers`, whose type invariant says the plaintext buffer is exactly as long as
+  the ciphertext. All 5 esdk open sites go through it, so BUG-07(b) is unreachable from esdk,
+  **Verus-proven at every esdk open site** (before: code reading), still relative to A-OPEN for
+  what aws-lc-rs would do with a mismatch. Trusted: the three-line TB-A body of `secret::open`.
+- **VR-015 (b):** the check "verification key present exactly when the suite is signed" is the
+  verified `signature_presence_gate`, which mints a `SignaturePresence` token that step 5 needs.
+  The "no signature to check" token is made only for an unsigned suite with no key; the signature
+  check needs a `SignatureRequired` (signed suite, key present). "No verification key means
+  unsigned suite" is no longer trusted. Still trusted: the callers pass the real suite and
+  key-present flags, and `dec_mat` does not change between the check and step 5.
+
 
 **Status at branch `signature-release-gate` (VR-015 signature release gate, on top of the
 VR-001 (b) and VR-002 tokens):**
@@ -103,7 +119,7 @@ VR-001 (b) and VR-002 tokens):**
   VR-2026-C03 (`make -C prim verus`: 18 verified, 0 errors on both feature sets; 10 before
   VR-013/014).
 - **Decrypt order, in-crate (branch `vr001b-vr002-stage2`):** VR-001 (b) and VR-002 use two tokens in `esdk/src/decrypt_gate.rs`. Verus proves each token is created only when its check passed (`CommitmentAccepted`: the commitment check passed or the suite does not commit; `HeaderVerified`: the header tag verified, made only from a `CommitmentAccepted`). The compiler enforces the order: only `decrypt_gate` can build a token, and `step_decrypt_body` cannot be called without a `&HeaderVerified`. Trusted: the unverified callers pass the real check results, aws-lc-rs AES-GCM accepts only a valid tag, frames are decrypted only through `step_decrypt_body` (grep-checked), and a token is not tied to one message. The standalone models no longer back these properties.
-- **Signature release gate, in-crate (VR-015, branch `signature-release-gate`, threat R3):** the final plaintext (final frame, the last full frame before an empty final frame, or a non-framed body) is held in a `HeldFinalPlaintext` and can only be written to the caller through `release`, which needs a `SignatureVerified` token. Verus proves the token is created only when `ecdsa_verify_context` returned `true` or there is no verification key (unsigned suite). The compiler enforces the release order (private fields). Trusted: aws-lc-rs signature verification, that the callers pass the real check result and key-present flag, that "no verification key" means "unsigned suite" (runtime check in `decrypt_steps`), and that the final plaintext reaches the caller only through the gated write. Regular non-final frames are still released early, as the spec allows.
+- **Signature release gate, in-crate (VR-015, branch `signature-release-gate`, threat R3):** the final plaintext (final frame, the last full frame before an empty final frame, or a non-framed body) is held in a `HeldFinalPlaintext` and can only be written to the caller through `release`, which needs a `SignatureVerified` token. Verus proves the token is created only when `ecdsa_verify_context` returned `true` for a signed suite with a key, or the suite is unsigned and there is no key (VR-015 (b), branch `sizing-and-sigpresence`: through the `SignaturePresence` token). The compiler enforces the release order (private fields). Trusted: aws-lc-rs signature verification, that the callers pass the real check result, suite flag and key-present flag, that `dec_mat` does not change between the presence check and step 5, and that the final plaintext reaches the caller only through the gated write. Regular non-final frames are still released early, as the spec allows.
 - **VR-001 overall:** the key-commitment *decision* (property a) and *ordering* (property b) are in-crate; constant time (property c) stays trusted (see below).
 
 **Highest-risk findings:**
@@ -1010,13 +1026,13 @@ recommendation:
   id: VR-2026-015
   rank: 15
   origin: threat-driven
-  status: in_crate   # branch signature-release-gate; SignatureVerified token + HeldFinalPlaintext; mutation-tested
+  status: in_crate   # branch signature-release-gate; SignatureVerified token + HeldFinalPlaintext; mutation-tested. (b) presence check: branch sizing-and-sigpresence
   target:
     library: aws-esdk
     file: esdk/src/decrypt_gate.rs, esdk/src/decrypt.rs
-    function: signature_not_required, signature_gate, hold_final_plaintext, release (decrypt_gate.rs); step_decrypt_body, step_verify_signature, verify_signature, decrypt_steps (decrypt.rs, unverified adapters)
+    function: signature_presence_gate, signature_not_required, signature_gate, hold_final_plaintext, release (decrypt_gate.rs); step_decrypt_body, step_verify_signature, verify_signature, decrypt_steps (decrypt.rs, unverified adapters)
   property: "Plaintext decrypted from non-framed data or from a final frame is not released to the caller until signature verification succeeds (or the suite is unsigned). Regular non-final frames in streaming mode may be released before the signature, as the spec allows, and are not covered."
-  formal_spec: "write_to_sink(plaintext, final_plaintext) is reachable only with a SignatureVerified t, and t exists only if ecdsa_verify_context returned true (t.signed()) or the materials have no verification key (!t.signed())"
+  formal_spec: "write_to_sink(plaintext, final_plaintext) is reachable only with a SignatureVerified t, and t exists only if ecdsa_verify_context returned true for a signed suite with a key (t.signed()) or the suite is unsigned and the materials have no verification key (!t.signed())"
   approach: |
     Same token pattern as VR-001 (b) / VR-002. SignatureVerified is zero-sized with a private
     ghost field; it is created only by signature_not_required(has_verification_key) or
@@ -1025,18 +1041,23 @@ recommendation:
     it. aws-lc-rs signature verification, the footer read and I/O stay in the unverified async
     adapters. Behavior, errors and their order are unchanged; no public API change.
   enforcement:
-    verus_proven:   # make -C esdk verus: 77 verified, 0 errors on both feature sets (73 before)
-      - "signature_not_required: (r is Some) <==> !has_verification_key; Some(t) ==> !t.signed()"
-      - "signature_gate: (r is Some) <==> valid; Some(t) ==> t.signed()"
+    verus_proven:   # make -C esdk verus: 81 verified, 0 errors on both feature sets (77 at VR-015, 73 before)
+      - "signature_presence_gate: (r is Some) <==> suite_has_signature == has_verification_key; SignaturePresence type invariant signed() == has_key() (VR-015 (b))"
+      - "signature_not_required(presence): (r is Ok) <==> !signed && !has_key; Ok(t) ==> !t.signed(); Err(q) ==> signed && has_key (VR-015 (b))"
+      - "SignatureRequired type invariant + lemma_signature_required: signed suite and key present (VR-015 (b))"
+      - "signature_gate(required, valid): (r is Some) <==> valid; Some(t) ==> t.signed() and the used-up token was signed with a key"
       - "hold_final_plaintext: r.bytes() == bytes@; release: r@ == held.bytes()"
       - "mutation-tested: signature_gate returning a token when !valid -> Verus postcondition fails (76 verified, 1 errors)"
+      - "mutation-tested (VR-015 (b)): not-required token for a signed suite, swapped branches, presence token on a mismatch, SignatureRequired with no key -> Verus fails each (80 verified, 1 errors)"
     compiler_enforced:
       - "only decrypt_gate can build a SignatureVerified or read a HeldFinalPlaintext (private fields); so the final plaintext cannot be written before the signature step returned Ok"
       - "mutation-tested: writing last_frame.bytes directly -> E0616 (private field); calling release without the token -> E0061"
+      - "step_verify_signature needs a SignaturePresence and signature_gate needs a SignatureRequired; mutation-tested: re-reading verification_key().is_some() in step 5 -> E0308; signature_gate(valid) without the token -> E0061"
     not_verus_proven:
       - "trusted: aws-lc-rs ecdsa_verify_context returns true only for a valid signature over the digest"
-      - "trusted: the callers pass the real valid value and the real verification-key-present flag"
-      - "trusted: 'no verification key' means 'unsigned suite' (existing runtime InvalidMaterials check in decrypt_steps, unverified async code)"
+      - "trusted: the callers pass the real valid value, the real suite flag and the real verification-key-present flag"
+      - "trusted: dec_mat does not change between the presence check and step 5 (code reading)"
+      - "removed by VR-015 (b): 'no verification key means unsigned suite' is no longer trusted"
       - "trusted: the final plaintext reaches the caller only through the gated write (the body readers return it and never write it to the sink; checked by reading, not by the compiler)"
       - "a token is not tied to one message; the non-streaming Vec API is protected by Result, not by the token"
   trace_to_spec: "spec/client-apis/decrypt.md#decrypt-the-message-body: 'Any plaintext decrypted from nonframed data or a final frame in a streamed Decrypt operation MUST NOT be released until signature verification successfully completes.'"
@@ -1048,6 +1069,41 @@ recommendation:
   coverage_gap: 0.3
   quick_win: false
   dependencies: [ "VR-001 (b) / VR-002 tokens in esdk/src/decrypt_gate.rs" ]
+recommendation:
+  id: VR-2026-016
+  rank: 16
+  origin: capability-driven   # follows from BUG-07(b) / VR-014; the esdk impact review recommended it
+  bug_reference: BUG-07
+  status: in_crate   # branch sizing-and-sigpresence; OpenBuffers + open_buffers; mutation-tested
+  target:
+    library: aws-esdk
+    file: esdk/src/secret.rs, esdk/src/decrypt.rs, esdk/src/message/body/body_decrypt.rs
+    function: open_buffers, lemma_open_buffers_sized (secret.rs, verified); open (secret.rs, TB-A); the 5 open sites
+  property: "At every esdk call of aes_decrypt the plaintext buffer is exactly as long as the ciphertext, so BUG-07(b) is unreachable from esdk."
+  formal_spec: "secret::open takes an OpenBuffers b, and every OpenBuffers has b.plain_len() == b.cipher().len() (type invariant); open_buffers(c, p) returns b with b.cipher() == c@"
+  approach: |
+    Same pattern as the decrypt tokens. OpenBuffers has private fields (the ciphertext slice and the
+    plaintext Vec) and a type invariant; the verified open_buffers resizes the given Vec to the
+    ciphertext length. secret::open takes an OpenBuffers and returns the plaintext Vec. The 5 sites
+    (header tag, empty final frame, non-empty final frame, regular frame, non-framed body) build
+    their buffers with open_buffers. Sizes, errors, their order, and streaming are unchanged.
+  enforcement:
+    verus_proven:   # make -C esdk verus: 81 verified, 0 errors on both feature sets
+      - "OpenBuffers type invariant: plain_len() == cipher().len(); lemma_open_buffers_sized"
+      - "open_buffers: r.cipher() == cipher_text@, r.plain_len() == cipher_text@.len()"
+      - "mutation-tested: open_buffers resizing to len + 1 -> Verus fails (80 verified, 1 errors; type invariant, overflow)"
+    compiler_enforced:
+      - "only open_buffers can build an OpenBuffers (private fields); secret::open accepts only an OpenBuffers; MessageKey.bytes is private, so secret::open is the only esdk path to aes_decrypt under a message key"
+      - "mutation-tested: hand-building an OpenBuffers at a site -> E0451; passing a raw &mut [u8] the old way -> E0061"
+    not_verus_proven:
+      - "trusted: the TB-A body of secret::open passes the two fields to aes_decrypt unchanged (three lines)"
+      - "assumed: what aws-lc-rs does with a mismatched buffer (A-OPEN, VR-014); esdk no longer passes one"
+  tool: Verus
+  agent: verus-zero-panic
+  estimated_effort: ~half a day
+  coverage_gap: 0.2
+  quick_win: true
+  dependencies: [ "VR-014 (BUG-07(b) under A-OPEN)", "VR-011 confinement in esdk/src/secret.rs" ]
 ```
 
 ---

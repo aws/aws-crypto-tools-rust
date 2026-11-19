@@ -36,8 +36,13 @@
 //! verifies (VR-015). The spec says plaintext from a final frame or from a
 //! non-framed body must not be released before the signature check passes.
 //!
-//! - [`SignatureVerified`]: the signature verified, or the message has no
-//!   verification key (an unsigned suite), so there is nothing to check.
+//! - [`SignaturePresence`]: the materials have a verification key exactly
+//!   when the suite has a signature algorithm. `decrypt_steps` gets one from
+//!   [`signature_presence_gate`], and the signature step needs it.
+//! - [`SignatureRequired`]: the suite is signed and a key is present, so the
+//!   signature must be checked. [`signature_gate`] needs one.
+//! - [`SignatureVerified`]: the signature verified, or the suite is unsigned
+//!   and there is no verification key, so there is nothing to check.
 //! - [`HeldFinalPlaintext`]: the final plaintext. Its bytes can only be read
 //!   through [`release`], which needs a `&SignatureVerified`.
 //!
@@ -45,17 +50,21 @@
 //! `decrypt_steps` writes it to the caller only through `release`.
 //!
 //! What is proven and what is trusted for VR-015:
-//! - Verus proves that a `SignatureVerified` is made only when the signature
-//!   check returned `true`, or when there is no verification key, and that
-//!   `release` returns exactly the held bytes.
-//! - The Rust compiler enforces the order. Only this module can build a
-//!   `SignatureVerified` or read a `HeldFinalPlaintext`, so the final
-//!   plaintext cannot be written out before the signature step passes.
+//! - Verus proves that a `SignaturePresence` is made only when "suite signed"
+//!   equals "key present"; that a `SignatureVerified` is made only when the
+//!   signature check returned `true` for a signed suite with a key, or when
+//!   the suite is unsigned and there is no key; and that `release` returns
+//!   exactly the held bytes.
+//! - The Rust compiler enforces the order. Only this module can build these
+//!   tokens or read a `HeldFinalPlaintext`, so the signature step cannot
+//!   choose its path without the presence check, and the final plaintext
+//!   cannot be written out before the signature step passes.
 //! - Trusted, not proven: aws-lc-rs returns `true` only for a valid
-//!   signature; the caller passes the real check result and the real
-//!   "verification key present" flag; "no verification key" means "unsigned
-//!   suite" (a runtime check in `decrypt_steps` fails otherwise); the body
-//!   readers return the final plaintext instead of writing it out themselves.
+//!   signature; the caller passes the real check result, the real suite
+//!   flag and the real "verification key present" flag; the decryption
+//!   materials do not change between the presence check and the signature
+//!   step; the body readers return the final plaintext instead of writing it
+//!   out themselves.
 //!   Regular frames before the final one are released early on purpose, as
 //!   the spec allows, and are not covered.
 
@@ -219,29 +228,122 @@ impl SignatureVerified {
     }
 }
 
-/// For a message with no verification key (an unsigned suite), returns a
-/// token saying no signature check is needed. When there is a verification
-/// key, returns `None`, and the caller must check the signature to get a
-/// token.
-pub(crate) fn signature_not_required(has_verification_key: bool) -> (r: Option<SignatureVerified>)
-    ensures
-        (r is Some) <==> !has_verification_key,
-        r matches Some(t) ==> !t.signed(),
-{
-    if has_verification_key {
-        None
-    } else {
-        Some(SignatureVerified { signed: Ghost(false) })
+/// Proof that the decryption materials have a verification key exactly when
+/// the algorithm suite has a signature algorithm (VR-015 (b)). Only this
+/// module can create one, and only through `signature_presence_gate`.
+pub(crate) struct SignaturePresence {
+    suite_signed: bool,
+    #[allow(dead_code, reason = "ghost field: read only by specs")]
+    has_key: Ghost<bool>,
+}
+
+impl SignaturePresence {
+    /// Whether the algorithm suite has a signature algorithm.
+    pub(crate) closed spec fn signed(&self) -> bool {
+        self.suite_signed
+    }
+
+    /// Whether the decryption materials have a verification key.
+    pub(crate) closed spec fn has_key(&self) -> bool {
+        self.has_key@
+    }
+
+    /// The suite is signed exactly when there is a verification key.
+    #[verifier::type_invariant]
+    spec fn inv(&self) -> bool {
+        self.signed() == self.has_key()
     }
 }
 
-/// Returns a token only when the signature check (`valid`) passed. When it
-/// failed, returns `None`, and the caller reports the error.
-pub(crate) fn signature_gate(valid: bool) -> (r: Option<SignatureVerified>)
+/// Proof that the suite is signed and a verification key is present, so the
+/// signature must be checked. Only this module can create one, and only by
+/// using up a `SignaturePresence` for a signed suite.
+pub(crate) struct SignatureRequired {
+    #[allow(dead_code, reason = "held so that a SignatureRequired implies a SignaturePresence")]
+    _presence: SignaturePresence,
+}
+
+impl SignatureRequired {
+    /// The presence token this token was built from.
+    pub(crate) closed spec fn presence(&self) -> SignaturePresence {
+        self._presence
+    }
+
+    /// The suite is signed and a verification key is present.
+    #[verifier::type_invariant]
+    spec fn inv(&self) -> bool {
+        self._presence.signed() && self._presence.has_key()
+    }
+}
+
+/// Every `SignatureRequired` is for a signed suite with a verification key.
+pub(crate) proof fn lemma_signature_required(tracked t: &SignatureRequired)
+    ensures
+        t.presence().signed() && t.presence().has_key(),
+{
+    use_type_invariant(t);
+}
+
+/// The presence check: returns a token only when the suite has a signature
+/// algorithm exactly when the materials have a verification key. On a
+/// mismatch it returns `None`, and the caller reports `InvalidMaterials`.
+pub(crate) fn signature_presence_gate(suite_has_signature: bool, has_verification_key: bool) -> (r:
+    Option<SignaturePresence>)
+    ensures
+        (r is Some) <==> (suite_has_signature == has_verification_key),
+        r matches Some(p) ==> (p.signed() == suite_has_signature && p.has_key()
+            == has_verification_key),
+{
+    if suite_has_signature == has_verification_key {
+        Some(
+            SignaturePresence {
+                suite_signed: suite_has_signature,
+                has_key: Ghost(has_verification_key),
+            },
+        )
+    } else {
+        None
+    }
+}
+
+/// Uses up the presence token. For an unsigned suite with no verification
+/// key, returns `Ok` with a token saying no signature check is needed. For a
+/// signed suite with a verification key, returns `Err` with a
+/// `SignatureRequired`, and the caller must check the signature to get a
+/// token.
+pub(crate) fn signature_not_required(presence: SignaturePresence) -> (r: Result<
+    SignatureVerified,
+    SignatureRequired,
+>)
+    ensures
+        (r is Ok) <==> (!presence.signed() && !presence.has_key()),
+        r matches Ok(t) ==> !t.signed(),
+        r matches Err(q) ==> (q.presence() == presence && presence.signed() && presence.has_key()),
+{
+    proof {
+        use_type_invariant(&presence);
+    }
+    if presence.suite_signed {
+        Err(SignatureRequired { _presence: presence })
+    } else {
+        Ok(SignatureVerified { signed: Ghost(false) })
+    }
+}
+
+/// Uses up the `SignatureRequired` token and returns a signature token only
+/// when the signature check (`valid`) passed. When it failed, returns
+/// `None`, and the caller reports the error.
+pub(crate) fn signature_gate(_required: SignatureRequired, valid: bool) -> (r: Option<
+    SignatureVerified,
+>)
     ensures
         (r is Some) <==> valid,
-        r matches Some(t) ==> t.signed(),
+        r matches Some(t) ==> (t.signed() && _required.presence().signed()
+            && _required.presence().has_key()),
 {
+    proof {
+        use_type_invariant(&_required);
+    }
     if valid {
         Some(SignatureVerified { signed: Ghost(true) })
     } else {

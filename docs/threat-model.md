@@ -637,11 +637,16 @@ mitigation is now checked in-crate. The final plaintext (final frame, the last f
 an empty final frame, or a non-framed body) is held in a `HeldFinalPlaintext` and can only be
 written to the caller through `release`, which needs a `SignatureVerified` token
 (`esdk/src/decrypt_gate.rs`). Verus proves the token is created only when the signature check
-returned `true` or there is no verification key (unsigned suite); the compiler enforces that the
-final plaintext cannot be written before the token exists. Still trusted: aws-lc-rs signature
-verification; that the callers pass the real check result and key-present flag; that "no
-verification key" means "unsigned suite" (runtime check in `decrypt_steps`); and that the final
-plaintext reaches the caller only through the gated write. Regular non-final frames are still
+returned `true` for a signed suite with a verification key, or the suite is unsigned and there is
+no key; the compiler enforces that the final plaintext cannot be written before the token exists.
+Since VR-015 (b) (branch `sizing-and-sigpresence`), the check that the key is present exactly
+when the suite is signed is the verified `signature_presence_gate`, and step 5 needs the
+`SignaturePresence` token it mints, so a CMM that drops the verification key for a signed suite
+cannot make decrypt skip the signature check. Still trusted: aws-lc-rs signature verification;
+that the callers pass the real check result, suite flag and key-present flag; that the decryption
+materials do not change between the presence check and step 5; and that the final plaintext
+reaches the caller only through the gated write. ("No verification key means unsigned suite" is
+no longer trusted.) Regular non-final frames are still
 released before the signature, as the spec allows, so the residual risk above (callers acting on
 streamed frames before the operation finishes) is unchanged.
 
@@ -835,20 +840,22 @@ All targets reference real files in this repository. Scores below are the origin
 the current coverage gaps, full scoring and agent assignments see
 `docs/verification-recommendations.md`.
 
-**Verification status on branch `signature-release-gate`** (in-crate counts; the model results are
+**Verification status on branch `sizing-and-sigpresence`** (in-crate counts; the model results are
 unchanged since `5ea2a804`). Verus checks two things:
 
 - **In-crate (shipped `esdk` code).** `make -C esdk verus` verifies the `verus!` blocks in
   `esdk/src/message/`, `esdk/src/key_derivation.rs`, `esdk/src/secret.rs` and
-  `esdk/src/decrypt_gate.rs` (43 exec fns, 6 proof fns): `77 verified, 0 errors` for both the
+  `esdk/src/decrypt_gate.rs` (45 exec fns, 8 proof fns): `81 verified, 0 errors` for both the
   default features and `--no-default-features --features aws-lc-sys` (40 at `5ea2a804`, 45 after
-  VR-009, 57 after VR-011, 69 after VR-012, 73 after the VR-001 (b) / VR-002 tokens). This
+  VR-009, 57 after VR-011, 69 after VR-012, 73 after the VR-001 (b) / VR-002 tokens, 77 after
+  VR-015). This
   covers parts of VR-003 (big-endian decoding, bounded readers, header-field decisions, the 0x41
   Base64 hint), VR-004 (regular- and final-frame sequence checks, frames-start-at-1 lemmas),
   VR-005 (body AAD, IV, frame prefix layout), VR-007 (EDK count check), the esdk half of VR-009
   (key-derivation length checks), the secret-type accessors of VR-011, the VR-012 codec lemmas, and
-  the decrypt-order tokens of VR-001 (b) and VR-002, and the VR-015 signature release gate
-  (threat R3). The async readers and loops around these cores
+  the decrypt-order tokens of VR-001 (b) and VR-002, the VR-015 signature release gate
+  (threat R3) with its presence check (VR-015 (b)), and VR-016 (every esdk AES-GCM decryption
+  gets a plaintext buffer as long as its ciphertext, so BUG-07(b) is unreachable from esdk). The async readers and loops around these cores
   are unverified glue.
 - **Decrypt order (VR-001 (b), VR-002), Verus plus the compiler.** Verus proves that the
   `CommitmentAccepted` and `HeaderVerified` tokens in `esdk/src/decrypt_gate.rs` are created only

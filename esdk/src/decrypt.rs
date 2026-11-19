@@ -6,7 +6,8 @@
 //! and decrypts the plaintext (handling both framed and nonframed formats).
 
 use crate::decrypt_gate::{
-    self, CommitmentAccepted, HeaderVerified, HeldFinalPlaintext, SignatureVerified,
+    self, CommitmentAccepted, HeaderVerified, HeldFinalPlaintext, SignaturePresence,
+    SignatureRequired, SignatureVerified,
 };
 use crate::error::{Error, Kind, err, val_err};
 use crate::key_derivation;
@@ -291,12 +292,20 @@ async fn decrypt_steps(
         .suite
         .asymmetric_signature_algorithm()
         .is_some();
-    if suite_has_signature != state.dec_mat.verification_key().is_some() {
+    //
+    // `signature_presence_gate` returns a `SignaturePresence` token only when
+    // these two agree. Step 5 needs that token to choose between skipping
+    // and checking the signature, so a CMM that drops the key for a signed
+    // suite cannot make decrypt skip the check (VR-015 (b)).
+    let Some(signature_presence) = decrypt_gate::signature_presence_gate(
+        suite_has_signature,
+        state.dec_mat.verification_key().is_some(),
+    ) else {
         return Err(err(
             Kind::InvalidMaterials,
             "decryption materials must include a verification key exactly when the algorithm suite has a signature algorithm",
         ));
-    }
+    };
 
     //= spec/client-apis/decrypt.md#v2-header-deserialization
     //= reason=Parsed header kept in local state until step_verify_header succeeds
@@ -325,7 +334,7 @@ async fn decrypt_steps(
     //
     // `step_decrypt_body` returns the final plaintext held back, and only a
     // `SignatureVerified` token from this step can release it (VR-015).
-    let signature_verified = step_verify_signature(ciphertext, &state).await?;
+    let signature_verified = step_verify_signature(ciphertext, &state, signature_presence).await?;
 
     //= spec/client-apis/decrypt.md#decrypt-the-message-body
     //# Any plaintext decrypted from [nonframed data](../data-format/message-body.md#nonframed-data) or
@@ -588,7 +597,9 @@ fn step_verify_header(
         //= type=implication
         //= reason=Source literally passes &[] (empty slice) as the ciphertext argument
         //# - the ciphertext MUST be an empty byte array
-        &[],
+        //
+        // `open_buffers` pairs it with an empty plaintext buffer (VR-016).
+        secret::open_buffers(&[], Vec::new()),
         //= spec/client-apis/decrypt.md#verify-the-header
         //# - the tag MUST be the value serialized in the message header's
         //# [authentication tag field](../data-format/message-header.md#authentication-tag)
@@ -609,8 +620,8 @@ fn step_verify_header(
             &serialized_req_encryption_context[..],
         ]
         .concat(),
-        &mut [],
-    );
+    )
+    .map(|_empty_plaintext| ());
 
     //= spec/client-apis/decrypt.md#verify-the-header
     //# If this tag verification fails, this operation MUST immediately halt and fail.
@@ -695,6 +706,9 @@ async fn step_decrypt_body(
 async fn step_verify_signature(
     ciphertext: &mut dyn Source,
     state: &DecryptState,
+    // Proof that the suite is signed exactly when a verification key is
+    // present. Only `decrypt_gate` can create one.
+    signature_presence: SignaturePresence,
 ) -> Result<SignatureVerified, Error> {
     //= spec/client-apis/decrypt.md#verify-the-signature
     //# If the algorithm suite has a signature algorithm,
@@ -707,40 +721,41 @@ async fn step_verify_signature(
     //# as the [message footer](../data-format/message-footer.md).
     //
     // Either way this yields a `SignatureVerified` token, which is created
-    // only when there is no verification key or the signature verified.
-    if let Some(not_required) =
-        decrypt_gate::signature_not_required(state.dec_mat.verification_key().is_some())
-    {
+    // only when the suite is unsigned and there is no verification key, or
+    // when the suite is signed, a key is present and the signature verified.
+    match decrypt_gate::signature_not_required(signature_presence) {
         //= spec/client-apis/decrypt.md#behavior
         //# - If the message header does not contain an algorithm suite including a signature algorithm,
         //# the Decrypt operation MUST NOT perform this step.
-        Ok(not_required)
-    } else {
-        let mut noop = NoopWriter;
+        Ok(not_required) => Ok(not_required),
+        Err(required) => {
+            let mut noop = NoopWriter;
 
-        //= spec/client-apis/decrypt.md#verify-the-signature
-        //# Once the message footer is deserialized, the Decrypt operation MUST use the
-        //# [signature algorithm](../framework/algorithm-suites.md#signature-algorithm)
-        //# from the [algorithm suite](../framework/algorithm-suites.md) in the decryption materials to
-        //# verify the encrypted message, with the following inputs:
-        verify_signature(
-            ciphertext,
             //= spec/client-apis/decrypt.md#verify-the-signature
-            //# - The input to verify MUST be the concatenation of the serialization of the
-            //# [message header](../data-format/message-header.md) and [message body](../data-format/message-body.md).
-            state.sig_digest.context.clone().ok_or_else(|| {
-                err(
-                    Kind::Internal,
-                    "signature digest context must be present for signature verification",
-                )
-            })?,
-            //= spec/client-apis/decrypt.md#verify-the-signature
-            //# - The verification key MUST be the [verification key](../framework/structures.md#verification-key)
-            //# in the decryption materials.
-            &state.dec_mat,
-            &mut noop,
-        )
-        .await
+            //# Once the message footer is deserialized, the Decrypt operation MUST use the
+            //# [signature algorithm](../framework/algorithm-suites.md#signature-algorithm)
+            //# from the [algorithm suite](../framework/algorithm-suites.md) in the decryption materials to
+            //# verify the encrypted message, with the following inputs:
+            verify_signature(
+                ciphertext,
+                //= spec/client-apis/decrypt.md#verify-the-signature
+                //# - The input to verify MUST be the concatenation of the serialization of the
+                //# [message header](../data-format/message-header.md) and [message body](../data-format/message-body.md).
+                state.sig_digest.context.clone().ok_or_else(|| {
+                    err(
+                        Kind::Internal,
+                        "signature digest context must be present for signature verification",
+                    )
+                })?,
+                //= spec/client-apis/decrypt.md#verify-the-signature
+                //# - The verification key MUST be the [verification key](../framework/structures.md#verification-key)
+                //# in the decryption materials.
+                &state.dec_mat,
+                &mut noop,
+                required,
+            )
+            .await
+        }
     }
 }
 
@@ -763,6 +778,8 @@ async fn verify_signature(
     context: DigestContext,
     dec_mat: &DecryptionMaterials,
     sig_digest: &mut Tee,
+    // Proof that the suite is signed and a verification key is present.
+    required: SignatureRequired,
 ) -> Result<SignatureVerified, Error> {
     //= spec/client-apis/decrypt.md#verify-the-signature
     //= reason=awaiting reads on the input stream waits for enough bytes
@@ -785,8 +802,8 @@ async fn verify_signature(
     //= spec/client-apis/decrypt.md#verify-the-signature
     //# If this verification is not successful, this operation MUST immediately halt and fail.
     //
-    // `signature_gate` returns a `SignatureVerified` token only if the
-    // signature verified.
-    decrypt_gate::signature_gate(valid)
+    // `signature_gate` uses up the `SignatureRequired` token and returns a
+    // `SignatureVerified` token only if the signature verified.
+    decrypt_gate::signature_gate(required, valid)
         .ok_or_else(|| err(Kind::Cryptographic, "signature verification failed"))
 }

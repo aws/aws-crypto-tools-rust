@@ -23,14 +23,18 @@ Current output for both runs (default, and
 `--no-default-features --features aws-lc-sys`):
 
 ```
-verification results:: 57 verified, 0 errors
-verification results:: 57 verified, 0 errors
+verification results:: 81 verified, 0 errors
+verification results:: 81 verified, 0 errors
 ```
 
 The count is Verus's obligation count, not a function count; the checked
-fns are 34 exec fns (13 before the in-crate work, 22 before VR-009, 24 before
-VR-011) and 3 proof fns. The verified fns (each inside a `verus!` block; paths
-are under `esdk/src/message/` unless they start with `esdk/src/`):
+fns are 45 exec fns (13 before the in-crate work, 22 before VR-009, 24 before
+VR-011, 34 before VR-001 / VR-012) and 8 proof fns. The table below lists the
+fns up to VR-011 plus VR-016; the VR-001 (a), VR-012, decrypt-order token
+(VR-001 (b), VR-002) and VR-015 rows are in the per-fn table of
+`docs/verus-proofs-report.md` ("In-crate proofs"). Each fn is inside a
+`verus!` block; paths are under `esdk/src/message/` unless they start with
+`esdk/src/`:
 
 | File | Fn | Property proven |
 |---|---|---|
@@ -39,6 +43,7 @@ are under `esdk/src/message/` unless they start with `esdk/src/`):
 | `esdk/src/secret.rs` | `CommitmentValue::as_suite_data` | Declassification (decrypt side): `s@ == self.view()`. VR-011. |
 | `esdk/src/secret.rs` | `PublicBytes::from_commitment` (and private `copy_vec`) | Declassification (encrypt side): `p.view() == c.view()` and `p.is_public()`. VR-011. |
 | `esdk/src/secret.rs` | `PublicBytes::into_vec`; type invariant `PublicBytes::inv` | `v@ == self.view()`; every `PublicBytes` is labelled `Label::Public`. VR-011. |
+| `esdk/src/secret.rs` | `open_buffers`, proof fn `lemma_open_buffers_sized`; type invariant `OpenBuffers::inv` | Every `OpenBuffers` (the only input `secret::open` accepts) has a plaintext buffer exactly as long as its ciphertext, so BUG-07(b) is unreachable from esdk. VR-016. |
 | `esdk/src/key_derivation.rs` | `identity_kdf_key_len_ok` (called by `derive_key_v1`) | True iff the identity-KDF plaintext data key length equals the suite encryption key length. VR-009. |
 | `esdk/src/key_derivation.rs` | `check_v2_key_lengths` (called by `derive_key_v2`) | `Ok` iff the KDF is not the identity KDF, the message ID is `MESSAGE_ID_LEN_V2` (32) bytes and the plaintext key length equals the suite key length; `Ok(n)` has `n` equal to both (it sizes the derived encryption key); each `Err` variant fires exactly when its check is the first to fail (identity KDF, then message ID, then key length). VR-009. |
 | `serialize_functions.rs` | `be_u16`, `be_u32`, `be_u64` | Result equals the big-endian value of the bytes (`spec_be_u16/u32/u64`). |
@@ -107,7 +112,7 @@ the `DigestAlg` / `AesGcm` dispatch, `format!` and the crate `Error`.
 | `prim/src/lib.rs` | `ct_equal_core` (called by `constant_time_equal`) | Totality; result is the `Ok`-ness of the aws-lc-rs comparison (no claim about equality semantics or timing). | VR-013(e) |
 | `prim/src/lib.rs` | `hmac_core` (called by `hmac`) | `Ok` iff `out.len()` is the HMAC tag length; `out` unchanged on `Err`; copy only after the guard, in bounds. | VR-013(f) |
 | `prim/src/lib.rs` | `aes_encrypt_core` (called by `aes_encrypt`) | Key/nonce `Err` ⇒ buffer is exactly `old ++ message` (BUG-07(a)); seal `Err` ⇒ length `old + |message|`, prefix kept; `Ok` ⇒ `old ++ ct ++ tag`, length `old + |message| + 16`. | VR-014(a) |
-| `prim/src/lib.rs` | `aes_decrypt_core` (called by `aes_decrypt`) | Under the labeled assumption A-OPEN: `Ok` ⇒ `|plain_text| == |cipher_text|`; a longer buffer passes the guard and ends in a callee-side `Err` (BUG-07(b), recorded, not a proof of aws-lc-rs). | VR-014(b) |
+| `prim/src/lib.rs` | `aes_decrypt_core` (called by `aes_decrypt`) | Under the labeled assumption A-OPEN: `Ok` ⇒ `|plain_text| == |cipher_text|`; a longer buffer passes the guard and ends in a callee-side `Err` (BUG-07(b), recorded, not a proof of aws-lc-rs). esdk never passes such a buffer (VR-016). | VR-014(b) |
 
 VR-013 and VR-014 implement pipeline target VR-2026-C03 (MPL-Verus
 `docs/verification-targets/02-capability-driven.md`) and the BUG-07 buffer

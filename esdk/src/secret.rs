@@ -45,7 +45,12 @@
 //! - [`hkdf_v2_expand_key`]: V2 HKDF-Expand into the [`MessageKey`].
 //! - [`hkdf_v2_expand_commitment`]: V2 HKDF-Expand into the [`CommitmentValue`].
 //! - [`seal`]: AES-GCM encryption under a [`MessageKey`].
-//! - [`open`]: AES-GCM decryption under a [`MessageKey`].
+//! - [`open`]: AES-GCM decryption under a [`MessageKey`]. It takes its
+//!   ciphertext and plaintext buffer as one [`OpenBuffers`], built only by
+//!   the verified [`open_buffers`], so Verus proves the plaintext buffer is
+//!   exactly as long as the ciphertext at every esdk decryption (VR-016).
+//!   Trusted: the body of `open` passes the two buffers to `aes_decrypt`
+//!   unchanged.
 //!
 //! With the `test-internals` feature, `data_key_from_slice_for_tests`,
 //! `expose_message_key_for_tests` and `expose_commitment_for_tests` also read or
@@ -227,6 +232,60 @@ impl PublicBytes {
     }
 }
 
+/// The two buffers for one AES-GCM decryption (VR-016): the ciphertext and
+/// a plaintext buffer of exactly the same length. Only [`open_buffers`] can
+/// build one, and [`open`] accepts nothing else, so every esdk decryption
+/// passes `aes_decrypt` a plaintext buffer as long as its ciphertext.
+pub(crate) struct OpenBuffers<'a> {
+    cipher_text: &'a [u8],
+    plain_text: Vec<u8>,
+}
+
+#[expect(
+    single_use_lifetimes,
+    clippy::elidable_lifetime_names,
+    reason = "Verus needs a named lifetime on an impl that holds a type invariant"
+)]
+impl<'a> OpenBuffers<'a> {
+    /// The ciphertext, for specs only.
+    pub(crate) closed spec fn cipher(&self) -> Seq<u8> {
+        self.cipher_text@
+    }
+
+    /// The length of the plaintext buffer, for specs only.
+    pub(crate) closed spec fn plain_len(&self) -> nat {
+        self.plain_text@.len()
+    }
+
+    /// The plaintext buffer is exactly as long as the ciphertext.
+    #[verifier::type_invariant]
+    spec fn inv(&self) -> bool {
+        self.plain_len() == self.cipher().len()
+    }
+}
+
+/// Every `OpenBuffers` has a plaintext buffer exactly as long as its
+/// ciphertext.
+pub(crate) proof fn lemma_open_buffers_sized(tracked b: &OpenBuffers<'_>)
+    ensures
+        b.plain_len() == b.cipher().len(),
+{
+    use_type_invariant(b);
+}
+
+/// Pairs `cipher_text` with `plain_text` resized to the ciphertext length.
+/// The caller may pass any Vec; it is reused, so no new allocation is needed
+/// when it is already large enough.
+pub(crate) fn open_buffers(cipher_text: &[u8], plain_text: Vec<u8>) -> (r: OpenBuffers<'_>)
+    ensures
+        r.cipher() == cipher_text@,
+        r.plain_len() == cipher_text@.len(),
+{
+    let mut plain_text = plain_text;
+    plain_text.resize(cipher_text.len(), 0);
+    OpenBuffers { cipher_text, plain_text }
+}
+
 /// A vector of `len` zero bytes.
 fn zero_vec(len: usize) -> (v: Vec<u8>)
     ensures
@@ -399,7 +458,9 @@ pub(crate) fn seal(
 }
 
 /// AES-GCM decryption under the message key. Mirrors
-/// `aws_mpl_primitives::aes_decrypt`.
+/// `aws_mpl_primitives::aes_decrypt`, but takes its ciphertext and plaintext
+/// buffer as one [`OpenBuffers`], whose plaintext buffer Verus proves is as
+/// long as the ciphertext (VR-016). Returns the plaintext buffer.
 ///
 /// # Errors
 ///
@@ -407,13 +468,25 @@ pub(crate) fn seal(
 pub(crate) fn open(
     alg: AesGcm,
     key: &MessageKey,
-    cipher_text: &[u8],
+    bufs: OpenBuffers<'_>,
     auth_tag: &[u8],
     iv: &[u8],
     aad: &[u8],
-    plain_text: &mut [u8],
-) -> Result<(), aws_mpl_primitives::Error> {
-    aes_decrypt(alg, &key.bytes, cipher_text, auth_tag, iv, aad, plain_text)
+) -> Result<Vec<u8>, aws_mpl_primitives::Error> {
+    let OpenBuffers {
+        cipher_text,
+        mut plain_text,
+    } = bufs;
+    aes_decrypt(
+        alg,
+        &key.bytes,
+        cipher_text,
+        auth_tag,
+        iv,
+        aad,
+        &mut plain_text[..],
+    )?;
+    Ok(plain_text)
 }
 
 /// Test-only: a `DataKeyRef` over caller bytes, so esdk's integration tests can
