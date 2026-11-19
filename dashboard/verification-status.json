@@ -1,0 +1,3451 @@
+{
+  "generated": {
+    "commit": "1809702806f570dda74c0cdda1fa8e976a50df73",
+    "commit_short": "1809702",
+    "branch": "MPL-Verus",
+    "sources_clean": true,
+    "dirty_paths": [],
+    "timestamp_utc": "2026-11-19T21:16:33Z",
+    "generator": "dashboard/generate_dashboard.py",
+    "schema_version": 1,
+    "commit_meaning": "the commit whose docs/ and verus-proofs/ were read; the dashboard files are committed after it"
+  },
+  "declared_nondeterministic_fields": [
+    "generated.timestamp_utc"
+  ],
+  "verus": {
+    "version": "0.2026.07.12.0b42f4c",
+    "platform": "release, macos_aarch64, 1.96.0-aarch64-apple-darwin",
+    "runs_recorded_at": "2026-11-19T21:13:04Z",
+    "runs_recorded_on_commit": "1809702",
+    "command": "~/verus/verus verus-proofs/<file>.rs, run from the repo root"
+  },
+  "scope_statement": "Every proof on this branch checks a hand-written model of the code. None checks the shipped code.",
+  "evidence_labels": {
+    "proved": "Checked by Verus on a model. Verus is a proof checker for Rust. Evidence label 'proved' always means model level here.",
+    "assumed": "Taken as true by the proof. Verus does not check it.",
+    "code_reading": "A person read the shipped code and judged that it matches the model. Nothing checks this."
+  },
+  "honesty_levels": [
+    {
+      "key": "in_crate",
+      "label": "Proved in the shipped code",
+      "rank": 1,
+      "text": "Verus checks the real library code, not a copy. No target is at this level on this branch."
+    },
+    {
+      "key": "in_crate_other_branch",
+      "label": "Proved in the shipped code, on another branch only",
+      "rank": 2,
+      "text": "Verus checks the real code, but only on branch Mahnush_Verus. This branch has no such proof, so nothing about the code here is proved."
+    },
+    {
+      "key": "model_proved",
+      "label": "Model proof, no failing check",
+      "rank": 3,
+      "text": "Verus checks a hand-written copy (a model) of the code and finds no failing check. The code itself is not checked. The result holds only under the listed assumptions."
+    },
+    {
+      "key": "model_partly",
+      "label": "Model proof, with an intentional failing check",
+      "rank": 4,
+      "text": "Verus checks a model. One or more checks fail on purpose. Each failing check states a rule that the code does not follow, so the failure is the evidence of a bug or a spec gap."
+    },
+    {
+      "key": "not_started",
+      "label": "No proof yet",
+      "rank": 5,
+      "text": "The target is ranked and described, but no proof has been written. Nothing is checked."
+    }
+  ],
+  "page_rules": [
+    "Every number on this page is read from the repository docs or from a recorded Verus run. Nothing is typed in by hand.",
+    "A proof result is marked STALE when the proof file has changed since the run that produced the result.",
+    "No level is shown as an upgrade of a lower level. A model proof is never shown as a proof of the shipped code.",
+    "Scores, ranks, coverage gaps and quick wins are copied from docs/mpl-verification-targets.md. They are not recomputed and a proof does not change them.",
+    "A passing model proof does not mean a threat is handled. It means only what its card says it checks.",
+    "If a docs statement and a Verus run disagree, the page shows the disagreement and uses the weaker reading."
+  ],
+  "executive": {
+    "active_targets": 33,
+    "threat_driven": 26,
+    "capability_driven": 7,
+    "retired_targets": 2,
+    "level_counts": {
+      "in_crate": 0,
+      "in_crate_other_branch": 1,
+      "model_proved": 6,
+      "model_partly": 3,
+      "not_started": 23
+    },
+    "targets_with_model_proof_on_this_branch": 9,
+    "targets_with_proof_in_shipped_code_on_this_branch": 0,
+    "targets_with_proof_on_other_branch_only": 1,
+    "targets_without_proof": 23,
+    "high_threat_count": 3,
+    "high_threats_with_current_model_proof": 3,
+    "threat_count": 26,
+    "bugs_open": [
+      "BUG-01",
+      "BUG-04",
+      "BUG-05",
+      "BUG-06",
+      "BUG-07",
+      "BUG-08",
+      "BUG-10"
+    ],
+    "bugs_fixed": [
+      "BUG-02",
+      "BUG-03",
+      "BUG-09"
+    ],
+    "open_bugs_confirmed_by_model_proof": [
+      "BUG-01",
+      "BUG-06"
+    ],
+    "open_bugs_with_no_proof_on_this_branch": [
+      "BUG-04",
+      "BUG-05",
+      "BUG-07",
+      "BUG-10"
+    ],
+    "proofs_with_intentional_failures": [
+      "T02",
+      "T13",
+      "T06"
+    ],
+    "intentional_failing_checks": 6,
+    "stale_proofs": [],
+    "proofs_not_run": [],
+    "unexpected_failures": [],
+    "docs_drift": [],
+    "scope_statement": "Every proof on this branch checks a hand-written model of the code. None checks the shipped code."
+  },
+  "high_threats": [
+    {
+      "id": "TM-MPL-005",
+      "title": "Branch-key record substitution or rollback: swap in a valid record from another branch-key-id/version, or replay an older ACTIVE record",
+      "plain": "Someone swaps a valid key-store record for another valid record, or replays an older one, so the reader trusts the wrong key record.",
+      "severity": "Critical",
+      "likelihood": "Medium",
+      "risk": "High",
+      "related_targets": [
+        {
+          "id": "T01",
+          "level": "model_proved",
+          "state": "current"
+        },
+        {
+          "id": "T02",
+          "level": "model_partly",
+          "state": "current"
+        }
+      ],
+      "has_current_model_proof": true,
+      "targets_with_current_model_proof": [
+        "T01",
+        "T02"
+      ],
+      "related_targets_without_proof": []
+    },
+    {
+      "id": "TM-MPL-009",
+      "title": "Cache-identifier collision returns the wrong branch-key materials",
+      "plain": "Two different keyring settings get the same cache identifier, so one keyring is given the other's cached key.",
+      "severity": "High",
+      "likelihood": "Medium",
+      "risk": "High",
+      "related_targets": [
+        {
+          "id": "T13",
+          "level": "model_partly",
+          "state": "current"
+        }
+      ],
+      "has_current_model_proof": true,
+      "targets_with_current_model_proof": [
+        "T13"
+      ],
+      "related_targets_without_proof": []
+    },
+    {
+      "id": "TM-MPL-010",
+      "title": "Shared-cache confusion serves branch-key materials to a keyring that should not access them",
+      "plain": "A shared cache gives branch key material to a keyring that should not have it.",
+      "severity": "High",
+      "likelihood": "Medium",
+      "risk": "High",
+      "related_targets": [
+        {
+          "id": "T13",
+          "level": "model_partly",
+          "state": "current"
+        },
+        {
+          "id": "T14",
+          "level": "not_started",
+          "state": null
+        }
+      ],
+      "has_current_model_proof": true,
+      "targets_with_current_model_proof": [
+        "T13"
+      ],
+      "related_targets_without_proof": [
+        "T14"
+      ]
+    }
+  ],
+  "targets": [
+    {
+      "id": "T01",
+      "origin": "threat-driven",
+      "rank": 1,
+      "score": "8.96",
+      "coverage_gap": "0.8",
+      "scoring_product": "4 × 0.8 × 0.7 × 4 = 8.96",
+      "quick_win": false,
+      "effort": "2 weeks",
+      "agent": "mpl-verus-header-parsing-proofs",
+      "technical_name": "key-store auth-EC builders (kms_ops.rs:49, branch_key_store.rs:132, :1089, :1141)",
+      "title": "Key-store records are read back with the same context that KMS checked",
+      "threats": [
+        "TM-MPL-002",
+        "TM-MPL-005"
+      ],
+      "threats_note": "",
+      "bugs": [],
+      "level": "model_proved",
+      "proof": {
+        "file": "verus-proofs/t01_keystore_auth_ec.rs",
+        "state": "current"
+      },
+      "card": {
+        "area": "The branch key store. It saves branch keys as records in a DynamoDB table. AWS KMS protects each record's key and binds an encryption context (a set of labelled values) to it.",
+        "risk": "A record could be swapped for another valid record, or the reader could trust labels that KMS never checked. This is threat TM-MPL-005, rated High. If the context used when reading differed from the one KMS checked, the reader would act on unchecked values.",
+        "checks_label": "What the proof checks",
+        "checks": "That three contexts are equal for a record: the one written with it, the one KMS checks when it unlocks it, and the one the reader rebuilds. It also checks that writing and reading back adds, drops or changes nothing, and that rotating to a new key version keeps this.",
+        "not_shown": "It does not show that KMS or DynamoDB behave as assumed. Both are modeled by assumptions (A_KMS, A_DDB). It does not cover replay of an older genuine record. A later edit to kms_ops.rs or branch_key_store.rs would not be detected.",
+        "result": "Verus reports 52 passing checks and 0 failing checks on a model of this code, not on the shipped code; KMS and DynamoDB are modeled by assumptions, so the KMS part is shown relative to those assumptions.",
+        "notes": [
+          "The two context builders are separate functions with no shared code. They agree today. An edit to one alone would break the match (observation O1, code reading)."
+        ],
+        "expected_failure_explanation": "",
+        "sources": [
+          {
+            "doc": "docs/mpl-verification-targets/01-threat-driven.md",
+            "locator": "id: VR-2026-T01",
+            "line": 176
+          },
+          {
+            "doc": "verus-proofs/README.md",
+            "locator": "## T01: key-store authenticated encryption context",
+            "line": 178
+          },
+          {
+            "doc": "docs/mpl-verification-targets.md",
+            "locator": "**T01: no gap found at model level.**",
+            "line": 150
+          },
+          {
+            "doc": "docs/mpl-verification-targets.md",
+            "locator": "## 1. Combined ranked summary",
+            "line": 215
+          }
+        ]
+      },
+      "docs_proof_status": "Proved (model level, not the shipped code, under stated hypotheses): 52 verified, 0 errors"
+    },
+    {
+      "id": "T02",
+      "origin": "threat-driven",
+      "rank": 2,
+      "score": "6.72",
+      "coverage_gap": "0.6",
+      "scoring_product": "4 × 0.6 × 0.7 × 4 = 6.72",
+      "quick_win": true,
+      "effort": "1 week",
+      "agent": "mpl-verus-header-parsing-proofs",
+      "technical_name": "record::branch_key_materials_from_authenticated_encryption_context (record.rs:95)",
+      "title": "A stored key record is accepted only when it is well formed",
+      "threats": [
+        "TM-MPL-005"
+      ],
+      "threats_note": "",
+      "bugs": [],
+      "level": "model_partly",
+      "proof": {
+        "file": "verus-proofs/t02_record_reconstruction.rs",
+        "state": "current"
+      },
+      "card": {
+        "area": "The branch key store, in the step that turns a decrypted record back into key material (record.rs).",
+        "risk": "A malformed or wrongly typed record could be accepted. The spec also says a record must have create-time and hierarchy-version fields, and the code does not check for them (gap G1). The impact is low: a record changed after encryption already fails at KMS, and no key is exposed or mis-selected.",
+        "checks_label": "What the proof checks",
+        "checks": "That the code accepts a record exactly when its type, version, key id and 32-byte key are valid, and that every rejection has a known cause. On acceptance the outputs are exactly the values in the record. One more check states the spec rule that both fields must be present.",
+        "not_shown": "It does not cover the step that reads the record from the database, where the key came from, or replay of an older genuine record. It checks a model, not the shipped code.",
+        "result": "Verus reports 21 passing checks and 1 failing check on a model of this code, not on the shipped code; the one failing check is the intentional one for gap G1 (the code accepts a record without two fields the spec requires), not a broken proof.",
+        "notes": [],
+        "expected_failure_explanation": "The failing check states the spec rule that a record must contain create-time and hierarchy-version before it is accepted. The code does not enforce this rule, so Verus rejects the check. That rejection is the evidence of gap G1: the code accepts records that the spec says to reject. The proof is not broken. The check was left failing and was not weakened.",
+        "sources": [
+          {
+            "doc": "docs/mpl-verification-targets/01-threat-driven.md",
+            "locator": "id: VR-2026-T02",
+            "line": 242
+          },
+          {
+            "doc": "verus-proofs/README.md",
+            "locator": "## T02: record reconstruction",
+            "line": 47
+          },
+          {
+            "doc": "docs/mpl-verification-targets.md",
+            "locator": "**G1 confirmed formally (T02).**",
+            "line": 146
+          },
+          {
+            "doc": "docs/mpl-verification-targets.md",
+            "locator": "## 1. Combined ranked summary",
+            "line": 215
+          }
+        ]
+      },
+      "docs_proof_status": "Partly proved (model level, not the shipped code, under stated hypotheses): 21 verified, 1 errors"
+    },
+    {
+      "id": "C01",
+      "origin": "capability-driven",
+      "rank": 3,
+      "score": "6.72",
+      "coverage_gap": "0.8",
+      "scoring_product": "3 × 0.8 × 0.7 × 4 = 6.72",
+      "quick_win": true,
+      "effort": "1 week",
+      "agent": "mpl-verus-header-parsing-proofs",
+      "technical_name": "key_store/encryption_context.rs builders ∘ record.rs reconstruction",
+      "title": "Encryption-context builders and record reconstruction undo each other",
+      "threats": [],
+      "threats_note": "none cited in the targets docs",
+      "bugs": [
+        "BUG-08"
+      ],
+      "level": "model_proved",
+      "proof": {
+        "file": "verus-proofs/c01_ec_roundtrip.rs",
+        "state": "current"
+      },
+      "card": {
+        "area": "The branch key store's code that builds the encryption context for a record (encryption_context.rs) and the code that rebuilds key material from a record (record.rs).",
+        "risk": "A key written by the store could be read back with a different id, version or custom context. The targets doc cites no threat for this target. Related: BUG-08, an error branch that can never run.",
+        "checks_label": "What the proof checks",
+        "checks": "That for a non-empty id and version, a 32-byte key and any custom context, building the context and reading it back returns the same id, version, custom context and key. That the builders fail only on an empty id or version. That the collision error branch in build_base is dead exactly when assumption A_ITER holds.",
+        "not_shown": "It does not model the KMS step (T01 does), the database read, rotation, error text or replay. The proof holds only under A_ITER, and two results also need A_DDB and A_NAME. It checks a model, not the shipped code.",
+        "result": "Verus reports 40 passing checks and 0 failing checks on a model of this code, not on the shipped code; this holds under assumption A_ITER, and two results also need A_DDB and A_NAME.",
+        "notes": [],
+        "expected_failure_explanation": "",
+        "sources": [
+          {
+            "doc": "docs/mpl-verification-targets/02-capability-driven.md",
+            "locator": "id: VR-2026-C01",
+            "line": 123
+          },
+          {
+            "doc": "verus-proofs/README.md",
+            "locator": "## C01: encryption-context builders",
+            "line": 84
+          },
+          {
+            "doc": "docs/mpl-verification-targets.md",
+            "locator": "- **BUG-08 (C01).**",
+            "line": 167
+          },
+          {
+            "doc": "docs/mpl-verification-targets.md",
+            "locator": "## 1. Combined ranked summary",
+            "line": 215
+          }
+        ]
+      },
+      "docs_proof_status": "Proved (model level, not the shipped code, under stated hypotheses): 40 verified, 0 errors"
+    },
+    {
+      "id": "C02",
+      "origin": "capability-driven",
+      "rank": 4,
+      "score": "6.40",
+      "coverage_gap": "0.8",
+      "scoring_product": "2 × 0.8 × 1.0 × 4 = 6.40",
+      "quick_win": true,
+      "effort": "1 week",
+      "agent": "mpl-verus-zero-panic",
+      "technical_name": "prim::ecdsa sign_fixed_len (ecdsa.rs:180) and callers",
+      "title": "The signing retry loop is bounded and writes only whole signatures",
+      "threats": [],
+      "threats_note": "none cited in the targets docs",
+      "bugs": [],
+      "level": "model_proved",
+      "proof": {
+        "file": "verus-proofs/c02_sign_fixed_len.rs",
+        "state": "current"
+      },
+      "card": {
+        "area": "The ECDSA signing code in the primitives crate (prim::ecdsa, function sign_fixed_len). It retries signing until it gets a signature of the required length.",
+        "risk": "The loop could run without end, panic, or leave a half-written signature in the caller's buffer. The targets doc cites no threat for this target.",
+        "checks_label": "What the proof checks",
+        "checks": "That the signing step is called at most 128 times. That on success the buffer holds exactly one whole signature of the required length. That on failure the buffer is unchanged. That a wrong-length buffer is rejected with no signing call.",
+        "not_shown": "It does not cover signature verification, key generation, a panic inside aws-lc-rs, timing, or the tiny chance that all 128 attempts fail. The signing step is abstract. The docs record that branch Mahnush_Verus proves the retry bound on the real loop (VR-008), so this proof is partly superseded there.",
+        "result": "Verus reports 21 passing checks and 0 failing checks on a model of this code, not on the shipped code; the signing closure and the aws-lc-rs calls are abstract.",
+        "notes": [],
+        "expected_failure_explanation": "",
+        "sources": [
+          {
+            "doc": "docs/mpl-verification-targets/02-capability-driven.md",
+            "locator": "id: VR-2026-C02",
+            "line": 188
+          },
+          {
+            "doc": "verus-proofs/README.md",
+            "locator": "## C02: bounded ECDSA signing loop",
+            "line": 132
+          },
+          {
+            "doc": "docs/mpl-verification-targets.md",
+            "locator": "C02 and VR-008.",
+            "line": 114
+          },
+          {
+            "doc": "docs/mpl-verification-targets.md",
+            "locator": "## 1. Combined ranked summary",
+            "line": 215
+          }
+        ]
+      },
+      "docs_proof_status": "Proved (model level, not the shipped code, under stated hypotheses): 21 verified, 0 errors. Partly superseded by VR-008 (in-crate, on the shipped prim code, on branch Mahnush_Verus, not on this branch): retry bound, termination, guarded copy"
+    },
+    {
+      "id": "C03",
+      "origin": "capability-driven",
+      "rank": 5,
+      "score": "5.60",
+      "coverage_gap": "0.7",
+      "scoring_product": "2 × 0.7 × 1.0 × 4 = 5.60",
+      "quick_win": false,
+      "effort": "1 week",
+      "agent": "mpl-verus-zero-panic",
+      "technical_name": "prim::{hmac, digest, aes_encrypt, aes_decrypt, hkdf*, kbkdf_ctr_hmac}, DigestContext::finish",
+      "title": "Primitive wrappers handle bad lengths as errors (proved on another branch)",
+      "threats": [],
+      "threats_note": "none cited in the targets docs",
+      "bugs": [
+        "BUG-07"
+      ],
+      "level": "in_crate_other_branch",
+      "proof": null,
+      "card": {
+        "area": "The primitives crate (prim). It wraps aws-lc-rs for HMAC, digests, AES encryption and decryption, key derivation and random bytes.",
+        "risk": "A wrong buffer length could cause a panic, a truncated result or a buffer left in a surprising state. BUG-07 is one case: AES encrypt leaves plaintext in the buffer on an error. The targets doc cites no threat for this target.",
+        "checks_label": "What the proof checks",
+        "checks": "On branch Mahnush_Verus, Verus checks the real prim code. For HMAC and digests, success happens exactly when the output buffer has the right length, and on an error the buffer is unchanged. For AES encrypt, the docs list the buffer contents on each error and success path. For AES decrypt, a success implies equal lengths, relative to an assumption about aws-lc-rs.",
+        "not_shown": "The proof is not on this branch, where prim has no Verus annotations. It rests on 20 stated assumptions about aws-lc-rs. It does not prove that hkdf output lengths are right end to end, and it says nothing about wiping. The docs call it partly proved.",
+        "result": "On branch Mahnush_Verus, Verus checked the real prim code and the docs record 18 verified, 0 errors for the whole prim crate there, not only C03 (taken from the docs, not re-run here); this branch has no such proof.",
+        "notes": [],
+        "expected_failure_explanation": "",
+        "sources": [
+          {
+            "doc": "docs/mpl-verification-targets/02-capability-driven.md",
+            "locator": "id: VR-2026-C03",
+            "line": 235
+          },
+          {
+            "doc": "docs/mpl-verification-targets.md",
+            "locator": "### C03: in-crate proof on branch Mahnush_Verus (not on this branch)",
+            "line": 61
+          },
+          {
+            "doc": "docs/mpl-verification-targets.md",
+            "locator": "## 1. Combined ranked summary",
+            "line": 215
+          }
+        ]
+      },
+      "docs_proof_status": "Partly proved (in-crate, on the shipped prim code, on branch Mahnush_Verus, not on this branch, under trusted aws-lc-rs assumptions A1-A20): 18 verified, 0 errors"
+    },
+    {
+      "id": "T03",
+      "origin": "threat-driven",
+      "rank": 6,
+      "score": "5.12",
+      "coverage_gap": "0.8",
+      "scoring_product": "4 × 0.8 × 0.4 × 4 = 5.12",
+      "quick_win": false,
+      "effort": "1 day",
+      "agent": "mpl-verus-header-parsing-proofs",
+      "technical_name": "kms_ops::resolve_key_store_arn pinned modes (kms_ops.rs:88)",
+      "title": "The key store always asks KMS to use the configured key",
+      "threats": [
+        "TM-MPL-002"
+      ],
+      "threats_note": "",
+      "bugs": [],
+      "level": "model_proved",
+      "proof": {
+        "file": "verus-proofs/t03_resolve_pinned_arn.rs",
+        "state": "current"
+      },
+      "card": {
+        "area": "The branch key store, in the step that chooses which KMS key to call (resolve_key_store_arn). It covers the modes where the store is set to one single-Region key or one multi-Region key.",
+        "risk": "Someone who can write records in the database could name a different KMS key inside a record. The decrypt call would then go to a key they chose. This is threat TM-MPL-002 (a forged record).",
+        "checks_label": "What the proof checks",
+        "checks": "That in both modes the KMS key used is always the configured one, never the one stored in the record. The record's key is accepted only if it is compatible: identical for a single-Region key, or the same multi-Region key in another Region. Otherwise the call fails with a validation error.",
+        "not_shown": "It does not cover the two discovery modes (see BUG-04 and T17). It does not show that KMS authenticates the record, and it does not cover replay of an older genuine record. It checks a model, not the shipped code.",
+        "result": "Verus reports 39 passing checks and 0 failing checks on a model of this code, not on the shipped code; discovery modes are out of scope.",
+        "notes": [
+          "Finding O1: two identical alias ARNs fail the code's match, where the spec text would match. The code is stricter than the spec, and the case cannot occur for a configuration that build() accepts.",
+          "Finding O2: the model of ARN validity accepts an ARN with empty partition, region and account. That is looser than the spec. It does not affect this property. It is a gap in configuration checking."
+        ],
+        "expected_failure_explanation": "",
+        "sources": [
+          {
+            "doc": "docs/mpl-verification-targets/01-threat-driven.md",
+            "locator": "id: VR-2026-T03",
+            "line": 323
+          },
+          {
+            "doc": "verus-proofs/README-t03-t05.md",
+            "locator": "## T03: pinned-mode KMS key ARN resolution",
+            "line": 20
+          },
+          {
+            "doc": "docs/mpl-verification-targets.md",
+            "locator": "**O1, DEV-ALIAS (T03).**",
+            "line": 147
+          },
+          {
+            "doc": "docs/mpl-verification-targets.md",
+            "locator": "## 1. Combined ranked summary",
+            "line": 215
+          }
+        ]
+      },
+      "docs_proof_status": "Proved (model level, not the shipped code, under stated hypotheses): 39 verified, 0 errors"
+    },
+    {
+      "id": "C07",
+      "origin": "capability-driven",
+      "rank": 7,
+      "score": "5.04",
+      "coverage_gap": "0.6",
+      "scoring_product": "3 × 0.6 × 0.7 × 4 = 5.04",
+      "quick_win": false,
+      "effort": "1 week",
+      "agent": "mpl-verus-header-parsing-proofs",
+      "technical_name": "materials_checks transitions + send() wiring",
+      "title": "A keyring or materials manager cannot silently change the suite or context",
+      "threats": [],
+      "threats_note": "none cited in the targets docs",
+      "bugs": [],
+      "level": "not_started",
+      "proof": null,
+      "card": {
+        "area": "The materials checks (materials_checks.rs) and the send() calls on shared keyrings and shared materials managers, which every MPL and ESDK path goes through.",
+        "risk": "A keyring passed through a shared wrapper, including a user's own keyring, could swap the algorithm suite or the encryption context without anyone noticing. The targets doc cites no threat for this target.",
+        "checks_label": "What a proof would check",
+        "checks": "That the encryption and decryption transition checks succeed exactly when the suite, context, required keys and signing key are unchanged and the data key is only added, never changed or removed. That the completeness checks require a data key (and on encrypt at least one encrypted data key). That every send() returns success only if its check did.",
+        "not_shown": "No proof exists yet, so nothing here is machine-checked. Calling a keyring or manager directly, without send(), bypasses the checks and is excluded. A proof would list the fields the checks do not constrain, such as symmetric signing keys and encrypted-key order, so the owner can compare them with the Dafny version.",
+        "result": "No proof exists yet, so there is no result.",
+        "notes": [],
+        "expected_failure_explanation": "",
+        "sources": [
+          {
+            "doc": "docs/mpl-verification-targets/02-capability-driven.md",
+            "locator": "id: VR-2026-C07",
+            "line": 298
+          },
+          {
+            "doc": "docs/mpl-verification-targets.md",
+            "locator": "## 1. Combined ranked summary",
+            "line": 215
+          }
+        ]
+      },
+      "docs_proof_status": "None yet"
+    },
+    {
+      "id": "T04",
+      "origin": "threat-driven",
+      "rank": 8,
+      "score": "4.48",
+      "coverage_gap": "0.7",
+      "scoring_product": "4 × 0.7 × 0.4 × 4 = 4.48",
+      "quick_win": false,
+      "effort": "1 week",
+      "agent": "mpl-verus-unsafe-ffi-safety",
+      "technical_name": "branch_key_wrap::wrap (:157)",
+      "title": "Wrapping a branch key draws a separate salt and IV and builds the documented layout",
+      "threats": [
+        "TM-MPL-012"
+      ],
+      "threats_note": "",
+      "bugs": [],
+      "level": "model_proved",
+      "proof": {
+        "file": "verus-proofs/t04_branch_key_wrap.rs",
+        "state": "current"
+      },
+      "card": {
+        "area": "The branch key store's wrapping step (branch_key_wrap::wrap). It protects a data key with AES-GCM, using a key derived from the branch key. Each call needs two one-time values: a 16-byte salt and a 12-byte IV.",
+        "risk": "Reusing a salt or IV with the same key would weaken the encryption. This is threat TM-MPL-012.",
+        "checks_label": "What the proof checks",
+        "checks": "That on every successful call the code makes two separate random draws, the salt first and then the IV. The salt goes to the key derivation and the IV to AES-GCM. The output is salt, IV, version, ciphertext and tag, and it is 60 + n bytes long for an n-byte data key.",
+        "not_shown": "It does not show that the salt or the IV is fresh, random or unique. That comes from the random generator in aws-lc-rs, which the model only assumes fills its buffer. It does not show that wrap can succeed at all. It does not cover wiping of the derived key. It checks a model, not the shipped code.",
+        "result": "Verus reports 45 passing checks and 0 failing checks on a model of this code, not on the shipped code; it shows the structure of the draws and the output, not that the salt or IV is fresh.",
+        "notes": [
+          "Low-severity observation O1 (code reading, not proved): if the AES step fails after it copied the message, the output buffer can hold a clear copy of the data key, and wrap drops it without wiping. See BUG-07 and T26."
+        ],
+        "expected_failure_explanation": "",
+        "sources": [
+          {
+            "doc": "docs/mpl-verification-targets/01-threat-driven.md",
+            "locator": "id: VR-2026-T04",
+            "line": 367
+          },
+          {
+            "doc": "verus-proofs/README.md",
+            "locator": "## T04: branch-key wrap",
+            "line": 260
+          },
+          {
+            "doc": "docs/mpl-verification-targets.md",
+            "locator": "**T04, what is not proved (TM-MPL-012).**",
+            "line": 157
+          },
+          {
+            "doc": "docs/mpl-verification-targets.md",
+            "locator": "## 1. Combined ranked summary",
+            "line": 215
+          }
+        ]
+      },
+      "docs_proof_status": "Proved (model level, not the shipped code, under stated hypotheses): 45 verified, 0 errors"
+    },
+    {
+      "id": "T13",
+      "origin": "threat-driven",
+      "rank": 9,
+      "score": "4.41",
+      "coverage_gap": "0.7",
+      "scoring_product": "3 × 0.7 × 0.7 × 3 = 4.41",
+      "quick_win": false,
+      "effort": "1 week",
+      "agent": "mpl-verus-header-parsing-proofs",
+      "technical_name": "build_cache_identifier (cache_entry_identifier.rs:35) + keyring inputs",
+      "title": "Two keyring settings can get the same cache identifier (BUG-06)",
+      "threats": [
+        "TM-MPL-009",
+        "TM-MPL-010"
+      ],
+      "threats_note": "",
+      "bugs": [
+        "BUG-06"
+      ],
+      "level": "model_partly",
+      "proof": {
+        "file": "verus-proofs/t13_cache_identifier.rs",
+        "state": "current"
+      },
+      "card": {
+        "area": "The hierarchical keyring's cache lookup. The function build_cache_identifier joins the partition id, key store name, branch key id and version with zero-byte separators and hashes the result with SHA-384. The hash is the key for cached branch keys.",
+        "risk": "If a field contains a zero byte, two different settings can produce the same identifier. With a shared cache, keyring B can then be given the branch key of key store A. This is BUG-06 (open, rated High, confirmed end to end by a test on main) and threats TM-MPL-009 and TM-MPL-010, both rated High.",
+        "checks_label": "What the proof checks",
+        "checks": "That the preimage (the bytes that are hashed) is unique exactly when no field contains a zero byte, with concrete collisions for the encrypt and decrypt cases. That two proposed fixes work at model level: forbid zero bytes, or put a length in front of each field. That encrypt and decrypt identifiers never coincide.",
+        "not_shown": "It does not show that a real deployment can be set up to collide. BUG-06 states the preconditions: a shared cache and settings that contain zero bytes. SHA-384 is modeled as never colliding. Cache hit logic, TTL and panics are not covered. It checks a model, not the shipped code.",
+        "result": "Verus reports 42 passing checks and 1 failing check on a model of this code, not on the shipped code; the one failing check is the intentional one for BUG-06 (identifiers can collide when a field contains a zero byte), not a broken proof.",
+        "notes": [],
+        "expected_failure_explanation": "The failing check states that different settings always give different cache identifiers, for every input. That claim is false when a field contains a zero byte, and the proof contains concrete examples. Verus rejects the claim, and a companion lemma proves the claim false, not only unproved. This is the evidence of BUG-06. The proof is not broken. The check was left failing and was not weakened.",
+        "sources": [
+          {
+            "doc": "docs/mpl-verification-targets/01-threat-driven.md",
+            "locator": "id: VR-2026-T13",
+            "line": 412
+          },
+          {
+            "doc": "verus-proofs/README.md",
+            "locator": "## T13: cache identifier",
+            "line": 223
+          },
+          {
+            "doc": "docs/mpl-verification-targets.md",
+            "locator": "**BUG-06 confirmed formally (T13).**",
+            "line": 153
+          },
+          {
+            "doc": "docs/mpl-verification-targets.md",
+            "locator": "## 1. Combined ranked summary",
+            "line": 215
+          }
+        ]
+      },
+      "docs_proof_status": "Partly proved (model level, not the shipped code, under stated hypotheses): 42 verified, 1 errors"
+    },
+    {
+      "id": "T05",
+      "origin": "threat-driven",
+      "rank": 10,
+      "score": "4.32",
+      "coverage_gap": "0.9",
+      "scoring_product": "3 × 0.9 × 0.4 × 4 = 4.32",
+      "quick_win": false,
+      "effort": "1 day",
+      "agent": "mpl-verus-header-parsing-proofs",
+      "technical_name": "branch_key_wrap::derive_branch_key (:122)",
+      "title": "The key-derivation step receives exactly the documented inputs",
+      "threats": [
+        "TM-MPL-014"
+      ],
+      "threats_note": "",
+      "bugs": [],
+      "level": "model_proved",
+      "proof": {
+        "file": "verus-proofs/t05_kbkdf_fixed_info.rs",
+        "state": "current"
+      },
+      "card": {
+        "area": "The branch key store's wrapping code (derive_branch_key). It derives a 32-byte key from the branch key with KBKDF, a standard key-derivation method, using HMAC-SHA-256 and a short fixed information string.",
+        "risk": "A wrong algorithm, a wrong argument order or a wrong layout of the information string would give weaker or incompatible keys. This is threat TM-MPL-014. The spec does not state the layout. It exists only in the code and in a test helper.",
+        "checks_label": "What the proof checks",
+        "checks": "That the function passes HMAC-SHA-256, the branch key as the key, a 38-byte information string and a 32-byte output length to the primitive. The string is the label 'aws-kms-hierarchy', a zero byte, the 16-byte salt and the bytes 00 00 01 00. Wrap and unwrap use the same salt, so they pass the same input.",
+        "not_shown": "It does not check the derived key. The key-derivation output is left unspecified, so the proof shows which arguments the primitive receives, not that the result is correct. It does not cover aws-lc-rs, interoperability with other implementations, or wiping.",
+        "result": "Verus reports 33 passing checks and 0 failing checks on a model of this code, not on the shipped code; it shows what the key-derivation primitive receives, not what it computes.",
+        "notes": [
+          "Finding F1 (spec gap, not a code defect): the spec does not state this layout.",
+          "Observation F3: no test compares the output with a known-answer value, so a layout change would not be caught by tests."
+        ],
+        "expected_failure_explanation": "",
+        "sources": [
+          {
+            "doc": "docs/mpl-verification-targets/01-threat-driven.md",
+            "locator": "id: VR-2026-T05",
+            "line": 475
+          },
+          {
+            "doc": "verus-proofs/README-t03-t05.md",
+            "locator": "## T05: KBKDF fixed-info string in `derive_branch_key`",
+            "line": 69
+          },
+          {
+            "doc": "docs/mpl-verification-targets.md",
+            "locator": "**F1 (T05).**",
+            "line": 149
+          },
+          {
+            "doc": "docs/mpl-verification-targets.md",
+            "locator": "## 1. Combined ranked summary",
+            "line": 215
+          }
+        ]
+      },
+      "docs_proof_status": "Proved (model level, not the shipped code, under stated hypotheses): 33 verified, 0 errors"
+    },
+    {
+      "id": "T06",
+      "origin": "threat-driven",
+      "rank": 11,
+      "score": "4.20",
+      "coverage_gap": "1.0",
+      "scoring_product": "2 × 1.0 × 0.7 × 3 = 4.20",
+      "quick_win": false,
+      "effort": "1 week",
+      "agent": "mpl-verus-zero-panic",
+      "technical_name": "SystemTime + Duration (hierarchical_keyring.rs:702, :945; storm_tracking.rs:333, :680)",
+      "title": "A very large time setting can crash the keyring and cache code (BUG-01)",
+      "threats": [
+        "TM-MPL-018",
+        "TM-MPL-022",
+        "TM-MPL-023"
+      ],
+      "threats_note": "",
+      "bugs": [
+        "BUG-01"
+      ],
+      "level": "model_partly",
+      "proof": {
+        "file": "verus-proofs/t06_systemtime_add_overflow.rs",
+        "state": "current"
+      },
+      "card": {
+        "area": "The hierarchical keyring and the storm-tracking cache. Four places add a length of time (a TTL or a grace interval) to the current time.",
+        "risk": "The builders accept very large values such as Duration::MAX. The addition then overflows and the program panics (crashes) on first use. Two of the four places run while a cache lock is held. A panic there poisons the lock, and later calls on that cache return an internal error. This is BUG-01 (open, rated Low), linked to threats TM-MPL-018, 022 and 023.",
+        "checks_label": "What the proof checks",
+        "checks": "That below a stated safe size the addition cannot overflow. That for settings the builders accept, such as Duration::MAX, each of the four additions panics. That after a panic at the two locked places the lock is poisoned and later cache calls return an error (relative to an assumption about locks). That two proposed fixes work at model level.",
+        "not_shown": "It does not show the range of SystemTime on any platform. That range is assumed (A_TIME_RANGE). It does not cover builds that abort on panic, other sources of panic, or the shipped code. Which upper bound a fix should use is an owner decision.",
+        "result": "Verus reports 28 passing checks and 4 failing checks on a model of this code, not on the shipped code; the four failing checks are the intentional ones for BUG-01 (one per time addition), not a broken proof.",
+        "notes": [],
+        "expected_failure_explanation": "There are four failing checks, one for each place where time is added. Each states 'no crash for every setting the builder accepts'. That claim is false: for example Duration::MAX is accepted and makes the addition panic. Verus rejects the claim and the proof gives the counterexample. This is the evidence of BUG-01. The proof is not broken. The checks were left failing and were not weakened.",
+        "sources": [
+          {
+            "doc": "docs/mpl-verification-targets/01-threat-driven.md",
+            "locator": "id: VR-2026-T06",
+            "line": 517
+          },
+          {
+            "doc": "verus-proofs/README.md",
+            "locator": "## T06: `SystemTime + Duration` additions",
+            "line": 306
+          },
+          {
+            "doc": "docs/mpl-verification-targets.md",
+            "locator": "**BUG-01 confirmed formally (T06).**",
+            "line": 161
+          },
+          {
+            "doc": "docs/mpl-verification-targets.md",
+            "locator": "## 1. Combined ranked summary",
+            "line": 215
+          }
+        ]
+      },
+      "docs_proof_status": "Partly proved (model level, not the shipped code, under stated hypotheses): 28 verified, 4 errors"
+    },
+    {
+      "id": "T07",
+      "origin": "threat-driven",
+      "rank": 12,
+      "score": "3.84",
+      "coverage_gap": "0.8",
+      "scoring_product": "4 × 0.8 × 0.4 × 3 = 3.84",
+      "quick_win": false,
+      "effort": "1 week",
+      "agent": "mpl-verus-unsafe-ffi-safety",
+      "technical_name": "raw-AES wrap/unwrap + prim::aes_*",
+      "title": "The raw AES keyring uses a fresh IV and valid AES call arguments",
+      "threats": [
+        "TM-MPL-011"
+      ],
+      "threats_note": "",
+      "bugs": [
+        "BUG-07"
+      ],
+      "level": "not_started",
+      "proof": null,
+      "card": {
+        "area": "The raw AES keyring, where the user supplies the AES wrapping key, and the AES functions in the primitives crate (prim).",
+        "risk": "Reusing an IV with the same AES-GCM key breaks the encryption. This is threat TM-MPL-011. Wrong lengths passed to the AES calls would cause errors.",
+        "checks_label": "What a proof would check",
+        "checks": "That every built keyring has a wrapping key of the right length for its algorithm. That each wrap draws a new 12-byte IV with one random call and stores it nowhere else, and uses the same bytes as the AES nonce and in the key's provider info. That every AES call meets the length rules, so the only decrypt error is a failed authentication. On success the ciphertext is the data key length plus 16 bytes.",
+        "not_shown": "No proof exists yet, so nothing here is machine-checked. The docs note that plaintext left in a buffer when aes_encrypt fails (BUG-07a) is tracked under T26, not here.",
+        "result": "No proof exists yet, so there is no result.",
+        "notes": [],
+        "expected_failure_explanation": "",
+        "sources": [
+          {
+            "doc": "docs/mpl-verification-targets/01-threat-driven.md",
+            "locator": "id: VR-2026-T07",
+            "line": 573
+          },
+          {
+            "doc": "docs/mpl-verification-targets.md",
+            "locator": "## 1. Combined ranked summary",
+            "line": 215
+          }
+        ]
+      },
+      "docs_proof_status": "None yet"
+    },
+    {
+      "id": "T14",
+      "origin": "threat-driven",
+      "rank": 13,
+      "score": "3.78",
+      "coverage_gap": "0.6",
+      "scoring_product": "3 × 0.6 × 0.7 × 3 = 3.78",
+      "quick_win": false,
+      "effort": "1 week",
+      "agent": "mpl-verus-header-parsing-proofs",
+      "technical_name": "as_branch_key_materials (:1000), cache_entry_within_limits (:989), generate_partition_id (:626)",
+      "title": "The keyring cache holds only branch keys and honors the exact lifetime",
+      "threats": [
+        "TM-MPL-010"
+      ],
+      "threats_note": "",
+      "bugs": [
+        "BUG-09"
+      ],
+      "level": "not_started",
+      "proof": null,
+      "card": {
+        "area": "The hierarchical keyring's use of its cache: which entries it stores, when it considers an entry too old, and how it generates its default partition id.",
+        "risk": "A shared cache could hand back the wrong kind of entry, or an entry could be used past its lifetime. This is threat TM-MPL-010, rated High.",
+        "checks_label": "What a proof would check",
+        "checks": "That only branch-key entries are stored and that any other kind read back is an error. That an entry is used only if its age is at most the TTL, compared as exact durations. That the default partition id is 16 bytes with the version 4 UUID bits. That cached entries carry no suite or commitment state.",
+        "not_shown": "No proof exists yet, so nothing here is machine-checked. The docs state one consequence a proof would record: an entry whose creation time is in the future counts as fresh. Whether to reject that is an owner decision. The older one-second overshoot (BUG-09) is fixed.",
+        "result": "No proof exists yet, so there is no result.",
+        "notes": [],
+        "expected_failure_explanation": "",
+        "sources": [
+          {
+            "doc": "docs/mpl-verification-targets/01-threat-driven.md",
+            "locator": "id: VR-2026-T14",
+            "line": 621
+          },
+          {
+            "doc": "docs/mpl-verification-targets.md",
+            "locator": "## 1. Combined ranked summary",
+            "line": 215
+          }
+        ]
+      },
+      "docs_proof_status": "None yet"
+    },
+    {
+      "id": "T27",
+      "origin": "threat-driven",
+      "rank": 14,
+      "score": "3.78",
+      "coverage_gap": "0.9",
+      "scoring_product": "2 × 0.9 × 0.7 × 3 = 3.78",
+      "quick_win": false,
+      "effort": "1 week",
+      "agent": "mpl-verus-zero-panic",
+      "technical_name": "HierarchicalKeyring::on_decrypt EDK loop → try_decrypt_edk → decrypt_edk_at_version (hierarchical_keyring.rs:734, :751-772, :901)",
+      "title": "Key-store reads per decrypt are bounded (provisional)",
+      "threats": [
+        "TM-MPL-018",
+        "TM-MPL-025"
+      ],
+      "threats_note": "",
+      "bugs": [
+        "BUG-05"
+      ],
+      "level": "not_started",
+      "proof": null,
+      "card": {
+        "area": "The hierarchical keyring's decrypt loop and the storm-tracking cache. The sender of a message chooses how many encrypted data keys it holds and which key versions they name.",
+        "risk": "Each matching key can cost a cache lookup and, on a miss, a key-store read. With no cap and no cache for failed reads, a sender could drive many reads. This is threat TM-MPL-025, rated Medium and provisional: it is static reasoning and unconfirmed until a reproducer exists.",
+        "checks_label": "What a proof would check",
+        "checks": "That the loop runs at most as many times as there are keys, and makes at most as many cache lookups and key-store reads as there are matching keys. The docs expect this to pass. They also expect a second check to fail: no bound on reads exists that does not depend on the number of keys the sender chose.",
+        "not_shown": "No proof exists yet, so nothing here is machine-checked. The docs exclude wall-clock time, DynamoDB and KMS cost, and thread interleavings, which belong to T21. Which bound to add is an owner decision.",
+        "result": "No proof exists yet, so there is no result.",
+        "notes": [],
+        "expected_failure_explanation": "",
+        "sources": [
+          {
+            "doc": "docs/mpl-verification-targets/01-threat-driven.md",
+            "locator": "id: VR-2026-T27",
+            "line": 675
+          },
+          {
+            "doc": "docs/mpl-verification-targets.md",
+            "locator": "## 1. Combined ranked summary",
+            "line": 215
+          }
+        ]
+      },
+      "docs_proof_status": "None yet"
+    },
+    {
+      "id": "T26",
+      "origin": "threat-driven",
+      "rank": 15,
+      "score": "3.20",
+      "coverage_gap": "1.0",
+      "scoring_product": "2 × 1.0 × 0.4 × 4 = 3.20",
+      "quick_win": false,
+      "effort": "2 weeks",
+      "agent": "mpl-verus-unsafe-ffi-safety",
+      "technical_name": "transient / error-path secret buffers",
+      "title": "Secret key bytes are wiped on every exit path",
+      "threats": [
+        "TM-MPL-015"
+      ],
+      "threats_note": "",
+      "bugs": [
+        "BUG-07",
+        "BUG-10"
+      ],
+      "level": "not_started",
+      "proof": null,
+      "card": {
+        "area": "Temporary buffers that hold plaintext keys in the raw AES keyring, the AES helper, the branch key wrap, the key-store KMS code, the local cache and the ECDSA key generation.",
+        "risk": "A secret could stay in freed memory after an error or after a cache entry expires. Reading it needs access to the process memory. This is threat TM-MPL-015, rated Low. Related reports are BUG-07(a) and BUG-10.",
+        "checks_label": "What a proof would check",
+        "checks": "That every buffer that held plaintext key bytes is either moved into an owner that wipes on drop or wiped before it is dropped, on every exit path. The docs expect this to fail at five places (F1 to F5), among them the decrypt buffers, the AES helper on error, and the key generation error path.",
+        "not_shown": "No proof exists yet, so nothing here is machine-checked. The docs exclude copies made when a vector grows, allocator and operating-system residency, the cache holding branch keys for their lifetime by design, and aws-lc-rs internal buffers. Fixes change behavior and are owner decisions.",
+        "result": "No proof exists yet, so there is no result.",
+        "notes": [],
+        "expected_failure_explanation": "",
+        "sources": [
+          {
+            "doc": "docs/mpl-verification-targets/01-threat-driven.md",
+            "locator": "id: VR-2026-T26",
+            "line": 759
+          },
+          {
+            "doc": "docs/mpl-verification-targets.md",
+            "locator": "## 1. Combined ranked summary",
+            "line": 215
+          }
+        ]
+      },
+      "docs_proof_status": "None yet"
+    },
+    {
+      "id": "T10",
+      "origin": "threat-driven",
+      "rank": 16,
+      "score": "2.88",
+      "coverage_gap": "0.6",
+      "scoring_product": "3 × 0.6 × 0.4 × 4 = 2.88",
+      "quick_win": false,
+      "effort": "1 week",
+      "agent": "mpl-verus-header-parsing-proofs",
+      "technical_name": "compute_aad (:61), UUID codec",
+      "title": "Wrap and unwrap build the same authenticated data (AAD) in one fixed layout",
+      "threats": [
+        "TM-MPL-013"
+      ],
+      "threats_note": "",
+      "bugs": [],
+      "level": "not_started",
+      "proof": null,
+      "card": {
+        "area": "The branch key store's wrapping code. compute_aad builds the extra data that AES-GCM authenticates with each wrapped key, and a second helper converts the key version between text and 16 bytes.",
+        "risk": "If the authenticated data were built inconsistently, the binding of the wrapped key to its context would break. This is threat TM-MPL-013.",
+        "checks_label": "What a proof would check",
+        "checks": "That compute_aad succeeds exactly when the version is a 36-character UUID and the context can be written out. That the result is the label, the branch key id, the version bytes and the context bytes, and that for one branch key id different (version, context) pairs give different AAD. That converting a UUID to text and back returns the same 16 bytes.",
+        "not_shown": "No proof exists yet, so nothing here is machine-checked. The docs say a proof would show that different branch key ids can give the same AAD, because the layout has no length prefix. This is harmless, because each AAD is used only under its own branch key.",
+        "result": "No proof exists yet, so there is no result.",
+        "notes": [],
+        "expected_failure_explanation": "",
+        "sources": [
+          {
+            "doc": "docs/mpl-verification-targets/01-threat-driven.md",
+            "locator": "id: VR-2026-T10",
+            "line": 844
+          },
+          {
+            "doc": "docs/mpl-verification-targets.md",
+            "locator": "## 1. Combined ranked summary",
+            "line": 215
+          }
+        ]
+      },
+      "docs_proof_status": "None yet"
+    },
+    {
+      "id": "T11",
+      "origin": "threat-driven",
+      "rank": 17,
+      "score": "2.88",
+      "coverage_gap": "0.6",
+      "scoring_product": "3 × 0.6 × 0.4 × 4 = 2.88",
+      "quick_win": false,
+      "effort": "2 weeks",
+      "agent": "mpl-verus-header-parsing-proofs",
+      "technical_name": "aws_kms_mrk_match_for_decrypt (mrk_match.rs:24), is_arn_compatible",
+      "title": "Key ARN matching accepts only the intended keys",
+      "threats": [
+        "TM-MPL-004"
+      ],
+      "threats_note": "",
+      "bugs": [],
+      "level": "not_started",
+      "proof": null,
+      "card": {
+        "area": "The code that decides whether two KMS key ARNs (names of keys) refer to the same key, including multi-Region keys, which have copies in other Regions.",
+        "risk": "A match test that is too loose could accept a key that is not the configured one. This is threat TM-MPL-004.",
+        "checks_label": "What a proof would check",
+        "checks": "That the match is true exactly when neither input is an alias and the inputs are identical, or both are multi-Region key ARNs that differ at most in Region. That the match is symmetric. That the compatibility test is exact equality for a single key, the multi-Region match for a multi-Region key, and always true for the discovery modes.",
+        "not_shown": "No proof exists yet, so nothing here is machine-checked. The docs flag one thing to settle: the match splits an ARN into exactly 6 parts, while the ARN parser splits into at most 6. The proof would not settle which is intended.",
+        "result": "No proof exists yet, so there is no result.",
+        "notes": [],
+        "expected_failure_explanation": "",
+        "sources": [
+          {
+            "doc": "docs/mpl-verification-targets/01-threat-driven.md",
+            "locator": "id: VR-2026-T11",
+            "line": 884
+          },
+          {
+            "doc": "docs/mpl-verification-targets.md",
+            "locator": "## 1. Combined ranked summary",
+            "line": 215
+          }
+        ]
+      },
+      "docs_proof_status": "None yet"
+    },
+    {
+      "id": "T12",
+      "origin": "threat-driven",
+      "rank": 18,
+      "score": "2.88",
+      "coverage_gap": "0.6",
+      "scoring_product": "3 × 0.6 × 0.4 × 4 = 2.88",
+      "quick_win": false,
+      "effort": "1 week",
+      "agent": "mpl-verus-header-parsing-proofs",
+      "technical_name": "merge_reproduced_encryption_context (default_cmm.rs:273)",
+      "title": "Merging the encryption context on decrypt keeps what the sender bound",
+      "threats": [
+        "TM-MPL-017"
+      ],
+      "threats_note": "",
+      "bugs": [],
+      "level": "not_started",
+      "proof": null,
+      "card": {
+        "area": "The default materials manager, in the step that merges the encryption context stored in the message with a context the caller supplies when decrypting (merge_reproduced_encryption_context).",
+        "risk": "A merge that drops or changes a value would let decryption use a different context than encryption bound. This is threat TM-MPL-017.",
+        "checks_label": "What a proof would check",
+        "checks": "That with no supplied context the message context is used. Otherwise the merge succeeds exactly when both agree on every shared key, and then the result is the union. That the context passed to the keyring is exactly the merged map.",
+        "not_shown": "No proof exists yet, so nothing here is machine-checked. The docs say the later materials checks (target C07) stop a keyring from changing the context afterwards, but the merge is the only guard that the decrypt context equals the encrypt context.",
+        "result": "No proof exists yet, so there is no result.",
+        "notes": [],
+        "expected_failure_explanation": "",
+        "sources": [
+          {
+            "doc": "docs/mpl-verification-targets/01-threat-driven.md",
+            "locator": "id: VR-2026-T12",
+            "line": 923
+          },
+          {
+            "doc": "docs/mpl-verification-targets.md",
+            "locator": "## 1. Combined ranked summary",
+            "line": 215
+          }
+        ]
+      },
+      "docs_proof_status": "None yet"
+    },
+    {
+      "id": "C04",
+      "origin": "capability-driven",
+      "rank": 19,
+      "score": "2.80",
+      "coverage_gap": "0.5",
+      "scoring_product": "2 × 0.5 × 0.7 × 4 = 2.80",
+      "quick_win": false,
+      "effort": "1 week",
+      "agent": "mpl-verus-header-parsing-proofs",
+      "technical_name": "PDK length invariant (check_data_key_length, algorithm_suite.rs:547)",
+      "title": "A plaintext data key always has the length the suite requires",
+      "threats": [],
+      "threats_note": "none cited in the targets docs",
+      "bugs": [
+        "BUG-02"
+      ],
+      "level": "not_started",
+      "proof": null,
+      "card": {
+        "area": "The materials structures (encryption and decryption materials) and the keyrings that add a plaintext data key to them.",
+        "risk": "A data key of the wrong length could be accepted. This was BUG-02, now fixed. The targets doc cites no threat for this target.",
+        "checks_label": "What a proof would check",
+        "checks": "That any materials value that exists and holds a plaintext data key has the length the algorithm suite requires, because every constructor and every method that adds a key checks it. The docs expect this to pass.",
+        "not_shown": "No proof exists yet, so nothing here is machine-checked. The docs describe the value as regression-proofing a rule the ESDK relies on. They list no further limits.",
+        "result": "No proof exists yet, so there is no result.",
+        "notes": [],
+        "expected_failure_explanation": "",
+        "sources": [
+          {
+            "doc": "docs/mpl-verification-targets/02-capability-driven.md",
+            "locator": "id: VR-2026-C04",
+            "line": 362
+          },
+          {
+            "doc": "docs/mpl-verification-targets.md",
+            "locator": "## 1. Combined ranked summary",
+            "line": 215
+          }
+        ]
+      },
+      "docs_proof_status": "None yet"
+    },
+    {
+      "id": "T09",
+      "origin": "threat-driven",
+      "rank": 20,
+      "score": "2.56",
+      "coverage_gap": "0.4",
+      "scoring_product": "4 × 0.4 × 0.4 × 4 = 2.56",
+      "quick_win": false,
+      "effort": "1 week",
+      "agent": "mpl-verus-header-parsing-proofs",
+      "technical_name": "commitment policy + DefaultCmm gates",
+      "title": "Commitment-policy rules allow only the permitted algorithm suites",
+      "threats": [
+        "TM-MPL-006",
+        "TM-MPL-008"
+      ],
+      "threats_note": "",
+      "bugs": [],
+      "level": "not_started",
+      "proof": null,
+      "card": {
+        "area": "The commitment policy tables and the default materials manager (CMM) gates that decide which algorithm suite may be used to encrypt or decrypt.",
+        "risk": "A suite that does not commit to its key could be accepted where commitment is required, or a policy could be bypassed. These are threats TM-MPL-006 (suite downgrade) and TM-MPL-008 (non-committing suite).",
+        "checks_label": "What a proof would check",
+        "checks": "That commitment is reported for exactly two suites (0x0478 and 0x0578). That the allow tables match the spec for 3 policies and 11 suites, and that each policy's default suite is allowed for encryption. That encryption succeeds only with an allowed suite, and that decryption fails before any keyring is called when the suite is not allowed.",
+        "not_shown": "No proof exists yet, so nothing here is machine-checked. A custom CMM behind SharedCmm is not policy-checked inside the MPL: its send() checks only completeness. The proof would cover the default CMM gates. The default suite for the FORBID policy is a documented deviation from the spec and is still non-committing.",
+        "result": "No proof exists yet, so there is no result.",
+        "notes": [],
+        "expected_failure_explanation": "",
+        "sources": [
+          {
+            "doc": "docs/mpl-verification-targets/01-threat-driven.md",
+            "locator": "id: VR-2026-T09",
+            "line": 962
+          },
+          {
+            "doc": "docs/mpl-verification-targets.md",
+            "locator": "## 1. Combined ranked summary",
+            "line": 215
+          }
+        ]
+      },
+      "docs_proof_status": "None yet"
+    },
+    {
+      "id": "C05",
+      "origin": "capability-driven",
+      "rank": 21,
+      "score": "2.40",
+      "coverage_gap": "0.5",
+      "scoring_product": "3 × 0.5 × 0.4 × 4 = 2.40",
+      "quick_win": false,
+      "effort": "1 day",
+      "agent": "mpl-verus-header-parsing-proofs",
+      "technical_name": "suite table",
+      "title": "The algorithm suite table matches the spec",
+      "threats": [],
+      "threats_note": "none cited in the targets docs",
+      "bugs": [],
+      "level": "not_started",
+      "proof": null,
+      "card": {
+        "area": "The table of the 11 algorithm suites and the constants that depend on it, such as key lengths and signature sizes.",
+        "risk": "A wrong or duplicated entry in the table would give a suite the wrong parameters or confuse two suites. The targets doc cites no threat for this target and calls it cheap regression-proofing.",
+        "checks_label": "What a proof would check",
+        "checks": "That for all 11 suites the code equals the spec row. That suite ids are unique and never 00 00. That key lengths are 16, 24 or 32 bytes and equal the AES key length. That the key-derivation flag, the message format version and the suite data length agree. That verification key lengths equal the primitives' field sizes.",
+        "not_shown": "No proof exists yet, so nothing here is machine-checked. The docs list no further limits for this target.",
+        "result": "No proof exists yet, so there is no result.",
+        "notes": [],
+        "expected_failure_explanation": "",
+        "sources": [
+          {
+            "doc": "docs/mpl-verification-targets/02-capability-driven.md",
+            "locator": "id: VR-2026-C05",
+            "line": 417
+          },
+          {
+            "doc": "docs/mpl-verification-targets.md",
+            "locator": "## 1. Combined ranked summary",
+            "line": 215
+          }
+        ]
+      },
+      "docs_proof_status": "None yet"
+    },
+    {
+      "id": "T16",
+      "origin": "threat-driven",
+      "rank": 22,
+      "score": "2.24",
+      "coverage_gap": "0.7",
+      "scoring_product": "2 × 0.7 × 0.4 × 4 = 2.24",
+      "quick_win": false,
+      "effort": "1 week",
+      "agent": "mpl-verus-zero-panic",
+      "technical_name": "malformed-input panic sites",
+      "title": "Malformed input returns an error and never crashes",
+      "threats": [
+        "TM-MPL-023"
+      ],
+      "threats_note": "",
+      "bugs": [
+        "BUG-05"
+      ],
+      "level": "not_started",
+      "proof": null,
+      "card": {
+        "area": "The places in the library that cut slices, index arrays or call expect on data that can come from outside: encrypted data keys, encryption context bytes and ARN strings.",
+        "risk": "A malformed message or setting could cause a panic (a crash) instead of an error. This is threat TM-MPL-023. One listed place is BUG-05(a), a panic if ECDSA key generation fails.",
+        "checks_label": "What a proof would check",
+        "checks": "That for every input these paths return a result and never panic. Every slice or index is preceded by a guard that keeps it in range, every length conversion has exactly the right length, and offset arithmetic cannot overflow.",
+        "not_shown": "No proof exists yet, so nothing here is machine-checked. The docs list the storm-tracking expect calls as test-only and out of scope. BUG-05(b) is not a panic: a short encrypted data key costs one lookup before it is rejected.",
+        "result": "No proof exists yet, so there is no result.",
+        "notes": [],
+        "expected_failure_explanation": "",
+        "sources": [
+          {
+            "doc": "docs/mpl-verification-targets/01-threat-driven.md",
+            "locator": "id: VR-2026-T16",
+            "line": 1018
+          },
+          {
+            "doc": "docs/mpl-verification-targets.md",
+            "locator": "## 1. Combined ranked summary",
+            "line": 215
+          }
+        ]
+      },
+      "docs_proof_status": "None yet"
+    },
+    {
+      "id": "T21",
+      "origin": "threat-driven",
+      "rank": 23,
+      "score": "2.24",
+      "coverage_gap": "0.8",
+      "scoring_product": "2 × 0.8 × 0.7 × 2 = 2.24",
+      "quick_win": false,
+      "effort": "1 month",
+      "agent": "mpl-verus-zero-panic (+ concurrency)",
+      "technical_name": "cmc/storm_tracking.rs (build :606)",
+      "title": "The storm-tracking cache obeys its spec limits",
+      "threats": [
+        "TM-MPL-018"
+      ],
+      "threats_note": "",
+      "bugs": [
+        "BUG-01"
+      ],
+      "level": "not_started",
+      "proof": null,
+      "card": {
+        "area": "The storm-tracking cache. It limits how many callers fetch the same missing key at once, and it makes other callers wait for the first one.",
+        "risk": "A bad setting or a logic error could cause a stampede of requests, a stuck wait, a stuck in-flight mark or a panic. This is threat TM-MPL-018.",
+        "checks_label": "What a proof would check",
+        "checks": "That the builder enforces the spec ordering of its settings (the docs expect this to fail because the check regressed). That the number of in-flight keys stays within the fan-out limit. That a key already in flight gets a new leader only after its grace interval. That a put writes the cache before it clears the mark. That a poisoned lock gives an error. The docs also state three more expected failures: a failed leader's mark is never cleared, a waiter can have no deadline, and a panic can happen while the lock is held.",
+        "not_shown": "No proof exists yet, so nothing here is machine-checked. The docs exclude liveness under a real scheduler and the interleavings of threads. The last three checks come from static reasoning and have not been run.",
+        "result": "No proof exists yet, so there is no result.",
+        "notes": [],
+        "expected_failure_explanation": "",
+        "sources": [
+          {
+            "doc": "docs/mpl-verification-targets/01-threat-driven.md",
+            "locator": "id: VR-2026-T21",
+            "line": 1071
+          },
+          {
+            "doc": "docs/mpl-verification-targets.md",
+            "locator": "## 1. Combined ranked summary",
+            "line": 215
+          }
+        ]
+      },
+      "docs_proof_status": "None yet"
+    },
+    {
+      "id": "T15",
+      "origin": "threat-driven",
+      "rank": 24,
+      "score": "1.92",
+      "coverage_gap": "0.4",
+      "scoring_product": "3 × 0.4 × 0.4 × 4 = 1.92",
+      "quick_win": false,
+      "effort": "2 weeks",
+      "agent": "mpl-verus-header-parsing-proofs",
+      "technical_name": "EncryptionContext::{to_bytes, from_bytes} (:91, :145)",
+      "title": "An encryption context has exactly one valid byte form",
+      "threats": [
+        "TM-MPL-013",
+        "TM-MPL-017"
+      ],
+      "threats_note": "",
+      "bugs": [
+        "BUG-03"
+      ],
+      "level": "not_started",
+      "proof": null,
+      "card": {
+        "area": "The EncryptionContext type, in the code that turns a context into bytes (to_bytes) and bytes back into a context (from_bytes).",
+        "risk": "If two different byte strings decoded to the same context, the bytes could be changed without notice. This was BUG-03, now fixed. The threats are TM-MPL-013 and TM-MPL-017.",
+        "checks_label": "What a proof would check",
+        "checks": "That to_bytes succeeds exactly when the context has at most 65535 entries and every key and value is at most 65535 bytes. That it writes the sorted spec layout, that different contexts give different bytes, and that reading the bytes back returns the context. That any bytes that from_bytes accepts are exactly the canonical form.",
+        "not_shown": "No proof exists yet, so nothing here is machine-checked. The docs expect this proof to succeed because BUG-03 is fixed. It would not cover the ESDK header parser, which has its own code.",
+        "result": "No proof exists yet, so there is no result.",
+        "notes": [],
+        "expected_failure_explanation": "",
+        "sources": [
+          {
+            "doc": "docs/mpl-verification-targets/01-threat-driven.md",
+            "locator": "id: VR-2026-T15",
+            "line": 1166
+          },
+          {
+            "doc": "docs/mpl-bug-reports/BUG-03-encryption-context-deserialize-accepts-unsorted.md",
+            "locator": "Severity: Low. No production caller",
+            "line": 9
+          },
+          {
+            "doc": "docs/mpl-verification-targets.md",
+            "locator": "## 1. Combined ranked summary",
+            "line": 215
+          }
+        ]
+      },
+      "docs_proof_status": "None yet"
+    },
+    {
+      "id": "T17",
+      "origin": "threat-driven",
+      "rank": 25,
+      "score": "1.92",
+      "coverage_gap": "0.8",
+      "scoring_product": "3 × 0.8 × 0.4 × 2 = 1.92",
+      "quick_win": false,
+      "effort": "1 week",
+      "agent": "mpl-verus-header-parsing-proofs",
+      "technical_name": "Discovery / MRDiscovery ARN (kms_ops.rs:96-102, :118, :144)",
+      "title": "Discovery modes rewrite the Region only for multi-Region keys (BUG-04)",
+      "threats": [
+        "TM-MPL-007"
+      ],
+      "threats_note": "",
+      "bugs": [
+        "BUG-04"
+      ],
+      "level": "not_started",
+      "proof": null,
+      "card": {
+        "area": "The branch key store, in the two discovery modes that accept the key named in a record instead of one configured key.",
+        "risk": "In MRDiscovery mode the code rewrites the Region of every non-alias key ARN, including single-Region keys, where the spec says multi-Region keys only. KMS then rejects the request, so the request is refused (it fails closed). This is BUG-04 (open, rated Low) and threat TM-MPL-007.",
+        "checks_label": "What a proof would check",
+        "checks": "That Discovery mode accepts the record's ARN exactly when it parses and is not an alias. That MRDiscovery rewrites the Region only for multi-Region key ARNs. The docs expect the second check to fail today and to pass once a multi-Region test is added.",
+        "not_shown": "No proof exists yet, so nothing here is machine-checked. The docs list no further limits for this target.",
+        "result": "No proof exists yet, so there is no result.",
+        "notes": [],
+        "expected_failure_explanation": "",
+        "sources": [
+          {
+            "doc": "docs/mpl-verification-targets/01-threat-driven.md",
+            "locator": "id: VR-2026-T17",
+            "line": 1209
+          },
+          {
+            "doc": "docs/mpl-verification-targets.md",
+            "locator": "## 1. Combined ranked summary",
+            "line": 215
+          }
+        ]
+      },
+      "docs_proof_status": "None yet"
+    },
+    {
+      "id": "T18",
+      "origin": "threat-driven",
+      "rank": 26,
+      "score": "1.92",
+      "coverage_gap": "0.8",
+      "scoring_product": "2 × 0.8 × 0.4 × 3 = 1.92",
+      "quick_win": false,
+      "effort": "1 week",
+      "agent": "mpl-verus-header-parsing-proofs",
+      "technical_name": "version_key EC derivation (branch_key_store.rs:641, :706-722)",
+      "title": "Rotating a branch key keeps the record's context",
+      "threats": [
+        "TM-MPL-016"
+      ],
+      "threats_note": "",
+      "bugs": [],
+      "level": "not_started",
+      "proof": null,
+      "card": {
+        "area": "The branch key store, in the step that creates a new key version (version_key). It builds the contexts for the new decrypt-only record and the new active record.",
+        "risk": "If rotation dropped or changed a context value, the new records would not match the old key's identity. The threat in the threat model is TM-MPL-016 (version race).",
+        "checks_label": "What a proof would check",
+        "checks": "That the new decrypt-only context is the old one with the version and creation time changed. That the new active context is that one with the active type. That both keep the branch key id, KMS ARN, hierarchy version, table name and every custom entry, and that they agree with the shared builder functions.",
+        "not_shown": "No proof exists yet, so nothing here is machine-checked. DynamoDB transaction behavior is excluded. The docs note that version_key still builds the new contexts inline.",
+        "result": "No proof exists yet, so there is no result.",
+        "notes": [],
+        "expected_failure_explanation": "",
+        "sources": [
+          {
+            "doc": "docs/mpl-verification-targets/01-threat-driven.md",
+            "locator": "id: VR-2026-T18",
+            "line": 1253
+          },
+          {
+            "doc": "docs/mpl-verification-targets.md",
+            "locator": "## 1. Combined ranked summary",
+            "line": 215
+          }
+        ]
+      },
+      "docs_proof_status": "None yet"
+    },
+    {
+      "id": "T19",
+      "origin": "threat-driven",
+      "rank": 27,
+      "score": "1.92",
+      "coverage_gap": "0.6",
+      "scoring_product": "2 × 0.6 × 0.4 × 4 = 1.92",
+      "quick_win": false,
+      "effort": "1 week",
+      "agent": "mpl-verus-header-parsing-proofs",
+      "technical_name": "hierarchical bkid binding",
+      "title": "The hierarchical keyring tries only encrypted data keys that name the right branch key",
+      "threats": [
+        "TM-MPL-003"
+      ],
+      "threats_note": "",
+      "bugs": [
+        "BUG-06"
+      ],
+      "level": "not_started",
+      "proof": null,
+      "card": {
+        "area": "The hierarchical keyring, in the step that picks the branch key id (a fixed one, or one from a supplier) and filters encrypted data keys on decrypt.",
+        "risk": "A malicious or message-driven supplier could return a branch key id chosen by an attacker. This is threat TM-MPL-003.",
+        "checks_label": "What a proof would check",
+        "checks": "That with a fixed id the resolved id is exactly that id. That on decrypt a key is tried only if its provider id and provider info match the resolved id. That the cache and key-store query use that id and the version bytes from the key. That encrypt writes the resolved id as provider info.",
+        "not_shown": "No proof exists yet, so nothing here is machine-checked. It would show the id is bound consistently. It would not show the id is one the application should serve. Which tenant ids may be decrypted is the application's job. The returned materials are not compared with the request, because decrypt fails closed through the AAD.",
+        "result": "No proof exists yet, so there is no result.",
+        "notes": [],
+        "expected_failure_explanation": "",
+        "sources": [
+          {
+            "doc": "docs/mpl-verification-targets/01-threat-driven.md",
+            "locator": "id: VR-2026-T19",
+            "line": 1294
+          },
+          {
+            "doc": "docs/mpl-verification-targets.md",
+            "locator": "## 1. Combined ranked summary",
+            "line": 215
+          }
+        ]
+      },
+      "docs_proof_status": "None yet"
+    },
+    {
+      "id": "T20",
+      "origin": "threat-driven",
+      "rank": 28,
+      "score": "1.68",
+      "coverage_gap": "0.7",
+      "scoring_product": "2 × 0.7 × 0.4 × 3 = 1.68",
+      "quick_win": false,
+      "effort": "1 week",
+      "agent": "mpl-verus-header-parsing-proofs",
+      "technical_name": "raw-AES provider-info codec (:129, :191)",
+      "title": "The raw AES provider-info format round-trips and parsing is total",
+      "threats": [
+        "TM-MPL-001",
+        "TM-MPL-011",
+        "TM-MPL-023"
+      ],
+      "threats_note": "",
+      "bugs": [],
+      "level": "not_started",
+      "proof": null,
+      "card": {
+        "area": "The raw AES keyring's small byte format that carries the IV inside the provider info of an encrypted data key.",
+        "risk": "A malformed or forged provider info could cause a parse error or a panic, or a wrong IV. The threats are TM-MPL-023, TM-MPL-011 and TM-MPL-001.",
+        "checks_label": "What a proof would check",
+        "checks": "That the writer produces the key name, then 128 and 12 as 4-byte numbers, then the IV. That the parser returns the IV exactly when the provider id equals the namespace and the info has that shape for a 12-byte IV. That writing and parsing round-trip and that parsing never fails with a crash.",
+        "not_shown": "No proof exists yet, so nothing here is machine-checked. The docs describe this as the parser half of T07 and list no further limits.",
+        "result": "No proof exists yet, so there is no result.",
+        "notes": [],
+        "expected_failure_explanation": "",
+        "sources": [
+          {
+            "doc": "docs/mpl-verification-targets/01-threat-driven.md",
+            "locator": "id: VR-2026-T20",
+            "line": 1334
+          },
+          {
+            "doc": "docs/mpl-verification-targets.md",
+            "locator": "## 1. Combined ranked summary",
+            "line": 215
+          }
+        ]
+      },
+      "docs_proof_status": "None yet"
+    },
+    {
+      "id": "T22",
+      "origin": "threat-driven",
+      "rank": 29,
+      "score": "1.60",
+      "coverage_gap": "0.5",
+      "scoring_product": "2 × 0.5 × 0.4 × 4 = 1.60",
+      "quick_win": false,
+      "effort": "1 week",
+      "agent": "mpl-verus-unsafe-ffi-safety",
+      "technical_name": "Debug + error DataKeyInfo",
+      "title": "Debug output and error details never include secret bytes",
+      "threats": [
+        "TM-MPL-021"
+      ],
+      "threats_note": "",
+      "bugs": [],
+      "level": "not_started",
+      "proof": null,
+      "card": {
+        "area": "The Debug formatting of key types, materials, keyrings and errors, and the data-key information attached to errors.",
+        "risk": "Secret bytes could leak into logs or error messages. This is threat TM-MPL-021.",
+        "checks_label": "What a proof would check",
+        "checks": "That every Debug output, and every error's attached key information, depends only on non-secret fields and never on secret bytes or encrypted-key ciphertext.",
+        "not_shown": "No proof exists yet, so nothing here is machine-checked. Errors keep the provider id and provider info of the message's encrypted data keys. These are not secret, but they come from the message sender and can contain a KMS key ARN with an account id. The proof does not claim that it is appropriate to log or to return to a sender.",
+        "result": "No proof exists yet, so there is no result.",
+        "notes": [],
+        "expected_failure_explanation": "",
+        "sources": [
+          {
+            "doc": "docs/mpl-verification-targets/01-threat-driven.md",
+            "locator": "id: VR-2026-T22",
+            "line": 1373
+          },
+          {
+            "doc": "docs/mpl-verification-targets.md",
+            "locator": "## 1. Combined ranked summary",
+            "line": 215
+          }
+        ]
+      },
+      "docs_proof_status": "None yet"
+    },
+    {
+      "id": "T25",
+      "origin": "threat-driven",
+      "rank": 30,
+      "score": "1.44",
+      "coverage_gap": "0.6",
+      "scoring_product": "3 × 0.6 × 0.4 × 2 = 1.44",
+      "quick_win": false,
+      "effort": "1 week",
+      "agent": "mpl-verus-unsafe-ffi-safety",
+      "technical_name": "C++ shim handles (esdk/shims/aws-esdk-cpp/src/lib.rs:715, :728, :1570-1571, :1661; into_keyring_handle :2059)",
+      "title": "C++ shim handles are checked before they are used",
+      "threats": [
+        "TM-MPL-024"
+      ],
+      "threats_note": "",
+      "bugs": [],
+      "level": "not_started",
+      "proof": null,
+      "card": {
+        "area": "The C++ shim (esdk/shims/aws-esdk-cpp), which lies outside mpl/ and prim/. It passes raw pointers from C++ to MPL objects and is the only unsafe code that reaches MPL key material.",
+        "risk": "A dangling, forged or doubly owned pointer from C++ would cause undefined behavior. This is threat TM-MPL-024.",
+        "checks_label": "What a proof would check",
+        "checks": "The part Rust can check: every use of a raw pointer is preceded by a null check, a null required handle gives a validation error, a null optional handle gives none, and no handle is used after the shim frees it. Also, into_keyring_handle returns a non-null pointer to a new box that nothing else aliases.",
+        "not_shown": "No proof exists yet, so nothing here is machine-checked. Whether a non-null pointer from C++ is valid is a caller obligation and is trusted, not proved. The C++ adopt function has no null, type or ownership check, and no Rust-side proof can fix that. A hardening change is an owner decision.",
+        "result": "No proof exists yet, so there is no result.",
+        "notes": [],
+        "expected_failure_explanation": "",
+        "sources": [
+          {
+            "doc": "docs/mpl-verification-targets/01-threat-driven.md",
+            "locator": "id: VR-2026-T25",
+            "line": 1421
+          },
+          {
+            "doc": "docs/mpl-verification-targets.md",
+            "locator": "## 1. Combined ranked summary",
+            "line": 215
+          }
+        ]
+      },
+      "docs_proof_status": "None yet"
+    },
+    {
+      "id": "T23",
+      "origin": "threat-driven",
+      "rank": 31,
+      "score": "1.26",
+      "coverage_gap": "0.6",
+      "scoring_product": "1 × 0.6 × 0.7 × 3 = 1.26",
+      "quick_win": false,
+      "effort": "2 weeks",
+      "agent": "mpl-verus-zero-panic",
+      "technical_name": "LocalCmc (cmc/local.rs)",
+      "title": "The local cache respects its capacity and expiry",
+      "threats": [
+        "TM-MPL-022"
+      ],
+      "threats_note": "",
+      "bugs": [],
+      "level": "not_started",
+      "proof": null,
+      "card": {
+        "area": "The local in-memory cache (LocalCmc) that holds cached branch keys.",
+        "risk": "A cache that exceeds its capacity or returns expired entries could force many requests to KMS. This is threat TM-MPL-022.",
+        "checks_label": "What a proof would check",
+        "checks": "That the cache is absent exactly when its capacity is zero, and otherwise never holds more than its capacity after any operation. That a read never returns an expired entry. That pruning scans at most the tail size or the number of entries. That a poisoned lock is an error.",
+        "not_shown": "No proof exists yet, so nothing here is machine-checked. The docs note that this is the base of the storm-tracking cache (T21) and list no further limits.",
+        "result": "No proof exists yet, so there is no result.",
+        "notes": [],
+        "expected_failure_explanation": "",
+        "sources": [
+          {
+            "doc": "docs/mpl-verification-targets/01-threat-driven.md",
+            "locator": "id: VR-2026-T23",
+            "line": 1498
+          },
+          {
+            "doc": "docs/mpl-verification-targets.md",
+            "locator": "## 1. Combined ranked summary",
+            "line": 215
+          }
+        ]
+      },
+      "docs_proof_status": "None yet"
+    },
+    {
+      "id": "T24",
+      "origin": "threat-driven",
+      "rank": 32,
+      "score": "1.20",
+      "coverage_gap": "0.5",
+      "scoring_product": "2 × 0.5 × 0.4 × 3 = 1.20",
+      "quick_win": false,
+      "effort": "1 day",
+      "agent": "mpl-verus-header-parsing-proofs",
+      "technical_name": "RawAesKeyringBuilder::build (:350, check :360)",
+      "title": "Raw AES keyrings cannot use the reserved aws-kms name",
+      "threats": [
+        "TM-MPL-001"
+      ],
+      "threats_note": "",
+      "bugs": [],
+      "level": "not_started",
+      "proof": null,
+      "card": {
+        "area": "The builder of the raw AES keyring, which takes a key namespace chosen by the user.",
+        "risk": "A raw AES keyring could write encrypted data keys that claim to come from an AWS KMS keyring. This is threat TM-MPL-001.",
+        "checks_label": "What a proof would check",
+        "checks": "That build fails for every namespace that starts with 'aws-kms', so no built keyring and no encrypted data key it writes has such a provider id.",
+        "not_shown": "No proof exists yet, so nothing here is machine-checked. The docs call this target trivial and well tested. They keep it so that the threat has a proof-grade closure, and they list no further limits.",
+        "result": "No proof exists yet, so there is no result.",
+        "notes": [],
+        "expected_failure_explanation": "",
+        "sources": [
+          {
+            "doc": "docs/mpl-verification-targets/01-threat-driven.md",
+            "locator": "id: VR-2026-T24",
+            "line": 1535
+          },
+          {
+            "doc": "docs/mpl-verification-targets.md",
+            "locator": "## 1. Combined ranked summary",
+            "line": 215
+          }
+        ]
+      },
+      "docs_proof_status": "None yet"
+    },
+    {
+      "id": "C08",
+      "origin": "capability-driven",
+      "rank": 33,
+      "score": "0.96",
+      "coverage_gap": "0.6",
+      "scoring_product": "2 × 0.6 × 0.4 × 2 = 0.96",
+      "quick_win": false,
+      "effort": "1 day",
+      "agent": "mpl-verus-zero-panic",
+      "technical_name": "CacheEntry::record_use (entry.rs:206) + update_usage_metadata",
+      "title": "Cache usage counters never wrap around",
+      "threats": [],
+      "threats_note": "none cited in the targets docs",
+      "bugs": [],
+      "level": "not_started",
+      "proof": null,
+      "card": {
+        "area": "The cache entry's usage counters (CacheEntry::record_use) and the cache's update_usage_metadata call.",
+        "risk": "A counter that wrapped would let a caching materials manager exceed its usage limits. No component in the repository calls this today, so the risk is for a future caching manager. The targets doc cites no threat for this target.",
+        "checks_label": "What a proof would check",
+        "checks": "That record_use either returns true and adds exactly 1 message and the given bytes, or returns false and leaves both counters unchanged. That neither counter wraps. That both change under one lock. That update_usage_metadata deletes the entry exactly when record_use returns false.",
+        "not_shown": "No proof exists yet, so nothing here is machine-checked. The docs give this a low priority because nothing in the repository calls update_usage_metadata, and they list no further limits.",
+        "result": "No proof exists yet, so there is no result.",
+        "notes": [],
+        "expected_failure_explanation": "",
+        "sources": [
+          {
+            "doc": "docs/mpl-verification-targets/02-capability-driven.md",
+            "locator": "id: VR-2026-C08",
+            "line": 457
+          },
+          {
+            "doc": "docs/mpl-verification-targets.md",
+            "locator": "## 1. Combined ranked summary",
+            "line": 215
+          }
+        ]
+      },
+      "docs_proof_status": "None yet"
+    }
+  ],
+  "proofs": [
+    {
+      "target": "T01",
+      "file": "verus-proofs/t01_keystore_auth_ec.rs",
+      "state": "current",
+      "file_sha256_now": "824216521e4359431dbd44088b1a940ec84978796717c7edc6e2f34e235184f1",
+      "file_sha256_at_run": "824216521e4359431dbd44088b1a940ec84978796717c7edc6e2f34e235184f1",
+      "run_at": "2026-11-19T21:13:07Z",
+      "verified": 52,
+      "errors": 0,
+      "exit_code": 0,
+      "verus_output_line": "verification results:: 52 verified, 0 errors",
+      "failing_obligations": [],
+      "expected_failures": [],
+      "unexpected_failures": [],
+      "expected_failures_not_seen": [],
+      "docs_result_line": "verification results:: 52 verified, 0 errors",
+      "docs_match_run": true,
+      "level": "model_proved",
+      "failure_explanation": "",
+      "hypotheses": [
+        {
+          "name": "A_KMS",
+          "kind": "assumed",
+          "text": "KMS binds the context given at write time and accepts a decrypt only for an equal context."
+        },
+        {
+          "name": "A_DDB",
+          "kind": "assumed",
+          "text": "DynamoDB returns exactly the attributes that were written."
+        },
+        {
+          "name": "A_NUM",
+          "kind": "assumed",
+          "text": "The hierarchy-version value is written as a canonical number."
+        },
+        {
+          "name": "A_NAME",
+          "kind": "assumed",
+          "text": "The reader and the writer use the same key store name."
+        },
+        {
+          "name": "A_ITER",
+          "kind": "assumed",
+          "text": "Walking through a map visits each key exactly once. This holds for the map type used (BTreeMap), but Verus cannot check it."
+        },
+        {
+          "name": "A_ARN",
+          "kind": "assumed",
+          "text": "The record lookup returns the record for the requested id and type. ARN resolution, grant tokens and other KMS errors are not modeled."
+        },
+        {
+          "name": "A_STR",
+          "kind": "assumed",
+          "text": "Strings behave as sequences of characters in the model. Byte and character splits agree because the relevant text is ASCII."
+        },
+        {
+          "name": "A_BLD",
+          "kind": "assumed",
+          "text": "The builder for branch key material behaves as the T02 model says."
+        },
+        {
+          "name": "H_WF",
+          "kind": "premise",
+          "text": "The written context has a table name and no enc entry. This is proved for every context the builders produce."
+        },
+        {
+          "name": "H_ENUM",
+          "kind": "premise",
+          "text": "The loops visit every entry of the maps. It can be satisfied."
+        },
+        {
+          "name": "H_SAME_EC",
+          "kind": "code_reading",
+          "text": "One local context goes to both the KMS call and the stored record. A later edit that breaks this would not be detected."
+        }
+      ]
+    },
+    {
+      "target": "T02",
+      "file": "verus-proofs/t02_record_reconstruction.rs",
+      "state": "current",
+      "file_sha256_now": "241f1cd133aa408d80214282fd7738447e2ded553bbea53cef9e8108224ba191",
+      "file_sha256_at_run": "241f1cd133aa408d80214282fd7738447e2ded553bbea53cef9e8108224ba191",
+      "run_at": "2026-11-19T21:13:08Z",
+      "verified": 21,
+      "errors": 1,
+      "exit_code": 1,
+      "verus_output_line": "verification results:: 21 verified, 1 errors",
+      "failing_obligations": [
+        {
+          "function": "lemma_g1_spec_soundness_FAILS",
+          "line": 771
+        }
+      ],
+      "expected_failures": [
+        "lemma_g1_spec_soundness_FAILS"
+      ],
+      "unexpected_failures": [],
+      "expected_failures_not_seen": [],
+      "docs_result_line": "verification results:: 21 verified, 1 errors",
+      "docs_match_run": true,
+      "level": "model_partly",
+      "failure_explanation": "The failing check states the spec rule that a record must contain create-time and hierarchy-version before it is accepted. The code does not enforce this rule, so Verus rejects the check. That rejection is the evidence of gap G1: the code accepts records that the spec says to reject. The proof is not broken. The check was left failing and was not weakened.",
+      "hypotheses": [
+        {
+          "name": "A_STR",
+          "kind": "assumed",
+          "text": "Strings behave as sequences of characters in the model. Byte and character splits agree because the relevant text is ASCII."
+        }
+      ]
+    },
+    {
+      "target": "C01",
+      "file": "verus-proofs/c01_ec_roundtrip.rs",
+      "state": "current",
+      "file_sha256_now": "d266597083141d47ebcdb19bd9a0798cdadac455ce99969391039ef0e7665c94",
+      "file_sha256_at_run": "d266597083141d47ebcdb19bd9a0798cdadac455ce99969391039ef0e7665c94",
+      "run_at": "2026-11-19T21:13:05Z",
+      "verified": 40,
+      "errors": 0,
+      "exit_code": 0,
+      "verus_output_line": "verification results:: 40 verified, 0 errors",
+      "failing_obligations": [],
+      "expected_failures": [],
+      "unexpected_failures": [],
+      "expected_failures_not_seen": [],
+      "docs_result_line": "verification results:: 40 verified, 0 errors",
+      "docs_match_run": true,
+      "level": "model_proved",
+      "failure_explanation": "",
+      "hypotheses": [
+        {
+          "name": "A_ITER",
+          "kind": "assumed",
+          "text": "Walking through a map visits each key exactly once. This holds for the map type used (BTreeMap), but Verus cannot check it."
+        },
+        {
+          "name": "A_STR",
+          "kind": "assumed",
+          "text": "Strings behave as sequences of characters in the model. Byte and character splits agree because the relevant text is ASCII."
+        },
+        {
+          "name": "A_BLD",
+          "kind": "assumed",
+          "text": "The builder for branch key material behaves as the T02 model says."
+        },
+        {
+          "name": "A_DDB",
+          "kind": "assumed",
+          "text": "DynamoDB returns exactly the attributes that were written."
+        },
+        {
+          "name": "A_NAME",
+          "kind": "assumed",
+          "text": "The reader and the writer use the same key store name."
+        }
+      ]
+    },
+    {
+      "target": "C02",
+      "file": "verus-proofs/c02_sign_fixed_len.rs",
+      "state": "current",
+      "file_sha256_now": "1cee411299d29a1ec729745da81c83ca002fbc01052ec0def1707ce12464e820",
+      "file_sha256_at_run": "1cee411299d29a1ec729745da81c83ca002fbc01052ec0def1707ce12464e820",
+      "run_at": "2026-11-19T21:13:06Z",
+      "verified": 21,
+      "errors": 0,
+      "exit_code": 0,
+      "verus_output_line": "verification results:: 21 verified, 0 errors",
+      "failing_obligations": [],
+      "expected_failures": [],
+      "unexpected_failures": [],
+      "expected_failures_not_seen": [],
+      "docs_result_line": "verification results:: 21 verified, 0 errors",
+      "docs_match_run": true,
+      "level": "model_proved",
+      "failure_explanation": "",
+      "hypotheses": [
+        {
+          "name": "A1",
+          "kind": "assumed",
+          "text": "Verus's own spec for copy_from_slice: it needs equal lengths and writes the whole target."
+        },
+        {
+          "name": "A3",
+          "kind": "assumed",
+          "text": "The signing step is abstract. Nothing is assumed about its randomness, so the chance of using up all attempts is not covered."
+        },
+        {
+          "name": "A4",
+          "kind": "assumed",
+          "text": "The calls into aws-lc-rs have no stated contract. That none of them panics or hangs is assumed."
+        },
+        {
+          "name": "A5",
+          "kind": "assumed",
+          "text": "A ghost log counts calls. It is only as good as the manual check that the shipped loop calls the signer once per attempt."
+        }
+      ]
+    },
+    {
+      "target": "T03",
+      "file": "verus-proofs/t03_resolve_pinned_arn.rs",
+      "state": "current",
+      "file_sha256_now": "7508a1090fe6902a9eca7bcf19c754a3a0228acf1a7190c753090899c6f15795",
+      "file_sha256_at_run": "7508a1090fe6902a9eca7bcf19c754a3a0228acf1a7190c753090899c6f15795",
+      "run_at": "2026-11-19T21:13:09Z",
+      "verified": 39,
+      "errors": 0,
+      "exit_code": 0,
+      "verus_output_line": "verification results:: 39 verified, 0 errors",
+      "failing_obligations": [],
+      "expected_failures": [],
+      "unexpected_failures": [],
+      "expected_failures_not_seen": [],
+      "docs_result_line": "verification results:: 39 verified, 0 errors",
+      "docs_match_run": true,
+      "level": "model_proved",
+      "failure_explanation": "",
+      "hypotheses": [
+        {
+          "name": "H_ORACLE",
+          "kind": "code_reading",
+          "text": "The shipped ARN-compatibility function equals the modeled one. A person audited this."
+        },
+        {
+          "name": "H_BUILD",
+          "kind": "code_reading",
+          "text": "The configuration used at call time is the one that build() checked."
+        },
+        {
+          "name": "H_CALLER",
+          "kind": "code_reading",
+          "text": "The callers pass only the returned value as the KMS key id. A person read this."
+        },
+        {
+          "name": "A_STR",
+          "kind": "assumed",
+          "text": "Strings behave as sequences of characters in the model. Byte and character splits agree because the relevant text is ASCII."
+        },
+        {
+          "name": "A_MR",
+          "kind": "assumed",
+          "text": "The code's own test for a multi-Region key ARN is used as the definition. It is looser than the spec."
+        }
+      ]
+    },
+    {
+      "target": "T04",
+      "file": "verus-proofs/t04_branch_key_wrap.rs",
+      "state": "current",
+      "file_sha256_now": "9bef3d8ae2d91bd358557c170d1c11dd8a2725468235469e860ebe864fa2c0ab",
+      "file_sha256_at_run": "9bef3d8ae2d91bd358557c170d1c11dd8a2725468235469e860ebe864fa2c0ab",
+      "run_at": "2026-11-19T21:13:10Z",
+      "verified": 45,
+      "errors": 0,
+      "exit_code": 0,
+      "verus_output_line": "verification results:: 45 verified, 0 errors",
+      "failing_obligations": [],
+      "expected_failures": [],
+      "unexpected_failures": [],
+      "expected_failures_not_seen": [],
+      "docs_result_line": "verification results:: 45 verified, 0 errors",
+      "docs_match_run": true,
+      "level": "model_proved",
+      "failure_explanation": "",
+      "hypotheses": [
+        {
+          "name": "A_RNG",
+          "kind": "assumed",
+          "text": "Each call to the random generator fills the whole buffer or fails. Nothing is assumed about the values."
+        },
+        {
+          "name": "A_KDF",
+          "kind": "assumed",
+          "text": "The key-derivation function (KBKDF) is left unspecified. The proof does not say what it computes."
+        },
+        {
+          "name": "A_AES",
+          "kind": "assumed",
+          "text": "A successful AES-GCM encryption grows the output by the message length plus 16 bytes. Nothing else about AES-GCM is assumed."
+        },
+        {
+          "name": "A_STD",
+          "kind": "assumed",
+          "text": "Standard Rust byte conversions behave as documented."
+        },
+        {
+          "name": "A_VSTD",
+          "kind": "assumed",
+          "text": "Verus's standard-library specs for vectors, slices and arrays are correct."
+        },
+        {
+          "name": "A_TYP",
+          "kind": "assumed",
+          "text": "Rust array types fix the lengths."
+        },
+        {
+          "name": "A_ALLOC",
+          "kind": "assumed",
+          "text": "Allocating the output vector succeeds."
+        },
+        {
+          "name": "H_RNG_DIFFERS",
+          "kind": "premise",
+          "text": "Two calls draw different salts or IVs. It is only the 'if' part of one result and is never established."
+        },
+        {
+          "name": "A_RNG_FRESH",
+          "kind": "not_assumed",
+          "text": "That random draws are uniform and independent. It is not assumed, not used and not proved."
+        },
+        {
+          "name": "H_MODEL_MATCH",
+          "kind": "code_reading",
+          "text": "The model equals the shipped code at the lines named in the proof file header. A person checked this by reading."
+        },
+        {
+          "name": "H_AAD_PURE",
+          "kind": "code_reading",
+          "text": "The helpers that build the AAD and the version bytes are pure functions."
+        },
+        {
+          "name": "H_NO_STATE",
+          "kind": "code_reading",
+          "text": "The wrap function keeps no state between calls."
+        },
+        {
+          "name": "H_WIPE",
+          "kind": "code_reading",
+          "text": "The derived key is wiped when dropped. Verus cannot model this, so nothing is proved about wiping."
+        }
+      ]
+    },
+    {
+      "target": "T13",
+      "file": "verus-proofs/t13_cache_identifier.rs",
+      "state": "current",
+      "file_sha256_now": "ee93828c47731a2c2bef1c020a53cb9e089f2c8cdde86d97cd541ab534d36261",
+      "file_sha256_at_run": "ee93828c47731a2c2bef1c020a53cb9e089f2c8cdde86d97cd541ab534d36261",
+      "run_at": "2026-11-19T21:13:13Z",
+      "verified": 42,
+      "errors": 1,
+      "exit_code": 1,
+      "verus_output_line": "verification results:: 42 verified, 1 errors",
+      "failing_obligations": [
+        {
+          "function": "lemma_bug06_injectivity_without_nul_precondition_EXPECTED_FAIL",
+          "line": 1019
+        }
+      ],
+      "expected_failures": [
+        "lemma_bug06_injectivity_without_nul_precondition_EXPECTED_FAIL"
+      ],
+      "unexpected_failures": [],
+      "expected_failures_not_seen": [],
+      "docs_result_line": "verification results:: 42 verified, 1 errors",
+      "docs_match_run": true,
+      "level": "model_partly",
+      "failure_explanation": "The failing check states that different settings always give different cache identifiers, for every input. That claim is false when a field contains a zero byte, and the proof contains concrete examples. Verus rejects the claim, and a companion lemma proves the claim false, not only unproved. This is the evidence of BUG-06. The proof is not broken. The check was left failing and was not weakened.",
+      "hypotheses": [
+        {
+          "name": "A_DIGEST_CR",
+          "kind": "assumed",
+          "text": "SHA-384 is treated as never giving the same output for different inputs. The real hash can, but no one can find such inputs."
+        },
+        {
+          "name": "H_LEN_FITS",
+          "kind": "assumed",
+          "text": "Every field is shorter than 2^32 bytes. Needed only for the length-prefixed fix, which a real fix would have to check."
+        },
+        {
+          "name": "H_MODEL_MATCH",
+          "kind": "code_reading",
+          "text": "The model equals the shipped code at the lines named in the proof file header. A person checked this by reading."
+        },
+        {
+          "name": "H_BYTES",
+          "kind": "code_reading",
+          "text": "Fields are byte sequences. Whether a collision partner is valid UTF-8 is not modeled."
+        },
+        {
+          "name": "H_SCOPE_PAIRING",
+          "kind": "code_reading",
+          "text": "The encrypt scope is always used without a version and the decrypt scope always with one."
+        },
+        {
+          "name": "H_VERSION_NO_NUL",
+          "kind": "code_reading",
+          "text": "The version is a hyphenated UUID string and cannot contain a zero byte."
+        },
+        {
+          "name": "H_NO_DIGEST_ERROR",
+          "kind": "code_reading",
+          "text": "The hash call cannot fail."
+        }
+      ]
+    },
+    {
+      "target": "T05",
+      "file": "verus-proofs/t05_kbkdf_fixed_info.rs",
+      "state": "current",
+      "file_sha256_now": "986744de667b3fc939bc39285818fb82411a9b9cc04a876a1f5b7d1493b55cc0",
+      "file_sha256_at_run": "986744de667b3fc939bc39285818fb82411a9b9cc04a876a1f5b7d1493b55cc0",
+      "run_at": "2026-11-19T21:13:11Z",
+      "verified": 33,
+      "errors": 0,
+      "exit_code": 0,
+      "verus_output_line": "verification results:: 33 verified, 0 errors",
+      "failing_obligations": [],
+      "expected_failures": [],
+      "unexpected_failures": [],
+      "expected_failures_not_seen": [],
+      "docs_result_line": "verification results:: 33 verified, 0 errors",
+      "docs_match_run": true,
+      "level": "model_proved",
+      "failure_explanation": "",
+      "hypotheses": [
+        {
+          "name": "A_KDF",
+          "kind": "assumed",
+          "text": "The key-derivation function (KBKDF) is left unspecified. The proof does not say what it computes."
+        },
+        {
+          "name": "A_STD",
+          "kind": "assumed",
+          "text": "Standard Rust byte conversions behave as documented."
+        },
+        {
+          "name": "A_LBL",
+          "kind": "assumed",
+          "text": "The label bytes and constants were copied by hand from the source. A script compared them and found them equal."
+        },
+        {
+          "name": "A_VSTD",
+          "kind": "assumed",
+          "text": "Verus's standard-library specs for vectors, slices and arrays are correct."
+        },
+        {
+          "name": "A_TYP",
+          "kind": "assumed",
+          "text": "Rust array types fix the lengths."
+        }
+      ]
+    },
+    {
+      "target": "T06",
+      "file": "verus-proofs/t06_systemtime_add_overflow.rs",
+      "state": "current",
+      "file_sha256_now": "a21ec7e219eed1be289851a0ec71b9ce5367b7fa2a3c01e2f7401e3255ff16b6",
+      "file_sha256_at_run": "a21ec7e219eed1be289851a0ec71b9ce5367b7fa2a3c01e2f7401e3255ff16b6",
+      "run_at": "2026-11-19T21:13:11Z",
+      "verified": 28,
+      "errors": 4,
+      "exit_code": 1,
+      "verus_output_line": "verification results:: 28 verified, 4 errors",
+      "failing_obligations": [
+        {
+          "function": "lemma_bug01_site_702_no_overflow_for_any_accepted_ttl_EXPECTED_FAIL",
+          "line": 614
+        },
+        {
+          "function": "lemma_bug01_site_945_no_overflow_for_any_accepted_ttl_EXPECTED_FAIL",
+          "line": 629
+        },
+        {
+          "function": "lemma_bug01_site_333_no_overflow_for_any_accepted_in_flight_ttl_EXPECTED_FAIL",
+          "line": 649
+        },
+        {
+          "function": "lemma_bug01_site_680_no_overflow_for_any_accepted_grace_interval_EXPECTED_FAIL",
+          "line": 668
+        }
+      ],
+      "expected_failures": [
+        "lemma_bug01_site_702_no_overflow_for_any_accepted_ttl_EXPECTED_FAIL",
+        "lemma_bug01_site_945_no_overflow_for_any_accepted_ttl_EXPECTED_FAIL",
+        "lemma_bug01_site_333_no_overflow_for_any_accepted_in_flight_ttl_EXPECTED_FAIL",
+        "lemma_bug01_site_680_no_overflow_for_any_accepted_grace_interval_EXPECTED_FAIL"
+      ],
+      "unexpected_failures": [],
+      "expected_failures_not_seen": [],
+      "docs_result_line": "verification results:: 28 verified, 4 errors",
+      "docs_match_run": true,
+      "level": "model_partly",
+      "failure_explanation": "There are four failing checks, one for each place where time is added. Each states 'no crash for every setting the builder accepts'. That claim is false: for example Duration::MAX is accepted and makes the addition panic. Verus rejects the claim and the proof gives the counterexample. This is the evidence of BUG-01. The proof is not broken. The checks were left failing and were not weakened.",
+      "hypotheses": [
+        {
+          "name": "A_TIME_RANGE",
+          "kind": "assumed",
+          "text": "The range of times a SystemTime can hold. The proof uses the 64-bit Unix range. The language does not fix it."
+        },
+        {
+          "name": "A_NOW",
+          "kind": "assumed",
+          "text": "The clock reading is a time that can be represented."
+        },
+        {
+          "name": "A_NOW_CAP",
+          "kind": "assumed",
+          "text": "Used for one proposed fix only: the clock never reads past the year 3000."
+        },
+        {
+          "name": "A_MUTEX",
+          "kind": "assumed",
+          "text": "A panic while a lock is held poisons it, and locking a poisoned lock gives an error. This is from the Rust documentation."
+        },
+        {
+          "name": "H_STD_ADD",
+          "kind": "code_reading",
+          "text": "Rust's + on SystemTime panics on overflow. Read in the standard library source."
+        },
+        {
+          "name": "H_STD_UNIX",
+          "kind": "code_reading",
+          "text": "The steps of the Unix time addition, read in the standard library source. Other platforms are not modeled."
+        },
+        {
+          "name": "H_MODEL_MATCH",
+          "kind": "code_reading",
+          "text": "The model equals the shipped code at the lines named in the proof file header. A person checked this by reading."
+        },
+        {
+          "name": "H_REACH",
+          "kind": "code_reading",
+          "text": "Which of the four additions can be reached with a large duration."
+        },
+        {
+          "name": "H_STATE_LOCKED_SITES",
+          "kind": "code_reading",
+          "text": "Two of the four additions run while the cache state lock is held."
+        },
+        {
+          "name": "H_NO_LOCK_KEYRING",
+          "kind": "code_reading",
+          "text": "The other two additions, in the keyring, run with no lock held."
+        },
+        {
+          "name": "H_NO_CLEAR",
+          "kind": "code_reading",
+          "text": "Nothing in the library clears a poisoned lock."
+        },
+        {
+          "name": "H_LOCAL_SEPARATE",
+          "kind": "code_reading",
+          "text": "The local cache has its own lock, so the other cache's panic does not poison it."
+        },
+        {
+          "name": "H_UNWIND",
+          "kind": "code_reading",
+          "text": "Panics unwind. With abort-on-panic the process would end instead."
+        },
+        {
+          "name": "H_CLOCK",
+          "kind": "code_reading",
+          "text": "In production the clock is SystemTime::now. The override is for tests."
+        }
+      ]
+    }
+  ],
+  "threats": [
+    {
+      "id": "TM-MPL-001",
+      "title": "Raw-AES keyring emits an EDK whose key-provider-id impersonates an AWS KMS keyring",
+      "component": "RawAesKeyringBuilder::build",
+      "stride": "S",
+      "severity": "Medium",
+      "likelihood": "Low",
+      "risk": "Low",
+      "rating_note": "re-confirmed",
+      "risk_column": "Risk (851977d)",
+      "related_targets": [
+        {
+          "id": "T20",
+          "level": "not_started",
+          "state": null
+        },
+        {
+          "id": "T24",
+          "level": "not_started",
+          "state": null
+        }
+      ],
+      "bugs": []
+    },
+    {
+      "id": "TM-MPL-002",
+      "title": "Forged branch-key-store record decrypts under an attacker-influenced KMS key (key-id confusion)",
+      "component": "kms_ops::decrypt_branch_key",
+      "stride": "S",
+      "severity": "Critical",
+      "likelihood": "Low",
+      "risk": "Medium",
+      "rating_note": "sharpened: Discovery on encrypt path",
+      "risk_column": "Risk (851977d)",
+      "related_targets": [
+        {
+          "id": "T01",
+          "level": "model_proved",
+          "state": "current"
+        },
+        {
+          "id": "T03",
+          "level": "model_proved",
+          "state": "current"
+        }
+      ],
+      "bugs": []
+    },
+    {
+      "id": "TM-MPL-003",
+      "title": "Malicious branch-key supplier, or message-driven supplier input, returns an attacker-chosen branch key id",
+      "component": "HierarchicalKeyring::resolve_branch_key_id, BranchKeyIdSupplier",
+      "stride": "S",
+      "severity": "Medium",
+      "likelihood": "Low",
+      "risk": "Low",
+      "rating_note": "message-driven supplier input noted",
+      "risk_column": "Risk (851977d)",
+      "related_targets": [
+        {
+          "id": "T19",
+          "level": "not_started",
+          "state": null
+        }
+      ],
+      "bugs": [
+        "BUG-06"
+      ]
+    },
+    {
+      "id": "TM-MPL-004",
+      "title": "ARN/MRK match logic accepts a non-matching key ARN (over-permissive match)",
+      "component": "mrk_match, kms_config::is_arn_compatible",
+      "stride": "T",
+      "severity": "High",
+      "likelihood": "Low",
+      "risk": "Medium",
+      "rating_note": "re-confirmed",
+      "risk_column": "Risk (851977d)",
+      "related_targets": [
+        {
+          "id": "T11",
+          "level": "not_started",
+          "state": null
+        }
+      ],
+      "bugs": []
+    },
+    {
+      "id": "TM-MPL-005",
+      "title": "Branch-key record substitution or rollback: swap in a valid record from another branch-key-id/version, or replay an older ACTIVE record",
+      "component": "DynamoDbKeyStore, kms_ops, record",
+      "stride": "T",
+      "severity": "Critical",
+      "likelihood": "Medium",
+      "risk": "High",
+      "rating_note": "rollback residual added",
+      "risk_column": "Risk (851977d)",
+      "related_targets": [
+        {
+          "id": "T01",
+          "level": "model_proved",
+          "state": "current"
+        },
+        {
+          "id": "T02",
+          "level": "model_partly",
+          "state": "current"
+        }
+      ],
+      "bugs": [
+        "BUG-08"
+      ]
+    },
+    {
+      "id": "TM-MPL-006",
+      "title": "Algorithm-suite downgrade / commitment-policy bypass",
+      "component": "default_cmm, commitment_policy, materials checks",
+      "stride": "E",
+      "severity": "Critical",
+      "likelihood": "Low",
+      "risk": "Medium",
+      "rating_note": "SharedCmm backstop residual",
+      "risk_column": "Risk (851977d)",
+      "related_targets": [
+        {
+          "id": "T09",
+          "level": "not_started",
+          "state": null
+        }
+      ],
+      "bugs": [
+        "BUG-02"
+      ]
+    },
+    {
+      "id": "TM-MPL-007",
+      "title": "Discovery/MRDiscovery config decrypts a record under an alias or attacker-region key",
+      "component": "kms_ops::resolve_key_store_arn",
+      "stride": "E",
+      "severity": "High",
+      "likelihood": "Low",
+      "risk": "Medium",
+      "rating_note": "BUG-04 open, fails closed",
+      "risk_column": "Risk (851977d)",
+      "related_targets": [
+        {
+          "id": "T17",
+          "level": "not_started",
+          "state": null
+        }
+      ],
+      "bugs": [
+        "BUG-04"
+      ]
+    },
+    {
+      "id": "TM-MPL-008",
+      "title": "Non-committing suite reused where commitment is expected (Invisible Salamanders)",
+      "component": "commitment_policy, default_cmm",
+      "stride": "E",
+      "severity": "High",
+      "likelihood": "Low",
+      "risk": "Medium",
+      "rating_note": "CVE verified, not applicable",
+      "risk_column": "Risk (851977d)",
+      "related_targets": [
+        {
+          "id": "T09",
+          "level": "not_started",
+          "state": null
+        }
+      ],
+      "bugs": []
+    },
+    {
+      "id": "TM-MPL-009",
+      "title": "Cache-identifier collision returns the wrong branch-key materials",
+      "component": "cache_entry_identifier",
+      "stride": "E",
+      "severity": "High",
+      "likelihood": "Medium",
+      "risk": "High",
+      "rating_note": "BUG-06 open; re-derived",
+      "risk_column": "Risk (851977d)",
+      "related_targets": [
+        {
+          "id": "T13",
+          "level": "model_partly",
+          "state": "current"
+        }
+      ],
+      "bugs": [
+        "BUG-06"
+      ]
+    },
+    {
+      "id": "TM-MPL-010",
+      "title": "Shared-cache confusion serves branch-key materials to a keyring that should not access them",
+      "component": "cache_entry_identifier, hierarchical_keyring",
+      "stride": "I/E",
+      "severity": "High",
+      "likelihood": "Medium",
+      "risk": "High",
+      "rating_note": "BUG-06; same-name and future-time residuals",
+      "risk_column": "Risk (851977d)",
+      "related_targets": [
+        {
+          "id": "T13",
+          "level": "model_partly",
+          "state": "current"
+        },
+        {
+          "id": "T14",
+          "level": "not_started",
+          "state": null
+        }
+      ],
+      "bugs": [
+        "BUG-06",
+        "BUG-09"
+      ]
+    },
+    {
+      "id": "TM-MPL-011",
+      "title": "AES-GCM IV reuse in the raw-AES keyring",
+      "component": "raw_aes_keyring::wrap_data_key, prim::aes_encrypt",
+      "stride": "E",
+      "severity": "Critical",
+      "likelihood": "Low",
+      "risk": "Medium",
+      "rating_note": "2^32 usage bound noted",
+      "risk_column": "Risk (851977d)",
+      "related_targets": [
+        {
+          "id": "T07",
+          "level": "not_started",
+          "state": null
+        },
+        {
+          "id": "T20",
+          "level": "not_started",
+          "state": null
+        }
+      ],
+      "bugs": [
+        "BUG-07"
+      ]
+    },
+    {
+      "id": "TM-MPL-012",
+      "title": "AES-GCM salt/IV reuse in branch-key wrap (birthday-bound collision)",
+      "component": "branch_key_wrap::wrap",
+      "stride": "E",
+      "severity": "Critical",
+      "likelihood": "Low",
+      "risk": "Medium",
+      "rating_note": "re-confirmed",
+      "risk_column": "Risk (851977d)",
+      "related_targets": [
+        {
+          "id": "T04",
+          "level": "model_proved",
+          "state": "current"
+        }
+      ],
+      "bugs": []
+    },
+    {
+      "id": "TM-MPL-013",
+      "title": "Branch-key wrap/unwrap AAD built inconsistently, breaking context binding",
+      "component": "branch_key_wrap::compute_aad",
+      "stride": "T",
+      "severity": "High",
+      "likelihood": "Low",
+      "risk": "Medium",
+      "rating_note": "BUG-03 fixed",
+      "risk_column": "Risk (851977d)",
+      "related_targets": [
+        {
+          "id": "T10",
+          "level": "not_started",
+          "state": null
+        },
+        {
+          "id": "T15",
+          "level": "not_started",
+          "state": null
+        }
+      ],
+      "bugs": [
+        "BUG-03"
+      ]
+    },
+    {
+      "id": "TM-MPL-014",
+      "title": "KBKDF fixed-info / L-value misuse weakens branch-key derivation",
+      "component": "branch_key_wrap::derive_branch_key",
+      "stride": "E",
+      "severity": "High",
+      "likelihood": "Low",
+      "risk": "Medium",
+      "rating_note": "spec silent on fixed info",
+      "risk_column": "Risk (851977d)",
+      "related_targets": [
+        {
+          "id": "T05",
+          "level": "model_proved",
+          "state": "current"
+        }
+      ],
+      "bugs": []
+    },
+    {
+      "id": "TM-MPL-015",
+      "title": "Secret material (branch keys, data keys, derived keys, wrapping key) not zeroized or kept past its use",
+      "component": "structures, branch_key_wrap, raw_aes_keyring, prim, LocalCmc",
+      "stride": "I",
+      "severity": "Medium",
+      "likelihood": "Low",
+      "risk": "Low",
+      "rating_note": "cache residency, keypair error path",
+      "risk_column": "Risk (851977d)",
+      "related_targets": [
+        {
+          "id": "T26",
+          "level": "not_started",
+          "state": null
+        }
+      ],
+      "bugs": [
+        "BUG-07",
+        "BUG-10"
+      ]
+    },
+    {
+      "id": "TM-MPL-016",
+      "title": "VersionKey optimistic-lock bypass overwrites the ACTIVE record (version race)",
+      "component": "DynamoDbKeyStore::version_key",
+      "stride": "T",
+      "severity": "Medium",
+      "likelihood": "Low",
+      "risk": "Low",
+      "rating_note": "re-confirmed",
+      "risk_column": "Risk (851977d)",
+      "related_targets": [
+        {
+          "id": "T18",
+          "level": "not_started",
+          "state": null
+        }
+      ],
+      "bugs": []
+    },
+    {
+      "id": "TM-MPL-017",
+      "title": "Encryption-context / reproduced-EC merge lets an attacker drop or alter bound context",
+      "component": "default_cmm::merge_reproduced_encryption_context",
+      "stride": "T",
+      "severity": "High",
+      "likelihood": "Low",
+      "risk": "Medium",
+      "rating_note": "re-confirmed",
+      "risk_column": "Risk (851977d)",
+      "related_targets": [
+        {
+          "id": "T12",
+          "level": "not_started",
+          "state": null
+        },
+        {
+          "id": "T15",
+          "level": "not_started",
+          "state": null
+        }
+      ],
+      "bugs": [
+        "BUG-03"
+      ]
+    },
+    {
+      "id": "TM-MPL-018",
+      "title": "Storm-tracking misconfiguration or logic error causes a stampede, deadlock, InFlightTTL failures, a stale-mark wedge or a panic",
+      "component": "cmc/storm_tracking",
+      "stride": "D",
+      "severity": "Medium",
+      "likelihood": "Medium",
+      "risk": "Medium",
+      "rating_note": "liveness gaps; BUG-01 poisons the lock",
+      "risk_column": "Risk (851977d)",
+      "related_targets": [
+        {
+          "id": "T06",
+          "level": "model_partly",
+          "state": "current"
+        },
+        {
+          "id": "T27",
+          "level": "not_started",
+          "state": null
+        },
+        {
+          "id": "T21",
+          "level": "not_started",
+          "state": null
+        }
+      ],
+      "bugs": [
+        "BUG-01"
+      ]
+    },
+    {
+      "id": "TM-MPL-019",
+      "title": "Missing Duvet coverage lets a spec MUST silently regress",
+      "component": "whole library",
+      "stride": "E",
+      "severity": "Medium",
+      "likelihood": "Medium",
+      "risk": "Medium",
+      "rating_note": "re-confirmed",
+      "risk_column": "Risk (851977d)",
+      "related_targets": [],
+      "bugs": []
+    },
+    {
+      "id": "TM-MPL-020",
+      "title": "No audit binding between an MPL operation and the KMS/DDB calls it triggered",
+      "component": "key store, keyring",
+      "stride": "R",
+      "severity": "Low",
+      "likelihood": "Low",
+      "risk": "Low",
+      "rating_note": "re-confirmed",
+      "risk_column": "Risk (851977d)",
+      "related_targets": [],
+      "bugs": []
+    },
+    {
+      "id": "TM-MPL-021",
+      "title": "Secret bytes or attacker-supplied text leak via `Debug`/error/log formatting",
+      "component": "structures, error model",
+      "stride": "I",
+      "severity": "Medium",
+      "likelihood": "Low",
+      "risk": "Low",
+      "rating_note": "provider info in errors",
+      "risk_column": "Risk (851977d)",
+      "related_targets": [
+        {
+          "id": "T22",
+          "level": "not_started",
+          "state": null
+        }
+      ],
+      "bugs": []
+    },
+    {
+      "id": "TM-MPL-022",
+      "title": "Cache exhaustion / eviction thrash forces a KMS-call storm (throttling)",
+      "component": "cmc/local, cmc/default",
+      "stride": "D",
+      "severity": "Low",
+      "likelihood": "Medium",
+      "risk": "Low",
+      "rating_note": "invalid versions cannot evict",
+      "risk_column": "Risk (851977d)",
+      "related_targets": [
+        {
+          "id": "T06",
+          "level": "model_partly",
+          "state": "current"
+        },
+        {
+          "id": "T23",
+          "level": "not_started",
+          "state": null
+        }
+      ],
+      "bugs": [
+        "BUG-01"
+      ]
+    },
+    {
+      "id": "TM-MPL-023",
+      "title": "Malformed EDK/ciphertext or extreme configuration triggers a panic or resource blow-up instead of an error",
+      "component": "branch_key_wrap::unwrap, keyrings, default_cmm",
+      "stride": "D",
+      "severity": "Medium",
+      "likelihood": "Low",
+      "risk": "Low",
+      "rating_note": "re-confirmed",
+      "risk_column": "Risk (851977d)",
+      "related_targets": [
+        {
+          "id": "T06",
+          "level": "model_partly",
+          "state": "current"
+        },
+        {
+          "id": "T16",
+          "level": "not_started",
+          "state": null
+        },
+        {
+          "id": "T20",
+          "level": "not_started",
+          "state": null
+        }
+      ],
+      "bugs": [
+        "BUG-01",
+        "BUG-02",
+        "BUG-05",
+        "BUG-07"
+      ]
+    },
+    {
+      "id": "TM-MPL-024",
+      "title": "C++ shim dereferences or adopts a dangling, forged or double-owned handle to an MPL object",
+      "component": "esdk/shims/aws-esdk-cpp (boundary)",
+      "stride": "E/T",
+      "severity": "High",
+      "likelihood": "Low",
+      "risk": "Medium",
+      "rating_note": "`adopt` added; #188/#189 no change",
+      "risk_column": "Risk (851977d)",
+      "related_targets": [
+        {
+          "id": "T25",
+          "level": "not_started",
+          "state": null
+        }
+      ],
+      "bugs": []
+    },
+    {
+      "id": "TM-MPL-025",
+      "title": "Decrypt-input amplification: EDK count and branch-key versions chosen by the sender drive key-store reads, in-flight slots and wall-clock time (new, provisional)",
+      "component": "hierarchical_keyring::on_decrypt, cmc/storm_tracking",
+      "stride": "D",
+      "severity": "Medium",
+      "likelihood": "Medium",
+      "risk": "Medium",
+      "rating_note": "new, provisional (static reasoning)",
+      "risk_column": "Risk (851977d)",
+      "related_targets": [
+        {
+          "id": "T27",
+          "level": "not_started",
+          "state": null
+        }
+      ],
+      "bugs": [
+        "BUG-05"
+      ]
+    },
+    {
+      "id": "TM-MPL-026",
+      "title": "Unauthenticated loopback test server exercises ambient AWS credentials for any local process (new)",
+      "component": "mpl/test-server (and the other three)",
+      "stride": "E/I",
+      "severity": "Medium",
+      "likelihood": "Low",
+      "risk": "Low",
+      "rating_note": "new, test-only",
+      "risk_column": "Risk (851977d)",
+      "related_targets": [],
+      "bugs": []
+    }
+  ],
+  "bugs": [
+    {
+      "id": "BUG-01",
+      "title_doc": "Large accepted TTL / grace / inflight values overflow `SystemTime + Duration` and panic",
+      "component": "Hierarchical keyring; StormTracking CMC",
+      "severity": "Low",
+      "confidence": "Confirmed by test",
+      "spec_conflict": "no",
+      "status_doc": "Still present",
+      "open": true,
+      "threats": [
+        "TM-MPL-018",
+        "TM-MPL-022",
+        "TM-MPL-023"
+      ],
+      "targets": [
+        "T06",
+        "T21"
+      ],
+      "priority_doc": "2 – Medium",
+      "plain": "A very large time setting makes the keyring or cache code crash when it adds the time to the clock.",
+      "proof_relation": {
+        "kind": "confirmed_by_model_proof",
+        "target": "T06",
+        "text": "The T06 model proof shows that an accepted setting such as Duration::MAX makes each of the four additions panic. The four intentional failing checks are the evidence. Model level only.",
+        "status": "confirmed (current run)"
+      },
+      "sources": [
+        {
+          "doc": "docs/mpl-bug-reports/BUG-01-ttl-duration-overflow-panic.md",
+          "locator": "# BUG-01",
+          "line": 1
+        },
+        {
+          "doc": "docs/mpl-verification-targets.md",
+          "locator": "BUG-01 confirmed formally (T06)",
+          "line": 161
+        }
+      ]
+    },
+    {
+      "id": "BUG-02",
+      "title_doc": "Plaintext data key length not enforced (hierarchical OnDecrypt and materials constructors)",
+      "component": "Hierarchical keyring; materials structures",
+      "severity": "Medium",
+      "confidence": "Confirmed by test",
+      "spec_conflict": "yes",
+      "status_doc": "Fixed on main (`e9bde48`, #98)",
+      "open": false,
+      "threats": [
+        "TM-MPL-006",
+        "TM-MPL-023"
+      ],
+      "targets": [
+        "C04"
+      ],
+      "priority_doc": "8 – Resolved",
+      "plain": "A decrypted data key could have the wrong length. Fixed on main.",
+      "proof_relation": {
+        "kind": "none",
+        "target": "",
+        "text": "Fixed. Target C04 would guard the fix against regression. No proof yet.",
+        "status": ""
+      },
+      "sources": [
+        {
+          "doc": "docs/mpl-bug-reports/BUG-02-plaintext-data-key-length-not-enforced.md",
+          "locator": "# BUG-02",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "id": "BUG-03",
+      "title_doc": "`EncryptionContext::deserialize` accepts entries not sorted by key",
+      "component": "`structures::EncryptionContext`",
+      "severity": "Low",
+      "confidence": "Confirmed by test",
+      "spec_conflict": "yes",
+      "status_doc": "Fixed on main (`e9bde48`, #98)",
+      "open": false,
+      "threats": [
+        "TM-MPL-013",
+        "TM-MPL-017"
+      ],
+      "targets": [
+        "T15"
+      ],
+      "priority_doc": "9 – Resolved",
+      "plain": "Two different byte strings could decode to the same encryption context. Fixed on main.",
+      "proof_relation": {
+        "kind": "none",
+        "target": "",
+        "text": "Fixed. Target T15 would check that only one byte form is accepted. No proof yet.",
+        "status": ""
+      },
+      "sources": [
+        {
+          "doc": "docs/mpl-bug-reports/BUG-03-encryption-context-deserialize-accepts-unsorted.md",
+          "locator": "# BUG-03",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "id": "BUG-04",
+      "title_doc": "MRDiscovery rewrites the region of single-Region (non-MRK) KMS key ARNs",
+      "component": "Branch key store (KMS ARN resolution)",
+      "severity": "Low",
+      "confidence": "Confirmed by test",
+      "spec_conflict": "yes",
+      "status_doc": "Still present",
+      "open": true,
+      "threats": [
+        "TM-MPL-007"
+      ],
+      "targets": [
+        "T17"
+      ],
+      "priority_doc": "3 – Medium",
+      "plain": "One discovery mode rewrites the Region of every KMS key ARN, including single-Region keys. KMS then rejects the request, so the request is refused (it fails closed).",
+      "proof_relation": {
+        "kind": "none",
+        "target": "",
+        "text": "Target T17 would state the rule. No proof yet. The T03 proof does not cover discovery modes.",
+        "status": ""
+      },
+      "sources": [
+        {
+          "doc": "docs/mpl-bug-reports/BUG-04-mrdiscovery-rewrites-non-mrk-arn-region.md",
+          "locator": "# BUG-04",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "id": "BUG-05",
+      "title_doc": "(a) Default CMM panics if ECDSA key generation fails; (b) 44–59-byte hierarchical EDK reaches the keystore",
+      "component": "Default CMM; hierarchical keyring",
+      "severity": "Low",
+      "confidence": "(a) Confirmed by code reading; (b) Confirmed by test, likely not a bug",
+      "spec_conflict": "no",
+      "status_doc": "(a) Still present; (b) Still present (likely not a bug)",
+      "open": true,
+      "threats": [
+        "TM-MPL-023",
+        "TM-MPL-025"
+      ],
+      "targets": [
+        "T16",
+        "T27"
+      ],
+      "priority_doc": "5 – Low",
+      "plain": "(a) The default materials manager panics if key generation fails. (b) An encrypted data key that is too short still causes one key-store read before it is rejected. The reports say (b) is likely not a bug.",
+      "proof_relation": {
+        "kind": "none",
+        "target": "",
+        "text": "Targets T16 and T27 cover these. No proof yet.",
+        "status": ""
+      },
+      "sources": [
+        {
+          "doc": "docs/mpl-bug-reports/BUG-05-keygen-expect-and-short-edk-keystore-lookup.md",
+          "locator": "# BUG-05",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "id": "BUG-06",
+      "title_doc": "Cache-identifier preimage not injective when fields contain NUL",
+      "component": "Hierarchical keyring (cache identifier)",
+      "severity": "High (raised from Low on the owner's decision)",
+      "confidence": "Confirmed by test",
+      "spec_conflict": "yes",
+      "status_doc": "Still present",
+      "open": true,
+      "threats": [
+        "TM-MPL-003",
+        "TM-MPL-009",
+        "TM-MPL-010"
+      ],
+      "targets": [
+        "T13",
+        "T19"
+      ],
+      "priority_doc": "1 – High",
+      "plain": "Two different keyring settings can produce the same cache identifier when a field contains a zero byte. With a shared cache, one keyring can then receive the other's cached key.",
+      "proof_relation": {
+        "kind": "confirmed_by_model_proof",
+        "target": "T13",
+        "text": "The T13 model proof shows the identifier is unique exactly when no field contains a zero byte, with concrete collisions. The intentional failing check is the evidence. Model level only. The bug was already confirmed end to end by a test on main.",
+        "status": "confirmed (current run)"
+      },
+      "sources": [
+        {
+          "doc": "docs/mpl-bug-reports/BUG-06-cache-identifier-not-injective-with-nul.md",
+          "locator": "# BUG-06",
+          "line": 1
+        },
+        {
+          "doc": "docs/mpl-verification-targets.md",
+          "locator": "BUG-06 confirmed formally (T13)",
+          "line": 153
+        }
+      ]
+    },
+    {
+      "id": "BUG-07",
+      "title_doc": "`prim::aes_encrypt` leaves plaintext in buffer on `Err`; `aes_decrypt` guard weaker than callee. Caller impact (from Mahnush_Verus): [Impact on callers](BUG-07-prim-aes-buffer-handling.md#impact-on-callers-from-mahnush_verus)",
+      "component": "`aws-mpl-primitives` (AES-GCM)",
+      "severity": "Low",
+      "confidence": "Confirmed by test",
+      "spec_conflict": "no",
+      "status_doc": "Still present (a and b)",
+      "open": true,
+      "threats": [
+        "TM-MPL-011",
+        "TM-MPL-015",
+        "TM-MPL-023"
+      ],
+      "targets": [
+        "C03",
+        "T07",
+        "T26"
+      ],
+      "priority_doc": "4 – Low",
+      "plain": "(a) The AES encrypt helper leaves the plaintext in the caller's buffer when it fails. (b) The AES decrypt length check is weaker than the library underneath, which gives a less helpful error.",
+      "proof_relation": {
+        "kind": "other_branch",
+        "target": "C03",
+        "text": "The prim-side facts are proved in the shipped prim code on branch Mahnush_Verus (target C03). This branch has no such proof. What the callers in mpl do with the buffer is code reading and belongs to T26.",
+        "status": ""
+      },
+      "sources": [
+        {
+          "doc": "docs/mpl-bug-reports/BUG-07-prim-aes-buffer-handling.md",
+          "locator": "# BUG-07",
+          "line": 1
+        },
+        {
+          "doc": "docs/mpl-verification-targets.md",
+          "locator": "BUG-07(a), prim side (C03, VR-014; not on this branch)",
+          "line": 169
+        }
+      ]
+    },
+    {
+      "id": "BUG-08",
+      "title_doc": "Custom-EC collision `Err` in `build_base` is dead code",
+      "component": "Branch key store (encryption context)",
+      "severity": "Informational",
+      "confidence": "Confirmed by code reading",
+      "spec_conflict": "no",
+      "status_doc": "Still present",
+      "open": true,
+      "threats": [
+        "TM-MPL-005"
+      ],
+      "targets": [
+        "C01"
+      ],
+      "priority_doc": "7 – Low",
+      "plain": "An error branch for colliding custom keys can never run. This is informational: behavior is correct, the comment is misleading.",
+      "proof_relation": {
+        "kind": "model_relates",
+        "target": "C01",
+        "text": "The C01 model proof shows the branch is dead if and only if assumption A_ITER holds, and live if a key repeats. This does not confirm a defect. It explains the dead code at model level.",
+        "status": ""
+      },
+      "sources": [
+        {
+          "doc": "docs/mpl-bug-reports/BUG-08-build-base-collision-branch-unreachable.md",
+          "locator": "# BUG-08",
+          "line": 1
+        },
+        {
+          "doc": "docs/mpl-verification-targets.md",
+          "locator": "**BUG-08 (C01).**",
+          "line": 167
+        }
+      ]
+    },
+    {
+      "id": "BUG-09",
+      "title_doc": "`cache_entry_within_limits` admits entries up to `ttl + 1 s`",
+      "component": "Hierarchical keyring (cache TTL)",
+      "severity": "Informational",
+      "confidence": "Confirmed by test, likely not a bug",
+      "spec_conflict": "no",
+      "status_doc": "Fixed on main (`e9bde48`, #98)",
+      "open": false,
+      "threats": [
+        "TM-MPL-010"
+      ],
+      "targets": [
+        "T14"
+      ],
+      "priority_doc": "10 – Resolved",
+      "plain": "A cached key could be used up to one second after its lifetime. Informational. Fixed on main.",
+      "proof_relation": {
+        "kind": "none",
+        "target": "",
+        "text": "Fixed. Target T14 would check the exact comparison. No proof yet.",
+        "status": ""
+      },
+      "sources": [
+        {
+          "doc": "docs/mpl-bug-reports/BUG-09-cache-ttl-check-whole-second-truncation.md",
+          "locator": "# BUG-09",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "id": "BUG-10",
+      "title_doc": "Raw AES `on_decrypt` drops an authenticated data key un-wiped when its length is wrong",
+      "component": "Raw AES keyring",
+      "severity": "Low",
+      "confidence": "Confirmed by code reading",
+      "spec_conflict": "no",
+      "status_doc": "Still present",
+      "open": true,
+      "threats": [
+        "TM-MPL-015"
+      ],
+      "targets": [
+        "T26"
+      ],
+      "priority_doc": "6 – Low",
+      "plain": "The raw AES keyring drops a decrypted data key without wiping it when the key has the wrong length.",
+      "proof_relation": {
+        "kind": "none",
+        "target": "",
+        "text": "Target T26 covers this. No proof yet, and no proof of any kind exists for it.",
+        "status": ""
+      },
+      "sources": [
+        {
+          "doc": "docs/mpl-bug-reports/BUG-10-raw-aes-on-decrypt-unwiped-data-key.md",
+          "locator": "# BUG-10",
+          "line": 1
+        }
+      ]
+    }
+  ],
+  "retired_targets": [
+    {
+      "id": "C06",
+      "technical_name": "~~grace-vs-TTL integer division~~",
+      "plain": "The integer division that mixed up grace period and TTL was removed from the code, so the target no longer applies."
+    },
+    {
+      "id": "T08",
+      "technical_name": "~~PlaintextDataKey::zeroize unsafe loop~~",
+      "plain": "The unsafe loop that wiped a data key was removed from the code, so the target no longer applies. Its concern moved to T26."
+    }
+  ],
+  "glossary": [
+    {
+      "term": "Model-level proof",
+      "text": "A proof about a hand-written copy of the code, written in a form Verus can read. The copy is called a model. Verus checks the logic of the model. A person checks that the model matches the code. Nothing checks that automatically, so an edit to the real code would not be noticed."
+    },
+    {
+      "term": "Shipped code",
+      "text": "The Rust code in mpl/, prim/ and esdk/ as users get it. On this branch no proof checks it."
+    },
+    {
+      "term": "Verus",
+      "text": "A tool that checks proofs written next to Rust code. It reports how many checks pass and how many fail."
+    },
+    {
+      "term": "Check (verification obligation)",
+      "text": "One statement that Verus tries to prove. The line 'N verified, M errors' counts them. It does not count properties of the product."
+    },
+    {
+      "term": "Expected failure",
+      "text": "A check that is written to fail on purpose. It states what the spec requires. The code does not meet it, so Verus rejects it. The failure is the finding. It is not a broken proof. Names in the proof files end in _FAILS or _EXPECTED_FAIL."
+    },
+    {
+      "term": "Assumption (A_ names)",
+      "text": "A fact the proof takes as true without checking it. Example: KMS only decrypts when the context matches. If an assumption is wrong, the proof says nothing. Names starting with A_ (and A1, A3 and so on in one file) are assumptions."
+    },
+    {
+      "term": "Hypothesis (H_ names)",
+      "text": "A condition about how the model relates to the code or how the code is used. A premise is a condition a theorem is stated under. A code-reading hypothesis is a fact a person checked by reading the code. Names starting with H_ are hypotheses. The page shows which kind each one is."
+    },
+    {
+      "term": "Honesty level",
+      "text": "How strong the evidence for a target is: proved in the shipped code, proved in the shipped code on another branch, model proof, model proof with an intentional failing check, or no proof yet. A level is never shown as better than it is."
+    },
+    {
+      "term": "Stale result",
+      "text": "A recorded proof result is stale when the proof file has changed since the run that produced it. A stale result must be re-run before it is trusted."
+    },
+    {
+      "term": "Target (T01 to T27, C01 to C08)",
+      "text": "One thing the verification work proposes to prove. T targets come from the threat model. C targets come from a sweep of what the library can do. Retired targets are listed but not counted."
+    },
+    {
+      "term": "Score, rank, coverage gap, quick win",
+      "text": "The score is severity x coverage gap x feasibility x blast radius, as recorded in the docs. The rank orders the targets by score. The coverage gap says how little existing tests cover the property. A quick win has a score above 6.0 and an effort of one week or less. This page copies these values and never recomputes them."
+    },
+    {
+      "term": "Threat (TM-MPL-nnn)",
+      "text": "A threat from docs/mpl-threat-model.md. Each has a risk rating of Low, Medium or High. The threat model has 26 threats."
+    },
+    {
+      "term": "Bug (BUG-nn)",
+      "text": "A bug report in docs/mpl-bug-reports/. Open means the code on main still has the problem. Fixed means it was fixed on main."
+    },
+    {
+      "term": "G1",
+      "text": "A gap found in the spec review. The spec says a branch key record must have create-time and hierarchy-version. The code accepts a record without them."
+    },
+    {
+      "term": "Branch key",
+      "text": "A key that protects other keys. The key store keeps branch keys as records in a DynamoDB table and uses AWS KMS to protect them."
+    },
+    {
+      "term": "KMS and DynamoDB",
+      "text": "AWS KMS is the AWS service that creates and manages encryption keys. DynamoDB is the AWS database that holds key-store records."
+    },
+    {
+      "term": "Encryption context (EC)",
+      "text": "A set of labelled text values that is bound to an encryption. Decryption works only if the same values are supplied again."
+    },
+    {
+      "term": "AAD",
+      "text": "Additional authenticated data. Data that an encryption protects against change but does not hide. The encryption context is used as AAD."
+    },
+    {
+      "term": "Keyring and EDK",
+      "text": "A keyring protects and recovers the data key for a message. An EDK (encrypted data key) is the protected copy of that key stored in the message."
+    },
+    {
+      "term": "CMM",
+      "text": "Cryptographic materials manager. It decides which algorithm suite and keys are used and asks the keyrings to do the work."
+    },
+    {
+      "term": "Commitment policy",
+      "text": "A setting that says whether messages must use algorithm suites that bind the ciphertext to one key. It guards against attacks where one ciphertext decrypts under two keys."
+    },
+    {
+      "term": "Cache identifier",
+      "text": "A fingerprint (SHA-384 hash) used to look up cached branch keys. Two different keyring settings must never produce the same one."
+    },
+    {
+      "term": "NUL byte",
+      "text": "The byte with value zero (0x00). The cache identifier uses it as a separator. A field that contains it can make two different settings look the same (BUG-06)."
+    },
+    {
+      "term": "TTL and grace interval",
+      "text": "TTL is how long a cache entry may be used. The grace interval is a wait before a second caller may refresh the same entry."
+    },
+    {
+      "term": "Panic",
+      "text": "A Rust crash. The program stops the current work instead of returning an error."
+    },
+    {
+      "term": "Mutex and poisoned lock",
+      "text": "A mutex is a lock that lets one thread use shared data at a time. If a thread panics while it holds the lock, the lock is marked poisoned and later users get an error."
+    },
+    {
+      "term": "Mahnush_Verus",
+      "text": "Another branch of the repository that holds in-crate Verus proofs (VR-013, VR-014 for C03). Nothing from it is merged here."
+    }
+  ],
+  "sources": [
+    {
+      "path": "docs/mpl-verification-targets.md",
+      "sha256": "6df15233223fbe16814f2bebc5d73296ec037140b93dcfaf7209d359c33d0f67"
+    },
+    {
+      "path": "docs/mpl-verification-targets/01-threat-driven.md",
+      "sha256": "988da6bb30f1ae83ec3a3925117559033aa3b0e813eae32f55d15cdf4ebf2c54"
+    },
+    {
+      "path": "docs/mpl-verification-targets/02-capability-driven.md",
+      "sha256": "ae9b6ff8c1895466f6f098f6ad23ce9d9189d1c1ddb0c8431c4d5485557b63e9"
+    },
+    {
+      "path": "docs/mpl-threat-model.md",
+      "sha256": "6e93672062ee518f969ff84566f9496892f024cdcd21c92c1ca509f66fb1593d"
+    },
+    {
+      "path": "docs/mpl-bug-reports/README.md",
+      "sha256": "1bfef4890212b781187e67a20a5c6fd3625675f296f6d2e8aef62ca6764c6271"
+    },
+    {
+      "path": "verus-proofs/README.md",
+      "sha256": "8e73486ff555caad9068aa37dd0cc9e55715cc6f8b9bf0e89c4dcfe9889d0c3f"
+    },
+    {
+      "path": "verus-proofs/README-t03-t05.md",
+      "sha256": "0bcdf599bc9cc58af6cb4dcfdd78ba182ac585ddfbc13950599351aab363f6b8"
+    },
+    {
+      "path": "verus-proofs/t01_keystore_auth_ec.rs",
+      "sha256": "824216521e4359431dbd44088b1a940ec84978796717c7edc6e2f34e235184f1"
+    },
+    {
+      "path": "verus-proofs/t02_record_reconstruction.rs",
+      "sha256": "241f1cd133aa408d80214282fd7738447e2ded553bbea53cef9e8108224ba191"
+    },
+    {
+      "path": "verus-proofs/c01_ec_roundtrip.rs",
+      "sha256": "d266597083141d47ebcdb19bd9a0798cdadac455ce99969391039ef0e7665c94"
+    },
+    {
+      "path": "verus-proofs/c02_sign_fixed_len.rs",
+      "sha256": "1cee411299d29a1ec729745da81c83ca002fbc01052ec0def1707ce12464e820"
+    },
+    {
+      "path": "verus-proofs/t03_resolve_pinned_arn.rs",
+      "sha256": "7508a1090fe6902a9eca7bcf19c754a3a0228acf1a7190c753090899c6f15795"
+    },
+    {
+      "path": "verus-proofs/t04_branch_key_wrap.rs",
+      "sha256": "9bef3d8ae2d91bd358557c170d1c11dd8a2725468235469e860ebe864fa2c0ab"
+    },
+    {
+      "path": "verus-proofs/t13_cache_identifier.rs",
+      "sha256": "ee93828c47731a2c2bef1c020a53cb9e089f2c8cdde86d97cd541ab534d36261"
+    },
+    {
+      "path": "verus-proofs/t05_kbkdf_fixed_info.rs",
+      "sha256": "986744de667b3fc939bc39285818fb82411a9b9cc04a876a1f5b7d1493b55cc0"
+    },
+    {
+      "path": "verus-proofs/t06_systemtime_add_overflow.rs",
+      "sha256": "a21ec7e219eed1be289851a0ec71b9ce5367b7fa2a3c01e2f7401e3255ff16b6"
+    },
+    {
+      "path": "dashboard/plain-english.json",
+      "sha256": "8454b3b2be7e0bff3b68d51581eda2b1b8f4cfef4e3b4f13ce01daf601fa40e3"
+    }
+  ]
+}
