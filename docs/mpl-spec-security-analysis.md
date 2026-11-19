@@ -219,7 +219,7 @@ None authenticates callers. All are test harnesses.
 | Secret compare | `aws-lc-rs` `verify_slices_are_equal` | PDK, signing keys | Used by the transition checks (`materials_checks.rs:91`, `:100`) |
 | Suite KDF | HKDF-SHA256/384/512 or identity, per suite | n/a | MPL exposes the parameters. Message-level derivation belongs to the ESDK |
 
-The suite table (`structures/algorithm_suite.rs`) covers the 11 ESDK suites. All use AES-GCM with a 12-byte IV and 16-byte tag. The commit-key suites (`04 78`, `05 78`) use HKDF-SHA512. DBE and S3EC suites are intentionally not implemented.
+The suite table (`structures/algorithm_suite.rs`) covers the 11 ESDK suites. All use AES-GCM with a 12-byte IV and 16-byte tag. The commit-key suites (`04 78`, `05 78`) use HKDF-SHA512. DBE and S3EC suites are intentionally not implemented. The C05 proof (model level, not the shipped code: 22 verified, 0 errors) checks the table against the spec text for those 11 rows. It is a consistency check of two hand-typed tables, and 22 existing tests cover the same facts.
 
 ## Key Hierarchy
 
@@ -295,7 +295,7 @@ Spec text is quoted from the local `spec/framework` at `e8334535`. Status is bas
 
 Keyrings:
 - Raw AES: "MUST use the serialized encryption context as the additional authenticated data (AAD)". Enforced (`raw_aes_keyring.rs:403-406`, `:436-439`).
-- Raw AES: "MUST NOT accept a key namespace of 'aws-kms'". Enforced as a prefix check (`:360`).
+- Raw AES: "MUST NOT accept a key namespace of 'aws-kms'". Enforced as a prefix check (`:360`). The T24 proof (model level, not the shipped code: 19 verified, 0 errors) shows at model level that every namespace starting with `aws-kms` is rejected. The check is case-sensitive, so `AWS-KMS` and lookalikes are accepted. The spec text names the lowercase string only.
 - Raw AES OnDecrypt: an existing PDK means it "MUST fail and MUST NOT modify"; "If no decryption succeeds, the keyring MUST fail". Enforced (`:427-433`, `:526-529`).
 - Hierarchical wrap: 16-byte random salt, 12-byte random IV, KBKDF-CTR-HMAC-SHA256 → 32 bytes, AES-256-GCM, 16-byte tag, AAD as specified. Enforced (`branch_key_wrap.rs:157-218`). The T04 proof (`verus-proofs/t04_branch_key_wrap.rs`, Proved (model level, not the shipped code, under stated hypotheses): 45 verified, 0 errors) checks at model level that the salt and the IV come from two separate generator calls, go to the KDF and to AES-GCM, and sit at the specified offsets of the output. It does not prove that they are random or fresh: the spec says "secure source of randomness", and whether `aws_lc_rs::rand::fill` is one is a fact about aws-lc-rs, which the model assumes only as A_RNG.
 - Hierarchical EDK: provider id "MUST be UTF8 Encoded `aws-kms-hierarchy`". Provider info "MUST be the UTF8 Encoded AWS DDB response `branch-key-id`". **Partial:** the code writes the *resolved* bkid (`hierarchical_keyring.rs:722`), not `bkm.branch_key_id()`. The two are equal for `DynamoDbKeyStore`. A user key store that returns another key's materials would make the EDK undecryptable rather than mis-attributed.
@@ -309,7 +309,7 @@ CMM / commitment policy:
 - `allows_for_encrypt` / `allows_for_decrypt` match the `commitment-policy.md` tables (`commitment_policy.rs:62`, `:77`).
 - Default suite: **deviation** for `FORBID_ENCRYPT_ALLOW_DECRYPT` (`03 78` instead of the spec's `00 78`; documented at `:46-48`). The other two policies meet "`05 78` MUST be the default".
 - Reproduced EC: shared keys MUST agree, and reproduced-only pairs are appended as RECK (`default_cmm.rs:273-303`).
-- Materials: RECK ⊆ EC; EDKs empty without a PDK; signing/verification/symmetric keys absent when the suite has none ("If the algorithm suite does not contain an asymmetric signing algorithm, the signing key MUST NOT be present", `structures.md` "Signing Key"); verification-key length matches the suite; PDK length = suite key length (new). Enforced in the builders and in `add_data_key`. The converse (a signing suite MUST have a signing key, `cmm-interface.md` "Get Encryption Materials") is enforced only by `materials_checks` on the fluent path (second pass C5).
+- Materials: RECK ⊆ EC; EDKs empty without a PDK; signing/verification/symmetric keys absent when the suite has none ("If the algorithm suite does not contain an asymmetric signing algorithm, the signing key MUST NOT be present", `structures.md` "Signing Key"); verification-key length matches the suite; PDK length = suite key length (new). Enforced in the builders and in `add_data_key`. The converse (a signing suite MUST have a signing key, `cmm-interface.md` "Get Encryption Materials") is enforced only by `materials_checks` on the fluent path (second pass C5). The C04 proof (model level, not the shipped code: 24 verified, 0 errors) shows at model level that no modeled path gives a PDK whose length differs from the suite key length.
 - CMM output: GetEncryptionMaterials output has a PDK and ≥ 1 EDK; DecryptMaterials output has a PDK. Enforced by `SharedCmm::send()`.
 
 Key store:
@@ -321,7 +321,7 @@ Key store:
 Caches:
 - Storm tracking "Grace Interval MUST be ≤ Grace Period", "Inflight TTL MUST be ≤ Grace Period", "Grace Interval MUST be ≤ Inflight TTL", and grace period / grace interval "at least 1". **Only the third is enforced** (`storm_tracking.rs:622`). The spec's default in-flight TTL of 20 s is deliberately replaced by 10 s (`:117-119`).
 - Storm-tracking behaviors (within grace period/interval formulas, fan-out, in-flight TTL failure, PutCacheEntry clears in-flight) are implemented (`:264-344`, `:661`, `:675`, `:710`).
-- "Updating usage metadata SHOULD be atomic": implemented under one lock (`entry.rs:201-206`, the only Duvet annotation).
+- "Updating usage metadata SHOULD be atomic": implemented under one lock (`entry.rs:201-206`, the only Duvet annotation). The C08 proof (model level, not the shipped code: 20 verified, 0 errors) shows at model level that the counters never wrap and that both change together or neither. The spec has no overflow rule. The overflow-evicts behavior comes from the trait doc and the code.
 
 Primitives:
 - KBKDF/HMAC/digest/AES/ECDSA output-buffer lengths are checked and return errors, not panics (`prim/src/lib.rs:241-260`, `:272-285`; `ecdsa.rs:200`).

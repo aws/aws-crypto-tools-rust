@@ -1,0 +1,150 @@
+BASELINE: verification results:: 24 verified, 0 errors (exit 0)
+BASELINE copy-check: exit 0, 0 failing checks
+m01_enc_add_data_key_skips_check [predicted: reject] enc_add_data_key stores the key without calling check_data_key_length
+    -> 21 verified, 3 errors  REJECTED
+    failing: ['theorem_add_data_key_exact', 'lemma_step_preserves', 'theorem_c04_summary']
+    copy-check on the mutant: does not catch it
+m02_dec_add_data_key_skips_check [predicted: reject] dec_add_data_key stores the key without calling check_data_key_length
+    -> 19 verified, 5 errors  REJECTED
+    failing: ['theorem_add_data_key_exact', 'lemma_hier_dec', 'lemma_step_preserves', 'lemma_witnesses', 'theorem_c04_summary']
+    copy-check on the mutant: does not catch it
+m03_enc_build_skips_check [predicted: reject] enc_build does not check the builder PDK
+    -> 22 verified, 2 errors  REJECTED
+    failing: ['theorem_build_exact', 'lemma_witnesses']
+    copy-check on the mutant: does not catch it
+m04_dec_build_skips_check [predicted: reject] dec_build does not check the builder PDK
+    -> 22 verified, 2 errors  REJECTED
+    failing: ['theorem_build_exact', 'lemma_witnesses']
+    copy-check on the mutant: does not catch it
+m05_raw_dec_bypasses_add_data_key [predicted: reject] raw_dec builds the materials directly from the first candidate length (no length test, no add_data_key)
+    -> 22 verified, 1 errors  REJECTED
+    failing: ['lemma_raw_dec']
+    copy-check on the mutant: does not catch it
+m06_hier_dec_bypasses_add_data_key [predicted: reject] hier_dec builds the materials directly from the first Ok length
+    -> 23 verified, 1 errors  REJECTED
+    failing: ['lemma_hier_dec']
+    copy-check on the mutant: does not catch it
+m07_build_checks_wrong_suite [predicted: reject] enc_build checks the builder PDK against the 256-bit suite for every suite
+    -> 22 verified, 2 errors  REJECTED
+    failing: ['theorem_build_exact', 'lemma_witnesses']
+    copy-check on the mutant: does not catch it
+m08_build_checks_only_256 [predicted: reject] dec_build checks the PDK only when the suite key length is 32
+    -> 22 verified, 2 errors  REJECTED
+    failing: ['theorem_build_exact', 'lemma_witnesses']
+    copy-check on the mutant: does not catch it
+m09_check_wrong_field [predicted: reject] check_data_key_length compares with the IV length (12) instead of the key length
+    -> 13 verified, 11 errors  REJECTED
+    failing: ['theorem_check_exact', 'theorem_add_data_key_exact', 'theorem_build_exact', 'lemma_gen_pdk', 'lemma_hier_dec', 'lemma_decrypt_succeeds_on_right_length', 'lemma_step_preserves', 'check_data_key_length_exec', 'theorem_check_exact_exec_agrees', 'lemma_witnesses', 'lemma_run_witness']
+    copy-check on the mutant: does not catch it
+m10_check_accepts_shorter [predicted: reject] check_data_key_length rejects only a longer key (`k.len > key_len`), so a shorter key passes
+    -> 15 verified, 9 errors  REJECTED
+    failing: ['theorem_check_exact', 'theorem_add_data_key_exact', 'theorem_build_exact', 'lemma_hier_dec', 'lemma_step_preserves', 'check_data_key_length_exec', 'theorem_check_exact_exec_agrees', 'lemma_witnesses', 'theorem_c04_summary']
+    copy-check on the mutant: does not catch it
+m11_check_accepts_longer [predicted: reject] check_data_key_length rejects only a shorter key (`k.len < key_len`), so a longer key passes
+    -> 15 verified, 9 errors  REJECTED
+    failing: ['theorem_check_exact', 'theorem_add_data_key_exact', 'theorem_build_exact', 'lemma_hier_dec', 'lemma_step_preserves', 'check_data_key_length_exec', 'theorem_check_exact_exec_agrees', 'lemma_witnesses', 'theorem_c04_summary']
+    copy-check on the mutant: does not catch it
+m12_check_off_by_one [predicted: reject] check_data_key_length compares `k.len + 1` with the key length
+    -> 13 verified, 11 errors  REJECTED
+    failing: ['theorem_check_exact', 'theorem_add_data_key_exact', 'theorem_build_exact', 'lemma_gen_pdk', 'lemma_hier_dec', 'lemma_decrypt_succeeds_on_right_length', 'lemma_step_preserves', 'check_data_key_length_exec', 'theorem_check_exact_exec_agrees', 'lemma_witnesses', 'lemma_run_witness']
+    copy-check on the mutant: does not catch it
+m13_check_inverted [predicted: reject] check_data_key_length: the `!=` is `==` (accepts only wrong lengths)
+    -> 13 verified, 11 errors  REJECTED
+    failing: ['theorem_check_exact', 'theorem_add_data_key_exact', 'theorem_build_exact', 'lemma_gen_pdk', 'lemma_hier_dec', 'lemma_decrypt_succeeds_on_right_length', 'lemma_step_preserves', 'check_data_key_length_exec', 'theorem_check_exact_exec_agrees', 'lemma_witnesses', 'lemma_run_witness']
+    copy-check on the mutant: does not catch it
+m14_table_wrong_key_length [predicted: reject] copied table: row 00 46 key_len 24 -> 32 (spec says 192 bits)
+    -> 22 verified, 2 errors  REJECTED
+    failing: ['lemma_key_len_table', 'encryption_key_length_exec']
+    copy-check on the mutant: catches it (2 failing checks)
+m15_table_non_aes_key_length [predicted: reject] copied table and both spec columns: row 03 46 key length 20 bytes / 160 bits (a consistent copy error, not an AES length)
+    -> 22 verified, 2 errors  REJECTED
+    failing: ['lemma_key_len_table', 'encryption_key_length_exec']
+    copy-check on the mutant: catches it (4 failing checks)
+m16_generator_one_byte_long [predicted: reject] gen_pdk returns a key one byte longer than the suite key length
+    -> 21 verified, 3 errors  REJECTED
+    failing: ['lemma_gen_pdk', 'generate_exec', 'lemma_run_witness']
+    copy-check on the mutant: does not catch it
+m17_generator_fixed_32 [predicted: reject] gen_pdk always returns 32 bytes (a generator that ignores the suite)
+    -> 21 verified, 3 errors  REJECTED
+    failing: ['lemma_gen_pdk', 'generate_exec', 'lemma_run_witness']
+    copy-check on the mutant: does not catch it
+m18_exec_generator_fixed_16 [predicted: reject] generate_exec allocates a fixed 16 bytes
+    -> 23 verified, 1 errors  REJECTED
+    failing: ['generate_exec']
+    copy-check on the mutant: does not catch it
+m19_exec_check_off_by_one [predicted: reject] check_data_key_length_exec: `key_len > expected_len` instead of `!=`
+    -> 23 verified, 1 errors  REJECTED
+    failing: ['check_data_key_length_exec']
+    copy-check on the mutant: does not catch it
+m20_exec_lookup_wrong [predicted: reject] encryption_key_length_exec: the 192-bit NO_KDF suite returns 32
+    -> 23 verified, 1 errors  REJECTED
+    failing: ['encryption_key_length_exec']
+    copy-check on the mutant: catches it (1 failing checks)
+m21_add_edk_changes_suite [predicted: reject] enc_add_edk returns the materials with the suite replaced by the 128-bit suite and the PDK kept
+    -> 22 verified, 2 errors  REJECTED
+    failing: ['lemma_step_preserves', 'theorem_producers_exact']
+    copy-check on the mutant: does not catch it
+m22_clone_changes_length [predicted: reject] CloneMat returns a copy whose PDK is one byte longer
+    -> 22 verified, 2 errors  REJECTED
+    failing: ['lemma_step_preserves', 'lemma_step_dispatch']
+    copy-check on the mutant: does not catch it
+m23_add_data_key_overwrites [predicted: reject] dec_add_data_key drops the `already has a PDK` guard (a second key replaces the first)
+    -> 23 verified, 1 errors  REJECTED
+    failing: ['theorem_add_data_key_exact']
+    copy-check on the mutant: does not catch it
+m24_invariant_weakened [predicted: reject] pdk_ok weakened to `k.len <= key_len` (a premise used by the spec-bits theorem)
+    -> 23 verified, 1 errors  REJECTED
+    failing: ['theorem_pdk_matches_spec_bits']
+    copy-check on the mutant: does not catch it
+m25_build_stores_other_key [predicted: reject] enc_build checks the builder PDK, then stores a PDK of length 0 instead of the checked one
+    -> 23 verified, 1 errors  REJECTED
+    failing: ['theorem_build_exact']
+    copy-check on the mutant: does not catch it
+s01_generated_path_bypasses_check [predicted: survive] hier_enc stores the generated key without add_data_key (the generated key has the right length by construction, so the check is redundant in the model)
+    -> 24 verified, 0 errors  SURVIVED
+    copy-check on the mutant: does not catch it
+s02_raw_precheck_weakened [predicted: survive] raw_dec pre-check `ns[0] != key_len` becomes `ns[0] < key_len`: a longer key now reaches add_data_key, which rejects it (the pre-check is redundant for the invariant)
+    -> 23 verified, 1 errors  REJECTED
+    failing: ['lemma_decrypt_succeeds_on_right_length']
+    copy-check on the mutant: does not catch it
+s03_hier_dec_guard_removed [predicted: survive] hier_dec drops its own `already has a PDK` guard (dec_add_data_key has the same guard)
+    -> 23 verified, 1 errors  REJECTED
+    failing: ['lemma_hier_dec']
+    copy-check on the mutant: does not catch it
+s04_closure_statement_weakened [predicted: survive] theorem_c04_closure: the conjunct `pdk_ok(r)` is removed from both ensures (Verus proves what is stated; a missing claim is not detected)
+    -> 23 verified, 1 errors  REJECTED
+    failing: ['theorem_c04_summary']
+    copy-check on the mutant: does not catch it
+s05_consistent_copy_error [predicted: survive] copied table and both spec columns changed together: row 00 46 key length 32 bytes / 256 bits (a consistent copy error; 32 is a valid AES length)
+    -> 23 verified, 1 errors  REJECTED
+    failing: ['encryption_key_length_exec']
+    copy-check on the mutant: catches it (4 failing checks)
+s06_exec_generator_unused_field [predicted: survive] generate_exec reads `bytes.len()` through a second binding (same value; a refactor with no effect)
+    -> 24 verified, 0 errors  SURVIVED
+    copy-check on the mutant: does not catch it
+m26_run_ignores_steps [predicted: reject] run returns Ok(m) without applying any step (the closure then holds trivially; the witness must catch it)
+    -> 22 verified, 2 errors  REJECTED
+    failing: ['lemma_run_preserves', 'lemma_run_witness']
+    copy-check on the mutant: does not catch it
+s07_consistent_copy_error_all_three [predicted: survive] code_row, both spec columns AND the exec lookup changed together: row 00 46 key length 32 bytes / 256 bits (a consistent error in every copy)
+    -> 24 verified, 0 errors  SURVIVED
+    copy-check on the mutant: catches it (5 failing checks)
+m27_step_drops_raw_dec [predicted: reject] step maps RawDec(..) to Ok(m): the raw-AES decrypt path is dropped from the closure (rejected by lemma_step_dispatch, added after the first run)
+    -> 23 verified, 1 errors  REJECTED
+    failing: ['lemma_step_dispatch']
+    copy-check on the mutant: does not catch it
+SUMMARY: 34 mutants, 31 rejected, 3 survived, 0 invalid (compile error), 4 differ from prediction
+SURVIVORS: s01_generated_path_bypasses_check, s06_exec_generator_unused_field, s07_consistent_copy_error_all_three
+SURVIVOR REASONS
+s01: hier_enc stores a generated key without calling add_data_key. The generated key has the suite length by construction (gen_pdk), so the check on that path is redundant in the model and the invariant still holds. The mutant is not wrong at model level. It shows that the check inside add_data_key is not what protects the generated path; the length of the generated key is. In the code that length comes from `vec![0u8; suite.encryption_key_length()]` (H_VEC_LEN, H_FILL_SLICE).
+s06: a no-op refactor of generate_exec (same value through a second binding). It cannot change any result.
+s07: the same wrong key length typed into code_row, both spec columns and the exec lookup (a consistent error in every copy). Verus has nothing to compare. The copy-check script catches it (it reads the Rust source and the spec). This is the copied-by-hand limit, as in C05 m21.
+HISTORY of m27 (first run, before lemma_step_dispatch existed: 34 mutants, 30 rejected, 4 survived): the mutant that drops RawDec from `step` SURVIVED. The local lemma on raw_dec and theorem_producers_exact still held because they speak about raw_dec directly, and the closure no longer contained the path. The link between `step` and the path functions was by reading only. lemma_step_dispatch (a definition check) was added to the proof and the mutant is now rejected. The lemma is true by the definition of `step`; it only catches an edit of `step`. The proof file was changed after that first run, so the baseline moved from 23 to 24 verified.
+PREDICTION DIFFERENCES (4 mutants were predicted to survive and were rejected; the predictions were written before the first run)
+s02: the pre-check `ns[0] < key_len` lets a longer key reach add_data_key, which rejects it with Err, so the safety lemma still holds. It was rejected by lemma_decrypt_succeeds_on_right_length: a longer key before a right-length key now ends the loop with Err. So the liveness witness pins the pre-check behavior (continue on a mismatch). The prediction missed that witness.
+s03: hier_dec without its own already-has-a-PDK guard is equivalent in behavior (dec_add_data_key has the same guard and returns Err). It was rejected only because the hand-written induction in lemma_hier_dec follows the guard (the recursive case is entered only when no PDK is present). That is a fragile proof step, not a semantic catch. The mutant is an equivalent mutant that Verus rejects for proof-script reasons.
+s04: removing `pdk_ok(r)` from the ensures of theorem_c04_closure was rejected because theorem_c04_summary uses that ensures to prove its own `pdk_ok(r)` conjunct. A weakened statement is caught only where another theorem restates it. Verus does not detect a missing claim by itself.
+s05: the consistent change of code_row and both spec columns was rejected by encryption_key_length_exec, the exec lookup, which is a third independent copy of the key lengths. s07 changes all three copies and survives.
+NOTE m14, m15: the copy-check script also catches them; Verus catches them through lemma_key_len_table (spec columns) and the exec lookup.
+NOTE m01-m08: path-level edits are caught by the local exactness theorems and by the closure; m05 and m06 (a decrypt path that builds materials without add_data_key) are caught by lemma_raw_dec and lemma_hier_dec.
+These checks cover edits to the model only, not edits to the shipped code. The copy-check script does not catch model-logic edits (m01 to m13, m16 to m19, m21 to m27), only copy errors in the table and the spec columns, and some code-site changes in mpl/.
