@@ -774,4 +774,33 @@ mod tests {
             assert_eq!(buf, expected, "seq={seq} final={final_content_len:?}");
         }
     }
+
+    // MAX_DATA + 1 does not fit a 32-bit `usize`.
+    #[cfg(target_pointer_width = "64")]
+    #[test]
+    fn plaintext_budget_rejects_over_max_data() {
+        let max = usize::try_from(MAX_DATA).unwrap();
+        assert_eq!(
+            PlaintextBudget::new().add(max + 1, None),
+            Err(BudgetError::TooLarge)
+        );
+        let mut b = PlaintextBudget::new();
+        assert_eq!(b.add(max, None), Ok(()));
+        assert_eq!(b.add(1, None), Err(BudgetError::TooLarge));
+    }
+
+    #[test]
+    fn frame_seq_stops_at_endframe() {
+        assert_eq!(EncryptFrameSeq::start().take_regular(), Some(1));
+        // Reaching ENDFRAME_SEQUENCE_NUMBER through `take_regular` takes
+        // 2^32 - 2 calls, so the test builds the counter there directly. The
+        // ghost frame count is erased at runtime and this module is not
+        // verified.
+        let mut s = EncryptFrameSeq {
+            next: ENDFRAME_SEQUENCE_NUMBER,
+            frames: Ghost::assume_new(),
+        };
+        assert_eq!(s.take_regular(), None);
+        assert_eq!(s.final_seq(), ENDFRAME_SEQUENCE_NUMBER);
+    }
 }

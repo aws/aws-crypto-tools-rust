@@ -533,3 +533,33 @@ pub fn ecdsa_generate_keypair(alg: EcdsaSignatureAlgorithm) -> Result<SignatureK
         signing_key,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sign_fixed_len_maps_failure_and_exhaustion() {
+        // (a) A failing `sign_once` is reported with its own error.
+        let e = sign_fixed_len(&mut [0; 103], || Err(serr("boom".to_owned()))).unwrap_err();
+        assert_eq!(e.message(), "boom");
+
+        // (b) No DER ECDSA signature is 1 byte long, so every attempt is
+        // retried until the attempt limit.
+        let kp =
+            EcdsaKeyPair::generate(&aws_lc_rs::signature::ECDSA_P384_SHA384_ASN1_SIGNING).unwrap();
+        let rng = SystemRandom::new();
+        let mut attempts = 0u32;
+        let e = sign_fixed_len(&mut [0; 1], || {
+            attempts += 1;
+            kp.sign(&rng, b"m")
+                .map_err(|_| serr("ECDSA signing failed".to_owned()))
+        })
+        .unwrap_err();
+        assert_eq!(
+            e.message(),
+            "no 1 byte DER signature produced in 128 attempts"
+        );
+        assert_eq!(attempts, MAX_SIGN_ATTEMPTS);
+    }
+}

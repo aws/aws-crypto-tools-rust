@@ -853,3 +853,88 @@ fn build_header_auth_tag(
         header_auth_tag: auth_tag,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::secret::CommitmentValue;
+    use aws_crypto_mpl::types::AlgorithmSuiteId as MplAlgorithmSuiteId;
+
+    #[test]
+    fn v2_header_body_rejects_bad_suite_data() {
+        let suite = AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey.specification();
+        let message_id: MessageId = vec![0; 32];
+        let ec = EncryptionContext::new();
+        let build =
+            |suite_data| build_v2_header_body(&message_id, &suite, &ec, &[], 4096, suite_data);
+
+        let e = build(None).unwrap_err();
+        assert_eq!(e.kind(), Kind::Internal);
+        assert_eq!(
+            e.message(),
+            "suite data must be present for a committing algorithm suite"
+        );
+
+        let e = build(Some(PublicBytes::from_commitment(
+            &CommitmentValue::zeroed(16),
+        )))
+        .unwrap_err();
+        assert_eq!(e.kind(), Kind::Internal);
+        assert_eq!(
+            e.message(),
+            "suite data length must match the commitment key output length for a committing suite"
+        );
+
+        let Ok(HeaderBody::V2Body(body)) = build(Some(PublicBytes::from_commitment(
+            &CommitmentValue::zeroed(32),
+        ))) else {
+            panic!("32 bytes of suite data must build a V2 header body");
+        };
+        assert_eq!(body.suite_data, vec![0; 32]);
+    }
+
+    // Defense-in-depth test of esdk's own fallback check: the MPL rejects a
+    // signing suite with no signing key before the public API hands the
+    // materials to esdk.
+    #[tokio::test]
+    async fn construct_signature_requires_signing_key() {
+        let id = AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384;
+        let suite = id.specification();
+        let ec = EncryptionContext::new();
+        let body = build_v2_header_body(
+            &vec![0; 32],
+            &suite,
+            &ec,
+            &[],
+            4096,
+            Some(PublicBytes::from_commitment(&CommitmentValue::zeroed(32))),
+        )
+        .unwrap();
+        let header = header::HeaderInfo {
+            body,
+            raw_header: Vec::new(),
+            encryption_context: ec,
+            suite,
+            header_auth: HeaderAuth::AESMac {
+                header_iv: vec![0; 12],
+                header_auth_tag: vec![0; 16],
+            },
+        };
+        let materials = EncryptionMaterials::builder()
+            .algorithm_suite_id(MplAlgorithmSuiteId::Esdk(id))
+            .build()
+            .unwrap();
+        let sig_digest = DigestWriter::from_suite(&suite).unwrap();
+        let mut sink: Vec<u8> = Vec::new();
+
+        let e = step_construct_signature(&header, &materials, sig_digest, &mut sink)
+            .await
+            .unwrap_err();
+        assert_eq!(e.kind(), Kind::InvalidMaterials);
+        assert_eq!(
+            e.message(),
+            "encryption materials must contain a signing key for signature algorithm"
+        );
+        assert!(sink.is_empty());
+    }
+}

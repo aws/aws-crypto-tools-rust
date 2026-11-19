@@ -108,3 +108,21 @@ pub(crate) fn signing_key<'a>(present: &SigningKeyPresent<'a>) -> (r: &'a [u8])
 }
 
 } // verus!
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Defense-in-depth test of esdk's own fallback check: the MPL rejects a
+    // signing suite with no signing key before the public API hands the
+    // materials to esdk, and the only caller passes `suite_signs == true`.
+    #[test]
+    fn signing_key_gate_cases() {
+        assert!(signing_key_gate(false, Some(b"k")).is_none());
+        assert!(signing_key_gate(true, None).is_none());
+        let Some(t) = signing_key_gate(true, Some(b"k")) else {
+            panic!("a signing suite with a signing key must yield a token");
+        };
+        assert_eq!(signing_key(&t), b"k");
+    }
+}

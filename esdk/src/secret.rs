@@ -548,4 +548,42 @@ mod tests {
         let k = identity_copy(&DataKeyRef { bytes: &pdk });
         assert_eq!(k.bytes, pdk);
     }
+
+    // Defense-in-depth test of esdk's own fallback check: the MPL rejects
+    // materials with no plaintext data key before the public API hands them
+    // to esdk, so only a crate-internal test can reach these arms.
+    #[test]
+    fn data_key_from_materials_requires_plaintext_data_key() {
+        use aws_crypto_mpl::types::{
+            AlgorithmSuiteId as MplAlgorithmSuiteId, EsdkAlgorithmSuiteId,
+        };
+        let suite =
+            MplAlgorithmSuiteId::Esdk(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey);
+
+        let enc = EncryptionMaterials::builder()
+            .algorithm_suite_id(suite)
+            .build()
+            .unwrap();
+        let Err(e) = data_key_from_encryption_materials(&enc) else {
+            panic!("encryption materials without a plaintext data key must be rejected");
+        };
+        assert_eq!(e.kind(), Kind::InvalidMaterials);
+        assert_eq!(
+            e.message(),
+            "encryption materials must contain a plaintext data key"
+        );
+
+        let dec = DecryptionMaterials::builder()
+            .algorithm_suite_id(suite)
+            .build()
+            .unwrap();
+        let Err(e) = data_key_from_decryption_materials(&dec) else {
+            panic!("decryption materials without a plaintext data key must be rejected");
+        };
+        assert_eq!(e.kind(), Kind::InvalidMaterials);
+        assert_eq!(
+            e.message(),
+            "decryption materials must contain a plaintext data key"
+        );
+    }
 }

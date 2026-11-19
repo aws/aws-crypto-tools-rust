@@ -386,3 +386,19 @@ pub(crate) fn release<'a>(held: &'a HeldFinalPlaintext, _signature: &SignatureVe
 }
 
 } // verus!
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Defense-in-depth test of esdk's own fallback check: the MPL rejects a
+    // signing suite with no verification key, and an unsigned suite with one,
+    // before the public API hands the materials to esdk.
+    #[test]
+    fn signature_presence_gate_rejects_mismatch() {
+        assert!(signature_presence_gate(true, false).is_none());
+        assert!(signature_presence_gate(false, true).is_none());
+        assert!(signature_presence_gate(true, true).is_some());
+        assert!(signature_presence_gate(false, false).is_some());
+    }
+}

@@ -418,4 +418,51 @@ mod tests {
         assert_eq!(edk_count_check(4, Some(3)), EdkCount::OverMax);
         assert_eq!(edk_count_check(2, Some(3)), EdkCount::Ok);
     }
+
+    // Defense-in-depth test of esdk's own fallback check: the MPL rejects
+    // encryption materials with zero EDKs before the public API hands them to
+    // esdk.
+    #[test]
+    fn validate_max_edks_rejects_empty() {
+        let e = validate_max_encrypted_data_keys(None, &[]).unwrap_err();
+        assert_eq!(e.kind(), Kind::InvalidMaterials);
+        assert_eq!(
+            e.message(),
+            "encrypted data key count must be greater than 0"
+        );
+    }
+
+    // Defense-in-depth test: `header_version_supports_commitment` already
+    // rejects a V2 header whose suite data is not the commit key length, so
+    // only a hand-built header reaches the LengthMismatch arm.
+    #[test]
+    fn validate_suite_data_reports_length_mismatch() {
+        use super::super::header_types::V2HeaderBody;
+        use crate::shapes::AlgorithmSuiteId;
+        let suite = AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey.specification();
+        let body = |suite_data: Vec<u8>| {
+            HeaderBody::V2Body(V2HeaderBody {
+                algorithm_suite: suite,
+                message_id: vec![0; MESSAGE_ID_LEN_V2],
+                encryption_context: EncryptionContext::new(),
+                encrypted_data_keys: Vec::new(),
+                content_type: ContentType::Framed,
+                frame_length: 4096,
+                suite_data,
+            })
+        };
+
+        // The bytes match, but 16 is not the suite's 32-byte commit key length.
+        let Err(e) = validate_suite_data(&suite, &body(vec![7; 16]), &[7; 16]) else {
+            panic!("a 16-byte suite data must be rejected for a 32-byte commit key");
+        };
+        assert_eq!(e.kind(), Kind::Internal);
+        assert_eq!(
+            e.message(),
+            "algorithm suite data length does not match the algorithm suite's declared suite-data length"
+        );
+
+        // Matching bytes at the declared length are accepted.
+        assert!(validate_suite_data(&suite, &body(vec![7; 32]), &[7; 32]).is_ok());
+    }
 }
