@@ -7,6 +7,7 @@
 
 use std::num::NonZeroU32;
 
+use crate::encrypt_gate;
 use crate::error::Error;
 use crate::error::{Kind, err, val_err};
 use crate::key_derivation;
@@ -27,6 +28,7 @@ use aws_crypto_mpl::types::AlgorithmSuite;
 use aws_crypto_mpl::types::EncryptedDataKey;
 use aws_crypto_mpl::types::EncryptionMaterials;
 use aws_crypto_mpl::types::RequiredEncryptionContextKeys;
+use aws_crypto_mpl::types::SigningKey;
 use aws_mpl_primitives::ecdsa_sign_digest;
 use vstd::prelude::*;
 
@@ -543,26 +545,31 @@ async fn step_construct_signature(
     //# If the [algorithm suite](../framework/algorithm-suites.md) contains a [signature algorithm](../framework/algorithm-suites.md#signature-algorithm),
     //# this operation MUST calculate a signature over the message,
     //# and the output [encrypted message](#encrypted-message) MUST contain a [message footer](../data-format/message-footer.md).
-    if header.suite.asymmetric_signature_algorithm().is_some() {
+    let suite_signs = header.suite.asymmetric_signature_algorithm().is_some();
+    if suite_signs {
         let ecdsa_params = get_ecdsa_alg(&header.suite)?;
 
         //= spec/client-apis/encrypt.md#construct-the-signature
         //# To calculate a signature, this operation MUST use the [signature algorithm](../framework/algorithm-suites.md#signature-algorithm)
         //# specified by the [algorithm suite](../framework/algorithm-suites.md), with the following input:
         let mut signature_bytes = vec![0u8; aws_mpl_primitives::signature_len(ecdsa_params)];
+        // `signing_key_gate` returns a `SigningKeyPresent` token only when the
+        // suite signs and the materials have a signing key (VR-019). The key
+        // for signing is read only through that token.
+        let Some(signing) = encrypt_gate::signing_key_gate(
+            suite_signs,
+            materials.signing_key().map(SigningKey::as_bytes),
+        ) else {
+            return Err(err(
+                Kind::InvalidMaterials,
+                "encryption materials must contain a signing key for signature algorithm",
+            ));
+        };
         ecdsa_sign_digest(
             ecdsa_params,
             //= spec/client-apis/encrypt.md#construct-the-signature
             //# - the signature key MUST be the [signing key](../framework/structures.md#signing-key) in the [encryption materials](../framework/structures.md#encryption-materials)
-            materials
-                .signing_key()
-                .ok_or_else(|| {
-                    err(
-                        Kind::InvalidMaterials,
-                        "encryption materials must contain a signing key for signature algorithm",
-                    )
-                })?
-                .as_bytes(),
+            encrypt_gate::signing_key(&signing),
             //= spec/client-apis/encrypt.md#construct-the-signature
             //# - the input to sign MUST be the concatenation of the serialization of the [message header](../data-format/message-header.md) and [message body](../data-format/message-body.md)
             sig_digest.context.ok_or_else(|| {

@@ -657,6 +657,21 @@ no longer trusted.) Regular non-final frames are still
 released before the signature, as the spec allows, so the residual risk above (callers acting on
 streamed frames before the operation finishes) is unchanged.
 
+**Encrypt side (VR-019, branch `verus-encrypt-signing-key-presence`; also relevant to R1):** the
+encrypt signing step gets the signing key only through a `SigningKeyPresent` token
+(`esdk/src/encrypt_gate.rs`). Verus proves that `signing_key_gate` makes the token iff the suite
+signs and the encryption materials have a signing key, and that the token holds exactly that key.
+The compiler enforces that `ecdsa_sign_digest` cannot get the key any other way. This is the
+counterpart of VR-015 (b), but it covers one direction only (finding F3). esdk rejects a signing
+suite with no signing key only in `step_construct_signature`, after the header and body are
+written, and it does not reject a non-signing suite whose materials have a signing key. Both the
+reverse direction and early rejection rely on the MPL (`GetEncryptionMaterials::send` /
+`check_encryption_materials` and `EncryptionMaterialsBuilder::build`), which is trusted code
+reading. So the residual risk that a misbehaving CMM makes encrypt omit the signature for a
+signing suite, or sign for a non-signing suite, now rests on the MPL checks plus the proven esdk
+gate in step 4. Also trusted: that `encrypt_steps` runs step 4 for every signing suite and that
+step 4 writes the footer.
+
 ---
 
 #### E2: Discovery Keyring Over-Permissiveness
@@ -847,15 +862,16 @@ All targets reference real files in this repository. Scores below are the origin
 the current coverage gaps, full scoring and agent assignments see
 `docs/verification-recommendations.md`.
 
-**Verification status on branch `verus-encrypt-limits-and-lengths`** (in-crate counts; the model
+**Verification status on branch `verus-encrypt-signing-key-presence`** (in-crate counts; the model
 results are unchanged since `5ea2a804`). Verus checks two things:
 
 - **In-crate (shipped `esdk` code).** `make -C esdk verus` verifies the `verus!` blocks in
   `esdk/src/message/`, `esdk/src/key_derivation.rs`, `esdk/src/secret.rs` and
-  `esdk/src/decrypt_gate.rs` and `esdk/src/encrypt.rs` (52 exec fns, 10 proof fns): `94 verified,
+  `esdk/src/decrypt_gate.rs`, `esdk/src/encrypt.rs` and `esdk/src/encrypt_gate.rs` (54 exec fns,
+  11 proof fns): `97 verified,
   0 errors` for both the default features and `--no-default-features --features aws-lc-sys` (40 at
   `5ea2a804`, 45 after VR-009, 57 after VR-011, 69 after VR-012, 73 after the VR-001 (b) / VR-002
-  tokens, 77 after VR-015, 81 after VR-016). This
+  tokens, 77 after VR-015, 81 after VR-016, 94 after VR-017 / VR-018). This
   covers parts of VR-003 (big-endian decoding, bounded readers, header-field decisions, the 0x41
   Base64 hint), VR-004 (regular- and final-frame sequence checks, frames-start-at-1 lemmas),
   VR-005 (body AAD, IV, frame prefix layout), VR-007 (EDK count check), the esdk half of VR-009
@@ -864,7 +880,8 @@ results are unchanged since `5ea2a804`). Verus checks two things:
   (threat R3) with its presence check (VR-015 (b)), and VR-016 (every esdk AES-GCM decryption
   gets a plaintext buffer as long as its ciphertext, so BUG-07(b) is unreachable from esdk),
   VR-017 (encrypt-side MAX_DATA budget and frame sequence numbers; Attack Tree 1) and VR-018
-  (encrypt-side suite-data and data-key length checks). The async readers and loops around these cores
+  (encrypt-side suite-data and data-key length checks), and VR-019 (the encrypt signing-key
+  check, one direction only; threat R3/R1). The async readers and loops around these cores
   are unverified glue.
 - **Decrypt order (VR-001 (b), VR-002), Verus plus the compiler.** Verus proves that the
   `CommitmentAccepted` and `HeaderVerified` tokens in `esdk/src/decrypt_gate.rs` are created only

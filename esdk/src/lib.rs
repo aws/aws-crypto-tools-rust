@@ -201,6 +201,7 @@ pub mod config;
 mod decrypt;
 pub(crate) mod decrypt_gate;
 mod encrypt;
+pub(crate) mod encrypt_gate;
 pub mod error;
 pub mod operation;
 mod shapes;

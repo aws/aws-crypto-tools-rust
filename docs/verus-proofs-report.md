@@ -272,6 +272,25 @@ make -C verification verify
 > Same errors, messages and order as before; no public API or streaming
 > change. The async body loop and the header builders are unverified
 > adapters. See "VR-017 and VR-018" under "In-crate proofs".
+>
+> **Update (branch `verus-encrypt-signing-key-presence`):** **97 verified,
+> 0 errors** on both feature sets (up from 94; +3 obligations).
+>
+> - **VR-019 (new): the encrypt signing-key check** (`esdk/src/encrypt_gate.rs`).
+>   This is the encrypt-side counterpart of VR-015 (b). In
+>   `step_construct_signature`, `signing_key_gate` returns a
+>   `SigningKeyPresent` token, which holds the key bytes, exactly when the
+>   suite signs and the materials have a signing key. The signing call reads
+>   the key only through `signing_key(&token)`. The error, message, order
+>   and place in the flow are unchanged.
+> - **Finding F3: the esdk check covers one direction only, and it runs
+>   late.** esdk rejects a signing suite with no signing key, but only in
+>   `step_construct_signature`, after the header and body have been written.
+>   esdk does not reject a non-signing suite whose materials have a signing
+>   key. Both the reverse direction and early rejection rely on the MPL
+>   (`GetEncryptionMaterials::send` / `check_encryption_materials` and
+>   `EncryptionMaterialsBuilder::build`), which is trusted code reading. See
+>   "VR-019" under "In-crate proofs".
 
 ### Adherence to the Verus skill invariants (esdk)
 - No proof was weakened: **no** `assume(...)`, `admit()`, or `#[verifier::external]` anywhere in esdk. In esdk there is exactly **one** `#[verifier::external_body]` — the `utf8_check` wrapper around `std::str::from_utf8` in the AAD sub-parser — used per Verus skill invariant #11 for a std call Verus cannot evaluate (the same role `tag_ok` plays for the AES-GCM check). Its `ensures` is a **trusted boundary, not a proof**: the UTF-8-validation correctness is delegated to the std library; everything around it (that the parser rejects non-UTF-8 with `Err`, never panics) is proven. This is called out explicitly in §5.
@@ -302,17 +321,17 @@ Output (the `aws-esdk` line; `vstd` is verified first with
 `--no-default-features --features aws-lc-sys`:
 
 ```
-verification results:: 94 verified, 0 errors
-verification results:: 94 verified, 0 errors
+verification results:: 97 verified, 0 errors
+verification results:: 97 verified, 0 errors
 ```
 
 The count is Verus's obligation count, not a function count; the checked
-fns are 52 exec fns (13 before the in-crate work, 22 before VR-009, 24 before
+fns are 54 exec fns (13 before the in-crate work, 22 before VR-009, 24 before
 VR-011, 34 before VR-001, 35 before VR-012, 36 before the VR-001 (b) / VR-002
 tokens, 39 before VR-015, 43 before VR-016 and VR-015 (b), 45 before VR-017 /
-VR-018) and 10 proof fns (3 before VR-012; the two VR-012 round-trip lemmas bring
+VR-018, 52 before VR-019) and 11 proof fns (3 before VR-012; the two VR-012 round-trip lemmas bring
 it to 5, `lemma_commitment_accepted` to 6, `lemma_open_buffers_sized`
-and `lemma_signature_required` to 8, and the two VR-017 lemmas to 10). The count rose from 59 to 69 at
+and `lemma_signature_required` to 8, and the two VR-017 lemmas to 10, `lemma_signing_key_present` to 11). The count rose from 59 to 69 at
 VR-012: the two lemmas plus the staged `by (nonlinear_arith)` sub-obligations in
 the `u64` proof each count. It rose from 69 to 73 with the decrypt tokens: the
 three token-creating fns and the lemma. It rose from 73 to 77 with VR-015:
@@ -323,7 +342,8 @@ three token-creating fns and the lemma. It rose from 73 to 77 with VR-015:
 were strengthened in place. It rose from 81 to 94 with VR-017
 (`PlaintextBudget::new` / `add`, `EncryptFrameSeq::start` / `take_regular` /
 `final_seq`, the two lemmas and the staged `nonlinear_arith` step) and VR-018
-(`check_v2_suite_data`, `data_key_len_ok`). Files are under `esdk/src/message/`
+(`check_v2_suite_data`, `data_key_len_ok`). It rose from 94 to 97 with VR-019
+(`signing_key_gate`, `signing_key`, `lemma_signing_key_present`). Files are under `esdk/src/message/`
 unless the path starts with `esdk/src/`.
 
 | Fn | File | Ensures | Target |
@@ -382,6 +402,9 @@ unless the path starts with `esdk/src/`.
 | proof fn `lemma_frame_guard_needed_at_16` | `body/body_encrypt.rs` | `(ENDFRAME_SEQUENCE_NUMBER - 1) * 16 == MAX_DATA` | VR-017 |
 | `check_v2_suite_data` | `esdk/src/encrypt.rs` | `Err(Missing)` iff no suite data; `Err(LengthMismatch)` iff present with `len != expected_len`; `Ok(sd) ==> sd` is the given suite data with `len == expected_len` | VR-018 |
 | `data_key_len_ok` | `esdk/src/encrypt.rs` | `ok` iff `data_key@.len() == expected_len` | VR-018 |
+| `signing_key_gate`; type invariant `SigningKeyPresent::inv` | `esdk/src/encrypt_gate.rs` | returns a token iff `suite_signs && signing_key is Some`; the token has `signs()` and holds exactly that key (`key() == k@`); every `SigningKeyPresent` has `signs()` | VR-019 |
+| `signing_key` | `esdk/src/encrypt_gate.rs` | takes a `&SigningKeyPresent`; `r@ == present.key()` | VR-019 |
+| proof fn `lemma_signing_key_present` | `esdk/src/encrypt_gate.rs` | every `SigningKeyPresent` is for a signing suite | VR-019 |
 
 Spec fns `spec_be_u16`/`spec_be_u32`/`spec_be_u64`, the `READ_CHUNK` const and
 the `LenCheck`, `EdkCount`, `MessageFormatVersion`, `MessageType`,
@@ -840,6 +863,86 @@ expected lengths.
 Adapter mutations (for example passing a stale number to `construct_frame`)
 are glue and are not caught.
 
+### VR-019 in-crate: the encrypt signing-key check (`esdk/src/encrypt_gate.rs`)
+
+Branch `verus-encrypt-signing-key-presence`. VR-019 is the encrypt-side
+counterpart of VR-015 (b). It gets its own number rather than VR-018 (b)
+because VR-018 is about header lengths and this is about signing, in a new
+module. Origin: threat-driven (R3, repudiation and signature stripping on
+encrypt).
+
+**What esdk checks today.** esdk checks one direction only, late in the
+flow:
+
+- A signing suite with no signing key is rejected, but only in
+  `step_construct_signature` (step 4), after the header and every body
+  frame have been written to the sink. On `encrypt_stream` those bytes have
+  already been released when the error is returned.
+- A non-signing suite whose materials have a signing key is **not**
+  rejected by esdk. `encrypt_steps` skips step 4, and the key is ignored.
+
+**Finding F3 (no behavior change made).** The decrypt side (VR-015 (b))
+checks "key present iff the suite signs" in esdk, before the body. The
+encrypt side does not. Both the reverse direction and early rejection rely
+on the MPL, which has no Verus proofs, so this is trusted code reading only:
+
+- `GetEncryptionMaterials::send` (`mpl/src/cmm/fluent_builders.rs`) runs
+  `check_encryption_materials` (`mpl/src/structures/materials_checks.rs`)
+  on every CMM output, custom CMMs included. It rejects a signing suite with
+  no signing key before esdk sees the materials.
+- `EncryptionMaterialsBuilder::build` (`mpl/src/structures/encryption_materials.rs`)
+  is the only way to construct `EncryptionMaterials`. It rejects a signing
+  key for a non-signing suite.
+
+So, given the MPL, the esdk error in step 4 is unreachable through the
+public API. Whether esdk should add its own early "present iff" check, as
+on decrypt, is an open question for the owners. It is not done here,
+because it would add a check and change the error order.
+
+**How the token works.**
+
+- `signing_key_gate(suite_signs, signing_key)` replaces the
+  `signing_key().ok_or_else(..)` in `step_construct_signature`, at the same
+  place: after `get_ecdsa_alg` and the signature buffer, and before the
+  digest-context check. It returns a `SigningKeyPresent` only when the suite
+  signs and a key is present. Otherwise the caller returns the same
+  `InvalidMaterials` error with the same message.
+- `SigningKeyPresent` holds the key bytes. `ecdsa_sign_digest` gets the key
+  only through `signing_key(&token)`. So the code cannot sign without the
+  token, and it signs with exactly the key that the check saw.
+- Nothing else in the flow changes. The footer is written in the same
+  branch, right after signing.
+
+**Verus-proven:** `signing_key_gate` returns a token iff "suite signs and
+key present"; the token holds exactly the given key; every
+`SigningKeyPresent` is for a signing suite (type invariant); `signing_key`
+returns exactly the held key.
+
+**Compiler-enforced:** only `encrypt_gate` can build a `SigningKeyPresent`
+(private fields); `signing_key` cannot be called without one. The token is
+neither `Clone` nor `Copy`.
+
+**Trusted, not proven:** the caller passes the real suite flag (from
+`header.suite`) and the real `materials.signing_key()`;
+`step_construct_signature` signs only with the key from `signing_key`;
+`encrypt_steps` runs step 4 for every signing suite, and step 4 writes the
+footer (the suite flag is still read twice, in `encrypt_steps` and in step
+4); the MPL invariants above; aws-lc-rs ECDSA signing. A misbehaving CMM
+that omits the key for a signing suite is stopped by the MPL first, and by
+the VR-019 gate if it ever got through. A key for a non-signing suite is
+stopped only by the MPL.
+
+**Mutation tests** (default features; each reverted):
+
+| Mutation | Caught by | Result |
+|---|---|---|
+| M1 `signing_key_gate`: accept a signing suite with no key (an empty key on `None`) | Verus | postcondition not satisfied (both `ensures` clauses) |
+| M2 `signing_key_gate`: accept a non-signing suite with a key (`if !suite_signs` → `if false`) | Verus | `96 verified, 1 errors`: postcondition not satisfied |
+| M3 `step_construct_signature`: delete the gate call and sign with `signing_key(&signing)` | compiler | `E0425` (`signing` not in scope) |
+| M3b `step_construct_signature`: pass the raw `materials.signing_key()` bytes instead of the token | compiler | `E0308` mismatched types |
+| M4 `step_construct_signature`: build a `SigningKeyPresent` on the failure path | compiler | `E0451` private fields |
+| M5 `signing_key_gate`: build a token with `signs() == false` on the failure path | Verus | `96 verified, 1 errors`: type invariant |
+
 ### VR-008 in-crate (`aws-mpl-primitives`, `prim/src/ecdsa.rs`)
 
 `prim/Cargo.toml` sets `[package.metadata.verus] verify = true` and depends on
@@ -1297,6 +1400,7 @@ independent evidence beyond that.
 | VR-014 AES buffer effects (pipeline target VR-2026-C03, BUG-07) | **in-crate** (`prim/src/lib.rs`): BUG-07(a) **proved** — `aes_encrypt` leaves exactly `old ++ message` on a key/nonce `Err`, `old_len + |message|` with prefix unchanged on a seal `Err`, and `old ++ ct ++ tag` (+16) on `Ok`. BUG-07(b) **recorded under A-OPEN** — a decrypt buffer longer than the ciphertext passes the guard and can only end in a callee-side `Err` | **assumed, not proven:** A-OPEN (A20), the 16-byte tag (A19), no-panic of the AES calls. Not proven: crypto, ciphertext/tag bytes, tail bytes after a seal failure. FOLLOW-UP: what the `aes_*` callers do with the buffer after an `Err` (mpl 2 + 2, esdk 2 + 5). BUG-07 itself is not fixed. In esdk, (b) is unreachable by VR-016 |
 | VR-017 encrypt body limits (MAX_DATA, frame sequence) | **in-crate** (`body/body_encrypt.rs`): `PlaintextBudget` (total never exceeds MAX_DATA; rejects iff the next chunk would; then the Plaintext Length Bound; overflow-free) and `EncryptFrameSeq` (starts at 1, +1 per regular frame, never wraps, final frame = regular count + 1); lemma: MAX_DATA stops the counter first only for frame length >= 17 | the async loop threading in `encrypt_and_serialize_body` (unverified glue); `read_up_to_peek` (`in_size <= frame_length`); the `usize::try_from` conversions; the error mapping |
 | VR-018 encrypt header length checks | **in-crate** (`esdk/src/encrypt.rs`): `check_v2_suite_data` (present and exactly `algorithm_suite_data_length()` bytes, in that order) and `data_key_len_ok` (accept iff equal) | the expected lengths come from MPL (`algorithm_suite_data_length`) and the const table `get_encrypt_key_length`; the adapters map variants to today's errors |
+| VR-019 encrypt signing-key check (threat R3; counterpart of VR-015 (b)) | **in-crate, one direction** (`esdk/src/encrypt_gate.rs`): `signing_key_gate` returns a `SigningKeyPresent` iff the suite signs and a signing key is present, and the token holds that key; the compiler enforces that `ecdsa_sign_digest` in step 4 gets the key only through the token. Same error, message, order and place as before | **finding F3:** esdk rejects a missing key only in step 4, after the header and body are written, and does not reject a key for a non-signing suite. Both rely on the MPL (`GetEncryptionMaterials::send` / `check_encryption_materials`, `EncryptionMaterialsBuilder::build`), which is trusted code reading. Also trusted: the real suite flag and key are passed; `encrypt_steps` runs step 4 for every signing suite; aws-lc-rs signing |
 | VR-016 decrypt buffer sizing (BUG-07(b) in esdk) | **in-crate** (`esdk/src/secret.rs`): `secret::open` takes only an `OpenBuffers`, built only by the verified `open_buffers`; its type invariant says the plaintext buffer is as long as the ciphertext. All 5 esdk open sites go through it, so BUG-07(b) is unreachable from esdk, Verus-proven | trusted: the TB-A body of `secret::open` passes the two fields to `aes_decrypt` unchanged; what aws-lc-rs does with a mismatch stays under A-OPEN |
 | Infra: I/O seam | `esdk` is Verus-buildable; sync `verus!` cores are verified in-crate behind the async `Source`/`Tee` adapters (see "In-crate proofs") | the async adapters themselves stay unverified glue |
 
@@ -1327,6 +1431,7 @@ Load-bearing proofs were checked by mutating the code and confirming Verus
 - **decrypt tokens (`esdk/src/decrypt_gate.rs`, VR-001 (b) and VR-002):** creating a token on a failure path makes **Verus** fail each time (`72 verified, 1 errors`, then reverted): in `commitment_gate`, returning a committing token on `Err` → *constructed value may fail to meet its declared type invariant*; in `commitment_not_required`, returning a token for a committing suite → *postcondition not satisfied*; in `header_auth_gate`, returning a token when `open` failed → *postcondition not satisfied*. The order is caught by the **compiler**: calling `step_decrypt_body` without running `step_verify_header` → `E0425` (`header_verified` not in scope); building a `HeaderVerified` in `decrypt.rs` → `E0451` (private field); building a `CommitmentAccepted` in `decrypt.rs` → `E0451` (private fields). Deleting the `&HeaderVerified` parameter and its argument still **compiles** (`cargo build` only warns that `header_verified` is unused; `cargo clippy -- -D warnings` rejects that warning, but deleting the binding too would pass), so only review catches that change.
 - **signature presence (VR-015 (b)) and decrypt buffer sizing (VR-016), branch `sizing-and-sigpresence`:** minting the not-required token for a signed suite, swapping the `signature_not_required` branches, minting a presence token on a mismatch, or building a `SignatureRequired` with no key → **Verus** fails each (`80 verified, 1 errors`: postcondition or type invariant); `open_buffers` resizing to `len + 1` → **Verus** fails (type invariant, overflow). Re-reading the key in step 5, calling `signature_gate` without a `SignatureRequired`, hand-building an `OpenBuffers` at an open site, or passing a raw `&mut [u8]` to `secret::open` → the **compiler** rejects it (`E0308`, `E0061`, `E0451`, `E0061`). Details in the VR-015 (b) and VR-016 sections.
 - **encrypt limits and length checks (VR-017, VR-018), branch `verus-encrypt-limits-and-lengths`:** an off-by-one in the MAX_DATA check, the overflow-prone `total + chunk` form, dropping the frame-count guard, letting the counter wrap, starting at 0, an off-by-one guard, and accepting a suite-data or data-key length one too long → **Verus** fails each (`93 verified, 1 errors`). Details in the VR-017 and VR-018 section.
+- **encrypt signing-key check (VR-019), branch `verus-encrypt-signing-key-presence`:** accepting a signing suite with no key, accepting a non-signing suite with a key, or building a non-signing token on the failure path → **Verus** fails each (postcondition, or type invariant). Signing without the gate, passing the raw key instead of the token, or building a token in `encrypt.rs` → the **compiler** rejects it (`E0425`, `E0308`, `E0451`). Details in the VR-019 section.
 - **big-endian codec round-trip (`lemma_u32_round_trip` / `lemma_u64_round_trip`, VR-012):** mutating the decoder `spec_be_u32` (changing the `b[3]` term to `b[3] * 2`) → `lemma_u32_round_trip`'s `spec_be_u32(b) == x as int` postcondition fails (67 verified, 2 errors; the other error is `be_u32`'s own ensures, also tied to the decoder spec); mutating `spec_be_u64` (adding `+ 1` to the `b[7]` term) → `lemma_u64_round_trip`'s postcondition fails (67 verified, 2 errors), then reverted. Both confirm the lemmas genuinely couple the encoder and decoder spec fns and are not a restatement of one side against itself.
 - **prim wrapper length contracts (VR-013, pipeline target VR-2026-C03):** removing the length guard in `digest_core`, `digest_finish_core` or `hmac_core` → `precondition not satisfied` on `copy_from_slice` plus the `Ok <==>` / `Err` postconditions fail; changing `!=` to `<` in the `digest_core` / `digest_finish_core` guard → the `Ok <==>` postcondition and the copy precondition fail; reporting `want_len: 0` → the `e.want_len` postcondition fails; taking `hmac`'s `want_len` from a constant `32` → the postconditions and the copy precondition fail; swapping `Unavailable` / `DerivationFailed` in `kbkdf_core` → its postconditions fail; injecting `let _x = bytes[0];` into `fill_random_core` → `index in bounds` precondition not met (the panic check covers the core); `.is_ok()` → `.is_err()` in `ct_equal_core` → the postcondition fails. Each run: `17 verified, 1 errors`, then reverted.
 - **AES buffer effects (VR-014, BUG-07):** moving `aes_encrypt_extend_core` after the nonce check (the BUG-07 fix option 1 shape) → the key/nonce `== o + m` postcondition fails; appending `message` instead of the tag → the "tag after ciphertext" assert fails; clearing the buffer on seal failure → the seal-failure postcondition fails; dropping either new extend-core conjunct → the `aes_encrypt_core` postconditions fail; pushing a byte before `old_size` or flipping the first tail byte in the extend core → the matching new conjunct fails; replacing the decrypt guard with `plain_text.len() != cipher_text.len()` (the BUG-07 fix shape) → the observation postcondition fails; dropping A-OPEN's `Ok ==>` ensures from A20 → both decrypt postconditions fail, which shows the BUG-07(b) result rests only on A-OPEN. Each run: `17 verified, 1 errors`, then reverted. Full log: `.agents/tasks/verus-prim-c03/logs/mutations.md` (M1–M19).
@@ -1431,3 +1536,6 @@ ID length consts moved into `verus!`).
 
 **VR-017 and VR-018 (branch `verus-encrypt-limits-and-lengths`):**
 `esdk/src/message/body/body_encrypt.rs`, `esdk/src/encrypt.rs`.
+
+**VR-019 (branch `verus-encrypt-signing-key-presence`):**
+`esdk/src/encrypt_gate.rs` (new), `esdk/src/lib.rs`, `esdk/src/encrypt.rs`.

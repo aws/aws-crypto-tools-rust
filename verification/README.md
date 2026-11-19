@@ -23,16 +23,16 @@ Current output for both runs (default, and
 `--no-default-features --features aws-lc-sys`):
 
 ```
-verification results:: 94 verified, 0 errors
-verification results:: 94 verified, 0 errors
+verification results:: 97 verified, 0 errors
+verification results:: 97 verified, 0 errors
 ```
 
 The count is Verus's obligation count, not a function count; the checked
-fns are 52 exec fns (13 before the in-crate work, 22 before VR-009, 24 before
-VR-011, 34 before VR-001 / VR-012, 45 before VR-017 / VR-018) and 10 proof
+fns are 54 exec fns (13 before the in-crate work, 22 before VR-009, 24 before
+VR-011, 34 before VR-001 / VR-012, 45 before VR-017 / VR-018, 52 before VR-019) and 11 proof
 fns. The table below lists the fns up to VR-011 plus VR-016, VR-017 and
 VR-018; the VR-001 (a), VR-012, decrypt-order token
-(VR-001 (b), VR-002) and VR-015 rows are in the per-fn table of
+(VR-001 (b), VR-002), VR-015 and VR-019 rows are in the per-fn table of
 `docs/verus-proofs-report.md` ("In-crate proofs"). Each fn is inside a
 `verus!` block; paths are under `esdk/src/message/` unless they start with
 `esdk/src/`:

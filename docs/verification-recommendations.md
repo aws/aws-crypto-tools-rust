@@ -74,7 +74,19 @@ capability-driven functional-correctness lemma (category 1c) about the message c
 VR-014 (prim, capability-driven) and VR-015 (threat-driven, R3: final plaintext held until the
 signature verifies) were added later, then VR-016 (esdk decrypt buffer sizing, which makes
 BUG-07(b) unreachable from esdk) and VR-015 (b) (the signature-presence check as a token), then
-VR-017 (encrypt body limits) and VR-018 (encrypt header length checks).
+VR-017 (encrypt body limits) and VR-018 (encrypt header length checks), then VR-019 (the encrypt
+signing-key check, counterpart of VR-015 (b)).
+**Update at branch `verus-encrypt-signing-key-presence`:** `make -C esdk verus` reports **`97
+verified, 0 errors`** on both feature sets (54 exec fns, 11 proof fns; up from 94).
+- **VR-019 (new, threat-driven, R3):** in `esdk/src/encrypt_gate.rs`, `signing_key_gate` returns a
+  `SigningKeyPresent` token, which holds the key, iff the suite signs and the encryption materials
+  have a signing key. The signing call in `step_construct_signature` reads the key only through
+  `signing_key(&token)`. Same error, message, order and place as before. **Finding F3:** esdk
+  checks one direction only and late. It rejects a missing key only in step 4, after the header and
+  body are written, and it does not reject a key for a non-signing suite. Both rely on the MPL
+  (`GetEncryptionMaterials::send` / `check_encryption_materials`, `EncryptionMaterialsBuilder::build`),
+  which is trusted code reading. Whether to add an early esdk "present iff" check is an open owner
+  question.
 **Update at branch `verus-encrypt-limits-and-lengths`:** `make -C esdk verus` reports **`94
 verified, 0 errors`** on both feature sets (52 exec fns, 10 proof fns; up from 81).
 - **VR-017 (new; sequence part threat-driven, Attack Tree 1 counter overflow / GCM nonce reuse;
@@ -177,6 +189,7 @@ verification results:: 57 verified, 0 errors     # --no-default-features --featu
 | VR-004 | `next_expected_frame`, `final_frame_seq_ok`, proof fns `lemma_accepts_run`, `lemma_frames_start_at_1` (`body/body_decrypt.rs`) | Regular frame accepted iff `seq == expected` (overflow-free increment); final frame accepted iff `seq == expected`; frames accepted from `START_SEQUENCE_NUMBER` are numbered 1, 2, … |
 | VR-017 (later) | `PlaintextBudget::new` / `add`, `EncryptFrameSeq::start` / `take_regular` / `final_seq`, proof fns `lemma_max_data_bounds_frames`, `lemma_frame_guard_needed_at_16` (`body/body_encrypt.rs`) | Encrypt side: total `<= MAX_DATA`, reject iff the next chunk would exceed it, overflow-free; frame numbers start at 1, +1 per regular frame, never wrap, final = count + 1 |
 | VR-018 (later) | `check_v2_suite_data`, `data_key_len_ok` (`esdk/src/encrypt.rs`) | Suite data present and exactly the suite length; data key exactly the suite key length; accept iff equal |
+| VR-019 (later) | `signing_key_gate`, `signing_key`, proof fn `lemma_signing_key_present`; type invariant `SigningKeyPresent::inv` (`esdk/src/encrypt_gate.rs`) | Encrypt signing step: a token iff the suite signs and a signing key is present; the token holds that key and is for a signing suite; signing reads the key only through the token (compiler). One direction only (finding F3) |
 | VR-005 | `u32_to_be`, `u64_to_be`, `low_byte` (`serialize_functions.rs`); `body_aad_content_type_string`, `iv_seq_core`, `body_aad_core` (`body/body_aad.rs`); `write_frame_prefix`, proof fn `lemma_endframe_bytes` (`body/body_encrypt.rs`) | Body AAD is exactly `message_id ‖ content ‖ seq_be(4) ‖ len_be(8)`; IV's last 4 bytes are the big-endian sequence number; frame prefix is `seq ‖ iv` (regular) or `FFFFFFFF ‖ seq ‖ iv ‖ len` (final) |
 | VR-007 | `edk_count_check` (`header.rs`) | `Empty` iff count is 0; `OverMax` iff count exceeds a configured max; `Ok` otherwise |
 | VR-009 (esdk half) | `identity_kdf_key_len_ok`, `check_v2_key_lengths` (`esdk/src/key_derivation.rs`) | V1 identity KDF: accept iff the plaintext key length equals the suite encryption key length. V2: `Ok(n)` iff the KDF is HKDF, the message ID is 32 bytes and the plaintext key length equals the suite key length, with `n` equal to both (it sizes the derived encryption key); otherwise the first failing check, in code order. Total; no arithmetic |
@@ -1178,13 +1191,43 @@ recommendation:
       - "trusted: algorithm_suite_data_length() (MPL) and get_encrypt_key_length (const table) supply the right expected lengths"
       - "the adapters map variants to today's Kind::Internal errors; for keys from derive_keys the data-key check never fails (VR-009); we prove the check, not unreachability"
   considered_not_included:
-    - "signing key present when the suite signs (encrypt counterpart of VR-015 (b)): a different async step, one direction only, a bare Option check; possible follow-up"
+    - "signing key present when the suite signs (encrypt counterpart of VR-015 (b)): done as VR-019"
   tool: Verus
   agent: verus-header-parsing-proofs
   estimated_effort: ~2 hours
   coverage_gap: 0.1
   quick_win: true
   dependencies: [ "VR-009 (derived key lengths)", "VR-011 (MessageKey::len, PublicBytes::len)" ]
+recommendation:
+  id: VR-2026-019
+  rank: 19
+  origin: threat-driven   # R3 (signature stripping / repudiation), encrypt counterpart of VR-015 (b)
+  status: in_crate   # branch verus-encrypt-signing-key-presence; mutation-tested; one direction only (F3)
+  target:
+    library: aws-esdk
+    file: esdk/src/encrypt_gate.rs, esdk/src/encrypt.rs
+    function: signing_key_gate, signing_key (verified); step_construct_signature (unverified adapter)
+  property: "Encrypt signs only with a signing key that the materials contain, and only for a suite with a signature algorithm: the signing step gets the key only through a SigningKeyPresent token, which exists iff the suite signs and a signing key is present. Same error (InvalidMaterials), message, order and place as before."
+  formal_spec: "signing_key_gate: (r is Some) <==> (suite_signs && signing_key is Some); Some(t) ==> t.signs() && t.key() == k@; SigningKeyPresent::inv: signs(). signing_key: r@ == present.key()"
+  enforcement:
+    verus_proven:   # make -C esdk verus: 97 verified, 0 errors on both feature sets
+      - "signing_key_gate, SigningKeyPresent type invariant, lemma_signing_key_present, signing_key as above"
+      - "mutation-tested: accept a signing suite with no key, accept a non-signing suite with a key, mint a non-signing token on the failure path -> Verus fails each"
+    compiler_enforced:
+      - "only encrypt_gate can build a SigningKeyPresent (private fields, E0451); ecdsa_sign_digest gets the key only through signing_key(&token) (E0425 / E0308 when bypassed)"
+    not_verus_proven:
+      - "trusted: the caller passes the real suite flag and the real materials.signing_key(); encrypt_steps runs step 4 for every signing suite and step 4 writes the footer; aws-lc-rs ECDSA signing"
+  findings:
+    - "F3 (no change made): esdk checks one direction only, and late. It rejects a signing suite with no signing key only in step_construct_signature, after the header and body are written; it does not reject a non-signing suite whose materials have a signing key. Both the reverse direction and early rejection rely on the MPL (GetEncryptionMaterials::send / check_encryption_materials, EncryptionMaterialsBuilder::build), trusted code reading only. Open owner question: add an early esdk 'present iff' check as on decrypt (VR-015 (b))."
+  trace_to_spec: "spec/client-apis/encrypt.md#construct-the-signature (the signature key MUST be the signing key in the encryption materials); spec/data-format/message-footer.md#overview"
+  tool: Verus
+  agent: verus-header-parsing-proofs
+  estimated_effort: ~2 hours
+  threat_references:
+    - { id: R3, category: Repudiation, description: "signature handling; encrypt counterpart of the VR-015 (b) presence check" }
+  coverage_gap: 0.1
+  quick_win: true
+  dependencies: [ "VR-015 (b) (decrypt counterpart)" ]
 ```
 
 ---
@@ -1288,6 +1331,11 @@ end to end.
   and frame sequence numbers, and the suite-data and data-key length checks, are verified in-crate
   (`make -C esdk verus`: 94 verified, 0 errors on both feature sets, 52 exec fns and 10 proof fns;
   mutation-tested). The async body loop and the header builders are unverified adapters.
+- VR-019 (branch `verus-encrypt-signing-key-presence`, threat R3): the encrypt signing-key check
+  is a verified gate and a `SigningKeyPresent` token that the signing call needs (`make -C esdk
+  verus`: 97 verified, 0 errors on both feature sets, 54 exec fns and 11 proof fns;
+  mutation-tested). One direction only, in step 4; the reverse direction and early rejection rely
+  on the MPL (finding F3).
 **Remaining, in priority order:**
 1. **VR-001 property (c)** — the decision (property a) and the ordering (property b) are in-crate.
    What is left is **not** Verus-provable here: the *constant-time* comparison (property c) is an
