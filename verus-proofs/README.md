@@ -4,6 +4,8 @@ Three Verus proofs for targets from the verification-targets pipeline. Repo `esd
 
 **What these are.** Each file is a proof about a hand-written, re-typed model of the shipped Rust. None of them verifies the shipped code. The code is not inside `verus!`, is not compiled by Verus, and nothing detects a later edit to `mpl/` or `prim/`. The link between model and code is a correspondence table in each file header that a human reviewed. Read every status below as "the logic of the model is machine-checked; the model's fidelity to the code is audited, not checked."
 
+T03 and T05 are described in `README-t03-t05.md`. T01 and T13 were added later (HEAD `4964d66`) and are described in the sections "T01" and "T13" below. The same rules apply to them: model level, not the shipped code.
+
 None of the files is part of a cargo build. They live outside `mpl/`, `prim/`, `esdk/` and `docs/`.
 
 ## How to run
@@ -14,9 +16,11 @@ Verus 0.2026.07.12.0b42f4c (release, macos_aarch64, toolchain 1.96.0). From the 
 ~/verus/verus verus-proofs/t02_record_reconstruction.rs   # exit 1, expected (see T02)
 ~/verus/verus verus-proofs/c01_ec_roundtrip.rs            # exit 0
 ~/verus/verus verus-proofs/c02_sign_fixed_len.rs          # exit 0
+~/verus/verus verus-proofs/t01_keystore_auth_ec.rs        # exit 0
+~/verus/verus verus-proofs/t13_cache_identifier.rs        # exit 1, expected (see T13)
 ```
 
-Each file ends with `fn main() {}` because Verus needs an entry point for a single file. The logs are in `.agents/tasks/verus-proofs-quickwins/logs/`. An independent reviewer re-ran all three from the repo root. The output was byte-identical to the logs (see `.agents/tasks/verus-proofs-quickwins/review.md`).
+Each file ends with `fn main() {}` because Verus needs an entry point for a single file. The logs are in `.agents/tasks/verus-proofs-quickwins/logs/`. An independent reviewer re-ran all three from the repo root. The output was byte-identical to the logs (see `.agents/tasks/verus-proofs-quickwins/review.md`). The T01 and T13 run records are `.agents/tasks/t01-t13/t01-run.txt` and `t13-run.txt` (workspace root, outside the `esdk-native-mpl` repo). The same directory holds the T01 model mutation checks (`t01-mutations.txt`) and a review (`review.md`, verdict approved, no blocking findings). Both files were run again when this section was written and gave the same result lines.
 
 ## Results
 
@@ -25,11 +29,14 @@ Each file ends with `fn main() {}` because Verus needs an entry point for a sing
 | T02 | VR-2026-T02 / TM-MPL-005 | `t02_record_reconstruction.rs` | `verification results:: 21 verified, 1 errors` | 1 | **Partly proved** |
 | C01 | VR-2026-C01 / capability 1c | `c01_ec_roundtrip.rs` | `verification results:: 40 verified, 0 errors` | 0 | **Proved** (model level, under hypotheses A_ITER; A_DDB and A_NAME for `theorem_prod_*`) |
 | C02 | VR-2026-C02 / capability 2d | `c02_sign_fixed_len.rs` | `verification results:: 21 verified, 0 errors` | 0 | **Proved** (model level) |
+| T01 | VR-2026-T01 / TM-MPL-005, TM-MPL-002 | `t01_keystore_auth_ec.rs` | `verification results:: 52 verified, 0 errors` | 0 | **Proved** (model level, relative to A_KMS, A_DDB, A_NUM, A_NAME, A_ITER, A_ARN and H_SAME_EC) |
+| T13 | VR-2026-T13 / TM-MPL-009, TM-MPL-010 (BUG-06) | `t13_cache_identifier.rs` | `verification results:: 42 verified, 1 errors` | 1 | **Partly proved** (model level; the one error is the intentional BUG-06 obligation) |
 
 Meaning of the status words:
 
 - **Proved** here means: the log shows `0 errors`, no `assume`, `admit`, `external_body`, `assume_specification` or `#[verifier...]` appears in the proof code (checked by grep), and every external assumption is stated in the file header and in the TCB table below. It does not mean the shipped code is verified.
-- **Partly proved** (T02): everything verifies except one obligation that fails on purpose, and the failure is a finding.
+- **Partly proved** (T02, T13): everything verifies except one obligation that fails on purpose, and the failure is a finding.
+- For T01 and T13, a grep for `assume`, `admit`, `external_body`, `assume_specification` and `#[verifier` outside comments finds nothing in either file. Both headers state the same.
 
 ---
 
@@ -164,6 +171,88 @@ To close the gap, do one of the following. Each needs a change in `prim/`, which
 
 ---
 
+## T01: key-store authenticated encryption context (VR-2026-T01 / TM-MPL-005, TM-MPL-002)
+
+**Property in plain language.** The EC written with a branch-key record, the EC that KMS binds as the AAD, and the EC that the reconstruction reads are the same EC. Targets: `kms_ops::build_authenticated_encryption_context` (`kms_ops.rs:49`), `DynamoDbKeyStore::build_auth_ec` (`branch_key_store.rs:132`), `item_from_ec_and_enc` (`:1089`) and `record_from_ddb_item` (`:1141`).
+
+**Status: Proved, at model level, with hypotheses.** `52 verified, 0 errors`. Nothing is left failing on purpose. KMS and DynamoDB are modeled by assumptions in the definitions of the model, so Verus cannot check them.
+
+**What is new versus C01** (`c01_ec_roundtrip.rs`, 40 verified). C01 proves that the builders in `encryption_context.rs` and the reconstruction in `record.rs` are inverses, with the stored item treated as a set operation. It does not model KMS, the DynamoDB attribute mapping or `kms_ops.rs`. T01 copies the C01 model (C01 lines 178-1306, which include the T02 model) into its file unchanged and does not re-prove it. T01 adds:
+
+1. The KMS-AAD side: `kms_aad` as a function separate from `rec_auth_ec`, with the proof that the two agree for every record attribute map (T01-A, under A_ITER) and that the AAD the reader builds equals the write-time EC (T01-C).
+2. A symbolic model of the three KMS calls (GenerateDataKeyWithoutPlaintext, ReEncrypt, Decrypt) under A_KMS, and the claim that one local EC goes to both the KMS call and `item_from_ec_and_enc` (H_SAME_EC, code reading), with the DECRYPT_ONLY to ACTIVE ReEncrypt chain.
+3. `item_from_ec_and_enc` and `record_from_ddb_item` as loops over any iteration order and over an AttributeValue model (S, N, B, other). The S, N and B mapping is lossless and the reader EC never contains `enc` (T01-B).
+4. `VersionKey` (rotation), which C01 does not cover (T01-D).
+5. The authenticity theorem T01-E: if the read passes KMS Decrypt, the EC the reconstruction uses equals the EC the ciphertext is bound to.
+
+**What the theorems say** (names are the proof functions in the file):
+
+| Theorem | Statement |
+|---|---|
+| `theorem_reader_builders_agree` (T01-A) | `kms_aad` and `rec_auth_ec` return the same EC for every record attribute map. |
+| `theorem_reader_ec_is_spec` (T01-B) | For any item `record_from_ddb_item` accepts, in any iteration order, the reader EC has no `enc`, has `tablename` equal to the reader's name, and has every other item attribute. |
+| `theorem_three_way` (T01-C) | The T01 property: for a record written under EC `ec`, the write-time EC equals the EC KMS bound, the reader's AAD equals the write-time EC, and the EC given to the reconstruction equals the write-time EC. KMS Decrypt with that AAD returns the generated key. |
+| `theorem_prod_decrypt_only`, `theorem_prod_active`, `theorem_prod_beacon_kms` | The `create_key` wiring through KMS and the three readers: Decrypt succeeds and the reconstruction returns the id, version, custom EC and key. |
+| `theorem_version_key` (T01-D) | For any stored item the reader accepts, the rotated DECRYPT_ONLY and ACTIVE ECs are well formed, the ReEncrypt is accepted, and both new records read back with the old id and custom EC and the new version and key. |
+| `theorem_read_authentic` (T01-E) | For any item and reader name: if the read passes KMS Decrypt, no attribute was added, dropped or altered, and the ciphertext was written for this key store name. |
+
+**Assumptions and hypotheses** (evidence levels as the other proofs use them):
+
+- Assumed (A_*, not checked by Verus): A_KMS (KMS binds the EC given at generate and at the ReEncrypt destination, and accepts Decrypt or ReEncrypt-source only for an equal EC), A_DDB (DynamoDB returns what was written), A_NUM (`hierarchy-version` is a canonical Number rendering), A_NAME (reader and writer use the same key store name), A_ITER (`BTreeMap` and `HashMap` iteration yields every key), A_ARN (`fetch_record` returns the item for the requested id and type; ARN resolution, grant tokens and KMS errors other than the EC check are not modeled), A_STR, A_BLD.
+- Theorem premises: H_WF (the EC written has `tablename` and no `enc`; proved for every EC the builders and `version_key` produce) and H_ENUM (the loop enumerations cover the maps; satisfiable).
+- Code reading: H_SAME_EC. A later edit that passes a different EC to the KMS call and to the item is not detected.
+
+**Findings.** No gap found at model level.
+
+- O1: `kms_aad` and `rec_auth_ec` are two separately written functions with no shared code. They agree today (T01-A). If one is edited alone, for example `tablename` dropped from one, the reconstruction would read attributes KMS did not authenticate. A shared helper or a unit test that pins both would remove the need to keep them in step. Verus rejects six mutants of the model (`.agents/tasks/t01-t13/t01-mutations.txt`). They cover edits to the model only.
+- O2: the S or N tag is not authenticated and no consumer sees it (`theorem_sn_tag_not_authenticated`).
+- O3: an item attribute named `tablename` is ignored and replaced by the reader's name in both builders.
+- O4: T01 holds for items with or without `create-time` and `hierarchy-version`. G1 stays a T02 finding.
+- O5: rollback of an authentic older record is outside the property (TM-MPL-005 non-goal).
+
+**Not covered.** The claim that KMS enforces the EC (A_KMS), AEAD integrity and DynamoDB behavior; `fetch_record` key selection and `resolve_key_store_arn` (T03); grant tokens and KMS error mapping; user-supplied `KeyStore` implementations; rollback; the `create-time` format and the UUID format of the version; the test-utils helpers in `record.rs`; zeroization, panics and error text.
+
+**Model-vs-code gap.** The shipped functions are native Rust over `BTreeMap`, `HashMap`, `aws_sdk_kms` and `aws_sdk_dynamodb`, outside `verus!`. Nothing detects a later edit to `kms_ops.rs`, `branch_key_store.rs`, `record.rs` or `encryption_context.rs`. To close the gap you need the functions inside `verus!` (or `cargo verus` on the crate), vstd specs for the map and string operations, and a spec of the KMS and DynamoDB clients, which would stay an axiom (A_KMS).
+
+---
+
+## T13: cache identifier (VR-2026-T13 / TM-MPL-009, TM-MPL-010; BUG-06)
+
+**Property in plain language.** `build_cache_identifier` (`cache_entry_identifier.rs:35`) is injective over the two call shapes if and only if the input fields contain no `0x00` byte. The BUG-06 counterexample is an intentional expected-FAIL obligation. The NUL-free precondition, and a length-prefixed encoding as a proposed fix, give injectivity.
+
+**Status: Partly proved, at model level, with hypotheses.** `42 verified, 1 errors`. The one error is `lemma_bug06_injectivity_without_nul_precondition_EXPECTED_FAIL` (`t13_cache_identifier.rs:1008`, postcondition at `:1019`). It states the spec property "different field tuples give different identifiers" for all inputs, with no NUL precondition. The shipped layout does not satisfy it (BUG-06, High, open), so Verus is right to reject it. It is left failing, not weakened, not assumed and not commented out. `lemma_bug06_failing_claim_is_false` proves the claim is false, not only unproved.
+
+**What the results say** (R-numbers from the file header):
+
+| Result | Statement |
+|---|---|
+| R1 `lemma_nul_free_injective` | Both tuples NUL-free: equal preimages imply equal tuples. |
+| R2 `lemma_if_direction_wf` | One tuple NUL-free, the other any well-formed tuple: equal preimages imply equal tuples. Needs H_SCOPE_PAIRING. |
+| R3 `lemma_partner_*` | A tuple with a `0x00` in some field has a different tuple with the same scope and shape and the same preimage. |
+| R4 `theorem_t13_iff`, `theorem_t13_iff_identifier`, `theorem_t13_iff_realistic` | For a well-formed tuple: no other well-formed tuple has its preimage if and only if every field is NUL-free. Same for identifiers under A_DIGEST_CR (the only-if half needs no assumption). The realistic form excludes the version (H_VERSION_NO_NUL). |
+| R5 `lemma_bug06_*` | The BUG-06 collisions for the encrypt scope and the decrypt scope, and the expected-FAIL obligation. |
+| R6 `lemma_nul_free_precondition_gives_identifier_injectivity` | The NUL-free precondition (BUG-06 fix option 1) gives injective identifiers under A_DIGEST_CR. |
+| R7 `lemma_lp_*`, `theorem_lp_*` | A length-prefixed encoding (fix option 2) is injective for all inputs, under A_DIGEST_CR and H_LEN_FITS. The BUG-06 pairs separate. Model of a proposed fix only. |
+| R8 `lemma_scope_separation`, `lemma_pairing_is_needed` | Encrypt and decrypt identifiers never coincide. H_SCOPE_PAIRING is needed: with one scope byte a NUL-free decrypt-shaped tuple collides with an encrypt-shaped one. |
+
+**Assumptions and hypotheses.**
+
+- Assumed: A_DIGEST_CR (SHA-384 modeled as an arbitrary injective function `h`; real SHA-384 is not injective, so this stands for computational collision resistance, idealized) and H_LEN_FITS (every field is shorter than 2^32 bytes; only for the length-prefixed fix, which a real fix must check).
+- Code reading: H_MODEL_MATCH (the preimage is the byte string that `:42-60` passes to the digest), H_BYTES (fields are byte sequences; UTF-8 validity is not modeled), H_SCOPE_PAIRING (encrypt scope 0x01 is always called with no version, decrypt scope 0x02 always with a version), H_VERSION_NO_NUL (the version is a hyphenated UUID string), H_NO_DIGEST_ERROR (the `.expect` at `:64` cannot fail).
+- No `assume`, `admit`, `external_body`, `assume_specification` or uninterpreted spec function is used.
+
+**Findings.**
+
+- BUG-06 is confirmed at model level, with concrete collisions for both scopes. For example, partition `"tenant\0x"` with name `"L"` and partition `"tenant"` with name `"x\0L"`, both with branch key id `"bk"`, have one preimage.
+- The only-if direction builds the colliding partner as a tuple of byte fields. When the NUL is in the partition id, the partner's name takes the bytes after the NUL, which may not be valid UTF-8. The proof does not decide that every NUL-bearing configuration has a realizable partner (for example a random 16-byte partition id). The ASCII examples do exist.
+- The layout is modeled as shipped and equals the layout the spec mandates (`aws-kms-hierarchical-keyring.md`, Appendix A), so the defect is in the spec text too.
+
+**Not covered.** Any other function; cache hit and miss logic, TTL and storm tracking; `HierarchicalKeyringBuilder::build`; whether a deployment can be configured so that two keyrings collide (BUG-06 states the preconditions); panic freedom (T16).
+
+**Model-vs-code gap.** The shipped function is native Rust outside `verus!`. The link between model and code is the correspondence table in the file header. Nothing detects a later edit to `mpl/`.
+
+---
+
 ## Combined TCB
 
 No `assume`, `admit`, `external_body`, `assume_specification` or `#[verifier...]` is written in any of the three files (grep, outside comments). No uninterpreted spec function is used. The one deliberately unconstrained item is the `Backend` trait in C02.
@@ -185,6 +274,11 @@ No `assume`, `admit`, `external_body`, `assume_specification` or `#[verifier...]
 | Hand-copied string constants (`attributes.rs:11-24`) | model fidelity | T02 (9), C01 (12) | Script comparison against `attributes.rs` matched all. Not tied to the crate by the build. |
 | Correspondence tables in file headers | human review | all | The only link between model and code. |
 | Verbatim copy of T02 model inside C01 | model fidelity | C01 | Byte-identical at time of writing. |
+| A_KMS: KMS binds the EC at generate and at the ReEncrypt destination, and accepts Decrypt only for an equal EC | external service contract | T01 | Encoded in the definitions of the model, not checked. Also A_DDB, A_NUM, A_NAME, A_ITER, A_ARN (see the T01 section). |
+| H_SAME_EC: one local EC goes to both the KMS call and the item | code reading | T01 | A later edit is not detected. |
+| Verbatim copy of the C01 model inside T01 | model fidelity | T01 | The review diffed C01 lines 178-1306 against the T01 block: they differ only by two wrapper comment lines. |
+| A_DIGEST_CR: SHA-384 is an injective function in the model | idealization | T13 | Real SHA-384 is not injective. Also H_LEN_FITS (length-prefixed fix only). |
+| H_MODEL_MATCH, H_BYTES, H_SCOPE_PAIRING, H_VERSION_NO_NUL, H_NO_DIGEST_ERROR | code reading | T13 | See the T13 section. |
 
 ## Findings
 
@@ -220,6 +314,8 @@ The branch returns `Err(Collision)` if and only if `custom.iter()` repeats a key
 | `t02_record_reconstruction.rs` | VR-2026-T02 | TM-MPL-005 | Exact Ok/Err characterization of record reconstruction; G1 |
 | `c01_ec_roundtrip.rs` | VR-2026-C01 | capability 1c | Builder and reconstruction round trip; BUG-08 |
 | `c02_sign_fixed_len.rs` | VR-2026-C02 | capability 2d | Bounded retry, no panic, no partial write in `sign_fixed_len` |
+| `t01_keystore_auth_ec.rs` | VR-2026-T01 | TM-MPL-005, TM-MPL-002 | Write-time EC, KMS-AAD EC and reconstruction EC are equal; authenticity of a read |
+| `t13_cache_identifier.rs` | VR-2026-T13 | TM-MPL-009, TM-MPL-010 | Cache identifier injective iff fields are NUL-free; BUG-06 expected FAIL |
 
 The orchestrator records proof status in `docs/mpl-verification-targets*.md` after review. This README does not edit those files.
 
@@ -230,5 +326,5 @@ The orchestrator records proof status in `docs/mpl-verification-targets*.md` aft
 3. Update the T02 YAML: add "non-empty `branch-key-id`" to `formal_spec`.
 4. Decide whether the branch key version should be checked as a UUID v4, or the spec relaxed.
 5. To turn a model proof into a code proof, start with C02. It needs the least: a shared loop body, or a skeleton-diff script. T02 and C01 need vstd specs for `BTreeMap` on `String` keys and for `str` prefix functions.
-6. Add a CI step that runs the three files and fails on any change to the result lines (T02 is expected to show `1 errors` until G1 is fixed).
-7. Remaining targets from the same pipeline: T01 (KMS leg), `ecdsa_verify*` never returning Err, `record_from_ddb_item` completeness.
+6. Add a CI step that runs the proof files and fails on any change to the result lines (T02 is expected to show `1 errors` until G1 is fixed, and T13 until BUG-06 is fixed).
+7. Remaining targets from the same pipeline: `ecdsa_verify*` never returning Err, `record_from_ddb_item` completeness.
