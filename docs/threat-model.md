@@ -400,6 +400,13 @@ Root Goal: Recover AES-GCM plaintext
 
 **Feasibility:** Low — IV is derived from sequential frame number, not random. Would require >2^32 frames.  
 **Existing Mitigation:** Spec limits frames to 2^32 - 1 per message (sequence number is u32).
+**Verification (VR-017, branch `verus-encrypt-limits-and-lengths`):** the "implementation wraps the
+32-bit sequence number" leaf is now Verus-proven not to happen on encrypt. `EncryptFrameSeq`
+(`esdk/src/message/body/body_encrypt.rs`) starts at 1, adds exactly 1 per regular frame, refuses
+the regular frame that would be numbered `u32::MAX`, and gives the final frame the next number, so
+no two frames of a message get the same number (and so the same IV). For frame lengths of 1 to 16
+bytes this guard, not the 2^36 - 32 plaintext limit, is what stops the counter (also proven).
+Still unverified: the async loop that passes each number to `construct_frame`.
 
 ### Attack Tree 2: Process Data with Tampered Header (Tampering)
 
@@ -840,22 +847,24 @@ All targets reference real files in this repository. Scores below are the origin
 the current coverage gaps, full scoring and agent assignments see
 `docs/verification-recommendations.md`.
 
-**Verification status on branch `sizing-and-sigpresence`** (in-crate counts; the model results are
-unchanged since `5ea2a804`). Verus checks two things:
+**Verification status on branch `verus-encrypt-limits-and-lengths`** (in-crate counts; the model
+results are unchanged since `5ea2a804`). Verus checks two things:
 
 - **In-crate (shipped `esdk` code).** `make -C esdk verus` verifies the `verus!` blocks in
   `esdk/src/message/`, `esdk/src/key_derivation.rs`, `esdk/src/secret.rs` and
-  `esdk/src/decrypt_gate.rs` (45 exec fns, 8 proof fns): `81 verified, 0 errors` for both the
-  default features and `--no-default-features --features aws-lc-sys` (40 at `5ea2a804`, 45 after
-  VR-009, 57 after VR-011, 69 after VR-012, 73 after the VR-001 (b) / VR-002 tokens, 77 after
-  VR-015). This
+  `esdk/src/decrypt_gate.rs` and `esdk/src/encrypt.rs` (52 exec fns, 10 proof fns): `94 verified,
+  0 errors` for both the default features and `--no-default-features --features aws-lc-sys` (40 at
+  `5ea2a804`, 45 after VR-009, 57 after VR-011, 69 after VR-012, 73 after the VR-001 (b) / VR-002
+  tokens, 77 after VR-015, 81 after VR-016). This
   covers parts of VR-003 (big-endian decoding, bounded readers, header-field decisions, the 0x41
   Base64 hint), VR-004 (regular- and final-frame sequence checks, frames-start-at-1 lemmas),
   VR-005 (body AAD, IV, frame prefix layout), VR-007 (EDK count check), the esdk half of VR-009
   (key-derivation length checks), the secret-type accessors of VR-011, the VR-012 codec lemmas, and
   the decrypt-order tokens of VR-001 (b) and VR-002, the VR-015 signature release gate
   (threat R3) with its presence check (VR-015 (b)), and VR-016 (every esdk AES-GCM decryption
-  gets a plaintext buffer as long as its ciphertext, so BUG-07(b) is unreachable from esdk). The async readers and loops around these cores
+  gets a plaintext buffer as long as its ciphertext, so BUG-07(b) is unreachable from esdk),
+  VR-017 (encrypt-side MAX_DATA budget and frame sequence numbers; Attack Tree 1) and VR-018
+  (encrypt-side suite-data and data-key length checks). The async readers and loops around these cores
   are unverified glue.
 - **Decrypt order (VR-001 (b), VR-002), Verus plus the compiler.** Verus proves that the
   `CommitmentAccepted` and `HeaderVerified` tokens in `esdk/src/decrypt_gate.rs` are created only

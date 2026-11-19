@@ -28,6 +28,55 @@ use aws_crypto_mpl::types::EncryptedDataKey;
 use aws_crypto_mpl::types::EncryptionMaterials;
 use aws_crypto_mpl::types::RequiredEncryptionContextKeys;
 use aws_mpl_primitives::ecdsa_sign_digest;
+use vstd::prelude::*;
+
+verus! {
+
+// ---------------------------------------------------------------------------
+// VR-018: encrypt-side header length checks. `build_v2_header_body` and
+// `build_header_auth_tag` are the unverified adapters: they read the expected
+// lengths from the suite and map the rejections to errors.
+// ---------------------------------------------------------------------------
+/// Why `check_v2_suite_data` rejected the suite data, in check order.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SuiteDataLenError {
+    /// No suite data (the commitment key) was given for a committing suite.
+    Missing,
+    /// The suite data is not the suite's `algorithm_suite_data_length()`.
+    LengthMismatch,
+}
+
+/// The V2 suite data check: the suite data must be present and exactly
+/// `expected_len` bytes. On success, returns the same suite data.
+fn check_v2_suite_data(suite_data: Option<PublicBytes>, expected_len: usize) -> (r: Result<
+    PublicBytes,
+    SuiteDataLenError,
+>)
+    ensures
+        (r matches Err(SuiteDataLenError::Missing)) <==> suite_data is None,
+        (r matches Err(SuiteDataLenError::LengthMismatch)) <==> (suite_data matches Some(sd) && sd@.len()
+            != expected_len),
+        r matches Ok(sd) ==> (suite_data == Some(sd) && sd@.len() == expected_len),
+{
+    let Some(sd) = suite_data else {
+        return Err(SuiteDataLenError::Missing);
+    };
+    if sd.len() != expected_len {
+        return Err(SuiteDataLenError::LengthMismatch);
+    }
+    Ok(sd)
+}
+
+/// Whether the derived data key is the suite's encryption key length
+/// `expected_len`.
+fn data_key_len_ok(data_key: &MessageKey, expected_len: usize) -> (ok: bool)
+    ensures
+        ok <==> data_key@.len() == expected_len,
+{
+    data_key.len() == expected_len
+}
+
+} // verus!
 
 /// AES-GCM IV length in bytes (used for body frames; header IV length varies by suite).
 const IV_LEN: usize = 12;
@@ -688,19 +737,23 @@ fn build_v2_header_body(
     frame_length: u32,
     suite_data: Option<PublicBytes>,
 ) -> Result<HeaderBody, Error> {
-    let Some(sd) = suite_data else {
-        return Err(err(
-            Kind::Internal,
-            "suite data must be present for a committing algorithm suite",
-        ));
+    // `check_v2_suite_data` (VR-018) is the verified check; this maps its
+    // rejections to errors.
+    let sd = match check_v2_suite_data(suite_data, suite.algorithm_suite_data_length()) {
+        Ok(sd) => sd,
+        Err(SuiteDataLenError::Missing) => {
+            return Err(err(
+                Kind::Internal,
+                "suite data must be present for a committing algorithm suite",
+            ));
+        }
+        Err(SuiteDataLenError::LengthMismatch) => {
+            return Err(err(
+                Kind::Internal,
+                "suite data length must match the commitment key output length for a committing suite",
+            ));
+        }
     };
-    let expected_len = suite.algorithm_suite_data_length();
-    if sd.len() != expected_len {
-        return Err(err(
-            Kind::Internal,
-            "suite data length must match the commitment key output length for a committing suite",
-        ));
-    }
     //= spec/client-apis/encrypt.md#v2-header
     //# The serialization order MUST follow the [Header Body Version 2.0](../data-format/message-header.md#header-body-version-20) specification.
     Ok(HeaderBody::V2Body(V2HeaderBody {
@@ -750,7 +803,8 @@ fn build_header_auth_tag(
     serialized_req_encryption_context: &[u8],
 ) -> Result<HeaderAuth, Error> {
     let key_length = get_encrypt_key_length(suite);
-    if data_key.len() != key_length {
+    // `data_key_len_ok` (VR-018) is the verified check.
+    if !data_key_len_ok(data_key, key_length) {
         return Err(err(
             Kind::Internal,
             format!(

@@ -73,7 +73,22 @@ ESDK threat model (`docs/threat-model.md`). Targets VR-001..VR-011 are threat-de
 capability-driven functional-correctness lemma (category 1c) about the message codec. VR-013 and
 VR-014 (prim, capability-driven) and VR-015 (threat-driven, R3: final plaintext held until the
 signature verifies) were added later, then VR-016 (esdk decrypt buffer sizing, which makes
-BUG-07(b) unreachable from esdk) and VR-015 (b) (the signature-presence check as a token).
+BUG-07(b) unreachable from esdk) and VR-015 (b) (the signature-presence check as a token), then
+VR-017 (encrypt body limits) and VR-018 (encrypt header length checks).
+**Update at branch `verus-encrypt-limits-and-lengths`:** `make -C esdk verus` reports **`94
+verified, 0 errors`** on both feature sets (52 exec fns, 10 proof fns; up from 81).
+- **VR-017 (new; sequence part threat-driven, Attack Tree 1 counter overflow / GCM nonce reuse;
+  MAX_DATA part capability-driven):** in `esdk/src/message/body/body_encrypt.rs`, the plaintext
+  total is a `PlaintextBudget` whose type invariant keeps it `<= MAX_DATA` (2^36 - 32); `add`
+  rejects exactly when the next chunk would exceed it (then the Plaintext Length Bound), with no
+  overflow for any input. Frame numbers come from `EncryptFrameSeq`: start at 1, +1 per regular
+  frame, refused at `u32::MAX` so never wrapped, final frame = regular count + 1. Lemmas show
+  MAX_DATA alone stops the counter first only for frame length >= 17, so the frame-count guard is
+  needed for 1..16 (it is present). Unverified glue: the async loop that calls these.
+- **VR-018 (new, capability-driven):** in `esdk/src/encrypt.rs`, `check_v2_suite_data` (suite
+  data present and exactly `algorithm_suite_data_length()` bytes) and `data_key_len_ok` (derived
+  key exactly the suite key length) accept iff the lengths are equal, with today's errors and
+  order. Trusted: the expected lengths (MPL getter, const table).
 
 **Update at branch `sizing-and-sigpresence`:** `make -C esdk verus` reports **`81 verified, 0
 errors`** on both feature sets (45 exec fns, 8 proof fns; up from 77).
@@ -160,6 +175,8 @@ verification results:: 57 verified, 0 errors     # --no-default-features --featu
 | VR-003 | `be_u16`, `be_u32`, `be_u64`, `bounded_len_u32`, `bounded_len_u64`, `next_chunk_end` (`serialize_functions.rs`) | Big-endian decoding equals the spec value; length fields over the bound are rejected before use; each read chunk is in bounds and at most 1 MiB |
 | VR-003 | `msg_format_version_from_u8`, `msg_type_from_u8`, `content_type_from_u8`, `classify_version_byte` (`header_types.rs`); `reserved_bytes_ok`, `iv_len_matches` (`v1_header_body.rs`) | Accept iff the byte is a spec value, correct variant; the 0x41 Base64 hint fires exactly on 0x41; reserved bytes all zero; IV length matches the suite |
 | VR-004 | `next_expected_frame`, `final_frame_seq_ok`, proof fns `lemma_accepts_run`, `lemma_frames_start_at_1` (`body/body_decrypt.rs`) | Regular frame accepted iff `seq == expected` (overflow-free increment); final frame accepted iff `seq == expected`; frames accepted from `START_SEQUENCE_NUMBER` are numbered 1, 2, … |
+| VR-017 (later) | `PlaintextBudget::new` / `add`, `EncryptFrameSeq::start` / `take_regular` / `final_seq`, proof fns `lemma_max_data_bounds_frames`, `lemma_frame_guard_needed_at_16` (`body/body_encrypt.rs`) | Encrypt side: total `<= MAX_DATA`, reject iff the next chunk would exceed it, overflow-free; frame numbers start at 1, +1 per regular frame, never wrap, final = count + 1 |
+| VR-018 (later) | `check_v2_suite_data`, `data_key_len_ok` (`esdk/src/encrypt.rs`) | Suite data present and exactly the suite length; data key exactly the suite key length; accept iff equal |
 | VR-005 | `u32_to_be`, `u64_to_be`, `low_byte` (`serialize_functions.rs`); `body_aad_content_type_string`, `iv_seq_core`, `body_aad_core` (`body/body_aad.rs`); `write_frame_prefix`, proof fn `lemma_endframe_bytes` (`body/body_encrypt.rs`) | Body AAD is exactly `message_id ‖ content ‖ seq_be(4) ‖ len_be(8)`; IV's last 4 bytes are the big-endian sequence number; frame prefix is `seq ‖ iv` (regular) or `FFFFFFFF ‖ seq ‖ iv ‖ len` (final) |
 | VR-007 | `edk_count_check` (`header.rs`) | `Empty` iff count is 0; `OverMax` iff count exceeds a configured max; `Ok` otherwise |
 | VR-009 (esdk half) | `identity_kdf_key_len_ok`, `check_v2_key_lengths` (`esdk/src/key_derivation.rs`) | V1 identity KDF: accept iff the plaintext key length equals the suite encryption key length. V2: `Ok(n)` iff the KDF is HKDF, the message ID is 32 bytes and the plaintext key length equals the suite key length, with `n` equal to both (it sizes the derived encryption key); otherwise the first failing check, in code order. Total; no arithmetic |
@@ -1104,6 +1121,70 @@ recommendation:
   coverage_gap: 0.2
   quick_win: true
   dependencies: [ "VR-014 (BUG-07(b) under A-OPEN)", "VR-011 confinement in esdk/src/secret.rs" ]
+recommendation:
+  id: VR-2026-017
+  rank: 17
+  origin: threat-driven   # sequence part: Attack Tree 1 "implementation wraps 32-bit sequence number" (GCM nonce reuse, §11); the MAX_DATA part is capability-driven (no threat entry)
+  status: in_crate   # branch verus-encrypt-limits-and-lengths; PlaintextBudget + EncryptFrameSeq; mutation-tested
+  target:
+    library: aws-esdk
+    file: esdk/src/message/body/body_encrypt.rs
+    function: PlaintextBudget::new/add, EncryptFrameSeq::start/take_regular/final_seq, lemma_max_data_bounds_frames, lemma_frame_guard_needed_at_16 (verified); encrypt_and_serialize_body (unverified adapter)
+  property: "On encrypt, the running plaintext total never exceeds MAX_DATA (2^36 - 32); the check rejects exactly when the next chunk would exceed it; the counter cannot overflow. Frame sequence numbers start at 1, go up by exactly 1 per regular frame, never wrap a u32, and the final frame carries the next number (the total frame count). The encrypt counterpart of VR-004."
+  formal_spec: "PlaintextBudget inv total <= MAX_DATA; add: Err(TooLarge) <==> total + chunk > MAX_DATA, Err(OverBound) <==> !TooLarge && bound == Some(b) && total + chunk > b, Ok ==> total' == total + chunk. EncryptFrameSeq inv next == frames + 1; start: next == 1; take_regular: None <==> next == u32::MAX, Some(n) ==> n == next && next' == n + 1; final_seq == frames + 1"
+  approach: |
+    Two small types with type invariants inside the existing verus! block, no requires (the caller
+    is unverified async code). The adapter calls take_regular where the frame-count check was, then
+    add(frame_length) where the MAX_DATA and bound checks were, and add(in_size) + final_seq for the
+    final frame. MAX_DATA becomes a u64 const inside verus! with the same value. Errors, messages
+    and order are unchanged; no public API or streaming change.
+  enforcement:
+    verus_proven:   # make -C esdk verus: 94 verified, 0 errors on both feature sets
+      - "PlaintextBudget: total <= MAX_DATA always; add rejects iff over MAX_DATA, then iff over the bound; overflow-free for every usize chunk"
+      - "EncryptFrameSeq: start at 1; +1 per regular frame; refuses at u32::MAX (never wraps); final_seq == regular frames + 1"
+      - "lemma_max_data_bounds_frames: frame_length >= 17 and k * frame_length <= MAX_DATA ==> k + 1 < u32::MAX; lemma_frame_guard_needed_at_16: (2^32 - 2) * 16 == MAX_DATA"
+      - "mutation-tested: MAX_DATA check off by one, overflow-prone sum, dropped guard, wrapping counter, start at 0, off-by-one guard -> Verus fails each (93 verified, 1 errors)"
+    not_verus_proven:
+      - "unverified glue: the async loop in encrypt_and_serialize_body calls start/new once, take_regular + add(frame_length) per regular frame, add(in_size) + final_seq for the final frame, and passes the returned number to construct_frame"
+      - "trusted: read_up_to_peek returns in_size <= frame_length; the usize::try_from conversions; the error mapping"
+  findings:
+    - "F1 (code vs spec, stricter, no change): the framed-encrypt 2^36 - 32 total limit has no Duvet annotation; the spec's 2^36 - 32 requirement is for non-framed content. Framed decrypt has no total limit."
+    - "F2 (cosmetic): the bound error says 'configured' for regular frames and 'specified' for the final frame; kept"
+  trace_to_spec: "spec/data-format/message-body.md#regular-frame-sequence-number, #final-frame-sequence-number, #framed-data (frames <= 2^32 - 1); spec/client-apis/encrypt.md#construct-a-frame, #plaintext-length-bound"
+  tool: Verus
+  agent: verus-zero-panic
+  estimated_effort: ~half a day
+  threat_references:
+    - { id: AT1, category: Information Disclosure, description: "Attack Tree 1: counter overflow / implementation wraps the 32-bit sequence number (GCM nonce reuse)" }
+  coverage_gap: 0.2
+  quick_win: true
+  dependencies: [ "VR-004 (decrypt counterpart)", "VR-005 (frame prefix layout)" ]
+recommendation:
+  id: VR-2026-018
+  rank: 18
+  origin: capability-driven   # header integrity of what encrypt emits; no threat entry (T8 is decrypt-side, VR-001)
+  status: in_crate   # branch verus-encrypt-limits-and-lengths; mutation-tested
+  target:
+    library: aws-esdk
+    file: esdk/src/encrypt.rs
+    function: check_v2_suite_data, data_key_len_ok (verified); build_v2_header_body, build_header_auth_tag (unverified adapters)
+  property: "The V2 header is built only with suite data that is present and exactly algorithm_suite_data_length() bytes; the header auth tag is computed only with a data key exactly the suite key length. Each check accepts iff the lengths are equal, with today's error variant, message and order."
+  formal_spec: "check_v2_suite_data: Err(Missing) <==> None; Err(LengthMismatch) <==> Some(sd) && |sd| != expected; Ok(sd) ==> sd is the input && |sd| == expected. data_key_len_ok: ok <==> |data_key| == expected"
+  enforcement:
+    verus_proven:   # make -C esdk verus: 94 verified, 0 errors on both feature sets
+      - "check_v2_suite_data and data_key_len_ok as above"
+      - "mutation-tested: accepting expected_len + 1 for the suite data or the data key -> Verus fails (93 verified, 1 errors)"
+    not_verus_proven:
+      - "trusted: algorithm_suite_data_length() (MPL) and get_encrypt_key_length (const table) supply the right expected lengths"
+      - "the adapters map variants to today's Kind::Internal errors; for keys from derive_keys the data-key check never fails (VR-009); we prove the check, not unreachability"
+  considered_not_included:
+    - "signing key present when the suite signs (encrypt counterpart of VR-015 (b)): a different async step, one direction only, a bare Option check; possible follow-up"
+  tool: Verus
+  agent: verus-header-parsing-proofs
+  estimated_effort: ~2 hours
+  coverage_gap: 0.1
+  quick_win: true
+  dependencies: [ "VR-009 (derived key lengths)", "VR-011 (MessageKey::len, PublicBytes::len)" ]
 ```
 
 ---
@@ -1203,6 +1284,10 @@ end to end.
   verification, the callers pass the real values, "no verification key" means "unsigned suite"
   (runtime check), and the final plaintext reaches the caller only through the gated write.
 
+- VR-017 and VR-018 (branch `verus-encrypt-limits-and-lengths`): the encrypt-side MAX_DATA budget
+  and frame sequence numbers, and the suite-data and data-key length checks, are verified in-crate
+  (`make -C esdk verus`: 94 verified, 0 errors on both feature sets, 52 exec fns and 10 proof fns;
+  mutation-tested). The async body loop and the header builders are unverified adapters.
 **Remaining, in priority order:**
 1. **VR-001 property (c)** — the decision (property a) and the ordering (property b) are in-crate.
    What is left is **not** Verus-provable here: the *constant-time* comparison (property c) is an

@@ -23,14 +23,15 @@ Current output for both runs (default, and
 `--no-default-features --features aws-lc-sys`):
 
 ```
-verification results:: 81 verified, 0 errors
-verification results:: 81 verified, 0 errors
+verification results:: 94 verified, 0 errors
+verification results:: 94 verified, 0 errors
 ```
 
 The count is Verus's obligation count, not a function count; the checked
-fns are 45 exec fns (13 before the in-crate work, 22 before VR-009, 24 before
-VR-011, 34 before VR-001 / VR-012) and 8 proof fns. The table below lists the
-fns up to VR-011 plus VR-016; the VR-001 (a), VR-012, decrypt-order token
+fns are 52 exec fns (13 before the in-crate work, 22 before VR-009, 24 before
+VR-011, 34 before VR-001 / VR-012, 45 before VR-017 / VR-018) and 10 proof
+fns. The table below lists the fns up to VR-011 plus VR-016, VR-017 and
+VR-018; the VR-001 (a), VR-012, decrypt-order token
 (VR-001 (b), VR-002) and VR-015 rows are in the per-fn table of
 `docs/verus-proofs-report.md` ("In-crate proofs"). Each fn is inside a
 `verus!` block; paths are under `esdk/src/message/` unless they start with
@@ -64,6 +65,11 @@ fns up to VR-011 plus VR-016; the VR-001 (a), VR-012, decrypt-order token
 | `header_types.rs` | `classify_version_byte` (called by `read_msg_format_version`) | `Supported(V1)` iff `b == 1`; `Supported(V2)` iff `b == 2`; `Base64Hint` iff `b == 0x41`; `Unsupported` otherwise. |
 | `body/body_encrypt.rs` | `write_frame_prefix` (called by `construct_frame`) | Appends exactly `spec_frame_prefix`: regular `seq ‖ iv`; final `FFFFFFFF ‖ seq ‖ iv ‖ enc_content_len`. |
 | `body/body_encrypt.rs` | proof fn `lemma_endframe_bytes` | `spec_u32_to_be(ENDFRAME_SEQUENCE_NUMBER)` is the bytes `FF FF FF FF`. |
+| `body/body_encrypt.rs` | `PlaintextBudget::new`, `PlaintextBudget::add`; type invariant `PlaintextBudget::inv` (called by `encrypt_and_serialize_body`) | The encrypt plaintext total never exceeds `MAX_DATA` (2^36 - 32); `add` rejects with `TooLarge` iff the new total would exceed it, else with `OverBound` iff it would exceed the Plaintext Length Bound; no overflow for any input. VR-017. |
+| `body/body_encrypt.rs` | `EncryptFrameSeq::start`, `take_regular`, `final_seq`; type invariant `EncryptFrameSeq::inv` (called by `encrypt_and_serialize_body`) | Encrypt frame numbers start at 1 and go up by exactly 1 per regular frame; `take_regular` refuses at `u32::MAX`, so the counter never wraps; the final frame gets the regular count + 1. The encrypt counterpart of VR-004. VR-017. |
+| `body/body_encrypt.rs` | proof fns `lemma_max_data_bounds_frames`, `lemma_frame_guard_needed_at_16` | For frame length >= 17, MAX_DATA stops the message before the frame-count guard can fire; at 16, `2^32 - 2` frames hold exactly MAX_DATA, so the guard is needed. VR-017. |
+| `esdk/src/encrypt.rs` | `check_v2_suite_data` (called by `build_v2_header_body`) | `Missing` iff no suite data; `LengthMismatch` iff present and not `expected_len` bytes; `Ok` returns the same suite data. VR-018. |
+| `esdk/src/encrypt.rs` | `data_key_len_ok` (called by `build_header_auth_tag`) | True iff the derived data key is `expected_len` bytes. VR-018. |
 
 `START_SEQUENCE_NUMBER`, `ENDFRAME_SEQUENCE_NUMBER` (`header.rs`),
 `BodyAADContent` with its three content strings (`body_aad.rs`),

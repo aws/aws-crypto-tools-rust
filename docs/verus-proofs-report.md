@@ -248,6 +248,30 @@ make -C verification verify
 >
 > Same errors, messages and order as before; no public API or streaming
 > change. See "VR-016" and "VR-015" under "In-crate proofs".
+>
+> **Update (branch `verus-encrypt-limits-and-lengths`):** two encrypt-side
+> results, **94 verified, 0 errors** on both feature sets (up from 81; +13
+> obligations).
+>
+> - **VR-017 (new): encrypt body limits** (`body/body_encrypt.rs`). The
+>   running plaintext total is a `PlaintextBudget`, whose type invariant says
+>   it never exceeds `MAX_DATA` (2^36 - 32); `add` rejects exactly when the
+>   new total would exceed `MAX_DATA` (then the Plaintext Length Bound), with
+>   overflow-free arithmetic for every input. Frame numbers come from an
+>   `EncryptFrameSeq`: it starts at 1, `take_regular` hands out the current
+>   number and adds exactly 1, refuses when the number would be `u32::MAX`
+>   (so it never wraps), and `final_seq` gives the final frame the regular
+>   count + 1. A lemma proves MAX_DATA alone stops the message first only
+>   for frame lengths of 17 bytes or more; for 1 to 16 bytes the frame-count
+>   guard is needed, and it is there.
+> - **VR-018 (new): encrypt header length checks** (`esdk/src/encrypt.rs`).
+>   `check_v2_suite_data` (present, and exactly
+>   `algorithm_suite_data_length()` bytes) and `data_key_len_ok` (the derived
+>   key is exactly the suite key length) accept iff the lengths are equal.
+>
+> Same errors, messages and order as before; no public API or streaming
+> change. The async body loop and the header builders are unverified
+> adapters. See "VR-017 and VR-018" under "In-crate proofs".
 
 ### Adherence to the Verus skill invariants (esdk)
 - No proof was weakened: **no** `assume(...)`, `admit()`, or `#[verifier::external]` anywhere in esdk. In esdk there is exactly **one** `#[verifier::external_body]` — the `utf8_check` wrapper around `std::str::from_utf8` in the AAD sub-parser — used per Verus skill invariant #11 for a std call Verus cannot evaluate (the same role `tag_ok` plays for the AES-GCM check). Its `ensures` is a **trusted boundary, not a proof**: the UTF-8-validation correctness is delegated to the std library; everything around it (that the parser rejects non-UTF-8 with `Err`, never panics) is proven. This is called out explicitly in §5.
@@ -278,16 +302,17 @@ Output (the `aws-esdk` line; `vstd` is verified first with
 `--no-default-features --features aws-lc-sys`:
 
 ```
-verification results:: 81 verified, 0 errors
-verification results:: 81 verified, 0 errors
+verification results:: 94 verified, 0 errors
+verification results:: 94 verified, 0 errors
 ```
 
 The count is Verus's obligation count, not a function count; the checked
-fns are 45 exec fns (13 before the in-crate work, 22 before VR-009, 24 before
+fns are 52 exec fns (13 before the in-crate work, 22 before VR-009, 24 before
 VR-011, 34 before VR-001, 35 before VR-012, 36 before the VR-001 (b) / VR-002
-tokens, 39 before VR-015, 43 before VR-016 and VR-015 (b)) and 8 proof fns (3 before VR-012; the two VR-012 round-trip lemmas bring
-it to 5, `lemma_commitment_accepted` to 6, and `lemma_open_buffers_sized`
-and `lemma_signature_required` to 8). The count rose from 59 to 69 at
+tokens, 39 before VR-015, 43 before VR-016 and VR-015 (b), 45 before VR-017 /
+VR-018) and 10 proof fns (3 before VR-012; the two VR-012 round-trip lemmas bring
+it to 5, `lemma_commitment_accepted` to 6, `lemma_open_buffers_sized`
+and `lemma_signature_required` to 8, and the two VR-017 lemmas to 10). The count rose from 59 to 69 at
 VR-012: the two lemmas plus the staged `by (nonlinear_arith)` sub-obligations in
 the `u64` proof each count. It rose from 69 to 73 with the decrypt tokens: the
 three token-creating fns and the lemma. It rose from 73 to 77 with VR-015:
@@ -295,7 +320,10 @@ three token-creating fns and the lemma. It rose from 73 to 77 with VR-015:
 `release`. It rose from 77 to 81 with VR-016 (`open_buffers`,
 `lemma_open_buffers_sized`) and VR-015 (b) (`signature_presence_gate`,
 `lemma_signature_required`); `signature_not_required` and `signature_gate`
-were strengthened in place. Files are under `esdk/src/message/`
+were strengthened in place. It rose from 81 to 94 with VR-017
+(`PlaintextBudget::new` / `add`, `EncryptFrameSeq::start` / `take_regular` /
+`final_seq`, the two lemmas and the staged `nonlinear_arith` step) and VR-018
+(`check_v2_suite_data`, `data_key_len_ok`). Files are under `esdk/src/message/`
 unless the path starts with `esdk/src/`.
 
 | Fn | File | Ensures | Target |
@@ -345,10 +373,20 @@ unless the path starts with `esdk/src/`.
 | `body_aad_core` | `body/body_aad.rs` | result `== message_id@ + spec_body_aad_content(bc) + spec_u32_to_be(seq) + spec_u64_to_be(length)` | VR-005 |
 | `write_frame_prefix` | `body/body_encrypt.rs` | appends exactly `spec_frame_prefix(seq, iv@, final_content_len)`: regular `seq ‖ iv`; final `spec_u32_to_be(ENDFRAME) ‖ seq ‖ iv ‖ len` | VR-005 |
 | proof fn `lemma_endframe_bytes` | `body/body_encrypt.rs` | `spec_u32_to_be(ENDFRAME_SEQUENCE_NUMBER) == [FF, FF, FF, FF]` | VR-005 |
+| `PlaintextBudget::new`; type invariant `PlaintextBudget::inv` | `body/body_encrypt.rs` | `total() == 0`; every `PlaintextBudget` has `total <= MAX_DATA` | VR-017 |
+| `PlaintextBudget::add` | `body/body_encrypt.rs` | no `requires`; `Err(TooLarge)` iff `old.total + chunk > MAX_DATA`; `Err(OverBound)` iff not `TooLarge` and `bound` is `Some(b)` with `old.total + chunk > b`; `Ok ==> total == old.total + chunk`; `Err ==> total` unchanged; always `total <= MAX_DATA` | VR-017 |
+| `EncryptFrameSeq::start`; type invariant `EncryptFrameSeq::inv` | `body/body_encrypt.rs` | `next() == START_SEQUENCE_NUMBER` (1), `frames() == 0`; every `EncryptFrameSeq` has `next == frames + 1` | VR-017 |
+| `EncryptFrameSeq::take_regular` | `body/body_encrypt.rs` | no `requires`; `None` iff `old.next == ENDFRAME_SEQUENCE_NUMBER` (`u32::MAX`), state unchanged; `Some(n) ==> n == old.next && n < u32::MAX && next == n + 1 && frames == old.frames + 1` | VR-017 |
+| `EncryptFrameSeq::final_seq` | `body/body_encrypt.rs` | `n == next()`, `n == frames() + 1` (the total frame count), `n >= 1` | VR-017 |
+| proof fn `lemma_max_data_bounds_frames` | `body/body_encrypt.rs` | `frame_length >= 17 && k * frame_length <= MAX_DATA ==> k + 1 < ENDFRAME_SEQUENCE_NUMBER` | VR-017 |
+| proof fn `lemma_frame_guard_needed_at_16` | `body/body_encrypt.rs` | `(ENDFRAME_SEQUENCE_NUMBER - 1) * 16 == MAX_DATA` | VR-017 |
+| `check_v2_suite_data` | `esdk/src/encrypt.rs` | `Err(Missing)` iff no suite data; `Err(LengthMismatch)` iff present with `len != expected_len`; `Ok(sd) ==> sd` is the given suite data with `len == expected_len` | VR-018 |
+| `data_key_len_ok` | `esdk/src/encrypt.rs` | `ok` iff `data_key@.len() == expected_len` | VR-018 |
 
 Spec fns `spec_be_u16`/`spec_be_u32`/`spec_be_u64`, the `READ_CHUNK` const and
 the `LenCheck`, `EdkCount`, `MessageFormatVersion`, `MessageType`,
-`ContentType`, `VersionByte`, `BodyAADContent` and `V2KeyLenError` enums, the
+`ContentType`, `VersionByte`, `BodyAADContent`, `V2KeyLenError`, `BudgetError`
+and `SuiteDataLenError` enums, the `MAX_DATA` const (now a `u64`, same value), the
 three body AAD content strings, `START_SEQUENCE_NUMBER` /
 `ENDFRAME_SEQUENCE_NUMBER` and `MESSAGE_ID_LEN_V1` / `MESSAGE_ID_LEN_V2` are
 also inside `verus!`. The shipped callers use these
@@ -361,7 +399,10 @@ matches on `check_v2_key_lengths` and sizes the derived encryption key with its
 the framed-decrypt loop calls `next_expected_frame` and `final_frame_seq_ok`,
 `read_msg_format_version` matches on `classify_version_byte`, `iv_seq` and
 `body_aad` call `iv_seq_core` and `body_aad_core` after their `debug_assert!`s,
-and `construct_frame` writes the frame fields with `write_frame_prefix`.
+`construct_frame` writes the frame fields with `write_frame_prefix`,
+`encrypt_and_serialize_body` counts plaintext with `PlaintextBudget::add` and
+numbers frames with `EncryptFrameSeq`, `build_v2_header_body` matches on
+`check_v2_suite_data`, and `build_header_auth_tag` calls `data_key_len_ok`.
 
 **Unverified / trusted boundaries:**
 - **The async `Source`/`Tee` adapters** are unverified glue. The readers are
@@ -376,6 +417,11 @@ and `construct_frame` writes the frame fields with `write_frame_prefix`.
   `read_and_decrypt_framed_message_body` that sets `expected_frame =
   START_SEQUENCE_NUMBER` and feeds each `next_expected_frame` result to the
   next iteration is unverified glue; the lemmas describe what it does.
+  The encrypt side is the same (VR-017): that `encrypt_and_serialize_body`
+  creates one budget and one counter, calls `take_regular` and
+  `add(frame_length)` once per regular frame and `add(in_size)` and
+  `final_seq` for the final frame, and passes the returned number to
+  `construct_frame` is unverified glue.
 - **`u32_to_be` / `u64_to_be` vs `to_be_bytes`.** vstd does not model
   `to_be_bytes`, so the cores use verified encoders; that they equal
   `to_be_bytes()` is checked by unit tests. The body AAD content strings are
@@ -705,6 +751,94 @@ point here.
 | D3 builds `OpenBuffers { cipher_text: &enc_content, plain_text: vec![0; len + 1] }` by hand | compiler | `E0451` private fields |
 | D5 passes `&enc_content, &mut vec![0; len + 1][..]` the old way | compiler | `E0061` wrong argument count |
 | D5 passes a `len + 1` `Vec` into `open_buffers` | no error (`81 verified, 0 errors`) | expected: `open_buffers` resizes it back, so the buffer at `aes_decrypt` is still exact. A site cannot mis-size through `open_buffers` |
+
+### VR-017 and VR-018 in-crate: encrypt-side limits and length checks
+
+Branch `verus-encrypt-limits-and-lengths`. Two numbers because they sit in
+different files and guard different things. VR-017 is the encrypt
+counterpart of VR-004; VR-018 is the encrypt counterpart of the VR-009 length
+checks. Neither changes VR-004, VR-005, VR-009 or VR-016.
+
+**VR-017: encrypt body limits (`body/body_encrypt.rs`).** Origin: the
+sequence part is threat-driven (Attack Tree 1, "implementation wraps 32-bit
+sequence number", which means GCM nonce reuse); the MAX_DATA part is
+capability-driven (no threat entry).
+
+- `PlaintextBudget` replaces the `total_data_size: usize` counter. Its type
+  invariant is `total <= MAX_DATA`. `add(chunk, bound)` tests
+  `chunk > MAX_DATA - total` (the same test as today's
+  `total + chunk > MAX_DATA`, but it cannot overflow), then the Plaintext
+  Length Bound, in today's order. It has no `requires`, because its caller
+  is unverified async code. On a rejection the total is unchanged; the
+  caller returns the error at once, so this is unobservable.
+- `EncryptFrameSeq` replaces `sequence_number: u32`. `take_regular` makes
+  today's `== ENDFRAME_SEQUENCE_NUMBER` check, returns the current number
+  and adds 1. The `+= 1` moved from after `construct_frame` into
+  `take_regular`, before it. That is unobservable: if `construct_frame`
+  fails, the function returns `Err` and drops the counter.
+- `MAX_DATA` moved into `verus!` as `u64` `0x000F_FFFF_FFE0` (same value).
+  Verus rejects 2^36 as a `usize` without a `global size_of usize == 8`
+  directive, whose cargo expansion trips `unused_braces` under clippy; a
+  `u64` budget avoids both, and `usize as u64` is lossless.
+- `lemma_max_data_bounds_frames` and `lemma_frame_guard_needed_at_16` state
+  how the two limits relate. The guard fires after `2^32 - 2` regular
+  frames. Those frames hold more than MAX_DATA iff the frame length is at
+  least 17, so for 1 to 16 bytes the frame-count guard, not MAX_DATA, stops
+  the counter. The code has the guard, so it does not rely on MAX_DATA.
+
+**VR-018: encrypt header length checks (`esdk/src/encrypt.rs`).** Origin:
+capability-driven (no threat entry; T8 is the decrypt-side commitment check,
+VR-001).
+
+- `check_v2_suite_data(suite_data, expected_len)` takes the
+  `Option<PublicBytes>` and returns it on success, so the presence check and
+  the length check both live in the core, in today's order.
+- `data_key_len_ok(data_key, expected_len)` reads the length through the
+  verified `MessageKey::len`. The adapter keeps the `format!` message.
+- For keys from `derive_keys` this check never fails (VR-009 already proves
+  the derived key length for V2). We prove the check, not that it is
+  unreachable.
+
+**Verus-proven:** the start value 1, +1 per regular frame, no wrap, refusal
+of the regular frame that would be numbered `u32::MAX`, the final frame
+number = regular frames + 1; the total stays `<= MAX_DATA`, `TooLarge` iff
+`total + chunk > MAX_DATA`, `OverBound` iff not `TooLarge` and over the
+bound, no overflow; the frame-length relationship above; the suite-data
+and data-key accept-iff-equal decisions with their variant order.
+
+**Unverified glue / trusted:** the async loop threading (above);
+`read_up_to_peek` returning `in_size <= frame_length` (trusted, as today,
+`debug_assert!`); the `usize::try_from` conversions of the frame length and
+bound; the mapping of each variant to today's `val_err` / `err(Kind::Internal,
+..)` messages; `algorithm_suite_data_length()` (MPL) and
+`get_encrypt_key_length` (a const table outside `verus!`), which supply the
+expected lengths.
+
+**Findings (no behavior change):**
+- F1: encrypt refuses framed messages over 2^36 - 32 bytes, but no Duvet
+  annotation is attached to that check. The only 2^36 - 32 requirement in the
+  annotations is for non-framed content (`message-body.md#nonframed-data-encrypted-content-length`),
+  which the Rust ESDK never encrypts. Framed decrypt applies no total limit,
+  so this ESDK decrypts framed messages over 64 GiB but will not produce them.
+  Stricter than the spec, not a safety issue; a question for the spec owners.
+- F2: the bound error differs between regular frames ("configured") and the
+  final frame ("specified"). Kept verbatim.
+
+**Mutation tests** (default features; each reverted; all caught by Verus):
+
+| Mutation | Result |
+|---|---|
+| M1 `chunk > MAX_DATA - total` → `>=` (off by one) | `93 verified, 1 errors`: postcondition |
+| M2 overflow-prone form `total + chunk > MAX_DATA` | `93 verified, 1 errors`: possible arithmetic overflow |
+| M3 drop the `== ENDFRAME_SEQUENCE_NUMBER` guard | `93 verified, 1 errors`: possible arithmetic overflow |
+| M4 drop the guard and use `wrapping_add(1)` (let it wrap) | `93 verified, 1 errors`: type invariant |
+| M5 `start()` with `next: 0` | `93 verified, 1 errors`: type invariant |
+| M6 suite data accepts `expected_len + 1` | `93 verified, 1 errors`: postcondition |
+| M7 data key accepts `expected_len + 1` | `93 verified, 1 errors`: postcondition |
+| M8 guard at `ENDFRAME_SEQUENCE_NUMBER - 1` (off by one) | `93 verified, 1 errors`: postcondition, overflow |
+
+Adapter mutations (for example passing a stale number to `construct_frame`)
+are glue and are not caught.
 
 ### VR-008 in-crate (`aws-mpl-primitives`, `prim/src/ecdsa.rs`)
 
@@ -1161,6 +1295,8 @@ independent evidence beyond that.
 | VR-012 big-endian codec round-trip | **in-crate** (`esdk/src/message/serialize_functions.rs`): `lemma_u32_round_trip` and `lemma_u64_round_trip` prove the verified big-endian encoders and decoders are **exact inverses** for `u32` and `u64` — `spec_be_u32(b) == x` when `b@ == spec_u32_to_be(x)`, and the `u64` analogue; mutation-tested. Capability-driven (category 1c), couples the two spec fns each previously verified only against their own side | a functional-correctness lemma about the **codec** only; it says nothing about the async readers/writers (`read_*`/`write_*`) that call the exec helpers. No `u16` round-trip: `u16` has a decoder (`be_u16`) but no encoder. That the exec fns equal std's `from_be_bytes`/`to_be_bytes` rests on their own ensures and the in-module tests, not on these lemmas |
 | VR-013 prim wrapper length contracts (pipeline target VR-2026-C03) | **in-crate** (`prim/src/lib.rs`, `prim/src/ecdsa.rs`): `digest`, `DigestContext::finish` and `hmac` return `Err` unless the buffer has the algorithm's exact length, leave `out` unchanged on `Err`, and copy only after the guard (proven in bounds); `kbkdf_ctr_hmac`'s lookup / error mapping has no panic path; `generate_random_bytes` and `constant_time_equal` are total | **trusted (TCB A1–A13):** the aws-lc-rs output lengths (A2, A5, A8), no-panic of every listed call (incl. the documented `Context::finish` `expect`, F4), and A13 determinism. Not proven: output bytes, constant-time equality semantics and timing. F3: the `Unavailable` branch is dead with aws-lc-rs 1.18.1 |
 | VR-014 AES buffer effects (pipeline target VR-2026-C03, BUG-07) | **in-crate** (`prim/src/lib.rs`): BUG-07(a) **proved** — `aes_encrypt` leaves exactly `old ++ message` on a key/nonce `Err`, `old_len + |message|` with prefix unchanged on a seal `Err`, and `old ++ ct ++ tag` (+16) on `Ok`. BUG-07(b) **recorded under A-OPEN** — a decrypt buffer longer than the ciphertext passes the guard and can only end in a callee-side `Err` | **assumed, not proven:** A-OPEN (A20), the 16-byte tag (A19), no-panic of the AES calls. Not proven: crypto, ciphertext/tag bytes, tail bytes after a seal failure. FOLLOW-UP: what the `aes_*` callers do with the buffer after an `Err` (mpl 2 + 2, esdk 2 + 5). BUG-07 itself is not fixed. In esdk, (b) is unreachable by VR-016 |
+| VR-017 encrypt body limits (MAX_DATA, frame sequence) | **in-crate** (`body/body_encrypt.rs`): `PlaintextBudget` (total never exceeds MAX_DATA; rejects iff the next chunk would; then the Plaintext Length Bound; overflow-free) and `EncryptFrameSeq` (starts at 1, +1 per regular frame, never wraps, final frame = regular count + 1); lemma: MAX_DATA stops the counter first only for frame length >= 17 | the async loop threading in `encrypt_and_serialize_body` (unverified glue); `read_up_to_peek` (`in_size <= frame_length`); the `usize::try_from` conversions; the error mapping |
+| VR-018 encrypt header length checks | **in-crate** (`esdk/src/encrypt.rs`): `check_v2_suite_data` (present and exactly `algorithm_suite_data_length()` bytes, in that order) and `data_key_len_ok` (accept iff equal) | the expected lengths come from MPL (`algorithm_suite_data_length`) and the const table `get_encrypt_key_length`; the adapters map variants to today's errors |
 | VR-016 decrypt buffer sizing (BUG-07(b) in esdk) | **in-crate** (`esdk/src/secret.rs`): `secret::open` takes only an `OpenBuffers`, built only by the verified `open_buffers`; its type invariant says the plaintext buffer is as long as the ciphertext. All 5 esdk open sites go through it, so BUG-07(b) is unreachable from esdk, Verus-proven | trusted: the TB-A body of `secret::open` passes the two fields to `aes_decrypt` unchanged; what aws-lc-rs does with a mismatch stays under A-OPEN |
 | Infra: I/O seam | `esdk` is Verus-buildable; sync `verus!` cores are verified in-crate behind the async `Source`/`Tee` adapters (see "In-crate proofs") | the async adapters themselves stay unverified glue |
 
@@ -1190,6 +1326,7 @@ Load-bearing proofs were checked by mutating the code and confirming Verus
 - **key-commitment ordering (`commitment_ordering_proofs.rs`, VR-001 property b):** letting `verify` reach `Verified` without the accept condition (returning `Verified` unconditionally) → the `verify` `(next == Verified) <==> commitment_accepts(…)` and `(next == Unverified) <==> !commitment_accepts(…)` postconditions fail; and, with a forbidden `decrypt_frame(HeaderState::Unverified)` call added, removing the `requires state == Verified` guard flips that call from *precondition not satisfied* to passing — so with the guard in place the forbidden call is rejected. Both confirm the ordering is genuinely constrained, not tautological.
 - **decrypt tokens (`esdk/src/decrypt_gate.rs`, VR-001 (b) and VR-002):** creating a token on a failure path makes **Verus** fail each time (`72 verified, 1 errors`, then reverted): in `commitment_gate`, returning a committing token on `Err` → *constructed value may fail to meet its declared type invariant*; in `commitment_not_required`, returning a token for a committing suite → *postcondition not satisfied*; in `header_auth_gate`, returning a token when `open` failed → *postcondition not satisfied*. The order is caught by the **compiler**: calling `step_decrypt_body` without running `step_verify_header` → `E0425` (`header_verified` not in scope); building a `HeaderVerified` in `decrypt.rs` → `E0451` (private field); building a `CommitmentAccepted` in `decrypt.rs` → `E0451` (private fields). Deleting the `&HeaderVerified` parameter and its argument still **compiles** (`cargo build` only warns that `header_verified` is unused; `cargo clippy -- -D warnings` rejects that warning, but deleting the binding too would pass), so only review catches that change.
 - **signature presence (VR-015 (b)) and decrypt buffer sizing (VR-016), branch `sizing-and-sigpresence`:** minting the not-required token for a signed suite, swapping the `signature_not_required` branches, minting a presence token on a mismatch, or building a `SignatureRequired` with no key → **Verus** fails each (`80 verified, 1 errors`: postcondition or type invariant); `open_buffers` resizing to `len + 1` → **Verus** fails (type invariant, overflow). Re-reading the key in step 5, calling `signature_gate` without a `SignatureRequired`, hand-building an `OpenBuffers` at an open site, or passing a raw `&mut [u8]` to `secret::open` → the **compiler** rejects it (`E0308`, `E0061`, `E0451`, `E0061`). Details in the VR-015 (b) and VR-016 sections.
+- **encrypt limits and length checks (VR-017, VR-018), branch `verus-encrypt-limits-and-lengths`:** an off-by-one in the MAX_DATA check, the overflow-prone `total + chunk` form, dropping the frame-count guard, letting the counter wrap, starting at 0, an off-by-one guard, and accepting a suite-data or data-key length one too long → **Verus** fails each (`93 verified, 1 errors`). Details in the VR-017 and VR-018 section.
 - **big-endian codec round-trip (`lemma_u32_round_trip` / `lemma_u64_round_trip`, VR-012):** mutating the decoder `spec_be_u32` (changing the `b[3]` term to `b[3] * 2`) → `lemma_u32_round_trip`'s `spec_be_u32(b) == x as int` postcondition fails (67 verified, 2 errors; the other error is `be_u32`'s own ensures, also tied to the decoder spec); mutating `spec_be_u64` (adding `+ 1` to the `b[7]` term) → `lemma_u64_round_trip`'s postcondition fails (67 verified, 2 errors), then reverted. Both confirm the lemmas genuinely couple the encoder and decoder spec fns and are not a restatement of one side against itself.
 - **prim wrapper length contracts (VR-013, pipeline target VR-2026-C03):** removing the length guard in `digest_core`, `digest_finish_core` or `hmac_core` → `precondition not satisfied` on `copy_from_slice` plus the `Ok <==>` / `Err` postconditions fail; changing `!=` to `<` in the `digest_core` / `digest_finish_core` guard → the `Ok <==>` postcondition and the copy precondition fail; reporting `want_len: 0` → the `e.want_len` postcondition fails; taking `hmac`'s `want_len` from a constant `32` → the postconditions and the copy precondition fail; swapping `Unavailable` / `DerivationFailed` in `kbkdf_core` → its postconditions fail; injecting `let _x = bytes[0];` into `fill_random_core` → `index in bounds` precondition not met (the panic check covers the core); `.is_ok()` → `.is_err()` in `ct_equal_core` → the postcondition fails. Each run: `17 verified, 1 errors`, then reverted.
 - **AES buffer effects (VR-014, BUG-07):** moving `aes_encrypt_extend_core` after the nonce check (the BUG-07 fix option 1 shape) → the key/nonce `== o + m` postcondition fails; appending `message` instead of the tag → the "tag after ciphertext" assert fails; clearing the buffer on seal failure → the seal-failure postcondition fails; dropping either new extend-core conjunct → the `aes_encrypt_core` postconditions fail; pushing a byte before `old_size` or flipping the first tail byte in the extend core → the matching new conjunct fails; replacing the decrypt guard with `plain_text.len() != cipher_text.len()` (the BUG-07 fix shape) → the observation postcondition fails; dropping A-OPEN's `Ok ==>` ensures from A20 → both decrypt postconditions fail, which shows the BUG-07(b) result rests only on A-OPEN. Each run: `17 verified, 1 errors`, then reverted. Full log: `.agents/tasks/verus-prim-c03/logs/mutations.md` (M1–M19).
@@ -1291,3 +1428,6 @@ ID length consts moved into `verus!`).
 **VR-001 (b) and VR-002 tokens (branch `vr001b-vr002-stage2`):**
 `esdk/src/decrypt_gate.rs` (new), `esdk/src/lib.rs`, `esdk/src/decrypt.rs`,
 `esdk/src/message/header.rs`.
+
+**VR-017 and VR-018 (branch `verus-encrypt-limits-and-lengths`):**
+`esdk/src/message/body/body_encrypt.rs`, `esdk/src/encrypt.rs`.
