@@ -126,6 +126,15 @@ test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 The adapted test keeps the original print labels (for example `HierarchicalKeyring::new(ttl_seconds = u64::MAX)`), although the call it now makes is the builder. The output matches the original run at `a1e23d7` (`.agents/tasks/bug-reports/logs/bugrepro01.log`).
 
+## Formal check (T06)
+A Verus proof of a model of the four additions exists: `verus-proofs/t06_systemtime_add_overflow.rs`. Status: Partly proved (model level, not the shipped code, under stated hypotheses): 28 verified, 4 errors. It is a proof of a re-typed model, not of the shipped code.
+- With the assumed 64-bit Unix range (`i64` seconds, A_TIME_RANGE), a TTL of `Duration::MAX` is accepted by the builder and `now + ttl` panics at `hierarchical_keyring.rs:702` and `:945` (`lemma_bug01_keyring_counterexample`). `in_flight_ttl = Duration::MAX` with `grace_interval = 1 s` panics at `storm_tracking.rs:333`, and `grace_interval = in_flight_ttl = Duration::MAX` panics at `:680`. A TTL of `i64::MAX` seconds panics and `1e15` seconds does not, as in the log above.
+- The statement "no panic for every accepted configuration" is four intentional expected-FAIL obligations, one per site (`lemma_bug01_site_702_no_overflow_for_any_accepted_ttl_EXPECTED_FAIL` and the other three). They are the four errors of the result line.
+- Below the bound `d.secs + 1 <= hi - t.secs` the addition does not overflow (`theorem_safe_bound`).
+- After a panic at `:333` or `:680`, the model's state mutex stays poisoned and every later `get_cache_entry` and `put_cache_entry` that gets past the local cache returns `Internal` (relative to A_MUTEX; needs panic = unwind). `delete_cache_entry` and `update_usage_metadata` are not affected.
+- Fix options 1 and 2 hold at model level: checked addition returns the error exactly where the shipped model panics and cannot poison the lock; a bound in the builders removes the overflow only relative to the platform range and a cap on the clock (A_NOW_CAP). A builder bound alone, without a clock cap, does not discharge the obligation. Fix option 3 is not modeled.
+The proof assumes the platform range of `SystemTime`; it does not prove it. It does not change this bug's severity, status, confidence or evidence.
+
 ## Fix options
 
 These options were written against `a1e23d7`. On `main`, the four use sites are `hierarchical_keyring.rs:702`, `:945` and `storm_tracking.rs:333`, `:680`. The constructor checks named in option 2 are now `HierarchicalKeyringBuilder::build` (`hierarchical_keyring.rs:535`) and `StormTrackingCmcBuilder::build` (`storm_tracking.rs:606`). The error type is now `aws_crypto_mpl::Error` instead of `MaterialsError` / `CmcError`.

@@ -276,7 +276,7 @@ CreateKey / VersionKey: these need a single-key config (`branch_key_store.rs:112
 | Commitment policy | Per request (CMM input) | Gates encrypt and decrypt suites. `FORBID_ENCRYPT_ALLOW_DECRYPT` default suite is now `03 78` (spec says `00 78`). The other two policies default to `05 78` |
 | Algorithm suite | Policy default | Key size, KDF, signing, commitment |
 | `RawAesKeyringBuilder` | All four fields required | Key length must match `AesWrappingAlg`. Namespace must not start with `aws-kms` |
-| `ttl` (hierarchical) | Required, `Duration` > 0, no upper bound | Plaintext branch-key residency in the cache. Huge values panic (BUG-01). Must be > the cache's grace period |
+| `ttl` (hierarchical) | Required, `Duration` > 0, no upper bound | Plaintext branch-key residency in the cache. Huge values panic (BUG-01); the T06 proof (model level, not the shipped code: 28 verified, 4 errors) confirms this at model level and assumes the platform range of `SystemTime`. Must be > the cache's grace period |
 | `cache` (hierarchical) | `DefaultCmc` (storm-tracking, capacity 1000, grace period 10 s) with `rt-tokio`; required without it | A shared or user cache spans keyrings and relies on cache-id separation and on the cache behaving honestly |
 | `partition_id` | 16-byte v4 UUID from `prim` CSPRNG | Caller strings are used as raw UTF-8 bytes. Strings containing NUL can collide (BUG-06) |
 | `key_store` | Required, any `SharedKeyStore` | Its `logical_key_store_name` feeds the cache id. A user key store controls it |
