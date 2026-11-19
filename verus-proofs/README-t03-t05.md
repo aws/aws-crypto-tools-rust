@@ -124,7 +124,7 @@ To close the gap you need all of:
 **Not covered.**
 - The KBKDF output, PRF security, aws-lc-rs correctness.
 - Interop with other implementations. No test compares a `derive_branch_key` or wrap output to a Dafny or Java value.
-- The RNG for salt and IV (T04).
+- The RNG for salt and IV (T04; the model proof of the draw structure is in `README.md`, section T04, and it does not prove freshness either).
 - AES-GCM and the AAD.
 - Version UUID parsing.
 - Zeroization.
