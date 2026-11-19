@@ -10,6 +10,9 @@
 //!   [`crate::proof_coverage`];
 //! - claims: the plain sentences in `docs/verification-claims.toml`, each
 //!   checked against the code here so a claim cannot outlive its proof.
+//!
+//! It also lists every threat in `docs/threat-model.md`, so the page can show
+//! which claims back each threat, and which threats nothing backs.
 
 use std::collections::BTreeMap;
 
@@ -26,6 +29,8 @@ pub struct Status {
     pub counts: Vec<Count>,
     pub crates: Vec<CrateSummary>,
     pub claims: Vec<Claim>,
+    /// Every threat in the threat model's STRIDE tables, in table order.
+    pub threats: Vec<Threat>,
     /// Fns inside `verus!` that no claim names, as `path::name`.
     pub undescribed: Vec<String>,
     /// What each line kind means, keyed as in [`crate::proof_coverage::KINDS`].
@@ -123,6 +128,9 @@ pub struct ClaimSpec {
     pub fns: Vec<String>,
     #[serde(default)]
     pub files: Vec<String>,
+    /// Threat ids from `docs/threat-model.md` that this claim helps against.
+    #[serde(default)]
+    pub threats: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
@@ -142,6 +150,54 @@ pub struct Claim {
     pub mark: Mark,
     pub text: String,
     pub places: Vec<Place>,
+    pub threats: Vec<String>,
+}
+
+/// One row of a STRIDE table in `docs/threat-model.md`, such as
+/// `| T1 | Message header modification (algorithm suite downgrade) | ...`.
+#[derive(Debug, PartialEq, Eq, Serialize)]
+pub struct Threat {
+    pub id: String,
+    pub category: String,
+    pub name: String,
+}
+
+/// Reads the tables under `## 8. Threat Identification`. Each `### 8.N Name`
+/// heading names the category of the rows below it.
+pub fn parse_threats(text: &str) -> Vec<Threat> {
+    let mut threats = Vec::new();
+    let mut in_section = false;
+    let mut category = String::new();
+    for line in text.lines() {
+        if line.starts_with("## ") {
+            in_section = line.starts_with("## 8.");
+        } else if !in_section {
+            continue;
+        } else if let Some(heading) = line.strip_prefix("### ") {
+            category = heading
+                .split_once(' ')
+                .map_or(heading, |(_, name)| name)
+                .trim()
+                .to_owned();
+        } else if let Some(row) = line.strip_prefix("| ") {
+            let mut cells = row.split(" | ");
+            let (Some(id), Some(name)) = (cells.next(), cells.next()) else {
+                continue;
+            };
+            let id = id.trim();
+            let is_id = id.len() >= 2
+                && id.as_bytes()[0].is_ascii_uppercase()
+                && id[1..].bytes().all(|b| b.is_ascii_digit());
+            if is_id {
+                threats.push(Threat {
+                    id: id.to_owned(),
+                    category: category.clone(),
+                    name: name.trim().to_owned(),
+                });
+            }
+        }
+    }
+    threats
 }
 
 /// Where a claim is proven: a fn in shipped code, or a model file.
@@ -160,11 +216,19 @@ pub fn resolve_claims(
     file: ClaimsFile,
     files: &[FileCoverage],
     model_files: &[String],
+    threats: &[Threat],
 ) -> Result<(Vec<Claim>, Vec<String>), String> {
     let mut named = std::collections::BTreeSet::new();
     let mut claims = Vec::new();
     for c in file.claims {
         let what = format!("claim \"{}\"", c.text);
+        if let Some(t) = c
+            .threats
+            .iter()
+            .find(|t| !threats.iter().any(|x| &x.id == *t))
+        {
+            return Err(format!("{what}: no threat {t} in docs/threat-model.md"));
+        }
         let places = match c.mark {
             Mark::Proven => {
                 if c.fns.is_empty() || !c.files.is_empty() {
@@ -237,6 +301,7 @@ pub fn resolve_claims(
             mark: c.mark,
             text: c.text,
             places,
+            threats: c.threats,
         });
     }
     // Exec fns a reader should know about. Spec and proof fns only support

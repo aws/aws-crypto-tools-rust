@@ -1,6 +1,6 @@
 {
-  "generated": "2026-11-17T23:00:57Z",
-  "commit": "6f842510e1b4f939737bea5c2a635469b80db389",
+  "generated": "2026-11-19T19:12:21Z",
+  "commit": "fd907624e4c3328178f994dd328c0b1fc3904c74",
   "verus": "0.2026.07.12.0b42f4c",
   "snapshot_note": "Counts come from one Verus run at generation time. Run `cargo xtask verification-status` again to refresh them.",
   "counts": [
@@ -147,6 +147,10 @@
           "first": 110,
           "last": 121
         }
+      ],
+      "threats": [
+        "T1",
+        "D3"
       ]
     },
     {
@@ -160,6 +164,9 @@
           "first": 35,
           "last": 53
         }
+      ],
+      "threats": [
+        "D1"
       ]
     },
     {
@@ -179,6 +186,10 @@
           "first": 35,
           "last": 40
         }
+      ],
+      "threats": [
+        "T1",
+        "D3"
       ]
     },
     {
@@ -192,6 +203,10 @@
           "first": 86,
           "last": 112
         }
+      ],
+      "threats": [
+        "E3",
+        "T8"
       ]
     },
     {
@@ -205,6 +220,10 @@
           "first": null,
           "last": null
         }
+      ],
+      "threats": [
+        "E3",
+        "T8"
       ]
     },
     {
@@ -218,6 +237,10 @@
           "first": null,
           "last": null
         }
+      ],
+      "threats": [
+        "T1",
+        "T6"
       ]
     },
     {
@@ -231,6 +254,10 @@
           "first": null,
           "last": null
         }
+      ],
+      "threats": [
+        "D1",
+        "D3"
       ]
     },
     {
@@ -286,7 +313,8 @@
           "first": 180,
           "last": 223
         }
-      ]
+      ],
+      "threats": []
     },
     {
       "area": "Numbers and lengths",
@@ -311,6 +339,10 @@
           "first": 232,
           "last": 245
         }
+      ],
+      "threats": [
+        "D1",
+        "D3"
       ]
     },
     {
@@ -342,6 +374,11 @@
           "first": 111,
           "last": 120
         }
+      ],
+      "threats": [
+        "T2",
+        "T3",
+        "D2"
       ]
     },
     {
@@ -367,6 +404,10 @@
           "first": 66,
           "last": 75
         }
+      ],
+      "threats": [
+        "T2",
+        "T3"
       ]
     },
     {
@@ -386,6 +427,9 @@
           "first": 37,
           "last": 42
         }
+      ],
+      "threats": [
+        "T2"
       ]
     },
     {
@@ -399,6 +443,9 @@
           "first": null,
           "last": null
         }
+      ],
+      "threats": [
+        "T2"
       ]
     },
     {
@@ -418,7 +465,8 @@
           "first": 45,
           "last": 79
         }
-      ]
+      ],
+      "threats": []
     },
     {
       "area": "Keys",
@@ -449,6 +497,10 @@
           "first": 251,
           "last": 269
         }
+      ],
+      "threats": [
+        "E3",
+        "T8"
       ]
     },
     {
@@ -474,6 +526,9 @@
           "first": 96,
           "last": 101
         }
+      ],
+      "threats": [
+        "I1"
       ]
     },
     {
@@ -499,6 +554,9 @@
           "first": 470,
           "last": 501
         }
+      ],
+      "threats": [
+        "D1"
       ]
     },
     {
@@ -512,7 +570,8 @@
           "first": 397,
           "last": 439
         }
-      ]
+      ],
+      "threats": []
     },
     {
       "area": "Primitives",
@@ -537,7 +596,8 @@
           "first": 283,
           "last": 303
         }
-      ]
+      ],
+      "threats": []
     },
     {
       "area": "Primitives",
@@ -562,7 +622,8 @@
           "first": 127,
           "last": 143
         }
-      ]
+      ],
+      "threats": []
     },
     {
       "area": "Primitives",
@@ -575,7 +636,8 @@
           "first": 270,
           "last": 306
         }
-      ]
+      ],
+      "threats": []
     },
     {
       "area": "Primitives",
@@ -600,25 +662,195 @@
           "first": 364,
           "last": 369
         }
-      ]
+      ],
+      "threats": []
     },
     {
       "area": "Not proven",
       "mark": "assumed",
       "text": "The async encrypt and decrypt code calls the proven checks, in the right order.",
-      "places": []
+      "places": [],
+      "threats": [
+        "T1",
+        "T2",
+        "T6",
+        "E3",
+        "D1"
+      ]
     },
     {
       "area": "Not proven",
       "mark": "assumed",
       "text": "AES-GCM, HKDF, HMAC, ECDSA and random bytes from aws-lc-rs are correct.",
-      "places": []
+      "places": [],
+      "threats": []
     },
     {
       "area": "Not proven",
       "mark": "assumed",
       "text": "Comparisons of secret values run in constant time.",
-      "places": []
+      "places": [],
+      "threats": [
+        "I4",
+        "E3"
+      ]
+    }
+  ],
+  "threats": [
+    {
+      "id": "S1",
+      "category": "Spoofing",
+      "name": "KMS endpoint spoofing"
+    },
+    {
+      "id": "S2",
+      "category": "Spoofing",
+      "name": "Forged encrypted message (impersonate encryptor)"
+    },
+    {
+      "id": "S3",
+      "category": "Spoofing",
+      "name": "Malicious keyring returning attacker-controlled data key"
+    },
+    {
+      "id": "S4",
+      "category": "Spoofing",
+      "name": "Credential theft allowing unauthorized KMS calls"
+    },
+    {
+      "id": "T1",
+      "category": "Tampering",
+      "name": "Message header modification (algorithm suite downgrade)"
+    },
+    {
+      "id": "T2",
+      "category": "Tampering",
+      "name": "Frame reordering or deletion"
+    },
+    {
+      "id": "T3",
+      "category": "Tampering",
+      "name": "Frame splicing across messages"
+    },
+    {
+      "id": "T4",
+      "category": "Tampering",
+      "name": "EDK substitution (swap encrypted data key)"
+    },
+    {
+      "id": "T5",
+      "category": "Tampering",
+      "name": "Encryption context modification"
+    },
+    {
+      "id": "T6",
+      "category": "Tampering",
+      "name": "Auth tag truncation or modification"
+    },
+    {
+      "id": "T7",
+      "category": "Tampering",
+      "name": "Footer signature removal"
+    },
+    {
+      "id": "T8",
+      "category": "Tampering",
+      "name": "Commit key manipulation"
+    },
+    {
+      "id": "R1",
+      "category": "Repudiation",
+      "name": "Encryptor denies creating message (no signature)"
+    },
+    {
+      "id": "R2",
+      "category": "Repudiation",
+      "name": "Message forgery by decryptor with key access"
+    },
+    {
+      "id": "R3",
+      "category": "Repudiation",
+      "name": "Streaming plaintext consumed before signature verified"
+    },
+    {
+      "id": "I1",
+      "category": "Information Disclosure",
+      "name": "Plaintext data key leaked from memory"
+    },
+    {
+      "id": "I2",
+      "category": "Information Disclosure",
+      "name": "Encryption context reveals sensitive metadata"
+    },
+    {
+      "id": "I3",
+      "category": "Information Disclosure",
+      "name": "Frame length reveals plaintext size"
+    },
+    {
+      "id": "I4",
+      "category": "Information Disclosure",
+      "name": "Timing side-channels in crypto operations"
+    },
+    {
+      "id": "I5",
+      "category": "Information Disclosure",
+      "name": "Key material persists in memory after use"
+    },
+    {
+      "id": "I6",
+      "category": "Information Disclosure",
+      "name": "Error messages reveal internal state"
+    },
+    {
+      "id": "D1",
+      "category": "Denial of Service",
+      "name": "Excessive EDKs forcing many KMS Decrypt calls"
+    },
+    {
+      "id": "D2",
+      "category": "Denial of Service",
+      "name": "Extremely large frame count exhausting memory"
+    },
+    {
+      "id": "D3",
+      "category": "Denial of Service",
+      "name": "Malformed header causing parsing loops"
+    },
+    {
+      "id": "D4",
+      "category": "Denial of Service",
+      "name": "KMS throttling via EDK flood"
+    },
+    {
+      "id": "D5",
+      "category": "Denial of Service",
+      "name": "Cache poisoning in Caching CMM"
+    },
+    {
+      "id": "E1",
+      "category": "Elevation of Privilege",
+      "name": "Algorithm suite downgrade (bypass commitment)"
+    },
+    {
+      "id": "E2",
+      "category": "Elevation of Privilege",
+      "name": "Discovery keyring decrypts with unintended KMS key"
+    },
+    {
+      "id": "E3",
+      "category": "Elevation of Privilege",
+      "name": "Non-committing suite allows multi-plaintext attack"
+    },
+    {
+      "id": "E4",
+      "category": "Elevation of Privilege",
+      "name": "Caching CMM serves stale/compromised materials"
+    },
+    {
+      "id": "E5",
+      "category": "Elevation of Privilege",
+      "name": "Bypassing max EDK limit via message parsing race"
     }
   ],
   "undescribed": [

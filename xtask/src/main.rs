@@ -112,7 +112,11 @@ fn verification_status() -> Result<(), String> {
         .filter(|r| r.errors == 0)
         .map(|r| r.label.clone())
         .collect();
-    let (claims, undescribed) = verification::resolve_claims(claims_file, &files, &passed_models)?;
+    let threat_text = std::fs::read_to_string(root.join("docs/threat-model.md"))
+        .map_err(|e| format!("could not read docs/threat-model.md: {e}"))?;
+    let threats = verification::parse_threats(&threat_text);
+    let (claims, undescribed) =
+        verification::resolve_claims(claims_file, &files, &passed_models, &threats)?;
     for id in &undescribed {
         eprintln!("note: {id} is inside verus! but no claim in {claims_path} names it");
     }
@@ -125,6 +129,7 @@ fn verification_status() -> Result<(), String> {
         counts,
         crates: verification::crate_summaries(&files),
         claims,
+        threats,
         undescribed,
         line_kinds: verification::LINE_KINDS.into_iter().collect(),
         files,

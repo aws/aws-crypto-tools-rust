@@ -5,7 +5,9 @@
 //! the code, and for reading Verus's output.
 
 use xtask::proof_coverage::file_coverage;
-use xtask::verification::{ClaimsFile, Mark, crate_results, crate_summaries, resolve_claims};
+use xtask::verification::{
+    ClaimsFile, Mark, crate_results, crate_summaries, parse_threats, resolve_claims,
+};
 
 const HEADER: &str = "verus! {
 pub fn edk_count_check(count: usize) -> (r: bool)
@@ -28,6 +30,30 @@ fn claims(toml_text: &str) -> ClaimsFile {
     toml::from_str(toml_text).unwrap()
 }
 
+const THREAT_MODEL: &str = "\
+## 8. Threat Identification (STRIDE)
+
+### 8.2 Tampering
+
+| ID | Threat | Asset | Boundary |
+|----|--------|-------|----------|
+| T1 | Message header modification | A6 | TB4 |
+
+### 8.5 Denial of Service
+
+| ID | Threat | Impact | Vector |
+|----|--------|--------|--------|
+| D1 | Excessive EDKs forcing many KMS Decrypt calls | Availability | TB4 |
+
+## 9. Attack Trees
+
+| X1 | Not a threat | - | - |
+";
+
+fn threats() -> Vec<xtask::verification::Threat> {
+    parse_threats(THREAT_MODEL)
+}
+
 fn files() -> Vec<xtask::proof_coverage::FileCoverage> {
     vec![file_coverage("esdk/src/header.rs", HEADER)]
 }
@@ -43,7 +69,7 @@ text = "A message with no encrypted data keys is rejected."
 fns = ["esdk/src/header.rs::edk_count_check"]
 "#,
     );
-    let (resolved, undescribed) = resolve_claims(file, &files(), &[]).unwrap();
+    let (resolved, undescribed) = resolve_claims(file, &files(), &[], &threats()).unwrap();
     assert_eq!(resolved[0].mark, Mark::Proven);
     assert_eq!(resolved[0].places[0].first, Some(2));
     assert_eq!(resolved[0].places[0].last, Some(6));
@@ -61,17 +87,17 @@ mark = "proven"
 text = "t"
 fns = ["esdk/src/header.rs::edk_count_check"]
 "#;
-    assert!(resolve_claims(claims(inside), &files(), &[]).is_ok());
+    assert!(resolve_claims(claims(inside), &files(), &[], &threats()).is_ok());
     // Rejects a fn outside verus!, so an unchecked fn cannot be called proven
     let outside = inside.replace("edk_count_check", "read_header");
-    let err = resolve_claims(claims(&outside), &files(), &[]).unwrap_err();
+    let err = resolve_claims(claims(&outside), &files(), &[], &threats()).unwrap_err();
     assert_eq!(
         err,
         "claim \"t\": esdk/src/header.rs::read_header is unverified, not inside verus!"
     );
     // Rejects a fn that no longer exists
     let gone = inside.replace("edk_count_check", "renamed");
-    let err = resolve_claims(claims(&gone), &files(), &[]).unwrap_err();
+    let err = resolve_claims(claims(&gone), &files(), &[], &threats()).unwrap_err();
     assert_eq!(err, "claim \"t\": no fn renamed in esdk/src/header.rs");
 }
 
@@ -86,9 +112,9 @@ files = ["verification/commitment_ordering_proofs.rs"]
 "#;
     // Accepts a model file that verified with no errors
     let passed = ["commitment_ordering_proofs.rs".to_owned()];
-    assert!(resolve_claims(claims(model), &files(), &passed).is_ok());
+    assert!(resolve_claims(claims(model), &files(), &passed, &threats()).is_ok());
     // Rejects it when that file did not pass
-    let err = resolve_claims(claims(model), &files(), &[]).unwrap_err();
+    let err = resolve_claims(claims(model), &files(), &[], &threats()).unwrap_err();
     assert_eq!(
         err,
         "claim \"t\": verification/commitment_ordering_proofs.rs did not pass make -C verification verify"
@@ -104,10 +130,10 @@ mark = "assumed"
 text = "t"
 "#;
     // Accepts an assumed claim with no fns or files
-    assert!(resolve_claims(claims(assumed), &files(), &[]).is_ok());
+    assert!(resolve_claims(claims(assumed), &files(), &[], &threats()).is_ok());
     // Rejects one that names a fn, since that fn would look proven
     let named = format!("{assumed}fns = [\"esdk/src/header.rs::edk_count_check\"]\n");
-    assert!(resolve_claims(claims(&named), &files(), &[]).is_err());
+    assert!(resolve_claims(claims(&named), &files(), &[], &threats()).is_err());
 }
 
 #[test]
@@ -137,4 +163,38 @@ verification results:: 68 verified, 1 error
         crate_results(output, "aws-mpl-primitives"),
         [(18, 0), (18, 0)]
     );
+}
+
+#[test]
+fn threats_come_from_the_stride_tables_only() {
+    let t = threats();
+    let ids: Vec<(&str, &str)> = t
+        .iter()
+        .map(|x| (x.id.as_str(), x.category.as_str()))
+        .collect();
+    assert_eq!(ids, [("T1", "Tampering"), ("D1", "Denial of Service")]);
+    assert_eq!(t[1].name, "Excessive EDKs forcing many KMS Decrypt calls");
+}
+
+#[test]
+fn a_claim_must_name_a_threat_in_the_threat_model() {
+    let claim = r#"
+[[claim]]
+area = "a"
+mark = "assumed"
+text = "t"
+threats = ["D1"]
+"#;
+    // Accepts a threat id the threat model lists
+    let (resolved, _) = resolve_claims(claims(claim), &files(), &[], &threats()).unwrap();
+    assert_eq!(resolved[0].threats, ["D1"]);
+    // Rejects an id it does not list, so a typo cannot hide a threat
+    let err = resolve_claims(
+        claims(&claim.replace("D1", "D9")),
+        &files(),
+        &[],
+        &threats(),
+    )
+    .unwrap_err();
+    assert_eq!(err, "claim \"t\": no threat D9 in docs/threat-model.md");
 }
