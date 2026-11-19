@@ -29,7 +29,8 @@ All agents share:
 - The same Verus toolchain at `~/verus/verus`
 - The same ESDK specification source at `spec/` (repo root, checked out by `scripts/resolve-spec.sh`; tracked documents listed in `esdk/.duvet/config.toml`)
 - The same Duvet annotations in `esdk/src/**/*.rs` and `esdk/tests/**/*.rs` (requirement → code/test map)
-- The same project implementation in `esdk/src/` (crate `aws-esdk`, the only Verus-checked crate), with `prim/src/` and `mpl/src/` as read-only dependency context
+- The same project implementation in `esdk/src/` (crate `aws-esdk`) and `prim/src/` (crate `aws-mpl-primitives`), both Verus-checked, with `mpl/src/` as read-only dependency context (not Verus-checked)
+- The same honesty ladder, defined once in the `verus` skill (`.kiro/skills/verus/SKILL.md`, "Honesty ladder")
 - The same threat model at `docs/threat-model.md`
 - The same capability map and provability gate at `.kiro/agents/verus-capabilities.md`
 
@@ -64,6 +65,8 @@ Priority Score = Severity × Coverage_Gap × Feasibility × Blast_Radius
 | AES-GCM nonce reuse | 4 | 0.2 | 0.1 | 4 | 3.2 |
 | EDK flood DoS | 2 | 0.5 | 1.0 | 3 | 3.0 |
 
+These numbers show how the formula works. They are not current scores.
+
 Note: A lower coverage gap (already proven in-crate, or proven on a model) reduces priority even for critical threats.
 
 ## Agent Assignment Rules
@@ -77,6 +80,7 @@ Map each verification target to the correct Verus agent based on what is being p
 | FFI memory safety (unsafe blocks) | `verus-unsafe-ffi-safety` | Proving pointer validity across C boundary (no in-crate `unsafe` today) |
 | Functional correctness (algorithm) | `verus-header-parsing-proofs` | Proving output matches spec for valid input |
 | Key commitment verification | `verus-header-parsing-proofs` | Proving commit key check before decryption |
+| Ordering via typestate tokens (Category 1e) | `verus-header-parsing-proofs` | Proving a step runs only after a check passed, through a token minted by a sync verified gate |
 | Frame/serialization bounds | `verus-zero-panic` | Proving frame iteration stays in bounds |
 | Crypto output sizing | `verus-unsafe-ffi-safety` | Proving no information leakage from buffers |
 
@@ -91,14 +95,17 @@ Map each verification target to the correct Verus agent based on what is being p
 
 2a. **Provability gate:** For **every** candidate, threat-driven or capability-driven, consult `.kiro/agents/verus-capabilities.md` and answer "can Verus actually prove this, here?":
    - Is it Verus-provable at all (not timing, crypto hardness, external-service policy, probabilistic, or absence-of-code/confinement)?
-   - Is it provable **in place** under the in-crate constraints (sync code inside `verus!` in `esdk`; not async or `dyn`; not inside `prim` or `mpl`, by decision)? If not, it can only be a model-only target; say so.
-   - Is it already proven (check `docs/verus-proofs-report.md` and the VR-001…VR-011 status)?
+   - Is it provable **in place** under the in-crate constraints (sync code inside `verus!` in `esdk` or `prim`; not `dyn`; not inside `mpl`, which is not Verus-checked)? An order between async steps qualifies if it can be written as a token minted by a sync verified gate (Category 1e in `verus-capabilities.md`). If not, it can only be a model-only target; say so.
+   - Is it already proven (check the target table in `docs/verus-proofs-report.md` §3; VR-001…VR-019 at `578b1faa`)?
    - Which category (1–4) and which proof agent?
    Candidates that fail the gate are **not scored**. Record them in an "Out of scope / rejected" list with the reason.
 
 3. **Assess Coverage Gaps:** For each gated candidate, determine what verification already exists:
-   - Verified in-crate (`verus!` in `esdk/src`, `make -C esdk verus` at `0 errors`) for the full property (coverage gap = 0)
+   Name each state by its honesty-ladder level (`verus` skill).
+   - Verified in-crate (`verus!` in `esdk/src` or `prim/src`, `make -C esdk verus` / `make -C prim verus` at `0 errors`) for the full property (coverage gap = 0)
+   - Verus-proven gate with a compiler-enforced order (typestate token), with the adapter wiring trusted (coverage gap = low)
    - Verified in-crate for the decision core only, with unverified async glue around it (coverage gap = low–medium)
+   - Holds by code reading only, for example because a dependency's invariants rule a case out (coverage gap = medium–high; nothing checks it)
    - Model only (`verification/`, `make -C verification verify`): proven over a model that can drift from the code (coverage gap = medium–high for the shipped code)
    - Requirement exercised by Duvet `type=test` annotations only (coverage gap = medium — tested but not proven)
    - No proof (coverage gap = 1.0)
@@ -123,7 +130,7 @@ Map each verification target to the correct Verus agent based on what is being p
 
 ### Summary Table
 
-The `Origin` column is `T` (threat-driven, with the threat id in `Ref`) or `C` (capability-driven, with the Verus category in `Ref`, e.g. `cap:cat1`).
+The `Origin` column is `T` (threat-driven, with the threat id in `Ref`) or `C` (capability-driven, with the Verus category in `Ref`, e.g. `cap:cat1`). The rows below are historical samples of the format; both targets are now done (VR-002, VR-012).
 
 ```markdown
 | Rank | Score | Origin | Target | Property | Agent | Ref | Effort |
@@ -135,7 +142,7 @@ The `Origin` column is `T` (threat-driven, with the threat id in `Ref`) or `C` (
 
 ### Detailed Recommendations (YAML)
 
-For each target in the top 10:
+For each target in the top 10. **Historical sample:** this VR-002 entry was written before VR-002 was proven in-crate (`3195f86f`). VR-002 is now a Verus-proven gate with a compiler-enforced order (`HeaderVerified` in `esdk/src/decrypt_gate.rs`). Copy the shape, not the status or the rationale.
 
 ```yaml
 recommendation:
@@ -162,6 +169,7 @@ recommendation:
   trace_to_spec: "spec/client-apis/decrypt.md §Verify the header"
   coverage_gap: 1.0
   rationale: |
+    (historical, before 3195f86f)
     High severity tampering threat. Streaming mode creates a feasible attack path
     where frames could be processed before header authentication completes. The
     shipped order is a sequence of `.await?` calls in the async `decrypt_steps`,
@@ -176,7 +184,7 @@ recommendation:
   dependencies: []  # No prerequisite proofs needed
 ```
 
-And a **capability-driven** recommendation — no threat, justified by the Verus capability and the invariant it establishes. This is a **sample candidate** showing the shape, not a finding or a proven result:
+And a **capability-driven** recommendation — no threat, justified by the Verus capability and the invariant it establishes. This is a **historical sample** showing the shape. It was a candidate when written; it is now VR-012, proven in-crate (`b30bb367`):
 
 ```yaml
 recommendation:
@@ -213,15 +221,15 @@ recommendation:
 
 ### Coverage Gap Analysis
 
-Use the current coverage model (states: in-crate / model only / none), as in `docs/verification-recommendations.md`:
+Name each state by its honesty-ladder level (`verus` skill). Read the live status from `docs/verus-proofs-report.md` §3; the rows below are examples of the format as of `578b1faa`:
 
 ```markdown
 | Area | Verification | Gap | Files |
 |------|--------------|-----|-------|
-| Key commitment verification | None | Critical | `esdk/src/message/header.rs`, `esdk/src/key_derivation.rs` |
-| Header auth tag ordering | Model only | High | `esdk/src/decrypt.rs`, `esdk/src/message/header_auth.rs` |
+| Key commitment verification | In-crate: decision (VR-001 (a)); order by token (VR-001 (b), Verus-proven gate, compiler-enforced order); constant time (c) trusted | Low | `esdk/src/message/header.rs`, `esdk/src/decrypt_gate.rs` |
+| Header auth tag ordering | Verus-proven gate, compiler-enforced order (`HeaderVerified`, VR-002); adapter wiring trusted | Low | `esdk/src/decrypt_gate.rs`, `esdk/src/decrypt.rs` |
 | Header / EDK parsing | In-crate decision cores; async readers unverified | Medium | `esdk/src/message/header.rs`, `header_types.rs`, `serialize_functions.rs` |
-| AES-GCM encrypt/decrypt | Model only (`prim` not Verus-checked, by decision) | High | `prim/src/lib.rs` |
+| AES-GCM encrypt/decrypt | In-crate buffer safety and buffer effects (VR-006, VR-014) against trusted aws-lc-rs specs; crypto trusted | Low–Medium | `prim/src/lib.rs`, `prim/src/aws_lc_specs.rs` |
 | ... | ... | ... | ... |
 ```
 
@@ -256,15 +264,26 @@ Use the current coverage model (states: in-crate / model only / none), as in `do
 - Every candidate MUST pass the `verus-capabilities.md` provability gate before it is scored; failing candidates go in the out-of-scope list with a reason
 - The output MUST include capability-driven targets, not only threat-driven ones — run the Stage 2' sweep
 - Coverage gap assessment MUST account for in-crate proofs, model-only proofs and Duvet `type=test` annotations (tests lower the gap but never close it)
-- Never describe a model-only proof, a test, or a compiler/lint check as Verus-proven shipped code; cite verified counts only from a `0 errors` Verus run
+- Label every coverage claim with its honesty-ladder level (`verus` skill). Never describe a model-only proof, a test, a compiler/lint check, code reading or a trusted assumption as Verus-proven shipped code; cite verified counts only from a `0 errors` Verus run
 - Scoring MUST be consistent — same threat severity across all recommendations referencing it
 - Agent assignment MUST follow the property-to-agent mapping table above
 - Effort estimates MUST be realistic (1 day, 1 week, 2 weeks, 1 month) based on proof complexity
 - Quick wins (score > 6.0, effort ≤ 1 week) SHOULD be flagged explicitly
 - Output MUST include both the summary table AND at least 5 detailed YAML recommendations
-- Existing targets VR-001…VR-011 keep their ids (all `threat-driven`); new targets continue at VR-012 (YAML id `VR-2026-012`, …); retired ids are not reused
+- Existing targets keep their ids; retired ids are not reused. New targets take the next free id: at `578b1faa` that is VR-020 (YAML id `VR-2026-020`). Re-check with a grep over `docs/`, `verification/`, `esdk/src` and `prim/src` before using it
 - Output stays in the single `docs/verification-recommendations.md`, with the `Origin` and `Ref` columns in the ranked table
 - Do NOT assume Dafny proofs exist — this is native Rust code without transpilation
-- Respect the ESDK facts: there is no `unsafe` in `esdk/src`, `mpl/src` or `prim/src`; the C++ shim (`esdk/shims/aws-esdk-cpp/src/lib.rs`) holds the only shipped-path `unsafe`; `prim` and `mpl` are not Verus-checked, by decision, so targets there are model-only
-- Read the actual source in `esdk/src` (and `prim/src`, `mpl/src` as context) and the Duvet annotations to verify your coverage gap assessment is accurate
+- Respect the ESDK facts: there is no `unsafe` in `esdk/src`, `mpl/src` or `prim/src`; the C++ shim (`esdk/shims/aws-esdk-cpp/src/lib.rs`) holds the only shipped-path `unsafe`; `esdk` and `prim` are Verus-checked in place; `mpl` is not Verus-checked, so a target inside `mpl` is model-only or out of scope
+- Read the actual source in `esdk/src` and `prim/src` (and `mpl/src` as context) and the Duvet annotations to verify your coverage gap assessment is accurate
 - Use web search to check for recent CVEs that could elevate a threat's feasibility score
+
+## Stop and report findings
+
+Follow "Stop and report findings" in the `verus` skill. When gating or scoring shows that the code does not do what a target says (the property is false, a check works only one way, or the code is stricter or looser than the spec), record it as a finding (`VR-0NN Fk`) with the location, what the spec says, what the code does, and the options. Do not recommend a behavior change as if it were decided. Stop and ask the user.
+
+Write the user's answers word for word in this block in the task notes, and copy it forward to later steps:
+
+```markdown
+## Decisions (do not re-decide)
+- <date> <who>: "<the user's words, verbatim>" (applies to: <target / finding id>)
+```

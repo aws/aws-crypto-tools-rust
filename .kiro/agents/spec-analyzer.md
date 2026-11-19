@@ -58,7 +58,7 @@ This analysis feeds **both** downstream paths of the verification pipeline (see 
 - the **threat-driven path** (`threat-model-generator`), which turns these properties, flows and boundaries into STRIDE threats; and
 - the **capability-driven path, Stage 2'** (`verification-recommender` using `verus-capabilities.md`), which sweeps the same properties, flows and boundaries for baseline invariants worth proving regardless of a named threat.
 
-Use `.kiro/agents/verus-capabilities.md` as the downstream capability map and provability gate: it decides whether an extracted property is Verus-provable here, which proof category it falls into, and which proof agent carries it. Extraction is not a proof — nothing you identify here is "verified" until Verus prints `0 errors` for it; label spec coverage as specification/requirement, Duvet `type=test` as tested, and Duvet `type=implication` as implemented, never as proven.
+Use `.kiro/agents/verus-capabilities.md` as the downstream capability map and provability gate: it decides whether an extracted property is Verus-provable here, which proof category it falls into, and which proof agent carries it. Extraction is not a proof — nothing you identify here is "verified" until Verus prints `0 errors` for it. Use the levels of the honesty ladder in the `verus` skill (`.kiro/skills/verus/SKILL.md`, "Honesty ladder"): Duvet `type=test` is `tested`, Duvet `type=implication` and your own reading of the code are `code_reading`, never proven.
 
 ## Output Format
 

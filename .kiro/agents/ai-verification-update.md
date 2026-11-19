@@ -36,6 +36,11 @@ and the artifacts need to catch up.
 | `docs/verification-recommendations.md` (+ `.docx`) | Ranked VR-xxx targets, coverage, status | Yes |
 | `docs/verus-proofs-report.md` | What is actually proven, per target and per file | Yes |
 
+These files also carry status lines and counts. Report drift in them; do not
+edit them in this pass (extending the maintained list is a later step):
+`verification/README.md`, `docs/esdk-verification-developers-guide.md`, and
+the status lines in `docs/threat-model.md` that cite VR targets.
+
 It does **not** edit the other agent files, the spec, or any Rust source. If a
 proof needs to be written or changed, that is a proof agent's job
 (`verus-header-parsing-proofs`, `verus-zero-panic`, `verus-unsafe-ffi-safety`);
@@ -65,7 +70,7 @@ The docs already record their freshness as a commit, e.g. the threat model's
 3. **Re-read the ground truth for proof status, do not infer it.** Proof counts
    and "0 errors" come only from live tool output, never from reading code:
    - `make -C esdk verus` (default, then `--no-default-features --features aws-lc-sys`); read the `aws-esdk` results line. A cached run prints no line, so `touch esdk/src/lib.rs` to force a recheck.
-   - `make -C prim verus` (both feature sets).
+   - `make -C prim verus` (both feature sets); read the `aws-mpl-primitives` results line.
    - `make -C verification verify` (the standalone model files).
 
 ---
@@ -87,9 +92,11 @@ are the recurring drift sources in this repo:
    became an in-crate proof (as VR-006/008/009-prim-half did when Verus was
    enabled in `prim`), or a new proof file appeared. → status table rows
    (model-only → in-crate), the per-file proofs table, the verified counts.
-4. **A target's honest scope shifted.** New trusted boundaries, a declassification,
-   or a property proven on a model rather than shipped code (VR-001 (b),
-   VR-002). → the proven-vs-trusted split; make sure nothing now **overclaims**.
+4. **A target's honest scope shifted.** New trusted boundaries (a new TCB row),
+   a declassification, a property proven on a model rather than shipped code,
+   or a model-only property that moved in-crate as a typestate gate (as VR-001
+   (b) and VR-002 did at `3195f86f`). → the honesty-ladder level of each part;
+   make sure nothing now **overclaims**.
 5. **Modeled code no longer exists.** A model describes removed code (the VR-010
    `write_volatile` loop). → mark the target deferred/stale; do not silently keep
    it as "current".
@@ -107,15 +114,19 @@ delta.
 
 ## Numbering and routing new targets
 
-- **New targets continue the existing numbering:** `VR-012`, `VR-013`, …
-  (never reuse a retired id), each with an `origin` field — `threat-driven`
-  (from a threat) or `capability-driven` (from the Stage 2' capability sweep).
-  The existing VR-001…VR-011 stay as they are.
+- **New targets take the next free id** (never reuse a retired id), each with
+  an `origin` field — `threat-driven` (from a threat) or `capability-driven`
+  (from the Stage 2' capability sweep). At `578b1faa` the existing ids run
+  VR-001…VR-019 and the next free id is VR-020. Re-check with a grep over
+  `docs/`, `verification/`, `esdk/src` and `prim/src` before using it; an id
+  written in an agent file is never a real target.
 - **Triage every proposed target through `verus-capabilities.md`** before
   recommending it: is it Verus-provable *and* present in this repo? Record
   non-provable candidates (timing, crypto hardness, external-service policy,
-  async ordering in shipped code, anything inside `prim`/`mpl` that is out of
-  scope by decision) as **out of scope with a reason**, not as a target.
+  an async order that cannot be written as a typestate token, anything inside
+  `mpl`, which is not Verus-checked) as **out of scope with a reason**, not as
+  a target. An async order that *can* be written as a token minted by a sync
+  verified gate is a valid target (Category 1e).
 - **Route** each kept target to its proof agent in the status table
   (`verus-header-parsing-proofs`, `verus-zero-panic`, `verus-unsafe-ffi-safety`)
   exactly as the recommender does. This agent proposes and records; it does not
@@ -164,9 +175,12 @@ provable.
 
 - A proof counts only at **0 errors** from live tool output. Never write a
   verified count you did not just observe.
-- Never describe a compiler check, a clippy lint, a test, a model-only proof, or
-  a trusted boundary as a Verus proof of the shipped code. VR-011 confinement is
-  compiler/clippy-enforced; VR-001 (b) and VR-002 ordering are model-only;
+- Label every claim with its level on the honesty ladder in the `verus` skill.
+  Never describe a compiler check, a clippy lint, a test, a model-only proof,
+  code reading, or a trusted boundary as a Verus proof of the shipped code.
+  Examples at `578b1faa`: VR-011 confinement is compiler/clippy-enforced;
+  VR-001 (b), VR-002, VR-015 and VR-019 are Verus-proven gates whose order is
+  compiler-enforced (the order itself is not Verus-proven); the
   `assume_specification` / `external_type_specification` boundaries and the
   aws-lc-rs crypto are **trusted**, not proven. The drift report and the doc
   edits must keep these distinctions.

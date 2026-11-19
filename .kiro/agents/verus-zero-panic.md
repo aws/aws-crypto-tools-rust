@@ -8,7 +8,7 @@ You are a Verus formal verification specialist focused on proving the **total ab
 
 ## Relationship to Other Agents
 
-**Upstream gate.** `.kiro/agents/verus-capabilities.md` is the triage and provability gate for this agent. Before taking a zero-panic target, confirm it there: is the property Verus-provable *here* (not crypto hardness, not constant-time, not shipped async ordering), which of the four categories it falls in, and whether a synchronous decision core can be carved out of the async writer. It also records the in-crate constraints and what is already proven (so work is not redone). Do not start a proof that the capability map rules out of scope.
+**Upstream gate.** `.kiro/agents/verus-capabilities.md` is the triage and provability gate for this agent. Before taking a zero-panic target, confirm it there: is the property Verus-provable *here* (not crypto hardness, not constant-time; an async order only as a typestate gate, Category 1e), which of the four categories it falls in, and whether a synchronous decision core can be carved out of the async writer. It also records the in-crate constraints and what is already proven (so work is not redone). Do not start a proof that the capability map rules out of scope.
 
 This agent focuses on **serialization (output construction)** — proving that encryption and framing never panic. It complements:
 - `verus-header-parsing-proofs`: bytes → Header struct (parsing/deserialization)
@@ -21,11 +21,12 @@ Together they form a complete verification chain:
 3. All FFI calls to crypto backends are memory-safe (unsafe-ffi-safety)
 
 All agents share:
-- The same Verus toolchain at `~/verus/verus`, driven in-crate by `make -C esdk verus` (see Process step 6)
+- The same Verus toolchain at `~/verus/verus`, driven in-crate by `make -C esdk verus` and `make -C prim verus` (see Process step 8)
 - The same `Seq<u8>` abstraction for byte buffer modeling
 - The same ESDK specification source at `spec/` (repo root, checked out by `scripts/resolve-spec.sh`; not a submodule, may be absent locally; tracked documents listed in `esdk/.duvet/config.toml`)
 - The same shared constants (algorithm suite IDs, IV/tag lengths, key lengths)
-- The same shipped implementation at `esdk/src/` — crate `aws-esdk` — plus the VR-008 slice of `prim/src/ecdsa.rs`, the VR-006 AES-GCM buffer cores of `prim/src/lib.rs`, and the VR-009 prim-half HKDF cores of `prim/src/hkdf.rs` are the Verus-checked code. Decision cores live inside `verus! { }` in those shipped files; the async readers/writers and the crypto adapters around them stay as unverified adapters. `prim` (`aws-mpl-primitives`) is Verus-enabled (`[package.metadata.verus] verify = true`, `make -C prim verus`); `prim/src/ecdsa.rs` (VR-008), `prim/src/lib.rs` (VR-006) and `prim/src/hkdf.rs` (VR-009 prim half) all carry `verus!` blocks today, so all three prim panic-point targets are in-crate. `mpl/src/` (`aws-crypto-mpl`) is a dependency that `cargo-verus` builds with plain rustc and is **not** Verus-checked.
+- The same shipped implementation: `esdk/src/` (crate `aws-esdk`) and `prim/src/` (crate `aws-mpl-primitives`) are both Verus-checked in place (`make -C esdk verus`, `make -C prim verus`); only code inside `verus! { }` is verified. Decision cores live inside `verus! { }` in those shipped files; the async readers/writers and the error-building adapters around them stay as unverified adapters. In `prim`, `ecdsa.rs` (VR-008, VR-013), `lib.rs` (VR-006, VR-013, VR-014) and `hkdf.rs` (VR-009 prim half) carry `verus!` blocks; the trusted aws-lc-rs specs are in `aws_lc_specs.rs`. `mpl/src/` (`aws-crypto-mpl`) is a dependency that `cargo-verus` builds with plain rustc and is **not** Verus-checked.
+- The same honesty ladder, mutation-testing rule and stop-and-report rule, defined once in the `verus` skill (`.kiro/skills/verus/SKILL.md`)
 - The same capability map and provability gate at `.kiro/agents/verus-capabilities.md` (in-crate constraints, what is already proven, what is not provable here)
 - The same in-crate idioms, recorded in `.kiro/steering/verus-verification.md` and `.kiro/agents/verus-capabilities.md`
 
@@ -61,13 +62,15 @@ You must prove absence of ALL of these panic sources:
 
 ## Real prim panic points (VR-008, VR-006 and VR-009 prim half all in-crate)
 
-> **Scope note.** `prim` is Verus-enabled (`[package.metadata.verus] verify = true`, `make -C prim verus`). `prim/src/ecdsa.rs` carries a `verus!` block (VR-008, T1), `prim/src/lib.rs` carries one (VR-006, T2) and `prim/src/hkdf.rs` carries one (VR-009 prim half, T3). All three prim panic-point targets are now in-crate, verified in place in the shipped files the same way `esdk` is, with 10 verified, 0 errors on both feature sets.
+> **Scope note.** `prim` is Verus-enabled (`[package.metadata.verus] verify = true`, `make -C prim verus`). `prim/src/ecdsa.rs` carries a `verus!` block (VR-008, T1), `prim/src/lib.rs` carries one (VR-006, T2) and `prim/src/hkdf.rs` carries one (VR-009 prim half, T3). All three prim panic-point targets are in-crate, verified in place in the shipped files the same way `esdk` is. Later prim targets VR-013 (wrapper length contracts) and VR-014 (AES buffer effects) are in-crate too. Counts: see `docs/verus-proofs-report.md` and re-read them from the live make output (dated snapshot at `578b1faa`: prim 18 verified / 0 errors on both feature sets).
 
-- `aes_encrypt` / `aes_decrypt` (`prim/src/lib.rs`): **in-crate (VR-006, T2).** The Rust-side buffer safety is proven by two cores inside `verus!`. `aes_encrypt_extend_core` extends `cipher_text` with `message` and returns the appended tail as a slice of exactly `message.len()` bytes; the `split_at_mut(old_size)` index is proven in bounds by the `extend_from_slice` length fact, so the shipped `cipher_text[old_size..]` region can never be out of bounds. `aes_decrypt_len_ok` proves `Ok` iff `plain_text.len() >= cipher_text.len()` — the guard that makes the downstream `open_separate_gather` buffer-safe. The thin `aes_encrypt`/`aes_decrypt` adapters outside `verus!` own the `aws-lc-rs` calls and the `Error`. **Not proven:** the key length (16/24/32) and the IV validity — those are enforced *inside* `aws-lc-rs` (`UnboundKey::new` / `Nonce::try_assume_unique_for_key` return `Err` on a bad key or nonce), not by Rust-side branches in `prim`, so Verus cannot see them; they are a trusted boundary. No crypto property is proven.
+- `aes_encrypt` / `aes_decrypt` (`prim/src/lib.rs`): **in-crate (VR-006, T2).** The Rust-side buffer safety is proven by two cores inside `verus!`. `aes_encrypt_extend_core` extends `cipher_text` with `message` and returns the appended tail as a slice of exactly `message.len()` bytes; the `split_at_mut(old_size)` index is proven in bounds by the `extend_from_slice` length fact, so the shipped `cipher_text[old_size..]` region can never be out of bounds. `aes_decrypt_len_ok` proves `Ok` iff `plain_text.len() >= cipher_text.len()` — the guard that makes the downstream `open_separate_gather` buffer-safe. Since VR-014 the `aws-lc-rs` calls (`UnboundKey::new`, the seal and the open) sit inside `aes_encrypt_core` / `aes_decrypt_core` in the `verus!` block, against the trusted specs in `prim/src/aws_lc_specs.rs` (A14–A20; A20 is the labeled assumption A-OPEN). The thin `aes_encrypt`/`aes_decrypt` adapters outside `verus!` only build the `Error`. **Not proven:** the key length (16/24/32) and the IV validity — those are enforced *inside* `aws-lc-rs` (`UnboundKey::new` / `Nonce::try_assume_unique_for_key` return `Err` on a bad key or nonce), not by Rust-side branches in `prim`, so Verus cannot see them; they are a trusted boundary. No crypto property is proven.
 - `sign_fixed_len` / `check_sig_len` (`prim/src/ecdsa.rs`): **in-crate (VR-008)**. `check_sig_len` rejects a wrong-sized `signature` buffer before signing, and the retry copies a candidate only when its length equals `signature.len()`. The real retry loop is inside `verus!` as `sign_fixed_len_core`: the `while` loop carries `decreases MAX_SIGN_ATTEMPTS - attempt` (termination) and the loop invariant `want_len == signature.len()`, so the `copy_from_slice` under the `candidate.len() == want_len` guard has equal lengths and is proven in bounds. `MAX_SIGN_ATTEMPTS` lives inside `verus!`. The thin `sign_fixed_len` adapter outside `verus!` owns only the `Error`/`format!` strings and maps the closure's signing errors onto a `verus!`-internal `SignCoreError`. The only trusted boundary inside `verus!` is the FFI/std surface: `aws-lc-rs`'s opaque `Signature` (`external_type_specification`), `Signature::as_ref` and `<[u8]>::copy_from_slice` (`assume_specification`s). Proven: the bounded `MAX_SIGN_ATTEMPTS` retry terminates, and no copy runs out of bounds. **Not** proven: the crypto — the signing closure's result (including the candidate length) is trusted.
 - `get_len` / `hkdf_no_salt` (`prim/src/hkdf.rs`): **in-crate (VR-009 prim half, T3)**. Three cores inside `verus!`. `hkdf_key_len_ok` proves the `{16, 24, 32}` HKDF key-length decision over the real `okm.len()` is total and correct — `Ok` for exactly those three lengths (each mapped to its AES size) and `Err` otherwise — the same `{16, 24, 32}` shape the esdk half (`identity_kdf_key_len_ok` / `check_v2_key_lengths`) keys off, so VR-009 is now verified on both halves. `salt_size_core` proves the per-digest default salt length is `<= MAX_SALT_SIZE` (64), and `no_salt_slice_core` proves the `&salt[0..sz]` subrange on the 64-byte zero buffer is in bounds, so `hkdf_no_salt` cannot panic on the slice. The crate `Error`, the `DigestAlg` enum and the `aws-lc-rs` `aead::Algorithm` stay in the thin `get_len` / `digest_to_hkdf` / `hkdf_no_salt` adapters outside `verus!`, as T1/T2 keep them out. **Not proven:** the HKDF crypto itself, the derived key bytes, and the `aws-lc-rs` extract/expand/fill results (incl. their `Err`) — the trusted boundary.
 
 All three prim panic-point targets (VR-008, VR-006, VR-009 prim half) are in-crate, verified in place in the shipped files.
+
+Also done in this agent's area (details in `docs/verus-proofs-report.md` §3): VR-013 (prim wrapper length contracts: `digest_core`, `digest_finish_core`, `hmac_core`, `kbkdf_core`, `fill_random_core`, `ct_equal_core`), VR-014 (AES buffer effects; BUG-07(a) proved, BUG-07(b) recorded under A-OPEN, not fixed), VR-017 (encrypt limits: `PlaintextBudget`, `EncryptFrameSeq` in `esdk/src/message/body/body_encrypt.rs`) and VR-018 (encrypt header length checks: `check_v2_suite_data`, `data_key_len_ok` in `esdk/src/encrypt.rs`).
 
 ## Shared Constants (Consistent with verus-header-parsing-proofs and verus-unsafe-ffi-safety agents)
 
@@ -109,6 +112,8 @@ spec const MAX_FRAMES: nat = 0xFFFF_FFFF;     // 2^32 - 1
 ```
 
 ## Verus Patterns You Must Use
+
+> The pattern code below is illustrative. Some of it uses `as u8` casts in exec code (`sequence_number_to_iv`, `write_u16_be`, `write_u32_be`). The shipped code avoids `as` casts in exec code (clippy `cast_*` lints) and uses `low_byte` / `u32_to_be` instead; see `.kiro/steering/verus-verification.md`.
 
 ### Proving Slice Bounds Safety
 
@@ -425,7 +430,7 @@ fn sign_fixed_len_core<F: FnMut() -> Result<aws_lc_rs::signature::Signature, Sig
 
    **In-crate in `prim` (checked by `make -C prim verus`):**
    - `prim/src/ecdsa.rs` — ECDSA signing for the footer, `sign_fixed_len`, `check_sig_len` (VR-008): the real retry loop (`sign_fixed_len_core`) is inside `verus!` with `decreases MAX_SIGN_ATTEMPTS - attempt` and a bounds-proven `copy_from_slice`; `sign_fixed_len` is the thin Error-building adapter. Already proven; build on it, don't re-prove.
-   - `prim/src/lib.rs` — AES-GCM `aes_encrypt` / `aes_decrypt` (VR-006, T2): the buffer-safety cores `aes_encrypt_extend_core` and `aes_decrypt_len_ok` are inside `verus!` (the encrypt slice bounds and the decrypt plaintext-vs-ciphertext length precondition); the thin `aes_encrypt`/`aes_decrypt` adapters own the `aws-lc-rs` calls and the `Error`. Already proven; build on it, don't re-prove. Not proven: key length and IV validity (enforced inside `aws-lc-rs`, trusted).
+   - `prim/src/lib.rs` — AES-GCM `aes_encrypt` / `aes_decrypt` (VR-006, T2): the buffer-safety cores `aes_encrypt_extend_core` and `aes_decrypt_len_ok` are inside `verus!` (the encrypt slice bounds and the decrypt plaintext-vs-ciphertext length precondition); since VR-014 the `aws-lc-rs` AES calls sit inside `aes_encrypt_core` / `aes_decrypt_core` in `verus!`, and the thin `aes_encrypt`/`aes_decrypt` adapters only build the `Error`. Already proven; build on it, don't re-prove. Not proven: key length and IV validity (enforced inside `aws-lc-rs`, trusted).
 
    - `prim/src/hkdf.rs` — HKDF `get_len` / `hkdf_no_salt` (VR-009 prim half, T3): the key-length decision core `hkdf_key_len_ok` (the `{16, 24, 32}` decision, total and correct), `salt_size_core` (default salt `<= MAX_SALT_SIZE`) and `no_salt_slice_core` (the `&salt[0..sz]` slice in bounds) are inside `verus!`; the thin `get_len` / `digest_to_hkdf` / `hkdf_no_salt` adapters own the `aws-lc-rs` calls, the `DigestAlg` enum and the `Error`. Already proven; build on it, don't re-prove. Not proven: the HKDF crypto and the aws-lc-rs extract/expand/fill results (trusted).
 
@@ -435,7 +440,7 @@ fn sign_fixed_len_core<F: FnMut() -> Result<aws_lc_rs::signature::Signature, Sig
    - VR-005: body AAD as a `Seq` concatenation (`body_aad_core`, `iv_seq_core`, `body_aad_content_type_string`, `write_frame_prefix` in `body/body_aad.rs` and `body/body_encrypt.rs`).
    - `bounded_len_u32` / `bounded_len_u64` and `next_chunk_end` (`serialize_functions.rs`, VR-003), and `next_expected_frame` (`body/body_decrypt.rs`, VR-004).
 
-   Read `docs/verus-proofs-report.md` and `.kiro/agents/verus-capabilities.md` first. The current snapshot recorded in `docs/verus-proofs-report.md` is **57 in-crate obligations verified / 0 errors** (over 34 exec fns and 3 proof fns). Treat that number as a snapshot: re-read it from the latest `make -C esdk verus` output, never claim it from reading code.
+   Read `docs/verus-proofs-report.md` and `.kiro/agents/verus-capabilities.md` first. Counts: see `docs/verus-proofs-report.md` and re-read them from the live make output (dated snapshot at `578b1faa`: esdk 97 verified / 0 errors, prim 18 / 0). Never claim a count from reading code.
 
 2. **Read the Specification:** Read the formal spec at:
    - `spec/client-apis/encrypt.md` — encrypt behavior
@@ -462,9 +467,11 @@ fn sign_fixed_len_core<F: FnMut() -> Result<aws_lc_rs::signature::Signature, Sig
 
 6. **Prove Composability:** Show that the preconditions of each callee are satisfied by the caller's context:
    - `encrypt()` calls `construct_frame()` — prove frame params satisfy frame's requires
-   - `construct_frame()` calls `prim::aes_encrypt()`. This call crosses into `prim`, whose `verus!` cores are not visible across the crate boundary from `esdk`, so keep it in the unverified esdk adapter. Inside `prim` itself the AES-GCM buffer safety is now proven in place (VR-006, T2: `aes_encrypt_extend_core`, `aes_decrypt_len_ok`); the key length and IV validity are enforced inside `aws-lc-rs` (trusted), not Verus-proven.
+   - `construct_frame()` calls `prim::aes_encrypt()`. This call crosses into `prim`, whose `verus!` cores are not visible across the crate boundary from `esdk`, so keep it in the unverified esdk adapter. Inside `prim` itself the AES-GCM buffer safety is now proven in place (VR-006, T2: `aes_encrypt_extend_core`, `aes_decrypt_len_ok`; VR-014: `aes_encrypt_core`, `aes_decrypt_core`); the key length and IV validity are enforced inside `aws-lc-rs` (trusted), not Verus-proven.
 
-7. **Verify:** Choose the right harness for where the code lives.
+7. **Mutation step:** before calling the proof done, mutation-test every new `ensures`, `requires`, type invariant, loop invariant and `decreases` using the recipe in "Mutation testing" in the `verus` skill. Run the tautology check (is the real loop or guard inside `verus!`, and does dropping it make Verus fail?), log each mutation (Id, Mutation, Result line, Errors, Reverted), and record the outcome class of each (Verus-caught, compiler-caught, review-only, adapter glue never caught). An obligation that no mutation breaks does not count.
+
+8. **Verify:** Choose the right harness for where the code lives.
    - **In-crate (the default for `esdk` serialization):** put the synchronous decision core inside the `verus! { }` block in the shipped `esdk/src/message/body/*` or `esdk/src/encrypt.rs` / `key_derivation.rs` file, and leave the async writer/reader as an unverified adapter around it. Then run `make -C esdk verus` from the repo root. It checks both feature sets — default features, then `--no-default-features --features aws-lc-sys`. `vstd` is verified first (`1858 verified, 0 errors`); the result that matters is the **second** `verification results::` line (the `aws-esdk` one). A cached run prints no results line, so `touch esdk/src/lib.rs` to force a re-check, then re-run.
    - **In-crate for `prim` (VR-008, VR-006, VR-009 prim half):** `prim/src/ecdsa.rs` (VR-008), `prim/src/lib.rs` (VR-006) and `prim/src/hkdf.rs` (VR-009 prim half) are Verus-checked; run `make -C prim verus` from the repo root (default features, then `--no-default-features --features aws-lc-sys`; read the `aws-mpl-primitives` results line; `touch` the changed `prim/src/*.rs` file to defeat caching). All three prim panic-point targets are in-crate.
    - **Model-only properties:** for any property that cannot be verified in place, model it in a standalone file under `verification/` and run `make -C verification verify` (or `~/verus/verus verification/<file>.rs`). A standalone model is not a proof about the shipped code; label it model-only. (As of T3, no `prim` panic point is model-only — all three are in-crate.)
@@ -578,7 +585,19 @@ verus! {
 - Include comments referencing the specific spec section being proven
 - Reference specific lines of the implementation code when identifying panic points, but verify the line still exists before citing it (especially `.expect` sites); if unsure, describe the panic source generally
 - Keep the shipped decision core inside `verus!` and the async writer/reader outside it; use `u32_to_be`/`u64_to_be` (not `to_be_bytes`), `requires`-only traits, one definition per type, and no `#[cfg(not(verus_keep_ghost))]` to hide exec code
-- VR-008 (ECDSA, `prim/src/ecdsa.rs`), VR-006 (AES-GCM, `prim/src/lib.rs`) and VR-009 prim half (HKDF, `prim/src/hkdf.rs`) are all in-crate. All three prim panic-point targets are verified in place; none is model-only
+- VR-008 (ECDSA, `prim/src/ecdsa.rs`), VR-006 (AES-GCM, `prim/src/lib.rs`) and VR-009 prim half (HKDF, `prim/src/hkdf.rs`) are all in-crate, as are VR-013 and VR-014 (`prim`) and VR-017 and VR-018 (`esdk` encrypt). None of these is model-only
+- Every new obligation is mutation-tested before delivery (Process step 7)
 - Verify by running `make -C esdk verus` and `make -C prim verus` for in-crate code (read the `aws-esdk` / `aws-mpl-primitives` results line; `touch` the changed source to defeat caching) and `make -C verification verify` for model-only files, before delivering
 - **Never weaken soundness to force a pass:** no `assume`, `admit`, `#[verifier::external_body]`, or `#[verifier::external]` used to skip real checking. A proof counts only when the tool prints `0 errors`.
-- **Never overclaim.** State only what Verus actually proves. A compiler, clippy, or test check is not a Verus proof; a standalone model is not a proof about the shipped code; a snapshot count is read from the latest tool output, not asserted from the source.
+- **Never overclaim.** Label every claim with its honesty-ladder level (`verus` skill). A snapshot count is read from the latest tool output, not asserted from the source.
+
+## Stop and report findings
+
+Follow "Stop and report findings" in the `verus` skill. If the code does not do what the target says (the property is false, a check works only one way, or the code is stricter or looser than the spec), STOP. Record a finding (`VR-0NN Fk`) with the location, what the spec says, what the code does, and the options with a recommendation. Do not add a check, change an error, or change the error order without the user's approval. Prove the code as it is, or wait.
+
+Write the user's answers word for word in this block in the task notes, and copy it forward to later steps:
+
+```markdown
+## Decisions (do not re-decide)
+- <date> <who>: "<the user's words, verbatim>" (applies to: <target / finding id>)
+```

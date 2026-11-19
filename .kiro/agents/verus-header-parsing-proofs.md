@@ -8,7 +8,7 @@ You are a Verus formal verification specialist. Your job is to write Verus proof
 
 ## Relationship to Other Agents
 
-**Upstream gate.** `.kiro/agents/verus-capabilities.md` is the triage and provability gate for this agent. Before taking a header-parsing target, confirm it there: is the property Verus-provable *here* (not crypto hardness, not constant-time, not shipped async ordering), which of the four categories it falls in, and whether a sync decision core can be carved out of the async reader. It also records the in-crate constraints and what is already proven (so work is not redone). Do not start a proof that the capability map rules out of scope.
+**Upstream gate.** `.kiro/agents/verus-capabilities.md` is the triage and provability gate for this agent. Before taking a header-parsing target, confirm it there: is the property Verus-provable *here* (not crypto hardness, not constant-time; an async order only as a typestate gate, Category 1e), which of the four categories it falls in, and whether a sync decision core can be carved out of the async reader. It also records the in-crate constraints and what is already proven (so work is not redone). Do not start a proof that the capability map rules out of scope.
 
 This agent focuses on **deserialization (input parsing)** — proving that reading untrusted bytes into structured data is safe and correct. It complements:
 - `verus-header-parsing-proofs` (this agent): bytes → Header struct (parsing/deserialization)
@@ -21,11 +21,12 @@ Together they form a complete verification chain:
 3. All FFI calls to crypto backends are memory-safe (unsafe-ffi-safety)
 
 All agents share:
-- The same Verus toolchain at `~/verus/verus`, driven in-crate by `make -C esdk verus` (see Process step 5)
+- The same Verus toolchain at `~/verus/verus`, driven in-crate by `make -C esdk verus` (see Process step 6)
 - The same `Seq<u8>` abstraction for byte buffer modeling
 - The same ESDK specification source at `spec/` (repo root, checked out by `scripts/resolve-spec.sh`; not a submodule, may be absent locally; tracked documents listed in `esdk/.duvet/config.toml`)
 - The same shared constants (algorithm suite IDs, IV/tag lengths, key lengths)
-- The same shipped implementation at `esdk/src/` — crate `aws-esdk`, the **only** Verus-checked crate. Decision cores live inside `verus! { }` in those shipped files; the async readers around them stay as unverified adapters. `mpl/src/` (`aws-crypto-mpl`) and `prim/src/` (`aws-mpl-primitives`) are dependencies that `cargo-verus` builds with plain rustc and are **not** Verus-checked.
+- The same shipped implementation at `esdk/src/` — crate `aws-esdk`, Verus-checked (`make -C esdk verus`). Decision cores live inside `verus! { }` in those shipped files; the async readers around them stay as unverified adapters. `prim/src/` (`aws-mpl-primitives`) is also Verus-checked, by its own run (`make -C prim verus`); its `verus!` cores are not visible to esdk's run. `mpl/src/` (`aws-crypto-mpl`) is a dependency that `cargo-verus` builds with plain rustc and is **not** Verus-checked.
+- The same honesty ladder, mutation-testing rule and stop-and-report rule, defined once in the `verus` skill (`.kiro/skills/verus/SKILL.md`)
 - The same capability map and provability gate at `.kiro/agents/verus-capabilities.md` (in-crate constraints, what is already proven, what is not provable here)
 - The same in-crate idioms, recorded in `.kiro/steering/verus-verification.md` and `.kiro/agents/verus-capabilities.md`
 
@@ -186,10 +187,11 @@ spec fn valid_header_v2(header: HeaderV2) -> bool {
 
 1. **Read the Implementation:** First, read the actual Rust parsing code for the message header in the project. Look for:
    - `esdk/src/message/header.rs`, `header_types.rs`, `v1_header_body.rs`, `v2_header_body.rs`, `encrypted_data_keys.rs`, `serialize_functions.rs`, `header_auth.rs` — native Rust header parsing (async readers over `dyn Source`, with synchronous decision cores inside `verus!`)
-   - `prim/src/lib.rs` — AES-GCM wrappers `aes_encrypt` / `aes_decrypt` (shared with verus-zero-panic; `prim` is not Verus-checked, by decision)
+   - `prim/src/lib.rs` — AES-GCM wrappers `aes_encrypt` / `aes_decrypt` (shared with verus-zero-panic; Verus-checked in place, VR-006 and VR-014)
+   - `esdk/src/decrypt_gate.rs` and `esdk/src/encrypt_gate.rs` — the typestate tokens for ordering targets (Category 1e)
    - Message header deserialization logic
    - The data structures representing parsed headers
-   - **Do not redo work that is already proven.** The header-field decision cores (VR-003) and the `edk_count_check` core (VR-007) are already verified **in-crate** inside `verus! { }` in the shipped `esdk/src/message/` files. Read `docs/verus-proofs-report.md` and `.kiro/agents/verus-capabilities.md` first and build on these cores rather than re-proving them. The current snapshot recorded in `docs/verus-proofs-report.md` is **57 in-crate obligations verified / 0 errors** (over 34 exec fns and 3 proof fns). Treat that number as a snapshot: re-read it from the latest `make -C esdk verus` output, never claim it from reading code.
+   - **Do not redo work that is already proven.** Among others, the header-field decision cores (VR-003), the `edk_count_check` core (VR-007), the key-commitment decision (VR-001 (a)), the codec round-trip lemmas (VR-012) and the decrypt-order tokens (VR-001 (b), VR-002, VR-015) are already in-crate. Read the target table in `docs/verus-proofs-report.md` §3 and `.kiro/agents/verus-capabilities.md` first and build on these cores rather than re-proving them. Counts: see `docs/verus-proofs-report.md` and re-read them from the live make output (dated snapshot at `578b1faa`: esdk 97 verified / 0 errors). Never claim a count from reading code.
 
 2. **Read the Specification:** Read the formal spec at:
    - `spec/data-format/message-header.md`
@@ -210,7 +212,9 @@ spec fn valid_header_v2(header: HeaderV2) -> bool {
    - Proof functions (lemmas) establishing correctness
    - Helper proof functions for common patterns (bounds checking, integer overflow)
 
-5. **Verify:** Choose the right harness for where the code lives.
+5. **Mutation step:** before calling the proof done, mutation-test every new `ensures`, `requires`, type invariant, loop invariant and `decreases` using the recipe in "Mutation testing" in the `verus` skill. Run the tautology check, log each mutation (Id, Mutation, Result line, Errors, Reverted), and record the outcome class of each (Verus-caught, compiler-caught, review-only, adapter glue never caught). An obligation that no mutation breaks does not count.
+
+6. **Verify:** Choose the right harness for where the code lives.
    - **In-crate (the default for header parsing):** the shipped `esdk/src/message/` files are Verus-checked in place. Put the synchronous decision core inside the `verus! { }` block in the real file and leave the async reader as an unverified adapter around it. Then run `make -C esdk verus` from the repo root. It checks both feature sets — default features, then `--no-default-features --features aws-lc-sys`. `vstd` is verified first (`1858 verified, 0 errors`); the result that matters is the **second** `verification results::` line (the `aws-esdk` one). A cached run prints no results line, so `touch esdk/src/lib.rs` to force a re-check, then re-run.
    - **Model-only properties:** if a property cannot be carved into a sync in-crate core (for example a round-trip that is only expressible over the async `dyn Source`/`Sink` serializer), model it in a standalone file under `verification/` and run `make -C verification verify` (or `~/verus/verus verification/<file>.rs`). A standalone model is not a proof about the shipped code; label it model-only.
 
@@ -330,4 +334,16 @@ For **Version 2.0** headers (version byte = 0x02):
 - Keep the shipped decision core inside `verus!` and the async reader outside it; use `u32_to_be`/`u64_to_be` (not `to_be_bytes`), `requires`-only traits, one definition per type, and no `#[cfg(not(verus_keep_ghost))]` to hide exec code
 - Verify by running `make -C esdk verus` for in-crate code (read the `aws-esdk` results line; `touch esdk/src/lib.rs` to defeat caching) and `make -C verification verify` for model-only files, before delivering
 - **Never weaken soundness to force a pass:** no `assume`, `admit`, `#[verifier::external_body]`, or `#[verifier::external]` used to skip real checking. A proof counts only when the tool prints `0 errors`.
-- **Never overclaim.** State only what Verus actually proves. A compiler, clippy, or test check is not a Verus proof; a standalone model is not a proof about the shipped code; a snapshot count is read from the latest tool output, not asserted from the source.
+- **Never overclaim.** Label every claim with its honesty-ladder level (`verus` skill). For a typestate gate, only the gate is Verus-proven; the order is compiler-enforced. A count is read from the latest tool output, not asserted from the source.
+- Every new obligation is mutation-tested before delivery (Process step 5).
+
+## Stop and report findings
+
+Follow "Stop and report findings" in the `verus` skill. If the code does not do what the target says (the property is false, a check works only one way, or the code is stricter or looser than the spec), STOP. Record a finding (`VR-0NN Fk`) with the location, what the spec says, what the code does, and the options with a recommendation. Do not add a check, change an error, or change the error order without the user's approval. Prove the code as it is, or wait.
+
+Write the user's answers word for word in this block in the task notes, and copy it forward to later steps:
+
+```markdown
+## Decisions (do not re-decide)
+- <date> <who>: "<the user's words, verbatim>" (applies to: <target / finding id>)
+```
