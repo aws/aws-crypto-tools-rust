@@ -1,11 +1,11 @@
 {
   "generated": {
-    "commit": "1809702806f570dda74c0cdda1fa8e976a50df73",
-    "commit_short": "1809702",
+    "commit": "33f973b55c6009b42c76071697ad5b824f624f22",
+    "commit_short": "33f973b",
     "branch": "MPL-Verus",
     "sources_clean": true,
     "dirty_paths": [],
-    "timestamp_utc": "2026-11-19T21:16:33Z",
+    "timestamp_utc": "2026-11-19T21:23:25Z",
     "generator": "dashboard/generate_dashboard.py",
     "schema_version": 1,
     "commit_meaning": "the commit whose docs/ and verus-proofs/ were read; the dashboard files are committed after it"
@@ -16,8 +16,8 @@
   "verus": {
     "version": "0.2026.07.12.0b42f4c",
     "platform": "release, macos_aarch64, 1.96.0-aarch64-apple-darwin",
-    "runs_recorded_at": "2026-11-19T21:13:04Z",
-    "runs_recorded_on_commit": "1809702",
+    "runs_recorded_at": "2026-11-19T21:23:09Z",
+    "runs_recorded_on_commit": "33f973b",
     "command": "~/verus/verus verus-proofs/<file>.rs, run from the repo root"
   },
   "scope_statement": "Every proof on this branch checks a hand-written model of the code. None checks the shipped code.",
@@ -35,9 +35,9 @@
     },
     {
       "key": "in_crate_other_branch",
-      "label": "Proved in the shipped code, on another branch only",
+      "label": "Partly proved in the shipped code, on another branch only",
       "rank": 2,
-      "text": "Verus checks the real code, but only on branch Mahnush_Verus. This branch has no such proof, so nothing about the code here is proved."
+      "text": "Verus checks the real code, partly, and only on branch Mahnush_Verus. It relies on 20 assumed aws-lc-rs facts. This branch has no such proof, so nothing about the code here is proved."
     },
     {
       "key": "model_proved",
@@ -267,7 +267,7 @@
       "effort": "1 week",
       "agent": "mpl-verus-header-parsing-proofs",
       "technical_name": "record::branch_key_materials_from_authenticated_encryption_context (record.rs:95)",
-      "title": "A stored key record is accepted only when it is well formed",
+      "title": "A stored key record should be accepted only when it is well formed (gap G1: two required fields are not checked)",
       "threats": [
         "TM-MPL-005"
       ],
@@ -433,7 +433,7 @@
       "effort": "1 week",
       "agent": "mpl-verus-zero-panic",
       "technical_name": "prim::{hmac, digest, aes_encrypt, aes_decrypt, hkdf*, kbkdf_ctr_hmac}, DigestContext::finish",
-      "title": "Primitive wrappers handle bad lengths as errors (proved on another branch)",
+      "title": "Primitive wrappers should handle bad lengths as errors (partly proved on another branch, under 20 assumed aws-lc-rs facts)",
       "threats": [],
       "threats_note": "none cited in the targets docs",
       "bugs": [
@@ -446,8 +446,8 @@
         "risk": "A wrong buffer length could cause a panic, a truncated result or a buffer left in a surprising state. BUG-07 is one case: AES encrypt leaves plaintext in the buffer on an error. The targets doc cites no threat for this target.",
         "checks_label": "What the proof checks",
         "checks": "On branch Mahnush_Verus, Verus checks the real prim code. For HMAC and digests, success happens exactly when the output buffer has the right length, and on an error the buffer is unchanged. For AES encrypt, the docs list the buffer contents on each error and success path. For AES decrypt, a success implies equal lengths, relative to an assumption about aws-lc-rs.",
-        "not_shown": "The proof is not on this branch, where prim has no Verus annotations. It rests on 20 stated assumptions about aws-lc-rs. It does not prove that hkdf output lengths are right end to end, and it says nothing about wiping. The docs call it partly proved.",
-        "result": "On branch Mahnush_Verus, Verus checked the real prim code and the docs record 18 verified, 0 errors for the whole prim crate there, not only C03 (taken from the docs, not re-run here); this branch has no such proof.",
+        "not_shown": "The proof is not on this branch, where prim has no Verus annotations. It rests on 20 stated assumptions about aws-lc-rs. It does not prove that no listed function panics for any argument. It does not prove that hkdf and hkdf_expand output lengths are right end to end: only the decision functions are proved. It says nothing about wiping. The docs call it partly proved.",
+        "result": "On branch Mahnush_Verus the docs record 18 passing checks and 0 failing checks for the whole prim crate there, not only C03. The status is partly proved, under 20 assumed aws-lc-rs facts. These numbers are taken from the docs and were not re-run here. This branch has no such proof.",
         "notes": [],
         "expected_failure_explanation": "",
         "sources": [
@@ -817,7 +817,7 @@
       "effort": "1 week",
       "agent": "mpl-verus-unsafe-ffi-safety",
       "technical_name": "raw-AES wrap/unwrap + prim::aes_*",
-      "title": "The raw AES keyring uses a fresh IV and valid AES call arguments",
+      "title": "The raw AES keyring draws its IV with one random call and passes valid AES arguments",
       "threats": [
         "TM-MPL-011"
       ],
@@ -832,7 +832,7 @@
         "risk": "Reusing an IV with the same AES-GCM key breaks the encryption. This is threat TM-MPL-011. Wrong lengths passed to the AES calls would cause errors.",
         "checks_label": "What a proof would check",
         "checks": "That every built keyring has a wrapping key of the right length for its algorithm. That each wrap draws a new 12-byte IV with one random call and stores it nowhere else, and uses the same bytes as the AES nonce and in the key's provider info. That every AES call meets the length rules, so the only decrypt error is a failed authentication. On success the ciphertext is the data key length plus 16 bytes.",
-        "not_shown": "No proof exists yet, so nothing here is machine-checked. The docs note that plaintext left in a buffer when aes_encrypt fails (BUG-07a) is tracked under T26, not here.",
+        "not_shown": "No proof exists yet, so nothing here is machine-checked. A proof of this structure would not show that the IV is random or unique. That rests on the random generator in aws-lc-rs and would be assumed. The docs note that plaintext left in a buffer when aes_encrypt fails (BUG-07a) is tracked under T26, not here.",
         "result": "No proof exists yet, so there is no result.",
         "notes": [],
         "expected_failure_explanation": "",
@@ -953,7 +953,7 @@
       "effort": "2 weeks",
       "agent": "mpl-verus-unsafe-ffi-safety",
       "technical_name": "transient / error-path secret buffers",
-      "title": "Secret key bytes are wiped on every exit path",
+      "title": "Secret key bytes should be wiped on every exit path (docs expect five failures today)",
       "threats": [
         "TM-MPL-015"
       ],
@@ -1256,7 +1256,7 @@
       "effort": "1 week",
       "agent": "mpl-verus-zero-panic",
       "technical_name": "malformed-input panic sites",
-      "title": "Malformed input returns an error and never crashes",
+      "title": "Malformed input should return an error, not crash (BUG-05a panics today)",
       "threats": [
         "TM-MPL-023"
       ],
@@ -1301,7 +1301,7 @@
       "effort": "1 month",
       "agent": "mpl-verus-zero-panic (+ concurrency)",
       "technical_name": "cmc/storm_tracking.rs (build :606)",
-      "title": "The storm-tracking cache obeys its spec limits",
+      "title": "The storm-tracking cache should obey its spec limits (docs expect four failures today)",
       "threats": [
         "TM-MPL-018"
       ],
@@ -1397,7 +1397,7 @@
       "effort": "1 week",
       "agent": "mpl-verus-header-parsing-proofs",
       "technical_name": "Discovery / MRDiscovery ARN (kms_ops.rs:96-102, :118, :144)",
-      "title": "Discovery modes rewrite the Region only for multi-Region keys (BUG-04)",
+      "title": "Discovery modes should rewrite the Region only for multi-Region keys (BUG-04 rewrites every non-alias key ARN today)",
       "threats": [
         "TM-MPL-007"
       ],
@@ -1411,7 +1411,7 @@
         "area": "The branch key store, in the two discovery modes that accept the key named in a record instead of one configured key.",
         "risk": "In MRDiscovery mode the code rewrites the Region of every non-alias key ARN, including single-Region keys, where the spec says multi-Region keys only. KMS then rejects the request, so the request is refused (it fails closed). This is BUG-04 (open, rated Low) and threat TM-MPL-007.",
         "checks_label": "What a proof would check",
-        "checks": "That Discovery mode accepts the record's ARN exactly when it parses and is not an alias. That MRDiscovery rewrites the Region only for multi-Region key ARNs. The docs expect the second check to fail today and to pass once a multi-Region test is added.",
+        "checks": "That Discovery mode accepts the record's ARN exactly when it parses and is not an alias. That MRDiscovery rewrites the Region only for multi-Region key ARNs. The docs expect the second check to fail today. It would pass once the code rewrites the Region only for multi-Region key ARNs (an mrk- check).",
         "not_shown": "No proof exists yet, so nothing here is machine-checked. The docs list no further limits for this target.",
         "result": "No proof exists yet, so there is no result.",
         "notes": [],
@@ -1618,7 +1618,7 @@
       "effort": "1 week",
       "agent": "mpl-verus-unsafe-ffi-safety",
       "technical_name": "C++ shim handles (esdk/shims/aws-esdk-cpp/src/lib.rs:715, :728, :1570-1571, :1661; into_keyring_handle :2059)",
-      "title": "C++ shim handles are checked before they are used",
+      "title": "C++ shim handles should be checked before they are used (the C++ adopt function has no check today)",
       "threats": [
         "TM-MPL-024"
       ],
@@ -1785,7 +1785,7 @@
       "state": "current",
       "file_sha256_now": "824216521e4359431dbd44088b1a940ec84978796717c7edc6e2f34e235184f1",
       "file_sha256_at_run": "824216521e4359431dbd44088b1a940ec84978796717c7edc6e2f34e235184f1",
-      "run_at": "2026-11-19T21:13:07Z",
+      "run_at": "2026-11-19T21:23:12Z",
       "verified": 52,
       "errors": 0,
       "exit_code": 0,
@@ -1862,7 +1862,7 @@
       "state": "current",
       "file_sha256_now": "241f1cd133aa408d80214282fd7738447e2ded553bbea53cef9e8108224ba191",
       "file_sha256_at_run": "241f1cd133aa408d80214282fd7738447e2ded553bbea53cef9e8108224ba191",
-      "run_at": "2026-11-19T21:13:08Z",
+      "run_at": "2026-11-19T21:23:13Z",
       "verified": 21,
       "errors": 1,
       "exit_code": 1,
@@ -1896,7 +1896,7 @@
       "state": "current",
       "file_sha256_now": "d266597083141d47ebcdb19bd9a0798cdadac455ce99969391039ef0e7665c94",
       "file_sha256_at_run": "d266597083141d47ebcdb19bd9a0798cdadac455ce99969391039ef0e7665c94",
-      "run_at": "2026-11-19T21:13:05Z",
+      "run_at": "2026-11-19T21:23:10Z",
       "verified": 40,
       "errors": 0,
       "exit_code": 0,
@@ -1943,7 +1943,7 @@
       "state": "current",
       "file_sha256_now": "1cee411299d29a1ec729745da81c83ca002fbc01052ec0def1707ce12464e820",
       "file_sha256_at_run": "1cee411299d29a1ec729745da81c83ca002fbc01052ec0def1707ce12464e820",
-      "run_at": "2026-11-19T21:13:06Z",
+      "run_at": "2026-11-19T21:23:11Z",
       "verified": 21,
       "errors": 0,
       "exit_code": 0,
@@ -1985,7 +1985,7 @@
       "state": "current",
       "file_sha256_now": "7508a1090fe6902a9eca7bcf19c754a3a0228acf1a7190c753090899c6f15795",
       "file_sha256_at_run": "7508a1090fe6902a9eca7bcf19c754a3a0228acf1a7190c753090899c6f15795",
-      "run_at": "2026-11-19T21:13:09Z",
+      "run_at": "2026-11-19T21:23:14Z",
       "verified": 39,
       "errors": 0,
       "exit_code": 0,
@@ -2032,7 +2032,7 @@
       "state": "current",
       "file_sha256_now": "9bef3d8ae2d91bd358557c170d1c11dd8a2725468235469e860ebe864fa2c0ab",
       "file_sha256_at_run": "9bef3d8ae2d91bd358557c170d1c11dd8a2725468235469e860ebe864fa2c0ab",
-      "run_at": "2026-11-19T21:13:10Z",
+      "run_at": "2026-11-19T21:23:15Z",
       "verified": 45,
       "errors": 0,
       "exit_code": 0,
@@ -2119,7 +2119,7 @@
       "state": "current",
       "file_sha256_now": "ee93828c47731a2c2bef1c020a53cb9e089f2c8cdde86d97cd541ab534d36261",
       "file_sha256_at_run": "ee93828c47731a2c2bef1c020a53cb9e089f2c8cdde86d97cd541ab534d36261",
-      "run_at": "2026-11-19T21:13:13Z",
+      "run_at": "2026-11-19T21:23:18Z",
       "verified": 42,
       "errors": 1,
       "exit_code": 1,
@@ -2183,7 +2183,7 @@
       "state": "current",
       "file_sha256_now": "986744de667b3fc939bc39285818fb82411a9b9cc04a876a1f5b7d1493b55cc0",
       "file_sha256_at_run": "986744de667b3fc939bc39285818fb82411a9b9cc04a876a1f5b7d1493b55cc0",
-      "run_at": "2026-11-19T21:13:11Z",
+      "run_at": "2026-11-19T21:23:16Z",
       "verified": 33,
       "errors": 0,
       "exit_code": 0,
@@ -2230,7 +2230,7 @@
       "state": "current",
       "file_sha256_now": "a21ec7e219eed1be289851a0ec71b9ce5367b7fa2a3c01e2f7401e3255ff16b6",
       "file_sha256_at_run": "a21ec7e219eed1be289851a0ec71b9ce5367b7fa2a3c01e2f7401e3255ff16b6",
-      "run_at": "2026-11-19T21:13:11Z",
+      "run_at": "2026-11-19T21:23:16Z",
       "verified": 28,
       "errors": 4,
       "exit_code": 1,
@@ -3141,7 +3141,7 @@
       "proof_relation": {
         "kind": "other_branch",
         "target": "C03",
-        "text": "The prim-side facts are proved in the shipped prim code on branch Mahnush_Verus (target C03). This branch has no such proof. What the callers in mpl do with the buffer is code reading and belongs to T26.",
+        "text": "The prim-side facts are partly proved in the shipped prim code on branch Mahnush_Verus (target C03), under assumed aws-lc-rs facts. This branch has no such proof. What the callers in mpl do with the buffer is code reading and belongs to T26.",
         "status": ""
       },
       "sources": [
@@ -3299,7 +3299,7 @@
     },
     {
       "term": "Honesty level",
-      "text": "How strong the evidence for a target is: proved in the shipped code, proved in the shipped code on another branch, model proof, model proof with an intentional failing check, or no proof yet. A level is never shown as better than it is."
+      "text": "How strong the evidence for a target is: proved in the shipped code, partly proved in the shipped code on another branch (under 20 assumed aws-lc-rs facts), model proof, model proof with an intentional failing check, or no proof yet. A level is never shown as better than it is."
     },
     {
       "term": "Stale result",
@@ -3445,7 +3445,7 @@
     },
     {
       "path": "dashboard/plain-english.json",
-      "sha256": "8454b3b2be7e0bff3b68d51581eda2b1b8f4cfef4e3b4f13ce01daf601fa40e3"
+      "sha256": "8831e67d9ea8c1f88bd5315cae246d96cd9e7c97fb094a79f51c9ffc88948065"
     }
   ]
 }

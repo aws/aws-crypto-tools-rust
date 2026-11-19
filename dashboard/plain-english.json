@@ -14,9 +14,9 @@
     },
     {
       "key": "in_crate_other_branch",
-      "label": "Proved in the shipped code, on another branch only",
+      "label": "Partly proved in the shipped code, on another branch only",
       "rank": 2,
-      "text": "Verus checks the real code, but only on branch Mahnush_Verus. This branch has no such proof, so nothing about the code here is proved."
+      "text": "Verus checks the real code, partly, and only on branch Mahnush_Verus. It relies on 20 assumed aws-lc-rs facts. This branch has no such proof, so nothing about the code here is proved."
     },
     {
       "key": "model_proved",
@@ -53,7 +53,7 @@
     {"term": "Expected failure", "text": "A check that is written to fail on purpose. It states what the spec requires. The code does not meet it, so Verus rejects it. The failure is the finding. It is not a broken proof. Names in the proof files end in _FAILS or _EXPECTED_FAIL."},
     {"term": "Assumption (A_ names)", "text": "A fact the proof takes as true without checking it. Example: KMS only decrypts when the context matches. If an assumption is wrong, the proof says nothing. Names starting with A_ (and A1, A3 and so on in one file) are assumptions."},
     {"term": "Hypothesis (H_ names)", "text": "A condition about how the model relates to the code or how the code is used. A premise is a condition a theorem is stated under. A code-reading hypothesis is a fact a person checked by reading the code. Names starting with H_ are hypotheses. The page shows which kind each one is."},
-    {"term": "Honesty level", "text": "How strong the evidence for a target is: proved in the shipped code, proved in the shipped code on another branch, model proof, model proof with an intentional failing check, or no proof yet. A level is never shown as better than it is."},
+    {"term": "Honesty level", "text": "How strong the evidence for a target is: proved in the shipped code, partly proved in the shipped code on another branch (under 20 assumed aws-lc-rs facts), model proof, model proof with an intentional failing check, or no proof yet. A level is never shown as better than it is."},
     {"term": "Stale result", "text": "A recorded proof result is stale when the proof file has changed since the run that produced it. A stale result must be re-run before it is trusted."},
     {"term": "Target (T01 to T27, C01 to C08)", "text": "One thing the verification work proposes to prove. T targets come from the threat model. C targets come from a sweep of what the library can do. Retired targets are listed but not counted."},
     {"term": "Score, rank, coverage gap, quick win", "text": "The score is severity x coverage gap x feasibility x blast radius, as recorded in the docs. The rank orders the targets by score. The coverage gap says how little existing tests cover the property. A quick win has a score above 6.0 and an effort of one week or less. This page copies these values and never recomputes them."},
@@ -195,7 +195,7 @@
   "c03_other_branch": {
     "doc": "docs/mpl-verification-targets.md",
     "locator": "### C03: in-crate proof on branch Mahnush_Verus (not on this branch)",
-    "sentence_template": "On branch Mahnush_Verus, Verus checked the real prim code and the docs record {result} for the whole prim crate there, not only C03 (taken from the docs, not re-run here); this branch has no such proof."
+    "sentence_template": "On branch Mahnush_Verus the docs record {result} for the whole prim crate there, not only C03. The status is partly proved, under 20 assumed aws-lc-rs facts. These numbers are taken from the docs and were not re-run here. This branch has no such proof."
   },
   "bugs": {
     "BUG-01": {
@@ -230,7 +230,7 @@
     },
     "BUG-07": {
       "plain": "(a) The AES encrypt helper leaves the plaintext in the caller's buffer when it fails. (b) The AES decrypt length check is weaker than the library underneath, which gives a less helpful error.",
-      "relation": {"kind": "other_branch", "target": "C03", "text": "The prim-side facts are proved in the shipped prim code on branch Mahnush_Verus (target C03). This branch has no such proof. What the callers in mpl do with the buffer is code reading and belongs to T26."},
+      "relation": {"kind": "other_branch", "target": "C03", "text": "The prim-side facts are partly proved in the shipped prim code on branch Mahnush_Verus (target C03), under assumed aws-lc-rs facts. This branch has no such proof. What the callers in mpl do with the buffer is code reading and belongs to T26."},
       "sources": [{"doc": "docs/mpl-bug-reports/BUG-07-prim-aes-buffer-handling.md", "locator": "# BUG-07"}, {"doc": "docs/mpl-verification-targets.md", "locator": "BUG-07(a), prim side (C03, VR-014; not on this branch)"}]
     },
     "BUG-08": {
@@ -269,7 +269,7 @@
       "sources": [{"doc": "docs/mpl-verification-targets/01-threat-driven.md", "locator": "id: VR-2026-T01"}, {"doc": "verus-proofs/README.md", "locator": "## T01: key-store authenticated encryption context"}, {"doc": "docs/mpl-verification-targets.md", "locator": "**T01: no gap found at model level.**"}]
     },
     "T02": {
-      "title": "A stored key record is accepted only when it is well formed",
+      "title": "A stored key record should be accepted only when it is well formed (gap G1: two required fields are not checked)",
       "area": "The branch key store, in the step that turns a decrypted record back into key material (record.rs).",
       "risk": "A malformed or wrongly typed record could be accepted. The spec also says a record must have create-time and hierarchy-version fields, and the code does not check for them (gap G1). The impact is low: a record changed after encryption already fails at KMS, and no key is exposed or mis-selected.",
       "checks": "That the code accepts a record exactly when its type, version, key id and 32-byte key are valid, and that every rejection has a known cause. On acceptance the outputs are exactly the values in the record. One more check states the spec rule that both fields must be present.",
@@ -314,11 +314,11 @@
       "sources": [{"doc": "docs/mpl-verification-targets/01-threat-driven.md", "locator": "id: VR-2026-T06"}, {"doc": "verus-proofs/README.md", "locator": "## T06: `SystemTime + Duration` additions"}, {"doc": "docs/mpl-verification-targets.md", "locator": "**BUG-01 confirmed formally (T06).**"}]
     },
     "T07": {
-      "title": "The raw AES keyring uses a fresh IV and valid AES call arguments",
+      "title": "The raw AES keyring draws its IV with one random call and passes valid AES arguments",
       "area": "The raw AES keyring, where the user supplies the AES wrapping key, and the AES functions in the primitives crate (prim).",
       "risk": "Reusing an IV with the same AES-GCM key breaks the encryption. This is threat TM-MPL-011. Wrong lengths passed to the AES calls would cause errors.",
       "checks": "That every built keyring has a wrapping key of the right length for its algorithm. That each wrap draws a new 12-byte IV with one random call and stores it nowhere else, and uses the same bytes as the AES nonce and in the key's provider info. That every AES call meets the length rules, so the only decrypt error is a failed authentication. On success the ciphertext is the data key length plus 16 bytes.",
-      "not_shown": "The docs note that plaintext left in a buffer when aes_encrypt fails (BUG-07a) is tracked under T26, not here.",
+      "not_shown": "A proof of this structure would not show that the IV is random or unique. That rests on the random generator in aws-lc-rs and would be assumed. The docs note that plaintext left in a buffer when aes_encrypt fails (BUG-07a) is tracked under T26, not here.",
       "notes": [],
       "sources": [{"doc": "docs/mpl-verification-targets/01-threat-driven.md", "locator": "id: VR-2026-T07"}]
     },
@@ -386,7 +386,7 @@
       "sources": [{"doc": "docs/mpl-verification-targets/01-threat-driven.md", "locator": "id: VR-2026-T15"}, {"doc": "docs/mpl-bug-reports/BUG-03-encryption-context-deserialize-accepts-unsorted.md", "locator": "Severity: Low. No production caller"}]
     },
     "T16": {
-      "title": "Malformed input returns an error and never crashes",
+      "title": "Malformed input should return an error, not crash (BUG-05a panics today)",
       "area": "The places in the library that cut slices, index arrays or call expect on data that can come from outside: encrypted data keys, encryption context bytes and ARN strings.",
       "risk": "A malformed message or setting could cause a panic (a crash) instead of an error. This is threat TM-MPL-023. One listed place is BUG-05(a), a panic if ECDSA key generation fails.",
       "checks": "That for every input these paths return a result and never panic. Every slice or index is preceded by a guard that keeps it in range, every length conversion has exactly the right length, and offset arithmetic cannot overflow.",
@@ -395,10 +395,10 @@
       "sources": [{"doc": "docs/mpl-verification-targets/01-threat-driven.md", "locator": "id: VR-2026-T16"}]
     },
     "T17": {
-      "title": "Discovery modes rewrite the Region only for multi-Region keys (BUG-04)",
+      "title": "Discovery modes should rewrite the Region only for multi-Region keys (BUG-04 rewrites every non-alias key ARN today)",
       "area": "The branch key store, in the two discovery modes that accept the key named in a record instead of one configured key.",
       "risk": "In MRDiscovery mode the code rewrites the Region of every non-alias key ARN, including single-Region keys, where the spec says multi-Region keys only. KMS then rejects the request, so the request is refused (it fails closed). This is BUG-04 (open, rated Low) and threat TM-MPL-007.",
-      "checks": "That Discovery mode accepts the record's ARN exactly when it parses and is not an alias. That MRDiscovery rewrites the Region only for multi-Region key ARNs. The docs expect the second check to fail today and to pass once a multi-Region test is added.",
+      "checks": "That Discovery mode accepts the record's ARN exactly when it parses and is not an alias. That MRDiscovery rewrites the Region only for multi-Region key ARNs. The docs expect the second check to fail today. It would pass once the code rewrites the Region only for multi-Region key ARNs (an mrk- check).",
       "not_shown": "The docs list no further limits for this target.",
       "notes": [],
       "sources": [{"doc": "docs/mpl-verification-targets/01-threat-driven.md", "locator": "id: VR-2026-T17"}]
@@ -431,7 +431,7 @@
       "sources": [{"doc": "docs/mpl-verification-targets/01-threat-driven.md", "locator": "id: VR-2026-T20"}]
     },
     "T21": {
-      "title": "The storm-tracking cache obeys its spec limits",
+      "title": "The storm-tracking cache should obey its spec limits (docs expect four failures today)",
       "area": "The storm-tracking cache. It limits how many callers fetch the same missing key at once, and it makes other callers wait for the first one.",
       "risk": "A bad setting or a logic error could cause a stampede of requests, a stuck wait, a stuck in-flight mark or a panic. This is threat TM-MPL-018.",
       "checks": "That the builder enforces the spec ordering of its settings (the docs expect this to fail because the check regressed). That the number of in-flight keys stays within the fan-out limit. That a key already in flight gets a new leader only after its grace interval. That a put writes the cache before it clears the mark. That a poisoned lock gives an error. The docs also state three more expected failures: a failed leader's mark is never cleared, a waiter can have no deadline, and a panic can happen while the lock is held.",
@@ -467,7 +467,7 @@
       "sources": [{"doc": "docs/mpl-verification-targets/01-threat-driven.md", "locator": "id: VR-2026-T24"}]
     },
     "T25": {
-      "title": "C++ shim handles are checked before they are used",
+      "title": "C++ shim handles should be checked before they are used (the C++ adopt function has no check today)",
       "area": "The C++ shim (esdk/shims/aws-esdk-cpp), which lies outside mpl/ and prim/. It passes raw pointers from C++ to MPL objects and is the only unsafe code that reaches MPL key material.",
       "risk": "A dangling, forged or doubly owned pointer from C++ would cause undefined behavior. This is threat TM-MPL-024.",
       "checks": "The part Rust can check: every use of a raw pointer is preceded by a null check, a null required handle gives a validation error, a null optional handle gives none, and no handle is used after the shim frees it. Also, into_keyring_handle returns a non-null pointer to a new box that nothing else aliases.",
@@ -476,7 +476,7 @@
       "sources": [{"doc": "docs/mpl-verification-targets/01-threat-driven.md", "locator": "id: VR-2026-T25"}]
     },
     "T26": {
-      "title": "Secret key bytes are wiped on every exit path",
+      "title": "Secret key bytes should be wiped on every exit path (docs expect five failures today)",
       "area": "Temporary buffers that hold plaintext keys in the raw AES keyring, the AES helper, the branch key wrap, the key-store KMS code, the local cache and the ECDSA key generation.",
       "risk": "A secret could stay in freed memory after an error or after a cache entry expires. Reading it needs access to the process memory. This is threat TM-MPL-015, rated Low. Related reports are BUG-07(a) and BUG-10.",
       "checks": "That every buffer that held plaintext key bytes is either moved into an owner that wipes on drop or wiped before it is dropped, on every exit path. The docs expect this to fail at five places (F1 to F5), among them the decrypt buffers, the AES helper on error, and the key generation error path.",
@@ -512,11 +512,11 @@
       "sources": [{"doc": "docs/mpl-verification-targets/02-capability-driven.md", "locator": "id: VR-2026-C02"}, {"doc": "verus-proofs/README.md", "locator": "## C02: bounded ECDSA signing loop"}, {"doc": "docs/mpl-verification-targets.md", "locator": "C02 and VR-008."}]
     },
     "C03": {
-      "title": "Primitive wrappers handle bad lengths as errors (proved on another branch)",
+      "title": "Primitive wrappers should handle bad lengths as errors (partly proved on another branch, under 20 assumed aws-lc-rs facts)",
       "area": "The primitives crate (prim). It wraps aws-lc-rs for HMAC, digests, AES encryption and decryption, key derivation and random bytes.",
       "risk": "A wrong buffer length could cause a panic, a truncated result or a buffer left in a surprising state. BUG-07 is one case: AES encrypt leaves plaintext in the buffer on an error. The targets doc cites no threat for this target.",
       "checks": "On branch Mahnush_Verus, Verus checks the real prim code. For HMAC and digests, success happens exactly when the output buffer has the right length, and on an error the buffer is unchanged. For AES encrypt, the docs list the buffer contents on each error and success path. For AES decrypt, a success implies equal lengths, relative to an assumption about aws-lc-rs.",
-      "not_shown": "The proof is not on this branch, where prim has no Verus annotations. It rests on 20 stated assumptions about aws-lc-rs. It does not prove that hkdf output lengths are right end to end, and it says nothing about wiping. The docs call it partly proved.",
+      "not_shown": "The proof is not on this branch, where prim has no Verus annotations. It rests on 20 stated assumptions about aws-lc-rs. It does not prove that no listed function panics for any argument. It does not prove that hkdf and hkdf_expand output lengths are right end to end: only the decision functions are proved. It says nothing about wiping. The docs call it partly proved.",
       "notes": [],
       "sources": [{"doc": "docs/mpl-verification-targets/02-capability-driven.md", "locator": "id: VR-2026-C03"}, {"doc": "docs/mpl-verification-targets.md", "locator": "### C03: in-crate proof on branch Mahnush_Verus (not on this branch)"}]
     },

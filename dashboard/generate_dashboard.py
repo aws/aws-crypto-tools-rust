@@ -705,9 +705,10 @@ def result_sentence(tid, level, state, run_rec, plain, doc_row, ranked_row):
     if level == "not_started":
         return "No proof exists yet, so there is no result."
     if level == "in_crate_other_branch":
-        m = re.search(r"(\d+ verified, \d+ errors)", ranked_row["proof_status_doc"])
+        m = re.search(r"(\d+) verified, (\d+) errors", ranked_row["proof_status_doc"])
         tpl = plain["c03_other_branch"]["sentence_template"]
-        return tpl.format(result=m.group(1) if m else "a result")
+        res = "%s passing checks and %s failing checks" % (m.group(1), m.group(2)) if m else "a result"
+        return tpl.format(result=res)
     if run_rec is None:
         return "No recorded Verus run exists for this proof. Run the generator with --run-verus."
     v, e = run_rec["verified"], run_rec["errors"]
@@ -941,7 +942,7 @@ def render_html(status):
     A('<div class="tile"><div class="n">%d</div><div class="l">targets with a model proof on this branch (%d with a failing check on purpose)</div></div>' % (
         ex["targets_with_model_proof_on_this_branch"], ex["level_counts"]["model_partly"]))
     A('<div class="tile warn"><div class="n">%d</div><div class="l">targets with a proof of the shipped code on this branch</div></div>' % ex["targets_with_proof_in_shipped_code_on_this_branch"])
-    A('<div class="tile"><div class="n">%d</div><div class="l">target with a proof of the shipped code on another branch only (C03, branch Mahnush_Verus)</div></div>' % ex["targets_with_proof_on_other_branch_only"])
+    A('<div class="tile"><div class="n">%d</div><div class="l">target partly proved in the shipped code on another branch only (C03, branch Mahnush_Verus, under 20 assumed aws-lc-rs facts)</div></div>' % ex["targets_with_proof_on_other_branch_only"])
     A('<div class="tile"><div class="n">%d</div><div class="l">targets with no proof yet</div></div>' % ex["targets_without_proof"])
     A('<div class="tile"><div class="n">%d of %d</div><div class="l">High-risk threats have at least one related model proof (not a statement that they are handled)</div></div>' % (
         ex["high_threats_with_current_model_proof"], ex["high_threat_count"]))
@@ -1028,7 +1029,7 @@ def render_html(status):
                 res = "%d passed, %d failed%s" % (p["verified"], p["errors"], " (intentional)" if p["errors"] and not p["unexpected_failures"] else "")
             pc = '<span class="mono">%s</span><br>%s %s' % (e(p["file"].split("/")[-1]), e(res), state_badge(p["state"]))
         elif t["level"] == "in_crate_other_branch":
-            pc = '<span class="small">on branch Mahnush_Verus, not on this branch</span>'
+            pc = '<span class="small">partly proved on branch Mahnush_Verus, under 20 assumed aws-lc-rs facts; not on this branch</span>'
         else:
             pc = '<span class="small">none yet</span>'
         qw = "quick win" if t["quick_win"] else ""

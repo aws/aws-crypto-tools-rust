@@ -65,7 +65,7 @@ Both, split by kind of data.
 | Level | Meaning | Targets now |
 |---|---|---|
 | in_crate | Verus checks the shipped code on this branch | 0 |
-| in_crate_other_branch | Verus checks the shipped code, on `Mahnush_Verus` only | 1 (C03) |
+| in_crate_other_branch | Verus partly checks the shipped code, on `Mahnush_Verus` only, under 20 assumed aws-lc-rs facts | 1 (C03) |
 | model_proved | Verus checks a model, no failing check | 6 |
 | model_partly | Verus checks a model, one or more checks fail on purpose | 3 |
 | not_started | No proof | 23 |
@@ -73,8 +73,8 @@ Both, split by kind of data.
 Reasons:
 
 - `in_crate` is kept at 0 so the page says plainly that nothing on this branch reaches that level.
-- `in_crate_other_branch` is needed for C03. The docs say C03 is proved in-crate on `Mahnush_Verus`
-  and not here. It must not be shown at the same level as a proof on this branch, and it must not
+- `in_crate_other_branch` is needed for C03. The docs say C03 is partly proved in-crate on `Mahnush_Verus`,
+  under 20 assumed aws-lc-rs facts, and not here. The label carries "partly". It must not be shown at the same level as a proof on this branch, and it must not
   be hidden.
 - `model_proved` and `model_partly` follow the docs wording "Proved" and "Partly proved" at model
   level. The split matters because a failing check is evidence of a bug or spec gap.

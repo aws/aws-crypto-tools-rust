@@ -2,8 +2,8 @@
   "verus_version": "0.2026.07.12.0b42f4c",
   "verus_platform": "release, macos_aarch64, 1.96.0-aarch64-apple-darwin",
   "command": "verus <file> (run from the repo root)",
-  "recorded_at": "2026-11-19T21:13:04Z",
-  "recorded_on_commit": "1809702",
+  "recorded_at": "2026-11-19T21:23:09Z",
+  "recorded_on_commit": "33f973b",
   "runs": {
     "verus-proofs/c01_ec_roundtrip.rs": {
       "verified": 40,
@@ -12,7 +12,7 @@
       "result_line": "verification results:: 40 verified, 0 errors",
       "failing_obligations": [],
       "sha256": "d266597083141d47ebcdb19bd9a0798cdadac455ce99969391039ef0e7665c94",
-      "run_at": "2026-11-19T21:13:05Z"
+      "run_at": "2026-11-19T21:23:10Z"
     },
     "verus-proofs/c02_sign_fixed_len.rs": {
       "verified": 21,
@@ -21,7 +21,7 @@
       "result_line": "verification results:: 21 verified, 0 errors",
       "failing_obligations": [],
       "sha256": "1cee411299d29a1ec729745da81c83ca002fbc01052ec0def1707ce12464e820",
-      "run_at": "2026-11-19T21:13:06Z"
+      "run_at": "2026-11-19T21:23:11Z"
     },
     "verus-proofs/t01_keystore_auth_ec.rs": {
       "verified": 52,
@@ -30,7 +30,7 @@
       "result_line": "verification results:: 52 verified, 0 errors",
       "failing_obligations": [],
       "sha256": "824216521e4359431dbd44088b1a940ec84978796717c7edc6e2f34e235184f1",
-      "run_at": "2026-11-19T21:13:07Z"
+      "run_at": "2026-11-19T21:23:12Z"
     },
     "verus-proofs/t02_record_reconstruction.rs": {
       "verified": 21,
@@ -44,7 +44,7 @@
         }
       ],
       "sha256": "241f1cd133aa408d80214282fd7738447e2ded553bbea53cef9e8108224ba191",
-      "run_at": "2026-11-19T21:13:08Z"
+      "run_at": "2026-11-19T21:23:13Z"
     },
     "verus-proofs/t03_resolve_pinned_arn.rs": {
       "verified": 39,
@@ -53,7 +53,7 @@
       "result_line": "verification results:: 39 verified, 0 errors",
       "failing_obligations": [],
       "sha256": "7508a1090fe6902a9eca7bcf19c754a3a0228acf1a7190c753090899c6f15795",
-      "run_at": "2026-11-19T21:13:09Z"
+      "run_at": "2026-11-19T21:23:14Z"
     },
     "verus-proofs/t04_branch_key_wrap.rs": {
       "verified": 45,
@@ -62,7 +62,7 @@
       "result_line": "verification results:: 45 verified, 0 errors",
       "failing_obligations": [],
       "sha256": "9bef3d8ae2d91bd358557c170d1c11dd8a2725468235469e860ebe864fa2c0ab",
-      "run_at": "2026-11-19T21:13:10Z"
+      "run_at": "2026-11-19T21:23:15Z"
     },
     "verus-proofs/t05_kbkdf_fixed_info.rs": {
       "verified": 33,
@@ -71,7 +71,7 @@
       "result_line": "verification results:: 33 verified, 0 errors",
       "failing_obligations": [],
       "sha256": "986744de667b3fc939bc39285818fb82411a9b9cc04a876a1f5b7d1493b55cc0",
-      "run_at": "2026-11-19T21:13:11Z"
+      "run_at": "2026-11-19T21:23:16Z"
     },
     "verus-proofs/t06_systemtime_add_overflow.rs": {
       "verified": 28,
@@ -97,7 +97,7 @@
         }
       ],
       "sha256": "a21ec7e219eed1be289851a0ec71b9ce5367b7fa2a3c01e2f7401e3255ff16b6",
-      "run_at": "2026-11-19T21:13:11Z"
+      "run_at": "2026-11-19T21:23:16Z"
     },
     "verus-proofs/t13_cache_identifier.rs": {
       "verified": 42,
@@ -111,7 +111,7 @@
         }
       ],
       "sha256": "ee93828c47731a2c2bef1c020a53cb9e089f2c8cdde86d97cd541ab534d36261",
-      "run_at": "2026-11-19T21:13:13Z"
+      "run_at": "2026-11-19T21:23:18Z"
     }
   }
 }
