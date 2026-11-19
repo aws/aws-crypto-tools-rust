@@ -2,8 +2,8 @@
   "verus_version": "0.2026.07.12.0b42f4c",
   "verus_platform": "release, macos_aarch64, 1.96.0-aarch64-apple-darwin",
   "command": "verus <file> (run from the repo root)",
-  "recorded_at": "2026-11-19T21:23:09Z",
-  "recorded_on_commit": "33f973b",
+  "recorded_at": "2026-11-19T22:40:46Z",
+  "recorded_on_commit": "877ad2e",
   "runs": {
     "verus-proofs/c01_ec_roundtrip.rs": {
       "verified": 40,
@@ -12,7 +12,7 @@
       "result_line": "verification results:: 40 verified, 0 errors",
       "failing_obligations": [],
       "sha256": "d266597083141d47ebcdb19bd9a0798cdadac455ce99969391039ef0e7665c94",
-      "run_at": "2026-11-19T21:23:10Z"
+      "run_at": "2026-11-19T22:40:48Z"
     },
     "verus-proofs/c02_sign_fixed_len.rs": {
       "verified": 21,
@@ -21,7 +21,34 @@
       "result_line": "verification results:: 21 verified, 0 errors",
       "failing_obligations": [],
       "sha256": "1cee411299d29a1ec729745da81c83ca002fbc01052ec0def1707ce12464e820",
-      "run_at": "2026-11-19T21:23:11Z"
+      "run_at": "2026-11-19T22:40:48Z"
+    },
+    "verus-proofs/c04_pdk_length_invariant.rs": {
+      "verified": 24,
+      "errors": 0,
+      "exit_code": 0,
+      "result_line": "verification results:: 24 verified, 0 errors",
+      "failing_obligations": [],
+      "sha256": "f21902c0dac5cf7b4eff00a30b9059e0ea093853a767343183624b16101d546f",
+      "run_at": "2026-11-19T22:40:49Z"
+    },
+    "verus-proofs/c05_algorithm_suite_table.rs": {
+      "verified": 22,
+      "errors": 0,
+      "exit_code": 0,
+      "result_line": "verification results:: 22 verified, 0 errors",
+      "failing_obligations": [],
+      "sha256": "f4ac8ddd77869ef116bfcc2c9c747463416f845aea39b6b2ae434a6c844aaa9f",
+      "run_at": "2026-11-19T22:40:49Z"
+    },
+    "verus-proofs/c08_cache_usage_counters.rs": {
+      "verified": 20,
+      "errors": 0,
+      "exit_code": 0,
+      "result_line": "verification results:: 20 verified, 0 errors",
+      "failing_obligations": [],
+      "sha256": "898a969dcbd0eb033d17e0c695bf38125d2eeb73d8859724c59a4a2f6bbde2c6",
+      "run_at": "2026-11-19T22:40:50Z"
     },
     "verus-proofs/t01_keystore_auth_ec.rs": {
       "verified": 52,
@@ -30,7 +57,7 @@
       "result_line": "verification results:: 52 verified, 0 errors",
       "failing_obligations": [],
       "sha256": "824216521e4359431dbd44088b1a940ec84978796717c7edc6e2f34e235184f1",
-      "run_at": "2026-11-19T21:23:12Z"
+      "run_at": "2026-11-19T22:40:51Z"
     },
     "verus-proofs/t02_record_reconstruction.rs": {
       "verified": 21,
@@ -44,7 +71,7 @@
         }
       ],
       "sha256": "241f1cd133aa408d80214282fd7738447e2ded553bbea53cef9e8108224ba191",
-      "run_at": "2026-11-19T21:23:13Z"
+      "run_at": "2026-11-19T22:40:52Z"
     },
     "verus-proofs/t03_resolve_pinned_arn.rs": {
       "verified": 39,
@@ -53,7 +80,7 @@
       "result_line": "verification results:: 39 verified, 0 errors",
       "failing_obligations": [],
       "sha256": "7508a1090fe6902a9eca7bcf19c754a3a0228acf1a7190c753090899c6f15795",
-      "run_at": "2026-11-19T21:23:14Z"
+      "run_at": "2026-11-19T22:40:53Z"
     },
     "verus-proofs/t04_branch_key_wrap.rs": {
       "verified": 45,
@@ -62,7 +89,7 @@
       "result_line": "verification results:: 45 verified, 0 errors",
       "failing_obligations": [],
       "sha256": "9bef3d8ae2d91bd358557c170d1c11dd8a2725468235469e860ebe864fa2c0ab",
-      "run_at": "2026-11-19T21:23:15Z"
+      "run_at": "2026-11-19T22:40:54Z"
     },
     "verus-proofs/t05_kbkdf_fixed_info.rs": {
       "verified": 33,
@@ -71,7 +98,7 @@
       "result_line": "verification results:: 33 verified, 0 errors",
       "failing_obligations": [],
       "sha256": "986744de667b3fc939bc39285818fb82411a9b9cc04a876a1f5b7d1493b55cc0",
-      "run_at": "2026-11-19T21:23:16Z"
+      "run_at": "2026-11-19T22:40:55Z"
     },
     "verus-proofs/t06_systemtime_add_overflow.rs": {
       "verified": 28,
@@ -97,7 +124,7 @@
         }
       ],
       "sha256": "a21ec7e219eed1be289851a0ec71b9ce5367b7fa2a3c01e2f7401e3255ff16b6",
-      "run_at": "2026-11-19T21:23:16Z"
+      "run_at": "2026-11-19T22:40:55Z"
     },
     "verus-proofs/t13_cache_identifier.rs": {
       "verified": 42,
@@ -111,7 +138,16 @@
         }
       ],
       "sha256": "ee93828c47731a2c2bef1c020a53cb9e089f2c8cdde86d97cd541ab534d36261",
-      "run_at": "2026-11-19T21:23:18Z"
+      "run_at": "2026-11-19T22:40:57Z"
+    },
+    "verus-proofs/t24_raw_aes_namespace.rs": {
+      "verified": 19,
+      "errors": 0,
+      "exit_code": 0,
+      "result_line": "verification results:: 19 verified, 0 errors",
+      "failing_obligations": [],
+      "sha256": "5079d2fa38e8ea851025fbff988566d00c23dbfa9f9efb4be0352724c2bca585",
+      "run_at": "2026-11-19T22:40:58Z"
     }
   }
 }

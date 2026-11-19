@@ -1,11 +1,11 @@
 {
   "generated": {
-    "commit": "33f973b55c6009b42c76071697ad5b824f624f22",
-    "commit_short": "33f973b",
+    "commit": "877ad2ea599eebd92afe842b4c008a7cb24e134e",
+    "commit_short": "877ad2e",
     "branch": "MPL-Verus",
     "sources_clean": true,
     "dirty_paths": [],
-    "timestamp_utc": "2026-11-19T21:23:25Z",
+    "timestamp_utc": "2026-11-19T22:41:24Z",
     "generator": "dashboard/generate_dashboard.py",
     "schema_version": 1,
     "commit_meaning": "the commit whose docs/ and verus-proofs/ were read; the dashboard files are committed after it"
@@ -16,8 +16,8 @@
   "verus": {
     "version": "0.2026.07.12.0b42f4c",
     "platform": "release, macos_aarch64, 1.96.0-aarch64-apple-darwin",
-    "runs_recorded_at": "2026-11-19T21:23:09Z",
-    "runs_recorded_on_commit": "33f973b",
+    "runs_recorded_at": "2026-11-19T22:40:46Z",
+    "runs_recorded_on_commit": "877ad2e",
     "command": "~/verus/verus verus-proofs/<file>.rs, run from the repo root"
   },
   "scope_statement": "Every proof on this branch checks a hand-written model of the code. None checks the shipped code.",
@@ -74,14 +74,14 @@
     "level_counts": {
       "in_crate": 0,
       "in_crate_other_branch": 1,
-      "model_proved": 6,
+      "model_proved": 10,
       "model_partly": 3,
-      "not_started": 23
+      "not_started": 19
     },
-    "targets_with_model_proof_on_this_branch": 9,
+    "targets_with_model_proof_on_this_branch": 13,
     "targets_with_proof_in_shipped_code_on_this_branch": 0,
     "targets_with_proof_on_other_branch_only": 1,
-    "targets_without_proof": 23,
+    "targets_without_proof": 19,
     "high_threat_count": 3,
     "high_threats_with_current_model_proof": 3,
     "threat_count": 26,
@@ -235,22 +235,22 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T01",
-            "line": 176
+            "line": 182
           },
           {
             "doc": "verus-proofs/README.md",
             "locator": "## T01: key-store authenticated encryption context",
-            "line": 178
+            "line": 186
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "**T01: no gap found at model level.**",
-            "line": 150
+            "line": 187
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 215
+            "line": 271
           }
         ]
       },
@@ -291,22 +291,22 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T02",
-            "line": 242
+            "line": 248
           },
           {
             "doc": "verus-proofs/README.md",
             "locator": "## T02: record reconstruction",
-            "line": 47
+            "line": 55
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "**G1 confirmed formally (T02).**",
-            "line": 146
+            "line": 183
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 215
+            "line": 271
           }
         ]
       },
@@ -347,22 +347,22 @@
           {
             "doc": "docs/mpl-verification-targets/02-capability-driven.md",
             "locator": "id: VR-2026-C01",
-            "line": 123
+            "line": 144
           },
           {
             "doc": "verus-proofs/README.md",
             "locator": "## C01: encryption-context builders",
-            "line": 84
+            "line": 92
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "- **BUG-08 (C01).**",
-            "line": 167
+            "line": 223
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 215
+            "line": 271
           }
         ]
       },
@@ -401,22 +401,22 @@
           {
             "doc": "docs/mpl-verification-targets/02-capability-driven.md",
             "locator": "id: VR-2026-C02",
-            "line": 188
+            "line": 209
           },
           {
             "doc": "verus-proofs/README.md",
             "locator": "## C02: bounded ECDSA signing loop",
-            "line": 132
+            "line": 140
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "C02 and VR-008.",
-            "line": 114
+            "line": 122
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 215
+            "line": 271
           }
         ]
       },
@@ -454,17 +454,17 @@
           {
             "doc": "docs/mpl-verification-targets/02-capability-driven.md",
             "locator": "id: VR-2026-C03",
-            "line": 235
+            "line": 256
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "### C03: in-crate proof on branch Mahnush_Verus (not on this branch)",
-            "line": 61
+            "line": 69
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 215
+            "line": 271
           }
         ]
       },
@@ -508,7 +508,7 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T03",
-            "line": 323
+            "line": 329
           },
           {
             "doc": "verus-proofs/README-t03-t05.md",
@@ -518,12 +518,12 @@
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "**O1, DEV-ALIAS (T03).**",
-            "line": 147
+            "line": 184
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 215
+            "line": 271
           }
         ]
       },
@@ -559,12 +559,12 @@
           {
             "doc": "docs/mpl-verification-targets/02-capability-driven.md",
             "locator": "id: VR-2026-C07",
-            "line": 298
+            "line": 319
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 215
+            "line": 271
           }
         ]
       },
@@ -607,22 +607,22 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T04",
-            "line": 367
+            "line": 373
           },
           {
             "doc": "verus-proofs/README.md",
             "locator": "## T04: branch-key wrap",
-            "line": 260
+            "line": 268
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "**T04, what is not proved (TM-MPL-012).**",
-            "line": 157
+            "line": 194
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 215
+            "line": 271
           }
         ]
       },
@@ -666,22 +666,22 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T13",
-            "line": 412
+            "line": 418
           },
           {
             "doc": "verus-proofs/README.md",
             "locator": "## T13: cache identifier",
-            "line": 223
+            "line": 231
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "**BUG-06 confirmed formally (T13).**",
-            "line": 153
+            "line": 190
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 215
+            "line": 271
           }
         ]
       },
@@ -725,7 +725,7 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T05",
-            "line": 475
+            "line": 481
           },
           {
             "doc": "verus-proofs/README-t03-t05.md",
@@ -735,12 +735,12 @@
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "**F1 (T05).**",
-            "line": 149
+            "line": 186
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 215
+            "line": 271
           }
         ]
       },
@@ -785,22 +785,22 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T06",
-            "line": 517
+            "line": 523
           },
           {
             "doc": "verus-proofs/README.md",
             "locator": "## T06: `SystemTime + Duration` additions",
-            "line": 306
+            "line": 314
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "**BUG-01 confirmed formally (T06).**",
-            "line": 161
+            "line": 198
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 215
+            "line": 271
           }
         ]
       },
@@ -840,12 +840,12 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T07",
-            "line": 573
+            "line": 579
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 215
+            "line": 271
           }
         ]
       },
@@ -885,12 +885,12 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T14",
-            "line": 621
+            "line": 627
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 215
+            "line": 271
           }
         ]
       },
@@ -931,12 +931,12 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T27",
-            "line": 675
+            "line": 681
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 215
+            "line": 271
           }
         ]
       },
@@ -977,12 +977,12 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T26",
-            "line": 759
+            "line": 765
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 215
+            "line": 271
           }
         ]
       },
@@ -1020,12 +1020,12 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T10",
-            "line": 844
+            "line": 850
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 215
+            "line": 271
           }
         ]
       },
@@ -1063,12 +1063,12 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T11",
-            "line": 884
+            "line": 890
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 215
+            "line": 271
           }
         ]
       },
@@ -1106,12 +1106,12 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T12",
-            "line": 923
+            "line": 929
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 215
+            "line": 271
           }
         ]
       },
@@ -1134,31 +1134,48 @@
       "bugs": [
         "BUG-02"
       ],
-      "level": "not_started",
-      "proof": null,
+      "level": "model_proved",
+      "proof": {
+        "file": "verus-proofs/c04_pdk_length_invariant.rs",
+        "state": "current"
+      },
       "card": {
-        "area": "The materials structures (encryption and decryption materials) and the keyrings that add a plaintext data key to them.",
-        "risk": "A data key of the wrong length could be accepted. This was BUG-02, now fixed. The targets doc cites no threat for this target.",
-        "checks_label": "What a proof would check",
-        "checks": "That any materials value that exists and holds a plaintext data key has the length the algorithm suite requires, because every constructor and every method that adds a key checks it. The docs expect this to pass.",
-        "not_shown": "No proof exists yet, so nothing here is machine-checked. The docs describe the value as regression-proofing a rule the ESDK relies on. They list no further limits.",
-        "result": "No proof exists yet, so there is no result.",
-        "notes": [],
+        "area": "The materials structures (encryption and decryption materials) and every code path that puts a plaintext data key into them. A plaintext data key is the unencrypted key that protects the message.",
+        "risk": "A data key of the wrong length could be accepted. This was BUG-02, now fixed on main. The targets doc cites no threat for this target. The nearest threats are TM-MPL-006 and TM-MPL-023.",
+        "checks_label": "What the proof checks",
+        "checks": "That the length check accepts exactly the key length of the suite. That the four places that accept a data key (add a key to encryption materials, add one to decryption materials, and the two build calls) store it only when it passes. That both random key generators make a key of the suite's length. That after build and any sequence of the eight modeled paths in any order, every materials value that holds a key holds one of the suite's length. That the key length times 8 equals the key size column of the spec. That a right-length key is accepted, and a key one byte too short or too long, or an empty key, is rejected for every suite. The docs expected this to pass after the BUG-02 fix, and it does. No check was written to fail.",
+        "not_shown": "It does not show that the shipped code has these properties. It does not show that the list of paths is complete. That comes from reading and searching the code, and a new constructor or setter in mpl/src would break it. It does not show that the key is random, secret, wiped or the right bytes. The suite table is a copy of a copy, typed in by hand. The ESDK code that checks the length again (esdk/src/key_derivation.rs) is not modeled. The model does not contain the code from before the fix, so it does not re-prove that BUG-02 caused the old failure. It does not show that any threat is handled.",
+        "result": "Verus reports 24 passing checks and 0 failing checks on a model of this code, not on the shipped code; no gap was found, and the list of code paths rests on code reading.",
+        "notes": [
+          "Observation, not a defect: the PlaintextDataKey type itself enforces no length, because its constructors are public. The rule rests on the four checks and on the materials fields being private.",
+          "Observation: in raw AES decrypt, the length test at raw_aes_keyring.rs:489 is redundant for the rule. It changes behavior, because a wrong length skips to the next key instead of ending the call with an error.",
+          "Code reading, not proved: in the hierarchical keyring's decrypt, a wrong-length key from unwrap ends the call with an error and later encrypted data keys are not tried. It fails closed."
+        ],
         "expected_failure_explanation": "",
         "sources": [
           {
             "doc": "docs/mpl-verification-targets/02-capability-driven.md",
             "locator": "id: VR-2026-C04",
-            "line": 362
+            "line": 383
+          },
+          {
+            "doc": "verus-proofs/README.md",
+            "locator": "## C04: plaintext data key length invariant",
+            "line": 461
+          },
+          {
+            "doc": "docs/mpl-verification-targets.md",
+            "locator": "**C04: no gap found at model level.**",
+            "line": 218
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 215
+            "line": 271
           }
         ]
       },
-      "docs_proof_status": "None yet"
+      "docs_proof_status": "Proved (model level, not the shipped code, under stated hypotheses): 24 verified, 0 errors"
     },
     {
       "id": "T09",
@@ -1193,12 +1210,12 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T09",
-            "line": 962
+            "line": 968
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 215
+            "line": 271
           }
         ]
       },
@@ -1215,35 +1232,51 @@
       "effort": "1 day",
       "agent": "mpl-verus-header-parsing-proofs",
       "technical_name": "suite table",
-      "title": "The algorithm suite table matches the spec",
+      "title": "A hand-typed copy of the algorithm suite table agrees with a hand-typed copy of the spec table",
       "threats": [],
       "threats_note": "none cited in the targets docs",
       "bugs": [],
-      "level": "not_started",
-      "proof": null,
+      "level": "model_proved",
+      "proof": {
+        "file": "verus-proofs/c05_algorithm_suite_table.rs",
+        "state": "current"
+      },
       "card": {
-        "area": "The table of the 11 algorithm suites and the constants that depend on it, such as key lengths and signature sizes.",
-        "risk": "A wrong or duplicated entry in the table would give a suite the wrong parameters or confuse two suites. The targets doc cites no threat for this target and calls it cheap regression-proofing.",
-        "checks_label": "What a proof would check",
-        "checks": "That for all 11 suites the code equals the spec row. That suite ids are unique and never 00 00. That key lengths are 16, 24 or 32 bytes and equal the AES key length. That the key-derivation flag, the message format version and the suite data length agree. That verification key lengths equal the primitives' field sizes.",
-        "not_shown": "No proof exists yet, so nothing here is machine-checked. The docs list no further limits for this target.",
-        "result": "No proof exists yet, so there is no result.",
-        "notes": [],
+        "area": "The table of the 11 algorithm suites that the ESDK uses (EsdkAlgorithmSuiteId::specification()) and the constants that depend on it, such as key lengths and verification key sizes.",
+        "risk": "A wrong or duplicated entry in the table would give a suite the wrong parameters or make two suites look the same. The targets doc cites no threat for this target.",
+        "checks_label": "What the proof checks",
+        "checks": "This is a consistency check of the suite table against the spec text. It is not a deep property. That the model of the table equals the spec row for each of the 11 suites, field by field. That suite ids are unique, never 00 00, and differ from the 7 ids of other spec suites. That the list of all suites has each suite once, and that looking up an id gives back its suite. That key commitment (a feature that ties a message to one key), message format version 2 and a suite data length of 32 bytes occur together and only together. That no suite signs with a shared secret key. That key lengths (16, 24 or 32 bytes) agree with the sizes in the primitives. That the public key sizes for signatures (33 or 49 bytes) equal the sizes in the primitives. No check was written to fail, because no gap was found.",
+        "not_shown": "It does not show that the shipped code has these properties. It does not show that the spec is right. Both tables are typed in by hand. If the same mistake is typed into both copies, Verus cannot see it. A script compares the copies with the sources, but a script is not a proof. Suites of two other products, S3EC and DBE, are not modeled. Only their ids are, to check that no id repeats. How callers use the table is not covered. The 22 existing tests already cover the same finite domain, so the added value is low.",
+        "result": "Verus reports 22 passing checks and 0 failing checks on a model of this code, not on the shipped code; it is a consistency check of two hand-typed tables, the code table against the spec text, and finds no mismatch.",
+        "notes": [
+          "Observation, not a gap: a doc comment on id_bytes says ids are unique across every suite format, but the code has only the ESDK format. Uniqueness across formats is shown only against the spec ids.",
+          "Observation: the header of the spec file says version 0.4.0, but its change log lists 0.5.0. This is a nit in the spec document and does not affect the proof."
+        ],
         "expected_failure_explanation": "",
         "sources": [
           {
             "doc": "docs/mpl-verification-targets/02-capability-driven.md",
             "locator": "id: VR-2026-C05",
-            "line": 417
+            "line": 440
+          },
+          {
+            "doc": "verus-proofs/README.md",
+            "locator": "## C05: algorithm suite table",
+            "line": 352
+          },
+          {
+            "doc": "docs/mpl-verification-targets.md",
+            "locator": "**C05: no gap found at model level",
+            "line": 204
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 215
+            "line": 271
           }
         ]
       },
-      "docs_proof_status": "None yet"
+      "docs_proof_status": "Proved (model level, not the shipped code, under stated hypotheses): 22 verified, 0 errors"
     },
     {
       "id": "T16",
@@ -1279,12 +1312,12 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T16",
-            "line": 1018
+            "line": 1024
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 215
+            "line": 271
           }
         ]
       },
@@ -1324,12 +1357,12 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T21",
-            "line": 1071
+            "line": 1077
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 215
+            "line": 271
           }
         ]
       },
@@ -1370,7 +1403,7 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T15",
-            "line": 1166
+            "line": 1172
           },
           {
             "doc": "docs/mpl-bug-reports/BUG-03-encryption-context-deserialize-accepts-unsorted.md",
@@ -1380,7 +1413,7 @@
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 215
+            "line": 271
           }
         ]
       },
@@ -1420,12 +1453,12 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T17",
-            "line": 1209
+            "line": 1215
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 215
+            "line": 271
           }
         ]
       },
@@ -1463,12 +1496,12 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T18",
-            "line": 1253
+            "line": 1259
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 215
+            "line": 271
           }
         ]
       },
@@ -1508,12 +1541,12 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T19",
-            "line": 1294
+            "line": 1300
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 215
+            "line": 271
           }
         ]
       },
@@ -1553,12 +1586,12 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T20",
-            "line": 1334
+            "line": 1340
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 215
+            "line": 271
           }
         ]
       },
@@ -1596,12 +1629,12 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T22",
-            "line": 1373
+            "line": 1379
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 215
+            "line": 271
           }
         ]
       },
@@ -1639,12 +1672,12 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T25",
-            "line": 1421
+            "line": 1427
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 215
+            "line": 271
           }
         ]
       },
@@ -1682,12 +1715,12 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T23",
-            "line": 1498
+            "line": 1504
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 215
+            "line": 271
           }
         ]
       },
@@ -1704,37 +1737,53 @@
       "effort": "1 day",
       "agent": "mpl-verus-header-parsing-proofs",
       "technical_name": "RawAesKeyringBuilder::build (:350, check :360)",
-      "title": "Raw AES keyrings cannot use the reserved aws-kms name",
+      "title": "Raw AES keyrings cannot be built with the reserved aws-kms name",
       "threats": [
         "TM-MPL-001"
       ],
       "threats_note": "",
       "bugs": [],
-      "level": "not_started",
-      "proof": null,
+      "level": "model_proved",
+      "proof": {
+        "file": "verus-proofs/t24_raw_aes_namespace.rs",
+        "state": "current"
+      },
       "card": {
-        "area": "The builder of the raw AES keyring, which takes a key namespace chosen by the user.",
-        "risk": "A raw AES keyring could write encrypted data keys that claim to come from an AWS KMS keyring. This is threat TM-MPL-001.",
-        "checks_label": "What a proof would check",
-        "checks": "That build fails for every namespace that starts with 'aws-kms', so no built keyring and no encrypted data key it writes has such a provider id.",
-        "not_shown": "No proof exists yet, so nothing here is machine-checked. The docs call this target trivial and well tested. They keep it so that the threat has a proof-grade closure, and they list no further limits.",
-        "result": "No proof exists yet, so there is no result.",
-        "notes": [],
+        "area": "The builder of the raw AES keyring (RawAesKeyringBuilder::build). The user chooses a key namespace. The keyring writes it into every encrypted data key as the provider id.",
+        "risk": "A raw AES keyring could write encrypted data keys whose provider id looks like one from an AWS KMS keyring. This is threat TM-MPL-001.",
+        "checks_label": "What the proof checks",
+        "checks": "That build fails for every namespace, as any sequence of bytes, that starts with the seven bytes of 'aws-kms'. That build succeeds only when the four required fields are set, the namespace is not reserved and the key length fits the algorithm. That the provider id of every encrypted data key the keyring writes has no 'aws-kms' prefix. That holds because the id is the namespace (code-reading hypothesis H_EDK_ID). That a built keyring never tries to decrypt a key with such a provider id (code-reading hypothesis H_DECRYPT_FILTER). It also lists what the check accepts: case variants such as AWS-KMS, padded names, look-alike characters and the empty name. No check was written to fail, because no gap was found.",
+        "not_shown": "It does not show that the shipped code has these properties. It does not show that TM-MPL-001 is handled. Only one check, in one constructor, of one keyring type is modeled. Keyring types written by callers and encrypted data keys built by hand are not covered. The check is a byte test that does not ignore case. A consumer outside this repository that compared names without regard to case is a documented exclusion of TM-MPL-001, and this proof does not close it. Key validity beyond its length, the AES-GCM wrap and decryption are not covered. Whether accepting the empty namespace is fine is outside this target.",
+        "result": "Verus reports 19 passing checks and 0 failing checks on a model of this code, not on the shipped code; it shows the reserved-name check for all byte strings and finds no gap, but it does not show that TM-MPL-001 is handled.",
+        "notes": [
+          "Observation, not a gap: the check accepts AWS-KMS, Aws-Kms, aws_kms, xaws-kms, aws-km, a name with a leading space, look-alike characters and the empty string. Both spec sentences name only the lowercase string and ask for no case folding. In this repository the provider ids are compared exactly (code reading).",
+          "No gap against the spec: one spec sentence is a prefix rule and the other is an equality rule. The check is not narrower than either, and it is stricter than the equality rule."
+        ],
         "expected_failure_explanation": "",
         "sources": [
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T24",
-            "line": 1535
+            "line": 1541
+          },
+          {
+            "doc": "verus-proofs/README.md",
+            "locator": "## T24: reserved `aws-kms` namespace",
+            "line": 388
+          },
+          {
+            "doc": "docs/mpl-verification-targets.md",
+            "locator": "**T24: no gap found at model level.**",
+            "line": 208
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 215
+            "line": 271
           }
         ]
       },
-      "docs_proof_status": "None yet"
+      "docs_proof_status": "Proved (model level, not the shipped code, under stated hypotheses): 19 verified, 0 errors"
     },
     {
       "id": "C08",
@@ -1751,31 +1800,48 @@
       "threats": [],
       "threats_note": "none cited in the targets docs",
       "bugs": [],
-      "level": "not_started",
-      "proof": null,
+      "level": "model_proved",
+      "proof": {
+        "file": "verus-proofs/c08_cache_usage_counters.rs",
+        "state": "current"
+      },
       "card": {
-        "area": "The cache entry's usage counters (CacheEntry::record_use) and the cache's update_usage_metadata call.",
-        "risk": "A counter that wrapped would let a caching materials manager exceed its usage limits. No component in the repository calls this today, so the risk is for a future caching manager. The targets doc cites no threat for this target.",
-        "checks_label": "What a proof would check",
-        "checks": "That record_use either returns true and adds exactly 1 message and the given bytes, or returns false and leaves both counters unchanged. That neither counter wraps. That both change under one lock. That update_usage_metadata deletes the entry exactly when record_use returns false.",
-        "not_shown": "No proof exists yet, so nothing here is machine-checked. The docs give this a low priority because nothing in the repository calls update_usage_metadata, and they list no further limits.",
-        "result": "No proof exists yet, so there is no result.",
-        "notes": [],
+        "area": "The two usage counters of a cache entry, messages used and bytes used (CacheEntry::record_use), and the cache call that updates them (update_usage_metadata). Both counters are 64-bit numbers.",
+        "risk": "A counter that wrapped could let a future caching materials manager exceed its usage limits. No code in the repository calls update_usage_metadata today, so the risk is for a future caller. Reaching 2^64 messages or bytes is beyond any real workload. The targets doc cites no threat for this target.",
+        "checks_label": "What the proof checks",
+        "checks": "That for every start value and every byte count, record_use succeeds exactly when neither 'messages plus 1' nor 'bytes plus the byte count' is above the 64-bit maximum. That on success both counters hold the exact sums, and on failure both are unchanged. That update_usage_metadata removes the entry exactly when record_use fails. That for any sequence of calls, the entry survives exactly when the exact totals still fit. That a poisoned cache lock gives an internal error and changes nothing. No check was written to fail, because no gap was found.",
+        "not_shown": "It does not show that the shipped code has these properties. The statements about each identifier hold only if no cache entry handle is stored under two identifiers (A_NO_ALIAS). The code does not enforce that, because put_cache_entry takes a handle that can be cloned. They also assume that every counter change goes through update_usage_metadata and that nothing replaces the entry. Calls are modeled one at a time, so threads are not covered. The no-wrap part rests on the documented behavior of Rust's checked_add, so the argument for that part is short. Cache order, capacity, time limits and any usage limit policy are not covered. No threat is cited, so no threat status changes.",
+        "result": "Verus reports 20 passing checks and 0 failing checks on a model of this code, not on the shipped code; no gap was found, the per-identifier parts assume no shared counters, and the no-wrap part rests on Rust's checked_add contract.",
+        "notes": [
+          "Observation, not a gap: a handle taken before an eviction still accepts record_use afterward. After a failed call the counters are unchanged, so a later call with fewer bytes can succeed. The counters stay exact. Whether this matters depends on a future caching manager.",
+          "Observation, not a wrap: one handle can be stored under two identifiers, and then a call for one identifier changes the counters seen under the other. Even then, each call still cannot wrap, changes both counters or neither, and removes the addressed entry on failure.",
+          "Spec note: the only spec text on usage metadata says updating it SHOULD be atomic. The spec has no overflow rule. The targets YAML cites a spec anchor that does not exist in the spec checkout."
+        ],
         "expected_failure_explanation": "",
         "sources": [
           {
             "doc": "docs/mpl-verification-targets/02-capability-driven.md",
             "locator": "id: VR-2026-C08",
-            "line": 457
+            "line": 482
+          },
+          {
+            "doc": "verus-proofs/README.md",
+            "locator": "## C08: cache usage counters",
+            "line": 425
+          },
+          {
+            "doc": "docs/mpl-verification-targets.md",
+            "locator": "**C08: no gap found at model level.**",
+            "line": 212
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 215
+            "line": 271
           }
         ]
       },
-      "docs_proof_status": "None yet"
+      "docs_proof_status": "Proved (model level, not the shipped code, under stated hypotheses): 20 verified, 0 errors"
     }
   ],
   "proofs": [
@@ -1785,7 +1851,7 @@
       "state": "current",
       "file_sha256_now": "824216521e4359431dbd44088b1a940ec84978796717c7edc6e2f34e235184f1",
       "file_sha256_at_run": "824216521e4359431dbd44088b1a940ec84978796717c7edc6e2f34e235184f1",
-      "run_at": "2026-11-19T21:23:12Z",
+      "run_at": "2026-11-19T22:40:51Z",
       "verified": 52,
       "errors": 0,
       "exit_code": 0,
@@ -1862,7 +1928,7 @@
       "state": "current",
       "file_sha256_now": "241f1cd133aa408d80214282fd7738447e2ded553bbea53cef9e8108224ba191",
       "file_sha256_at_run": "241f1cd133aa408d80214282fd7738447e2ded553bbea53cef9e8108224ba191",
-      "run_at": "2026-11-19T21:23:13Z",
+      "run_at": "2026-11-19T22:40:52Z",
       "verified": 21,
       "errors": 1,
       "exit_code": 1,
@@ -1896,7 +1962,7 @@
       "state": "current",
       "file_sha256_now": "d266597083141d47ebcdb19bd9a0798cdadac455ce99969391039ef0e7665c94",
       "file_sha256_at_run": "d266597083141d47ebcdb19bd9a0798cdadac455ce99969391039ef0e7665c94",
-      "run_at": "2026-11-19T21:23:10Z",
+      "run_at": "2026-11-19T22:40:48Z",
       "verified": 40,
       "errors": 0,
       "exit_code": 0,
@@ -1943,7 +2009,7 @@
       "state": "current",
       "file_sha256_now": "1cee411299d29a1ec729745da81c83ca002fbc01052ec0def1707ce12464e820",
       "file_sha256_at_run": "1cee411299d29a1ec729745da81c83ca002fbc01052ec0def1707ce12464e820",
-      "run_at": "2026-11-19T21:23:11Z",
+      "run_at": "2026-11-19T22:40:48Z",
       "verified": 21,
       "errors": 0,
       "exit_code": 0,
@@ -1985,7 +2051,7 @@
       "state": "current",
       "file_sha256_now": "7508a1090fe6902a9eca7bcf19c754a3a0228acf1a7190c753090899c6f15795",
       "file_sha256_at_run": "7508a1090fe6902a9eca7bcf19c754a3a0228acf1a7190c753090899c6f15795",
-      "run_at": "2026-11-19T21:23:14Z",
+      "run_at": "2026-11-19T22:40:53Z",
       "verified": 39,
       "errors": 0,
       "exit_code": 0,
@@ -2032,7 +2098,7 @@
       "state": "current",
       "file_sha256_now": "9bef3d8ae2d91bd358557c170d1c11dd8a2725468235469e860ebe864fa2c0ab",
       "file_sha256_at_run": "9bef3d8ae2d91bd358557c170d1c11dd8a2725468235469e860ebe864fa2c0ab",
-      "run_at": "2026-11-19T21:23:15Z",
+      "run_at": "2026-11-19T22:40:54Z",
       "verified": 45,
       "errors": 0,
       "exit_code": 0,
@@ -2119,7 +2185,7 @@
       "state": "current",
       "file_sha256_now": "ee93828c47731a2c2bef1c020a53cb9e089f2c8cdde86d97cd541ab534d36261",
       "file_sha256_at_run": "ee93828c47731a2c2bef1c020a53cb9e089f2c8cdde86d97cd541ab534d36261",
-      "run_at": "2026-11-19T21:23:18Z",
+      "run_at": "2026-11-19T22:40:57Z",
       "verified": 42,
       "errors": 1,
       "exit_code": 1,
@@ -2183,7 +2249,7 @@
       "state": "current",
       "file_sha256_now": "986744de667b3fc939bc39285818fb82411a9b9cc04a876a1f5b7d1493b55cc0",
       "file_sha256_at_run": "986744de667b3fc939bc39285818fb82411a9b9cc04a876a1f5b7d1493b55cc0",
-      "run_at": "2026-11-19T21:23:16Z",
+      "run_at": "2026-11-19T22:40:55Z",
       "verified": 33,
       "errors": 0,
       "exit_code": 0,
@@ -2230,7 +2296,7 @@
       "state": "current",
       "file_sha256_now": "a21ec7e219eed1be289851a0ec71b9ce5367b7fa2a3c01e2f7401e3255ff16b6",
       "file_sha256_at_run": "a21ec7e219eed1be289851a0ec71b9ce5367b7fa2a3c01e2f7401e3255ff16b6",
-      "run_at": "2026-11-19T21:23:16Z",
+      "run_at": "2026-11-19T22:40:55Z",
       "verified": 28,
       "errors": 4,
       "exit_code": 1,
@@ -2337,6 +2403,414 @@
           "text": "In production the clock is SystemTime::now. The override is for tests."
         }
       ]
+    },
+    {
+      "target": "C04",
+      "file": "verus-proofs/c04_pdk_length_invariant.rs",
+      "state": "current",
+      "file_sha256_now": "f21902c0dac5cf7b4eff00a30b9059e0ea093853a767343183624b16101d546f",
+      "file_sha256_at_run": "f21902c0dac5cf7b4eff00a30b9059e0ea093853a767343183624b16101d546f",
+      "run_at": "2026-11-19T22:40:49Z",
+      "verified": 24,
+      "errors": 0,
+      "exit_code": 0,
+      "verus_output_line": "verification results:: 24 verified, 0 errors",
+      "failing_obligations": [],
+      "expected_failures": [],
+      "unexpected_failures": [],
+      "expected_failures_not_seen": [],
+      "docs_result_line": "verification results:: 24 verified, 0 errors",
+      "docs_match_run": true,
+      "level": "model_proved",
+      "failure_explanation": "",
+      "hypotheses": [
+        {
+          "name": "A_TABLE_COPY",
+          "kind": "assumed",
+          "text": "The suite table is a copy of the C05 copy of the code table, typed in by hand. Only the key length is used. A script compares it with the source."
+        },
+        {
+          "name": "A_SPEC_COLS_COPY",
+          "kind": "assumed",
+          "text": "Two columns of the spec (key length and key-derivation input length) were typed in by hand. A script compares them with the spec file."
+        },
+        {
+          "name": "A_FIT",
+          "kind": "assumed",
+          "text": "The spec says the data key must 'fit' the key derivation or the encryption algorithm. The proof reads this as 'has the suite's key length'. This is an interpretation."
+        },
+        {
+          "name": "A_OTHER_OK",
+          "kind": "assumed",
+          "text": "The other checks in build are replaced by one yes-or-no value. This is sound only if none of them can turn an error into success or change the stored key."
+        },
+        {
+          "name": "A_ERR",
+          "kind": "assumed",
+          "text": "Error kinds are not modeled. Only success against failure is claimed."
+        },
+        {
+          "name": "A_LEN",
+          "kind": "assumed",
+          "text": "A key length is any usize. The model allows more lengths than the code can produce."
+        },
+        {
+          "name": "A_RNG_FAIL",
+          "kind": "assumed",
+          "text": "The key generators are modeled for success only. On failure the code returns an error before it builds a key."
+        },
+        {
+          "name": "A_VSTD",
+          "kind": "assumed",
+          "text": "Verus's standard-library specs for vectors, slices and arrays are correct."
+        },
+        {
+          "name": "H_MODEL_MATCH",
+          "kind": "code_reading",
+          "text": "The model equals the shipped code at the lines named in the proof file header. A person checked this by reading."
+        },
+        {
+          "name": "H_CLOSED",
+          "kind": "code_reading",
+          "text": "The only writes to a materials value's data key are in the two add-key methods and the two builds. The fields are private, the structs are non-exhaustive, there is no mutable method and there is no unsafe code in mpl/src. A new constructor or method would break this."
+        },
+        {
+          "name": "H_NO_MUT",
+          "kind": "code_reading",
+          "text": "A holder of the materials cannot change the length of the key inside them."
+        },
+        {
+          "name": "H_SUITE_FIXED",
+          "kind": "code_reading",
+          "text": "Nothing changes the suite of a materials value after build."
+        },
+        {
+          "name": "H_BUILD_SAME_SUITE",
+          "kind": "code_reading",
+          "text": "In both builds, the suite that is checked is the suite that is stored."
+        },
+        {
+          "name": "H_BUILD_OTHER",
+          "kind": "code_reading",
+          "text": "The checks after the key check in build only return errors. The built value copies the key unchanged."
+        },
+        {
+          "name": "H_ENC_DEC_SAME",
+          "kind": "code_reading",
+          "text": "For this property, encryption and decryption materials differ only in fields the model ignores. The model lets one sequence mix both, which allows more than the real code does."
+        },
+        {
+          "name": "H_GEN_SUITE",
+          "kind": "code_reading",
+          "text": "Both keyrings generate a key with the suite of the materials that then receive it."
+        },
+        {
+          "name": "H_FILL_SLICE",
+          "kind": "code_reading",
+          "text": "The random-bytes function fills a slice, and a slice cannot change length. The random values are not modeled."
+        },
+        {
+          "name": "H_VEC_LEN",
+          "kind": "code_reading",
+          "text": "vec![0u8; n] has length n. Verus checks this through vstd."
+        },
+        {
+          "name": "H_RAW_DEC_LOOP",
+          "kind": "code_reading",
+          "text": "In raw AES decrypt, the materials change only at the final add-key call. A key that fails an earlier check is skipped."
+        },
+        {
+          "name": "H_HIER_DEC_LOOP",
+          "kind": "code_reading",
+          "text": "In hierarchical decrypt, the first successfully unwrapped key is passed to add-key and the call returns. The model takes its length as arbitrary."
+        },
+        {
+          "name": "H_NO_OTHER_PRODUCER",
+          "kind": "code_reading",
+          "text": "No other file in mpl/src creates a plaintext data key, and esdk/src has none."
+        },
+        {
+          "name": "H_TABLE_ONLY",
+          "kind": "code_reading",
+          "text": "Every suite value in the program comes from the table, because the struct has private fields and is built only there. A new constructor elsewhere would break this."
+        }
+      ]
+    },
+    {
+      "target": "C05",
+      "file": "verus-proofs/c05_algorithm_suite_table.rs",
+      "state": "current",
+      "file_sha256_now": "f4ac8ddd77869ef116bfcc2c9c747463416f845aea39b6b2ae434a6c844aaa9f",
+      "file_sha256_at_run": "f4ac8ddd77869ef116bfcc2c9c747463416f845aea39b6b2ae434a6c844aaa9f",
+      "run_at": "2026-11-19T22:40:49Z",
+      "verified": 22,
+      "errors": 0,
+      "exit_code": 0,
+      "verus_output_line": "verification results:: 22 verified, 0 errors",
+      "failing_obligations": [],
+      "expected_failures": [],
+      "unexpected_failures": [],
+      "expected_failures_not_seen": [],
+      "docs_result_line": "verification results:: 22 verified, 0 errors",
+      "docs_match_run": true,
+      "level": "model_proved",
+      "failure_explanation": "",
+      "hypotheses": [
+        {
+          "name": "A_SPEC_COPY",
+          "kind": "assumed",
+          "text": "The spec table rows (11 ESDK suites and 7 other ids) were typed in by hand from the spec. A script compares them with the spec file. Verus does not."
+        },
+        {
+          "name": "A_CODE_COPY",
+          "kind": "assumed",
+          "text": "The code table rows, the order of the list of suites and two key-size constants were typed in by hand from algorithm_suite.rs. A script compares them with the code. Verus does not see the Rust file."
+        },
+        {
+          "name": "A_PRIM_COPY",
+          "kind": "assumed",
+          "text": "The key lengths and signature field sizes of the primitives were typed in by hand from the prim crate, with two small lookup functions."
+        },
+        {
+          "name": "A_FMT",
+          "kind": "assumed",
+          "text": "The spec versions '1.0' and '2.0' correspond to the code values 1 and 2."
+        },
+        {
+          "name": "A_NA",
+          "kind": "assumed",
+          "text": "The spec value 'N/A' for the suite data length corresponds to 0 in the code."
+        },
+        {
+          "name": "A_INT",
+          "kind": "assumed",
+          "text": "All values are at most 49, so no arithmetic in the model overflows."
+        },
+        {
+          "name": "A_FIND",
+          "kind": "assumed",
+          "text": "Looking up a suite by id returns the first match in list order. This is standard Rust behavior that vstd does not specify."
+        },
+        {
+          "name": "A_VSTD",
+          "kind": "assumed",
+          "text": "Verus's standard-library specs for vectors, slices and arrays are correct."
+        },
+        {
+          "name": "H_MODEL_MATCH",
+          "kind": "code_reading",
+          "text": "The model equals the shipped code at the lines named in the proof file header. A person checked this by reading."
+        },
+        {
+          "name": "H_TABLE_ONLY",
+          "kind": "code_reading",
+          "text": "Every suite value in the program comes from the table, because the struct has private fields and is built only there. A new constructor elsewhere would break this."
+        },
+        {
+          "name": "H_ONLY_ESDK",
+          "kind": "code_reading",
+          "text": "Only the ESDK suites exist in the code. The spec also lists suites for two other products, S3EC and DBE. The code does not implement them."
+        },
+        {
+          "name": "H_ALL",
+          "kind": "code_reading",
+          "text": "The list of all suites has the 11 suites in the order modeled. A missing suite would be a compile error."
+        },
+        {
+          "name": "H_FROM_ID",
+          "kind": "code_reading",
+          "text": "Looking up a suite by id is a plain search of that list, with no other path."
+        },
+        {
+          "name": "H_CURVE_MAP",
+          "kind": "code_reading",
+          "text": "The two places that map a signature algorithm to a curve are one-to-one and cover both algorithms."
+        },
+        {
+          "name": "H_AES_MAP",
+          "kind": "code_reading",
+          "text": "One function maps a key length to an AES variant for message bodies. Keyrings do not choose an AES variant from the key length."
+        },
+        {
+          "name": "H_NO_SALT",
+          "kind": "code_reading",
+          "text": "No code reads a salt length from the table, because the table has none."
+        }
+      ]
+    },
+    {
+      "target": "T24",
+      "file": "verus-proofs/t24_raw_aes_namespace.rs",
+      "state": "current",
+      "file_sha256_now": "5079d2fa38e8ea851025fbff988566d00c23dbfa9f9efb4be0352724c2bca585",
+      "file_sha256_at_run": "5079d2fa38e8ea851025fbff988566d00c23dbfa9f9efb4be0352724c2bca585",
+      "run_at": "2026-11-19T22:40:58Z",
+      "verified": 19,
+      "errors": 0,
+      "exit_code": 0,
+      "verus_output_line": "verification results:: 19 verified, 0 errors",
+      "failing_obligations": [],
+      "expected_failures": [],
+      "unexpected_failures": [],
+      "expected_failures_not_seen": [],
+      "docs_result_line": "verification results:: 19 verified, 0 errors",
+      "docs_match_run": true,
+      "level": "model_proved",
+      "failure_explanation": "",
+      "hypotheses": [
+        {
+          "name": "A_BYTES",
+          "kind": "assumed",
+          "text": "A namespace is any sequence of bytes in the model. Every Rust string is one, so the results cover all strings."
+        },
+        {
+          "name": "A_SPEC_IDS",
+          "kind": "assumed",
+          "text": "The four AWS KMS provider ids were typed in by hand from the spec files. Only their first seven bytes matter to any result."
+        },
+        {
+          "name": "A_VSTD",
+          "kind": "assumed",
+          "text": "Verus's standard-library specs for vectors, slices and arrays are correct."
+        },
+        {
+          "name": "H_STD_STARTS",
+          "kind": "code_reading",
+          "text": "Rust's starts_with on strings is a byte-by-byte prefix test. It does not fold case or normalize text. Read in the standard library source."
+        },
+        {
+          "name": "H_CONST",
+          "kind": "code_reading",
+          "text": "The reserved prefix is defined once, has the seven bytes of 'aws-kms' and is used once, in build."
+        },
+        {
+          "name": "H_BUILD_ORDER",
+          "kind": "code_reading",
+          "text": "In build, the four required-field checks come first, then the reserved-name check, then the key length check."
+        },
+        {
+          "name": "H_ONLY_BUILD",
+          "kind": "code_reading",
+          "text": "A keyring is created only inside build, after the check. So every keyring comes from a build that returned Ok."
+        },
+        {
+          "name": "H_NS_UNCHANGED",
+          "kind": "code_reading",
+          "text": "The namespace that is checked is the same value that is stored in the keyring."
+        },
+        {
+          "name": "H_EDK_ID",
+          "kind": "code_reading",
+          "text": "The provider id of every encrypted data key the keyring writes is its namespace."
+        },
+        {
+          "name": "H_DECRYPT_FILTER",
+          "kind": "code_reading",
+          "text": "On decrypt, the keyring tries only encrypted data keys whose provider id equals its own namespace exactly."
+        },
+        {
+          "name": "H_CONSUMERS",
+          "kind": "code_reading",
+          "text": "In this repository the only comparisons of a provider id with a constant are exact and case-sensitive. Consumers outside the repository are not covered."
+        },
+        {
+          "name": "H_MODEL_MATCH",
+          "kind": "code_reading",
+          "text": "The model equals the shipped code at the lines named in the proof file header. A person checked this by reading."
+        }
+      ]
+    },
+    {
+      "target": "C08",
+      "file": "verus-proofs/c08_cache_usage_counters.rs",
+      "state": "current",
+      "file_sha256_now": "898a969dcbd0eb033d17e0c695bf38125d2eeb73d8859724c59a4a2f6bbde2c6",
+      "file_sha256_at_run": "898a969dcbd0eb033d17e0c695bf38125d2eeb73d8859724c59a4a2f6bbde2c6",
+      "run_at": "2026-11-19T22:40:50Z",
+      "verified": 20,
+      "errors": 0,
+      "exit_code": 0,
+      "verus_output_line": "verification results:: 20 verified, 0 errors",
+      "failing_obligations": [],
+      "expected_failures": [],
+      "unexpected_failures": [],
+      "expected_failures_not_seen": [],
+      "docs_result_line": "verification results:: 20 verified, 0 errors",
+      "docs_match_run": true,
+      "level": "model_proved",
+      "failure_explanation": "",
+      "hypotheses": [
+        {
+          "name": "A_VSTD",
+          "kind": "assumed",
+          "text": "Verus's standard-library specs for vectors, slices and arrays are correct."
+        },
+        {
+          "name": "A_LOCK_EXCL",
+          "kind": "assumed",
+          "text": "A held lock gives exclusive access. The model runs calls one at a time, each as one step. Real threads are covered only as some serial order."
+        },
+        {
+          "name": "A_NO_ALIAS",
+          "kind": "assumed",
+          "text": "No cache entry handle is stored under two identifiers, so each identifier has its own counters. The code does not enforce this."
+        },
+        {
+          "name": "A_ALL_CALLS",
+          "kind": "assumed",
+          "text": "Every change to a counter goes through update_usage_metadata for the identifier that holds it. record_use is public, so this is a premise about callers."
+        },
+        {
+          "name": "A_NO_PUT",
+          "kind": "assumed",
+          "text": "During the call sequence nothing replaces or deletes the entry by another route."
+        },
+        {
+          "name": "H_STD_CHECKED_ADD",
+          "kind": "code_reading",
+          "text": "The 64-bit checked_add returns nothing exactly when the true sum is above the maximum. This is the documented standard library contract. Verus's own spec for it was also cross-checked with a hand-written comparison."
+        },
+        {
+          "name": "H_ONLY_SITES",
+          "kind": "code_reading",
+          "text": "The only arithmetic on the two counters is the two checked_add calls in record_use. The fields are private."
+        },
+        {
+          "name": "H_NO_PANIC_IN_GUARD",
+          "kind": "code_reading",
+          "text": "Nothing between taking the entry lock and returning in record_use can panic, so the two stores are not interrupted."
+        },
+        {
+          "name": "H_STORE_FLOW",
+          "kind": "code_reading",
+          "text": "update_usage_metadata locks the store once, then does a peek, record_use and at most one removal under that lock. A poisoned lock returns an error before any change."
+        },
+        {
+          "name": "H_LRU_OPS",
+          "kind": "code_reading",
+          "text": "In the lru crate, peek changes nothing and pop removes exactly the key asked for."
+        },
+        {
+          "name": "H_BUILDER_ANY",
+          "kind": "code_reading",
+          "text": "A builder can set the start counters to any pair of 64-bit values, so the proof does not assume they start small."
+        },
+        {
+          "name": "H_DELEGATION",
+          "kind": "code_reading",
+          "text": "The default and storm-tracking caches pass the call through unchanged. A cache written outside this repository is not covered."
+        },
+        {
+          "name": "H_ARC_SHARED",
+          "kind": "code_reading",
+          "text": "A clone of a cache entry shares its counters. This is why A_NO_ALIAS is a separate premise."
+        },
+        {
+          "name": "H_MODEL_MATCH",
+          "kind": "code_reading",
+          "text": "The model equals the shipped code at the lines named in the proof file header. A person checked this by reading."
+        }
+      ]
     }
   ],
   "threats": [
@@ -2358,8 +2832,8 @@
         },
         {
           "id": "T24",
-          "level": "not_started",
-          "state": null
+          "level": "model_proved",
+          "state": "current"
         }
       ],
       "bugs": []
@@ -2946,7 +3420,7 @@
         {
           "doc": "docs/mpl-verification-targets.md",
           "locator": "BUG-01 confirmed formally (T06)",
-          "line": 161
+          "line": 198
         }
       ]
     },
@@ -2971,7 +3445,7 @@
       "proof_relation": {
         "kind": "none",
         "target": "",
-        "text": "Fixed. Target C04 would guard the fix against regression. No proof yet.",
+        "text": "Fixed. The C04 model proof shows that every modeled path that accepts a data key enforces the suite length. Model level only. It does not re-prove that the old code had the bug.",
         "status": ""
       },
       "sources": [
@@ -3113,7 +3587,7 @@
         {
           "doc": "docs/mpl-verification-targets.md",
           "locator": "BUG-06 confirmed formally (T13)",
-          "line": 153
+          "line": 190
         }
       ]
     },
@@ -3153,7 +3627,7 @@
         {
           "doc": "docs/mpl-verification-targets.md",
           "locator": "BUG-07(a), prim side (C03, VR-014; not on this branch)",
-          "line": 169
+          "line": 225
         }
       ]
     },
@@ -3189,7 +3663,7 @@
         {
           "doc": "docs/mpl-verification-targets.md",
           "locator": "**BUG-08 (C01).**",
-          "line": 167
+          "line": 223
         }
       ]
     },
@@ -3381,19 +3855,19 @@
   "sources": [
     {
       "path": "docs/mpl-verification-targets.md",
-      "sha256": "6df15233223fbe16814f2bebc5d73296ec037140b93dcfaf7209d359c33d0f67"
+      "sha256": "9d90f0f4fe28af75c8a70dca7a73191df66863da11b7dcc86b411a2cb5ba6212"
     },
     {
       "path": "docs/mpl-verification-targets/01-threat-driven.md",
-      "sha256": "988da6bb30f1ae83ec3a3925117559033aa3b0e813eae32f55d15cdf4ebf2c54"
+      "sha256": "2195b2ac619f286a4bbe011161331b2b91b36be3b9cd05f1e1ad32cf3e5e5109"
     },
     {
       "path": "docs/mpl-verification-targets/02-capability-driven.md",
-      "sha256": "ae9b6ff8c1895466f6f098f6ad23ce9d9189d1c1ddb0c8431c4d5485557b63e9"
+      "sha256": "0a4dc47a8bf8c8c95fdb686144a5a4f6e42231ce5348d5fb3c3de8a64a90a2cf"
     },
     {
       "path": "docs/mpl-threat-model.md",
-      "sha256": "6e93672062ee518f969ff84566f9496892f024cdcd21c92c1ca509f66fb1593d"
+      "sha256": "ef6a7b3c3897e5881538bce553005e65aa42d98160e0847ea73fc2cdc8b0037d"
     },
     {
       "path": "docs/mpl-bug-reports/README.md",
@@ -3401,7 +3875,7 @@
     },
     {
       "path": "verus-proofs/README.md",
-      "sha256": "8e73486ff555caad9068aa37dd0cc9e55715cc6f8b9bf0e89c4dcfe9889d0c3f"
+      "sha256": "54bac077c0d70c0f5bed10b33fb6c1cc5a162099293f720549a81d0063e9bac9"
     },
     {
       "path": "verus-proofs/README-t03-t05.md",
@@ -3444,8 +3918,24 @@
       "sha256": "a21ec7e219eed1be289851a0ec71b9ce5367b7fa2a3c01e2f7401e3255ff16b6"
     },
     {
+      "path": "verus-proofs/c04_pdk_length_invariant.rs",
+      "sha256": "f21902c0dac5cf7b4eff00a30b9059e0ea093853a767343183624b16101d546f"
+    },
+    {
+      "path": "verus-proofs/c05_algorithm_suite_table.rs",
+      "sha256": "f4ac8ddd77869ef116bfcc2c9c747463416f845aea39b6b2ae434a6c844aaa9f"
+    },
+    {
+      "path": "verus-proofs/t24_raw_aes_namespace.rs",
+      "sha256": "5079d2fa38e8ea851025fbff988566d00c23dbfa9f9efb4be0352724c2bca585"
+    },
+    {
+      "path": "verus-proofs/c08_cache_usage_counters.rs",
+      "sha256": "898a969dcbd0eb033d17e0c695bf38125d2eeb73d8859724c59a4a2f6bbde2c6"
+    },
+    {
       "path": "dashboard/plain-english.json",
-      "sha256": "8831e67d9ea8c1f88bd5315cae246d96cd9e7c97fb094a79f51c9ffc88948065"
+      "sha256": "0e63f1f76854b0492856f1ef6491c3e4c6247a3e7937ea978bf859c3579fc6bf"
     }
   ]
 }

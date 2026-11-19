@@ -8,7 +8,7 @@ Checks:
   1  all 33 active targets are in the JSON, in the HTML table and as HTML cards
   2  score and rank equal the values in docs/mpl-verification-targets.md (independent parse)
   3  no plain-English card field is empty; every card cites sources with line numbers
-  4  the nine proof results equal a fresh Verus run (unless --no-verus)
+  4  the 13 proof results equal a fresh Verus run (unless --no-verus)
   5  the JSON is current: a rebuild gives the same data (commit and timestamp fields excluded)
   6  the generator is deterministic: two runs differ only in the declared timestamp field
   7  the HTML makes no network or external resource references
@@ -128,7 +128,7 @@ def main():
             empty.append((t["id"], "title/sources"))
     check("3 no plain-English card field is empty, every card cites sources with line numbers", not empty, str(empty))
     nopf = [t for t in status["targets"] if t["level"] == "not_started"]
-    check("3 targets with no proof say so plainly", all("No proof exists yet" in t["card"]["result"] for t in nopf) and len(nopf) == 23, "%d targets" % len(nopf))
+    check("3 targets with no proof say so plainly", all("No proof exists yet" in t["card"]["result"] for t in nopf) and len(nopf) == 19, "%d targets" % len(nopf))
     failing_expl = [t["id"] for t in status["targets"] if t["card"]["expected_failure_explanation"]]
     check("3 T02, T06, T13 explain the intentional failures", sorted(failing_expl) == ["T02", "T06", "T13"], str(failing_expl))
 
@@ -150,7 +150,7 @@ def main():
                 print("      %s %s -> %d verified, %d errors" % (p["target"], p["file"], r["verified"], r["errors"]))
                 if got != rec:
                     mism.append((p["target"], got, rec))
-            check("4 nine proof results equal a fresh Verus run", len(status["proofs"]) == 9 and not mism, str(mism))
+            check("4 13 proof results equal a fresh Verus run", len(status["proofs"]) == 13 and not mism, str(mism))
 
     # 5, 6
     with tempfile.TemporaryDirectory() as d1, tempfile.TemporaryDirectory() as d2, tempfile.TemporaryDirectory() as d3:

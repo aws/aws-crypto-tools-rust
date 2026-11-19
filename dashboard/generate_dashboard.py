@@ -1076,8 +1076,8 @@ def render_html(status):
     A('</section>')
 
     # proofs
-    A('<section id="proofs"><h2>Proofs</h2><p>Nine proof files live in <code>verus-proofs/</code>. Each one checks a model. '
-      'The "Verus output line" is the tool\'s own wording, shown as recorded. A result is STALE if the file hash differs from the hash at the run.</p>')
+    A('<section id="proofs"><h2>Proofs</h2><p>%d proof files live in <code>verus-proofs/</code>. Each one checks a model. '
+      'The "Verus output line" is the tool\'s own wording, shown as recorded. A result is STALE if the file hash differs from the hash at the run.</p>' % len(status["proofs"]))
     A('<table><thead><tr><th>Target</th><th>File</th><th>Checks passed / failed</th><th>Verus output line</th><th>Recorded run</th><th>State</th><th>Docs agree</th></tr></thead><tbody>')
     for p in status["proofs"]:
         A('<tr><td><a class="cardlink" href="#card-%s">%s</a></td><td class="mono">%s</td><td>%s / %s%s</td><td class="mono">%s</td><td>%s<br><span class="small mono">sha256 %s</span></td><td>%s</td><td>%s</td></tr>' % (
