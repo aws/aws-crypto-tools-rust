@@ -70,16 +70,19 @@
 
 This document identifies **12 prioritized verification targets** derived from the 31 threats in the
 ESDK threat model (`docs/threat-model.md`). Targets VR-001..VR-011 are threat-derived; VR-012 is a
-capability-driven functional-correctness lemma (category 1c) about the message codec.
+capability-driven functional-correctness lemma (category 1c) about the message codec. VR-013 and
+VR-014 (prim, capability-driven) and VR-015 (threat-driven, R3: final plaintext held until the
+signature verifies) were added later.
 
-**Status at branch `vr001b-vr002-stage2` (VR-001 (b) and VR-002 tokens):**
-- **In-crate (shipped code):** `make -C esdk verus` reports **`73 verified, 0 errors`** (default
-  features and `--no-default-features --features aws-lc-sys`) over 39 exec fns and 6 proof fns in
+**Status at branch `signature-release-gate` (VR-015 signature release gate, on top of the
+VR-001 (b) and VR-002 tokens):**
+- **In-crate (shipped code):** `make -C esdk verus` reports **`77 verified, 0 errors`** (default
+  features and `--no-default-features --features aws-lc-sys`) over 43 exec fns and 6 proof fns in
   `esdk/src/message/`, `esdk/src/key_derivation.rs`, `esdk/src/secret.rs` and
-  `esdk/src/decrypt_gate.rs` (it was 69 before the decrypt tokens, 59 at `4396173f` before VR-012,
-  and 57 before VR-011). These cover the synchronous decision and layout
+  `esdk/src/decrypt_gate.rs` (it was 73 before VR-015, 69 before the decrypt tokens, 59 at
+  `4396173f` before VR-012, and 57 before VR-011). These cover the synchronous decision and layout
   cores of VR-001 (a), VR-003, VR-004, VR-005 and VR-007, the decrypt-order tokens of VR-001 (b)
-  and VR-002, the esdk half of VR-009 (key-derivation
+  and VR-002, the signature release gate of VR-015, the esdk half of VR-009 (key-derivation
   length checks; the prim half is not proven), the secret-type accessors of VR-011, and the
   big-endian codec round-trip of VR-012 (`lemma_u32_round_trip`, `lemma_u64_round_trip` in
   `serialize_functions.rs`). The async readers, loops and orchestration around them are unverified
@@ -100,6 +103,7 @@ capability-driven functional-correctness lemma (category 1c) about the message c
   VR-2026-C03 (`make -C prim verus`: 18 verified, 0 errors on both feature sets; 10 before
   VR-013/014).
 - **Decrypt order, in-crate (branch `vr001b-vr002-stage2`):** VR-001 (b) and VR-002 use two tokens in `esdk/src/decrypt_gate.rs`. Verus proves each token is created only when its check passed (`CommitmentAccepted`: the commitment check passed or the suite does not commit; `HeaderVerified`: the header tag verified, made only from a `CommitmentAccepted`). The compiler enforces the order: only `decrypt_gate` can build a token, and `step_decrypt_body` cannot be called without a `&HeaderVerified`. Trusted: the unverified callers pass the real check results, aws-lc-rs AES-GCM accepts only a valid tag, frames are decrypted only through `step_decrypt_body` (grep-checked), and a token is not tied to one message. The standalone models no longer back these properties.
+- **Signature release gate, in-crate (VR-015, branch `signature-release-gate`, threat R3):** the final plaintext (final frame, the last full frame before an empty final frame, or a non-framed body) is held in a `HeldFinalPlaintext` and can only be written to the caller through `release`, which needs a `SignatureVerified` token. Verus proves the token is created only when `ecdsa_verify_context` returned `true` or there is no verification key (unsigned suite). The compiler enforces the release order (private fields). Trusted: aws-lc-rs signature verification, that the callers pass the real check result and key-present flag, that "no verification key" means "unsigned suite" (runtime check in `decrypt_steps`), and that the final plaintext reaches the caller only through the gated write. Regular non-final frames are still released early, as the spec allows.
 - **VR-001 overall:** the key-commitment *decision* (property a) and *ordering* (property b) are in-crate; constant time (property c) stays trusted (see below).
 
 **Highest-risk findings:**
@@ -1002,6 +1006,48 @@ recommendation:
   scoring: { severity: 2, coverage_gap: 0.7, feasibility: 1.0, blast_radius: 4 }
   quick_win: false
   dependencies: [ "VR-006 in-crate (aes_encrypt_extend_core, aes_decrypt_len_ok)" ]
+recommendation:
+  id: VR-2026-015
+  rank: 15
+  origin: threat-driven
+  status: in_crate   # branch signature-release-gate; SignatureVerified token + HeldFinalPlaintext; mutation-tested
+  target:
+    library: aws-esdk
+    file: esdk/src/decrypt_gate.rs, esdk/src/decrypt.rs
+    function: signature_not_required, signature_gate, hold_final_plaintext, release (decrypt_gate.rs); step_decrypt_body, step_verify_signature, verify_signature, decrypt_steps (decrypt.rs, unverified adapters)
+  property: "Plaintext decrypted from non-framed data or from a final frame is not released to the caller until signature verification succeeds (or the suite is unsigned). Regular non-final frames in streaming mode may be released before the signature, as the spec allows, and are not covered."
+  formal_spec: "write_to_sink(plaintext, final_plaintext) is reachable only with a SignatureVerified t, and t exists only if ecdsa_verify_context returned true (t.signed()) or the materials have no verification key (!t.signed())"
+  approach: |
+    Same token pattern as VR-001 (b) / VR-002. SignatureVerified is zero-sized with a private
+    ghost field; it is created only by signature_not_required(has_verification_key) or
+    signature_gate(valid). step_decrypt_body returns the final plaintext wrapped in
+    HeldFinalPlaintext (private field); release(&held, &SignatureVerified) is the only way to read
+    it. aws-lc-rs signature verification, the footer read and I/O stay in the unverified async
+    adapters. Behavior, errors and their order are unchanged; no public API change.
+  enforcement:
+    verus_proven:   # make -C esdk verus: 77 verified, 0 errors on both feature sets (73 before)
+      - "signature_not_required: (r is Some) <==> !has_verification_key; Some(t) ==> !t.signed()"
+      - "signature_gate: (r is Some) <==> valid; Some(t) ==> t.signed()"
+      - "hold_final_plaintext: r.bytes() == bytes@; release: r@ == held.bytes()"
+      - "mutation-tested: signature_gate returning a token when !valid -> Verus postcondition fails (76 verified, 1 errors)"
+    compiler_enforced:
+      - "only decrypt_gate can build a SignatureVerified or read a HeldFinalPlaintext (private fields); so the final plaintext cannot be written before the signature step returned Ok"
+      - "mutation-tested: writing last_frame.bytes directly -> E0616 (private field); calling release without the token -> E0061"
+    not_verus_proven:
+      - "trusted: aws-lc-rs ecdsa_verify_context returns true only for a valid signature over the digest"
+      - "trusted: the callers pass the real valid value and the real verification-key-present flag"
+      - "trusted: 'no verification key' means 'unsigned suite' (existing runtime InvalidMaterials check in decrypt_steps, unverified async code)"
+      - "trusted: the final plaintext reaches the caller only through the gated write (the body readers return it and never write it to the sink; checked by reading, not by the compiler)"
+      - "a token is not tied to one message; the non-streaming Vec API is protected by Result, not by the token"
+  trace_to_spec: "spec/client-apis/decrypt.md#decrypt-the-message-body: 'Any plaintext decrypted from nonframed data or a final frame in a streamed Decrypt operation MUST NOT be released until signature verification successfully completes.'"
+  tool: Verus
+  agent: verus-header-parsing-proofs
+  estimated_effort: ~1 engineer-day
+  threat_references:
+    - { id: R3, category: Repudiation, description: "Streaming plaintext consumed before signature verified" }
+  coverage_gap: 0.3
+  quick_win: false
+  dependencies: [ "VR-001 (b) / VR-002 tokens in esdk/src/decrypt_gate.rs" ]
 ```
 
 ---
@@ -1092,6 +1138,14 @@ end to end.
   through `step_decrypt_body` (grep-checked), and a token is not tied to one message. The models
   `commitment_ordering_proofs.rs` and `header_auth_ordering_proofs.rs` are superseded and kept as
   history; these properties no longer depend on them.
+- VR-015 (branch `signature-release-gate`, threat R3): the final plaintext is held until the
+  signature verifies, using a `SignatureVerified` token and a `HeldFinalPlaintext` wrapper in
+  `esdk/src/decrypt_gate.rs` (`make -C esdk verus`: 77 verified, 0 errors on both feature sets, 43
+  exec fns and 6 proof fns). Verus proves the token is created only when the signature check
+  returned `true` or there is no verification key. The compiler enforces that the final plaintext
+  can only be written through `release`, which needs the token. Trusted: aws-lc-rs signature
+  verification, the callers pass the real values, "no verification key" means "unsigned suite"
+  (runtime check), and the final plaintext reaches the caller only through the gated write.
 
 **Remaining, in priority order:**
 1. **VR-001 property (c)** — the decision (property a) and the ordering (property b) are in-crate.

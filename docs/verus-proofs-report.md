@@ -198,6 +198,28 @@ make -C verification verify
 > `verification/header_auth_ordering_proofs.rs` are now **superseded**: these
 > two properties no longer depend on them. The model files are kept as
 > history. See "VR-001 (b) and VR-002" under "In-crate proofs".
+>
+> **Update (branch `signature-release-gate`):** VR-015 (the final plaintext is
+> held until the signature verifies, threat R3) is now in-crate, in the same
+> module and with the same token pattern. **77 verified, 0 errors** on both
+> feature sets (up from 73; +4 obligations). `SignatureVerified` is created
+> only by `signature_not_required` (no verification key, so an unsigned suite)
+> or `signature_gate` (which returns a token only when the aws-lc-rs signature
+> check returned `true`). `step_decrypt_body` now returns the final plaintext
+> as a `HeldFinalPlaintext`, whose bytes can only be read through `release`,
+> which takes a `&SignatureVerified`. **Verus-proven:** the token is created
+> only when the signature check returned `true` or there is no verification
+> key, and `release` returns exactly the held bytes. **Compiler-enforced:**
+> only `decrypt_gate` can build a `SignatureVerified` or read a
+> `HeldFinalPlaintext`, so the final plaintext cannot be written to the caller
+> before the signature step passes. **Trusted:** aws-lc-rs
+> `ecdsa_verify_context` returns `true` only for a valid signature; the callers
+> pass the real `valid` value and the real "verification key present" flag;
+> "no verification key" means "unsigned suite" (the existing runtime check in
+> `decrypt_steps`); the final plaintext reaches the caller only through the
+> gated write (the body readers return it instead of writing it themselves).
+> Regular frames before the final one are still released early, as the spec
+> allows. See "VR-015" under "In-crate proofs".
 
 ### Adherence to the Verus skill invariants (esdk)
 - No proof was weakened: **no** `assume(...)`, `admit()`, or `#[verifier::external]` anywhere in esdk. In esdk there is exactly **one** `#[verifier::external_body]` — the `utf8_check` wrapper around `std::str::from_utf8` in the AAD sub-parser — used per Verus skill invariant #11 for a std call Verus cannot evaluate (the same role `tag_ok` plays for the AES-GCM check). Its `ensures` is a **trusted boundary, not a proof**: the UTF-8-validation correctness is delegated to the std library; everything around it (that the parser rejects non-UTF-8 with `Err`, never panics) is proven. This is called out explicitly in §5.
@@ -228,18 +250,20 @@ Output (the `aws-esdk` line; `vstd` is verified first with
 `--no-default-features --features aws-lc-sys`:
 
 ```
-verification results:: 73 verified, 0 errors
-verification results:: 73 verified, 0 errors
+verification results:: 77 verified, 0 errors
+verification results:: 77 verified, 0 errors
 ```
 
 The count is Verus's obligation count, not a function count; the checked
-fns are 39 exec fns (13 before the in-crate work, 22 before VR-009, 24 before
+fns are 43 exec fns (13 before the in-crate work, 22 before VR-009, 24 before
 VR-011, 34 before VR-001, 35 before VR-012, 36 before the VR-001 (b) / VR-002
-tokens) and 6 proof fns (3 before VR-012; the two VR-012 round-trip lemmas bring
+tokens, 39 before VR-015) and 6 proof fns (3 before VR-012; the two VR-012 round-trip lemmas bring
 it to 5, and `lemma_commitment_accepted` to 6). The count rose from 59 to 69 at
 VR-012: the two lemmas plus the staged `by (nonlinear_arith)` sub-obligations in
 the `u64` proof each count. It rose from 69 to 73 with the decrypt tokens: the
-three token-creating fns and the lemma. Files are under `esdk/src/message/`
+three token-creating fns and the lemma. It rose from 73 to 77 with VR-015:
+`signature_not_required`, `signature_gate`, `hold_final_plaintext` and
+`release`. Files are under `esdk/src/message/`
 unless the path starts with `esdk/src/`.
 
 | Fn | File | Ensures | Target |
@@ -270,6 +294,10 @@ unless the path starts with `esdk/src/`.
 | `commitment_gate` | `esdk/src/decrypt_gate.rs` | same `requires` and same three iff conditions as `suite_data_check`; an `Ok` token has `committing()` and records `header@`, `expected@` and `commit_len` | VR-001 (property b) |
 | proof fn `lemma_commitment_accepted`; type invariant `CommitmentAccepted::inv` | `esdk/src/decrypt_gate.rs` | every `CommitmentAccepted` with `committing()` has `header() == expected()` and `commit_len() == expected().len()` | VR-001 (property b) |
 | `header_auth_gate` | `esdk/src/decrypt_gate.rs` | `Ok` iff `open_result` is `Ok`; an `Ok` token holds the given `CommitmentAccepted`; on `Err` returns the same error value | VR-002, VR-001 (property b) |
+| `signature_not_required` | `esdk/src/decrypt_gate.rs` | returns a token iff `!has_verification_key`; that token has `!signed()` | VR-015 |
+| `signature_gate` | `esdk/src/decrypt_gate.rs` | returns a token iff `valid`; that token has `signed()` | VR-015 |
+| `hold_final_plaintext` | `esdk/src/decrypt_gate.rs` | `r.bytes() == bytes@` | VR-015 |
+| `release` | `esdk/src/decrypt_gate.rs` | takes a `&SignatureVerified`; `r@ == held.bytes()` | VR-015 |
 | `next_expected_frame` | `body/body_decrypt.rs` | `Some` iff `seq_num == expected && expected < u32::MAX`; `Some(n) ==> n == expected + 1`; `r == spec_next_expected_frame(seq_num, expected)` | VR-004 |
 | `final_frame_seq_ok` | `body/body_decrypt.rs` | `ok` iff `seq_num == expected` | VR-004 |
 | proof fn `lemma_accepts_run` | `body/body_decrypt.rs` | requires `accepts_run(seqs, expected)`; `seqs[i] == expected + i` for every `i`; `run_end(seqs, expected) == expected + seqs.len()` | VR-004 |
@@ -440,6 +468,81 @@ The standalone models `verification/commitment_ordering_proofs.rs` (VR-001
 (b)) and `verification/header_auth_ordering_proofs.rs` (VR-002) are now
 **superseded**. These two properties no longer depend on them. The files are
 kept as history.
+
+### VR-015 in-crate (`esdk/src/decrypt_gate.rs`)
+
+The property is the spec rule in
+`spec/client-apis/decrypt.md#decrypt-the-message-body`: plaintext decrypted
+from non-framed data or from a final frame must not be released until
+signature verification succeeds (threat-model R3). It now holds for the
+shipped decrypt path, by a Verus proof plus a compiler check.
+
+**Where plaintext reaches the caller.** All of it goes through
+`serialize_functions::write_to_sink` on the caller's sink, in two places:
+
+| Path | Covered by the rule? | Where it is released |
+|---|---|---|
+| Framed, regular (non-final) frames, streaming | No. The spec allows releasing these once their tag verifies. For signed messages `SignedStreaming::RejectMultiFrame` fails instead | `release_previous_frame` in `body_decrypt.rs`, before the signature. Not changed |
+| Framed, final frame with content | Yes | `decrypt_steps`, through `release`, after the signature step |
+| Framed, empty final frame | Yes. The code also holds back the last full frame in this case, which is stricter than the spec asks | `decrypt_steps`, through `release` |
+| Non-framed body | Yes | `decrypt_steps`, through `release` |
+| Non-streaming `decrypt` (buffers into a `Vec`) | Covered by the stronger rule that no output is released before all steps complete | The caller only gets the `Vec` from `Ok(DecryptOutput)`. Protected by `Result`, not by the token |
+
+No path broke the rule before this change. The change turns the three "Yes"
+rows into a compiler-checked guarantee.
+
+**How it works.**
+
+- `SignatureVerified` says the signature verified, or there is no
+  verification key. `step_verify_signature` gets one from
+  `signature_not_required` when there is no key. Otherwise it gets one from
+  `verify_signature`, which calls `signature_gate` with the `bool` returned by
+  `ecdsa_verify_context`. `signature_gate` returns `None` when the check
+  failed, and the caller turns that into the same `Cryptographic`
+  "signature verification failed" error as before.
+- `HeldFinalPlaintext` holds the final plaintext. `step_decrypt_body` returns
+  one (made by `hold_final_plaintext`) instead of a `Vec<u8>`. Its field is
+  private, so the only way to read the bytes is `release`, which takes a
+  `&SignatureVerified`.
+- `decrypt_steps` writes `release(&last_frame, &signature_verified)`.
+
+**Verus-proven:** `signature_not_required` returns a token only when there is
+no verification key, `signature_gate` returns a token only when `valid` is
+`true`, and `release` returns exactly the bytes that were held.
+
+**Compiler-enforced:** no code outside `decrypt_gate` can build a
+`SignatureVerified` or read the bytes of a `HeldFinalPlaintext` (private
+fields). So the final plaintext cannot be written to the caller without a
+token, and a token exists only after the signature step returned `Ok`. This
+does not rely on the async runtime running the awaits in order.
+
+**Trusted, not proven:**
+
+- aws-lc-rs `ecdsa_verify_context` returns `true` only for a valid signature
+  over the digest.
+- The unverified callers pass the real `valid` value and the real
+  "verification key present" flag.
+- "No verification key" means "unsigned suite". This rests on the existing
+  runtime check in `decrypt_steps` (`InvalidMaterials` unless the key is
+  present exactly when the suite has a signature algorithm), which runs in
+  unverified async code.
+- The final plaintext reaches the caller only through the gated write. The
+  body readers return it and never write it to the sink themselves: the
+  non-framed reader has no sink, and the framed reader writes only through
+  `release_previous_frame`. Checked by reading the code; the compiler does not
+  enforce it.
+- A token is not tied to one particular message.
+
+**Mutation tests.** (1) Making `signature_gate` return a token even when
+`valid` is `false`: Verus fails the postcondition (`76 verified, 1 errors`).
+(2) Writing the final plaintext without the token: reading `last_frame.bytes`
+directly is rejected by the compiler (`E0616`, private field), and calling
+`release` without the token is rejected (`E0061`). Both mutations were
+reverted.
+
+Behavior is unchanged: the same checks run in the same order with the same
+error kinds and messages, and regular frames are released as before. No
+public API changed.
 
 ### VR-008 in-crate (`aws-mpl-primitives`, `prim/src/ecdsa.rs`)
 
@@ -879,6 +982,7 @@ independent evidence beyond that.
 | VR-004 frame sequence validation | **in-crate**: regular-frame step (`next_expected_frame`), final-frame check (`final_frame_seq_ok`), sequential-run and start-at-1 lemmas | the async loop that threads `expected_frame` (unverified glue) |
 | VR-005 frame construction/serialization | **in-crate**: body AAD layout (`body_aad_core`), IV (`iv_seq_core`), frame prefix layout (`write_frame_prefix`). **Model only**: the `ct ‖ tag` append (`frame_layout_proofs.rs`) | `aes_encrypt` (FFI) output and the `dyn Sink` / `DigestWriter` release |
 | VR-002 header auth tag ordering | **in-crate** with the `HeaderVerified` token (`esdk/src/decrypt_gate.rs`): Verus proves `header_auth_gate` returns a token only when the header `open` returned `Ok`; the compiler enforces that `step_decrypt_body` cannot run without that token. The model `header_auth_ordering_proofs.rs` is superseded | trusted: that `step_verify_header` passes the real `secret::open` result, that aws-lc-rs AES-GCM accepts only a valid tag, that frames are decrypted only through `step_decrypt_body` (grep-checked), and that a token is not tied to one message |
+| VR-015 final plaintext held until the signature verifies (threat R3) | **in-crate** with the `SignatureVerified` token and `HeldFinalPlaintext` (`esdk/src/decrypt_gate.rs`): Verus proves the token is created only when `ecdsa_verify_context` returned `true` or there is no verification key, and `release` returns exactly the held bytes; the compiler enforces that the final plaintext (final frame, last full frame before an empty final frame, or non-framed body) can only be written through `release`, which needs the token. Regular non-final frames are released early, as the spec allows | trusted: aws-lc-rs signature verification; that the callers pass the real `valid` value and key-present flag; that "no verification key" means "unsigned suite" (runtime check in `decrypt_steps`); that the final plaintext reaches the caller only through the gated write; a token is not tied to one message. The `Vec` API is protected by `Result`, not by the token |
 | VR-006 AES-GCM panic freedom | **in-crate** (`prim/src/lib.rs`, T2): `aes_encrypt_extend_core` proves the encrypt slice (`cipher_text[old_size..]`) is always in bounds and exactly `message.len()` bytes; `aes_decrypt_len_ok` proves the decrypt plaintext-vs-ciphertext length precondition that rejects an under-sized output buffer before the gather | **not** Verus-proven: the AES-GCM key length (16/24/32) and the IV validity — enforced inside `aws-lc-rs` (`UnboundKey::new` / `Nonce::try_assume_unique_for_key` return `Err`), a trusted boundary; and the crypto itself (aws-lc-rs `seal`/`open`, FFI) |
 | VR-008 ECDSA fixed-length signing | **in-crate** (`prim/src/ecdsa.rs`, `sign_fixed_len_core` inside `verus!`): the bounded `MAX_SIGN_ATTEMPTS` retry loop terminates (`decreases MAX_SIGN_ATTEMPTS - attempt`) and the guarded `copy_from_slice` is proven in bounds (tied to `check_sig_len`) | the `aws-lc-rs` signing closure and `Signature` type are the trusted boundary; the thin `sign_fixed_len` adapter builds the `Error`; no crypto property is proven |
 | VR-007 EDK count validation | **in-crate**: count-check logic (`edk_count_check`) | the "before any KMS call" ordering (caller-side in `decrypt.rs`) |

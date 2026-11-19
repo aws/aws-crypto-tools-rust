@@ -5,7 +5,9 @@
 //! obtains decryption materials from a keyring/CMM, derives the data key,
 //! and decrypts the plaintext (handling both framed and nonframed formats).
 
-use crate::decrypt_gate::{self, CommitmentAccepted, HeaderVerified};
+use crate::decrypt_gate::{
+    self, CommitmentAccepted, HeaderVerified, HeldFinalPlaintext, SignatureVerified,
+};
 use crate::error::{Error, Kind, err, val_err};
 use crate::key_derivation;
 use crate::materials;
@@ -320,7 +322,10 @@ async fn decrypt_steps(
     //= spec/client-apis/decrypt.md#behavior
     //= type=implication
     //# - Decrypt operation Step 5 MUST be [Verify the signature](#verify-the-signature)
-    step_verify_signature(ciphertext, &state).await?;
+    //
+    // `step_decrypt_body` returns the final plaintext held back, and only a
+    // `SignatureVerified` token from this step can release it (VR-015).
+    let signature_verified = step_verify_signature(ciphertext, &state).await?;
 
     //= spec/client-apis/decrypt.md#decrypt-the-message-body
     //# Any plaintext decrypted from [nonframed data](../data-format/message-body.md#nonframed-data) or
@@ -329,7 +334,11 @@ async fn decrypt_steps(
 
     //= spec/client-apis/decrypt.md#authenticated-data
     //# This operation MUST NOT release any unauthenticated plaintext or unauthenticated associated data.
-    serialize_functions::write_to_sink(plaintext, &last_frame).await?;
+    serialize_functions::write_to_sink(
+        plaintext,
+        decrypt_gate::release(&last_frame, &signature_verified),
+    )
+    .await?;
 
     //= spec/client-apis/decrypt.md#behavior
     //= type=exception
@@ -624,7 +633,7 @@ async fn step_decrypt_body(
     // Only `decrypt_gate` can create one, so this step cannot run before both
     // checks pass.
     _header_verified: &HeaderVerified,
-) -> Result<Vec<u8>, Error> {
+) -> Result<HeldFinalPlaintext, Error> {
     //= spec/client-apis/decrypt.md#decrypt-the-message-body
     //= type=implication
     //= reason=Body parsers read from the same `ciphertext` cursor passed to step_parse_header; cursor advances sequentially after the header parse
@@ -678,14 +687,15 @@ async fn step_decrypt_body(
             .await?
         }
     };
-    Ok(last_frame)
+    // Hold the final plaintext until the signature step passes (VR-015).
+    Ok(decrypt_gate::hold_final_plaintext(last_frame))
 }
 
 // Step 5: Verify the signature
 async fn step_verify_signature(
     ciphertext: &mut dyn Source,
     state: &DecryptState,
-) -> Result<(), Error> {
+) -> Result<SignatureVerified, Error> {
     //= spec/client-apis/decrypt.md#verify-the-signature
     //# If the algorithm suite has a signature algorithm,
     //# the Decrypt operation MUST verify the message footer using the specified signature algorithm.
@@ -695,7 +705,17 @@ async fn step_verify_signature(
     //= reason=step_verify_signature reads from the same input the body decode left positioned past the body, so the next bytes read are the footer by construction
     //# After deserializing the body, the Decrypt operation MUST deserialize the next encrypted message bytes
     //# as the [message footer](../data-format/message-footer.md).
-    if state.dec_mat.verification_key().is_some() {
+    //
+    // Either way this yields a `SignatureVerified` token, which is created
+    // only when there is no verification key or the signature verified.
+    if let Some(not_required) =
+        decrypt_gate::signature_not_required(state.dec_mat.verification_key().is_some())
+    {
+        //= spec/client-apis/decrypt.md#behavior
+        //# - If the message header does not contain an algorithm suite including a signature algorithm,
+        //# the Decrypt operation MUST NOT perform this step.
+        Ok(not_required)
+    } else {
         let mut noop = NoopWriter;
 
         //= spec/client-apis/decrypt.md#verify-the-signature
@@ -720,13 +740,8 @@ async fn step_verify_signature(
             &state.dec_mat,
             &mut noop,
         )
-        .await?;
-    } else {
-        //= spec/client-apis/decrypt.md#behavior
-        //# - If the message header does not contain an algorithm suite including a signature algorithm,
-        //# the Decrypt operation MUST NOT perform this step.
+        .await
     }
-    Ok(())
 }
 
 // The encryption context to only authenticate MUST be
@@ -748,7 +763,7 @@ async fn verify_signature(
     context: DigestContext,
     dec_mat: &DecryptionMaterials,
     sig_digest: &mut Tee,
-) -> Result<(), Error> {
+) -> Result<SignatureVerified, Error> {
     //= spec/client-apis/decrypt.md#verify-the-signature
     //= reason=awaiting reads on the input stream waits for enough bytes
     //# If there are not enough consumable bytes to deserialize the message footer and
@@ -767,10 +782,11 @@ async fn verify_signature(
         &signature,
     )?;
 
-    if !valid {
-        //= spec/client-apis/decrypt.md#verify-the-signature
-        //# If this verification is not successful, this operation MUST immediately halt and fail.
-        return Err(err(Kind::Cryptographic, "signature verification failed"));
-    }
-    Ok(())
+    //= spec/client-apis/decrypt.md#verify-the-signature
+    //# If this verification is not successful, this operation MUST immediately halt and fail.
+    //
+    // `signature_gate` returns a `SignatureVerified` token only if the
+    // signature verified.
+    decrypt_gate::signature_gate(valid)
+        .ok_or_else(|| err(Kind::Cryptographic, "signature verification failed"))
 }
