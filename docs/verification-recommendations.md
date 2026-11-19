@@ -81,7 +81,7 @@ verified, 0 errors`** on both feature sets (54 exec fns, 11 proof fns; up from 9
 - **VR-019 (new, threat-driven, R3):** in `esdk/src/encrypt_gate.rs`, `signing_key_gate` returns a
   `SigningKeyPresent` token, which holds the key, iff the suite signs and the encryption materials
   have a signing key. The signing call in `step_construct_signature` reads the key only through
-  `signing_key(&token)`. Same error, message, order and place as before. **Finding F3:** esdk
+  `signing_key(&token)`. Same error, message, order and place as before. **Finding VR-019 F1:** esdk
   checks one direction only and late. It rejects a missing key only in step 4, after the header and
   body are written, and it does not reject a key for a non-signing suite. Both rely on the MPL
   (`GetEncryptionMaterials::send` / `check_encryption_materials`, `EncryptionMaterialsBuilder::build`),
@@ -189,7 +189,7 @@ verification results:: 57 verified, 0 errors     # --no-default-features --featu
 | VR-004 | `next_expected_frame`, `final_frame_seq_ok`, proof fns `lemma_accepts_run`, `lemma_frames_start_at_1` (`body/body_decrypt.rs`) | Regular frame accepted iff `seq == expected` (overflow-free increment); final frame accepted iff `seq == expected`; frames accepted from `START_SEQUENCE_NUMBER` are numbered 1, 2, … |
 | VR-017 (later) | `PlaintextBudget::new` / `add`, `EncryptFrameSeq::start` / `take_regular` / `final_seq`, proof fns `lemma_max_data_bounds_frames`, `lemma_frame_guard_needed_at_16` (`body/body_encrypt.rs`) | Encrypt side: total `<= MAX_DATA`, reject iff the next chunk would exceed it, overflow-free; frame numbers start at 1, +1 per regular frame, never wrap, final = count + 1 |
 | VR-018 (later) | `check_v2_suite_data`, `data_key_len_ok` (`esdk/src/encrypt.rs`) | Suite data present and exactly the suite length; data key exactly the suite key length; accept iff equal |
-| VR-019 (later) | `signing_key_gate`, `signing_key`, proof fn `lemma_signing_key_present`; type invariant `SigningKeyPresent::inv` (`esdk/src/encrypt_gate.rs`) | Encrypt signing step: a token iff the suite signs and a signing key is present; the token holds that key and is for a signing suite; signing reads the key only through the token (compiler). One direction only (finding F3) |
+| VR-019 (later) | `signing_key_gate`, `signing_key`, proof fn `lemma_signing_key_present`; type invariant `SigningKeyPresent::inv` (`esdk/src/encrypt_gate.rs`) | Encrypt signing step: a token iff the suite signs and a signing key is present; the token holds that key and is for a signing suite; signing reads the key only through the token (compiler). One direction only (finding VR-019 F1) |
 | VR-005 | `u32_to_be`, `u64_to_be`, `low_byte` (`serialize_functions.rs`); `body_aad_content_type_string`, `iv_seq_core`, `body_aad_core` (`body/body_aad.rs`); `write_frame_prefix`, proof fn `lemma_endframe_bytes` (`body/body_encrypt.rs`) | Body AAD is exactly `message_id ‖ content ‖ seq_be(4) ‖ len_be(8)`; IV's last 4 bytes are the big-endian sequence number; frame prefix is `seq ‖ iv` (regular) or `FFFFFFFF ‖ seq ‖ iv ‖ len` (final) |
 | VR-007 | `edk_count_check` (`header.rs`) | `Empty` iff count is 0; `OverMax` iff count exceeds a configured max; `Ok` otherwise |
 | VR-009 (esdk half) | `identity_kdf_key_len_ok`, `check_v2_key_lengths` (`esdk/src/key_derivation.rs`) | V1 identity KDF: accept iff the plaintext key length equals the suite encryption key length. V2: `Ok(n)` iff the KDF is HKDF, the message ID is 32 bytes and the plaintext key length equals the suite key length, with `n` equal to both (it sizes the derived encryption key); otherwise the first failing check, in code order. Total; no arithmetic |
@@ -1202,7 +1202,7 @@ recommendation:
   id: VR-2026-019
   rank: 19
   origin: threat-driven   # R3 (signature stripping / repudiation), encrypt counterpart of VR-015 (b)
-  status: in_crate   # branch verus-encrypt-signing-key-presence; mutation-tested; one direction only (F3)
+  status: in_crate   # branch verus-encrypt-signing-key-presence; mutation-tested; one direction only (VR-019 F1)
   target:
     library: aws-esdk
     file: esdk/src/encrypt_gate.rs, esdk/src/encrypt.rs
@@ -1218,7 +1218,7 @@ recommendation:
     not_verus_proven:
       - "trusted: the caller passes the real suite flag and the real materials.signing_key(); encrypt_steps runs step 4 for every signing suite and step 4 writes the footer; aws-lc-rs ECDSA signing"
   findings:
-    - "F3 (no change made): esdk checks one direction only, and late. It rejects a signing suite with no signing key only in step_construct_signature, after the header and body are written; it does not reject a non-signing suite whose materials have a signing key. Both the reverse direction and early rejection rely on the MPL (GetEncryptionMaterials::send / check_encryption_materials, EncryptionMaterialsBuilder::build), trusted code reading only. Open owner question: add an early esdk 'present iff' check as on decrypt (VR-015 (b))."
+    - "VR-019 F1 (no change made): esdk checks one direction only, and late. It rejects a signing suite with no signing key only in step_construct_signature, after the header and body are written; it does not reject a non-signing suite whose materials have a signing key. Both the reverse direction and early rejection rely on the MPL (GetEncryptionMaterials::send / check_encryption_materials, EncryptionMaterialsBuilder::build), trusted code reading only. Open owner question: add an early esdk 'present iff' check as on decrypt (VR-015 (b))."
   trace_to_spec: "spec/client-apis/encrypt.md#construct-the-signature (the signature key MUST be the signing key in the encryption materials); spec/data-format/message-footer.md#overview"
   tool: Verus
   agent: verus-header-parsing-proofs
@@ -1335,7 +1335,7 @@ end to end.
   is a verified gate and a `SigningKeyPresent` token that the signing call needs (`make -C esdk
   verus`: 97 verified, 0 errors on both feature sets, 54 exec fns and 11 proof fns;
   mutation-tested). One direction only, in step 4; the reverse direction and early rejection rely
-  on the MPL (finding F3).
+  on the MPL (finding VR-019 F1).
 **Remaining, in priority order:**
 1. **VR-001 property (c)** — the decision (property a) and the ordering (property b) are in-crate.
    What is left is **not** Verus-provable here: the *constant-time* comparison (property c) is an

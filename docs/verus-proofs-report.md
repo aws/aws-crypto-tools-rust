@@ -283,7 +283,7 @@ make -C verification verify
 >   suite signs and the materials have a signing key. The signing call reads
 >   the key only through `signing_key(&token)`. The error, message, order
 >   and place in the flow are unchanged.
-> - **Finding F3: the esdk check covers one direction only, and it runs
+> - **Finding VR-019 F1: the esdk check covers one direction only, and it runs
 >   late.** esdk rejects a signing suite with no signing key, but only in
 >   `step_construct_signature`, after the header and body have been written.
 >   esdk does not reject a non-signing suite whose materials have a signing
@@ -881,7 +881,7 @@ flow:
 - A non-signing suite whose materials have a signing key is **not**
   rejected by esdk. `encrypt_steps` skips step 4, and the key is ignored.
 
-**Finding F3 (no behavior change made).** The decrypt side (VR-015 (b))
+**Finding VR-019 F1 (no behavior change made).** The decrypt side (VR-015 (b))
 checks "key present iff the suite signs" in esdk, before the body. The
 encrypt side does not. Both the reverse direction and early rejection rely
 on the MPL, which has no Verus proofs, so this is trusted code reading only:
@@ -1400,7 +1400,7 @@ independent evidence beyond that.
 | VR-014 AES buffer effects (pipeline target VR-2026-C03, BUG-07) | **in-crate** (`prim/src/lib.rs`): BUG-07(a) **proved** — `aes_encrypt` leaves exactly `old ++ message` on a key/nonce `Err`, `old_len + |message|` with prefix unchanged on a seal `Err`, and `old ++ ct ++ tag` (+16) on `Ok`. BUG-07(b) **recorded under A-OPEN** — a decrypt buffer longer than the ciphertext passes the guard and can only end in a callee-side `Err` | **assumed, not proven:** A-OPEN (A20), the 16-byte tag (A19), no-panic of the AES calls. Not proven: crypto, ciphertext/tag bytes, tail bytes after a seal failure. FOLLOW-UP: what the `aes_*` callers do with the buffer after an `Err` (mpl 2 + 2, esdk 2 + 5). BUG-07 itself is not fixed. In esdk, (b) is unreachable by VR-016 |
 | VR-017 encrypt body limits (MAX_DATA, frame sequence) | **in-crate** (`body/body_encrypt.rs`): `PlaintextBudget` (total never exceeds MAX_DATA; rejects iff the next chunk would; then the Plaintext Length Bound; overflow-free) and `EncryptFrameSeq` (starts at 1, +1 per regular frame, never wraps, final frame = regular count + 1); lemma: MAX_DATA stops the counter first only for frame length >= 17 | the async loop threading in `encrypt_and_serialize_body` (unverified glue); `read_up_to_peek` (`in_size <= frame_length`); the `usize::try_from` conversions; the error mapping |
 | VR-018 encrypt header length checks | **in-crate** (`esdk/src/encrypt.rs`): `check_v2_suite_data` (present and exactly `algorithm_suite_data_length()` bytes, in that order) and `data_key_len_ok` (accept iff equal) | the expected lengths come from MPL (`algorithm_suite_data_length`) and the const table `get_encrypt_key_length`; the adapters map variants to today's errors |
-| VR-019 encrypt signing-key check (threat R3; counterpart of VR-015 (b)) | **in-crate, one direction** (`esdk/src/encrypt_gate.rs`): `signing_key_gate` returns a `SigningKeyPresent` iff the suite signs and a signing key is present, and the token holds that key; the compiler enforces that `ecdsa_sign_digest` in step 4 gets the key only through the token. Same error, message, order and place as before | **finding F3:** esdk rejects a missing key only in step 4, after the header and body are written, and does not reject a key for a non-signing suite. Both rely on the MPL (`GetEncryptionMaterials::send` / `check_encryption_materials`, `EncryptionMaterialsBuilder::build`), which is trusted code reading. Also trusted: the real suite flag and key are passed; `encrypt_steps` runs step 4 for every signing suite; aws-lc-rs signing |
+| VR-019 encrypt signing-key check (threat R3; counterpart of VR-015 (b)) | **in-crate, one direction** (`esdk/src/encrypt_gate.rs`): `signing_key_gate` returns a `SigningKeyPresent` iff the suite signs and a signing key is present, and the token holds that key; the compiler enforces that `ecdsa_sign_digest` in step 4 gets the key only through the token. Same error, message, order and place as before | **finding VR-019 F1:** esdk rejects a missing key only in step 4, after the header and body are written, and does not reject a key for a non-signing suite. Both rely on the MPL (`GetEncryptionMaterials::send` / `check_encryption_materials`, `EncryptionMaterialsBuilder::build`), which is trusted code reading. Also trusted: the real suite flag and key are passed; `encrypt_steps` runs step 4 for every signing suite; aws-lc-rs signing |
 | VR-016 decrypt buffer sizing (BUG-07(b) in esdk) | **in-crate** (`esdk/src/secret.rs`): `secret::open` takes only an `OpenBuffers`, built only by the verified `open_buffers`; its type invariant says the plaintext buffer is as long as the ciphertext. All 5 esdk open sites go through it, so BUG-07(b) is unreachable from esdk, Verus-proven | trusted: the TB-A body of `secret::open` passes the two fields to `aes_decrypt` unchanged; what aws-lc-rs does with a mismatch stays under A-OPEN |
 | Infra: I/O seam | `esdk` is Verus-buildable; sync `verus!` cores are verified in-crate behind the async `Source`/`Tee` adapters (see "In-crate proofs") | the async adapters themselves stay unverified glue |
 
