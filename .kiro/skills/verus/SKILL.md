@@ -118,7 +118,7 @@ Verus cannot see into third-party crates or most of std. The sanctioned way to r
 
 | Id | Item | Spec (`requires` / `ensures`) | Why trusted (kind and source) |
 |---|---|---|---|
-| A2 | `digest::digest(alg, data)` | `ensures spec_digest_len(&d) == spec_digest_output_len(alg)` | TRUSTED length (`digest.rs:194-201`) |
+| A2 | `digest::digest(algorithm, data)` | `ensures spec_digest_len(&d) == spec_digest_output_len(algorithm)` | TRUSTED length (`digest.rs:194-201`) |
 
 Kinds: *naming* (introduces a symbol, claims nothing), *TRUSTED* (a real assumption, with source), *labeled assumption* (not fully stated by the docs; ladder level 8), *Rust type fact* (for example, a `&mut [u8]` cannot change length). The `verus-unsafe-ffi-safety` agent owns the TCB list.
 
