@@ -35,7 +35,7 @@ jobs:
     outputs:
       jobs: ${{ steps.set.outputs.jobs }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       # Each filter matches its crate, plus the crates it depends on.
       # ex. an mpl change re-tests mpl, esdk, the C++ shim, and their TestServers.
@@ -391,7 +391,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: ./.github/actions/setup-rust
         with:
@@ -418,7 +418,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
