@@ -8,7 +8,7 @@ use aws_crypto_mpl::error::{ConflictReason, Resource};
 use ciborium::value::Value;
 
 /// A modeled TestServer error.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum ServerError {
     /// Framework-side failure (bad request, unknown operation, unknown ID, etc.).
     Generic(String),
@@ -30,6 +30,8 @@ pub struct Details {
     pub retryable: Option<bool>,
     pub retry_kind: Option<String>,
     pub conflict_reason: Option<String>,
+    /// The messages of the failures the MPL collected, in order; empty when it collected none.
+    pub collected_errors: Vec<String>,
 }
 
 const NS: &str = "aws.cryptography.mpl.testserver";
@@ -50,8 +52,17 @@ impl ServerError {
 
     /// An error the MPL returned, with every member the shared tests can check.
     pub fn from_mpl(e: Error) -> Self {
+        let message = e.to_string();
+        let failures = e.failures();
+        // failures() yields the error itself when it collected nothing.
+        let collected_none = failures.len() == 1 && failures[0].to_string() == message;
+        let collected_errors = if collected_none {
+            Vec::new()
+        } else {
+            failures.iter().map(ToString::to_string).collect()
+        };
         Self::Mpl(Box::new(Details {
-            message: e.to_string(),
+            message,
             kind: Some(kind(&e).to_owned()),
             service: e.service().map(|s| s.as_str().to_owned()),
             resource: e.resource().map(resource),
@@ -62,6 +73,7 @@ impl ServerError {
                 Error::Conflict(c) => c.reason().map(|r| conflict_reason(r).to_owned()),
                 _ => None,
             },
+            collected_errors,
         }))
     }
 
@@ -81,7 +93,8 @@ impl ServerError {
     }
 
     /// Serialize to the rpcv2Cbor error body: a CBOR map of `__type`, `message`,
-    /// and each `MPLClientError` member that has a value.
+    /// each `MPLClientError` member that has a value, and `collectedErrors`
+    /// when the MPL collected any.
     pub fn to_cbor(&self) -> Vec<u8> {
         let text = |s: &str| Value::Text(s.to_owned());
         let mut map = vec![
@@ -104,6 +117,17 @@ impl ServerError {
             }
             if let Some(retryable) = d.retryable {
                 map.push((text("retryable"), Value::Bool(retryable)));
+            }
+            if !d.collected_errors.is_empty() {
+                map.push((
+                    text("collectedErrors"),
+                    Value::Array(
+                        d.collected_errors
+                            .iter()
+                            .map(|m| Value::Text(m.clone()))
+                            .collect(),
+                    ),
+                ));
             }
         }
         let mut buf = Vec::new();
@@ -152,5 +176,44 @@ fn conflict_reason(r: &ConflictReason) -> &'static str {
         ConflictReason::AlreadyExists => "AlreadyExists",
         ConflictReason::ConcurrentModification => "ConcurrentModification",
         _ => "Unknown",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn decode(error: &ServerError) -> Vec<(String, Value)> {
+        let Value::Map(entries) = ciborium::from_reader(&error.to_cbor()[..]).unwrap() else {
+            panic!("error body is not a CBOR map");
+        };
+        entries
+            .into_iter()
+            .map(|(k, v)| (k.into_text().unwrap(), v))
+            .collect()
+    }
+
+    #[test]
+    fn collected_errors_go_on_the_wire_only_when_present() {
+        let none = decode(&ServerError::mpl("failed"));
+        assert!(none.iter().all(|(k, _)| k != "collectedErrors"));
+
+        let error = ServerError::Mpl(Box::new(Details {
+            message: "failed".to_owned(),
+            collected_errors: vec!["first".to_owned(), "second".to_owned()],
+            ..Details::default()
+        }));
+        let collected = decode(&error)
+            .into_iter()
+            .find(|(k, _)| k == "collectedErrors")
+            .map(|(_, v)| v)
+            .expect("collectedErrors");
+        assert_eq!(
+            collected,
+            Value::Array(vec![
+                Value::Text("first".to_owned()),
+                Value::Text("second".to_owned())
+            ])
+        );
     }
 }

@@ -6,8 +6,17 @@ BIN      := target/release/mpl-test-server
 PID_FILE := .server.pid
 LOG_FILE := .server.log
 
+# Commons coordinates for `make test-server-duvet`. They live in
+# server-config.json next to this Makefile; COMMONS_BRANCH overrides the
+# configured branch at invocation time.
+MAKEFILE_DIR := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
+REPO_ROOT    := $(abspath $(MAKEFILE_DIR)/../..)
+COMMONS_CONFIGURATION := $(MAKEFILE_DIR)/server-config.json
+COMMONS_BRANCH ?=
+CLONE_DIR      ?= $(MAKEFILE_DIR)/.commons-clone
+
 .PHONY: help build-server run-server start-server wait-for-server stop-server \
-        test fmt clippy check clean
+        test test-server-duvet fmt clippy check clean
 
 help: ## Show this help
 	@echo "MPL TestServer (Rust) — make targets"
@@ -41,6 +50,28 @@ stop-server: ## Stop the background server and free PORT
 
 test: ## Run the server's tests
 	cargo test
+
+# A dry run of the commons Tests for Rust (no servers, a few seconds once
+# built), then copy the duvet test annotations of the Tests that run for Rust
+# into ../build/test-server-duvet/, which ../.duvet/config.toml reads. Needs a
+# JDK 21+ and network access to clone commons; no AWS credentials.
+DUVET_OUT := $(abspath $(MAKEFILE_DIR)/../build/test-server-duvet)
+test-server-duvet: ## Write the shared Tests' duvet annotations that run for Rust; COMMONS_BRANCH=<b> overrides
+	@set -eo pipefail; \
+	{ read -r url; read -r branch; } <<< "$$(python3 -c 'import json,sys; c=json.load(open(sys.argv[1]))["commonsRepository"]; print(c["url"]); print(c["branch"])' "$(COMMONS_CONFIGURATION)")"; \
+	if [ -n "$(strip $(COMMONS_BRANCH))" ]; then branch="$(strip $(COMMONS_BRANCH))"; fi; \
+	echo "==> Cloning commons at '$$branch' into $(CLONE_DIR)"; \
+	rm -rf "$(CLONE_DIR)"; \
+	git clone --quiet --depth 1 --single-branch --branch "$$branch" "$$url" "$(CLONE_DIR)"; \
+	"$(REPO_ROOT)/scripts/resolve-spec.sh"; \
+	$(MAKE) -C "$(CLONE_DIR)/mpl/test-server" orchestrate \
+		ORCHESTRATE_ARGS="workingTreeOverlay.aws-crypto-tools-rust=$(REPO_ROOT) workingTreeLanguages=rust languages=rust dryRun=true"; \
+	python3 "$(CLONE_DIR)/test-server-common/tools/duvet_test_annotations.py" \
+		--gate-log "$(CLONE_DIR)/mpl/test-server/tests/build/test-results/feature-gate-log.jsonl" \
+		--tests-dir "$(CLONE_DIR)/mpl/test-server/tests/src/test/java" \
+		--bug-config "$(MAKEFILE_DIR)/bug-config.json" \
+		--spec-root "$(REPO_ROOT)" \
+		--out "$(DUVET_OUT)/mpl.java"
 
 fmt: ## Check formatting
 	cargo fmt --all -- --check

@@ -88,6 +88,8 @@ mod fluent_builders;
 mod raw_aes_keyring;
 mod types;
 
+#[cfg(feature = "kms")]
+pub use crate::aws_kms::aws_kms_keyring::{AwsKmsKeyring, AwsKmsKeyringBuilder};
 pub use crate::aws_kms::hierarchical_keyring::{
     BranchKeyIdSupplier, GetBranchKeyIdFluentBuilder, GetBranchKeyIdInput,
     GetBranchKeyIdInputBuilder, GetBranchKeyIdOutput, GetBranchKeyIdOutputBuilder,

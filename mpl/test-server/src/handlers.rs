@@ -16,9 +16,9 @@ use aws_crypto_mpl::key_store::types::{
 };
 use aws_crypto_mpl::key_store::{DynamoDbKeyStore, SharedKeyStore};
 use aws_crypto_mpl::keyring::{
-    BranchKeyIdSupplier, GetBranchKeyIdInput, GetBranchKeyIdOutput, HierarchicalKeyring, Keyring,
-    OnDecryptInput, OnDecryptOutput, OnEncryptInput, OnEncryptOutput, SharedBranchKeyIdSupplier,
-    SharedKeyring,
+    AwsKmsKeyring, BranchKeyIdSupplier, GetBranchKeyIdInput, GetBranchKeyIdOutput,
+    HierarchicalKeyring, Keyring, OnDecryptInput, OnDecryptOutput, OnEncryptInput, OnEncryptOutput,
+    SharedBranchKeyIdSupplier, SharedKeyring,
 };
 use aws_crypto_mpl::types::{
     AlgorithmSuiteId as MplSuiteId, CommitmentPolicy as MplCommitmentPolicy, DecryptionMaterials,
@@ -95,6 +95,30 @@ impl AppState {
             .expect("keyrings mutex")
             .insert(id.clone(), SharedKeyring::new(keyring));
         Ok(CreateStaticKeyringResponse { keyring_id: id })
+    }
+
+    pub async fn create_aws_kms_keyring(
+        &self,
+        req: CreateAwsKmsKeyringRequest,
+    ) -> Result<CreateAwsKmsKeyringResponse, ServerError> {
+        let kms = match req.kms_client {
+            Some(config) => Some(kms_client(config).await),
+            None => None,
+        };
+        let keyring = AwsKmsKeyring::builder()
+            .set_kms_key_id(req.kms_key_id)
+            .set_kms_client(kms)
+            .set_grant_tokens(req.grant_tokens)
+            .build()
+            .await
+            .map_err(ServerError::from_mpl)?;
+
+        let id = uuid::Uuid::new_v4().to_string();
+        self.keyrings
+            .lock()
+            .expect("keyrings mutex")
+            .insert(id.clone(), SharedKeyring::new(keyring));
+        Ok(CreateAwsKmsKeyringResponse { keyring_id: id })
     }
 
     pub fn create_default_cmm(
@@ -428,6 +452,15 @@ async fn sdk_config(region: String) -> aws_config::SdkConfig {
         .region(Region::new(region))
         .load()
         .await
+}
+
+/// A KMS client for the model's `KmsClientConfig`.
+async fn kms_client(config: KmsClientConfig) -> aws_sdk_kms::Client {
+    let mut builder = aws_sdk_kms::config::Builder::from(&sdk_config(config.region).await);
+    if let Some(endpoint) = config.endpoint {
+        builder = builder.endpoint_url(endpoint);
+    }
+    aws_sdk_kms::Client::from_conf(builder.build())
 }
 
 /// The model's `StaticBranchKeyIdSupplier`: look up the encryption context
