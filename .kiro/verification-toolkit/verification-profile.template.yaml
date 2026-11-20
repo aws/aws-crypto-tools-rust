@@ -16,7 +16,7 @@ schema_version: 1
 library:
   # Full name of the library; read by: all
   name: ""
-  # Short name used in prose; read by: all
+  # Short name used in prose; read by: no agent yet (to be wired in Step 5)
   short_name: ""
   # Repository name or URL; read by: pipeline, update
   repo: ""
@@ -37,7 +37,7 @@ crates:
     verus_enabled: false
     # Source directories holding the code under verification; read by: recommender, update, proof agents
     source_dirs: []
-    # Test directories; read by: spec-analyzer, recommender
+    # Test directories; read by: no agent yet (to be wired in Step 5)
     test_dirs: []
     # Command that runs Verus on the crate, from the repo root; read by: SKILL, proof agents, update
     verify_cmd: ""
@@ -175,8 +175,6 @@ unsafe_surface:
   elsewhere:
     - # File with unsafe code; read by: ffi, capabilities, recommender
       path: ""
-      # Number of unsafe expressions, from the confirm command; read by: ffi, capabilities
-      count: 0
       # What the unsafe code does; read by: ffi, capabilities, recommender
       what: ""
       # Verification status of that code; read by: ffi, capabilities, recommender
@@ -186,7 +184,7 @@ unsafe_surface:
 
 # The trusted-spec (TCB) list; read by: ffi (owner), SKILL "Trusted boundary", capabilities, update drift item 4
 tcb:
-  # Agent that owns the TCB list; read by: SKILL, ffi
+  # Agent that owns the TCB list; read by: no agent yet (to be wired in Step 5)
   owner_agent: ""
   # Source files holding the trusted specs; read by: ffi, SKILL, capabilities
   modules: []
@@ -235,9 +233,9 @@ ids:
   next_free_check: ""
   # Format of finding ids; read by: SKILL, proof agents, recommender
   finding_format: ""
-  # Ids used by other repositories that must not be confused with ours; read by: recommender, update
+  # Ids used by other repositories that must not be confused with ours; read by: no agent yet (to be wired in Step 5)
   external_ids: []
-  # Known gaps in the numbering; read by: recommender, update
+  # Known gaps in the numbering; read by: no agent yet (to be wired in Step 5)
   known_gaps: []
 
 # Every target with the ladder level of each part; read by: recommender, capabilities, proof agents, update

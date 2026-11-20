@@ -1,7 +1,7 @@
-# Verification profile schema (template).
-# Copy this file to .kiro/verification-profile/verification-profile.yaml and fill
-# every value from the repository (grep, ls, the build files), never from memory.
-# Keep the comments. Never put a count ("N verified") in this file.
+# ESDK verification profile: an instance of the toolkit template
+# (.kiro/verification-toolkit/verification-profile.template.yaml).
+# Every value comes from the repository (grep, ls, the build files), never from memory.
+# Never put a count ("N verified") in this file.
 # Readers: pipeline = ai-verification-pipeline, update = ai-verification-update,
 # spec-analyzer, threat-model = threat-model-generator, recommender =
 # verification-recommender, capabilities = verus-capabilities, header-parsing =
@@ -20,7 +20,7 @@ schema_version: 1
 library:
   # Full name of the library; read by: all
   name: "AWS Encryption SDK for Rust (native Rust)"
-  # Short name used in prose; read by: all
+  # Short name used in prose; read by: no agent yet (to be wired in Step 5)
   short_name: "ESDK"
   # Repository name or URL; read by: pipeline, update
   repo: "aws-crypto-tools-rust"
@@ -41,7 +41,7 @@ crates:
     verus_enabled: true
     # Source directories holding the code under verification; read by: recommender, update, proof agents
     source_dirs: ["esdk/src/"]
-    # Test directories; read by: spec-analyzer, recommender
+    # Test directories; read by: no agent yet (to be wired in Step 5)
     test_dirs: ["esdk/tests/"]
     # Command that runs Verus on the crate, from the repo root; read by: SKILL, proof agents, update
     verify_cmd: "make -C esdk verus"
@@ -80,7 +80,7 @@ crates:
     result_line: "Read the `verification results::` line printed right after `Checking aws-mpl-primitives v...`. Never pick a line by position. In `make -C prim verus` vstd prints first on the default feature set and nothing on the second. `make -C esdk verus` also prints an aws-mpl-primitives line; compare like with like (a prim line from esdk's run is not the standalone prim run, and the two have differed before). A cached crate prints no line: run cache_bust and re-run."
     cache_bust: "touch prim/src/lib.rs (or the changed prim/src/*.rs file)"
     test_cmd: "cargo test (in prim/); `make -C prim test` also runs `--no-default-features --features fips`, which needs cmake and go (see local_env_limits)"
-    lint_cmds: ["make -C prim clippy", "cargo fmt --all -- --check (in prim/)"]
+    lint_cmds: ["make -C prim clippy (also runs --features fips, which needs cmake and go; see local_env_limits)", "cargo fmt --all -- --check (in prim/)"]
     known_test_failures: []
     unsafe: "none in prim/src"
   - name: "aws-crypto-mpl"
@@ -293,7 +293,7 @@ trust_boundaries:
   - id: "TB-shim"
     what: "C++ callers of the shim"
     where: "esdk/shims/aws-esdk-cpp/src/lib.rs"
-    trusted_for: "validity of the raw pointers they pass (4 unsafe expressions)"
+    trusted_for: "validity of the raw pointers they pass (list them with unsafe_surface.confirm_cmd)"
     ladder_level: "trusted"
   - id: "TB-A"
     what: "unverified adapters outside verus! in esdk/src/secret.rs (for example the body of secret::open)"
@@ -319,8 +319,6 @@ unsafe_surface:
   elsewhere:
     - # File with unsafe code; read by: ffi, capabilities, recommender
       path: "esdk/shims/aws-esdk-cpp/src/lib.rs"
-      # Number of unsafe expressions, from the confirm command; read by: ffi, capabilities
-      count: 4
       # What the unsafe code does; read by: ffi, capabilities, recommender
       what: "`unsafe { &*ptr }` and `unsafe { input.<field>.as_ref() }` on C++-supplied handles (kms_client, ddb_client, cache)"
       # Verification status of that code; read by: ffi, capabilities, recommender
@@ -330,7 +328,7 @@ unsafe_surface:
 
 # The trusted-spec (TCB) list; read by: ffi (owner), SKILL "Trusted boundary", capabilities, update drift item 4
 tcb:
-  # Agent that owns the TCB list; read by: SKILL, ffi
+  # Agent that owns the TCB list; read by: no agent yet (to be wired in Step 5)
   owner_agent: "verus-unsafe-ffi-safety"
   # Source files holding the trusted specs; read by: ffi, SKILL, capabilities
   modules:
@@ -390,9 +388,9 @@ ids:
   next_free_check: "grep -rnoE 'VR-0(2[0-9]|[3-9][0-9])' docs verification esdk/src prim/src mpl/src (expect no hits), and git grep -nE 'VR-0(2[0-9])' origin/MPL-Verus -- docs"
   # Format of finding ids; read by: SKILL, proof agents, recommender
   finding_format: "VR-0NN Fk (never a bare Fk)"
-  # Ids used by other repositories that must not be confused with ours; read by: recommender, update
+  # Ids used by other repositories that must not be confused with ours; read by: no agent yet (to be wired in Step 5)
   external_ids: ["VR-2026-Cxx and VR-2026-Txx (MPL-Verus branch); VR-2026-C03 is implemented by VR-013 and VR-014 and is always written in full so it is not misread as VR-2026-013"]
-  # Known gaps in the numbering; read by: recommender, update
+  # Known gaps in the numbering; read by: no agent yet (to be wired in Step 5)
   known_gaps: ["There is no VR-2026-008 YAML block in docs/verification-recommendations.md"]
 
 # Every target with the ladder level of each part; read by: recommender, capabilities, proof agents, update
