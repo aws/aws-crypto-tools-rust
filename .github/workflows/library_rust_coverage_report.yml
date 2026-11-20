@@ -22,7 +22,7 @@ jobs:
     outputs:
       projects: ${{ steps.set.outputs.projects }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Compute project matrix
         id: set
         shell: bash
@@ -54,7 +54,7 @@ jobs:
       matrix:
         project: ${{ fromJSON(needs.detect-projects.outputs.projects) }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           submodules: 'true'
           fetch-depth: 0
