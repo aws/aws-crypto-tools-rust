@@ -7,19 +7,351 @@ use crate::error::{Kind, err, val_err};
 use crate::message::header::{ENDFRAME_SEQUENCE_NUMBER, HeaderInfo, START_SEQUENCE_NUMBER};
 use crate::message::serializable_types::{get_iv_length, get_tag_length};
 use crate::message::serialize_functions::{
-    read_opt_u8, read_up_to_peek, write_bytes, write_to_sink, write_u32,
+    self as sf, read_opt_u8, read_up_to_peek, write_bytes, write_to_sink,
 };
 use crate::message::{DigestWriter, Error, ser_err};
+use crate::secret::{self, MessageKey};
 use crate::shapes::{Sink, Source};
-use aws_mpl_primitives::{AesGcm, aes_encrypt};
+use aws_mpl_primitives::AesGcm;
+use vstd::prelude::*;
 
+verus! {
+
+/// The frame fields before the encrypted content:
+/// a final frame (`final_content_len` is `Some`) is
+/// Sequence Number End ‖ Sequence Number ‖ IV ‖ Encrypted Content Length;
+/// a regular frame is Sequence Number ‖ IV.
+pub(crate) open spec fn spec_frame_prefix(
+    seq: u32,
+    iv: Seq<u8>,
+    final_content_len: Option<u32>,
+) -> Seq<u8> {
+    match final_content_len {
+        Some(n) => sf::spec_u32_to_be(ENDFRAME_SEQUENCE_NUMBER) + sf::spec_u32_to_be(seq) + iv
+            + sf::spec_u32_to_be(n),
+        None => sf::spec_u32_to_be(seq) + iv,
+    }
+}
+
+/// The Sequence Number End field is the bytes `FF FF FF FF`.
+proof fn lemma_endframe_bytes()
+    ensures
+        sf::spec_u32_to_be(ENDFRAME_SEQUENCE_NUMBER) == seq![0xFFu8, 0xFF, 0xFF, 0xFF],
+{
+    assert(sf::spec_u32_to_be(ENDFRAME_SEQUENCE_NUMBER) =~= seq![0xFFu8, 0xFF, 0xFF, 0xFF]);
+}
+
+/// Append the frame fields before the encrypted content to `frame_buf`.
+/// `final_content_len` is `Some(encrypted content length)` for a final frame
+/// and `None` for a regular frame.
+fn write_frame_prefix(
+    frame_buf: &mut Vec<u8>,
+    sequence_number: u32,
+    iv: &[u8],
+    final_content_len: Option<u32>,
+)
+    ensures
+        final(frame_buf)@ == old(frame_buf)@ + spec_frame_prefix(
+            sequence_number,
+            iv@,
+            final_content_len,
+        ),
+{
+    if final_content_len.is_some() {
+        // Sequence Number End
+
+        //= spec/client-apis/encrypt.md#construct-a-frame
+        //= reason=The following lines serialize SeqNumEnd, SeqNum, IV, EncContentLen, EncContent, and AuthTag in order per the Final Frame spec
+        //# For a final frame, each field MUST be serialized according to its specification:
+        //
+        //= spec/data-format/message-body.md#final-frame
+        //# A final frame MUST consist of, in order,
+        //# Sequence Number End,
+        //# Sequence Number,
+        //# IV,
+        //# Encrypted Content Length,
+        //# Encrypted Content,
+        //# and Authentication Tag.
+        //
+        //= spec/client-apis/encrypt.md#construct-a-frame
+        //# - MUST serialize the [Sequence Number End](../data-format/message-body.md#sequence-number-end).
+        //
+        //= spec/data-format/message-body.md#sequence-number-end
+        //# The value MUST be encoded as the 4 bytes `FF FF FF FF` in hexadecimal notation.
+        frame_buf.extend_from_slice(&sf::u32_to_be(ENDFRAME_SEQUENCE_NUMBER));
+    }
+
+    // Sequence Number
+
+    //= spec/client-apis/encrypt.md#construct-a-frame
+    //= reason=The following lines serialize SeqNum, IV, EncContent, and AuthTag in order per the Regular Frame spec
+    //# For a regular frame, each field MUST be serialized according to its specification:
+    //
+    //= spec/client-apis/encrypt.md#construct-a-frame
+    //# - MUST serialize the [Sequence Number](../data-format/message-body.md#regular-frame-sequence-number).
+    //# The value MUST be the sequence number of this frame.
+    //
+    //= spec/data-format/message-body.md#regular-frame-sequence-number
+    //# The sequence number MUST be interpreted as a UInt32.
+    //
+    //= spec/client-apis/encrypt.md#construct-a-frame
+    //= reason=The line below serializes the sequence number for both regular and final frames in this shared code path
+    //# - MUST serialize the [Sequence Number](../data-format/message-body.md#final-frame-sequence-number).
+    //# The value MUST be the sequence number of this frame.
+    //
+    //= spec/data-format/message-body.md#final-frame-sequence-number
+    //= reason=u32_to_be serializes the sequence number as a UInt32, same type as the regular frame sequence number
+    //# The Final Frame Sequence Number MUST be interpreted as the same type as the
+    //# [Regular Frame Sequence Number](#regular-frame-sequence-number).
+    //
+    //= spec/data-format/message-body.md#final-frame-sequence-number
+    //= reason=u32_to_be writes exactly 4 bytes, the same length as the regular frame sequence number field
+    //# The length of the Final Frame Sequence number field MUST be the same as the
+    //# [Regular Frame Sequence Number](#regular-frame-sequence-number).
+    frame_buf.extend_from_slice(&sf::u32_to_be(sequence_number));
+
+    // IV
+
+    //= spec/client-apis/encrypt.md#construct-a-frame
+    //# - MUST serialize the [IV](../data-format/message-body.md#regular-frame-iv).
+    //
+    //= spec/client-apis/encrypt.md#construct-a-frame
+    //# The value MUST be the IV used when calculating the encrypted content for this frame.
+    //
+    //= spec/client-apis/encrypt.md#construct-a-frame
+    //= reason=The line below serializes the IV for both regular and final frames in this shared code path
+    //# - MUST serialize the [IV](../data-format/message-body.md#final-frame-iv).
+    //
+    //= spec/data-format/message-body.md#final-frame-iv
+    //= reason=iv is &[u8], interpreted as raw bytes
+    //# The IV MUST be interpreted as bytes.
+    frame_buf.extend_from_slice(iv);
+
+    if let Some(enc_content_len) = final_content_len {
+        // Encrypted Content Length
+
+        //= spec/client-apis/encrypt.md#construct-a-frame
+        //# - MUST serialize the [Encrypted Content Length](../data-format/message-body.md#final-frame-encrypted-content-length).
+        //
+        //= spec/data-format/message-body.md#final-frame-encrypted-content-length
+        //# The length of the serialized encrypted content length field MUST be 4 bytes.
+        //
+        //= spec/data-format/message-header.md#frame-length
+        //= reason=enc_content_len is bounded by the frame length from the header, interpreted as a UInt32
+        //# The frame length MUST be interpreted as a UInt32.
+        frame_buf.extend_from_slice(&sf::u32_to_be(enc_content_len));
+    }
+
+    assert(frame_buf@ =~= old(frame_buf)@ + spec_frame_prefix(
+        sequence_number,
+        iv@,
+        final_content_len,
+    ));
+}
+
+// ---------------------------------------------------------------------------
+// VR-017: encrypt-side limits. The plaintext budget (MAX_DATA and the
+// Plaintext Length Bound) and the frame sequence numbers. The async loop in
+// `encrypt_and_serialize_body` is the unverified adapter: it calls these once
+// per frame and maps the rejections to errors.
+// ---------------------------------------------------------------------------
 /// Maximum plaintext bytes per message: 2^36 - 32 (AES-GCM safety bound).
-const MAX_DATA: usize = (1usize << 36) - 32;
+/// Same value as the old `(1usize << 36) - 32` and `header::SAFE_MAX_ENCRYPT`.
+/// It is a `u64` because 2^36 does not fit a 32-bit `usize`, so Verus rejects
+/// it as a `usize`. The budget counts in `u64`; every `usize` converts to
+/// `u64` without loss.
+pub(crate) const MAX_DATA: u64 = 0x000F_FFFF_FFE0;
+
+/// Why `PlaintextBudget::add` rejected a chunk, in check order.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum BudgetError {
+    /// The total plaintext would exceed `MAX_DATA`.
+    TooLarge,
+    /// The total plaintext would exceed the caller's Plaintext Length Bound.
+    OverBound,
+}
+
+/// The number of plaintext bytes encrypted so far. It never exceeds
+/// `MAX_DATA`.
+pub(crate) struct PlaintextBudget {
+    total: u64,
+}
+
+impl PlaintextBudget {
+    /// The plaintext bytes counted so far.
+    pub(crate) closed spec fn total(&self) -> nat {
+        self.total as nat
+    }
+
+    /// The total never exceeds `MAX_DATA`.
+    #[verifier::type_invariant]
+    spec fn inv(&self) -> bool {
+        self.total <= MAX_DATA
+    }
+
+    /// An empty budget, before any plaintext is read.
+    pub(crate) fn new() -> (b: Self)
+        ensures
+            b.total() == 0,
+    {
+        Self { total: 0 }
+    }
+
+    /// Count `chunk` more plaintext bytes. Rejects with `TooLarge` exactly when
+    /// the new total would exceed `MAX_DATA`, otherwise with `OverBound`
+    /// exactly when it would exceed `bound`. On a rejection the total is
+    /// unchanged. Works for every `chunk`: the check cannot overflow.
+    pub(crate) fn add(&mut self, chunk: usize, bound: Option<usize>) -> (r: Result<(), BudgetError>)
+        ensures
+            (r matches Err(BudgetError::TooLarge)) <==> old(self).total() + chunk > MAX_DATA,
+            (r matches Err(BudgetError::OverBound)) <==> (old(self).total() + chunk <= MAX_DATA
+                && (bound matches Some(b) && old(self).total() + chunk > b)),
+            r is Ok ==> final(self).total() == old(self).total() + chunk,
+            r is Err ==> final(self).total() == old(self).total(),
+            final(self).total() <= MAX_DATA,
+    {
+        proof {
+            use_type_invariant(&*self);
+        }
+        // `self.total <= MAX_DATA`, so the subtraction cannot underflow, and
+        // this is the same test as `self.total + chunk > MAX_DATA`.
+        let chunk = chunk as u64;
+        if chunk > MAX_DATA - self.total {
+            return Err(BudgetError::TooLarge);
+        }
+        let new_total = self.total + chunk;
+        match bound {
+            Some(b) if new_total > b as u64 => return Err(BudgetError::OverBound),
+            _ => {},
+        }
+        self.total = new_total;
+        Ok(())
+    }
+}
+
+/// The sequence number for the next frame on encrypt. It starts at 1, goes up
+/// by 1 per regular frame and never wraps. The final frame takes the current
+/// value, which is the total number of frames. The encrypt counterpart of
+/// VR-004's `next_expected_frame` / `final_frame_seq_ok` on decrypt.
+pub(crate) struct EncryptFrameSeq {
+    next: u32,
+    #[allow(dead_code, reason = "ghost field: read only by specs")]
+    frames: Ghost<nat>,
+}
+
+impl EncryptFrameSeq {
+    /// The number the next frame will get.
+    pub(crate) closed spec fn next(&self) -> u32 {
+        self.next
+    }
+
+    /// How many regular frames have been numbered so far.
+    pub(crate) closed spec fn frames(&self) -> nat {
+        self.frames@
+    }
+
+    /// The next number is one more than the number of frames so far, so it is
+    /// at least 1.
+    #[verifier::type_invariant]
+    spec fn inv(&self) -> bool {
+        self.next as nat == self.frames@ + 1
+    }
+
+    /// The counter before the first frame.
+    pub(crate) fn start() -> (s: Self)
+        ensures
+            s.next() == START_SEQUENCE_NUMBER,
+            s.frames() == 0,
+    {
+        //= spec/data-format/message-body.md#regular-frame-sequence-number
+        //= reason=START_SEQUENCE_NUMBER is defined as 1
+        //# Framed Data MUST start at Sequence Number 1.
+        //
+        //= spec/client-apis/encrypt.md#construct-a-frame
+        //= reason=START_SEQUENCE_NUMBER is defined as 1
+        //# If this is the first frame sequentially, the sequence number value MUST be 1.
+        Self { next: START_SEQUENCE_NUMBER, frames: Ghost(0) }
+    }
+
+    /// The number for the next regular frame. Returns `None`, and leaves the
+    /// counter unchanged, when that number would be `ENDFRAME_SEQUENCE_NUMBER`
+    /// (`u32::MAX`): the frame count would then pass `2^32 - 1` once the final
+    /// frame is added. Otherwise returns the current number and adds 1.
+    pub(crate) fn take_regular(&mut self) -> (r: Option<u32>)
+        ensures
+            (r is None) <==> old(self).next() == ENDFRAME_SEQUENCE_NUMBER,
+            r is None ==> *final(self) == *old(self),
+            r matches Some(n) ==> (n == old(self).next() && n < u32::MAX && final(self).next()
+                == n + 1 && final(self).frames() == old(self).frames() + 1),
+    {
+        proof {
+            use_type_invariant(&*self);
+        }
+        //= spec/data-format/message-body.md#framed-data
+        //# - The number of frames in a single message MUST be less than or equal to `2^32 - 1`.
+        if self.next == ENDFRAME_SEQUENCE_NUMBER {
+            return None;
+        }
+        let n = self.next;
+        //= spec/data-format/message-body.md#regular-frame-sequence-number
+        //# Subsequent frames MUST be in order and MUST contain an increment of 1 from the previous frame.
+        //
+        //= spec/client-apis/encrypt.md#construct-a-frame
+        //# Otherwise, the sequence number value MUST be 1 greater than the value of the sequence number
+        //# of the previous frame.
+        *self = Self { next: n + 1, frames: Ghost(self.frames@ + 1) };
+        Some(n)
+    }
+
+    /// The number for the final frame: the current value, which is the number
+    /// of regular frames plus 1, i.e. the total number of frames.
+    pub(crate) fn final_seq(&self) -> (n: u32)
+        ensures
+            n == self.next(),
+            n as nat == self.frames() + 1,
+            n >= START_SEQUENCE_NUMBER,
+    {
+        proof {
+            use_type_invariant(self);
+        }
+        self.next
+    }
+}
+
+/// For a frame length of 17 bytes or more, the MAX_DATA budget stops the
+/// message before the frame-count guard in `take_regular` can fire: if `k`
+/// full regular frames fit in MAX_DATA, the next number `k + 1` is below
+/// `ENDFRAME_SEQUENCE_NUMBER`. For smaller frames the guard is the only stop
+/// (see `lemma_frame_guard_needed_at_16`), so the code does not rely on
+/// MAX_DATA for this.
+pub(crate) proof fn lemma_max_data_bounds_frames(frame_length: nat, k: nat)
+    requires
+        frame_length >= 17,
+        k * frame_length <= MAX_DATA,
+    ensures
+        k + 1 < ENDFRAME_SEQUENCE_NUMBER,
+{
+    assert(k * 17 <= k * frame_length) by (nonlinear_arith)
+        requires
+            frame_length >= 17,
+    ;
+}
+
+/// With 16-byte frames, `2^32 - 2` regular frames (the most `take_regular`
+/// numbers) hold exactly MAX_DATA bytes, so the budget accepts them all and
+/// the frame-count guard is what stops the next one.
+pub(crate) proof fn lemma_frame_guard_needed_at_16()
+    ensures
+        (ENDFRAME_SEQUENCE_NUMBER - 1) * 16 == MAX_DATA,
+{
+}
+
+} // verus!
 
 /// Input for constructing a single frame (regular or final).
 pub(crate) struct ConstructFrameInput<'a> {
     pub(crate) alg_suite: AesGcm,
-    pub(crate) key: &'a [u8],
+    pub(crate) key: &'a MessageKey,
     pub(crate) plaintext: &'a [u8],
     pub(crate) message_id: &'a [u8],
     pub(crate) aad_content: BodyAADContent,
@@ -104,106 +436,30 @@ pub(crate) async fn construct_frame(
     //# A generated IV MUST be a unique IV within the message.
     iv_seq(input.sequence_number, iv);
 
-    //= spec/data-format/message-body.md#final-frame
-    //= reason=The two `if input.is_final` blocks below add Sequence Number End and Encrypted Content Length to the shared frame serialization path
-    //# A final frame MUST only differ from a regular frame by the addition of the
-    //# Sequence Number End
-    //# and Encrypted Content Length.
-    if input.is_final {
-        // Sequence Number End
+    // Encrypted Content Length (final frames only)
 
-        //= spec/client-apis/encrypt.md#construct-a-frame
-        //= reason=The following lines serialize SeqNumEnd, SeqNum, IV, EncContentLen, EncContent, and AuthTag in order per the Final Frame spec
-        //# For a final frame, each field MUST be serialized according to its specification:
-        //
-        //= spec/data-format/message-body.md#final-frame
-        //# A final frame MUST consist of, in order,
-        //# Sequence Number End,
-        //# Sequence Number,
-        //# IV,
-        //# Encrypted Content Length,
-        //# Encrypted Content,
-        //# and Authentication Tag.
-        //
-        //= spec/client-apis/encrypt.md#construct-a-frame
-        //# - MUST serialize the [Sequence Number End](../data-format/message-body.md#sequence-number-end).
-        //
-        //= spec/data-format/message-body.md#sequence-number-end
-        //# The value MUST be encoded as the 4 bytes `FF FF FF FF` in hexadecimal notation.
-        write_u32(frame_buf, ENDFRAME_SEQUENCE_NUMBER)?;
-    }
-
-    // Sequence Number
-
-    //= spec/client-apis/encrypt.md#construct-a-frame
-    //= reason=The following lines serialize SeqNum, IV, EncContent, and AuthTag in order per the Regular Frame spec
-    //# For a regular frame, each field MUST be serialized according to its specification:
-    //
-    //= spec/client-apis/encrypt.md#construct-a-frame
-    //# - MUST serialize the [Sequence Number](../data-format/message-body.md#regular-frame-sequence-number).
-    //# The value MUST be the sequence number of this frame.
-    //
-    //= spec/data-format/message-body.md#regular-frame-sequence-number
-    //# The sequence number MUST be interpreted as a UInt32.
-    //
-    //= spec/client-apis/encrypt.md#construct-a-frame
-    //= reason=write_u32 above serializes the sequence number for both regular and final frames in this shared code path
-    //# - MUST serialize the [Sequence Number](../data-format/message-body.md#final-frame-sequence-number).
-    //# The value MUST be the sequence number of this frame.
-    //
-    //= spec/data-format/message-body.md#final-frame-sequence-number
-    //= reason=write_u32 serializes the sequence number as a UInt32, same type as the regular frame sequence number
-    //# The Final Frame Sequence Number MUST be interpreted as the same type as the
-    //# [Regular Frame Sequence Number](#regular-frame-sequence-number).
-    //
-    //= spec/data-format/message-body.md#final-frame-sequence-number
-    //= reason=write_u32 writes exactly 4 bytes, the same length as the regular frame sequence number field
-    //# The length of the Final Frame Sequence number field MUST be the same as the
-    //# [Regular Frame Sequence Number](#regular-frame-sequence-number).
-    write_u32(frame_buf, input.sequence_number)?;
-
-    // IV
-
-    //= spec/client-apis/encrypt.md#construct-a-frame
-    //# - MUST serialize the [IV](../data-format/message-body.md#regular-frame-iv).
-    //
-    //= spec/client-apis/encrypt.md#construct-a-frame
-    //# The value MUST be the IV used when calculating the encrypted content for this frame.
-    //
-    //= spec/client-apis/encrypt.md#construct-a-frame
-    //= reason=write_bytes above serializes the IV for both regular and final frames in this shared code path
-    //# - MUST serialize the [IV](../data-format/message-body.md#final-frame-iv).
-    //
-    //= spec/data-format/message-body.md#final-frame-iv
-    //= reason=iv is &[u8], interpreted as raw bytes
-    //# The IV MUST be interpreted as bytes.
-    write_bytes(frame_buf, iv)?;
-
-    if input.is_final {
-        // Encrypted Content Length
-
-        //= spec/client-apis/encrypt.md#construct-a-frame
-        //# - MUST serialize the [Encrypted Content Length](../data-format/message-body.md#final-frame-encrypted-content-length).
-        //
-        //= spec/data-format/message-body.md#final-frame-encrypted-content-length
-        //# The encrypted content length MUST be a UInt32.
-        // The wire layout puts this length field before the encrypted content,
-        // so we'd otherwise need to encrypt into a scratch buffer just to learn
-        // the ciphertext length. AES-GCM produces a ciphertext exactly the size
-        // of the plaintext (the auth tag is a separate field), so plaintext.len()
-        // *is* the encrypted content length and lets us skip that buffering.
+    //= spec/data-format/message-body.md#final-frame-encrypted-content-length
+    //# The encrypted content length MUST be a UInt32.
+    // The wire layout puts this length field before the encrypted content,
+    // so we'd otherwise need to encrypt into a scratch buffer just to learn
+    // the ciphertext length. AES-GCM produces a ciphertext exactly the size
+    // of the plaintext (the auth tag is a separate field), so plaintext.len()
+    // *is* the encrypted content length and lets us skip that buffering.
+    let final_content_len = if input.is_final {
         let Ok(enc_content_len) = u32::try_from(input.plaintext.len()) else {
             return Err(err(Kind::Validation, "plaintext length exceeds u32"));
         };
+        Some(enc_content_len)
+    } else {
+        None
+    };
 
-        //= spec/data-format/message-body.md#final-frame-encrypted-content-length
-        //# The length of the serialized encrypted content length field MUST be 4 bytes.
-        //
-        //= spec/data-format/message-header.md#frame-length
-        //= reason=enc_content_len is bounded by the frame length from the header, interpreted as a UInt32
-        //# The frame length MUST be interpreted as a UInt32.
-        write_u32(frame_buf, enc_content_len)?;
-    }
+    //= spec/data-format/message-body.md#final-frame
+    //= reason=write_frame_prefix adds Sequence Number End and Encrypted Content Length only when final_content_len is Some, on the shared frame serialization path
+    //# A final frame MUST only differ from a regular frame by the addition of the
+    //# Sequence Number End
+    //# and Encrypted Content Length.
+    write_frame_prefix(frame_buf, input.sequence_number, iv, final_content_len);
 
     // Encrypted Content + Authentication Tag
 
@@ -241,7 +497,7 @@ pub(crate) async fn construct_frame(
     //
     //= spec/client-apis/encrypt.md#construct-a-frame
     //# The value MUST be the authentication tag output when calculating the encrypted content for this frame.
-    aes_encrypt(
+    secret::seal(
         input.alg_suite,
         iv,
         //= spec/client-apis/encrypt.md#construct-a-frame
@@ -282,14 +538,17 @@ pub(crate) async fn construct_frame(
 pub(crate) async fn encrypt_and_serialize_body(
     plaintext: &mut dyn Source,
     header: &HeaderInfo,
-    key: &[u8],
+    key: &MessageKey,
     ciphertext: &mut dyn Sink,
     sig_digest: &mut DigestWriter,
     max_plaintext_length: Option<u64>,
 ) -> Result<(), Error> {
     let max_plaintext_length =
         max_plaintext_length.map(|len| usize::try_from(len).unwrap_or(usize::MAX));
-    let mut total_data_size: usize = 0;
+    // `PlaintextBudget` and `EncryptFrameSeq` (VR-017) are the verified
+    // limits; this loop calls them once per frame and maps their rejections
+    // to errors.
+    let mut budget = PlaintextBudget::new();
     let Ok(frame_length) = usize::try_from(header.body.frame_length()) else {
         return ser_err(&format!(
             "frame length {} exceeds usize::MAX",
@@ -301,14 +560,7 @@ pub(crate) async fn encrypt_and_serialize_body(
     let frame_len = frame_length + iv_len + auth_len + 4;
     let mut frame_buf = Vec::with_capacity(frame_len);
 
-    //= spec/data-format/message-body.md#regular-frame-sequence-number
-    //= reason=START_SEQUENCE_NUMBER is defined as 1
-    //# Framed Data MUST start at Sequence Number 1.
-    //
-    //= spec/client-apis/encrypt.md#construct-a-frame
-    //= reason=START_SEQUENCE_NUMBER is defined as 1
-    //# If this is the first frame sequentially, the sequence number value MUST be 1.
-    let mut sequence_number = START_SEQUENCE_NUMBER;
+    let mut frame_seq = EncryptFrameSeq::start();
     let mut yielder = super::FrameYielder::new(frame_length);
     let alg_suite = get_alg_suite(&header.suite)?;
 
@@ -358,19 +610,13 @@ pub(crate) async fn encrypt_and_serialize_body(
         //# such that creating a regular frame does not processes all consumable bytes,
         //# then this operation MUST [construct a regular frame](#construct-a-frame)
         //# using the consumable plaintext bytes.
-        if sequence_number == ENDFRAME_SEQUENCE_NUMBER {
-            //= spec/data-format/message-body.md#framed-data
-            //# - The number of frames in a single message MUST be less than or equal to `2^32 - 1`.
+        let Some(sequence_number) = frame_seq.take_regular() else {
             return Err(val_err("too many frames"));
-        }
+        };
 
-        total_data_size += frame_length;
-        if total_data_size > MAX_DATA {
-            return Err(val_err("plaintext too large"));
-        }
-        if let Some(max_plaintext_len) = max_plaintext_length
-            && total_data_size > max_plaintext_len
-        {
+        match budget.add(frame_length, max_plaintext_length) {
+            Ok(()) => {}
+            Err(BudgetError::TooLarge) => return Err(val_err("plaintext too large")),
             //= spec/client-apis/encrypt.md#plaintext-length-bound
             //# If this input is provided, this operation MUST NOT encrypt a plaintext with length
             //# greater than this value.
@@ -380,9 +626,11 @@ pub(crate) async fn encrypt_and_serialize_body(
             //# and this operation determines at any time that the plaintext being encrypted
             //# has a length greater than this value,
             //# this operation MUST immediately fail.
-            return Err(val_err(
-                "plaintext length exceeds configured Plaintext Length Bound",
-            ));
+            Err(BudgetError::OverBound) => {
+                return Err(val_err(
+                    "plaintext length exceeds configured Plaintext Length Bound",
+                ));
+            }
         }
 
         //= spec/client-apis/encrypt.md#construct-a-frame
@@ -421,31 +669,22 @@ pub(crate) async fn encrypt_and_serialize_body(
             sig_digest,
         )
         .await?;
-
-        //= spec/data-format/message-body.md#regular-frame-sequence-number
-        //# Subsequent frames MUST be in order and MUST contain an increment of 1 from the previous frame.
-        //
-        //= spec/client-apis/encrypt.md#construct-a-frame
-        //# Otherwise, the sequence number value MUST be 1 greater than the value of the sequence number
-        //# of the previous frame.
-        sequence_number += 1;
     }
 
     //= spec/client-apis/encrypt.md#construct-the-body
     //# When the end of the input is indicated,
     //# this operation MUST perform the following until all consumable plaintext bytes are processed:
     // Final frame
-    total_data_size += in_size;
-    if total_data_size > MAX_DATA {
-        return Err(val_err("plaintext too large"));
+    match budget.add(in_size, max_plaintext_length) {
+        Ok(()) => {}
+        Err(BudgetError::TooLarge) => return Err(val_err("plaintext too large")),
+        Err(BudgetError::OverBound) => {
+            return Err(val_err(
+                "plaintext length exceeds specified Plaintext Length Bound",
+            ));
+        }
     }
-    if let Some(max_len) = max_plaintext_length
-        && total_data_size > max_len
-    {
-        return Err(val_err(
-            "plaintext length exceeds specified Plaintext Length Bound",
-        ));
-    }
+    let sequence_number = frame_seq.final_seq();
 
     //= spec/data-format/message-body.md#final-frame
     //= reason=in_size is the plaintext length for the final frame; this asserts it is <= frame_length
@@ -482,6 +721,7 @@ pub(crate) async fn encrypt_and_serialize_body(
             message_id: header.body.message_id(),
             aad_content: BodyAADContent::FinalFrame,
             //= spec/data-format/message-body.md#final-frame-sequence-number
+            //= reason=frame_seq.final_seq() (VR-017) returns the regular frame count plus 1
             //# The Final Frame Sequence number MUST be equal to the total number of frames in the Framed Data.
             sequence_number,
             is_final: true,
@@ -495,4 +735,72 @@ pub(crate) async fn encrypt_and_serialize_body(
     .await?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::message::serialize_functions::write_u32;
+
+    /// The bytes the `write_u32`/`write_bytes` calls in `construct_frame` wrote
+    /// before `write_frame_prefix` replaced them.
+    fn old_prefix(seq: u32, iv: &[u8], final_content_len: Option<u32>) -> Vec<u8> {
+        let mut buf = Vec::new();
+        if final_content_len.is_some() {
+            write_u32(&mut buf, ENDFRAME_SEQUENCE_NUMBER).unwrap();
+        }
+        write_u32(&mut buf, seq).unwrap();
+        write_bytes(&mut buf, iv).unwrap();
+        if let Some(n) = final_content_len {
+            write_u32(&mut buf, n).unwrap();
+        }
+        buf
+    }
+
+    #[test]
+    fn write_frame_prefix_matches_old_layout() {
+        let iv: Vec<u8> = (0..12).collect();
+        for (seq, final_content_len) in [
+            (1, None),
+            (0x0102_0304, None),
+            (1, Some(0)),
+            (7, Some(0x0A0B_0C0D)),
+            (u32::MAX - 1, Some(u32::MAX)),
+        ] {
+            let mut buf = vec![0xEE; 2];
+            write_frame_prefix(&mut buf, seq, &iv, final_content_len);
+            let mut expected = vec![0xEE; 2];
+            expected.extend(old_prefix(seq, &iv, final_content_len));
+            assert_eq!(buf, expected, "seq={seq} final={final_content_len:?}");
+        }
+    }
+
+    // MAX_DATA + 1 does not fit a 32-bit `usize`.
+    #[cfg(target_pointer_width = "64")]
+    #[test]
+    fn plaintext_budget_rejects_over_max_data() {
+        let max = usize::try_from(MAX_DATA).unwrap();
+        assert_eq!(
+            PlaintextBudget::new().add(max + 1, None),
+            Err(BudgetError::TooLarge)
+        );
+        let mut b = PlaintextBudget::new();
+        assert_eq!(b.add(max, None), Ok(()));
+        assert_eq!(b.add(1, None), Err(BudgetError::TooLarge));
+    }
+
+    #[test]
+    fn frame_seq_stops_at_endframe() {
+        assert_eq!(EncryptFrameSeq::start().take_regular(), Some(1));
+        // Reaching ENDFRAME_SEQUENCE_NUMBER through `take_regular` takes
+        // 2^32 - 2 calls, so the test builds the counter there directly. The
+        // ghost frame count is erased at runtime and this module is not
+        // verified.
+        let mut s = EncryptFrameSeq {
+            next: ENDFRAME_SEQUENCE_NUMBER,
+            frames: Ghost::assume_new(),
+        };
+        assert_eq!(s.take_regular(), None);
+        assert_eq!(s.final_seq(), ENDFRAME_SEQUENCE_NUMBER);
+    }
 }

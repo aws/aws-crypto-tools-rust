@@ -16,6 +16,30 @@ use super::{Error, ser_err};
 use crate::error::{Kind, err};
 use crate::shapes::{Source, Tee};
 use aws_crypto_mpl::types::AlgorithmSuite;
+use vstd::prelude::*;
+
+verus! {
+
+/// Whether the four V1 reserved bytes are all zero, i.e. equal `RESERVED_BYTES`,
+/// the value the writer emits. If `RESERVED_BYTES` ever changes, update this
+/// check too; the unit test `reserved_bytes_ok_only_for_all_zero` asserts
+/// `reserved_bytes_ok(RESERVED_BYTES)`.
+pub(crate) fn reserved_bytes_ok(b: [u8; 4]) -> (ok: bool)
+    ensures
+        ok <==> (b[0] == 0 && b[1] == 0 && b[2] == 0 && b[3] == 0),
+{
+    b[0] == 0 && b[1] == 0 && b[2] == 0 && b[3] == 0
+}
+
+/// Whether the header IV length equals the algorithm suite's IV length.
+pub(crate) fn iv_len_matches(iv_len: u8, expected: usize) -> (ok: bool)
+    ensures
+        ok <==> iv_len as int == expected as int,
+{
+    usize::from(iv_len) == expected
+}
+
+} // verus!
 
 //= spec/data-format/message-header.md#reserved
 //# A reserved sequence of 4 bytes
@@ -164,7 +188,7 @@ pub(crate) fn write_v1_header_body(w: &mut Tee, body: &V1HeaderBody) -> Result<(
 pub(crate) async fn read_v1_reserved_bytes(r: &mut dyn Source, raw: &mut Tee) -> Result<(), Error> {
     let mut result = [0; RESERVED_BYTES.len()];
     read_bytes(r, &mut result, raw).await?;
-    if result == RESERVED_BYTES {
+    if reserved_bytes_ok(result) {
         Ok(())
     } else {
         ser_err("incorrect reserved bytes")
@@ -181,7 +205,7 @@ pub(crate) async fn read_v1_header_iv_length(
     //= spec/data-format/message-header.md#iv-length
     //# This value MUST be equal to the [IV length](../framework/algorithm-suites.md#iv-length) value of the
     //# [algorithm suite](../framework/algorithm-suites.md) specified by the [Algorithm Suite ID](#algorithm-suite-id) field.
-    if usize::from(iv_len) == get_iv_length(suite) {
+    if iv_len_matches(iv_len, get_iv_length(suite)) {
         Ok(iv_len)
     } else {
         ser_err("header IV length does not match algorithm suite")
@@ -270,4 +294,30 @@ pub(crate) async fn read_v1_header_body(
         header_iv_length,
         frame_length,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reserved_bytes_ok_only_for_all_zero() {
+        assert!(reserved_bytes_ok(RESERVED_BYTES));
+        for i in 0..4 {
+            for v in 1..=u8::MAX {
+                let mut b = RESERVED_BYTES;
+                b[i] = v;
+                assert!(!reserved_bytes_ok(b));
+            }
+        }
+    }
+
+    #[test]
+    fn iv_len_matches_compares_values() {
+        for iv_len in 0..=u8::MAX {
+            assert!(iv_len_matches(iv_len, usize::from(iv_len)));
+            assert!(!iv_len_matches(iv_len, usize::from(iv_len) + 1));
+        }
+        assert!(!iv_len_matches(12, 256 + 12));
+    }
 }

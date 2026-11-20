@@ -3,6 +3,7 @@
 
 //! Encrypted data key serialization and deserialization.
 
+use super::header::{EdkCount, edk_count_check};
 use super::serialize_functions::{read_seq_u16, read_str_u16, read_u16, write_bytes, write_u16};
 use super::{Error, ser_err};
 use crate::error::{Kind, err};
@@ -152,31 +153,33 @@ pub(crate) async fn read_edks(
     //# The encrypted data key count MUST be interpreted as a UInt16.
     let count = read_u16(r, raw).await?;
 
-    //= spec/data-format/message-header.md#encrypted-data-key-count
-    //# This value MUST be greater than 0.
-    if count == 0 {
-        return ser_err("encrypted data key count must be greater than 0");
-    }
-
-    if let Some(max_edks) = max_edks
-        && usize::from(count) > max_edks.get()
-    {
+    let max = max_edks.map(std::num::NonZeroUsize::get);
+    match edk_count_check(usize::from(count), max) {
+        EdkCount::Ok => {}
         //= spec/data-format/message-header.md#encrypted-data-key-count
-        //# This value MUST be less than or equal to the [maximum number of encrypted data keys](../client-apis/client.md#maximum-number-of-encrypted-data-keys) if the maximum number is configured.
-        //
-        //= spec/client-apis/decrypt.md#v2-header-deserialization
-        //# If the number of [encrypted data keys](../framework/structures.md#encrypted-data-keys)
-        //# deserialized from the [message header](../data-format/message-header.md)
-        //# is greater than the [maximum number of encrypted data keys](client.md#maximum-number-of-encrypted-data-keys) configured in the [client](client.md),
-        //# then as soon as that can be determined during deserializing
-        //# decrypt MUST process no more bytes and yield an error.
-        return Err(err(
-            Kind::Validation,
-            format!(
-                "encrypted data key count {count} exceeds configured maximum {}",
-                max_edks.get()
-            ),
-        ));
+        //# This value MUST be greater than 0.
+        EdkCount::Empty => {
+            return ser_err("encrypted data key count must be greater than 0");
+        }
+        EdkCount::OverMax => {
+            //= spec/data-format/message-header.md#encrypted-data-key-count
+            //# This value MUST be less than or equal to the [maximum number of encrypted data keys](../client-apis/client.md#maximum-number-of-encrypted-data-keys) if the maximum number is configured.
+            //
+            //= spec/client-apis/decrypt.md#v2-header-deserialization
+            //# If the number of [encrypted data keys](../framework/structures.md#encrypted-data-keys)
+            //# deserialized from the [message header](../data-format/message-header.md)
+            //# is greater than the [maximum number of encrypted data keys](client.md#maximum-number-of-encrypted-data-keys) configured in the [client](client.md),
+            //# then as soon as that can be determined during deserializing
+            //# decrypt MUST process no more bytes and yield an error.
+            return Err(err(
+                Kind::Validation,
+                format!(
+                    "encrypted data key count {count} exceeds configured maximum {}",
+                    // OverMax implies `max` is `Some`.
+                    max.unwrap_or_default()
+                ),
+            ));
+        }
     }
 
     // Encrypted Data Key Entries

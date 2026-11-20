@@ -1,0 +1,110 @@
+{
+  "name": "verus-prove-target",
+  "description": "Recipe R1 (UNVALIDATED: the workflow schema was not validated; see the spec section 'Workflow file' for the uncertain fields): feasibility -> prove -> mutations -> CI parity -> docs -> review -> ask before merge, ask before push. Authoritative spec: .kiro/verification-toolkit/recipes/R1-prove-target.md",
+  "inputs": {
+    "target_id": "string",
+    "target_description": "string",
+    "base_branch": "string",
+    "base_sha": "string",
+    "profile_path": "absolute path",
+    "task_dir": "absolute path inside the workspace",
+    "worktree_path": "absolute path"
+  },
+  "steps": [
+    {
+      "type": "step",
+      "id": "setup",
+      "agent": "wf-coder",
+      "prompt": "Recipe R1, step 0 (setup) for target {{target_id}}: {{target_description}}.\n\nPaths (absolute; never use a relative path): worktree {{worktree_path}}, task dir {{task_dir}}, profile {{profile_path}}. The task branch name is the basename of {{worktree_path}}. Find the repository root with `git -C {{task_dir}} rev-parse --show-toplevel`.\n\nDo, in order:\n1. Confirm `git -C <repo root> rev-parse {{base_branch}}` equals {{base_sha}} (full sha). If it does not, stop: send_message severity warning to parent with both shas and wait for the user.\n2. If {{worktree_path}} does not exist, run `git -C <repo root> worktree add -b <task branch> {{worktree_path}} {{base_sha}}`. If it exists, do not recreate it: confirm it is on <task branch> at {{base_sha}} with a clean tree, or stop with a warning. Record `git -C {{worktree_path}} rev-parse HEAD`.\n3. Follow {{worktree_path}}/.kiro/verification-toolkit/recipes/R1-prove-target.md section 'Step 0: setup' and 'Standing rules'.\n4. Compare `schema_version` in {{profile_path}} with `schema_version` in {{worktree_path}}/.kiro/verification-toolkit/verification-profile.template.yaml. If they differ, stop with a warning.\n5. Create {{task_dir}} and {{task_dir}}/logs/. If {{task_dir}}/decisions.md does not exist, create it with the heading '## Decisions (do not re-decide)' and no entries; if it exists, keep it and read it. If {{task_dir}}/verdict.json exists from an earlier run, rename it to verdict.prev-<UTC timestamp>.json.\n6. Write {{task_dir}}/setup.md: worktree path, task branch, HEAD sha, base branch and base sha, the schema check result.\n\nNo source edits and no commits in this step. Do not push or merge. Files in {{task_dir}} are never committed.\n\nSignals: send_message severity success to parent when setup.md and decisions.md exist; warning for any stop above (wait for the answer; record it verbatim in {{task_dir}}/decisions.md with who relayed it; re-ask if the answer did not arrive); error if the user says stop.",
+      "artifacts": {
+        "decisions": "{{task_dir}}/decisions.md",
+        "setup_note": "{{task_dir}}/setup.md"
+      }
+    },
+    {
+      "type": "step",
+      "id": "feasibility",
+      "agent": "wf-coder",
+      "prompt": "Recipe R1, step 1 (feasibility, gate G1) for target {{target_id}}: {{target_description}}.\n\nPaths (absolute): worktree {{worktree_path}} (base {{base_branch}} at {{base_sha}}), task dir {{task_dir}}, profile {{profile_path}}. Read first: {{artifacts.decisions}} (the 'Decisions (do not re-decide)' block); follow every decision and append each new user decision verbatim, with who relayed it and the date. Then read {{profile_path}} and {{artifacts.setup_note}}.\n\nFollow {{worktree_path}}/.kiro/verification-toolkit/recipes/R1-prove-target.md section 'Step 1: feasibility and gate G1'. Fill the template {{worktree_path}}/.kiro/verification-toolkit/templates/T-feasibility.md and write it to {{task_dir}}/feasibility.md. Run the baseline today (cache bust, every verify command on every feature set, the models); never copy a count from a doc. Confirm every fact with a grep or command and show it.\n\nThis step is read-only on the source: no source edits and no commits. Scratch files go outside the repository. Act as the proof agent the spec names (profile `targets[].agent`, or the route in {{worktree_path}}/.kiro/agents/verus-capabilities.md for a new target) for judging the design, but write only the feasibility note and scratch files.\n\nGate G1: if the verdict is not 'GO, clean', or the change is intrusive, or it needs a behavior or API change, or a finding appears, record it in the note and do not fix it. Send send_message severity warning to parent with the trigger, numbered options and your recommendation, and wait. Record the answer verbatim in {{artifacts.decisions}} and in the note's Decisions block. If the answer seems lost or cut off, ask again. If the user picks an option that continues, update the note and send success. If the user says stop, send severity error.\n\nSignals: success when the note is complete and G1 passed or the user chose to continue; warning for G1; error when the user says stop.",
+      "artifacts": {
+        "feasibility": "{{task_dir}}/feasibility.md"
+      }
+    },
+    {
+      "type": "step",
+      "id": "prove",
+      "agent": "wf-coder",
+      "prompt": "Recipe R1, step 2 (prove) for target {{target_id}}: {{target_description}}.\n\nPaths (absolute): worktree {{worktree_path}}, task dir {{task_dir}}, profile {{profile_path}}. Work only in {{worktree_path}} on its task branch. Read first: {{artifacts.decisions}}; follow every decision and append each new one verbatim with who relayed it. Then read {{artifacts.feasibility}} (Design, Behavior, Mutations planned, Decisions).\n\nFollow {{worktree_path}}/.kiro/verification-toolkit/recipes/R1-prove-target.md section 'Step 2: prove'. Follow the proof agent named by profile `targets[].agent` in {{profile_path}} (files in {{worktree_path}}/.kiro/agents/), or for a new target the route in {{worktree_path}}/.kiro/agents/verus-capabilities.md. Keep every invariant of {{worktree_path}}/.kiro/skills/verus/SKILL.md. Never weaken a proof. Comments say in plain language what is proven and what is trusted.\n\nIf the proof needs a behavior or API change, or a trusted spec the Decisions block does not approve, do not make it: send_message severity warning to parent with the options and wait; record the answer verbatim; re-ask if it did not arrive.\n\nRun the cache bust and each verify command on each feature set once and read the result line the profile names. Commit locally on the task branch with a conventional message that includes the result lines. Fill the 'Implementation outcome' section of {{artifacts.feasibility}}. Do not push or merge.\n\nSignals: success when the commit exists and every verify run shows 0 errors; warning as above; error when the user says stop."
+    },
+    {
+      "type": "step",
+      "id": "mutations",
+      "agent": "wf-coder",
+      "prompt": "Recipe R1, step 3 (mutations) for target {{target_id}}.\n\nPaths (absolute): worktree {{worktree_path}}, task dir {{task_dir}}, profile {{profile_path}}. Read first: {{artifacts.decisions}}; follow every decision and append each new one verbatim with who relayed it. Then read the 'Mutations planned' section of {{artifacts.feasibility}} and the diff `git -C {{worktree_path}} diff {{base_sha}}..HEAD`.\n\nFollow {{worktree_path}}/.kiro/verification-toolkit/recipes/R1-prove-target.md section 'Step 3: mutations' and the SKILL section 'Mutation testing' ({{worktree_path}}/.kiro/skills/verus/SKILL.md). Fill the template {{worktree_path}}/.kiro/verification-toolkit/templates/T-mutations-log.md and write it to {{task_dir}}/logs/mutations.md: baseline after the cache bust, at least one mutation per new obligation, one at a time, the result line or compiler error, the outcome class, and a byte-for-byte revert per row.\n\nIf an expected catcher and the outcome class differ, stop: send_message severity warning to parent with the row and wait; record the answer verbatim; re-ask if it did not arrive.\n\nAt the end `git -C {{worktree_path}} status --short` must be empty. No commit in this step. Do not push or merge.\n\nSignals: success when the log is complete and the tree is clean; warning as above; error when the user says stop.",
+      "artifacts": {
+        "mutations_log": "{{task_dir}}/logs/mutations.md"
+      }
+    },
+    {
+      "type": "step",
+      "id": "ci_parity",
+      "agent": "wf-coder",
+      "prompt": "Recipe R1, step 4 (CI parity) for target {{target_id}}.\n\nPaths (absolute): worktree {{worktree_path}}, task dir {{task_dir}}, profile {{profile_path}}. Read first: {{artifacts.decisions}}; follow every decision (including accepted known items, which are not escalated again unless their root cause changed) and append each new one verbatim with who relayed it.\n\nFollow {{worktree_path}}/.kiro/verification-toolkit/recipes/R1-prove-target.md section 'Step 4: CI parity'. On HEAD, run from {{profile_path}}: `crates[].cache_bust`, then every `crates[].verify_cmd` with every `crates[].feature_sets` entry, reading `crates[].result_line`; `models.verify_cmd`; `crates[].test_cmd`, comparing failures with `crates[].known_test_failures`; every `crates[].lint_cmds` entry; every `ci.checks[].local_cmd`; and `ci.dependent_lockfiles` when a manifest changed. Check new platform-dependent code against `platform_assumptions`. List every `local_env_limits[]` item that stops a check from running locally, with its consequence, under 'Not run locally'.\n\nFix only what the change itself broke (format, lint), re-run that check and commit locally. Then write {{task_dir}}/logs/ci-parity.md: the HEAD sha the checks ran on (after any fix commit), each command, its result line or summary, and 'Not run locally'. Any other failure, or a test failure not in the known list: send_message severity warning to parent and wait; record the answer verbatim; re-ask if it did not arrive. Do not push or merge.\n\nSignals: success when the log is complete and every check passed or is accounted for; warning as above; error when the user says stop.",
+      "artifacts": {
+        "ci_parity_log": "{{task_dir}}/logs/ci-parity.md"
+      }
+    },
+    {
+      "type": "step",
+      "id": "docs",
+      "agent": "wf-coder",
+      "prompt": "Recipe R1, step 5 (docs) for target {{target_id}}.\n\nPaths (absolute): worktree {{worktree_path}}, task dir {{task_dir}}, profile {{profile_path}}. Read first: {{artifacts.decisions}}; follow every decision and append each new one verbatim with who relayed it. Then read {{artifacts.feasibility}}, {{artifacts.mutations_log}} and {{artifacts.ci_parity_log}}.\n\nFollow {{worktree_path}}/.kiro/verification-toolkit/recipes/R1-prove-target.md section 'Step 5: docs' and the doc rules of {{worktree_path}}/.kiro/agents/ai-verification-update.md. From {{profile_path}}: update every `artifacts.maintained` doc that cites the target and the status in `artifacts.status_oracle`; take counts only from the runs in {{artifacts.ci_parity_log}} (`artifacts.counts_source`); update the `artifacts.baseline_markers` lines; regenerate each `artifacts.maintained[].docx_twin` with `artifacts.docx_cmd`; report drift in `artifacts.report_only` files without editing them. Claims follow the SKILL 'Honesty ladder' and the outcome classes in the mutation log.\n\nCommit locally; this commit changes docs only. The message carries the verification block from {{artifacts.ci_parity_log}}, including 'Not run locally', and the mutation summary from {{artifacts.mutations_log}} (one line per row and the 'Claims supported' line). Then write {{task_dir}}/logs/docs.md (docs changed, report-only drift, the docs commit sha). Do not push or merge.\n\nSignals: success when the commit exists and the tree is clean; warning if a doc change needs a user decision (wait, record the answer verbatim, re-ask if it did not arrive); error when the user says stop.",
+      "artifacts": {
+        "docs_log": "{{task_dir}}/logs/docs.md"
+      }
+    },
+    {
+      "type": "repeat",
+      "id": "review_loop",
+      "maxIterations": 2,
+      "onMaxIterations": "pause",
+      "stopCondition": {
+        "fileCheck": {
+          "path": "{{task_dir}}/verdict.json",
+          "jsonPath": "verdict",
+          "value": "APPROVED"
+        }
+      },
+      "steps": [
+        {
+          "type": "step",
+          "id": "fix",
+          "agent": "wf-coder",
+          "prompt": "Recipe R1, step 6 (review loop, gate G2), fixer part, for target {{target_id}}.\n\nPaths (absolute): worktree {{worktree_path}}, task dir {{task_dir}}, profile {{profile_path}}. Read first: {{artifacts.decisions}}; follow every decision and append each new one verbatim with who relayed it. Follow {{worktree_path}}/.kiro/verification-toolkit/recipes/R1-prove-target.md section 'Step 6: review loop, gate G2'.\n\nRead the verdict file by its path, {{task_dir}}/verdict.json.\n- If it does not exist (first iteration): confirm `git -C {{worktree_path}} status --short` is empty, HEAD equals the docs commit sha recorded in {{artifacts.docs_log}}, and `git -C {{worktree_path}} diff --name-only <sha recorded in {{artifacts.ci_parity_log}}>..HEAD` lists only docs named in {{artifacts.docs_log}}. If not, re-run the step 4 checks on HEAD and update {{artifacts.ci_parity_log}}. Then send success.\n- Otherwise: fix every finding with severity blocker or major, and the minor findings that are inside the target's scope. Re-run the step 4 checks the fix affects, update {{artifacts.ci_parity_log}} and {{artifacts.mutations_log}} when obligations changed, and commit locally. Do not edit {{task_dir}}/verdict.json or {{task_dir}}/review.md.\n\nA fix that would change what users see or how the code behaves is a user decision: send_message severity warning to parent naming the finding, the change and what the user would notice, and wait; record the answer verbatim; re-ask if it did not arrive. Do not push or merge.\n\nSignals: success when the fixes are committed (or nothing was to fix) and the tree is clean; warning as above; error when the user says stop."
+        },
+        {
+          "type": "step",
+          "id": "review",
+          "agent": "verus-proof-reviewer",
+          "prompt": "Recipe R1, step 6 (review loop, gate G2), review part, for target {{target_id}}: {{target_description}}.\n\nPaths (absolute): worktree {{worktree_path}}, task branch = basename of {{worktree_path}}, base branch {{base_branch}}, base sha {{base_sha}}; the range under review is {{base_sha}}..HEAD. Task dir {{task_dir}}, profile {{profile_path}}. Read first: {{artifacts.decisions}} (the 'Decisions (do not re-decide)' block). Inputs: {{artifacts.feasibility}}, {{artifacts.mutations_log}}, {{artifacts.ci_parity_log}}, {{artifacts.docs_log}}.\n\nFollow {{worktree_path}}/.kiro/agents/verus-proof-reviewer.md (checklist C1 to C13) and {{worktree_path}}/.kiro/verification-toolkit/recipes/R1-prove-target.md section 'Step 6: review loop, gate G2'. Write the review in the template {{worktree_path}}/.kiro/verification-toolkit/templates/T-review.md to {{task_dir}}/review.md.\n\nWrite the verdict file to {{task_dir}}/verdict.json on EVERY iteration, also when the verdict did not change, with exactly this shape: {\"verdict\": \"APPROVED\"|\"CHANGES_REQUESTED\", \"summary\": str, \"reviewDoc\": abs path, \"findings\": [{\"id\",\"severity\",\"file\",\"issue\",\"fix\"}]}. Severities: blocker, major, minor, info. verdict is APPROVED if and only if no finding is blocker or major; otherwise CHANGES_REQUESTED. reviewDoc is the absolute path {{task_dir}}/review.md.\n\nNever edit source, docs or tests; never commit, merge or push; leave the tree as you found it.\n\nSignals: send_message severity success to parent when both files are written, whatever the verdict. The loop's stop condition reads {{task_dir}}/verdict.json.",
+          "artifacts": {
+            "review_doc": "{{task_dir}}/review.md",
+            "verdict": "{{task_dir}}/verdict.json"
+          }
+        }
+      ]
+    },
+    {
+      "type": "step",
+      "id": "merge_gate",
+      "agent": "wf-coder",
+      "prompt": "Recipe R1, step 7 (gate G3a, merge) for target {{target_id}}.\n\nPaths (absolute): worktree {{worktree_path}}, task branch = basename of {{worktree_path}}, task dir {{task_dir}}, profile {{profile_path}}. Read first: {{artifacts.decisions}}; follow every decision and append each new one verbatim with who relayed it and the date. Follow {{worktree_path}}/.kiro/verification-toolkit/recipes/R1-prove-target.md section 'Step 7: gate G3a, merge'. Read {{task_dir}}/verdict.json, {{task_dir}}/review.md and {{task_dir}}/logs/ci-parity.md by these paths.\n\nSend send_message severity warning to parent with: the commits in {{base_sha}}..HEAD, `git -C {{worktree_path}} diff --stat {{base_sha}}..HEAD`, the result lines from the CI-parity log, its 'Not run locally' list, the verdict and its remaining minor or info findings, and the question: fast-forward {{base_branch}} to the task branch with `git merge --ff-only`? Wait for an explicit answer. If the answer seems lost or cut off, ask again; never assume yes.\n\nOn an explicit yes: confirm `git -C {{worktree_path}} rev-parse {{base_branch}}` still equals {{base_sha}}; find the checkout that has {{base_branch}} checked out (`git -C {{worktree_path}} worktree list --porcelain`). If the base moved, or no checkout has {{base_branch}}, or that checkout has uncommitted changes, do not merge: report and ask. Otherwise run `git -C <that checkout> merge --ff-only <task branch>` and report the new sha. Do not push.\n\nOn no: record 'merge: declined' in {{artifacts.decisions}} and send success. Record every answer verbatim.\n\nSignals: warning for the G3a question (and any follow-up question); success after the merge or a recorded no; error when the user says stop."
+    },
+    {
+      "type": "step",
+      "id": "push_gate",
+      "agent": "wf-coder",
+      "prompt": "Recipe R1, step 8 (gate G3b, push) for target {{target_id}}.\n\nPaths (absolute): worktree {{worktree_path}}, task branch = basename of {{worktree_path}}, task dir {{task_dir}}. Read first: {{artifacts.decisions}}; follow every decision and append each new one verbatim with who relayed it and the date. Follow {{worktree_path}}/.kiro/verification-toolkit/recipes/R1-prove-target.md section 'Step 8: gate G3b, push' and its standing rules.\n\nIf {{artifacts.decisions}} records 'merge: declined', report that nothing was pushed and send success without asking. A push-and-PR flow without a local merge is out of scope for R1.\n\nOtherwise send send_message severity warning to parent and ask separately, as its own question, whether to push and what (branch and remote), and whether to edit a PR body. A yes to the merge is not a yes to the push. Wait for an explicit answer; if it seems lost or cut off, ask again.\n\nOn a yes to push: push only what the user named to the remote the user named; never force-push. On a yes to a PR-body edit: fetch the live body, save it as {{task_dir}}/pr-body.orig.md, write {{task_dir}}/pr-body.new.md, show the diff, and ask again before the edit. On no: record it and send success. Record every answer verbatim.\n\nSignals: warning for each G3b question; success after the approved actions or a recorded no; error when the user says stop."
+    }
+  ]
+}

@@ -199,7 +199,9 @@ mod builder;
 pub mod client;
 pub mod config;
 mod decrypt;
+pub(crate) mod decrypt_gate;
 mod encrypt;
+pub(crate) mod encrypt_gate;
 pub mod error;
 pub mod operation;
 mod shapes;
@@ -226,6 +228,7 @@ pub use aws_crypto_mpl::{cmc, cmm, key_store, keyring};
 pub(crate) mod key_derivation;
 pub(crate) mod materials;
 pub(crate) mod message;
+pub(crate) mod secret;
 
 /// Internal items exposed solely so integration tests under `tests/` can
 /// construct and assert on exact byte outputs of non-public serialization
@@ -235,7 +238,8 @@ pub(crate) mod message;
 /// changed, renamed, or removed at any time.
 #[doc(hidden)]
 pub mod __test_internals {
-    pub use crate::key_derivation::{ExpandedKeyMaterial, derive_key_v2, derive_keys};
+    #[cfg(feature = "test-internals")]
+    pub use crate::key_derivation::test_api::{ExpandedKeyMaterial, derive_key_v2, derive_keys};
     pub use crate::message::DigestWriter;
     pub use crate::message::body::body_aad::{BodyAADContent, body_aad};
     pub use crate::message::header::{HeaderInfo, generate_message_id, read_header_body};

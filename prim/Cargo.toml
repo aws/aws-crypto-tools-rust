@@ -12,6 +12,11 @@ readme = "README.md"
 
 [dependencies]
 aws-lc-rs = { version = "1.18.1", default-features = false }
+# Verus specs and proofs. The verus! blocks compile to plain Rust under rustc.
+vstd = "=0.0.0-2026-06-14-0213"
+
+[package.metadata.verus]
+verify = true
 
 [features]
 default = ["aws-lc-sys"]
@@ -19,3 +24,9 @@ default = ["aws-lc-sys"]
 # To use AWS-LC FIPS with MPL primitives, simply set `features = ["fips"]`.
 aws-lc-sys = ["aws-lc-rs/aws-lc-sys"]
 fips = ["aws-lc-rs/fips"]
+[lints.rust]
+# `verus_keep_ghost` is set by cargo-verus. Declared so rustc's cfg check
+# accepts it: the ghost-only AsRef trait proxy in src/aws_lc_specs.rs (needed
+# so Verus can name aws_lc_rs::aead::Aad<A: AsRef<[u8]>>) and the
+# `sized_hierarchy` cfg_attr in src/lib.rs are compiled only under it.
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(verus_keep_ghost)'] }

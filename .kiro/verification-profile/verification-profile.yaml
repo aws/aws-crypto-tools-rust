@@ -1,0 +1,797 @@
+# ESDK verification profile: an instance of the toolkit template
+# (.kiro/verification-toolkit/verification-profile.template.yaml).
+# Every value comes from the repository (grep, ls, the build files), never from memory.
+# Never put a count ("N verified") in this file.
+# Readers: pipeline = ai-verification-pipeline, update = ai-verification-update,
+# spec-analyzer, threat-model = threat-model-generator, recommender =
+# verification-recommender, capabilities = verus-capabilities, header-parsing =
+# verus-header-parsing-proofs, zero-panic = verus-zero-panic, ffi =
+# verus-unsafe-ffi-safety, SKILL = the verus skill, steering = the steering pointer.
+# R1 = recipe R1 (.kiro/verification-toolkit/recipes/R1-prove-target.md and
+# .kiro/workflows/verus-prove-target.workflow.json), proof-reviewer =
+# verus-proof-reviewer. A reader list of "all" covers R1 and proof-reviewer.
+# In a list, the comments on the first entry apply to every entry.
+#
+# This instance: the native-Rust AWS Encryption SDK (ESDK) in aws-crypto-tools-rust.
+# Values checked against the worktree at 4054fd89 (grep, ls, Makefiles, Cargo.toml,
+# CI workflows). Counts live in docs/verus-proofs-report.md, not here.
+
+# Version of this schema; read by: R1
+schema_version: 1
+
+# Identity and kind of the library; read by: all
+library:
+  # Full name of the library; read by: all
+  name: "AWS Encryption SDK for Rust (native Rust)"
+  # Short name used in prose; read by: R1, proof-reviewer
+  short_name: "ESDK"
+  # Repository name or URL; read by: pipeline, update
+  repo: "aws-crypto-tools-rust"
+  # Kind of system (library, service, ...); read by: pipeline Stage 1, threat-model, spec-analyzer
+  system_type: "Client-side encryption library (not a managed service)"
+  # One-paragraph description of what the library does; read by: pipeline, threat-model, spec-analyzer
+  description: "A client-side encryption library (`esdk/`, crate `aws-esdk`) that produces and consumes the encrypted message format (header, framed or non-framed body, footer signature), with key derivation, key commitment and secret types that hold data keys. Built on the Material Providers Library (`mpl/`, keyrings and CMMs) and safe crypto primitives over aws-lc-rs (`prim/`)."
+
+# Every crate the agents verify or read; read by: all agents, SKILL "Running Verus" and mutation recipe, update (live counts), R1
+crates:
+  - # Cargo package name, as printed in "Checking <name> v..."; read by: all
+    name: "aws-esdk"
+    # Crate directory from the repo root; read by: all
+    path: "esdk/"
+    # What the crate is for and how it is treated; read by: pipeline, capabilities, recommender
+    role: "The Encryption SDK: client, encrypt/decrypt, message format (`esdk/src/message/`), key derivation, secret types (`esdk/src/secret.rs`). Primary verification target. `[package.metadata.verus]` in `esdk/Cargo.toml`; only code inside `verus! { }` is verified."
+    # true if Verus checks the crate's verus! blocks; read by: all proof agents, recommender, update, capabilities
+    verus_enabled: true
+    # Source directories holding the code under verification; read by: recommender, update, proof agents
+    source_dirs: ["esdk/src/"]
+    # Test directories; read by: spec-analyzer, recommender, proof-reviewer
+    test_dirs: ["esdk/tests/"]
+    # Command that runs Verus on the crate, from the repo root; read by: SKILL, proof agents, update, R1, proof-reviewer
+    verify_cmd: "make -C esdk verus"
+    # Each feature set verify_cmd runs, with the reason; read by: SKILL, proof agents, update, R1, proof-reviewer
+    feature_sets:
+      - # Cargo arguments for this feature set; read by: SKILL, proof agents, update
+        args: ""
+        # Why this feature set is checked; read by: SKILL, proof agents, update
+        note: "Default features (`cargo verus verify`)."
+      - args: "--no-default-features --features aws-lc-sys"
+        note: "From `esdk/Makefile`: aws-lc-rs needs a crypto backend, so the minimal build keeps aws-lc-sys (as CI does)."
+    # Rule for picking this crate's "verification results::" line; read by: SKILL, proof agents, update, R1, proof-reviewer
+    result_line: "Read the `verification results::` line printed right after `Checking aws-esdk v...`. Never pick a line by position. On the default feature set the run prints a line for vstd first, then one after `Checking aws-mpl-primitives v...`, then one after `Checking aws-esdk v...`. On the second feature set vstd is cached and prints no line. A cached crate prints no line at all: run cache_bust and re-run."
+    # Command that forces a re-check of a cached crate; read by: SKILL mutation recipe, proof agents, update, R1, proof-reviewer
+    cache_bust: "touch esdk/src/lib.rs"
+    # Command that runs the crate's tests; read by: R1, proof-reviewer
+    test_cmd: "make -C esdk test"
+    # Lint and format commands to run before delivery; read by: R1, proof-reviewer
+    lint_cmds: ["make -C esdk clippy", "cargo fmt --all -- --check (in esdk/)"]
+    # Tests known to fail locally, with the reason; read by: R1, proof-reviewer
+    known_test_failures: ["esdk/tests/test_error_integ.rs: needs AWS credentials and KMS access"]
+    # Where unsafe code is in this crate (or none); read by: ffi, capabilities, recommender
+    unsafe: "none in esdk/src (the C++ shim under esdk/shims/aws-esdk-cpp/ is listed in unsafe_surface.elsewhere)"
+  - name: "aws-mpl-primitives"
+    path: "prim/"
+    role: "Safe wrappers over aws-lc-rs (AES-GCM, HKDF, ECDSA, HMAC, digest, RNG). The boundary crate: it calls aws-lc-rs and holds the trusted specs for it (`prim/src/aws_lc_specs.rs`). `[package.metadata.verus]` in `prim/Cargo.toml`; only code inside `verus! { }` is verified. Its `verus!` cores are not visible to esdk's Verus run."
+    verus_enabled: true
+    source_dirs: ["prim/src/"]
+    test_dirs: ["prim/tests/"]
+    verify_cmd: "make -C prim verus"
+    feature_sets:
+      - args: ""
+        note: "Default features (`cargo verus verify`)."
+      - args: "--no-default-features --features aws-lc-sys"
+        note: "From `prim/Makefile`: aws-lc-rs needs a crypto backend, so the minimal build keeps aws-lc-sys (as CI does)."
+    result_line: "Read the `verification results::` line printed right after `Checking aws-mpl-primitives v...`. Never pick a line by position. In `make -C prim verus` vstd prints first on the default feature set and nothing on the second. `make -C esdk verus` also prints an aws-mpl-primitives line; compare like with like (a prim line from esdk's run is not the standalone prim run, and the two have differed before). A cached crate prints no line: run cache_bust and re-run."
+    cache_bust: "touch prim/src/lib.rs (or the changed prim/src/*.rs file)"
+    test_cmd: "cargo test (in prim/); `make -C prim test` also runs `--no-default-features --features fips`, which needs cmake and go (see local_env_limits)"
+    lint_cmds: ["make -C prim clippy (also runs --features fips, which needs cmake and go; see local_env_limits)", "cargo fmt --all -- --check (in prim/)"]
+    known_test_failures: []
+    unsafe: "none in prim/src"
+  - name: "aws-crypto-mpl"
+    path: "mpl/"
+    role: "The Material Providers Library: keyrings, CMMs, material types. A dependency treated as a trusted contract. cargo-verus builds it with plain rustc; it is not Verus-checked, and facts that rest on its invariants count as `code_reading`."
+    verus_enabled: false
+    source_dirs: ["mpl/src/"]
+    test_dirs: ["mpl/tests/"]
+    verify_cmd: ""
+    feature_sets: []
+    result_line: ""
+    cache_bust: ""
+    test_cmd: "cargo test (in mpl/; there is no mpl/Makefile)"
+    lint_cmds: []
+    known_test_failures: ["mpl/tests/test_aws_kms_hierarchical_keyring_integ.rs: needs AWS credentials and KMS access", "mpl/tests/test_key_store_branch_key_store_integ.rs: needs AWS credentials and DynamoDB/KMS access"]
+    unsafe: "none in mpl/src"
+
+# Standalone Verus models that do not import the shipped code; read by: capabilities, update, proof agents (model-only harness), pipeline, R1, proof-reviewer
+models:
+  # Directory of the models; read by: capabilities, update, proof agents, pipeline
+  path: "verification/"
+  # Command that verifies every model; read by: update, proof agents, R1, proof-reviewer
+  verify_cmd: "make -C verification verify"
+  # File that records each model's status; read by: update, capabilities
+  status_file: "verification/README.md"
+  # Each model file with its target and status (superseded, model_only, possibly_stale, deferred); read by: capabilities, update, recommender
+  files:
+    - # Model file name; read by: capabilities, update, recommender
+      file: "body_aad_proofs.rs"
+      # Target id the model belongs to; read by: capabilities, update, recommender
+      target: "VR-005"
+      # Status of the model; read by: capabilities, update, recommender
+      status: "superseded"
+    - file: "edk_count_proofs.rs"
+      target: "VR-007"
+      status: "superseded"
+    - file: "zeroize_proofs.rs"
+      target: "VR-010"
+      status: "deferred (models the write_volatile loop removed in a864ad87)"
+    - file: "frame_layout_proofs.rs"
+      target: "VR-005"
+      status: "superseded for the frame prefix layout; model_only for the ct ‖ tag append"
+    - file: "header_parse_proofs.rs"
+      target: "VR-003"
+      status: "superseded"
+    - file: "frame_sequence_proofs.rs"
+      target: "VR-004"
+      status: "superseded"
+    - file: "io_stream_model.rs"
+      target: "infra"
+      status: "possibly_stale"
+    - file: "io_stream_aligned.rs"
+      target: "infra, VR-003, VR-004, VR-005"
+      status: "mostly superseded; model_only for the EDK list loop (read_edks); EC sub-parser obsolete; ByteReader loops possibly_stale"
+    - file: "header_auth_ordering_proofs.rs"
+      target: "VR-002"
+      status: "superseded (docs/verus-proofs-report.md; verification/README.md still says model-only and is stale)"
+    - file: "commitment_ordering_proofs.rs"
+      target: "VR-001 (b)"
+      status: "superseded (docs/verus-proofs-report.md; verification/README.md has no row for it)"
+    - file: "aes_gcm_bounds_proofs.rs"
+      target: "VR-006"
+      status: "superseded (docs/verus-proofs-report.md; verification/README.md still says model-only and is stale)"
+  # Whether the models are kept or removed, and where that is decided; read by: update, pipeline
+  decision: "kept (see packaging_decisions models). Where verification/README.md and the report's table 'Properties that stay model-only, and why' disagree, the report wins."
+
+# Version pins of the verification toolchain; read by: SKILL Environment, capabilities
+toolchain:
+  # Verus release version; read by: SKILL, capabilities
+  verus_version: "0.2026.07.12.0b42f4c"
+  # Path of the Verus binary; read by: SKILL, capabilities, proof agents
+  verus_binary: "~/verus/verus"
+  # Rust toolchain Verus needs; read by: SKILL, capabilities
+  rust_toolchain: "1.96.0 (no rust-toolchain file; from docs/verus-proofs-report.md header)"
+  # vstd version pin in the crates; read by: SKILL, capabilities
+  vstd_pin: "=0.0.0-2026-06-14-0213 (esdk/Cargo.toml and prim/Cargo.toml)"
+  # How cargo-verus treats dependencies and which crates it verifies; read by: SKILL, capabilities
+  cargo_verus: "cargo-verus (at ~/verus/cargo-verus; the Makefiles put ~/verus on PATH) builds the dependencies (aws-lc-rs, tokio, aws-sdk-*, mpl, and prim when checking esdk) with plain rustc and verifies only crates with `[package.metadata.verus] verify = true`. prim/Cargo.toml declares `cfg(verus_keep_ghost)` under `unexpected_cfgs`."
+
+# The library's specification; read by: spec-analyzer, threat-model, pipeline, recommender, proof agents
+spec:
+  # Directory of the spec from the repo root; read by: spec-analyzer, threat-model, proof agents
+  location: "spec/"
+  # Script that fetches the spec when it is absent; read by: spec-analyzer, threat-model
+  resolver: "scripts/resolve-spec.sh (config scripts/spec-source.json; `make -C esdk duvet` runs it)"
+  # Upstream source of the spec (url and ref); read by: spec-analyzer
+  source: "https://github.com/awslabs/aws-encryption-sdk-specification.git at the ref pinned in scripts/spec-source.json"
+  # true if the spec directory may be missing in a local checkout; read by: spec-analyzer, threat-model
+  may_be_absent: true
+  # Spec documents the code is traced against; read by: spec-analyzer, threat-model, pipeline
+  tracked_documents:
+    - "spec/data-format/message-header.md"
+    - "spec/data-format/message-footer.md"
+    - "spec/data-format/message-body.md"
+    - "spec/data-format/message-body-aad.md"
+    - "spec/data-format/message.md"
+    - "spec/client-apis/client.md"
+    - "spec/client-apis/decrypt.md"
+    - "spec/client-apis/encrypt.md"
+    - "spec/client-apis/streaming.md"
+    - "spec/framework/transitive-requirements.md"
+  # Further spec documents agents read that are not in the trace config; read by: spec-analyzer, proof agents
+  extra_documents: ["spec/framework/algorithm-suites.md"]
+  # External standards the library relies on; read by: pipeline Stage 1, threat-model
+  standards: ["RFC 8446", "FIPS 140-3", "SP 800-56A/B", "SP 800-38D (GCM)", "RFC 5869 (HKDF)"]
+  # Spec documents each proof agent reads first; read by: header-parsing, zero-panic
+  per_agent_documents:
+    # Spec documents for header parsing proofs; read by: header-parsing
+    header_parsing: ["spec/data-format/message-header.md", "spec/data-format/message.md", "spec/framework/algorithm-suites.md"]
+    # Spec documents for zero-panic proofs; read by: zero-panic
+    zero_panic: ["spec/client-apis/encrypt.md", "spec/data-format/message-body.md", "spec/data-format/message-body-aad.md", "spec/framework/algorithm-suites.md"]
+
+# Spec-to-code annotations; read by: spec-analyzer, threat-model, recommender, pipeline
+traceability:
+  # Annotation tool; read by: spec-analyzer, threat-model, recommender, pipeline
+  tool: "Duvet"
+  # Tool config file listing the tracked documents; read by: spec-analyzer, threat-model
+  config: "esdk/.duvet/config.toml"
+  # Comment markers that carry annotations; read by: spec-analyzer, SKILL Core/adapter pattern
+  markers: ["//=", "//#"]
+  # Directories that carry annotations; read by: spec-analyzer, threat-model, recommender
+  annotated_dirs: ["esdk/src/", "esdk/tests/"]
+  # Honesty-ladder level for each annotation type; read by: spec-analyzer, recommender, threat-model
+  type_to_ladder:
+    # Ladder level of a test annotation; read by: spec-analyzer, recommender, threat-model
+    test: "tested"
+    # Ladder level of an implication annotation; read by: spec-analyzer, recommender, threat-model
+    implication: "code_reading"
+
+# What is in and out of scope; read by: pipeline Stage 1/2, spec-analyzer, threat-model
+scope:
+  # In-scope areas; read by: pipeline, spec-analyzer, threat-model
+  in_scope:
+    - "SDK cryptographic operations (encrypt/decrypt)"
+    - "Message format (header, body, footer)"
+    - "Key derivation and key commitment"
+    - "Commitment-policy enforcement at the ESDK boundary"
+    - "The key-management interfaces the ESDK calls (CMM, keyring), as contracts"
+    - "Data-key handling inside esdk"
+    - "Frame sequencing, EDK limits, streaming release of plaintext, the signature"
+  # Out-of-scope areas and trusted dependencies; read by: pipeline, spec-analyzer, threat-model, recommender
+  out_of_scope:
+    - "Underlying KMS security"
+    - "Application business logic"
+    - "Internals of the MPL keyrings, CMMs, key stores and caches (trusted dependency)"
+    - "Internals of aws-lc-rs (trusted dependency)"
+    - "There are no in-repo Dafny proofs; the code is hand-written native Rust, so Dafny never reduces a coverage gap"
+  # Threat mindset for threat modeling; read by: pipeline, threat-model
+  threat_mindset: "Application-level cryptography: local compute, memory management, KMS interaction"
+  # Literature on the primitives used; read by: pipeline Stage 2, threat-model
+  related_literature: ["AES-GCM non-commitment", "HKDF misuse", "Invisible Salamanders"]
+  # Sibling libraries whose vulnerabilities are relevant; read by: pipeline Stage 2, threat-model
+  sibling_libraries: ["S3 Encryption Client", "Database Encryption SDK"]
+
+# Architecture inventory; read by: spec-analyzer, threat-model
+components:
+  - # Component name; read by: spec-analyzer, threat-model
+    name: "Client"
+    # Path of the component; read by: spec-analyzer, threat-model
+    path: "esdk/src/client.rs"
+    # What the component does; read by: spec-analyzer, threat-model
+    role: "encrypt/decrypt entry points"
+  - name: "encrypt"
+    path: "esdk/src/encrypt.rs"
+    role: "encrypt flow"
+  - name: "decrypt"
+    path: "esdk/src/decrypt.rs"
+    role: "decrypt flow (decrypt_steps)"
+  - name: "message"
+    path: "esdk/src/message/"
+    role: "header, header_auth, header_types, v1_header_body, v2_header_body, encrypted_data_keys, encryption_context, footer, serialize_functions, serializable_types, and body/{body_encrypt,body_aad,body_decrypt}: serialization and parsing"
+  - name: "key_derivation"
+    path: "esdk/src/key_derivation.rs"
+    role: "HKDF data-key and commitment-key derivation"
+  - name: "secret"
+    path: "esdk/src/secret.rs"
+    role: "secret types that confine data keys; OpenBuffers"
+  - name: "decrypt_gate"
+    path: "esdk/src/decrypt_gate.rs"
+    role: "decrypt typestate tokens"
+  - name: "encrypt_gate"
+    path: "esdk/src/encrypt_gate.rs"
+    role: "encrypt typestate token"
+  - name: "C++ shim"
+    path: "esdk/shims/aws-esdk-cpp/"
+    role: "C++ bindings; holds the only shipped-path unsafe"
+
+# Trust boundaries; read by: threat-model, spec-analyzer, ffi, capabilities
+trust_boundaries:
+  - # Boundary id; read by: threat-model, spec-analyzer, ffi, capabilities
+    id: "TB-aws-lc-rs"
+    # What is trusted at this boundary; read by: threat-model, spec-analyzer, ffi, capabilities
+    what: "aws-lc-rs safe API, reached only through prim"
+    # Where the boundary is in the code; read by: threat-model, ffi, capabilities
+    where: "prim/src/ (trusted specs in prim/src/aws_lc_specs.rs and prim/src/ecdsa.rs)"
+    # What the library trusts it for; read by: threat-model, ffi, capabilities
+    trusted_for: "the crypto; output lengths and no-panic as written in the TCB rows; AES key length and IV validity enforced inside aws-lc-rs"
+    # Honesty-ladder level of facts that rest on this boundary; read by: threat-model, capabilities, ffi
+    ladder_level: "trusted (TCB rows); A20 is assumed_labeled (A-OPEN)"
+  - id: "TB-mpl"
+    what: "MPL keyrings, CMMs and material types"
+    where: "mpl/src/"
+    trusted_for: "materials and their invariants (called as contracts)"
+    ladder_level: "trusted contract; facts resting on mpl invariants are code_reading"
+  - id: "TB-kms"
+    what: "AWS KMS, reached through the MPL keyrings"
+    where: "mpl/src/ (KMS keyrings)"
+    trusted_for: "key policy and key operations (external service)"
+    ladder_level: "trusted; out of scope"
+  - id: "TB-shim"
+    what: "C++ callers of the shim"
+    where: "esdk/shims/aws-esdk-cpp/src/lib.rs"
+    trusted_for: "validity of the raw pointers they pass (list them with unsafe_surface.confirm_cmd)"
+    ladder_level: "trusted"
+  - id: "TB-A"
+    what: "unverified adapters outside verus! in esdk/src/secret.rs (for example the body of secret::open)"
+    where: "esdk/src/secret.rs"
+    trusted_for: "passing the verified values to prim unchanged"
+    ladder_level: "trusted (adapter glue)"
+  - id: "TB-stream"
+    what: "the caller's Source / Sink in the streaming paths"
+    where: "esdk/src/ (async readers and writers over dyn Source / dyn Sink)"
+    trusted_for: "delivering bytes; the bytes themselves are attacker-controlled on decrypt"
+    ladder_level: "trusted (adapter glue; Verus cannot verify dyn)"
+  - id: "TB-zeroize"
+    what: "the zeroize crate (#[derive(Zeroize, ZeroizeOnDrop)])"
+    where: "esdk/src/secret.rs"
+    trusted_for: "zeroing key material on drop (the hand-written write_volatile loop was removed in a864ad87)"
+    ladder_level: "trusted"
+
+# Where unsafe code is; read by: ffi, capabilities Cat 3, recommender
+unsafe_surface:
+  # unsafe inside the verified crates (or none); read by: ffi, capabilities, recommender
+  in_crate: "none in esdk/src, mpl/src, prim/src (the only grep hits there are the lint name unsafe_op_in_unsafe_fn in esdk/src/lib.rs and prim/src/lib.rs). No raw aws-lc-sys calls, no from_raw_parts, no set_len."
+  # unsafe outside the verified crates; read by: ffi, capabilities, recommender
+  elsewhere:
+    - # File with unsafe code; read by: ffi, capabilities, recommender
+      path: "esdk/shims/aws-esdk-cpp/src/lib.rs"
+      # What the unsafe code does; read by: ffi, capabilities, recommender
+      what: "`unsafe { &*ptr }` and `unsafe { input.<field>.as_ref() }` on C++-supplied handles (kms_client, ddb_client, cache)"
+      # Verification status of that code; read by: ffi, capabilities, recommender
+      status: "not Verus-checked; pointer validity is trusted (TB-shim); threat-driven review item"
+  # Command that confirms the unsafe surface; read by: ffi
+  confirm_cmd: "grep -rn unsafe esdk/src mpl/src prim/src esdk/shims/aws-esdk-cpp/src/lib.rs"
+
+# The trusted-spec (TCB) list; read by: ffi (owner), SKILL "Trusted boundary", capabilities, update drift item 4, proof-reviewer
+tcb:
+  # Agent that owns the TCB list; read by: SKILL, ffi, proof-reviewer
+  owner_agent: "verus-unsafe-ffi-safety"
+  # Source files holding the trusted specs; read by: ffi, SKILL, capabilities, proof-reviewer
+  modules:
+    - "prim/src/aws_lc_specs.rs (VR-013, VR-014; AES calls are A14-A20)"
+    - "prim/src/ecdsa.rs (VR-008 specs: ExSignature, Signature::as_ref, copy_from_slice; reused by VR-013)"
+    - "esdk/src/decrypt.rs (VR-020: T-cmp is the `requires obeys_cmp::<String>()` of required_ec_entries; no external spec)"
+  # Doc section with the TCB table; read by: ffi, update, proof-reviewer
+  doc_section: "docs/verus-proofs-report.md, section \"VR-013 / VR-014 TCB (`prim/src/aws_lc_specs.rs`)\""
+  # Row ids of the TCB table; read by: ffi, update, capabilities
+  row_ids: "T-ty, T-AsRef, T-uf, A1-A20, T-cmp"
+  # TCB rows that are labeled assumptions (ladder level 8); read by: ffi, capabilities, update
+  labeled_assumptions:
+    - # Assumption id; read by: ffi, capabilities, update
+      id: "A-OPEN"
+      # TCB row the assumption is; read by: ffi, capabilities, update
+      row: "A20"
+      # Trusted item; read by: ffi, capabilities, update
+      item: "LessSafeKey::open_separate_gather"
+      # Proof status of the assumption; read by: ffi, capabilities, update
+      status: "not proven"
+  # Per-crate rules for trusted specs; read by: ffi, SKILL, header-parsing, zero-panic, proof-reviewer
+  crate_rules:
+    - # Crate the rule applies to; read by: ffi, SKILL, proof agents
+      crate: "aws-mpl-primitives"
+      # The rule; read by: ffi, SKILL, proof agents
+      rule: "external_type_specification, assume_specification and external_trait_specification are allowed for aws-lc-rs and std items, one TCB row each, with user approval per row. The ExAsRef trait spec needs the nightly attribute in prim/src/lib.rs (packaging_decisions nightly-cfg-attr)."
+    - crate: "aws-esdk"
+      rule: "secret types: no external_type_specification (VR-011 decision). Hold a Vec<u8> with #[derive(Zeroize, ZeroizeOnDrop)] instead of zeroize::Zeroizing<_>."
+
+# Typestate gate modules (capabilities Category 1e); read by: capabilities 1e, header-parsing, recommender
+typestate_gates:
+  - # Gate module path; read by: capabilities, header-parsing, recommender
+    module: "esdk/src/decrypt_gate.rs"
+    # Token types the module defines; read by: capabilities, header-parsing, recommender
+    tokens: ["CommitmentAccepted", "HeaderVerified", "SignaturePresence", "SignatureRequired", "SignatureVerified", "HeldFinalPlaintext"]
+    # Targets the tokens cover; read by: capabilities, header-parsing, recommender
+    targets: ["VR-001 (b)", "VR-002", "VR-015", "VR-015 (b)"]
+  - module: "esdk/src/encrypt_gate.rs"
+    tokens: ["SigningKeyPresent"]
+    targets: ["VR-019"]
+  - module: "esdk/src/secret.rs"
+    tokens: ["OpenBuffers"]
+    targets: ["VR-016"]
+
+# Platform facts the proofs or tests rely on; read by: R1, proof-reviewer
+platform_assumptions:
+  - "A test in esdk/src/message/body/body_encrypt.rs is gated on #[cfg(target_pointer_width = \"64\")]. No Verus `global size_of usize` directive exists in the source."
+
+# Numbering of targets and findings; read by: recommender, update, capabilities, SKILL "Stop and report", R1, proof-reviewer
+ids:
+  # Format of target ids; read by: recommender, update, capabilities
+  target_format: "VR-0NN"
+  # Format of ids in the YAML recommendations; read by: recommender, update
+  yaml_id_format: "VR-2026-NNN"
+  # Next free target id; read by: recommender, update, R1
+  next_free: "VR-021 (YAML VR-2026-021)"
+  # Command that confirms next_free is still free; read by: recommender, update, R1, proof-reviewer
+  next_free_check: "grep -rnoE 'VR-0(2[1-9]|[3-9][0-9])' docs verification esdk/src prim/src mpl/src (expect no hits), and git grep -nE 'VR-0(2[1-9])' origin/MPL-Verus -- docs"
+  # Format of finding ids; read by: SKILL, proof agents, recommender, R1, proof-reviewer
+  finding_format: "VR-0NN Fk (never a bare Fk)"
+  # Ids used by other repositories that must not be confused with ours; read by: recommender, update, R1, proof-reviewer
+  external_ids: ["VR-2026-Cxx and VR-2026-Txx (MPL-Verus branch); VR-2026-C03 is implemented by VR-013 and VR-014 and is always written in full so it is not misread as VR-2026-013"]
+  # Known gaps in the numbering; read by: recommender, update, R1, proof-reviewer
+  known_gaps: ["There is no VR-2026-008 YAML block in docs/verification-recommendations.md"]
+
+# Every target with the ladder level of each part; read by: recommender, capabilities, proof agents, update, R1
+targets:
+  - # Target id; read by: recommender, capabilities, proof agents, update, R1
+    id: "VR-001"
+    # Short title; read by: recommender, capabilities, proof agents, update
+    title: "Key commitment verification"
+    # Each part of the target at its own ladder level; read by: recommender, capabilities, proof agents, update
+    parts:
+      - # Part label; read by: recommender, capabilities, update
+        part: "(a) accept/reject decision"
+        # Honesty-ladder label of the part; read by: recommender, capabilities, update
+        level: "verus_in_crate"
+        # File or function the part is about; read by: recommender, capabilities, proof agents
+        where: "esdk/src/message/header.rs (suite_data_check, called from validate_suite_data)"
+      - part: "(b) commitment accepted before frame decryption"
+        level: "verus_gate_compiler_order"
+        where: "esdk/src/decrypt_gate.rs (CommitmentAccepted)"
+      - part: "(c) constant-time comparison"
+        level: "trusted"
+        where: "aws-lc-rs (Verus does not model timing)"
+    # Proof agent for the target; read by: recommender, capabilities, R1
+    agent: "verus-header-parsing-proofs"
+    # Pointer to the detail (appendix section); read by: recommender, capabilities, proof agents
+    details: "targets.md §VR-001"
+  - id: "VR-002"
+    title: "Header auth tag ordering"
+    parts:
+      - part: "header auth tag verified before any frame is decrypted"
+        level: "verus_gate_compiler_order"
+        where: "esdk/src/decrypt_gate.rs (HeaderVerified, header_auth_gate)"
+    agent: "verus-header-parsing-proofs"
+    details: "targets.md §VR-002"
+  - id: "VR-003"
+    title: "Header parsing safety"
+    parts:
+      - part: "big-endian decoding, bounded readers, header-field decisions, 0x41 hint, reserved bytes, IV length"
+        level: "verus_in_crate"
+        where: "esdk/src/message/header_types.rs, esdk/src/message/v1_header_body.rs, esdk/src/message/serialize_functions.rs, esdk/src/message/header.rs"
+      - part: "fixed-field header loop and EDK list loop"
+        level: "model_only"
+        where: "verification/io_stream_aligned.rs"
+    agent: "verus-header-parsing-proofs"
+    details: "targets.md §VR-003"
+  - id: "VR-004"
+    title: "Frame sequence validation"
+    parts:
+      - part: "regular-frame step, final-frame check, start-at-1 and sequential-run lemmas"
+        level: "verus_in_crate"
+        where: "esdk/src/message/body/body_decrypt.rs"
+    agent: "verus-header-parsing-proofs"
+    details: "targets.md §VR-004"
+  - id: "VR-005"
+    title: "Frame construction and serialization"
+    parts:
+      - part: "body AAD layout, IV, frame prefix layout"
+        level: "verus_in_crate"
+        where: "esdk/src/message/body/body_aad.rs, esdk/src/message/body/body_encrypt.rs"
+      - part: "ct ‖ tag append"
+        level: "model_only"
+        where: "verification/frame_layout_proofs.rs"
+    agent: "verus-header-parsing-proofs"
+    details: "targets.md §VR-005"
+  - id: "VR-006"
+    title: "AES-GCM panic freedom (Rust-side buffer safety)"
+    parts:
+      - part: "encrypt slice bounds and decrypt length guard"
+        level: "verus_in_crate"
+        where: "prim/src/lib.rs (aes_encrypt_extend_core, aes_decrypt_len_ok)"
+      - part: "AES key length and IV validity"
+        level: "trusted"
+        where: "inside aws-lc-rs (UnboundKey::new, Nonce::try_assume_unique_for_key)"
+    agent: "verus-zero-panic"
+    details: "targets.md §VR-006"
+  - id: "VR-007"
+    title: "EDK count validation"
+    parts:
+      - part: "count-check decision"
+        level: "verus_in_crate"
+        where: "esdk/src/message/header.rs (edk_count_check)"
+      - part: "before any KMS call ordering (caller side; residual)"
+        level: "not_started"
+        where: "esdk/src/decrypt.rs"
+    agent: "verus-header-parsing-proofs"
+    details: "targets.md §VR-007"
+  - id: "VR-008"
+    title: "ECDSA fixed-length signing"
+    parts:
+      - part: "bounded retry loop terminates; copy in bounds"
+        level: "verus_in_crate"
+        where: "prim/src/ecdsa.rs (sign_fixed_len_core)"
+      - part: "signing closure and Signature type"
+        level: "trusted"
+        where: "prim/src/ecdsa.rs (ExSignature, assume_specification)"
+    agent: "verus-zero-panic"
+    details: "targets.md §VR-008"
+  - id: "VR-009"
+    title: "HKDF and key-derivation lengths"
+    parts:
+      - part: "esdk half: identity-KDF and V2 key-length checks"
+        level: "verus_in_crate"
+        where: "esdk/src/key_derivation.rs (identity_kdf_key_len_ok, check_v2_key_lengths)"
+      - part: "prim half: {16, 24, 32} decision and no-salt slice bound"
+        level: "verus_in_crate"
+        where: "prim/src/hkdf.rs (hkdf_key_len_ok, salt_size_core, no_salt_slice_core)"
+      - part: "HKDF crypto"
+        level: "trusted"
+        where: "aws-lc-rs"
+    agent: "verus-zero-panic"
+    details: "targets.md §VR-009"
+  - id: "VR-010"
+    title: "Key-material zeroization"
+    parts:
+      - part: "model of the removed write_volatile loop"
+        level: "deferred"
+        where: "verification/zeroize_proofs.rs (removed code; current zeroization is the zeroize derive, trusted)"
+    agent: "verus-unsafe-ffi-safety"
+    details: "targets.md §VR-010"
+  - id: "VR-011"
+    title: "Data-key non-disclosure"
+    parts:
+      - part: "confinement to secret.rs"
+        level: "compiler_lint"
+        where: "esdk/src/secret.rs (field privacy; esdk/clippy.toml disallowed-methods)"
+      - part: "secret-type accessors and commitment-value declassification"
+        level: "verus_in_crate"
+        where: "esdk/src/secret.rs"
+    agent: "verus-header-parsing-proofs"
+    details: "targets.md §VR-011"
+  - id: "VR-012"
+    title: "Big-endian codec round-trip"
+    parts:
+      - part: "u32 and u64 round-trip lemmas"
+        level: "verus_in_crate"
+        where: "esdk/src/message/serialize_functions.rs (lemma_u32_round_trip, lemma_u64_round_trip)"
+    agent: "verus-header-parsing-proofs"
+    details: "targets.md §VR-012"
+  - id: "VR-013"
+    title: "prim wrapper length contracts (implements VR-2026-C03)"
+    parts:
+      - part: "digest, finish, hmac, kbkdf, random, constant-time wrapper cores"
+        level: "verus_in_crate"
+        where: "prim/src/lib.rs, prim/src/ecdsa.rs"
+      - part: "aws-lc-rs output lengths and no-panic"
+        level: "trusted"
+        where: "prim/src/aws_lc_specs.rs (A1-A13)"
+    agent: "verus-zero-panic"
+    details: "targets.md §VR-013"
+  - id: "VR-014"
+    title: "AES buffer effects (implements VR-2026-C03, BUG-07)"
+    parts:
+      - part: "BUG-07(a) buffer effects of aes_encrypt / aes_decrypt"
+        level: "verus_in_crate"
+        where: "prim/src/lib.rs (aes_encrypt_core, aes_decrypt_core)"
+      - part: "BUG-07(b) under A-OPEN"
+        level: "assumed_labeled"
+        where: "prim/src/aws_lc_specs.rs (A20)"
+    agent: "verus-zero-panic"
+    details: "targets.md §VR-014"
+  - id: "VR-015"
+    title: "Final plaintext held until the signature verifies"
+    parts:
+      - part: "SignatureVerified / HeldFinalPlaintext order"
+        level: "verus_gate_compiler_order"
+        where: "esdk/src/decrypt_gate.rs"
+      - part: "(b) signature presence matches the suite"
+        level: "verus_gate_compiler_order"
+        where: "esdk/src/decrypt_gate.rs (SignaturePresence, SignatureRequired)"
+    agent: "verus-header-parsing-proofs"
+    details: "targets.md §VR-015"
+  - id: "VR-016"
+    title: "Decrypt buffer sizing (BUG-07(b) in esdk)"
+    parts:
+      - part: "secret::open takes only an OpenBuffers built by the verified open_buffers"
+        level: "verus_gate_compiler_order"
+        where: "esdk/src/secret.rs (OpenBuffers, open_buffers)"
+      - part: "body of secret::open"
+        level: "trusted"
+        where: "esdk/src/secret.rs (TB-A)"
+    agent: "verus-header-parsing-proofs"
+    details: "targets.md §VR-016"
+  - id: "VR-017"
+    title: "Encrypt body limits (MAX_DATA, frame sequence)"
+    parts:
+      - part: "PlaintextBudget and EncryptFrameSeq"
+        level: "verus_in_crate"
+        where: "esdk/src/message/body/body_encrypt.rs"
+    agent: "verus-zero-panic"
+    details: "targets.md §VR-017"
+  - id: "VR-018"
+    title: "Encrypt header length checks"
+    parts:
+      - part: "check_v2_suite_data and data_key_len_ok"
+        level: "verus_in_crate"
+        where: "esdk/src/encrypt.rs"
+    agent: "verus-zero-panic"
+    details: "targets.md §VR-018"
+  - id: "VR-019"
+    title: "Encrypt signing-key check (one direction)"
+    parts:
+      - part: "signing_key_gate and SigningKeyPresent; one direction only (finding VR-019 F1)"
+        level: "verus_gate_compiler_order"
+        where: "esdk/src/encrypt_gate.rs"
+    agent: "verus-header-parsing-proofs"
+    details: "targets.md §VR-019"
+  - id: "VR-020"
+    title: "Decrypt keeps exactly the required-key encryption-context entries"
+    parts:
+      - part: "required_ec_entries: result == ec restricted to the required keys; relies on TCB row T-cmp"
+        level: "verus_in_crate"
+        where: "esdk/src/decrypt.rs"
+    agent: "verus-header-parsing-proofs"
+    details: "targets.md §VR-020"
+
+# Proven cores per agent area, not to be redone; read by: proof agents
+do_not_redo:
+  # Done header-parsing work; read by: header-parsing
+  header_parsing:
+    - "VR-003 header-field decision cores"
+    - "VR-007 edk_count_check"
+    - "VR-001 (a) key-commitment decision"
+    - "VR-012 codec round-trip lemmas"
+    - "VR-001 (b), VR-002, VR-015 decrypt-order tokens"
+    - "VR-020 required_ec_entries (encryption context to only authenticate)"
+  # Done zero-panic work; read by: zero-panic
+  zero_panic:
+    - "VR-005 body AAD and frame prefix (body_aad_core, iv_seq_core, body_aad_content_type_string, write_frame_prefix)"
+    - "VR-003 bounded_len_u32, bounded_len_u64, next_chunk_end"
+    - "VR-004 next_expected_frame"
+    - "VR-006 prim AES-GCM buffer cores"
+    - "VR-008 prim sign_fixed_len_core"
+    - "VR-009 prim half (hkdf_key_len_ok, salt_size_core, no_salt_slice_core)"
+    - "VR-013 prim wrapper length contracts"
+    - "VR-014 AES buffer effects"
+    - "VR-017 PlaintextBudget, EncryptFrameSeq"
+    - "VR-018 check_v2_suite_data, data_key_len_ok"
+  # Done or settled ffi work; read by: ffi
+  ffi:
+    - "VR-010 deferred (models removed code)"
+    - "VR-011 confinement is compiler_lint, not a Verus target"
+
+# Docs that carry status and counts; read by: update, recommender, pipeline, R1, proof-reviewer
+artifacts:
+  # Docs the update agent may edit after approval; read by: update, recommender, pipeline, R1, proof-reviewer
+  maintained:
+    - # Doc path; read by: update, recommender, pipeline
+      path: "docs/threat-model.md"
+      # What the doc holds; read by: update, recommender, pipeline
+      role: "threats, trust boundaries, residual risk"
+      # Path of the generated .docx twin, or empty; read by: update, R1, proof-reviewer
+      docx_twin: "docs/threat-model.docx"
+    - path: "docs/verification-recommendations.md"
+      role: "recommendations: ranked targets, coverage, status (the recommender's single output doc)"
+      docx_twin: "docs/verification-recommendations.docx"
+    - path: "docs/verus-proofs-report.md"
+      role: "what is proven, per target and per file; TCB table; counts"
+      docx_twin: ""
+  # Docs that carry status but are only reported, not edited; read by: update, R1, proof-reviewer
+  report_only:
+    - "verification/README.md"
+    - "docs/esdk-verification-developers-guide.md"
+    - "the VR status lines in docs/threat-model.md"
+  # Where the live status of each target is; read by: update, recommender, capabilities, R1
+  status_oracle: "docs/verus-proofs-report.md section 3 (Target coverage)"
+  # Where counts come from; read by: update, proof agents, capabilities, R1, proof-reviewer
+  counts_source: "the live output of each crates[].verify_cmd (line chosen by crates[].result_line) and of models.verify_cmd; dated numbers are written only in docs/verus-proofs-report.md"
+  # Lines that record each doc's baseline commit; read by: update, R1, proof-reviewer
+  baseline_markers:
+    - # Doc path; read by: update
+      file: "docs/threat-model.md"
+      # Text pattern of the baseline line; read by: update
+      pattern: "**Revised:** ... against `<sha>` (line 7)"
+    - file: "docs/verification-recommendations.md"
+      pattern: "revised against `<sha>` (line 7, Code Baseline)"
+    - file: "docs/verus-proofs-report.md"
+      pattern: "current at `<sha>` (line 4, Code baseline)"
+  # Command that regenerates a .docx twin; read by: update, R1, proof-reviewer
+  docx_cmd: "/opt/homebrew/bin/pandoc {md} -o {docx}"
+  # Directory for task notes and logs; read by: update, proof agents
+  task_notes_dir: ".agents/tasks/<task>/"
+
+# CI gates beyond Verus; read by: R1, proof-reviewer
+ci:
+  # Each CI check with what it enforces and its local command; read by: R1, proof-reviewer
+  checks:
+    - # Check name; read by: R1
+      name: "fmt"
+      # What the check enforces and where it is defined; read by: R1
+      what: "formatting (.github/workflows/library_rust_tests.yml)"
+      # Command to run it locally; read by: R1, proof-reviewer
+      local_cmd: "cargo fmt --all -- --check (in each crate directory)"
+    - name: "clippy"
+      what: "clippy with warnings denied (.github/workflows/library_rust_tests.yml)"
+      local_cmd: "cargo clippy --all-targets -- -D warnings"
+    - name: "clippy feature powerset"
+      what: "clippy over every feature combination (.github/workflows/library_rust_tests.yml)"
+      local_cmd: "cargo hack clippy --lib --feature-powerset --no-dev-deps"
+    - name: "clippy fips"
+      what: "clippy with the fips backend (.github/workflows/library_rust_tests.yml)"
+      local_cmd: "cargo clippy --lib --features fips -- -D warnings (needs cmake and go)"
+    - name: "docs"
+      what: "rustdoc with warnings denied (.github/workflows/library_rust_tests.yml)"
+      local_cmd: "RUSTDOCFLAGS='-D warnings' cargo doc --no-deps --all-features"
+    - name: "patch coverage"
+      what: "Enforce 100% patch coverage with diff-cover (.github/workflows/library_rust_coverage.yml)"
+      local_cmd: "not measurable locally (see local_env_limits)"
+    - name: "supply chain"
+      what: "cargo-deny advisories, bans, licenses, sources with deny.toml (.github/workflows/supply_chain.yml)"
+      local_cmd: "cargo deny --config deny.toml check bans licenses sources"
+    - name: "locked lockfiles"
+      what: "cargo metadata --locked per workspace (.github/actions/setup-rust/action.yml:61)"
+      local_cmd: "cargo metadata --locked --format-version 1 > /dev/null (in each directory with a Cargo.lock)"
+    - name: "code scanning"
+      what: "CodeQL alerts arrive through GitHub code scanning on the PR; there is no CodeQL workflow file in the repo"
+      local_cmd: ""
+  # Lockfiles that must change together when a dependency changes; read by: R1, proof-reviewer
+  dependent_lockfiles:
+    - "esdk/Cargo.lock"
+    - "prim/Cargo.lock"
+    - "mpl/Cargo.lock"
+    - "prim/test-server/Cargo.lock"
+    - "mpl/test-server/Cargo.lock"
+    - "esdk/test-server/Cargo.lock"
+    - "esdk/shims/aws-esdk-cpp/test-server/Cargo.lock"
+    - "esdk/performance-tests/Cargo.lock"
+    - "xtask/Cargo.lock"
+
+# What cannot run locally and what that means; read by: R1, proof-reviewer
+local_env_limits:
+  - # The limit; read by: R1, proof-reviewer
+    limit: "cmake and go are not installed locally, so the fips feature does not build"
+    # What follows from it; read by: R1, proof-reviewer
+    consequence: "make -C prim test (fips half) and the clippy fips check run only in CI; say so in the docs and the commit message"
+  - limit: "patch coverage cannot be measured locally: cargo-llvm-cov and diff-cover are not installed (command -v finds neither), and the coverage plan recorded an llvm-profdata LLVM 21 vs rustc LLVM 22 mismatch"
+    consequence: "the 100% patch coverage gate is checked only in CI; plan tests for every new line"
+  - limit: "no CI workflow runs Verus"
+    consequence: "local Verus runs (crates[].verify_cmd, models.verify_cmd) are the only evidence; record the result lines"
+  - limit: "esdk/tests/test_error_integ.rs needs AWS credentials and KMS"
+    consequence: "it fails locally without credentials; it is not a regression"
+
+# Build and packaging choices that must stay explicit; read by: all agents before proposing build or packaging changes, SKILL
+packaging_decisions:
+  - # Decision id; read by: all agents, SKILL
+    id: "vstd-gating"
+    # The question; read by: all agents, SKILL
+    question: "Is vstd a plain dependency (A) or feature-gated (B)?"
+    # What the code does today; read by: all agents, SKILL
+    current_choice: "A, plain dependency (vstd = \"=0.0.0-2026-06-14-0213\" in esdk and prim)"
+    # Who decides; read by: all agents, SKILL
+    owner: "PR #103 reviewer"
+    # open, on hold or decided; read by: all agents, SKILL
+    status: "open"
+    # Where the discussion is; read by: all agents, SKILL
+    ref: "PR #103 Q1; .agents/tasks/pr-draft/approach-B-vstd-feature-gating.md"
+  - id: "nightly-cfg-attr"
+    question: "Keep #![cfg_attr(verus_keep_ghost, feature(sized_hierarchy))] in prim/src/lib.rs (needed only in Verus builds, for the ExAsRef trait spec)?"
+    current_choice: "kept"
+    owner: "PR #103 reviewer"
+    status: "open"
+    ref: "PR #103"
+  - id: "kiro-location"
+    question: "Should .kiro (agents, skill, steering, toolkit, profile) be committed to this repo?"
+    current_choice: "committed on the working branches"
+    owner: "PR #103 reviewer"
+    status: "on hold"
+    ref: "PR #103 comment 4605348906 (not in .kiro; internal packages)"
+  - id: "docs-public"
+    question: "Should the verification docs be in the public docs before team review?"
+    current_choice: "in docs/"
+    owner: "PR #103 reviewer"
+    status: "on hold"
+    ref: "PR #103 comment 4605352385"
+  - id: "docx-twins"
+    question: "Keep the generated .docx twins of the docs?"
+    current_choice: "kept (docs/threat-model.docx, docs/verification-recommendations.docx)"
+    owner: "PR #103 reviewer"
+    status: "open"
+    ref: "PR #103 Q4"
+  - id: "models"
+    question: "Keep the standalone models in verification/?"
+    current_choice: "kept"
+    owner: "PR #103 reviewer"
+    status: "open"
+    ref: "PR #103 comments 4618192640, 4620180519, 4620434081 (remove the models or tie them to the code)"
+  - id: "verus-in-ci"
+    question: "Run Verus in CI?"
+    current_choice: "no workflow runs Verus today"
+    owner: "PR #103 reviewer"
+    status: "open"
+    ref: "PR #103 Q2"
+
+# Paths of the prose appendices; read by: proof agents, spec-analyzer, threat-model, capabilities
+appendices:
+  # Domain tables and context (format constants, spec topics, threat context); read by: proof agents, spec-analyzer, threat-model
+  domain: ".kiro/verification-profile/domain.md"
+  # Library-specific Verus idioms; read by: SKILL, proof agents, steering
+  idioms: ".kiro/verification-profile/idioms.md"
+  # Per-target detail, done lists and drift examples; read by: capabilities, proof agents, recommender, update
+  targets: ".kiro/verification-profile/targets.md"

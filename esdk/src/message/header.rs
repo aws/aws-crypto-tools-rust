@@ -12,16 +12,109 @@ use super::v2_header_body::{
     commit_key_length, has_commitment, read_v2_header_body, write_v2_header_body,
 };
 use super::{DigestWriter, Error, header_auth, ser_err, serialize_functions};
+use crate::decrypt_gate::{CommitmentAccepted, commitment_gate};
 use crate::error::{Kind, err, val_err};
 use crate::shapes::{EncryptionContext, Sink, Source, Tee};
 use aws_crypto_mpl::types::AlgorithmSuite;
 use aws_lc_rs::constant_time;
+use vstd::prelude::*;
+
+verus! {
+
+/// The outcome of checking an encrypted data key count.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum EdkCount {
+    /// The count is positive and within the configured maximum, if any.
+    Ok,
+    /// The count is zero.
+    Empty,
+    /// The count is positive and above the configured maximum.
+    OverMax,
+}
+
+/// Check an encrypted data key count against an optional configured maximum.
+pub(crate) fn edk_count_check(count: usize, max: Option<usize>) -> (r: EdkCount)
+    ensures
+        (r is Empty) <==> count == 0,
+        (r is OverMax) <==> (count > 0 && (max matches Some(m) && count > m)),
+        (r is Ok) <==> (count > 0 && !(max matches Some(m) && count > m)),
+{
+    if count == 0 {
+        EdkCount::Empty
+    } else {
+        match max {
+            Some(m) => if count > m {
+                EdkCount::OverMax
+            } else {
+                EdkCount::Ok
+            },
+            None => EdkCount::Ok,
+        }
+    }
+}
+
+/// Why `suite_data_check` rejected the key commitment, in check order.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum SuiteDataError {
+    /// The header's suite data does not equal the derived commit key.
+    CommitmentMismatch,
+    /// The committed suite-data length disagrees with the suite's declared length.
+    LengthMismatch,
+}
+
+/// Decide whether the header's key commitment is valid (VR-001).
+///
+/// Returns `Ok` only when the header's suite data equals the expected commit
+/// key and the suite's commit length equals the expected length. A byte
+/// mismatch is reported before a length mismatch.
+///
+/// `bytes_equal` is the result of comparing `header` and `expected` with
+/// `aws_lc_rs::constant_time::verify_slices_are_equal` in
+/// `validate_suite_data`. The `requires` says it is true exactly when the two
+/// byte sequences are equal.
+///
+/// This proof does not cover:
+/// - constant-time comparison, which comes from aws-lc-rs;
+/// - checking the commitment before decrypting any frame. That order is
+///   covered by the tokens in `crate::decrypt_gate` (VR-001 property (b)):
+///   `commitment_gate` wraps this function and returns a token only on `Ok`,
+///   and the compiler stops frame decryption from running without it.
+pub(crate) fn suite_data_check(
+    bytes_equal: bool,
+    header: &[u8],
+    expected: &[u8],
+    commit_len: usize,
+) -> (r: Result<(), SuiteDataError>)
+    requires
+        bytes_equal <==> header@ == expected@,
+    ensures
+        (r is Ok) <==> (header@ == expected@ && commit_len == expected@.len()),
+        (r matches Err(SuiteDataError::CommitmentMismatch)) <==> (header@ != expected@),
+        (r matches Err(SuiteDataError::LengthMismatch)) <==> (header@ == expected@
+            && commit_len != expected@.len()),
+{
+    // `header` is referenced only by the `requires` (to tie `bytes_equal` to
+    // `header@ == expected@`); it has no runtime role in the decision, which is
+    // driven by `bytes_equal` and the lengths. Discard it so the cargo build
+    // does not flag it as unused.
+    let _ = header;
+    if !bytes_equal {
+        return Err(SuiteDataError::CommitmentMismatch);
+    }
+    if commit_len != expected.len() {
+        return Err(SuiteDataError::LengthMismatch);
+    }
+    Ok(())
+}
 
 pub(crate) const START_SEQUENCE_NUMBER: u32 = 1;
 
 //= spec/data-format/message-body.md#sequence-number-end
 //# The value MUST be encoded as the 4 bytes `FF FF FF FF` in hexadecimal notation.
 pub(crate) const ENDFRAME_SEQUENCE_NUMBER: u32 = 0xFFFF_FFFF;
+
+} // verus!
+
 pub(crate) const NONFRAMED_SEQUENCE_NUMBER: u32 = 1;
 
 //= spec/data-format/message-body.md#nonframed-data-encrypted-content-length
@@ -152,25 +245,22 @@ pub(crate) fn validate_max_encrypted_data_keys(
     max_encrypted_data_keys: Option<std::num::NonZeroUsize>,
     edks: &[aws_crypto_mpl::types::EncryptedDataKey],
 ) -> Result<(), Error> {
-    if edks.is_empty() {
+    let max = max_encrypted_data_keys.map(std::num::NonZeroUsize::get);
+    match edk_count_check(edks.len(), max) {
+        EdkCount::Ok => Ok(()),
         //= spec/data-format/message-header.md#encrypted-data-key-count
         //# This value MUST be greater than 0.
-        return Err(err(
+        EdkCount::Empty => Err(err(
             Kind::InvalidMaterials,
             "encrypted data key count must be greater than 0",
-        ));
-    }
-
-    if let Some(max) = max_encrypted_data_keys
-        && edks.len() > max.get()
-    {
-        return Err(val_err(format!(
+        )),
+        // OverMax implies `max` is `Some`.
+        EdkCount::OverMax => Err(val_err(format!(
             "encrypted data key count {} exceeds configured maximum {}",
             edks.len(),
-            max.get(),
-        )));
+            max.unwrap_or_default(),
+        ))),
     }
-    Ok(())
 }
 
 /// Generates a fresh message id of the size required by the algorithm suite's
@@ -210,30 +300,48 @@ pub(crate) fn validate_suite_data(
     suite: &AlgorithmSuite,
     header_body: &HeaderBody,
     expected_suite_data: &[u8],
-) -> Result<(), Error> {
+) -> Result<CommitmentAccepted, Error> {
+    let header_suite_data = header_body.suite_data();
+
     //= spec/framework/transitive-requirements.md#hkdf-commit-key
     //= type=implication
-    //= reason=aws_lc_rs::constant_time::verify_slices_are_equal performs a constant-time slice equality check by aws-lc-rs API contract
+    //= reason=aws_lc_rs::constant_time::verify_slices_are_equal performs a constant-time slice equality check by aws-lc-rs API contract; its timing behavior is trusted, not Verus-proven
     //# Verification of the commitment key MUST be a constant time comparison.
-    if constant_time::verify_slices_are_equal(header_body.suite_data(), expected_suite_data)
-        .is_err()
-    {
-        return Err(err(
-            Kind::Cryptographic,
-            "the key commitment in the message header does not match the derived commit key",
-        ));
-    }
+    //
+    // Trusted boundary: the constant-time comparison itself. Verus does not
+    // model timing, so its constant-time property rests on the aws-lc-rs API
+    // contract. The boolean outcome `bytes_equal` is exactly `Seq`-equality of
+    // the two buffers, which is what `suite_data_check` reasons about.
+    let bytes_equal =
+        constant_time::verify_slices_are_equal(header_suite_data, expected_suite_data).is_ok();
 
     //= spec/data-format/message-header.md#algorithm-suite-data
     //# The length of the suite data field MUST be equal to the [Algorithm Suite Data Length](../framework/algorithm-suites.md#algorithm-suite-data-length) value
     //# of the [algorithm suite](../framework/algorithm-suites.md) specified by the [Algorithm Suite ID](#algorithm-suite-id) field.
-    if commit_key_length(suite) != expected_suite_data.len() {
-        return Err(err(
+    //
+    // `suite_data_check` is the verified decision (VR-001 property (a)): it
+    // accepts iff the commitment matches and the committed length agrees, and
+    // rejects commitment-first otherwise. `commitment_gate` runs it and, only
+    // when it accepts, returns the `CommitmentAccepted` token that frame
+    // decryption needs (VR-001 property (b)). This adapter owns the crate
+    // `Error` type and maps each rejection to the message it previously
+    // produced.
+    match commitment_gate(
+        bytes_equal,
+        header_suite_data,
+        expected_suite_data,
+        commit_key_length(suite),
+    ) {
+        Ok(accepted) => Ok(accepted),
+        Err(SuiteDataError::CommitmentMismatch) => Err(err(
+            Kind::Cryptographic,
+            "the key commitment in the message header does not match the derived commit key",
+        )),
+        Err(SuiteDataError::LengthMismatch) => Err(err(
             Kind::Internal,
             "algorithm suite data length does not match the algorithm suite's declared suite-data length",
-        ));
+        )),
     }
-    Ok(())
 }
 
 /// Write the message header (body + auth tag) to the output stream.
@@ -270,4 +378,91 @@ pub(crate) async fn write_header(
     serialize_functions::write_to_sink(ciphertext, &auth_buf).await?;
     serialize_functions::write_bytes(sig_digest, &auth_buf)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn suite_data_check_cases() {
+        let a = b"commitkey";
+        let b = b"commitkey";
+        let c = b"different";
+        // Accept: bytes equal and length agrees.
+        assert_eq!(suite_data_check(true, a, b, b.len()), Ok(()));
+        // Reject on commitment mismatch, even if the length would agree.
+        assert_eq!(
+            suite_data_check(false, a, c, c.len()),
+            Err(SuiteDataError::CommitmentMismatch)
+        );
+        // Reject on length disagreement when the commitment matches.
+        assert_eq!(
+            suite_data_check(true, a, b, b.len() + 1),
+            Err(SuiteDataError::LengthMismatch)
+        );
+        // Commitment is checked first: a mismatch wins over a bad length too.
+        assert_eq!(
+            suite_data_check(false, a, c, c.len() + 1),
+            Err(SuiteDataError::CommitmentMismatch)
+        );
+    }
+
+    #[test]
+    fn edk_count_check_cases() {
+        assert_eq!(edk_count_check(0, None), EdkCount::Empty);
+        assert_eq!(edk_count_check(0, Some(1)), EdkCount::Empty);
+        assert_eq!(edk_count_check(1, None), EdkCount::Ok);
+        assert_eq!(edk_count_check(usize::MAX, None), EdkCount::Ok);
+        assert_eq!(edk_count_check(3, Some(3)), EdkCount::Ok);
+        assert_eq!(edk_count_check(4, Some(3)), EdkCount::OverMax);
+        assert_eq!(edk_count_check(2, Some(3)), EdkCount::Ok);
+    }
+
+    // Defense-in-depth test of esdk's own fallback check: the MPL rejects
+    // encryption materials with zero EDKs before the public API hands them to
+    // esdk.
+    #[test]
+    fn validate_max_edks_rejects_empty() {
+        let e = validate_max_encrypted_data_keys(None, &[]).unwrap_err();
+        assert_eq!(e.kind(), Kind::InvalidMaterials);
+        assert_eq!(
+            e.message(),
+            "encrypted data key count must be greater than 0"
+        );
+    }
+
+    // Defense-in-depth test: `header_version_supports_commitment` already
+    // rejects a V2 header whose suite data is not the commit key length, so
+    // only a hand-built header reaches the LengthMismatch arm.
+    #[test]
+    fn validate_suite_data_reports_length_mismatch() {
+        use super::super::header_types::V2HeaderBody;
+        use crate::shapes::AlgorithmSuiteId;
+        let suite = AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey.specification();
+        let body = |suite_data: Vec<u8>| {
+            HeaderBody::V2Body(V2HeaderBody {
+                algorithm_suite: suite,
+                message_id: vec![0; MESSAGE_ID_LEN_V2],
+                encryption_context: EncryptionContext::new(),
+                encrypted_data_keys: Vec::new(),
+                content_type: ContentType::Framed,
+                frame_length: 4096,
+                suite_data,
+            })
+        };
+
+        // The bytes match, but 16 is not the suite's 32-byte commit key length.
+        let e = validate_suite_data(&suite, &body(vec![7; 16]), &[7; 16])
+            .err()
+            .expect("a 16-byte suite data must be rejected for a 32-byte commit key");
+        assert_eq!(e.kind(), Kind::Internal);
+        assert_eq!(
+            e.message(),
+            "algorithm suite data length does not match the algorithm suite's declared suite-data length"
+        );
+
+        // Matching bytes at the declared length are accepted.
+        assert!(validate_suite_data(&suite, &body(vec![7; 32]), &[7; 32]).is_ok());
+    }
 }

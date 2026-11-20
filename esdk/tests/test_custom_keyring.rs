@@ -11,6 +11,11 @@
 //! Local because a caller's `Keyring` impl is a native trait, unreachable from
 //! the cross-language interop vectors.
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "custom keyring reads the key by design (VR-011 scope limit 1)"
+)]
+
 #[allow(clippy::duplicate_mod)]
 mod fixtures;
 mod test_helpers;
