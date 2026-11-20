@@ -128,7 +128,15 @@ jobs:
                 {"when": "mpl", "project": "mpl"},
                 {"when": "prim", "project": "prim"}
               ],
+              "coverage": [
+                {"when": "esdk", "project": "esdk"},
+                {"when": "mpl", "project": "mpl"},
+                {"when": "prim", "project": "prim"}
+              ],
               "cpp-shim": [
+                {"when": "esdk"}
+              ],
+              "cpp-coverage": [
                 {"when": "esdk"}
               ],
               "duvet": [
@@ -230,6 +238,32 @@ jobs:
     with:
       platforms: '[{"os": "macos", "runner": "macos-latest"}]'
 
+  # 100% of new lines must be covered by tests.
+  # Coverage is measured against the PR's base branch, so it only runs on PRs.
+  coverage:
+    name: Patch coverage (${{ matrix.project }})
+    needs: detect
+    if: github.event_name == 'pull_request' && fromJSON(needs.detect.outputs.jobs)['coverage'] != null
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.detect.outputs.jobs)['coverage'] }}
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/library_rust_coverage.yml
+    with:
+      project: ${{ matrix.project }}
+
+  cpp-coverage:
+    name: C++ shim patch coverage
+    needs: detect
+    if: github.event_name == 'pull_request' && fromJSON(needs.detect.outputs.jobs)['cpp-coverage'] != null
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/library_cpp_coverage.yml
+
   duvet:
     name: Duvet
     needs: detect
@@ -293,8 +327,6 @@ jobs:
       # Only run tests that involve the focus language (ex. skip Python <--> Java tests for this Rust repo)
       focus: ${{ matrix.focus }}
       checkout-languages: ${{ matrix.focus }}
-    secrets:
-      repo-pat: ${{ secrets.COMMONS_REPO_PAT }}
 
   mpl-test-server:
     name: MPL TestServer
@@ -316,8 +348,6 @@ jobs:
       # This repository's CI role; it already reads the key store fixtures
       # in the mpl crate's integration tests.
       aws-role-arn: arn:aws:iam::370957321024:role/GitHub-CI-Public-ESDK-Dafny-Role-us-west-2
-    secrets:
-      repo-pat: ${{ secrets.COMMONS_REPO_PAT }}
 
   prim-test-server:
     name: Primitives TestServer
@@ -331,8 +361,6 @@ jobs:
       runner: *codebuild-linux
       focus: rust
       checkout-languages: rust
-    secrets:
-      repo-pat: ${{ secrets.COMMONS_REPO_PAT }}
 
   # Benchmarks only upload to CloudWatch on the daily run.
   # Not in pr-ci-all-required, so a slow or noisy benchmark can't block a merge.
@@ -402,7 +430,9 @@ jobs:
       - detect
       - rust-tests
       - supply-chain
+      - coverage
       - cpp-shim
+      - cpp-coverage
       - duvet
       - smithy-conformance
       - test-server-builds

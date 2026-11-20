@@ -13,6 +13,7 @@ mod ecdh_curve_spec;
 pub mod encrypted_data_key;
 pub mod encryption_context;
 pub mod encryption_materials;
+pub(crate) mod materials_checks;
 mod padding_scheme;
 pub mod required_encryption_context_keys;
 

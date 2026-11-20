@@ -11,6 +11,8 @@ use super::{
     SharedCmm,
 };
 use crate::Error;
+use crate::error::CmmResource;
+use crate::structures::materials_checks;
 use crate::structures::{AlgorithmSuiteId, CommitmentPolicy, EncryptedDataKey, EncryptionContext};
 
 impl SharedCmm {
@@ -159,11 +161,16 @@ impl GetEncryptionMaterialsFluentBuilder {
     /// # Errors
     ///
     /// - [`Validation`](crate::Error::Validation): `encryption_context` or `commitment_policy` is unset.
+    /// - [`InvalidMaterials`](crate::Error::InvalidMaterials): the returned materials are invalid,
+    ///   or have no plaintext data key or no encrypted data keys.
     ///
     /// Otherwise, the errors [`Cmm::get_encryption_materials`] documents.
     pub async fn send(self) -> Result<GetEncryptionMaterialsOutput, Error> {
         let input = self.inner.build()?;
-        Cmm::get_encryption_materials(&*self.handle.0, input).await
+        let output = Cmm::get_encryption_materials(&*self.handle.0, input).await?;
+        materials_checks::check_encryption_materials_complete(output.encryption_materials())
+            .map_err(|e| e.with_resource(CmmResource::new(self.handle.name())))?;
+        Ok(output)
     }
 }
 
@@ -302,11 +309,16 @@ impl DecryptMaterialsFluentBuilder {
     /// # Errors
     ///
     /// - [`Validation`](crate::Error::Validation): `algorithm_suite_id`, `commitment_policy`, `encrypted_data_keys` or `encryption_context` is unset.
+    /// - [`InvalidMaterials`](crate::Error::InvalidMaterials): the returned materials are invalid,
+    ///   or have no plaintext data key.
     ///
     /// Otherwise, the errors [`Cmm::decrypt_materials`] documents.
     pub async fn send(self) -> Result<DecryptMaterialsOutput, Error> {
         let input = self.inner.build()?;
-        Cmm::decrypt_materials(&*self.handle.0, input).await
+        let output = Cmm::decrypt_materials(&*self.handle.0, input).await?;
+        materials_checks::check_decryption_materials_complete(output.decryption_materials())
+            .map_err(|e| e.with_resource(CmmResource::new(self.handle.name())))?;
+        Ok(output)
     }
 }
 

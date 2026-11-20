@@ -23,7 +23,7 @@ use aws_esdk::{
     types::{EncryptionContext, SignedStreaming},
     Client,
 };
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Mutex;
 
 /// The ESDK client and CMM a registered client encrypts/decrypts with.
@@ -78,6 +78,39 @@ fn map_algorithm_suite(id: EsdkAlgorithmSuiteId) -> MplAlgorithmSuiteId {
             MplAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384
         }
     }
+}
+
+// The model has no member for a suite added to the ESDK later, so the decrypt
+// response leaves algorithmSuiteId unset for one.
+fn model_algorithm_suite(id: MplAlgorithmSuiteId) -> Option<EsdkAlgorithmSuiteId> {
+    Some(match id {
+        MplAlgorithmSuiteId::AlgAes128GcmIv12Tag16NoKdf => EsdkAlgorithmSuiteId::Alg128GcmNoKdf,
+        MplAlgorithmSuiteId::AlgAes192GcmIv12Tag16NoKdf => EsdkAlgorithmSuiteId::Alg192GcmNoKdf,
+        MplAlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf => EsdkAlgorithmSuiteId::Alg256GcmNoKdf,
+        MplAlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256 => EsdkAlgorithmSuiteId::Alg128GcmHkdf,
+        MplAlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha256 => EsdkAlgorithmSuiteId::Alg192GcmHkdf,
+        MplAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256 => EsdkAlgorithmSuiteId::Alg256GcmHkdf,
+        MplAlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256EcdsaP256 => {
+            EsdkAlgorithmSuiteId::Alg128GcmHkdfEcdsa
+        }
+        MplAlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha384EcdsaP384 => {
+            EsdkAlgorithmSuiteId::Alg192GcmHkdfEcdsa
+        }
+        MplAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384 => {
+            EsdkAlgorithmSuiteId::Alg256GcmHkdfEcdsa
+        }
+        MplAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey => {
+            EsdkAlgorithmSuiteId::Alg256GcmCommit
+        }
+        MplAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384 => {
+            EsdkAlgorithmSuiteId::Alg256GcmCommitEcdsa
+        }
+        _ => return None,
+    })
+}
+
+fn model_encryption_context(ec: &EncryptionContext) -> BTreeMap<String, String> {
+    ec.clone().into_iter().collect()
 }
 
 fn max_edks(config: &EsdkClientConfig) -> Result<Option<usize>, ServerError> {
@@ -161,8 +194,12 @@ impl AppState {
             .send()
             .await
             .map_err(|e| ServerError::esdk(e.to_string()))?;
+        let encryption_context = Some(model_encryption_context(output.encryption_context()));
+        let algorithm_suite_id = model_algorithm_suite(output.algorithm_suite_id());
         Ok(DecryptResponse {
             plaintext: output.into_plaintext().into_inner(),
+            encryption_context,
+            algorithm_suite_id,
         })
     }
 
@@ -203,7 +240,8 @@ impl AppState {
     ) -> Result<DecryptStreamResponse, ServerError> {
         let (esdk, cmm) = self.client(&req.client_id)?;
         let mut plaintext = Vec::new();
-        esdk.decrypt_stream()
+        let output = esdk
+            .decrypt_stream()
             .ciphertext(req.ciphertext.as_slice())
             .plaintext(&mut plaintext)
             .set_encryption_context(Some(encryption_context(req.encryption_context)))
@@ -214,7 +252,11 @@ impl AppState {
             .send()
             .await
             .map_err(|e| ServerError::esdk(e.to_string()))?;
-        Ok(DecryptStreamResponse { plaintext })
+        Ok(DecryptStreamResponse {
+            plaintext,
+            encryption_context: Some(model_encryption_context(output.encryption_context())),
+            algorithm_suite_id: model_algorithm_suite(output.algorithm_suite_id()),
+        })
     }
 
     /// Look up a registered client by id, cloning the shared CMM handle.

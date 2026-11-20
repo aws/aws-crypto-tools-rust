@@ -481,8 +481,7 @@ impl Keyring for crate::shared::Builtin<RawAesKeyring> {
                     Error::new(Kind::NoMatchingDataKey, format!(
                         "encrypted data key {index} did not match the keyring, expected key provider id {}",
                         self.inner.key_namespace,
-                    ))
-                    .with_encrypted_data_keys(encrypted_data_keys.iter().map(DataKeyInfo::from)),
+                    )),
                 );
                 continue;
             };
@@ -586,6 +585,7 @@ impl Keyring for crate::shared::Builtin<RawAesKeyring> {
                     "no encrypted data key matched this keyring",
                     collected_errors,
                 )
+                .with_encrypted_data_keys(encrypted_data_keys.iter().map(DataKeyInfo::from))
             });
         }
 
