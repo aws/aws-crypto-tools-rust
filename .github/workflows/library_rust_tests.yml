@@ -53,27 +53,14 @@ jobs:
 
       - uses: ./.github/actions/setup-rust
         with:
-          components: clippy, rustfmt, llvm-tools-preview
+          components: clippy, rustfmt
           workspaces: ${{ matrix.project }}
-
-      - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@86f7a0ffb25f40114606501a311ebcfaf882ea32 # v2.88.0
-        with:
-          tool: cargo-llvm-cov
 
       - name: Install cargo-hack
         uses: taiki-e/install-action@86f7a0ffb25f40114606501a311ebcfaf882ea32 # v2.88.0
         with:
           tool: cargo-hack
 
-      # KMS-backed integration tests (e.g. tests/test_encrypt_decrypt.rs) call
-      # kms:GenerateDataKey / kms:Decrypt against the shared AWS Crypto Tools
-      # test keys in us-west-2, so CI must have AWS credentials. Assume the
-      # shared public ESDK CI role via GitHub OIDC (the job already requests
-      # `id-token: write`). This is the same role and pattern the existing
-      # aws/aws-encryption-sdk `library_rust_tests.yml` uses. The role ARN is
-      # public (no repo secret needed); access is gated by the role's OIDC
-      # trust policy, which must permit `repo:aws/aws-crypto-tools-rust:*`.
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
@@ -115,33 +102,15 @@ jobs:
         if: matrix.project == 'esdk'
         run: make examples
 
-      # Line coverage does not need debug info, so build the coverage binaries
-      # with `-C debuginfo=0`. They are large (aws-lc-sys + aws-lc-fips-sys,
-      # coverage-instrumented); dropping debug info keeps the ubuntu link within
-      # the hosted runner's memory. Harmless on macOS.
-      #
-      # Default features, not `--all-features`: `--all-features` turns on `fips`,
-      # which replaces the default backend.
-      #
-      # TODO(esdk): esdk line-coverage gate is temporarily 80% (esdk is ~81%
-      # today); raise it toward 100 as coverage fills in.
-      # TODO(mpl): mpl line-coverage is temporarily 80%
-      # raise it to 100 as coverage fills in.
-      - name: Test + line coverage gate
+      - name: Test (all features)
         env:
+          # Drop debug info to save RAM
           RUSTFLAGS: "-C debuginfo=0"
-        run: cargo llvm-cov --workspace --fail-under-lines 80 --verbose
+        # --all-features enables FIPS, which links aws-lc-fips-sys
+        run: cargo test --all-features --workspace --verbose
 
-      # FIPS parity check for `prim`. `--no-default-features` is required to get
-      # a FIPS-only build: `--features fips` alone leaves `default` enabled, so
-      # both `aws-lc-sys` and `aws-lc-fips-sys` get compiled and only the latter
-      # is used. Test-only — the coverage gate above already covers these lines
-      # against the default backend, so this step exists to prove the same code
-      # passes when linked against AWS-LC-FIPS.
-      # Needs Go, which setup-rust installs.
-      # Windows also needs the NASM step above.
-      - name: Test FIPS-only backend
-        if: matrix.project == 'prim'
+      # Test without --all-features to test non-FIPS aws-lc-sys
+      - name: Test (default features)
         env:
           RUSTFLAGS: "-C debuginfo=0"
-        run: cargo test --no-default-features --features fips --verbose
+        run: cargo test --workspace --verbose

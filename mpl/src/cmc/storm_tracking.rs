@@ -58,7 +58,7 @@ enum GetDecision {
     /// Return this value immediately from `get_cache_entry`. `Some(e)` is a
     /// cache hit; `None` is "NoSuchEntry" (with the key already marked
     /// inflight if the classifier decided a new refresh leader was needed).
-    Ready(Option<Arc<CacheEntry>>),
+    Ready(Option<CacheEntry>),
     /// Enter the polling loop. `deadline = Some(_)` gives this waiter a
     /// per-waiter TTL. `deadline = None` is the "cache miss,
     /// key not inflight, fan-out saturated" case — the waiter holds no
@@ -86,7 +86,7 @@ impl std::fmt::Debug for StormTrackingCmc {
             .field("grace_period", &self.inner.grace_period)
             .field("grace_interval", &self.inner.grace_interval)
             .field("fan_out", &self.inner.fan_out)
-            .field("inflight_ttl", &self.inner.inflight_ttl)
+            .field("in_flight_ttl", &self.inner.in_flight_ttl)
             .field("sleep", &self.inner.sleep)
             .finish_non_exhaustive()
     }
@@ -97,7 +97,7 @@ struct StormTrackingCmcInner {
     grace_period: Duration,
     grace_interval: Duration,
     fan_out: usize,
-    inflight_ttl: Duration,
+    in_flight_ttl: Duration,
     sleep: Duration,
     state: Mutex<StormTrackingState>,
     now: Clock,
@@ -113,16 +113,16 @@ pub const DEFAULT_STORM_GRACE_PERIOD: Duration = Duration::from_secs(10);
 pub const DEFAULT_STORM_GRACE_INTERVAL: Duration = Duration::from_secs(1);
 /// Default [`StormTrackingCmcBuilder::fan_out`].
 pub const DEFAULT_STORM_FAN_OUT: usize = 20;
-/// Default [`StormTrackingCmcBuilder::inflight_ttl`].
+/// Default [`StormTrackingCmcBuilder::in_flight_ttl`].
 // Not the spec's 20 s, which would break the spec's rule
 // "Inflight TTL MUST be less than or equal to the Grace Period" with the 10 s default grace period.
 pub const DEFAULT_STORM_INFLIGHT_TTL: Duration = Duration::from_secs(10);
 /// Default [`StormTrackingCmcBuilder::sleep`].
 pub const DEFAULT_STORM_SLEEP: Duration = Duration::from_millis(20);
 
-/// The error when another caller holds the in-flight slot for this key past `inflight_ttl`.
+/// The error when another caller holds the in-flight slot for this key past `in_flight_ttl`.
 /// This is contention, not a fault: the next attempt usually finds the entry filled.
-fn inflight_ttl_exceeded() -> Error {
+fn in_flight_ttl_exceeded() -> Error {
     Error::new(
         Kind::Throttling,
         "timed out waiting for another caller to fill the cache entry",
@@ -166,8 +166,8 @@ impl StormTrackingCmc {
 
     /// How long a caller waits for another caller's refresh before failing.
     #[must_use]
-    pub fn inflight_ttl(&self) -> Duration {
-        self.inner.inflight_ttl
+    pub fn in_flight_ttl(&self) -> Duration {
+        self.inner.in_flight_ttl
     }
 
     /// How long a waiting caller sleeps between checks of the cache.
@@ -229,7 +229,7 @@ impl StormTrackingCmc {
     }
 
     /// Acquire the state mutex, prune inflight entries that have exceeded
-    /// `inflight_ttl` (skipping `skip_key` so the caller's own TTL check
+    /// `in_flight_ttl` (skipping `skip_key` so the caller's own TTL check
     /// still fires against a fresh view of that key), and return the guard.
     ///
     /// All non-observability state-touching paths use this helper so
@@ -246,7 +246,7 @@ impl StormTrackingCmc {
             .state
             .lock()
             .map_err(|_| Error::new(Kind::Internal, "cache lock poisoned"))?;
-        let ttl = self.inner.inflight_ttl;
+        let ttl = self.inner.in_flight_ttl;
         guard.inflight.retain(|k, t| {
             k.as_slice() == skip_key
                 || now
@@ -265,7 +265,7 @@ impl StormTrackingCmc {
         &self,
         state: &mut StormTrackingState,
         cache_id: &[u8],
-        cached: &Option<Arc<CacheEntry>>,
+        cached: &Option<CacheEntry>,
         now: SystemTime,
     ) -> Result<GetDecision, Error> {
         match cached {
@@ -275,11 +275,11 @@ impl StormTrackingCmc {
                     // Fan-out saturated: serve the cached entry even if
                     // within the grace period; storm tracking is disabled
                     // until slots free up.
-                    return Ok(GetDecision::Ready(Some(Arc::clone(entry))));
+                    return Ok(GetDecision::Ready(Some(entry.clone())));
                 }
 
                 if !within_grace_period(entry.expiry_time(), now, self.inner.grace_period) {
-                    return Ok(GetDecision::Ready(Some(Arc::clone(entry))));
+                    return Ok(GetDecision::Ready(Some(entry.clone())));
                 }
 
                 match state.inflight.get(cache_id).copied() {
@@ -293,7 +293,7 @@ impl StormTrackingCmc {
                         if within_grace_interval(inflight_t, now, self.inner.grace_interval) {
                             // Another thread is already refreshing; serve
                             // the cached copy.
-                            Ok(GetDecision::Ready(Some(Arc::clone(entry))))
+                            Ok(GetDecision::Ready(Some(entry.clone())))
                         } else {
                             // Grace interval elapsed since the last leader
                             // was marked; take the leader slot.
@@ -319,8 +319,8 @@ impl StormTrackingCmc {
                     Some(inflight_t) => {
                         let elapsed = now.duration_since(inflight_t).unwrap_or(Duration::ZERO);
 
-                        if elapsed > self.inner.inflight_ttl {
-                            return Err(inflight_ttl_exceeded());
+                        if elapsed > self.inner.in_flight_ttl {
+                            return Err(in_flight_ttl_exceeded());
                         }
 
                         if within_grace_interval(inflight_t, now, self.inner.grace_interval) {
@@ -330,7 +330,7 @@ impl StormTrackingCmc {
                             // reference extern: computed once here, checked
                             // each iteration in `wait_for_leader`.
                             Ok(GetDecision::Wait {
-                                deadline: Some(now + self.inner.inflight_ttl),
+                                deadline: Some(now + self.inner.in_flight_ttl),
                             })
                         } else {
                             // Grace interval elapsed; take the leader slot.
@@ -361,7 +361,7 @@ impl StormTrackingCmc {
         &self,
         cache_id: &[u8],
         deadline: Option<SystemTime>,
-    ) -> Result<Option<Arc<CacheEntry>>, Error> {
+    ) -> Result<Option<CacheEntry>, Error> {
         loop {
             tokio::time::sleep(self.inner.sleep).await;
 
@@ -373,12 +373,12 @@ impl StormTrackingCmc {
 
             // Per-waiter TTL check (only present for the "key inflight"
             // classification). Fires if this getter has been in the loop
-            // longer than `inflight_ttl`, regardless of the map's current
+            // longer than `in_flight_ttl`, regardless of the map's current
             // inflight_t.
             if let Some(deadline) = deadline
                 && now >= deadline
             {
-                return Err(inflight_ttl_exceeded());
+                return Err(in_flight_ttl_exceeded());
             }
 
             // Re-classify per Dafny `CheckNewEntry`: become leader when
@@ -410,7 +410,7 @@ pub struct StormTrackingCmcBuilder {
     grace_period: Option<Duration>,
     grace_interval: Option<Duration>,
     fan_out: Option<usize>,
-    inflight_ttl: Option<Duration>,
+    in_flight_ttl: Option<Duration>,
     sleep: Option<Duration>,
     clock: Option<Clock>,
 }
@@ -423,7 +423,7 @@ impl std::fmt::Debug for StormTrackingCmcBuilder {
             .field("grace_period", &self.grace_period)
             .field("grace_interval", &self.grace_interval)
             .field("fan_out", &self.fan_out)
-            .field("inflight_ttl", &self.inflight_ttl)
+            .field("in_flight_ttl", &self.in_flight_ttl)
             .field("sleep", &self.sleep)
             .finish_non_exhaustive()
     }
@@ -432,7 +432,7 @@ impl std::fmt::Debug for StormTrackingCmcBuilder {
 impl StormTrackingCmcBuilder {
     /// Set the maximum number of entries. Defaults to 1000.
     #[must_use]
-    pub const fn entry_capacity(mut self, n: usize) -> Self {
+    pub fn entry_capacity(mut self, n: usize) -> Self {
         self.entry_capacity = Some(n);
         self
     }
@@ -440,7 +440,7 @@ impl StormTrackingCmcBuilder {
     /// Set how many least-recently-used entries each get checks for expired entries to evict.
     /// Defaults to 1.
     #[must_use]
-    pub const fn entry_pruning_tail_size(mut self, n: usize) -> Self {
+    pub fn entry_pruning_tail_size(mut self, n: usize) -> Self {
         self.entry_pruning_tail_size = Some(n);
         self
     }
@@ -448,7 +448,7 @@ impl StormTrackingCmcBuilder {
     /// Set how long before an entry expires the cache sends one caller to refresh it.
     /// Defaults to 10 seconds.
     #[must_use]
-    pub const fn grace_period(mut self, d: Duration) -> Self {
+    pub fn grace_period(mut self, d: Duration) -> Self {
         self.grace_period = Some(d);
         self
     }
@@ -456,7 +456,7 @@ impl StormTrackingCmcBuilder {
     /// Set how long one caller has to refresh an entry before another caller may try.
     /// Defaults to 1 second.
     #[must_use]
-    pub const fn grace_interval(mut self, d: Duration) -> Self {
+    pub fn grace_interval(mut self, d: Duration) -> Self {
         self.grace_interval = Some(d);
         self
     }
@@ -464,7 +464,7 @@ impl StormTrackingCmcBuilder {
     /// Set the maximum number of refreshes in flight at once.
     /// Defaults to 20. Must be at least 1.
     #[must_use]
-    pub const fn fan_out(mut self, n: usize) -> Self {
+    pub fn fan_out(mut self, n: usize) -> Self {
         self.fan_out = Some(n);
         self
     }
@@ -472,15 +472,15 @@ impl StormTrackingCmcBuilder {
     /// Set how long a caller waits for another caller's refresh before failing.
     /// Defaults to 10 seconds.
     #[must_use]
-    pub const fn inflight_ttl(mut self, d: Duration) -> Self {
-        self.inflight_ttl = Some(d);
+    pub fn in_flight_ttl(mut self, d: Duration) -> Self {
+        self.in_flight_ttl = Some(d);
         self
     }
 
     /// Set how long a waiting caller sleeps between checks of the cache.
     /// Defaults to 20 milliseconds.
     #[must_use]
-    pub const fn sleep(mut self, d: Duration) -> Self {
+    pub fn sleep(mut self, d: Duration) -> Self {
         self.sleep = Some(d);
         self
     }
@@ -488,98 +488,98 @@ impl StormTrackingCmcBuilder {
     /// Set or clear `entry_capacity`, for forwarding an existing `Option`.
     /// `None` applies the default documented on [`entry_capacity`](Self::entry_capacity).
     #[must_use]
-    pub const fn set_entry_capacity(mut self, v: Option<usize>) -> Self {
+    pub fn set_entry_capacity(mut self, v: Option<usize>) -> Self {
         self.entry_capacity = v;
         self
     }
 
     /// The entry capacity, if set.
     #[must_use]
-    pub const fn get_entry_capacity(&self) -> &Option<usize> {
+    pub fn get_entry_capacity(&self) -> &Option<usize> {
         &self.entry_capacity
     }
 
     /// Set or clear `entry_pruning_tail_size`, for forwarding an existing `Option`.
     /// `None` applies the default documented on [`entry_pruning_tail_size`](Self::entry_pruning_tail_size).
     #[must_use]
-    pub const fn set_entry_pruning_tail_size(mut self, v: Option<usize>) -> Self {
+    pub fn set_entry_pruning_tail_size(mut self, v: Option<usize>) -> Self {
         self.entry_pruning_tail_size = v;
         self
     }
 
     /// The entry pruning tail size, if set.
     #[must_use]
-    pub const fn get_entry_pruning_tail_size(&self) -> &Option<usize> {
+    pub fn get_entry_pruning_tail_size(&self) -> &Option<usize> {
         &self.entry_pruning_tail_size
     }
 
     /// Set or clear `grace_period`, for forwarding an existing `Option`.
     /// `None` applies the default documented on [`grace_period`](Self::grace_period).
     #[must_use]
-    pub const fn set_grace_period(mut self, v: Option<Duration>) -> Self {
+    pub fn set_grace_period(mut self, v: Option<Duration>) -> Self {
         self.grace_period = v;
         self
     }
 
     /// The grace period, if set.
     #[must_use]
-    pub const fn get_grace_period(&self) -> &Option<Duration> {
+    pub fn get_grace_period(&self) -> &Option<Duration> {
         &self.grace_period
     }
 
     /// Set or clear `grace_interval`, for forwarding an existing `Option`.
     /// `None` applies the default documented on [`grace_interval`](Self::grace_interval).
     #[must_use]
-    pub const fn set_grace_interval(mut self, v: Option<Duration>) -> Self {
+    pub fn set_grace_interval(mut self, v: Option<Duration>) -> Self {
         self.grace_interval = v;
         self
     }
 
     /// The grace interval, if set.
     #[must_use]
-    pub const fn get_grace_interval(&self) -> &Option<Duration> {
+    pub fn get_grace_interval(&self) -> &Option<Duration> {
         &self.grace_interval
     }
 
     /// Set or clear `fan_out`, for forwarding an existing `Option`.
     /// `None` applies the default documented on [`fan_out`](Self::fan_out).
     #[must_use]
-    pub const fn set_fan_out(mut self, v: Option<usize>) -> Self {
+    pub fn set_fan_out(mut self, v: Option<usize>) -> Self {
         self.fan_out = v;
         self
     }
 
     /// The fan-out, if set.
     #[must_use]
-    pub const fn get_fan_out(&self) -> &Option<usize> {
+    pub fn get_fan_out(&self) -> &Option<usize> {
         &self.fan_out
     }
 
-    /// Set or clear `inflight_ttl`, for forwarding an existing `Option`.
-    /// `None` applies the default documented on [`inflight_ttl`](Self::inflight_ttl).
+    /// Set or clear `in_flight_ttl`, for forwarding an existing `Option`.
+    /// `None` applies the default documented on [`in_flight_ttl`](Self::in_flight_ttl).
     #[must_use]
-    pub const fn set_inflight_ttl(mut self, v: Option<Duration>) -> Self {
-        self.inflight_ttl = v;
+    pub fn set_in_flight_ttl(mut self, v: Option<Duration>) -> Self {
+        self.in_flight_ttl = v;
         self
     }
 
     /// The inflight TTL, if set.
     #[must_use]
-    pub const fn get_inflight_ttl(&self) -> &Option<Duration> {
-        &self.inflight_ttl
+    pub fn get_in_flight_ttl(&self) -> &Option<Duration> {
+        &self.in_flight_ttl
     }
 
     /// Set or clear `sleep`, for forwarding an existing `Option`.
     /// `None` applies the default documented on [`sleep`](Self::sleep).
     #[must_use]
-    pub const fn set_sleep(mut self, v: Option<Duration>) -> Self {
+    pub fn set_sleep(mut self, v: Option<Duration>) -> Self {
         self.sleep = v;
         self
     }
 
     /// The sleep duration, if set.
     #[must_use]
-    pub const fn get_sleep(&self) -> &Option<Duration> {
+    pub fn get_sleep(&self) -> &Option<Duration> {
         &self.sleep
     }
 
@@ -601,27 +601,27 @@ impl StormTrackingCmcBuilder {
     /// # Errors
     ///
     /// Returns a validation error ([`Error::is_validation`]) if:
-    /// - `fan_out`, `inflight_ttl`, or `sleep` is 0, or
-    /// - `grace_interval` exceeds `inflight_ttl`.
+    /// - `fan_out`, `in_flight_ttl`, or `sleep` is 0, or
+    /// - `grace_interval` exceeds `in_flight_ttl`.
     pub fn build(self) -> Result<StormTrackingCmc, Error> {
         let fan_out = self.fan_out.unwrap_or(DEFAULT_STORM_FAN_OUT);
         let grace_period = self.grace_period.unwrap_or(DEFAULT_STORM_GRACE_PERIOD);
         let grace_interval = self.grace_interval.unwrap_or(DEFAULT_STORM_GRACE_INTERVAL);
-        let inflight_ttl = self.inflight_ttl.unwrap_or(DEFAULT_STORM_INFLIGHT_TTL);
+        let in_flight_ttl = self.in_flight_ttl.unwrap_or(DEFAULT_STORM_INFLIGHT_TTL);
         let sleep = self.sleep.unwrap_or(DEFAULT_STORM_SLEEP);
 
         if fan_out == 0 {
             return Err(invalid("fan_out must be at least 1"));
         }
-        if inflight_ttl.is_zero() {
-            return Err(invalid("inflight_ttl must be greater than zero"));
+        if in_flight_ttl.is_zero() {
+            return Err(invalid("in_flight_ttl must be greater than zero"));
         }
         if sleep.is_zero() {
             return Err(invalid("sleep must be greater than zero"));
         }
-        if grace_interval > inflight_ttl {
+        if grace_interval > in_flight_ttl {
             return Err(invalid(format!(
-                "grace_interval ({grace_interval:?}) must be less than or equal to inflight_ttl ({inflight_ttl:?})"
+                "grace_interval ({grace_interval:?}) must be less than or equal to in_flight_ttl ({in_flight_ttl:?})"
             )));
         }
 
@@ -639,7 +639,7 @@ impl StormTrackingCmcBuilder {
                 grace_period,
                 grace_interval,
                 fan_out,
-                inflight_ttl,
+                in_flight_ttl,
                 sleep,
                 state: Mutex::new(StormTrackingState {
                     inflight: HashMap::new(),

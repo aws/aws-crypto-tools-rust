@@ -16,7 +16,7 @@ pub(crate) async fn read_encryption_context(
 ) -> Result<EncryptionContext, Error> {
     let len = usize::from(read_u16(r, raw).await?);
     let bytes = read_vec(r, len, raw).await?;
-    EncryptionContext::deserialize(&bytes)
+    EncryptionContext::from_bytes(&bytes)
         .map_err(|e| err_with_cause(Kind::Serialization, "invalid encryption context", e))
 }
 

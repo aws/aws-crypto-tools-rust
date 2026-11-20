@@ -6,7 +6,6 @@ mod fixtures;
 mod test_helpers;
 
 use aws_esdk::{Client, types::EncryptionContext};
-use std::num::NonZeroU32;
 use test_helpers::test_keyring;
 
 #[tokio::test(flavor = "multi_thread")]
@@ -197,8 +196,7 @@ async fn test_encrypt_decrypt_varied_frame_lengths() {
     let plaintext = "0123456789abcdef".as_bytes();
     let ec = EncryptionContext::new();
     for i in 4..=plaintext.len() {
-        let frame_length =
-            NonZeroU32::new(u32::try_from(i).expect("frame length fits u32")).unwrap();
+        let frame_length = u32::try_from(i).expect("frame length fits u32");
         let esdk_ciphertext = esdk
             .encrypt()
             .plaintext(plaintext)

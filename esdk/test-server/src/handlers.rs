@@ -23,8 +23,7 @@ use aws_esdk::{
     types::{EncryptionContext, SignedStreaming},
     Client,
 };
-use std::collections::HashMap;
-use std::num::{NonZeroU32, NonZeroUsize};
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Mutex;
 
 /// The ESDK client and keyring a registered client encrypts/decrypts with.
@@ -79,13 +78,46 @@ fn map_algorithm_suite(id: EsdkAlgorithmSuiteId) -> MplAlgorithmSuiteId {
     }
 }
 
-fn max_edks(config: &EsdkClientConfig) -> Result<Option<NonZeroUsize>, ServerError> {
+// The model has no member for a suite added to the ESDK later, so the decrypt
+// response leaves algorithmSuiteId unset for one.
+fn model_algorithm_suite(id: MplAlgorithmSuiteId) -> Option<EsdkAlgorithmSuiteId> {
+    Some(match id {
+        MplAlgorithmSuiteId::AlgAes128GcmIv12Tag16NoKdf => EsdkAlgorithmSuiteId::Alg128GcmNoKdf,
+        MplAlgorithmSuiteId::AlgAes192GcmIv12Tag16NoKdf => EsdkAlgorithmSuiteId::Alg192GcmNoKdf,
+        MplAlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf => EsdkAlgorithmSuiteId::Alg256GcmNoKdf,
+        MplAlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256 => EsdkAlgorithmSuiteId::Alg128GcmHkdf,
+        MplAlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha256 => EsdkAlgorithmSuiteId::Alg192GcmHkdf,
+        MplAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256 => EsdkAlgorithmSuiteId::Alg256GcmHkdf,
+        MplAlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256EcdsaP256 => {
+            EsdkAlgorithmSuiteId::Alg128GcmHkdfEcdsa
+        }
+        MplAlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha384EcdsaP384 => {
+            EsdkAlgorithmSuiteId::Alg192GcmHkdfEcdsa
+        }
+        MplAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384 => {
+            EsdkAlgorithmSuiteId::Alg256GcmHkdfEcdsa
+        }
+        MplAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey => {
+            EsdkAlgorithmSuiteId::Alg256GcmCommit
+        }
+        MplAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384 => {
+            EsdkAlgorithmSuiteId::Alg256GcmCommitEcdsa
+        }
+        _ => return None,
+    })
+}
+
+fn model_encryption_context(ec: &EncryptionContext) -> BTreeMap<String, String> {
+    ec.clone().into_iter().collect()
+}
+
+fn max_edks(config: &EsdkClientConfig) -> Result<Option<usize>, ServerError> {
     let Some(v) = config.max_encrypted_data_keys else {
         return Ok(None);
     };
     usize::try_from(v)
         .ok()
-        .and_then(NonZeroUsize::new)
+        .filter(|&n| n > 0)
         .map(Some)
         .ok_or_else(|| {
             ServerError::generic(format!("maxEncryptedDataKeys must be positive, got {v}"))
@@ -99,13 +131,10 @@ fn encryption_context(
 }
 
 // The commons suite expects an out-of-range frame length as ESDKClientError.
-fn frame_length(frame: i64) -> Result<NonZeroU32, ServerError> {
-    u32::try_from(frame)
-        .ok()
-        .and_then(NonZeroU32::new)
-        .ok_or_else(|| {
-            ServerError::esdk(format!("frameLength must be in 1..=u32::MAX, got {frame}"))
-        })
+fn frame_length(frame: i64) -> Result<u32, ServerError> {
+    u32::try_from(frame).ok().filter(|&n| n > 0).ok_or_else(|| {
+        ServerError::esdk(format!("frameLength must be in 1..=u32::MAX, got {frame}"))
+    })
 }
 
 impl AppState {
@@ -163,8 +192,12 @@ impl AppState {
             .send()
             .await
             .map_err(|e| ServerError::esdk(e.to_string()))?;
+        let encryption_context = Some(model_encryption_context(output.encryption_context()));
+        let algorithm_suite_id = model_algorithm_suite(output.algorithm_suite_id());
         Ok(DecryptResponse {
             plaintext: output.into_plaintext().into_inner(),
+            encryption_context,
+            algorithm_suite_id,
         })
     }
 
@@ -174,10 +207,10 @@ impl AppState {
     ) -> Result<EncryptStreamResponse, ServerError> {
         let (esdk, keyring) = self.client(&req.client_id)?;
         let frame_length = req.frame_length.map(frame_length).transpose()?;
-        let data_size = req
+        let plaintext_length_bound = req
             .plaintext_length_bound
             .map(|bound| {
-                usize::try_from(bound).map_err(|_| {
+                u64::try_from(bound).map_err(|_| {
                     ServerError::esdk(format!(
                         "plaintextLengthBound must be non-negative, got {bound}"
                     ))
@@ -192,7 +225,7 @@ impl AppState {
             .keyring(keyring)
             .set_algorithm_suite_id(req.algorithm_suite_id.map(map_algorithm_suite))
             .set_frame_length(frame_length)
-            .set_data_size(data_size)
+            .set_plaintext_length_bound(plaintext_length_bound)
             .send()
             .await
             .map_err(|e| ServerError::esdk(e.to_string()))?;
@@ -205,7 +238,8 @@ impl AppState {
     ) -> Result<DecryptStreamResponse, ServerError> {
         let (esdk, keyring) = self.client(&req.client_id)?;
         let mut plaintext = Vec::new();
-        esdk.decrypt_stream()
+        let output = esdk
+            .decrypt_stream()
             .ciphertext(req.ciphertext.as_slice())
             .plaintext(&mut plaintext)
             .set_encryption_context(Some(encryption_context(req.encryption_context)))
@@ -216,7 +250,11 @@ impl AppState {
             .send()
             .await
             .map_err(|e| ServerError::esdk(e.to_string()))?;
-        Ok(DecryptStreamResponse { plaintext })
+        Ok(DecryptStreamResponse {
+            plaintext,
+            encryption_context: Some(model_encryption_context(output.encryption_context())),
+            algorithm_suite_id: model_algorithm_suite(output.algorithm_suite_id()),
+        })
     }
 
     /// Look up a registered client by id, cloning the shared keyring handle.

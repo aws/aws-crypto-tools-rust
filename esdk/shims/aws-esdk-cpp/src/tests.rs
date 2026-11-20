@@ -76,7 +76,7 @@ fn unset_storm_tracking_options() -> ffi::StormTrackingCmcOptions {
         grace_period: unset_duration(),
         grace_interval: unset_duration(),
         fan_out: unset_u32(),
-        inflight_ttl: unset_duration(),
+        in_flight_ttl: unset_duration(),
         sleep: unset_duration(),
     }
 }
@@ -396,8 +396,8 @@ fn max_edks_zero_is_no_limit_positive_is_limit() {
     //# The shim MUST translate zero to the core ESDK's "no limit" representation,
     //# and a positive value `n` to a limit of `n`.
     assert_eq!(max_edks_target_to_core(0), None);
-    assert_eq!(max_edks_target_to_core(1), std::num::NonZeroUsize::new(1));
-    assert_eq!(max_edks_target_to_core(42), std::num::NonZeroUsize::new(42));
+    assert_eq!(max_edks_target_to_core(1), Some(1));
+    assert_eq!(max_edks_target_to_core(42), Some(42));
 }
 
 #[test]
@@ -408,7 +408,7 @@ fn make_kms_config_accepts_key_arn() {
     //# - The shim MUST translate a KMS key ARN configuration.
     assert!(matches!(
         make_kms_config(ffi::KmsConfigurationType::KmsKeyArn, "arn:test-key").unwrap(),
-        KmsConfiguration::KmsKeyArn(v) if v == "arn:test-key"
+        KmsConfiguration::KmsKeyArn(v) if v.arn() == "arn:test-key"
     ));
 }
 
@@ -420,7 +420,7 @@ fn make_kms_config_accepts_mr_key_arn() {
     //# - The shim MUST translate a KMS multi-Region-key ARN configuration.
     assert!(matches!(
         make_kms_config(ffi::KmsConfigurationType::KmsMrKeyArn, "arn:test-mr-key").unwrap(),
-        KmsConfiguration::KmsMrKeyArn(v) if v == "arn:test-mr-key"
+        KmsConfiguration::KmsMrKeyArn(v) if v.arn() == "arn:test-mr-key"
     ));
 }
 
@@ -926,7 +926,7 @@ fn storm_tracking_options() -> ffi::StormTrackingCmcOptions {
         grace_period: set_duration(10, 0),
         grace_interval: set_duration(0, 500_000_000),
         fan_out: set_u32(20),
-        inflight_ttl: set_duration(2, 250_000_000),
+        in_flight_ttl: set_duration(2, 250_000_000),
         sleep: set_duration(0, 20_000_000),
     }
 }
@@ -947,7 +947,7 @@ fn create_storm_tracking_cmc_passes_each_option_to_the_core() {
     assert_eq!(cache.grace_period(), Some(Duration::from_secs(10)));
     assert_eq!(cache.grace_interval(), Duration::from_millis(500));
     assert_eq!(cache.fan_out(), 20);
-    assert_eq!(cache.inflight_ttl(), Duration::from_millis(2250));
+    assert_eq!(cache.in_flight_ttl(), Duration::from_millis(2250));
     assert_eq!(cache.sleep(), Duration::from_millis(20));
 }
 
@@ -1042,8 +1042,8 @@ fn create_keystore_forwards_id_and_grant_tokens() {
 fn create_raw_aes_keyring_rejects_unsupported_wrapping_alg() {
     //= spec/shim/esdk-shim.md#aes-wrapping-algorithm
     //= type=test
-    //# - The shim MUST return an error when the target wrapping algorithm is not a
-    //# supported value.
+    //# - The shim MUST return an error when the target wrapping algorithm configuration is not
+    //# supported.
     let unset = expect_err(create_raw_aes_keyring(&ffi::RawAesKeyringInput {
         key_namespace: "test-ns".to_string(),
         key_name: "test-key".to_string(),
@@ -1242,10 +1242,7 @@ fn encrypt_settings_forwards_every_optional_input() {
     //# - MUST provide the target-supplied maximum-encrypted-data-keys value to
     //# the core ESDK, converted as defined in
     //# [Maximum encrypted data keys](#maximum-encrypted-data-keys).
-    assert_eq!(
-        config.max_encrypted_data_keys(),
-        std::num::NonZeroUsize::new(5)
-    );
+    assert_eq!(config.max_encrypted_data_keys(), Some(5));
 
     //= spec/shim/esdk-shim.md#encrypt-inputs
     //= type=test
@@ -1301,10 +1298,7 @@ fn decrypt_client_forwards_every_optional_input() {
     //# - MUST provide the target-supplied maximum-encrypted-data-keys value to
     //# the core ESDK, converted as defined in
     //# [Maximum encrypted data keys](#maximum-encrypted-data-keys).
-    assert_eq!(
-        config.max_encrypted_data_keys(),
-        std::num::NonZeroUsize::new(7)
-    );
+    assert_eq!(config.max_encrypted_data_keys(), Some(7));
 
     //= spec/shim/esdk-shim.md#decrypt-inputs
     //= type=test

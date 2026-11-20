@@ -1,6 +1,6 @@
 {
   "spec": {
     "url": "https://github.com/awslabs/aws-encryption-sdk-specification.git",
-    "ref": "lucasmcdonald3/shim-streaming-adopt-bulk"
+    "ref": "master"
   }
 }

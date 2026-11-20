@@ -91,8 +91,8 @@ pub(crate) fn resolve_key_store_arn(
     branch_key_id: &str,
 ) -> Result<String, Error> {
     let configured = match kms_config {
-        KmsConfiguration::KmsKeyArn(configured) => configured.as_str(),
-        KmsConfiguration::KmsMrKeyArn(configured) => configured.as_str(),
+        KmsConfiguration::KmsKeyArn(configured) => configured.arn(),
+        KmsConfiguration::KmsMrKeyArn(configured) => configured.arn(),
         KmsConfiguration::Discovery(_) => {
             reject_alias_arn(record_kms_arn, branch_key_id)?;
             return Ok(record_kms_arn.to_string());
@@ -212,12 +212,8 @@ fn map_kms_error<E>(operation: &str, key_arn: &str, err: SdkError<E, HttpRespons
 where
     E: ProvideErrorMetadata + std::error::Error + Send + Sync + 'static,
 {
-    Error::from_sdk(
-        Service::Kms,
-        &format!("AWS KMS {operation}"),
-        Some(Resource::KmsKey(KmsKey::new(key_arn.to_owned()))),
-        err,
-    )
+    Error::from_sdk(Service::Kms, &format!("AWS KMS {operation}"), err)
+        .with_resource(KmsKey::new(key_arn.to_owned()))
 }
 
 /// Generate a fresh 32-byte data key wrapped under `key_arn`, bound to

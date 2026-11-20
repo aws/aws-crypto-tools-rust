@@ -19,7 +19,6 @@ use aws_sdk_dynamodb::operation::describe_table::DescribeTableError;
 use aws_sdk_dynamodb::operation::get_item::GetItemError;
 use aws_sdk_kms::Client as KmsClient;
 
-use aws_crypto_mpl::__test_internals::error_chain::{aws_service_error_code, find_in_error_chain};
 use aws_crypto_mpl::key_store::DynamoDbKeyStore;
 use aws_crypto_mpl::key_store::DynamoDbKeyStoreBuilder;
 use aws_crypto_mpl::key_store::types::KmsConfiguration;
@@ -54,7 +53,7 @@ const KMS_KEY_ARN: &str =
 fn required_only() -> DynamoDbKeyStoreBuilder {
     DynamoDbKeyStore::builder()
         .ddb_table_name("test-table")
-        .kms_configuration(KmsConfiguration::KmsKeyArn(KMS_KEY_ARN.into()))
+        .kms_configuration(KmsConfiguration::kms_key_arn(KMS_KEY_ARN))
         .logical_key_store_name("test-logical")
 }
 
@@ -82,7 +81,7 @@ async fn build_err(builder: DynamoDbKeyStoreBuilder) -> aws_crypto_mpl::Error {
 async fn build_without_ddb_table_name_returns_configuration_error() {
     let (kms, ddb) = dummy_clients();
     let builder = DynamoDbKeyStore::builder()
-        .kms_configuration(KmsConfiguration::KmsKeyArn(KMS_KEY_ARN.into()))
+        .kms_configuration(KmsConfiguration::kms_key_arn(KMS_KEY_ARN))
         .logical_key_store_name("test-logical")
         .kms_client(kms)
         .ddb_client(ddb);
@@ -95,7 +94,7 @@ async fn build_without_logical_key_store_name_returns_configuration_error() {
     let (kms, ddb) = dummy_clients();
     let builder = DynamoDbKeyStore::builder()
         .ddb_table_name("test-table")
-        .kms_configuration(KmsConfiguration::KmsKeyArn(KMS_KEY_ARN.into()))
+        .kms_configuration(KmsConfiguration::kms_key_arn(KMS_KEY_ARN))
         .kms_client(kms)
         .ddb_client(ddb);
     let err = build_err(builder).await;
@@ -212,7 +211,7 @@ async fn new_without_key_store_id_two_calls_produce_distinct_uuids() {
 #[tokio::test]
 async fn new_with_malformed_kms_arn_returns_configuration_error() {
     let cfg = fixture_config_with_id("caller-id")
-        .kms_configuration(KmsConfiguration::KmsKeyArn("not-an-arn".into()));
+        .kms_configuration(KmsConfiguration::kms_key_arn("not-an-arn"));
     let err = match cfg.build().await {
         Ok(_) => panic!("construction with malformed ARN must fail"),
         Err(e) => e,
@@ -222,8 +221,8 @@ async fn new_with_malformed_kms_arn_returns_configuration_error() {
 
 #[tokio::test]
 async fn new_with_alias_kms_arn_returns_configuration_error() {
-    let cfg = fixture_config_with_id("caller-id").kms_configuration(KmsConfiguration::KmsKeyArn(
-        "arn:aws:kms:us-west-2:111122223333:alias/my-alias".into(),
+    let cfg = fixture_config_with_id("caller-id").kms_configuration(KmsConfiguration::kms_key_arn(
+        "arn:aws:kms:us-west-2:111122223333:alias/my-alias",
     ));
     let err = match cfg.build().await {
         Ok(_) => panic!("construction with alias ARN must fail"),
@@ -257,7 +256,7 @@ async fn get_key_store_info_returns_configured_values() {
     let (kms, ddb) = dummy_clients();
     let cfg = DynamoDbKeyStore::builder()
         .ddb_table_name("my-table")
-        .kms_configuration(KmsConfiguration::KmsKeyArn(KMS_KEY_ARN.into()))
+        .kms_configuration(KmsConfiguration::kms_key_arn(KMS_KEY_ARN))
         .logical_key_store_name("my-logical")
         .id("my-id")
         .set_grant_tokens(Some(["grant-1", "grant-2"].map(String::from).into()))
@@ -500,7 +499,7 @@ async fn the_message_does_not_render_the_sdk_errors_display() {
 }
 
 #[tokio::test]
-async fn find_in_error_chain_recovers_the_sdk_error_by_type() {
+async fn find_source_recovers_the_sdk_error_by_type() {
     let store = fixture_config_with_id("id-x").build().await.unwrap();
     let err = match store
         .get_active_branch_key()
@@ -513,11 +512,11 @@ async fn find_in_error_chain_recovers_the_sdk_error_by_type() {
     };
 
     assert!(
-        find_in_error_chain::<SdkError<GetItemError>>(&err).is_some(),
-        "find_in_error_chain must recover the concrete GetItem SdkError from the chain"
+        err.find_source::<SdkError<GetItemError>>().is_some(),
+        "find_source must recover the concrete GetItem SdkError from the chain"
     );
     assert!(
-        find_in_error_chain::<SdkError<DescribeTableError>>(&err).is_none(),
+        err.find_source::<SdkError<DescribeTableError>>().is_none(),
         "a different operation's SdkError is a different type and must not match"
     );
 }
@@ -540,14 +539,15 @@ async fn a_dispatch_failure_has_no_service_error_code() {
         Err(e) => e,
     };
 
-    let sdk = find_in_error_chain::<SdkError<GetItemError>>(&err)
+    let sdk = err
+        .find_source::<SdkError<GetItemError>>()
         .expect("precondition: the SDK error is in the chain");
     assert!(
         sdk.as_service_error().is_none(),
         "precondition: with no AWS configured this is a dispatch failure, not a service error"
     );
     assert!(
-        aws_service_error_code(&err).is_none(),
+        err.code().is_none(),
         "a dispatch failure carries no service metadata, so it has no code"
     );
 }

@@ -1,7 +1,7 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Picks a branch key per tenant with a [`BranchKeySupplier`].
+//! Picks a branch key per tenant with a [`BranchKeyIdSupplier`].
 //!
 //! A multi-tenant application gives each tenant its own branch key,
 //! so one tenant's branch key cannot decrypt another tenant's data.
@@ -19,20 +19,20 @@ use std::time::Duration;
 
 use aws_esdk::key_store::types::KmsConfiguration;
 use aws_esdk::keyring::{
-    BranchKeySupplier, GetBranchKeyIdInput, GetBranchKeyIdOutput, HierarchicalKeyring,
+    BranchKeyIdSupplier, GetBranchKeyIdInput, GetBranchKeyIdOutput, HierarchicalKeyring,
 };
 use aws_esdk::mpl::Error as MplError;
 use aws_esdk::types::EncryptionContext;
 use aws_esdk::{Error, async_trait, aws_config, aws_sdk_dynamodb, aws_sdk_kms, key_store};
 
 /// Maps the `tenant` value in the encryption context to that tenant's branch key ID.
-struct TenantBranchKeySupplier {
+struct TenantBranchKeyIdSupplier {
     tenant_a: String,
     tenant_b: String,
 }
 
 #[async_trait]
-impl BranchKeySupplier for TenantBranchKeySupplier {
+impl BranchKeyIdSupplier for TenantBranchKeyIdSupplier {
     async fn get_branch_key_id(
         &self,
         input: GetBranchKeyIdInput,
@@ -54,18 +54,6 @@ fn tenant_context(tenant: &str) -> EncryptionContext {
     EncryptionContext::from([("tenant", tenant), ("purpose", "example")])
 }
 
-async fn fixed_keyring(
-    key_store: &key_store::DynamoDbKeyStore,
-    branch_key_id: &str,
-) -> Result<HierarchicalKeyring, MplError> {
-    HierarchicalKeyring::builder()
-        .key_store(key_store.clone())
-        .ttl(Duration::from_secs(600))
-        .branch_key_id(branch_key_id)
-        .build()
-        .await
-}
-
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let sdk_config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
@@ -75,8 +63,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let key_store = key_store::DynamoDbKeyStore::builder()
         .ddb_table_name("KeyStoreDdbTable")
         .logical_key_store_name("KeyStoreDdbTable")
-        .kms_configuration(KmsConfiguration::KmsKeyArn(
-            "arn:aws:kms:us-west-2:370957321024:key/9d989aa2-2f9c-438c-a745-cc57d3ad0126".into(),
+        .kms_configuration(KmsConfiguration::kms_key_arn(
+            "arn:aws:kms:us-west-2:370957321024:key/9d989aa2-2f9c-438c-a745-cc57d3ad0126",
         ))
         .kms_client(aws_sdk_kms::Client::new(&sdk_config))
         .ddb_client(aws_sdk_dynamodb::Client::new(&sdk_config))
@@ -95,10 +83,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let branch_key_a = create_branch_key().await?;
     let branch_key_b = create_branch_key().await?;
 
-    let keyring = HierarchicalKeyring::builder()
+    // Every keyring below shares these settings.
+    // Each one starts from a clone of this builder and adds only its branch key choice.
+    let template = HierarchicalKeyring::builder()
         .key_store(key_store.clone())
-        .ttl(Duration::from_secs(600))
-        .branch_key_id_supplier(TenantBranchKeySupplier {
+        .ttl(Duration::from_secs(600));
+
+    let keyring = template
+        .clone()
+        .branch_key_id_supplier(TenantBranchKeyIdSupplier {
             tenant_a: branch_key_a.clone(),
             tenant_b: branch_key_b.clone(),
         })
@@ -124,8 +117,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .send()
         .await?;
 
-    let keyring_a = fixed_keyring(&key_store, &branch_key_a).await?;
-    let keyring_b = fixed_keyring(&key_store, &branch_key_b).await?;
+    let keyring_a = template
+        .clone()
+        .branch_key_id(&branch_key_a)
+        .build()
+        .await?;
+    let keyring_b = template.branch_key_id(&branch_key_b).build().await?;
 
     // Tenant B's branch key cannot decrypt tenant A's message.
     let result = esdk

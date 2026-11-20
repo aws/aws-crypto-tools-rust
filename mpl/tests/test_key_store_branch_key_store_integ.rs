@@ -25,7 +25,6 @@ use aws_sdk_kms::Client as KmsClient;
 use aws_sdk_kms::error::SdkError;
 use aws_sdk_kms::operation::decrypt::DecryptError;
 
-use aws_crypto_mpl::__test_internals::error_chain::aws_service_error_code;
 use aws_crypto_mpl::key_store::DynamoDbKeyStore;
 use aws_crypto_mpl::key_store::types::KmsConfiguration;
 
@@ -104,7 +103,7 @@ async fn build_store(
 #[tokio::test]
 async fn integ_get_active_branch_key_returns_expected_materials() {
     let store = build_store(
-        KmsConfiguration::KmsKeyArn(KEY_ARN.into()),
+        KmsConfiguration::kms_key_arn(KEY_ARN),
         LOGICAL_KEY_STORE_NAME,
         kms_client_for_region("us-west-2").await,
         ddb_client_us_west_2().await,
@@ -129,7 +128,7 @@ async fn integ_get_active_branch_key_returns_expected_materials() {
 #[tokio::test]
 async fn integ_get_branch_key_version_returns_expected_materials() {
     let store = build_store(
-        KmsConfiguration::KmsKeyArn(KEY_ARN.into()),
+        KmsConfiguration::kms_key_arn(KEY_ARN),
         LOGICAL_KEY_STORE_NAME,
         kms_client_for_region("us-west-2").await,
         ddb_client_us_west_2().await,
@@ -155,7 +154,7 @@ async fn integ_get_branch_key_version_returns_expected_materials() {
 #[tokio::test]
 async fn integ_get_active_mrk_key_west_kmskeyarn_west_branch() {
     let store = build_store(
-        KmsConfiguration::KmsKeyArn(MRK_ARN_WEST.into()),
+        KmsConfiguration::kms_key_arn(MRK_ARN_WEST),
         LOGICAL_KEY_STORE_NAME,
         kms_client_for_region("us-west-2").await,
         ddb_client_us_west_2().await,
@@ -175,7 +174,7 @@ async fn integ_get_active_mrk_key_west_kmskeyarn_west_branch() {
 #[tokio::test]
 async fn integ_get_active_mrk_key_east_kmskeyarn_east_branch() {
     let store = build_store(
-        KmsConfiguration::KmsKeyArn(MRK_ARN_EAST.into()),
+        KmsConfiguration::kms_key_arn(MRK_ARN_EAST),
         LOGICAL_KEY_STORE_NAME,
         kms_client_for_region("us-east-1").await,
         ddb_client_us_west_2().await,
@@ -195,7 +194,7 @@ async fn integ_get_active_mrk_key_east_kmskeyarn_east_branch() {
 #[tokio::test]
 async fn integ_get_active_mrk_key_west_mrk_west_branch() {
     let store = build_store(
-        KmsConfiguration::KmsMrKeyArn(MRK_ARN_WEST.into()),
+        KmsConfiguration::kms_mr_key_arn(MRK_ARN_WEST),
         LOGICAL_KEY_STORE_NAME,
         kms_client_for_region("us-west-2").await,
         ddb_client_us_west_2().await,
@@ -215,7 +214,7 @@ async fn integ_get_active_mrk_key_west_mrk_west_branch() {
 #[tokio::test]
 async fn integ_get_active_mrk_key_east_mrk_east_branch() {
     let store = build_store(
-        KmsConfiguration::KmsMrKeyArn(MRK_ARN_EAST.into()),
+        KmsConfiguration::kms_mr_key_arn(MRK_ARN_EAST),
         LOGICAL_KEY_STORE_NAME,
         kms_client_for_region("us-east-1").await,
         ddb_client_us_west_2().await,
@@ -237,7 +236,7 @@ async fn integ_get_active_mrk_key_east_mrk_east_branch() {
 #[tokio::test]
 async fn integ_get_active_mrk_key_west_mrk_fetches_east_branch() {
     let store = build_store(
-        KmsConfiguration::KmsMrKeyArn(MRK_ARN_WEST.into()),
+        KmsConfiguration::kms_mr_key_arn(MRK_ARN_WEST),
         LOGICAL_KEY_STORE_NAME,
         kms_client_for_region("us-west-2").await,
         ddb_client_us_west_2().await,
@@ -257,7 +256,7 @@ async fn integ_get_active_mrk_key_west_mrk_fetches_east_branch() {
 #[tokio::test]
 async fn integ_get_active_mrk_key_east_mrk_fetches_west_branch() {
     let store = build_store(
-        KmsConfiguration::KmsMrKeyArn(MRK_ARN_EAST.into()),
+        KmsConfiguration::kms_mr_key_arn(MRK_ARN_EAST),
         LOGICAL_KEY_STORE_NAME,
         kms_client_for_region("us-east-1").await,
         ddb_client_us_west_2().await,
@@ -279,7 +278,7 @@ async fn integ_get_active_mrk_key_east_mrk_fetches_west_branch() {
 #[tokio::test]
 async fn integ_get_active_kmskeyarn_west_fetches_east_branch_fails() {
     let store = build_store(
-        KmsConfiguration::KmsKeyArn(MRK_ARN_WEST.into()),
+        KmsConfiguration::kms_key_arn(MRK_ARN_WEST),
         LOGICAL_KEY_STORE_NAME,
         kms_client_for_region("us-west-2").await,
         ddb_client_us_west_2().await,
@@ -300,7 +299,7 @@ async fn integ_get_active_kmskeyarn_west_fetches_east_branch_fails() {
 #[tokio::test]
 async fn integ_get_active_kmskeyarn_east_fetches_west_branch_fails() {
     let store = build_store(
-        KmsConfiguration::KmsKeyArn(MRK_ARN_EAST.into()),
+        KmsConfiguration::kms_key_arn(MRK_ARN_EAST),
         LOGICAL_KEY_STORE_NAME,
         kms_client_for_region("us-east-1").await,
         ddb_client_us_west_2().await,
@@ -323,7 +322,7 @@ async fn integ_get_active_kmskeyarn_east_fetches_west_branch_fails() {
 #[tokio::test]
 async fn integ_get_active_mrk_key_ap_config_fails_at_kms() {
     let store = build_store(
-        KmsConfiguration::KmsMrKeyArn(MRK_ARN_AP.into()),
+        KmsConfiguration::kms_mr_key_arn(MRK_ARN_AP),
         LOGICAL_KEY_STORE_NAME,
         kms_client_for_region("ap-south-2").await,
         ddb_client_us_west_2().await,
@@ -360,7 +359,7 @@ async fn integ_get_active_key_with_arn_disagreement_fails() {
     // created with a different KMS ARN — the kms-arn-compat check in
     // resolve_key_store_arn rejects with Authentication errkind.
     let store = build_store(
-        KmsConfiguration::KmsKeyArn(KEY_ARN.into()),
+        KmsConfiguration::kms_key_arn(KEY_ARN),
         LOGICAL_KEY_STORE_NAME,
         kms_client_for_region("us-west-2").await,
         ddb_client_us_west_2().await,
@@ -386,7 +385,7 @@ async fn integ_get_active_key_wrong_logical_name_fails_at_kms() {
     // EC, so KMS Decrypt fails to authenticate and returns
     // InvalidCiphertextException, which is a `Service` error.
     let store = build_store(
-        KmsConfiguration::KmsKeyArn(KEY_ARN.into()),
+        KmsConfiguration::kms_key_arn(KEY_ARN),
         INCORRECT_LOGICAL_NAME,
         kms_client_for_region("us-west-2").await,
         ddb_client_us_west_2().await,
@@ -428,11 +427,11 @@ async fn integ_get_active_key_wrong_logical_name_fails_at_kms() {
 
     // The same exception is reachable without knowing which KMS operation
     // failed, via the error code the SDK prescribes for forward-compatible
-    // matching. This is the `Some(code)` half of `aws_service_error_code`;
+    // matching. This is the `Some(code)` half of `Error::code`;
     // the `None` half (a dispatch failure carries no service metadata) is
     // covered in `tests/test_key_store_branch_key_store.rs`.
     assert_eq!(
-        aws_service_error_code(&err),
+        err.code(),
         Some("InvalidCiphertextException"),
         "the service error code must be reachable from the top of the chain",
     );
@@ -456,7 +455,7 @@ async fn integ_get_active_key_against_a_missing_table_nests_the_ddb_sdk_error() 
     // are the same nesting, which is what is under test here.
     let store = DynamoDbKeyStore::builder()
         .ddb_table_name("aws-crypto-tools-rust-table-that-does-not-exist")
-        .kms_configuration(KmsConfiguration::KmsKeyArn(KEY_ARN.into()))
+        .kms_configuration(KmsConfiguration::kms_key_arn(KEY_ARN))
         .logical_key_store_name(LOGICAL_KEY_STORE_NAME)
         .ddb_client(ddb_client_us_west_2().await)
         .kms_client(kms_client_for_region("us-west-2").await)
@@ -496,7 +495,7 @@ async fn integ_get_active_key_against_a_missing_table_nests_the_ddb_sdk_error() 
 #[tokio::test]
 async fn integ_get_active_key_does_not_exist() {
     let store = build_store(
-        KmsConfiguration::KmsKeyArn(KEY_ARN.into()),
+        KmsConfiguration::kms_key_arn(KEY_ARN),
         LOGICAL_KEY_STORE_NAME,
         kms_client_for_region("us-west-2").await,
         ddb_client_us_west_2().await,
@@ -559,7 +558,7 @@ async fn integ_create_key_store_returns_existing_table_arn() {
     // The table already exists, so CreateKeyStore takes the DescribeTable
     // path, validates the KeySchema, and returns the existing table ARN.
     let store = build_store(
-        KmsConfiguration::KmsKeyArn(KEY_ARN.into()),
+        KmsConfiguration::kms_key_arn(KEY_ARN),
         LOGICAL_KEY_STORE_NAME,
         kms_client_for_region("us-west-2").await,
         ddb_client_us_west_2().await,
@@ -581,7 +580,7 @@ async fn integ_create_key_store_returns_existing_table_arn() {
 #[tokio::test]
 async fn integ_create_key_round_trips() {
     let store = build_store(
-        KmsConfiguration::KmsKeyArn(KEY_ARN.into()),
+        KmsConfiguration::kms_key_arn(KEY_ARN),
         LOGICAL_KEY_STORE_NAME,
         kms_client_for_region("us-west-2").await,
         ddb_client_us_west_2().await,
@@ -652,7 +651,7 @@ async fn integ_create_key_round_trips() {
 #[tokio::test]
 async fn integ_version_key_round_trips() {
     let store = build_store(
-        KmsConfiguration::KmsKeyArn(KEY_ARN.into()),
+        KmsConfiguration::kms_key_arn(KEY_ARN),
         LOGICAL_KEY_STORE_NAME,
         kms_client_for_region("us-west-2").await,
         ddb_client_us_west_2().await,
