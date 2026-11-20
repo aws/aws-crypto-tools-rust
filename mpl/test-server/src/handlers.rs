@@ -16,8 +16,9 @@ use aws_crypto_mpl::key_store::types::{
 };
 use aws_crypto_mpl::key_store::{DynamoDbKeyStore, SharedKeyStore};
 use aws_crypto_mpl::keyring::{
-    BranchKeyIdSupplier, GetBranchKeyIdInput, GetBranchKeyIdOutput, HierarchicalKeyring,
-    SharedBranchKeyIdSupplier, SharedKeyring,
+    BranchKeyIdSupplier, GetBranchKeyIdInput, GetBranchKeyIdOutput, HierarchicalKeyring, Keyring,
+    OnDecryptInput, OnDecryptOutput, OnEncryptInput, OnEncryptOutput, SharedBranchKeyIdSupplier,
+    SharedKeyring,
 };
 use aws_crypto_mpl::types::{
     AlgorithmSuiteId as MplSuiteId, CommitmentPolicy as MplCommitmentPolicy, DecryptionMaterials,
@@ -72,6 +73,28 @@ impl AppState {
             .expect("keyrings mutex")
             .insert(id.clone(), SharedKeyring::new(keyring));
         Ok(CreateRawAesKeyringResponse { keyring_id: id })
+    }
+
+    pub fn create_static_keyring(
+        &self,
+        req: CreateStaticKeyringRequest,
+    ) -> Result<CreateStaticKeyringResponse, ServerError> {
+        let keyring = StaticKeyring {
+            encryption_materials: req
+                .encryption_materials
+                .map(shape_to_encryption_materials)
+                .transpose()?,
+            decryption_materials: req
+                .decryption_materials
+                .map(shape_to_decryption_materials)
+                .transpose()?,
+        };
+        let id = uuid::Uuid::new_v4().to_string();
+        self.keyrings
+            .lock()
+            .expect("keyrings mutex")
+            .insert(id.clone(), SharedKeyring::new(keyring));
+        Ok(CreateStaticKeyringResponse { keyring_id: id })
     }
 
     pub fn create_default_cmm(
@@ -434,6 +457,38 @@ impl BranchKeyIdSupplier for StaticBranchKeyIdSupplierImpl {
         GetBranchKeyIdOutput::builder()
             .branch_key_id(branch_key_id.clone())
             .build()
+    }
+}
+
+/// The model's static keyring: OnEncrypt and OnDecrypt return the fixed
+/// materials, or the input materials when none were given.
+struct StaticKeyring {
+    encryption_materials: Option<EncryptionMaterials>,
+    decryption_materials: Option<DecryptionMaterials>,
+}
+
+#[aws_crypto_mpl::async_trait]
+impl Keyring for StaticKeyring {
+    async fn on_encrypt(
+        &self,
+        input: OnEncryptInput,
+    ) -> Result<OnEncryptOutput, aws_crypto_mpl::Error> {
+        let materials = match &self.encryption_materials {
+            Some(materials) => materials.clone(),
+            None => input.into_materials(),
+        };
+        Ok(materials.into())
+    }
+
+    async fn on_decrypt(
+        &self,
+        input: OnDecryptInput,
+    ) -> Result<OnDecryptOutput, aws_crypto_mpl::Error> {
+        let materials = match &self.decryption_materials {
+            Some(materials) => materials.clone(),
+            None => input.into_materials(),
+        };
+        Ok(materials.into())
     }
 }
 

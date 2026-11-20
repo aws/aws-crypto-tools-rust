@@ -76,6 +76,18 @@ pub struct DecryptRequest {
 pub struct DecryptResponse {
     #[serde(with = "serde_bytes")]
     pub plaintext: Vec<u8>,
+    #[serde(
+        rename = "encryptionContext",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub encryption_context: Option<BTreeMap<String, String>>,
+    #[serde(
+        rename = "algorithmSuiteId",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub algorithm_suite_id: Option<EsdkAlgorithmSuiteId>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -135,6 +147,18 @@ pub struct DecryptStreamRequest {
 pub struct DecryptStreamResponse {
     #[serde(with = "serde_bytes")]
     pub plaintext: Vec<u8>,
+    #[serde(
+        rename = "encryptionContext",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub encryption_context: Option<BTreeMap<String, String>>,
+    #[serde(
+        rename = "algorithmSuiteId",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub algorithm_suite_id: Option<EsdkAlgorithmSuiteId>,
 }
 
 // Client configuration

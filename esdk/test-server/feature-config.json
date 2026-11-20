@@ -7,7 +7,6 @@
     "caching"
   ],
   "unsupportedFeatures": [
-    "MPL",
     "raw-rsa",
     "raw-ecdh",
     "multi",
