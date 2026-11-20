@@ -144,7 +144,7 @@ Record it as a finding with an id prefixed by the target (profile `ids.finding_f
 - **Version check:** `~/verus/verus --version`
 - **Required toolchain:** the Rust version that the Verus release names (install with `rustup install <version>`)
 - **Z3:** bundled with the Verus release (no separate install)
-- **Pins** (Verus version, Rust toolchain, vstd, cargo-verus): profile `toolchain`
+- **Pins:** profile `toolchain` (`toolchain.verus_version`, `toolchain.verus_binary`, `toolchain.rust_toolchain`, `toolchain.vstd_pin`, `toolchain.cargo_verus`)
 
 ## Running Verus
 
@@ -200,6 +200,11 @@ The library's core and adapter names are in profile appendix `idioms.md`.
 - `zeroize::Zeroizing<_>` cannot be a field of a type inside `verus!`: Verus rejects it unless it gets an `external_type_specification`, which is a trusted spec (a TCB row). The per-crate choice is in profile `tcb.crate_rules`.
 - A `pub`/`pub(crate)` fn's `ensures` cannot read a private field ("field expression for an opaque datatype"). Add a `closed spec fn view(&self)` and write the `ensures` against `self.view()`.
 - A trait declared inside `verus!` but implemented outside it has its method `ensures` trusted silently (an impl that breaks them still verifies). Give such traits `requires` only, no `ensures`, unless a named trusted assumption is approved.
+- std `BTreeMap` / `BTreeSet`: vstd specifies them only under `obeys_cmp::<K>()` (the key type's `Eq`/`Ord` obey the laws). vstd proves that law for integer keys, not for `String`. A `String` (or other unproven) key needs a TCB row for the law, approved per "Trusted boundary".
+- Verus desugars `for` loops; the desugaring can trigger the `unused_qualifications` lint in the Verus build only (the cargo build is clean). Allow it where it fires, with a reason.
+- `for x in &map` over a `BTreeMap` does not verify: vstd specifies `BTreeMap::iter` but not `IntoIterator for &BTreeMap`. Write `for x in map.iter()`; where the crate enables clippy `explicit_iter_loop`, allow it with that reason.
+- Under a `for` loop, Verus's loop wrapper already carries the iterator-position relation (vstd `VerusForLoopWrapper::wf`). A loop invariant that restates it is redundant: it still verifies when deleted, so it is not counted as an obligation ("Mutation testing", tautology check); flag it for a later cleanup.
+- Call `vstd::std_specs::iter::IteratorSpec` methods by path (for example `IteratorSpec::remaining(&it)`); a plain `use` of the trait is an unused import in the cargo build.
 - A verified fn cannot call a fn or name a type declared outside `verus!` (dependency types, the crate's error type, functions of another crate) unless that item is given a spec at the trusted boundary. Otherwise keep such calls in unverified adapters outside `verus!` and list them by name as the trusted base.
 
 Library-specific idioms (helper names, lint settings, per-crate decisions): profile appendix `idioms.md`.

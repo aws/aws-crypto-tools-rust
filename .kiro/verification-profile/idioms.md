@@ -99,3 +99,7 @@ Source: `.kiro/steering/verus-verification.md` §In-crate proofs (`verus!` in `p
 > packaging question.
 
 Fact checked at `4054fd89`: `prim/src/lib.rs:10`. The packaging question is profile `packaging_decisions` id `nightly-cfg-attr`.
+
+## String keys in esdk collections (VR-020)
+The generic idiom is in the `verus` skill, "Idioms" (vstd specifies `BTreeMap` / `BTreeSet` only under `obeys_cmp::<K>()`). In esdk, `String` keys use TCB row T-cmp: `required_ec_entries` in `esdk/src/decrypt.rs` has `requires vstd::laws_cmp::obeys_cmp::<String>()` (VR-020; the row is listed in profile `tcb.modules` and `tcb.row_ids`). The same function carries the `unused_qualifications` and `clippy::explicit_iter_loop` allows of the generic `for`-loop idioms, each with a reason, and calls `vstd::std_specs::iter::IteratorSpec::remaining` by path.
+Fact checked at `cf326cb3`: `esdk/src/decrypt.rs` lines 783, 787, 790, 795, 804.

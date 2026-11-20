@@ -111,7 +111,7 @@ Verus cannot check the order of `.await` steps. The order can still be covered i
 
 - **Surface:** profile `unsafe_surface` (`in_crate`, `elsewhere[]`, `confirm_cmd`). Run `confirm_cmd` before scoping. If there is no in-crate `unsafe`, there is no raw-pointer target.
 - **Pointer validity supplied by a foreign caller** (for example a C or C++ caller of a shim) is not Verus-provable: it is a property of the caller, so it is trusted. Treat such a concern as threat-driven, not a Verus target, unless a Rust-side null/ownership decision can be extracted into a sync core.
-- **The trusted third-party boundary** is the TCB list (profile `tcb.modules`, `tcb.doc_section`), owned by `verus-unsafe-ffi-safety`. Its format and rules are in "Trusted boundary" in the `verus` skill.
+- **The trusted third-party boundary** is the TCB list (profile `tcb.modules`, `tcb.doc_section`), owned by the agent named in profile `tcb.owner_agent`. Its format and rules are in "Trusted boundary" in the `verus` skill.
 - **Safe-wrapper preconditions** enforced inside a third-party library (its constructors return `Err`) are a trusted boundary; Verus cannot prove them. Only the Rust-side buffer and decision safety around the call is in-crate.
 - See profile appendix `targets.md` §Category 3 for this library's facts (surface, zeroization, trusted boundary).
 - **Agent:** `verus-unsafe-ffi-safety` if a target ever qualifies.
@@ -134,8 +134,9 @@ The rows below are generic. The library's own rows (with its target ids): profil
 | A sync decision core (field, count or key-length check) returns the spec result | Yes | Yes, if the core is inside `verus!` in a crate with `verus_enabled: true` | `verus-header-parsing-proofs` |
 | A layout (AAD, IV, frame prefix) equals the spec bytes | Yes | Yes, for sync code inside `verus!` | `verus-header-parsing-proofs` |
 | Encoder / decoder round-trip identity lemma | Yes | Yes, for the verified encoders that exist | `verus-header-parsing-proofs` |
+| A sync function over std `BTreeMap` / `BTreeSet` returns a spec-level result (filter, restrict) | Yes, relative to vstd's collection specs and their `obeys_cmp` precondition | Yes, inside `verus!`; a key type whose `obeys_cmp` vstd does not prove needs a TCB row (SKILL Idioms) | `verus-header-parsing-proofs` |
 | Sync indexing / arithmetic cores never panic | Yes | Yes, if extractable into `verus!` | `verus-zero-panic` |
-| Wrapper output lengths and buffer effects against trusted third-party specs | Yes, relative to the TCB rows | Yes, in a crate whose `tcb.crate_rules` allow boundary specs | `verus-zero-panic`; TCB rows owned by `verus-unsafe-ffi-safety` |
+| Wrapper output lengths and buffer effects against trusted third-party specs | Yes, relative to the TCB rows | Yes, in a crate whose `tcb.crate_rules` allow boundary specs | `verus-zero-panic`; TCB rows owned by the agent in profile `tcb.owner_agent` |
 | Anything inside a crate with `verus_enabled: false`, in place | Yes in kind | **No**: that crate is not Verus-checked | out of scope here |
 | Constant-time comparison / no timing leak | **No**: Verus does not model timing | n/a | out of scope; review / tooling |
 | A cipher, signature scheme or KDF is cryptographically secure | **No**: crypto analysis, not code proof | n/a | out of scope; crypto library / design |

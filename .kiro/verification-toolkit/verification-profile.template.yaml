@@ -50,11 +50,11 @@ crates:
         args: ""
         # Why this feature set is checked; read by: SKILL, proof agents, update
         note: ""
-    # Rule for picking this crate's "verification results::" line; read by: SKILL, proof agents, update, R1, proof-reviewer
+    # Rule for picking this crate's "verification results::" line (for example: the first such line after the crate's "Checking <name> v..." line; error text can sit between them); read by: SKILL, proof agents, update, R1, proof-reviewer
     result_line: ""
     # Command that forces a re-check of a cached crate; read by: SKILL mutation recipe, proof agents, update, R1, proof-reviewer
     cache_bust: ""
-    # Command that runs the crate's tests; read by: R1, proof-reviewer
+    # Command that runs the crate's tests, and a form that does not stop at the first failing test binary when the default one does; read by: R1, proof-reviewer
     test_cmd: ""
     # Lint and format commands to run before delivery; read by: R1, proof-reviewer
     lint_cmds: []
@@ -82,7 +82,7 @@ models:
   # Whether the models are kept or removed, and where that is decided; read by: update, pipeline
   decision: ""
 
-# Version pins of the verification toolchain; read by: SKILL Environment, capabilities
+# Version pins of the verification toolchain; read by: SKILL Environment, capabilities, R1
 toolchain:
   # Verus release version; read by: SKILL, capabilities
   verus_version: ""
@@ -90,18 +90,18 @@ toolchain:
   verus_binary: ""
   # Rust toolchain Verus needs; read by: SKILL, capabilities
   rust_toolchain: ""
-  # vstd version pin in the crates; read by: SKILL, capabilities
+  # vstd version pin in the crates; read by: SKILL, capabilities, R1
   vstd_pin: ""
   # How cargo-verus treats dependencies and which crates it verifies; read by: SKILL, capabilities
   cargo_verus: ""
 
-# The library's specification; read by: spec-analyzer, threat-model, pipeline, recommender, proof agents
+# The library's specification; read by: spec-analyzer, threat-model, pipeline, recommender, proof agents, R1
 spec:
   # Directory of the spec from the repo root; read by: spec-analyzer, threat-model, proof agents
   location: ""
   # Script that fetches the spec when it is absent; read by: spec-analyzer, threat-model
   resolver: ""
-  # Upstream source of the spec (url and ref); read by: spec-analyzer
+  # Upstream source of the spec (url and ref); read by: spec-analyzer, R1
   source: ""
   # true if the spec directory may be missing in a local checkout; read by: spec-analyzer, threat-model
   may_be_absent: false
@@ -118,7 +118,7 @@ spec:
     # Spec documents for zero-panic proofs; read by: zero-panic
     zero_panic: []
 
-# Spec-to-code annotations; read by: spec-analyzer, threat-model, recommender, pipeline
+# Spec-to-code annotations; read by: spec-analyzer, threat-model, recommender, pipeline, R1, proof-reviewer
 traceability:
   # Annotation tool; read by: spec-analyzer, threat-model, recommender, pipeline
   tool: ""
@@ -185,15 +185,15 @@ unsafe_surface:
   # Command that confirms the unsafe surface; read by: ffi
   confirm_cmd: ""
 
-# The trusted-spec (TCB) list; read by: ffi (owner), SKILL "Trusted boundary", capabilities, update drift item 4, proof-reviewer
+# The trusted-spec (TCB) list; read by: ffi (owner), SKILL "Trusted boundary", capabilities, update drift item 4, R1, proof-reviewer
 tcb:
-  # Agent that owns the TCB list; read by: SKILL, ffi, proof-reviewer
+  # Agent that owns the TCB list; read by: SKILL, ffi, capabilities, R1, proof-reviewer
   owner_agent: ""
-  # Source files holding the trusted specs; read by: ffi, SKILL, capabilities, proof-reviewer
+  # Source files holding the trusted specs; read by: ffi, SKILL, capabilities, R1, proof-reviewer
   modules: []
   # Doc section with the TCB table; read by: ffi, update, proof-reviewer
   doc_section: ""
-  # Row ids of the TCB table; read by: ffi, update, capabilities
+  # Row ids of the TCB table and the row-id convention; read by: ffi, update, capabilities, R1, proof-reviewer
   row_ids: ""
   # TCB rows that are labeled assumptions (ladder level 8); read by: ffi, capabilities, update
   labeled_assumptions:
@@ -247,7 +247,7 @@ targets:
     id: ""
     # Short title; read by: recommender, capabilities, proof agents, update
     title: ""
-    # Each part of the target at its own ladder level; read by: recommender, capabilities, proof agents, update
+    # Each part of the target at its own ladder level; read by: recommender, capabilities, proof agents, update, R1
     parts:
       - # Part label; read by: recommender, capabilities, update
         part: ""
@@ -260,7 +260,7 @@ targets:
     # Pointer to the detail (appendix section); read by: recommender, capabilities, proof agents
     details: ""
 
-# Proven cores per agent area, not to be redone; read by: proof agents
+# Proven cores per agent area, not to be redone; read by: proof agents, R1
 do_not_redo:
   # Done header-parsing work; read by: header-parsing
   header_parsing: []
@@ -304,7 +304,7 @@ ci:
       name: ""
       # What the check enforces and where it is defined; read by: R1
       what: ""
-      # Command to run it locally; read by: R1, proof-reviewer
+      # Command to run it locally: the CI arguments, a local form when CI needs something not installed here, and the directory it runs in; read by: R1, proof-reviewer
       local_cmd: ""
   # Lockfiles that must change together when a dependency changes; read by: R1, proof-reviewer
   dependent_lockfiles: []
@@ -331,11 +331,11 @@ packaging_decisions:
     # Where the discussion is; read by: all agents, SKILL
     ref: ""
 
-# Paths of the prose appendices; read by: proof agents, spec-analyzer, threat-model, capabilities
+# Paths of the prose appendices; read by: proof agents, spec-analyzer, threat-model, capabilities, R1
 appendices:
   # Domain tables and context (format constants, spec topics, threat context); read by: proof agents, spec-analyzer, threat-model
   domain: ""
   # Library-specific Verus idioms; read by: SKILL, proof agents, steering
   idioms: ""
-  # Per-target detail, done lists and drift examples; read by: capabilities, proof agents, recommender, update
+  # Per-target detail, done lists and drift examples; read by: capabilities, proof agents, recommender, update, R1
   targets: ""

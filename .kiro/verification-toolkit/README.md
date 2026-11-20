@@ -13,7 +13,7 @@ A set of Kiro agents, one skill and one steering file that take a Rust library f
 | Profile schema | `.kiro/verification-toolkit/verification-profile.template.yaml` |
 | Recipes | `.kiro/verification-toolkit/recipes/` |
 | Templates | `.kiro/verification-toolkit/templates/` |
-| Workflow (UNVALIDATED) | `.kiro/workflows/verus-prove-target.workflow.json` |
+| Workflow | `.kiro/workflows/verus-prove-target.workflow.json` |
 
 The library profile is not part of the toolkit: `.kiro/verification-profile/verification-profile.yaml` plus the appendices `domain.md`, `idioms.md` and `targets.md` in the same directory.
 
@@ -23,7 +23,7 @@ Kiro finds agents only in `.kiro/agents/`, skills in `.kiro/skills/` and steerin
 
 ## Recipes and templates
 
-A recipe is a fixed sequence of steps and gates that uses the agents. Recipe R1 (`.kiro/verification-toolkit/recipes/R1-prove-target.md`) takes one target through feasibility, proof, mutations, CI parity, docs and review, then asks before merge and asks again before push. The R1 spec is authoritative. `.kiro/workflows/verus-prove-target.workflow.json` is its machine-readable form and is UNVALIDATED: its schema has not been checked, and the spec lists the uncertain fields. The templates in `.kiro/verification-toolkit/templates/` (T-feasibility, T-mutations-log, T-review) give the shape of the notes R1 writes. The `verus-proof-reviewer` agent runs R1's review step.
+A recipe is a fixed sequence of steps and gates that uses the agents. Recipe R1 (`.kiro/verification-toolkit/recipes/R1-prove-target.md`) takes one target through feasibility, proof, mutations, CI parity, docs and review, then asks before merge and asks again before push. The R1 spec is authoritative. `.kiro/workflows/verus-prove-target.workflow.json` is its machine-readable form. It was validated by its first run; the spec section "Workflow file" lists what that run confirmed and the two points still open (artifacts declared inside a `repeat` seen by later top-level steps, and `captureOutput`; nothing depends on either). The templates in `.kiro/verification-toolkit/templates/` (T-feasibility, T-mutations-log, T-review) give the shape of the notes R1 writes. The `verus-proof-reviewer` agent runs R1's review step.
 
 ## How agents find the profile
 

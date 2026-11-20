@@ -14,6 +14,8 @@ One line per crate and feature set, run on the unmutated tree after busting the 
 
 - <crate>, <feature set>: `verification results:: <N> verified, 0 errors`
 
+For each mutation, each feature set's command was run directly (`cargo verus verify <feature set args>` in the crate directory), so a Verus error on one feature set does not hide the other. Crates re-run per mutation: <every crate that contains the mutated file or depends on it>.
+
 Mutations were applied by `<tool or "hand">`. After each revert the file was compared with the saved copy using `<cmp | git diff --exit-code <file>>`.
 
 ## Mutations
@@ -35,9 +37,12 @@ Use exactly these four names, as the SKILL section "Mutation testing" defines th
 | Review-only | the mutation compiles and verifies; only code review catches it | no tool claim; the docs say only review catches it |
 | Adapter glue, never caught | a change in an unverified adapter outside `verus!`; neither tool sees it | no claim; the docs say the adapter is not covered |
 
+Each expected-catcher word maps to one class: `Verus` → Verus-caught, `compiler` → Compiler-caught, `review only` → Review-only, `never` → Adapter glue, never caught.
+
 Rules:
 
 - If the expected catcher and the outcome class differ, stop and report it. A Verus obligation that no mutation breaks is a tautology or does not reach the code (SKILL "Mutation testing", tautology check). Do not count it.
+- The one allowed difference: under a Verus `for` loop, an invariant that restates what the loop wrapper already carries (for example the iterator-position relation) may be redundant. If its deletion still verifies, class the row Review-only, do not count it as an obligation, flag it for a later cleanup, and do not stop. Say in the row that it is redundant and which other rows still pin the `ensures`.
 - Every row ends with `yes` in the last column. A row without a byte-for-byte revert makes the log invalid.
 
 ## Claims supported

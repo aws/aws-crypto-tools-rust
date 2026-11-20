@@ -12,23 +12,26 @@ Worktree `<absolute worktree path>`, branch `<branch>`, HEAD = base = `<full bas
 
 ## Baseline (run today)
 
-Run each command after busting the cache (profile `crates[].cache_bust`), and copy the line that profile `crates[].result_line` names. Do not copy a count from a doc or an earlier note.
+Run each command after busting the cache (profile `crates[].cache_bust`), and copy the line that profile `crates[].result_line` names. Do not copy a count from a doc or an earlier note. When one `verify_cmd` already runs every feature set, run it once and map its `Checking <crate>` lines to the `feature_sets` entries in order; say so in the Command column.
 
 | Crate | Feature set (profile `crates[].feature_sets`) | Command (profile `crates[].verify_cmd`) | Result line |
 |---|---|---|---|
 | <crate> | <feature set> | `<command>` | `verification results:: <N> verified, 0 errors` |
 
-Models (profile `models.verify_cmd`): `<result line>`.
+Models (profile `models.verify_cmd`): all <N> files 0 errors, total <M> verified. One line per file:
+
+- `<model file>`: `verification results:: <n> verified, 0 errors`
 
 ## Verdict
 
-`<GO, clean | FINDING, paused | NO-GO>`
+`<GO, clean | GO, needs approval | FINDING, paused | NO-GO>`
 
-- `GO, clean`: the design proves the target with no behavior change, no public API change and no finding.
+- `GO, clean`: the design proves the target with no behavior change, no public API change, no new trusted row and no finding.
+- `GO, needs approval`: as `GO, clean`, but the design needs a new TCB row or trusted assumption that the user must approve (a G1 trigger). On approval, the Decisions block records it as the user's approval and as the sign-off of the agent named in profile `tcb.owner_agent` (`TCB owner sign-off: <owner agent>, via decision D<n>`).
 - `FINDING, paused`: the code does not match the target (see the SKILL section "Stop and report findings"). Nothing is fixed. The run waits for the user's decision.
 - `NO-GO`: the property is not provable here (see `.kiro/agents/verus-capabilities.md`), or the cost is out of proportion.
 
-Gate G1 stops the run for the user when any of these holds: the verdict is not `GO, clean`; the change is intrusive (wide signature changes, restructuring async code, touching many files); the proof needs a behavior or API change (a new check, a changed error, a changed error order, a changed message, a changed buffer effect); or a finding appeared. Record the trigger here. Do not fix it.
+Gate G1 stops the run for the user when any of these holds: the verdict is not `GO, clean`; the change is intrusive (wide signature changes, restructuring async code, touching many files); the proof needs a behavior or API change (a new check, a changed error, a changed error order, a changed message, a changed buffer effect); the design needs a new TCB row or trusted assumption; or a finding appeared. Record the trigger here. Do not fix it.
 
 ## Facts re-confirmed
 
@@ -36,9 +39,15 @@ One bullet per fact the design rests on. Each gives `file:function:line`, says w
 
 - `<file>:<function>:<line>` (<sync | async>, <inside | outside> `verus!`): <fact>. Confirmed by `<grep command>`.
 
+Spec facts: the spec was fetched read-only to scratch outside the repository (a shallow clone of profile `spec.source`) at commit `<sha>`; the resolver was not run into the worktree.
+
+A fact at level `tested` names the test and shows that it ran in this step: test name, command, result line. A test annotation (profile `traceability`) inside a commented-out or disabled test is not test evidence.
+
 ## Design
 
 The types, functions and `requires`/`ensures` to add, as a short code sketch. Say where each item lives and why there (for example, a separate module so field privacy limits who can build a token). List every signature that changes, before and after.
+
+Scratch proofs are checked in a scratch cargo crate outside the repository, pinned to profile `toolchain.vstd_pin`, with the target crate's lints and import style (a standalone file with a top-level `use` can hide an unused-import error). Name the scratch path and the result line.
 
 ## Proven, compiler-enforced, trusted
 
@@ -63,7 +72,7 @@ State each item as "unchanged" with the reason, or describe the change (a change
 
 ## Mutations planned
 
-At least one per new `ensures`, `requires`, type invariant, loop invariant and `decreases` (SKILL "Mutation testing"). The run's log uses template T-mutations-log.
+At least one per new `ensures`, `requires`, type invariant, loop invariant and `decreases` (SKILL "Mutation testing"). The run's log uses template T-mutations-log. The expected catcher is exactly one of `Verus`, `compiler`, `review only`, `never`; a row on an unverified adapter is `never`. Mark a loop invariant that a Verus `for` wrapper may already carry (for example the iterator-position relation) as "may be redundant".
 
 | Mutation | Obligation it targets | Expected catcher (Verus, compiler, review only, never) |
 |---|---|---|
@@ -75,7 +84,7 @@ Lines per file, as an estimate. New Verus obligations and the expected count aft
 
 ## Numbering
 
-- Id for this target: `<id>`. Next free id per profile `ids.next_free`, re-checked with profile `ids.next_free_check` (show the command and its empty output).
+- Id for this target: `<id>`. Next free id per profile `ids.next_free`, re-checked with profile `ids.next_free_check` (show the command and its empty output; for its remote half, name the local remote-tracking ref, its sha, and whether it was fetched).
 - External ids (profile `ids.external_ids`): not taken, not reused; written in full when cited.
 - Known gaps (profile `ids.known_gaps`): <none touched | which one, and that it stays a known gap>.
 - Strengthens an existing target instead of taking a new id: <yes, which, and why | no>.
@@ -94,6 +103,8 @@ Only when the verdict is not `GO, clean` or there is a choice to make. Number th
 The user's decisions, copied word for word, each with who relayed it (for example "relayed by the parent session") and the date. Later steps copy this block forward and do not re-open it.
 
 > <verbatim decision>
+
+TCB owner sign-off (only when a new TCB row was approved): `TCB owner sign-off: <profile tcb.owner_agent>, via decision D<n>`.
 
 ## Implementation outcome
 

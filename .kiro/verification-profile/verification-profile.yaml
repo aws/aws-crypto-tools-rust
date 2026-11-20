@@ -56,12 +56,12 @@ crates:
         note: "Default features (`cargo verus verify`)."
       - args: "--no-default-features --features aws-lc-sys"
         note: "From `esdk/Makefile`: aws-lc-rs needs a crypto backend, so the minimal build keeps aws-lc-sys (as CI does)."
-    # Rule for picking this crate's "verification results::" line; read by: SKILL, proof agents, update, R1, proof-reviewer
-    result_line: "Read the `verification results::` line printed right after `Checking aws-esdk v...`. Never pick a line by position. On the default feature set the run prints a line for vstd first, then one after `Checking aws-mpl-primitives v...`, then one after `Checking aws-esdk v...`. On the second feature set vstd is cached and prints no line. A cached crate prints no line at all: run cache_bust and re-run."
+    # Rule for picking this crate's "verification results::" line (for example: the first such line after the crate's "Checking <name> v..." line; error text can sit between them); read by: SKILL, proof agents, update, R1, proof-reviewer
+    result_line: "Read the first `verification results::` line after `Checking aws-esdk v...` (an error run prints error text between them). Never pick a line by position. vstd and aws-mpl-primitives print their own lines first only when they are not cached: on the default feature set the run can print a line for vstd, then one after `Checking aws-mpl-primitives v...`, then one after `Checking aws-esdk v...`; on the second feature set vstd is cached and prints no line. A cached crate prints no line at all: run cache_bust and re-run."
     # Command that forces a re-check of a cached crate; read by: SKILL mutation recipe, proof agents, update, R1, proof-reviewer
     cache_bust: "touch esdk/src/lib.rs"
-    # Command that runs the crate's tests; read by: R1, proof-reviewer
-    test_cmd: "make -C esdk test"
+    # Command that runs the crate's tests, and a form that does not stop at the first failing test binary when the default one does; read by: R1, proof-reviewer
+    test_cmd: "make -C esdk test (stops at the first failing test binary; to see every failure, run `cargo test --no-fail-fast` in esdk/ once per feature set of the `test` target in esdk/Makefile: default; --no-default-features; --no-default-features --features kms; --no-default-features --features ddb)"
     # Lint and format commands to run before delivery; read by: R1, proof-reviewer
     lint_cmds: ["make -C esdk clippy", "cargo fmt --all -- --check (in esdk/)"]
     # Tests known to fail locally, with the reason; read by: R1, proof-reviewer
@@ -80,7 +80,7 @@ crates:
         note: "Default features (`cargo verus verify`)."
       - args: "--no-default-features --features aws-lc-sys"
         note: "From `prim/Makefile`: aws-lc-rs needs a crypto backend, so the minimal build keeps aws-lc-sys (as CI does)."
-    result_line: "Read the `verification results::` line printed right after `Checking aws-mpl-primitives v...`. Never pick a line by position. In `make -C prim verus` vstd prints first on the default feature set and nothing on the second. `make -C esdk verus` also prints an aws-mpl-primitives line; compare like with like (a prim line from esdk's run is not the standalone prim run, and the two have differed before). A cached crate prints no line: run cache_bust and re-run."
+    result_line: "Read the first `verification results::` line after `Checking aws-mpl-primitives v...` (an error run prints error text between them). Never pick a line by position. In `make -C prim verus` vstd prints its own line first only when it is not cached (on the default feature set, not on the second). `make -C esdk verus` also prints an aws-mpl-primitives line; compare like with like (a prim line from esdk's run is not the standalone prim run, and the two have differed before). A cached crate prints no line: run cache_bust and re-run."
     cache_bust: "touch prim/src/lib.rs (or the changed prim/src/*.rs file)"
     test_cmd: "cargo test (in prim/); `make -C prim test` also runs `--no-default-features --features fips`, which needs cmake and go (see local_env_limits)"
     lint_cmds: ["make -C prim clippy (also runs --features fips, which needs cmake and go; see local_env_limits)", "cargo fmt --all -- --check (in prim/)"]
@@ -150,7 +150,7 @@ models:
   # Whether the models are kept or removed, and where that is decided; read by: update, pipeline
   decision: "kept (see packaging_decisions models). Where verification/README.md and the report's table 'Properties that stay model-only, and why' disagree, the report wins."
 
-# Version pins of the verification toolchain; read by: SKILL Environment, capabilities
+# Version pins of the verification toolchain; read by: SKILL Environment, capabilities, R1
 toolchain:
   # Verus release version; read by: SKILL, capabilities
   verus_version: "0.2026.07.12.0b42f4c"
@@ -158,18 +158,18 @@ toolchain:
   verus_binary: "~/verus/verus"
   # Rust toolchain Verus needs; read by: SKILL, capabilities
   rust_toolchain: "1.96.0 (no rust-toolchain file; from docs/verus-proofs-report.md header)"
-  # vstd version pin in the crates; read by: SKILL, capabilities
+  # vstd version pin in the crates; read by: SKILL, capabilities, R1
   vstd_pin: "=0.0.0-2026-06-14-0213 (esdk/Cargo.toml and prim/Cargo.toml)"
   # How cargo-verus treats dependencies and which crates it verifies; read by: SKILL, capabilities
   cargo_verus: "cargo-verus (at ~/verus/cargo-verus; the Makefiles put ~/verus on PATH) builds the dependencies (aws-lc-rs, tokio, aws-sdk-*, mpl, and prim when checking esdk) with plain rustc and verifies only crates with `[package.metadata.verus] verify = true`. prim/Cargo.toml declares `cfg(verus_keep_ghost)` under `unexpected_cfgs`."
 
-# The library's specification; read by: spec-analyzer, threat-model, pipeline, recommender, proof agents
+# The library's specification; read by: spec-analyzer, threat-model, pipeline, recommender, proof agents, R1
 spec:
   # Directory of the spec from the repo root; read by: spec-analyzer, threat-model, proof agents
   location: "spec/"
   # Script that fetches the spec when it is absent; read by: spec-analyzer, threat-model
   resolver: "scripts/resolve-spec.sh (config scripts/spec-source.json; `make -C esdk duvet` runs it)"
-  # Upstream source of the spec (url and ref); read by: spec-analyzer
+  # Upstream source of the spec (url and ref); read by: spec-analyzer, R1
   source: "https://github.com/awslabs/aws-encryption-sdk-specification.git at the ref pinned in scripts/spec-source.json"
   # true if the spec directory may be missing in a local checkout; read by: spec-analyzer, threat-model
   may_be_absent: true
@@ -196,7 +196,7 @@ spec:
     # Spec documents for zero-panic proofs; read by: zero-panic
     zero_panic: ["spec/client-apis/encrypt.md", "spec/data-format/message-body.md", "spec/data-format/message-body-aad.md", "spec/framework/algorithm-suites.md"]
 
-# Spec-to-code annotations; read by: spec-analyzer, threat-model, recommender, pipeline
+# Spec-to-code annotations; read by: spec-analyzer, threat-model, recommender, pipeline, R1, proof-reviewer
 traceability:
   # Annotation tool; read by: spec-analyzer, threat-model, recommender, pipeline
   tool: "Duvet"
@@ -329,19 +329,19 @@ unsafe_surface:
   # Command that confirms the unsafe surface; read by: ffi
   confirm_cmd: "grep -rn unsafe esdk/src mpl/src prim/src esdk/shims/aws-esdk-cpp/src/lib.rs"
 
-# The trusted-spec (TCB) list; read by: ffi (owner), SKILL "Trusted boundary", capabilities, update drift item 4, proof-reviewer
+# The trusted-spec (TCB) list; read by: ffi (owner), SKILL "Trusted boundary", capabilities, update drift item 4, R1, proof-reviewer
 tcb:
-  # Agent that owns the TCB list; read by: SKILL, ffi, proof-reviewer
+  # Agent that owns the TCB list; read by: SKILL, ffi, capabilities, R1, proof-reviewer
   owner_agent: "verus-unsafe-ffi-safety"
-  # Source files holding the trusted specs; read by: ffi, SKILL, capabilities, proof-reviewer
+  # Source files holding the trusted specs; read by: ffi, SKILL, capabilities, R1, proof-reviewer
   modules:
     - "prim/src/aws_lc_specs.rs (VR-013, VR-014; AES calls are A14-A20)"
     - "prim/src/ecdsa.rs (VR-008 specs: ExSignature, Signature::as_ref, copy_from_slice; reused by VR-013)"
     - "esdk/src/decrypt.rs (VR-020: T-cmp is the `requires obeys_cmp::<String>()` of required_ec_entries; no external spec)"
   # Doc section with the TCB table; read by: ffi, update, proof-reviewer
   doc_section: "docs/verus-proofs-report.md, section \"VR-013 / VR-014 TCB (`prim/src/aws_lc_specs.rs`)\""
-  # Row ids of the TCB table; read by: ffi, update, capabilities
-  row_ids: "T-ty, T-AsRef, T-uf, A1-A20, T-cmp"
+  # Row ids of the TCB table and the row-id convention; read by: ffi, update, capabilities, R1, proof-reviewer
+  row_ids: "T-ty, T-AsRef, T-uf, A1-A20, T-cmp. Convention: `A<n>` = an `assume_specification` row in prim/src/aws_lc_specs.rs; `T-<name>` = a type fact, trait spec or law (T-ty, T-AsRef, T-uf, T-cmp)"
   # TCB rows that are labeled assumptions (ladder level 8); read by: ffi, capabilities, update
   labeled_assumptions:
     - # Assumption id; read by: ffi, capabilities, update
@@ -403,7 +403,7 @@ targets:
     id: "VR-001"
     # Short title; read by: recommender, capabilities, proof agents, update
     title: "Key commitment verification"
-    # Each part of the target at its own ladder level; read by: recommender, capabilities, proof agents, update
+    # Each part of the target at its own ladder level; read by: recommender, capabilities, proof agents, update, R1
     parts:
       - # Part label; read by: recommender, capabilities, update
         part: "(a) accept/reject decision"
@@ -607,10 +607,16 @@ targets:
       - part: "required_ec_entries: result == ec restricted to the required keys; relies on TCB row T-cmp"
         level: "verus_in_crate"
         where: "esdk/src/decrypt.rs"
+      - part: "adapter build_encryption_context_to_only_authenticate and its call site pass the materials' own fields"
+        level: "code_reading"
+        where: "esdk/src/decrypt.rs"
+      - part: "T-cmp: obeys_cmp::<String>() (String Eq/Ord obey the laws vstd's BTreeMap/BTreeSet specs need)"
+        level: "trusted"
+        where: "esdk/src/decrypt.rs"
     agent: "verus-header-parsing-proofs"
     details: "targets.md §VR-020"
 
-# Proven cores per agent area, not to be redone; read by: proof agents
+# Proven cores per agent area, not to be redone; read by: proof agents, R1
 do_not_redo:
   # Done header-parsing work; read by: header-parsing
   header_parsing:
@@ -685,26 +691,26 @@ ci:
       name: "fmt"
       # What the check enforces and where it is defined; read by: R1
       what: "formatting (.github/workflows/library_rust_tests.yml)"
-      # Command to run it locally; read by: R1, proof-reviewer
+      # Command to run it locally: the CI arguments, a local form when CI needs something not installed here, and the directory it runs in; read by: R1, proof-reviewer
       local_cmd: "cargo fmt --all -- --check (in each crate directory)"
     - name: "clippy"
       what: "clippy with warnings denied (.github/workflows/library_rust_tests.yml)"
-      local_cmd: "cargo clippy --all-targets -- -D warnings"
+      local_cmd: "cargo clippy --all-targets -- -D warnings (in each changed crate directory; CI runs the checks per changed project)"
     - name: "clippy feature powerset"
       what: "clippy over every feature combination (.github/workflows/library_rust_tests.yml)"
-      local_cmd: "cargo hack clippy --lib --feature-powerset --no-dev-deps"
+      local_cmd: "CI form (.github/workflows/library_rust_tests.yml:76-82): cargo hack clippy --lib --feature-powerset --no-dev-deps --exclude-features default --mutually-exclusive-features aws-lc-sys,fips --at-least-one-of aws-lc-sys,fips -- -D warnings. Local non-fips form (cargo-hack rejects fips in both --exclude-features and --mutually-exclusive-features): cargo hack clippy --lib --feature-powerset --no-dev-deps --exclude-features default,fips --features aws-lc-sys -- -D warnings. Run in each changed crate directory (CI runs the checks per changed project)"
     - name: "clippy fips"
       what: "clippy with the fips backend (.github/workflows/library_rust_tests.yml)"
-      local_cmd: "cargo clippy --lib --features fips -- -D warnings (needs cmake and go)"
+      local_cmd: "cargo clippy --lib --features fips -- -D warnings (needs cmake and go; in each changed crate directory)"
     - name: "docs"
       what: "rustdoc with warnings denied (.github/workflows/library_rust_tests.yml)"
-      local_cmd: "RUSTDOCFLAGS='-D warnings' cargo doc --no-deps --all-features"
+      local_cmd: "CI form: RUSTDOCFLAGS='-D warnings' cargo doc --no-deps --all-features (pulls in fips, which needs cmake and go). Local form in esdk/: RUSTDOCFLAGS='-D warnings' cargo doc --no-deps --features aws-lc-sys,kms,ddb,default-aws-sdk-clients,rt-tokio,test-internals; in another crate, list every feature of its Cargo.toml except fips. Run in each changed crate directory (CI runs the checks per changed project)"
     - name: "patch coverage"
       what: "Enforce 100% patch coverage with diff-cover (.github/workflows/library_rust_coverage.yml)"
       local_cmd: "not measurable locally (see local_env_limits)"
     - name: "supply chain"
       what: "cargo-deny advisories, bans, licenses, sources with deny.toml (.github/workflows/supply_chain.yml)"
-      local_cmd: "cargo deny --config deny.toml check bans licenses sources"
+      local_cmd: "cargo deny --config deny.toml check bans licenses sources (in each changed crate directory)"
     - name: "locked lockfiles"
       what: "cargo metadata --locked per workspace (.github/actions/setup-rust/action.yml:61)"
       local_cmd: "cargo metadata --locked --format-version 1 > /dev/null (in each directory with a Cargo.lock)"
@@ -728,13 +734,15 @@ local_env_limits:
   - # The limit; read by: R1, proof-reviewer
     limit: "cmake and go are not installed locally, so the fips feature does not build"
     # What follows from it; read by: R1, proof-reviewer
-    consequence: "make -C prim test (fips half) and the clippy fips check run only in CI; say so in the docs and the commit message"
+    consequence: "make -C prim test (fips half), the make -C prim clippy fips half, the clippy fips check, the fips half of the clippy feature powerset and cargo doc --all-features run only in CI; say so in the docs and the commit message"
   - limit: "patch coverage cannot be measured locally: cargo-llvm-cov and diff-cover are not installed (command -v finds neither), and the coverage plan recorded an llvm-profdata LLVM 21 vs rustc LLVM 22 mismatch"
     consequence: "the 100% patch coverage gate is checked only in CI; plan tests for every new line"
   - limit: "no CI workflow runs Verus"
     consequence: "local Verus runs (crates[].verify_cmd, models.verify_cmd) are the only evidence; record the result lines"
   - limit: "esdk/tests/test_error_integ.rs needs AWS credentials and KMS"
     consequence: "it fails locally without credentials; it is not a regression"
+  - limit: "mpl/tests/test_aws_kms_hierarchical_keyring_integ.rs and mpl/tests/test_key_store_branch_key_store_integ.rs need AWS credentials, KMS and DynamoDB"
+    consequence: "they fail locally without credentials; they are not a regression"
 
 # Build and packaging choices that must stay explicit; read by: all agents before proposing build or packaging changes, SKILL
 packaging_decisions:
@@ -787,11 +795,11 @@ packaging_decisions:
     status: "open"
     ref: "PR #103 Q2"
 
-# Paths of the prose appendices; read by: proof agents, spec-analyzer, threat-model, capabilities
+# Paths of the prose appendices; read by: proof agents, spec-analyzer, threat-model, capabilities, R1
 appendices:
   # Domain tables and context (format constants, spec topics, threat context); read by: proof agents, spec-analyzer, threat-model
   domain: ".kiro/verification-profile/domain.md"
   # Library-specific Verus idioms; read by: SKILL, proof agents, steering
   idioms: ".kiro/verification-profile/idioms.md"
-  # Per-target detail, done lists and drift examples; read by: capabilities, proof agents, recommender, update
+  # Per-target detail, done lists and drift examples; read by: capabilities, proof agents, recommender, update, R1
   targets: ".kiro/verification-profile/targets.md"

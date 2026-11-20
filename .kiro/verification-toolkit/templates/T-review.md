@@ -24,22 +24,30 @@ What the feasibility note and the Decisions block asked for, and whether the dif
 Each item: evidence (file:line, command and output, or the log it was read from) or `n/a: <reason>`. Say for each count or result whether you ran it or read it from a log.
 
 - **C1 Scope and requirements:** <evidence>
-- **C2 Soundness grep on added lines:** <the command, every hit by file:line, and for each allowed hit the allowlist rule it meets>
+- **C2 Soundness grep on added lines:** <the command (code files only), every hit by file:line, and for each allowed hit the allowlist rule it meets; hits in non-code files listed as "not code">
 - **C3 Target inside `verus!`, satisfiable `requires`, nothing contradictory, honest `decreases`:** <evidence>
-- **C4 Mutation log:** <one row per new obligation, an outcome class per row, byte-for-byte reverts, each ladder claim matches its class>
+- **C4 Mutation log:** <one row per new obligation, an outcome class per row, byte-for-byte reverts, each ladder claim matches its class; redundant `for`-loop invariant rows classed Review-only and not counted>
 - **C5 One definition per function and type:** <evidence>
 - **C6 Behavior preserved:** <results, error kinds, messages, check order, buffer effects on Ok and Err, public API, streaming; the tests that pin it>
-- **C7 Honesty ladder:** <each claim and its level; no overclaiming>
-- **C8 TCB:** <new trusted specs, their rows, the approval in Decisions; changes flagged for the TCB owner>
-- **C9 Live counts:** <result line per crate and feature set, run now after the cache bust; models; compared with every count in the commit and docs>
+- **C7 Honesty ladder:** <each claim and its level; no overclaiming; every `tested` claim cites a test that runs>
+- **C8 TCB:** <new trusted specs, their rows, the approval and the TCB owner sign-off in Decisions (a row with both is listed, not flagged again); the profile TCB fields list the row>
+- **C9 Live counts:** <result line per crate and feature set, run now after the cache bust (or reused from the previous iteration, with the sha, when no `.rs` file or manifest changed since); models; compared with every count in the commit and docs; any count no tool prints>
 - **C10 CI parity:** <tests against known failures, lints, CI checks, dependent lockfiles, what was not run locally and why, platform assumptions>
-- **C11 Docs and ids:** <maintained docs updated, baseline markers and twins regenerated, report-only drift reported, ids correct, plain-language comments>
+- **C11 Docs and ids:** <maintained docs updated, baseline markers moved only in edited docs, twins regenerated (compared by unzipped parts), report-only drift reported, ids correct, plain-language comments, no citation of task-directory files>
 - **C12 Git state:** <base branch unchanged, nothing merged, `git branch -r --contains HEAD` empty, tree clean>
 - **C13 Decisions respected:** <each decision and how the diff follows it; user-accepted items not re-raised>
 
+## Recipe notes (optional)
+
+Gaps in the recipe, its templates or the profile that the review found (not findings against the target). `n/a` if none.
+
+## Resolved since last iteration
+
+From the second iteration on: each finding id from the previous verdict that is now resolved, with the commit that resolved it. `n/a` on the first iteration.
+
 ## Findings
 
-`None.`, or one row per finding. Ids are `R1`, `R2`, ... within this review. Severities: `blocker`, `major`, `minor`, `info`.
+`None.`, or one row per finding. Ids are `R1`, `R2`, ... and carry across iterations: a finding that is still open keeps its id, a resolved id is retired and never reused, and a new finding takes the next unused number. Severities: `blocker`, `major`, `minor`, `info`.
 
 | Id | Severity | File | Issue | Fix |
 |---|---|---|---|---|
