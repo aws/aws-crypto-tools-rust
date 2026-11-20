@@ -85,6 +85,7 @@ use std::borrow::Cow;
 use async_trait::async_trait;
 
 mod fluent_builders;
+mod multi_keyring;
 mod raw_aes_keyring;
 mod types;
 
@@ -96,6 +97,7 @@ pub use crate::aws_kms::hierarchical_keyring::{
     HierarchicalKeyring, HierarchicalKeyringBuilder, SharedBranchKeyIdSupplier,
 };
 pub use fluent_builders::{OnDecryptFluentBuilder, OnEncryptFluentBuilder};
+pub use multi_keyring::{MultiKeyring, MultiKeyringBuilder};
 pub use raw_aes_keyring::{RawAesKeyring, RawAesKeyringBuilder};
 pub use types::{
     OnDecryptInput, OnDecryptInputBuilder, OnDecryptOutput, OnDecryptOutputBuilder, OnEncryptInput,
