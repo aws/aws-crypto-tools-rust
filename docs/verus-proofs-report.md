@@ -1,7 +1,7 @@
 # Verus Proofs — Work Report
 
 **Repository:** `aws-crypto-tools-rust` (AWS Encryption SDK for Rust)
-**Code baseline:** commit `d8c1c3d` for the standalone models; the "In-crate proofs" section and the status tables are current at `2fb844fa`
+**Code baseline:** commit `d8c1c3d` for the standalone models; the "In-crate proofs" section and the status tables are current at `99a02892` (branch `r1-validate-vr020`, VR-020; the counts were re-run there and the other rows were last rechecked at `2fb844fa` and on the branches named in the update notes)
 **Date:** September 2026 (models); November 2026 (in-crate)
 **Verus:** `0.2026.07.12.0b42f4c`, toolchain `1.96.0` (binary at `~/verus/verus`)
 **Pipeline / targets:** `.kiro/agents/ai-verification-pipeline.md`, `docs/verification-recommendations.md`
@@ -291,6 +291,22 @@ make -C verification verify
 >   (`GetEncryptionMaterials::send` / `check_encryption_materials` and
 >   `EncryptionMaterialsBuilder::build`), which is trusted code reading. See
 >   "VR-019" under "In-crate proofs".
+>
+> **Update (branch `r1-validate-vr020`, code commit `99a02892`):** **99
+> verified, 0 errors** on both feature sets (up from 97; +2 obligations).
+> prim stays at 18 and the models at 78.
+>
+> - **VR-020 (new): decrypt keeps exactly the required-key entries of the
+>   encryption context** (`esdk/src/decrypt.rs`). `required_ec_entries`
+>   returns the materials' encryption context restricted to the required
+>   encryption context keys (`out@ == ec@.restrict(keys@)`): same values, no
+>   other keys. This is the "encryption context to only authenticate" of
+>   `client-apis/decrypt.md`, which goes into the header-auth AAD and into the
+>   encryption context returned to the caller. The proof rests on one new
+>   trusted row, **T-cmp** (`obeys_cmp::<String>()`, see the TCB table), and on
+>   vstd's `BTreeMap` / `BTreeSet` / `String` specs. The adapter
+>   `build_encryption_context_to_only_authenticate` is unverified glue. No
+>   behavior or API change. See "VR-020" under "In-crate proofs".
 
 ### Adherence to the Verus skill invariants (esdk)
 - No proof was weakened: **no** `assume(...)`, `admit()`, or `#[verifier::external]` anywhere in esdk. In esdk there is exactly **one** `#[verifier::external_body]` — the `utf8_check` wrapper around `std::str::from_utf8` in the AAD sub-parser — used per Verus skill invariant #11 for a std call Verus cannot evaluate (the same role `tag_ok` plays for the AES-GCM check). Its `ensures` is a **trusted boundary, not a proof**: the UTF-8-validation correctness is delegated to the std library; everything around it (that the parser rejects non-UTF-8 with `Err`, never panics) is proven. This is called out explicitly in §5.
@@ -321,15 +337,15 @@ Output (the `aws-esdk` line; `vstd` is verified first with
 `--no-default-features --features aws-lc-sys`:
 
 ```
-verification results:: 97 verified, 0 errors
-verification results:: 97 verified, 0 errors
+verification results:: 99 verified, 0 errors
+verification results:: 99 verified, 0 errors
 ```
 
 The count is Verus's obligation count, not a function count; the checked
-fns are 54 exec fns (13 before the in-crate work, 22 before VR-009, 24 before
+fns are 55 exec fns (13 before the in-crate work, 22 before VR-009, 24 before
 VR-011, 34 before VR-001, 35 before VR-012, 36 before the VR-001 (b) / VR-002
 tokens, 39 before VR-015, 43 before VR-016 and VR-015 (b), 45 before VR-017 /
-VR-018, 52 before VR-019) and 11 proof fns (3 before VR-012; the two VR-012 round-trip lemmas bring
+VR-018, 52 before VR-019, 54 before VR-020) and 11 proof fns (3 before VR-012; the two VR-012 round-trip lemmas bring
 it to 5, `lemma_commitment_accepted` to 6, `lemma_open_buffers_sized`
 and `lemma_signature_required` to 8, and the two VR-017 lemmas to 10, `lemma_signing_key_present` to 11). The count rose from 59 to 69 at
 VR-012: the two lemmas plus the staged `by (nonlinear_arith)` sub-obligations in
@@ -343,7 +359,8 @@ were strengthened in place. It rose from 81 to 94 with VR-017
 (`PlaintextBudget::new` / `add`, `EncryptFrameSeq::start` / `take_regular` /
 `final_seq`, the two lemmas and the staged `nonlinear_arith` step) and VR-018
 (`check_v2_suite_data`, `data_key_len_ok`). It rose from 94 to 97 with VR-019
-(`signing_key_gate`, `signing_key`, `lemma_signing_key_present`). Files are under `esdk/src/message/`
+(`signing_key_gate`, `signing_key`, `lemma_signing_key_present`). It rose
+from 97 to 99 with VR-020 (`required_ec_entries`). Files are under `esdk/src/message/`
 unless the path starts with `esdk/src/`.
 
 | Fn | File | Ensures | Target |
@@ -405,6 +422,7 @@ unless the path starts with `esdk/src/`.
 | `signing_key_gate`; type invariant `SigningKeyPresent::inv` | `esdk/src/encrypt_gate.rs` | returns a token iff `suite_signs && signing_key is Some`; the token has `signs()` and holds exactly that key (`key() == k@`); every `SigningKeyPresent` has `signs()` | VR-019 |
 | `signing_key` | `esdk/src/encrypt_gate.rs` | takes a `&SigningKeyPresent`; `r@ == present.key()` | VR-019 |
 | proof fn `lemma_signing_key_present` | `esdk/src/encrypt_gate.rs` | every `SigningKeyPresent` is for a signing suite | VR-019 |
+| `required_ec_entries` | `esdk/src/decrypt.rs` | requires `obeys_cmp::<String>()` (TCB row T-cmp); `out@ == ec@.restrict(keys@)` | VR-020 |
 
 Spec fns `spec_be_u16`/`spec_be_u32`/`spec_be_u64`, the `READ_CHUNK` const and
 the `LenCheck`, `EdkCount`, `MessageFormatVersion`, `MessageType`,
@@ -943,6 +961,87 @@ stopped only by the MPL.
 | M4 `step_construct_signature`: build a `SigningKeyPresent` on the failure path | compiler | `E0451` private fields |
 | M5 `signing_key_gate`: build a token with `signs() == false` on the failure path | Verus | `96 verified, 1 errors`: type invariant |
 
+### VR-020 in-crate: the encryption context to only authenticate (`esdk/src/decrypt.rs`)
+
+Branch `r1-validate-vr020`, code commit `99a02892`. Origin:
+capability-driven (a sync core that returns the spec result; route from
+`.kiro/agents/verus-capabilities.md`). No finding: the code already matched
+the spec.
+
+**The spec clause.** `client-apis/decrypt.md` (spec commit `cf53fa80`): the
+encryption context to only authenticate "MUST be the encryption context in
+the decryption materials filtered to only contain key value pairs listed in
+the decryption material's required encryption context keys". esdk stores the
+result in `DecryptState.encryption_context_to_only_authenticate`, serializes
+it into the header-auth AAD, and merges it into the encryption context it
+returns to the caller.
+
+**How it is split.**
+
+- `required_ec_entries(ec: &BTreeMap<String, String>, keys: &BTreeSet<String>)`
+  is inside a new `verus!` block in `decrypt.rs`. It walks `ec.iter()` and
+  inserts each entry whose key is in `keys`.
+- `build_encryption_context_to_only_authenticate` keeps its signature. Its
+  body now unwraps the MPL types (`EncryptionContext::as_map`,
+  `RequiredEncryptionContextKeys::as_set`), calls the core, and wraps the
+  result with `EncryptionContext::from`. It stays outside `verus!`.
+- Results, errors, order and the public API are unchanged. Before, the body
+  was `iter().filter(contains).collect()`; the new in-module test
+  `only_authenticate_keeps_exactly_the_required_entries` checks the core
+  against that expression, against the expected map, and with an empty key
+  set.
+
+**Verus-proven:** `required_ec_entries` returns `ec@.restrict(keys@)`. Every
+key in the result is in both `ec` and `keys`, every key in both is in the
+result, and each value is the value `ec` holds for that key. This holds
+relative to the trusted row T-cmp and vstd's `BTreeMap` / `BTreeSet` /
+`String` specs.
+
+**Compiler-enforced:** nothing. There is no token or privacy argument.
+
+**Trusted, not proven:**
+
+- **T-cmp** (new TCB row, approved by the user for this target):
+  `obeys_cmp::<String>()`, that `String`'s `Eq` and `Ord` agree with Verus
+  equality and form a total order. The pinned vstd gives `BTreeMap::iter`,
+  `BTreeMap::insert` and `BTreeSet::contains` their specs only under this law
+  and proves it only for the integer types. It enters as the core's
+  `requires`, which no verified caller discharges.
+- The adapter (code reading): `as_map` and `as_set` return the inner
+  collections, `EncryptionContext::from` wraps the map unchanged (mpl
+  source), and the only call site (`step_get_decryption_materials`) passes the
+  decryption materials' own `encryption_context()` and
+  `required_encryption_context_keys()`. mpl is not Verus-checked.
+- vstd's btree and `String::clone` specs are part of Verus's own trust base,
+  not rows in this repo's TCB table.
+
+The end-to-end behavior is also tested (Duvet test annotations in
+`esdk/tests/test_verify_header.rs` and
+`esdk/tests/test_required_encryption_context.rs`).
+
+**Mutation tests** (both feature sets gave the same result for every row;
+each reverted byte for byte; log `.agents/tasks/r1-validate-vr020/logs/mutations.md`):
+
+| Mutation | Obligation | Caught by | Result |
+|---|---|---|---|
+| M1 `if keys.contains(k)` → `if true` | `ensures` (no extra keys); loop invariant 3 | Verus | `98 verified, 1 errors`: invariant not satisfied at end of loop body |
+| M2 `if keys.contains(k)` → `if !keys.contains(k)` | same, both directions | Verus | `98 verified, 1 errors`: invariant not satisfied at end of loop body |
+| M3 delete `requires obeys_cmp::<String>()` | the `requires` | Verus | `98 verified, 1 errors`: precondition not satisfied (the `for` loop), invariant not satisfied before loop |
+| M4 insert `k.clone()` as the value | loop invariant 4; value part of the `ensures` | Verus | `98 verified, 1 errors`: invariant not satisfied at end of loop body |
+| M5 delete loop invariant 2 (`it.seq() == remaining(spec_btree_map_iter(ec))`) | loop invariant 2 | review only | `99 verified, 0 errors`. Redundant: Verus's `for` wrapper already carries this relation, so it is not counted as an obligation. The `ensures` is still pinned by M1, M2 and M4 |
+| M6 delete loop invariant 1 (`obeys_cmp::<String>()`) | loop invariant 1 | Verus | `98 verified, 1 errors`: invariants 3 and 4 not satisfied at end of loop body |
+| M7 adapter skips the core and clones the whole map | adapter glue | never | `99 verified, 0 errors`: outside `verus!`, so neither Verus nor the compiler sees it |
+
+**Not run locally:** the fips feature (no cmake or go), so the fips halves
+of `make -C prim test`, `make -C prim clippy`, the clippy fips check, the
+clippy feature powerset and `cargo doc --all-features` run only in CI; patch
+coverage (checked only in CI); CodeQL (alerts arrive on the PR). No CI
+workflow runs Verus, so the local runs above are the only Verus evidence. The
+AWS-credential integration tests (`esdk/tests/test_error_integ.rs`,
+`mpl/tests/test_aws_kms_hierarchical_keyring_integ.rs`,
+`mpl/tests/test_key_store_branch_key_store_integ.rs`) fail locally without
+credentials and are not regressions.
+
 ### VR-008 in-crate (`aws-mpl-primitives`, `prim/src/ecdsa.rs`)
 
 `prim/Cargo.toml` sets `[package.metadata.verus] verify = true` and depends on
@@ -1317,6 +1416,13 @@ listed call is trusted not to panic**. Allocation failure / OOM
 VR-008 (`prim/src/ecdsa.rs`): `ExSignature`, `Signature::as_ref`,
 `<[T]>::copy_from_slice` (vstd spec restated verbatim).
 
+The table also holds the one esdk row, **T-cmp** (VR-020,
+`esdk/src/decrypt.rs`). It is not an aws-lc-rs spec and not an
+`assume_specification`: it is the `requires obeys_cmp::<String>()` of
+`required_ec_entries`, which no verified caller discharges. Its owner is
+`verus-unsafe-ffi-safety`, like the other rows; the user approved it for
+VR-020.
+
 | Id | Item | `ensures` | Kind / source |
 |---|---|---|---|
 | T-ty | opaque types: `digest::{Algorithm, Digest, Context}`, `hmac::{Algorithm, Key, Tag}`, `kdf::{KbkdfCtrHmacAlgorithm, KbkdfCtrHmacAlgorithmId}`, `error::Unspecified`, `aead::{Algorithm, UnboundKey, Nonce, LessSafeKey, Aad<A>, Tag}` | (none) | naming |
@@ -1339,6 +1445,7 @@ VR-008 (`prim/src/ecdsa.rs`): `ExSignature`, `Signature::as_ref`,
 | A18 | `LessSafeKey::seal_in_place_separate_tag::<A>` | `final(in_out)@.len() == old(in_out)@.len()` | Rust type fact (nothing about the bytes) |
 | A19 | `<aead::Tag as AsRef<[u8]>>::as_ref` | `s@.len() == 16` | **TRUSTED length (AEAD-TAG-16)** (`aead.rs:1069-1074`) |
 | A20 | `LessSafeKey::open_separate_gather::<A>` | `(r is Ok) ==> in_ciphertext@.len() == old(out_plaintext)@.len()`; `final(out_plaintext)@.len() == old(out_plaintext)@.len()` | **LABELED ASSUMPTION A-OPEN** (`aead.rs:~806`, `unbound_key.rs:136-139`). Not proven |
+| T-cmp | `vstd::laws_cmp::obeys_cmp::<String>()`, the `requires` of `required_ec_entries` (`esdk/src/decrypt.rs`, VR-020) | (none; a precondition) | **TRUSTED law** (std documents that `String` compares its bytes lexicographically). Reason: the pinned vstd specifies `BTreeMap` / `BTreeSet` only under this law and does not prove it for `String` |
 
 The length-preservation clauses (A11, A12, A18, A20 second clause) restate a
 Rust type fact (a `&mut [u8]` cannot change length); the core `ensures` that
@@ -1402,6 +1509,7 @@ independent evidence beyond that.
 | VR-018 encrypt header length checks | **in-crate** (`esdk/src/encrypt.rs`): `check_v2_suite_data` (present and exactly `algorithm_suite_data_length()` bytes, in that order) and `data_key_len_ok` (accept iff equal) | the expected lengths come from MPL (`algorithm_suite_data_length`) and the const table `get_encrypt_key_length`; the adapters map variants to today's errors |
 | VR-019 encrypt signing-key check (threat R3; counterpart of VR-015 (b)) | **in-crate, one direction** (`esdk/src/encrypt_gate.rs`): `signing_key_gate` returns a `SigningKeyPresent` iff the suite signs and a signing key is present, and the token holds that key; the compiler enforces that `ecdsa_sign_digest` in step 4 gets the key only through the token. Same error, message, order and place as before | **finding VR-019 F1:** esdk rejects a missing key only in step 4, after the header and body are written, and does not reject a key for a non-signing suite. Both rely on the MPL (`GetEncryptionMaterials::send` / `check_encryption_materials`, `EncryptionMaterialsBuilder::build`), which is trusted code reading. Also trusted: the real suite flag and key are passed; `encrypt_steps` runs step 4 for every signing suite; aws-lc-rs signing |
 | VR-016 decrypt buffer sizing (BUG-07(b) in esdk) | **in-crate** (`esdk/src/secret.rs`): `secret::open` takes only an `OpenBuffers`, built only by the verified `open_buffers`; its type invariant says the plaintext buffer is as long as the ciphertext. All 5 esdk open sites go through it, so BUG-07(b) is unreachable from esdk, Verus-proven | trusted: the TB-A body of `secret::open` passes the two fields to `aes_decrypt` unchanged; what aws-lc-rs does with a mismatch stays under A-OPEN |
+| VR-020 encryption context to only authenticate (`client-apis/decrypt.md`) | **in-crate** (`esdk/src/decrypt.rs`, branch `r1-validate-vr020`): `required_ec_entries` returns the materials' encryption context restricted to the required encryption context keys (`out@ == ec@.restrict(keys@)`), relative to TCB row T-cmp; mutation-tested (loop invariant 2 is redundant and review-only) | **trusted:** T-cmp (`obeys_cmp::<String>()`) and vstd's btree / `String` specs. **Code reading:** the adapter `build_encryption_context_to_only_authenticate` (`as_map`, `as_set`, `EncryptionContext::from`) and its call site pass the materials' own fields; no tool catches a change there (mutation M7). End-to-end behavior is tested |
 | Infra: I/O seam | `esdk` is Verus-buildable; sync `verus!` cores are verified in-crate behind the async `Source`/`Tee` adapters (see "In-crate proofs") | the async adapters themselves stay unverified glue |
 
 ---
@@ -1432,6 +1540,7 @@ Load-bearing proofs were checked by mutating the code and confirming Verus
 - **signature presence (VR-015 (b)) and decrypt buffer sizing (VR-016), branch `sizing-and-sigpresence`:** minting the not-required token for a signed suite, swapping the `signature_not_required` branches, minting a presence token on a mismatch, or building a `SignatureRequired` with no key → **Verus** fails each (`80 verified, 1 errors`: postcondition or type invariant); `open_buffers` resizing to `len + 1` → **Verus** fails (type invariant, overflow). Re-reading the key in step 5, calling `signature_gate` without a `SignatureRequired`, hand-building an `OpenBuffers` at an open site, or passing a raw `&mut [u8]` to `secret::open` → the **compiler** rejects it (`E0308`, `E0061`, `E0451`, `E0061`). Details in the VR-015 (b) and VR-016 sections.
 - **encrypt limits and length checks (VR-017, VR-018), branch `verus-encrypt-limits-and-lengths`:** an off-by-one in the MAX_DATA check, the overflow-prone `total + chunk` form, dropping the frame-count guard, letting the counter wrap, starting at 0, an off-by-one guard, and accepting a suite-data or data-key length one too long → **Verus** fails each (`93 verified, 1 errors`). Details in the VR-017 and VR-018 section.
 - **encrypt signing-key check (VR-019), branch `verus-encrypt-signing-key-presence`:** accepting a signing suite with no key, accepting a non-signing suite with a key, or building a non-signing token on the failure path → **Verus** fails each (postcondition, or type invariant). Signing without the gate, passing the raw key instead of the token, or building a token in `encrypt.rs` → the **compiler** rejects it (`E0425`, `E0308`, `E0451`). Details in the VR-019 section.
+- **encryption context to only authenticate (VR-020), branch `r1-validate-vr020`:** keeping every entry, keeping the wrong entries, dropping the `obeys_cmp::<String>()` `requires`, inserting the key as the value, or dropping loop invariant 1 → **Verus** fails each (`98 verified, 1 errors` on both feature sets). Dropping loop invariant 2 still verifies (`99 verified, 0 errors`): it is redundant under Verus's `for` loop, so only review catches it and it is not counted. Skipping the core in the adapter is outside `verus!`, so neither tool catches it. Details in the VR-020 section.
 - **big-endian codec round-trip (`lemma_u32_round_trip` / `lemma_u64_round_trip`, VR-012):** mutating the decoder `spec_be_u32` (changing the `b[3]` term to `b[3] * 2`) → `lemma_u32_round_trip`'s `spec_be_u32(b) == x as int` postcondition fails (67 verified, 2 errors; the other error is `be_u32`'s own ensures, also tied to the decoder spec); mutating `spec_be_u64` (adding `+ 1` to the `b[7]` term) → `lemma_u64_round_trip`'s postcondition fails (67 verified, 2 errors), then reverted. Both confirm the lemmas genuinely couple the encoder and decoder spec fns and are not a restatement of one side against itself.
 - **prim wrapper length contracts (VR-013, pipeline target VR-2026-C03):** removing the length guard in `digest_core`, `digest_finish_core` or `hmac_core` → `precondition not satisfied` on `copy_from_slice` plus the `Ok <==>` / `Err` postconditions fail; changing `!=` to `<` in the `digest_core` / `digest_finish_core` guard → the `Ok <==>` postcondition and the copy precondition fail; reporting `want_len: 0` → the `e.want_len` postcondition fails; taking `hmac`'s `want_len` from a constant `32` → the postconditions and the copy precondition fail; swapping `Unavailable` / `DerivationFailed` in `kbkdf_core` → its postconditions fail; injecting `let _x = bytes[0];` into `fill_random_core` → `index in bounds` precondition not met (the panic check covers the core); `.is_ok()` → `.is_err()` in `ct_equal_core` → the postcondition fails. Each run: `17 verified, 1 errors`, then reverted.
 - **AES buffer effects (VR-014, BUG-07):** moving `aes_encrypt_extend_core` after the nonce check (the BUG-07 fix option 1 shape) → the key/nonce `== o + m` postcondition fails; appending `message` instead of the tag → the "tag after ciphertext" assert fails; clearing the buffer on seal failure → the seal-failure postcondition fails; dropping either new extend-core conjunct → the `aes_encrypt_core` postconditions fail; pushing a byte before `old_size` or flipping the first tail byte in the extend core → the matching new conjunct fails; replacing the decrypt guard with `plain_text.len() != cipher_text.len()` (the BUG-07 fix shape) → the observation postcondition fails; dropping A-OPEN's `Ok ==>` ensures from A20 → both decrypt postconditions fail, which shows the BUG-07(b) result rests only on A-OPEN. Each run: `17 verified, 1 errors`, then reverted. Full log: `.agents/tasks/verus-prim-c03/logs/mutations.md` (M1–M19).
@@ -1539,3 +1648,5 @@ ID length consts moved into `verus!`).
 
 **VR-019 (branch `verus-encrypt-signing-key-presence`):**
 `esdk/src/encrypt_gate.rs` (new), `esdk/src/lib.rs`, `esdk/src/encrypt.rs`.
+
+**VR-020 (branch `r1-validate-vr020`):** `esdk/src/decrypt.rs`.
