@@ -19,12 +19,14 @@ use crate::error::Kind;
 /// Each variant tags a format and carries that format's Algorithm Suite ENUM.
 /// For example, `ESDK.ALG_AES_256_GCM_IV12_TAG16_NO_KDF` becomes
 /// `AlgorithmSuiteId::Esdk(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf)`.
-/// Only the ESDK format is implemented.
+/// The ESDK and DBE formats are implemented.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum AlgorithmSuiteId {
     /// ESDK format algorithm suites.
     Esdk(EsdkAlgorithmSuiteId),
+    /// DBE (AWS Database Encryption SDK) format algorithm suites.
+    Dbe(DbeAlgorithmSuiteId),
 }
 
 impl AlgorithmSuiteId {
@@ -32,6 +34,24 @@ impl AlgorithmSuiteId {
     pub const fn specification(self) -> AlgorithmSuite {
         match self {
             Self::Esdk(id) => id.specification(),
+            Self::Dbe(id) => id.specification(),
+        }
+    }
+
+    /// Looks up the suite of any format with the given on-wire id; the inverse of [`Self::id_bytes`].
+    ///
+    /// Returns `None` if no suite has that id.
+    pub fn from_id_bytes(bytes: [u8; 2]) -> Option<AlgorithmSuiteId> {
+        EsdkAlgorithmSuiteId::from_id_bytes(bytes)
+            .map(Self::Esdk)
+            .or_else(|| DbeAlgorithmSuiteId::from_id_bytes(bytes).map(Self::Dbe))
+    }
+
+    /// The format that this suite belongs to.
+    pub const fn format(self) -> Format {
+        match self {
+            Self::Esdk(_) => Format::Esdk,
+            Self::Dbe(_) => Format::Dbe,
         }
     }
 
@@ -58,6 +78,104 @@ impl AlgorithmSuiteId {
 impl From<EsdkAlgorithmSuiteId> for AlgorithmSuiteId {
     fn from(id: EsdkAlgorithmSuiteId) -> Self {
         Self::Esdk(id)
+    }
+}
+
+impl From<DbeAlgorithmSuiteId> for AlgorithmSuiteId {
+    fn from(id: DbeAlgorithmSuiteId) -> Self {
+        Self::Dbe(id)
+    }
+}
+
+/// DBE Format Algorithm Suite ENUM: the suites of the AWS Database Encryption SDK.
+/// Its variants correspond 1:1 to the DBE rows of the Supported Algorithm Suites table.
+///
+/// Every DBE suite signs with HMAC-SHA-384 and wraps data keys with intermediate key wrapping.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum DbeAlgorithmSuiteId {
+    /// 67 00 -- DBE.ALG_AES_256_GCM_HKDF_SHA512_COMMIT_KEY_SYMSIG_HMAC_SHA384
+    AlgAes256GcmHkdfSha512CommitKeySymsigHmacSha384,
+    /// 67 01 -- DBE.ALG_AES_256_GCM_HKDF_SHA512_COMMIT_KEY_ECDSA_P384_SYMSIG_HMAC_SHA384
+    AlgAes256GcmHkdfSha512CommitKeyEcdsaP384SymsigHmacSha384,
+}
+
+const ALL_DBE_SUITES: [DbeAlgorithmSuiteId; 2] = [
+    DbeAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeySymsigHmacSha384,
+    DbeAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384SymsigHmacSha384,
+];
+
+/// The intermediate key wrapping that every DBE suite uses.
+/// HKDF-SHA-512 derives both the key-encryption key and the MAC key.
+/// AES-256-GCM encrypts the data key.
+const DBE_EDK_WRAPPING: EdkWrapping =
+    EdkWrapping::IntermediateKeyWrapping(IntermediateKeyWrapping {
+        key_encryption_key_kdf: KeyDerivationAlgorithm::HkdfSha512,
+        mac_key_kdf: KeyDerivationAlgorithm::HkdfSha512,
+    });
+
+impl DbeAlgorithmSuiteId {
+    /// Every DBE algorithm suite id, in ascending on-wire id order.
+    pub const ALL: &'static [DbeAlgorithmSuiteId] = &ALL_DBE_SUITES;
+
+    /// Looks up the DBE suite with the given on-wire id; the inverse of [`Self::id_bytes`].
+    ///
+    /// Returns `None` if no DBE suite has that id.
+    pub fn from_id_bytes(bytes: [u8; 2]) -> Option<DbeAlgorithmSuiteId> {
+        Self::ALL.iter().copied().find(|id| id.id_bytes() == bytes)
+    }
+
+    /// Materialize the [`AlgorithmSuite`] specification table for this suite ID.
+    pub const fn specification(self) -> AlgorithmSuite {
+        match self {
+            Self::AlgAes256GcmHkdfSha512CommitKeySymsigHmacSha384 => AlgorithmSuite {
+                id: [0x67, 0x00],
+                encryption_algorithm: EncryptionAlgorithm::Aes,
+                encryption_algorithm_mode: EncryptionAlgorithmMode::Gcm,
+                encryption_key_length: 32,
+                iv_length: 12,
+                authentication_tag_length: 16,
+                encryption_kdf: KeyDerivationAlgorithm::HkdfSha512,
+                commit_kdf: Some(KeyDerivationAlgorithm::HkdfSha512),
+                asymmetric_signature_algorithm: None,
+                symmetric_signature_algorithm: Some(SymmetricSignatureAlgorithm::HmacSha384),
+                message_format_version: 0x01,
+                algorithm_suite_data_length: 0,
+                edk_wrapping: DBE_EDK_WRAPPING,
+            },
+            Self::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384SymsigHmacSha384 => AlgorithmSuite {
+                id: [0x67, 0x01],
+                encryption_algorithm: EncryptionAlgorithm::Aes,
+                encryption_algorithm_mode: EncryptionAlgorithmMode::Gcm,
+                encryption_key_length: 32,
+                iv_length: 12,
+                authentication_tag_length: 16,
+                encryption_kdf: KeyDerivationAlgorithm::HkdfSha512,
+                commit_kdf: Some(KeyDerivationAlgorithm::HkdfSha512),
+                asymmetric_signature_algorithm: Some(AsymmetricSignatureAlgorithm::EcdsaP384),
+                symmetric_signature_algorithm: Some(SymmetricSignatureAlgorithm::HmacSha384),
+                message_format_version: 0x01,
+                algorithm_suite_data_length: 0,
+                edk_wrapping: DBE_EDK_WRAPPING,
+            },
+        }
+    }
+
+    /// Returns the on-wire 2-byte algorithm suite identifier.
+    pub const fn id_bytes(self) -> [u8; 2] {
+        self.specification().id
+    }
+
+    /// Returns true when this suite has an asymmetric signature algorithm.
+    pub const fn has_asymmetric_signing(self) -> bool {
+        self.specification()
+            .asymmetric_signature_algorithm
+            .is_some()
+    }
+
+    /// Returns true when this suite has a symmetric signature algorithm; always true for DBE suites.
+    pub const fn has_symmetric_signing(self) -> bool {
+        self.specification().symmetric_signature_algorithm.is_some()
     }
 }
 /// ESDK Format Algorithm Suite ENUM.
@@ -159,6 +277,7 @@ impl EsdkAlgorithmSuiteId {
                 symmetric_signature_algorithm: None,
                 message_format_version: 0x01,
                 algorithm_suite_data_length: 0,
+                edk_wrapping: EdkWrapping::DirectKeyWrapping(DirectKeyWrapping {}),
             },
             Self::AlgAes192GcmIv12Tag16NoKdf => AlgorithmSuite {
                 id: [0x00, 0x46],
@@ -173,6 +292,7 @@ impl EsdkAlgorithmSuiteId {
                 symmetric_signature_algorithm: None,
                 message_format_version: 0x01,
                 algorithm_suite_data_length: 0,
+                edk_wrapping: EdkWrapping::DirectKeyWrapping(DirectKeyWrapping {}),
             },
             Self::AlgAes256GcmIv12Tag16NoKdf => AlgorithmSuite {
                 id: [0x00, 0x78],
@@ -187,6 +307,7 @@ impl EsdkAlgorithmSuiteId {
                 symmetric_signature_algorithm: None,
                 message_format_version: 0x01,
                 algorithm_suite_data_length: 0,
+                edk_wrapping: EdkWrapping::DirectKeyWrapping(DirectKeyWrapping {}),
             },
             Self::AlgAes128GcmIv12Tag16HkdfSha256 => AlgorithmSuite {
                 id: [0x01, 0x14],
@@ -201,6 +322,7 @@ impl EsdkAlgorithmSuiteId {
                 symmetric_signature_algorithm: None,
                 message_format_version: 0x01,
                 algorithm_suite_data_length: 0,
+                edk_wrapping: EdkWrapping::DirectKeyWrapping(DirectKeyWrapping {}),
             },
             Self::AlgAes192GcmIv12Tag16HkdfSha256 => AlgorithmSuite {
                 id: [0x01, 0x46],
@@ -215,6 +337,7 @@ impl EsdkAlgorithmSuiteId {
                 symmetric_signature_algorithm: None,
                 message_format_version: 0x01,
                 algorithm_suite_data_length: 0,
+                edk_wrapping: EdkWrapping::DirectKeyWrapping(DirectKeyWrapping {}),
             },
             Self::AlgAes256GcmIv12Tag16HkdfSha256 => AlgorithmSuite {
                 id: [0x01, 0x78],
@@ -229,6 +352,7 @@ impl EsdkAlgorithmSuiteId {
                 symmetric_signature_algorithm: None,
                 message_format_version: 0x01,
                 algorithm_suite_data_length: 0,
+                edk_wrapping: EdkWrapping::DirectKeyWrapping(DirectKeyWrapping {}),
             },
             Self::AlgAes128GcmIv12Tag16HkdfSha256EcdsaP256 => AlgorithmSuite {
                 id: [0x02, 0x14],
@@ -244,6 +368,7 @@ impl EsdkAlgorithmSuiteId {
                 symmetric_signature_algorithm: None,
                 message_format_version: 0x01,
                 algorithm_suite_data_length: 0,
+                edk_wrapping: EdkWrapping::DirectKeyWrapping(DirectKeyWrapping {}),
             },
             Self::AlgAes192GcmIv12Tag16HkdfSha384EcdsaP384 => AlgorithmSuite {
                 id: [0x03, 0x46],
@@ -258,6 +383,7 @@ impl EsdkAlgorithmSuiteId {
                 symmetric_signature_algorithm: None,
                 message_format_version: 0x01,
                 algorithm_suite_data_length: 0,
+                edk_wrapping: EdkWrapping::DirectKeyWrapping(DirectKeyWrapping {}),
             },
             Self::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384 => AlgorithmSuite {
                 id: [0x03, 0x78],
@@ -272,6 +398,7 @@ impl EsdkAlgorithmSuiteId {
                 symmetric_signature_algorithm: None,
                 message_format_version: 0x01,
                 algorithm_suite_data_length: 0,
+                edk_wrapping: EdkWrapping::DirectKeyWrapping(DirectKeyWrapping {}),
             },
             Self::AlgAes256GcmHkdfSha512CommitKey => AlgorithmSuite {
                 id: [0x04, 0x78],
@@ -286,6 +413,7 @@ impl EsdkAlgorithmSuiteId {
                 symmetric_signature_algorithm: None,
                 message_format_version: 0x02,
                 algorithm_suite_data_length: 32,
+                edk_wrapping: EdkWrapping::DirectKeyWrapping(DirectKeyWrapping {}),
             },
             Self::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384 => AlgorithmSuite {
                 id: [0x05, 0x78],
@@ -300,6 +428,7 @@ impl EsdkAlgorithmSuiteId {
                 symmetric_signature_algorithm: None,
                 message_format_version: 0x02,
                 algorithm_suite_data_length: 32,
+                edk_wrapping: EdkWrapping::DirectKeyWrapping(DirectKeyWrapping {}),
             },
         }
     }
@@ -354,6 +483,7 @@ pub struct AlgorithmSuite {
     symmetric_signature_algorithm: Option<SymmetricSignatureAlgorithm>,
     message_format_version: u8,
     algorithm_suite_data_length: usize,
+    edk_wrapping: EdkWrapping,
 }
 
 impl AlgorithmSuite {
@@ -433,6 +563,12 @@ impl AlgorithmSuite {
         self.algorithm_suite_data_length
     }
 
+    /// Returns how keyrings wrap the data key under this suite.
+    #[must_use]
+    pub const fn edk_wrapping(&self) -> EdkWrapping {
+        self.edk_wrapping
+    }
+
     /// Required length of a verification key (public point, SEC1 compressed
     /// `tag || X` where `tag` is `0x02` when Y is even and `0x03` when Y is
     /// odd) for this suite, in bytes. Returns `None` for non-signing suites.
@@ -489,12 +625,86 @@ pub enum AsymmetricSignatureAlgorithm {
     EcdsaP384,
 }
 
-/// Symmetric signature algorithm. No ESDK suite uses one; the variant exists so
-/// `Option<SymmetricSignatureAlgorithm>` can express "OPTIONAL" per spec.
+/// Symmetric signature algorithm.
+/// No ESDK suite uses one; every DBE suite uses HMAC-SHA-384.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum SymmetricSignatureAlgorithm {
     HmacSha384,
+}
+
+// ============================================================================
+// EDK wrapping algorithm
+// ============================================================================
+
+/// How a keyring wraps the plaintext data key into an encrypted data key.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum EdkWrapping {
+    /// The keyring encrypts the plaintext data key itself.
+    DirectKeyWrapping(DirectKeyWrapping),
+    /// The keyring encrypts a fresh intermediate key.
+    /// Keys derived from it encrypt the plaintext data key and sign the message.
+    IntermediateKeyWrapping(IntermediateKeyWrapping),
+}
+
+/// The settings of [`EdkWrapping::DirectKeyWrapping`], which has none.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub struct DirectKeyWrapping {}
+
+/// The key derivations of [`EdkWrapping::IntermediateKeyWrapping`].
+///
+/// Keyrings encrypt the plaintext data key with AES-GCM, using a key of the suite's encryption key length.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub struct IntermediateKeyWrapping {
+    key_encryption_key_kdf: KeyDerivationAlgorithm,
+    mac_key_kdf: KeyDerivationAlgorithm,
+}
+
+impl IntermediateKeyWrapping {
+    /// The KDF that derives the key that encrypts the plaintext data key.
+    #[must_use]
+    pub fn key_encryption_key_kdf(&self) -> KeyDerivationAlgorithm {
+        self.key_encryption_key_kdf
+    }
+
+    /// The KDF that derives the symmetric signing (MAC) key.
+    #[must_use]
+    pub fn mac_key_kdf(&self) -> KeyDerivationAlgorithm {
+        self.mac_key_kdf
+    }
+}
+
+// ============================================================================
+// Cryptographic format identifier
+// ============================================================================
+
+/// Cryptographic format identifier.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum Format {
+    /// AWS Encryption SDK Message Format / "ESDK".
+    Esdk,
+    /// AWS Database Encryption SDK Structured Data Format / "DBE".
+    Dbe,
+}
+
+impl Format {
+    pub const fn long_name(self) -> &'static str {
+        match self {
+            Self::Esdk => "AWS Encryption SDK Message Format",
+            Self::Dbe => "AWS Database Encryption SDK Structured Data Format",
+        }
+    }
+
+    pub const fn short_name(self) -> &'static str {
+        match self {
+            Self::Esdk => "ESDK",
+            Self::Dbe => "DBE",
+        }
+    }
 }
 
 // ============================================================================

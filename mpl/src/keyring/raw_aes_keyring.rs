@@ -9,7 +9,8 @@ use crate::error::{DataKeyInfo, Kind};
 use std::borrow::Cow;
 use std::sync::Arc;
 
-use crate::structures::AesWrappingAlg;
+use crate::keyring::edk_wrapping;
+use crate::structures::{AesWrappingAlg, EdkWrapping};
 use async_trait::async_trait;
 use aws_mpl_primitives::{aes_decrypt, aes_encrypt, generate_random_bytes};
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
@@ -405,13 +406,42 @@ impl Keyring for crate::shared::Builtin<RawAesKeyring> {
             .to_bytes()
             .map_err(|e| Error::wrap("failed to serialize the encryption context", e))?;
 
-        let materials = match materials.plaintext_data_key() {
-            Some(plaintext_dk) => {
+        let suite = materials.algorithm_suite();
+        let materials = match (suite.edk_wrapping(), materials.plaintext_data_key()) {
+            (EdkWrapping::IntermediateKeyWrapping(_), existing) => {
+                // Wrap a fresh intermediate key.
+                // Keys derived from it encrypt the plaintext data key and sign the message.
+                let (plaintext_dk, generated) = match existing {
+                    Some(key) => (key.clone(), false),
+                    None => (generate_random_data_key(suite)?, true),
+                };
+                let ikm = generate_random_data_key(suite)?;
+                let provider_edk = self.wrap_data_key(&ikm, &aad)?;
+                let (encrypted_pdk, signing_key) =
+                    edk_wrapping::encrypt_pdk(&suite, ikm.as_bytes(), &aad, &plaintext_dk)?;
+                let mut ciphertext = encrypted_pdk;
+                ciphertext.extend_from_slice(provider_edk.ciphertext());
+                let edk = EncryptedDataKey::builder()
+                    .key_provider_id(provider_edk.key_provider_id())
+                    .key_provider_info(provider_edk.key_provider_info().to_vec())
+                    .ciphertext(ciphertext)
+                    .build()?;
+                if generated {
+                    materials.add_data_key_with_symmetric_signing_key(
+                        plaintext_dk,
+                        edk,
+                        signing_key,
+                    )?
+                } else {
+                    materials.add_encrypted_data_key_with_symmetric_signing_key(edk, signing_key)?
+                }
+            }
+            (_, Some(plaintext_dk)) => {
                 let edk = self.wrap_data_key(plaintext_dk, &aad)?;
                 materials.add_encrypted_data_key(edk)?
             }
-            None => {
-                let plaintext_dk = generate_random_data_key(materials.algorithm_suite())?;
+            (_, None) => {
+                let plaintext_dk = generate_random_data_key(suite)?;
                 let edk = self.wrap_data_key(&plaintext_dk, &aad)?;
                 materials.add_data_key(plaintext_dk, edk)?
             }
@@ -457,18 +487,36 @@ impl Keyring for crate::shared::Builtin<RawAesKeyring> {
             };
             attempted_decryption = true;
 
-            if edk.ciphertext().len() < TAG_LENGTH {
+            let intermediate = matches!(
+                materials.algorithm_suite().edk_wrapping(),
+                EdkWrapping::IntermediateKeyWrapping(_)
+            );
+            let (encrypted_pdk, provider_wrapped) = if intermediate {
+                match edk_wrapping::split(&materials.algorithm_suite(), edk.ciphertext()) {
+                    Ok((pdk, wrapped)) => (Some(pdk), wrapped),
+                    Err(e) => {
+                        collected_errors.push(Error::wrap(
+                            format!("encrypted data key {index}: Invalid material for Intermediate Unwrapping"),
+                            e,
+                        ));
+                        continue;
+                    }
+                }
+            } else {
+                (None, edk.ciphertext())
+            };
+
+            if provider_wrapped.len() < TAG_LENGTH {
                 collected_errors.push(Error::new(Kind::Cryptographic, format!(
                     "encrypted data key {index}: insufficient data to decrypt: ciphertext is {} bytes, need at least the {TAG_LENGTH}-byte authentication tag",
-                    edk.ciphertext().len(),
+                    provider_wrapped.len(),
                 )));
                 continue;
             }
-            let (encrypted_key, auth_tag) = edk
-                .ciphertext()
-                .split_at(edk.ciphertext().len() - TAG_LENGTH);
+            let (encrypted_key, auth_tag) =
+                provider_wrapped.split_at(provider_wrapped.len() - TAG_LENGTH);
 
-            let mut plaintext_dk = vec![0u8; encrypted_key.len()];
+            let mut plaintext_dk = Zeroizing::new(vec![0u8; encrypted_key.len()]);
             if let Err(e) = aes_decrypt(
                 self.inner.wrapping_alg.primitive(),
                 &self.inner.wrapping_key,
@@ -494,7 +542,30 @@ impl Keyring for crate::shared::Builtin<RawAesKeyring> {
                 continue;
             }
 
-            let materials = materials.add_data_key(PlaintextDataKey::new(plaintext_dk))?;
+            if let Some(encrypted_pdk) = encrypted_pdk {
+                let (pdk, signing_key) = match edk_wrapping::decrypt_pdk(
+                    &materials.algorithm_suite(),
+                    &plaintext_dk,
+                    &aad,
+                    encrypted_pdk,
+                ) {
+                    Ok(keys) => keys,
+                    Err(e) => {
+                        collected_errors.push(Error::wrap(
+                            format!(
+                                "encrypted data key {index}: the plaintext data key did not decrypt"
+                            ),
+                            e,
+                        ));
+                        continue;
+                    }
+                };
+                let materials =
+                    materials.add_data_key_with_symmetric_signing_key(pdk, signing_key)?;
+                return OnDecryptOutput::builder().materials(materials).build();
+            }
+
+            let materials = materials.add_data_key(PlaintextDataKey::new(plaintext_dk.to_vec()))?;
             return OnDecryptOutput::builder().materials(materials).build();
         }
 

@@ -28,12 +28,12 @@ const fn default_salt_size(alg: DigestAlg) -> usize {
     }
 }
 
-fn get_len(len: usize) -> Result<&'static aws_lc_rs::aead::Algorithm, Error> {
-    match len {
-        16 => Ok(&aws_lc_rs::aead::AES_128_GCM),
-        24 => Ok(&aws_lc_rs::aead::AES_192_GCM),
-        32 => Ok(&aws_lc_rs::aead::AES_256_GCM),
-        _ => Err(serr(format!("invalid key length {len} for HKDF"))),
+/// An HKDF output length: any length up to 255 times the digest length (RFC 5869).
+struct OkmLen(usize);
+
+impl aws_lc_rs::hkdf::KeyType for OkmLen {
+    fn len(&self) -> usize {
+        self.0
     }
 }
 
@@ -41,8 +41,7 @@ fn get_len(len: usize) -> Result<&'static aws_lc_rs::aead::Algorithm, Error> {
 ///
 /// # Errors
 ///
-/// Returns an [`Error`] if `okm.len()` is not 16, 24, or 32, or if the
-/// underlying expand operation fails.
+/// Returns an [`Error`] if `okm` is longer than 255 times the digest length.
 pub fn hkdf(
     alg: DigestAlg,
     salt: &[u8],
@@ -53,7 +52,7 @@ pub fn hkdf(
     let salt = aws_lc_rs::hkdf::Salt::new(get_alg(alg), salt);
     let prk = salt.extract(ikm);
     let inner_okm = prk
-        .expand(info, get_len(okm.len())?)
+        .expand(info, OkmLen(okm.len()))
         .map_err(|_| serr("HKDF expand failed".to_owned()))?;
     inner_okm
         .fill(okm)
@@ -71,8 +70,7 @@ pub fn hkdf(
 ///
 /// # Errors
 ///
-/// Returns an [`Error`] if `okm.len()` is not 16, 24, or 32, or if the
-/// underlying expand operation fails.
+/// Returns an [`Error`] if `okm` is longer than 255 times the digest length.
 pub fn hkdf_no_salt(
     alg: DigestAlg,
     ikm: &[u8],
@@ -96,12 +94,11 @@ pub fn hkdf_extract(alg: DigestAlg, salt: &[u8], ikm: &[u8]) -> Prk {
 ///
 /// # Errors
 ///
-/// Returns an [`Error`] if `okm.len()` is not 16, 24, or 32, or if the
-/// underlying expand operation fails.
+/// Returns an [`Error`] if `okm` is longer than 255 times the digest length.
 pub fn hkdf_expand(prk: &Prk, info: &[&[u8]], okm: &mut [u8]) -> Result<(), Error> {
     let inner_okm = prk
         .prk
-        .expand(info, get_len(okm.len())?)
+        .expand(info, OkmLen(okm.len()))
         .map_err(|_| serr("HKDF expand failed".to_owned()))?;
     inner_okm
         .fill(okm)

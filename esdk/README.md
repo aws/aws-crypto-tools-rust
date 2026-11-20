@@ -129,8 +129,24 @@ Run one with `cargo run --example <name>`:
 | `shared_storm_tracking_cache` | share one cache across two hierarchical keyrings | KMS + DynamoDB |
 | `handling_errors` | handle the errors a hierarchical keyring and its key store return | KMS + DynamoDB |
 | `per_request_credentials` | call AWS KMS with credentials issued for one request | KMS + DynamoDB |
+| `aws_kms_keyring` | encrypt and decrypt with an AWS KMS keyring | KMS |
+| `aws_kms_discovery_keyring` | decrypt with an AWS KMS discovery keyring and a discovery filter | KMS |
+| `aws_kms_multi_keyring` | encrypt under several AWS KMS keys, and decrypt with any one of them | KMS |
+| `aws_kms_discovery_multi_keyring` | decrypt with AWS KMS discovery keyrings in several regions | KMS |
+| `aws_kms_mrk_keyring` | encrypt with a multi-Region key, and decrypt with its replica in another region | KMS |
+| `aws_kms_mrk_discovery_keyring` | decrypt a multi-Region key's message in another region | KMS |
+| `aws_kms_mrk_multi_keyring` | encrypt under a multi-Region key and a single-Region key | KMS |
+| `aws_kms_mrk_discovery_multi_keyring` | decrypt with multi-Region key discovery keyrings in several regions | KMS |
+| `aws_kms_rsa_keyring` | encrypt with an AWS KMS RSA public key, and decrypt through AWS KMS | KMS |
+| `aws_kms_ecdh_keyring` | encrypt and decrypt with AWS KMS ECDH keyrings | KMS |
+| `raw_rsa_keyring` | encrypt with an RSA public key, and decrypt with its private key | no |
+| `raw_ecdh_keyring` | encrypt and decrypt with raw ECDH keyrings in each key agreement scheme | no |
+| `multi_keyring` | encrypt with an AWS KMS keyring and a raw AES keyring, and decrypt with either | KMS |
+| `required_encryption_context_cmm` | keep chosen encryption context pairs out of the message | no |
+| `caching_cmm` | reuse data keys across messages with a caching CMM | no |
 
-The examples that need AWS also need credentials, a KMS key, and a key store table in DynamoDB.
+The examples that need AWS also need credentials and the KMS keys that they name.
+The KMS + DynamoDB ones also need a key store table in DynamoDB.
 
 ## Cargo features
 

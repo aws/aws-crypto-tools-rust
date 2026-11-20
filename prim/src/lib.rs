@@ -62,10 +62,14 @@
 
 pub mod error;
 
+mod ecdh;
+pub use ecdh::*;
 mod ecdsa;
 pub use ecdsa::*;
 mod hkdf;
 pub use hkdf::*;
+mod rsa;
+pub use rsa::*;
 
 use aws_lc_rs::aead::{Aad, LessSafeKey, Nonce, UnboundKey};
 use aws_lc_rs::rand;
@@ -326,4 +330,45 @@ pub fn kbkdf_ctr_hmac(
     aws_lc_rs::kdf::kbkdf_ctr_hmac(algorithm, ikm, info, okm)
         .map_err(|_| serr("KBKDF-CTR-HMAC derivation failed".to_owned()))?;
     Ok(())
+}
+
+/// The length of an AES-KDF-CTR nonce: one AES block.
+const AES_KDF_CTR_NONCE_LEN: usize = 16;
+
+/// Returns the first `length` bytes of the AES-256-CTR keystream of `key`,
+/// starting from the counter block `nonce`.
+///
+/// This is the `AesKdfCtrStream` key derivation that the DB-ESDK uses
+/// to derive the key and nonce for each encrypted field.
+///
+/// # Errors
+///
+/// Returns an [`Error`] if:
+/// - `nonce` is not 16 bytes
+/// - `key` is not a 32-byte AES-256 key
+/// - the cipher fails
+pub fn aes_kdf_ctr_stream(nonce: &[u8], key: &[u8], length: u32) -> Result<Vec<u8>, Error> {
+    use aws_lc_rs::cipher::{AES_256, EncryptingKey, EncryptionContext, UnboundCipherKey};
+    let Ok(iv) = <[u8; AES_KDF_CTR_NONCE_LEN]>::try_from(nonce) else {
+        return err(format!(
+            "Aes Kdf Ctr : Nonce length of {} not supported in AesKdfCtrStream. Nonce length must be {AES_KDF_CTR_NONCE_LEN}.",
+            nonce.len()
+        ));
+    };
+    let len = usize::try_from(length).map_err(|_| {
+        serr(format!(
+            "Aes Kdf Ctr : length {length} does not fit in memory"
+        ))
+    })?;
+    let key = UnboundCipherKey::new(&AES_256, key)
+        .map_err(|_| serr("Aes Kdf Ctr : invalid AES-256 key".to_owned()))?;
+    let key = EncryptingKey::ctr(key)
+        .map_err(|_| serr("Aes Kdf Ctr : could not create the CTR key".to_owned()))?;
+    let mut stream = vec![0u8; len];
+    key.less_safe_encrypt(
+        &mut stream,
+        EncryptionContext::Iv128(aws_lc_rs::iv::FixedLength::from(iv)),
+    )
+    .map_err(|_| serr("Aes Kdf Ctr : AES-CTR encryption failed".to_owned()))?;
+    Ok(stream)
 }

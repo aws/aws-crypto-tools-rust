@@ -11,8 +11,10 @@
 //! See [Errors for keyring and CMM authors](crate::keyring#errors-for-keyring-and-cmm-authors)
 //! for which error variant to return.
 
+mod caching_cmm;
 mod default_cmm;
 mod fluent_builders;
+mod required_encryption_context_cmm;
 mod types;
 
 use crate::Error;
@@ -20,8 +22,12 @@ use std::borrow::Cow;
 
 use async_trait::async_trait;
 
+pub use caching_cmm::{CachingCmm, CachingCmmBuilder, MAX_LIMIT_BYTES, MAX_LIMIT_MESSAGES};
 pub use default_cmm::DefaultCmm;
 pub use fluent_builders::{DecryptMaterialsFluentBuilder, GetEncryptionMaterialsFluentBuilder};
+pub use required_encryption_context_cmm::{
+    RequiredEncryptionContextCmm, RequiredEncryptionContextCmmBuilder,
+};
 pub use types::{
     DecryptMaterialsInput, DecryptMaterialsInputBuilder, DecryptMaterialsOutput,
     DecryptMaterialsOutputBuilder, GetEncryptionMaterialsInput, GetEncryptionMaterialsInputBuilder,

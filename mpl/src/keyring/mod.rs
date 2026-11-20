@@ -84,17 +84,55 @@ use std::borrow::Cow;
 
 use async_trait::async_trait;
 
+pub(crate) mod ecdh_wrapping;
+pub(crate) mod edk_wrapping;
 mod fluent_builders;
+mod multi_keyring;
 mod raw_aes_keyring;
+mod raw_ecdh_keyring;
+mod raw_rsa_keyring;
 mod types;
 
+#[cfg(feature = "kms")]
+pub use crate::aws_kms::aws_kms_keyring::{AwsKmsKeyring, AwsKmsKeyringBuilder};
+#[cfg(feature = "kms")]
+pub use crate::aws_kms::discovery_keyring::{
+    AwsKmsDiscoveryKeyring, AwsKmsDiscoveryKeyringBuilder, DiscoveryFilter, DiscoveryFilterBuilder,
+};
 pub use crate::aws_kms::hierarchical_keyring::{
     BranchKeyIdSupplier, GetBranchKeyIdFluentBuilder, GetBranchKeyIdInput,
     GetBranchKeyIdInputBuilder, GetBranchKeyIdOutput, GetBranchKeyIdOutputBuilder,
     HierarchicalKeyring, HierarchicalKeyringBuilder, SharedBranchKeyIdSupplier,
 };
+#[cfg(feature = "kms")]
+pub use crate::aws_kms::kms_ecdh_keyring::{
+    AwsKmsEcdhKeyring, AwsKmsEcdhKeyringBuilder, KmsEcdhStaticConfigurations,
+    KmsPrivateKeyToStaticPublicKeyInput, KmsPrivateKeyToStaticPublicKeyInputBuilder,
+    KmsPublicKeyDiscoveryInput, KmsPublicKeyDiscoveryInputBuilder,
+};
+#[cfg(feature = "kms")]
+pub use crate::aws_kms::kms_rsa_keyring::{AwsKmsRsaKeyring, AwsKmsRsaKeyringBuilder};
+#[cfg(feature = "kms")]
+pub use crate::aws_kms::mrk_discovery_keyring::{
+    AwsKmsMrkDiscoveryKeyring, AwsKmsMrkDiscoveryKeyringBuilder,
+};
+#[cfg(feature = "kms")]
+pub use crate::aws_kms::mrk_keyring::{AwsKmsMrkKeyring, AwsKmsMrkKeyringBuilder};
+#[cfg(feature = "kms")]
+pub use crate::aws_kms::multi_keyrings::{
+    AwsKmsDiscoveryMultiKeyringBuilder, AwsKmsMrkDiscoveryMultiKeyringBuilder,
+    AwsKmsMrkMultiKeyringBuilder, AwsKmsMultiKeyringBuilder,
+};
 pub use fluent_builders::{OnDecryptFluentBuilder, OnEncryptFluentBuilder};
+pub use multi_keyring::{MultiKeyring, MultiKeyringBuilder};
 pub use raw_aes_keyring::{RawAesKeyring, RawAesKeyringBuilder};
+pub use raw_ecdh_keyring::{
+    EphemeralPrivateKeyToStaticPublicKeyInput, EphemeralPrivateKeyToStaticPublicKeyInputBuilder,
+    PublicKeyDiscoveryInput, PublicKeyDiscoveryInputBuilder, RawEcdhKeyring, RawEcdhKeyringBuilder,
+    RawEcdhStaticConfigurations, RawPrivateKeyToStaticPublicKeyInput,
+    RawPrivateKeyToStaticPublicKeyInputBuilder,
+};
+pub use raw_rsa_keyring::{RawRsaKeyring, RawRsaKeyringBuilder};
 pub use types::{
     OnDecryptInput, OnDecryptInputBuilder, OnDecryptOutput, OnDecryptOutputBuilder, OnEncryptInput,
     OnEncryptInputBuilder, OnEncryptOutput, OnEncryptOutputBuilder,

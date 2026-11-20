@@ -929,3 +929,98 @@ fn test_build_requires_every_field() {
         assert!(err.is_validation(), "missing {field}");
     }
 }
+
+// DBE suites wrap an intermediate key (Dafny IntermediateKeyWrapping.dfy).
+// The EDK ciphertext is the encrypted plaintext data key (32 + 16 bytes),
+// followed by the keyring's wrapping of the intermediate key (32 + 16 bytes).
+// Encrypt and decrypt derive the same symmetric signing key.
+#[tokio::test]
+async fn intermediate_key_wrapping_round_trips_and_yields_one_signing_key_per_edk() {
+    use aws_crypto_mpl::types::DbeAlgorithmSuiteId;
+    let suite =
+        AlgorithmSuiteId::Dbe(DbeAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeySymsigHmacSha384);
+    let (namespace, name) = namespace_and_name();
+    let keyring = RawAesKeyring::builder()
+        .key_namespace(namespace)
+        .key_name(name)
+        .wrapping_key(vec![7u8; 32])
+        .wrapping_alg(AesWrappingAlg::AlgAes256GcmIv12Tag16)
+        .build()
+        .unwrap();
+
+    let materials = EncryptionMaterials::builder()
+        .algorithm_suite_id(suite)
+        .set_encryption_context(Some(small_encryption_context_a()))
+        .build()
+        .unwrap();
+    let encrypted = keyring
+        .on_encrypt()
+        .materials(materials)
+        .send()
+        .await
+        .unwrap()
+        .into_materials();
+    // Run the keyring again, as a second keyring would:
+    // it adds an EDK to materials that already have a data key.
+    let encrypted = keyring
+        .on_encrypt()
+        .materials(encrypted)
+        .send()
+        .await
+        .unwrap()
+        .into_materials();
+    let edks = encrypted.encrypted_data_keys().to_vec();
+    assert_eq!(edks.len(), 2);
+    assert!(
+        edks.iter()
+            .all(|e| e.ciphertext().len() == 32 + 16 + 32 + 16)
+    );
+    let signing_keys = encrypted.symmetric_signing_keys();
+    assert_eq!(signing_keys.len(), 2);
+    // Each EDK has its own intermediate key, so it has its own signing key.
+    assert!(!signing_keys[0].ct_eq(&signing_keys[1]));
+
+    for (i, edk) in edks.iter().enumerate() {
+        let decrypted = keyring
+            .on_decrypt()
+            .materials(
+                DecryptionMaterials::builder()
+                    .algorithm_suite_id(suite)
+                    .set_encryption_context(Some(small_encryption_context_a()))
+                    .build()
+                    .unwrap(),
+            )
+            .encrypted_data_keys(edk.clone())
+            .send()
+            .await
+            .unwrap()
+            .into_materials();
+        assert!(
+            decrypted
+                .plaintext_data_key()
+                .unwrap()
+                .ct_eq(encrypted.plaintext_data_key().unwrap())
+        );
+        assert!(
+            decrypted
+                .symmetric_signing_key()
+                .unwrap()
+                .ct_eq(&signing_keys[i])
+        );
+    }
+
+    // The encryption context is authenticated: a different context does not decrypt.
+    let err = keyring
+        .on_decrypt()
+        .materials(
+            DecryptionMaterials::builder()
+                .algorithm_suite_id(suite)
+                .build()
+                .unwrap(),
+        )
+        .set_encrypted_data_keys(Some(edks))
+        .send()
+        .await
+        .unwrap_err();
+    assert!(err.is_cryptographic(), "{err:?}");
+}

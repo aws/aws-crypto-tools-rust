@@ -11,7 +11,7 @@ use std::collections::HashSet;
 
 use aws_crypto_mpl::types::{
     AsymmetricSignatureAlgorithm, EncryptionAlgorithm, EncryptionAlgorithmMode,
-    EsdkAlgorithmSuiteId, KeyDerivationAlgorithm,
+    EsdkAlgorithmSuiteId, Format, KeyDerivationAlgorithm,
 };
 
 /// All 11 ESDK algorithm suite variants in the order their hex IDs appear in
@@ -551,5 +551,54 @@ fn test_verification_key_length_matches_spec_table() {
             "{:?}",
             suite
         );
+    }
+}
+
+// The DBE rows of the Supported Algorithm Suites table (Dafny AlgorithmSuites.dfy).
+#[test]
+fn dbe_suites_match_the_reference_table() {
+    use aws_crypto_mpl::types::{
+        AlgorithmSuiteId, DbeAlgorithmSuiteId, EdkWrapping, SymmetricSignatureAlgorithm,
+    };
+    let cases = [
+        (
+            DbeAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeySymsigHmacSha384,
+            [0x67, 0x00],
+            None,
+        ),
+        (
+            DbeAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384SymsigHmacSha384,
+            [0x67, 0x01],
+            Some(AsymmetricSignatureAlgorithm::EcdsaP384),
+        ),
+    ];
+    for (id, bytes, signature) in cases {
+        let suite = AlgorithmSuiteId::Dbe(id);
+        assert_eq!(AlgorithmSuiteId::from_id_bytes(bytes), Some(suite));
+        assert_eq!(suite.format(), Format::Dbe);
+        let spec = suite.specification();
+        assert_eq!(spec.id(), bytes);
+        assert_eq!(spec.encryption_key_length(), 32);
+        assert_eq!(spec.encryption_kdf(), KeyDerivationAlgorithm::HkdfSha512);
+        assert_eq!(spec.commit_kdf(), Some(KeyDerivationAlgorithm::HkdfSha512));
+        assert_eq!(spec.asymmetric_signature_algorithm(), signature);
+        assert_eq!(
+            spec.symmetric_signature_algorithm(),
+            Some(SymmetricSignatureAlgorithm::HmacSha384)
+        );
+        let EdkWrapping::IntermediateKeyWrapping(wrapping) = spec.edk_wrapping() else {
+            panic!("DBE suites use intermediate key wrapping");
+        };
+        assert_eq!(
+            wrapping.key_encryption_key_kdf(),
+            KeyDerivationAlgorithm::HkdfSha512
+        );
+        assert_eq!(wrapping.mac_key_kdf(), KeyDerivationAlgorithm::HkdfSha512);
+    }
+    for id in EsdkAlgorithmSuiteId::ALL {
+        assert!(matches!(
+            id.specification().edk_wrapping(),
+            EdkWrapping::DirectKeyWrapping(_)
+        ));
     }
 }
