@@ -61,7 +61,7 @@ Not checked: whether aws-lc-rs leaves decrypted bytes in the output buffer when 
 
 ## Relation to TM-MPL-015 and T26
 
-This site is already in scope. `docs/mpl-threat-model.md` lists under TM-MPL-015's residual exposures "the raw-AES decrypt buffer on the AES-error and wrong-length paths (`raw_aes_keyring.rs:471`, `:489`)" and "the `Vec` returned by `branch_key_wrap::unwrap` before it is wrapped in `PlaintextDataKey`". T26's target lists "raw-AES on_decrypt buffer (:471, :489)" and `branch_key_wrap::unwrap`, and its property expects to fail on "(F1) raw-AES on_decrypt drops `plaintext_dk` unwiped on the aes_decrypt-Err and wrong-length paths" and "(F3) unwrap's returned Vec ... plain Vec<u8> between producer and wrapper" (`docs/mpl-verification-targets/01-threat-driven.md:786-789`). No bug report existed for it before this one. T26's proof status is "None yet".
+This site is already in scope. `docs/mpl-threat-model.md` lists under TM-MPL-015's residual exposures "the raw-AES decrypt buffer on the AES-error and wrong-length paths (`raw_aes_keyring.rs:471`, `:489`)" and "the `Vec` returned by `branch_key_wrap::unwrap` before it is wrapped in `PlaintextDataKey`". T26's target lists "raw-AES on_decrypt buffer (:471, :489)" and `branch_key_wrap::unwrap`, and its property expects to fail on "(F1) raw-AES on_decrypt drops `plaintext_dk` unwiped on the aes_decrypt-Err and wrong-length paths" and "(F3) unwrap's returned Vec ... plain Vec<u8> between producer and wrapper" (`docs/mpl-verification-targets/01-threat-driven.md:803-806`). No bug report existed for it before this one. T26's proof status is "None yet".
 
 ## Evidence
 
