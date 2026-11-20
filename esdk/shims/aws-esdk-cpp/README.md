@@ -225,6 +225,12 @@ However, the hierarchical keyring requires an AWS account, a KMS key, and a Dyna
 - **To create an AWS account**, go to [Sign In or Create an AWS Account](https://portal.aws.amazon.com/gp/aws/developer/registration/index.html).
 - **To create a symmetric encryption KMS key**, see [Creating Keys](https://docs.aws.amazon.com/kms/latest/developerguide/create-keys.html).
 
+## Using the shim with fork()
+
+The shim is not safe to use across `fork()`.
+Don't use the shim in a process before it forks.
+Create clients, keyrings and caches in each child process, after `fork()`.
+
 ## FAQ
 
 See the [Frequently Asked Questions](https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/faq.html) page in the official documentation.
