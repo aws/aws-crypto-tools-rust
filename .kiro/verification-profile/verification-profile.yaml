@@ -13,7 +13,7 @@
 # Values checked against the worktree at 4054fd89 (grep, ls, Makefiles, Cargo.toml,
 # CI workflows). Counts live in docs/verus-proofs-report.md, not here.
 
-# Version of this schema; read by: all
+# Version of this schema; read by: no agent yet (to be wired in Step 5, recipe R1 CI-parity step)
 schema_version: 1
 
 # Identity and kind of the library; read by: all
@@ -57,11 +57,11 @@ crates:
     result_line: "Read the `verification results::` line printed right after `Checking aws-esdk v...`. Never pick a line by position. On the default feature set the run prints a line for vstd first, then one after `Checking aws-mpl-primitives v...`, then one after `Checking aws-esdk v...`. On the second feature set vstd is cached and prints no line. A cached crate prints no line at all: run cache_bust and re-run."
     # Command that forces a re-check of a cached crate; read by: SKILL mutation recipe, proof agents, update
     cache_bust: "touch esdk/src/lib.rs"
-    # Command that runs the crate's tests; read by: proof agents, update
+    # Command that runs the crate's tests; read by: no agent yet (to be wired in Step 5, recipe R1 CI-parity step)
     test_cmd: "make -C esdk test"
-    # Lint and format commands to run before delivery; read by: proof agents
+    # Lint and format commands to run before delivery; read by: no agent yet (to be wired in Step 5, recipe R1 CI-parity step)
     lint_cmds: ["make -C esdk clippy", "cargo fmt --all -- --check (in esdk/)"]
-    # Tests known to fail locally, with the reason; read by: proof agents, update
+    # Tests known to fail locally, with the reason; read by: no agent yet (to be wired in Step 5, recipe R1 CI-parity step)
     known_test_failures: ["esdk/tests/test_error_integ.rs: needs AWS credentials and KMS access"]
     # Where unsafe code is in this crate (or none); read by: ffi, capabilities, recommender
     unsafe: "none in esdk/src (the C++ shim under esdk/shims/aws-esdk-cpp/ is listed in unsafe_surface.elsewhere)"
@@ -374,7 +374,7 @@ typestate_gates:
     tokens: ["OpenBuffers"]
     targets: ["VR-016"]
 
-# Platform facts the proofs or tests rely on; read by: ffi, zero-panic
+# Platform facts the proofs or tests rely on; read by: no agent yet (to be wired in Step 5, recipe R1 CI-parity step)
 platform_assumptions:
   - "A test in esdk/src/message/body/body_encrypt.rs is gated on #[cfg(target_pointer_width = \"64\")]. No Verus `global size_of usize` directive exists in the source."
 
@@ -666,15 +666,15 @@ artifacts:
   # Directory for task notes and logs; read by: update, proof agents
   task_notes_dir: ".agents/tasks/<task>/"
 
-# CI gates beyond Verus; read by: proof agents (verify step), update
+# CI gates beyond Verus; read by: no agent yet (to be wired in Step 5, recipe R1 CI-parity step)
 ci:
-  # Each CI check with what it enforces and its local command; read by: proof agents, update
+  # Each CI check with what it enforces and its local command; read by: no agent yet (to be wired in Step 5, recipe R1 CI-parity step)
   checks:
-    - # Check name; read by: proof agents, update
+    - # Check name; read by: no agent yet (to be wired in Step 5, recipe R1 CI-parity step)
       name: "fmt"
-      # What the check enforces and where it is defined; read by: proof agents, update
+      # What the check enforces and where it is defined; read by: no agent yet (to be wired in Step 5, recipe R1 CI-parity step)
       what: "formatting (.github/workflows/library_rust_tests.yml)"
-      # Command to run it locally; read by: proof agents
+      # Command to run it locally; read by: no agent yet (to be wired in Step 5, recipe R1 CI-parity step)
       local_cmd: "cargo fmt --all -- --check (in each crate directory)"
     - name: "clippy"
       what: "clippy with warnings denied (.github/workflows/library_rust_tests.yml)"
@@ -700,7 +700,7 @@ ci:
     - name: "code scanning"
       what: "CodeQL alerts arrive through GitHub code scanning on the PR; there is no CodeQL workflow file in the repo"
       local_cmd: ""
-  # Lockfiles that must change together when a dependency changes; read by: proof agents, update
+  # Lockfiles that must change together when a dependency changes; read by: no agent yet (to be wired in Step 5, recipe R1 CI-parity step)
   dependent_lockfiles:
     - "esdk/Cargo.lock"
     - "prim/Cargo.lock"
@@ -712,11 +712,11 @@ ci:
     - "esdk/performance-tests/Cargo.lock"
     - "xtask/Cargo.lock"
 
-# What cannot run locally and what that means; read by: proof agents, update
+# What cannot run locally and what that means; read by: no agent yet (to be wired in Step 5, recipe R1 CI-parity step)
 local_env_limits:
-  - # The limit; read by: proof agents, update
+  - # The limit; read by: no agent yet (to be wired in Step 5, recipe R1 CI-parity step)
     limit: "cmake and go are not installed locally, so the fips feature does not build"
-    # What follows from it; read by: proof agents, update
+    # What follows from it; read by: no agent yet (to be wired in Step 5, recipe R1 CI-parity step)
     consequence: "make -C prim test (fips half) and the clippy fips check run only in CI; say so in the docs and the commit message"
   - limit: "patch coverage cannot be measured locally: cargo-llvm-cov and diff-cover are not installed (command -v finds neither), and the coverage plan recorded an llvm-profdata LLVM 21 vs rustc LLVM 22 mismatch"
     consequence: "the 100% patch coverage gate is checked only in CI; plan tests for every new line"

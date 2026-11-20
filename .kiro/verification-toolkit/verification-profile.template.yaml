@@ -9,7 +9,7 @@
 # verus-unsafe-ffi-safety, SKILL = the verus skill, steering = the steering pointer.
 # In a list, the comments on the first entry apply to every entry.
 
-# Version of this schema; read by: all
+# Version of this schema; read by: no agent yet (to be wired in Step 5, recipe R1 CI-parity step)
 schema_version: 1
 
 # Identity and kind of the library; read by: all
@@ -51,11 +51,11 @@ crates:
     result_line: ""
     # Command that forces a re-check of a cached crate; read by: SKILL mutation recipe, proof agents, update
     cache_bust: ""
-    # Command that runs the crate's tests; read by: proof agents, update
+    # Command that runs the crate's tests; read by: no agent yet (to be wired in Step 5, recipe R1 CI-parity step)
     test_cmd: ""
-    # Lint and format commands to run before delivery; read by: proof agents
+    # Lint and format commands to run before delivery; read by: no agent yet (to be wired in Step 5, recipe R1 CI-parity step)
     lint_cmds: []
-    # Tests known to fail locally, with the reason; read by: proof agents, update
+    # Tests known to fail locally, with the reason; read by: no agent yet (to be wired in Step 5, recipe R1 CI-parity step)
     known_test_failures: []
     # Where unsafe code is in this crate (or none); read by: ffi, capabilities, recommender
     unsafe: ""
@@ -220,7 +220,7 @@ typestate_gates:
     # Targets the tokens cover; read by: capabilities, header-parsing, recommender
     targets: []
 
-# Platform facts the proofs or tests rely on; read by: ffi, zero-panic
+# Platform facts the proofs or tests rely on; read by: no agent yet (to be wired in Step 5, recipe R1 CI-parity step)
 platform_assumptions: []
 
 # Numbering of targets and findings; read by: recommender, update, capabilities, SKILL "Stop and report"
@@ -295,24 +295,24 @@ artifacts:
   # Directory for task notes and logs; read by: update, proof agents
   task_notes_dir: ""
 
-# CI gates beyond Verus; read by: proof agents (verify step), update
+# CI gates beyond Verus; read by: no agent yet (to be wired in Step 5, recipe R1 CI-parity step)
 ci:
-  # Each CI check with what it enforces and its local command; read by: proof agents, update
+  # Each CI check with what it enforces and its local command; read by: no agent yet (to be wired in Step 5, recipe R1 CI-parity step)
   checks:
-    - # Check name; read by: proof agents, update
+    - # Check name; read by: no agent yet (to be wired in Step 5, recipe R1 CI-parity step)
       name: ""
-      # What the check enforces and where it is defined; read by: proof agents, update
+      # What the check enforces and where it is defined; read by: no agent yet (to be wired in Step 5, recipe R1 CI-parity step)
       what: ""
-      # Command to run it locally; read by: proof agents
+      # Command to run it locally; read by: no agent yet (to be wired in Step 5, recipe R1 CI-parity step)
       local_cmd: ""
-  # Lockfiles that must change together when a dependency changes; read by: proof agents, update
+  # Lockfiles that must change together when a dependency changes; read by: no agent yet (to be wired in Step 5, recipe R1 CI-parity step)
   dependent_lockfiles: []
 
-# What cannot run locally and what that means; read by: proof agents, update
+# What cannot run locally and what that means; read by: no agent yet (to be wired in Step 5, recipe R1 CI-parity step)
 local_env_limits:
-  - # The limit; read by: proof agents, update
+  - # The limit; read by: no agent yet (to be wired in Step 5, recipe R1 CI-parity step)
     limit: ""
-    # What follows from it; read by: proof agents, update
+    # What follows from it; read by: no agent yet (to be wired in Step 5, recipe R1 CI-parity step)
     consequence: ""
 
 # Build and packaging choices that must stay explicit; read by: all agents before proposing build or packaging changes, SKILL
