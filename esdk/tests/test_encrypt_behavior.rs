@@ -417,6 +417,52 @@ async fn test_max_edk_exceeded_error() {
         "2 EDKs must encrypt when the configured maximum is 2"
     );
 }
+#[tokio::test(flavor = "multi_thread")]
+async fn test_decrypt_rejects_edk_count_over_max() {
+    // `DuplicateEdkCmm` writes a message with 2 EDKs; a client that allows at
+    // most 1 must refuse to decrypt it.
+    let pt = b"max edk decrypt";
+    let ct = Client::default()
+        .encrypt()
+        .plaintext(pt)
+        .cmm(DuplicateEdkCmm {
+            inner: DefaultCmm::new(test_keyring().await),
+        })
+        .send()
+        .await
+        .unwrap()
+        .into_ciphertext()
+        .into_inner();
+    let err = esdk_with_max_edks(1)
+        .decrypt()
+        .ciphertext(&ct)
+        .keyring(test_keyring().await)
+        .send()
+        .await
+        .expect_err("decrypt must fail when EDK count exceeds max");
+    assert!(
+        err.is_validation(),
+        "expected Validation error, got: {err:?}"
+    );
+    assert!(
+        err.message()
+            .contains("encrypted data key count 2 exceeds configured maximum 1"),
+        "unexpected message: {}",
+        err.message()
+    );
+    // Under a maximum of 2 the same message decrypts, so the failure above is
+    // the maximum-EDK check.
+    let decrypted = esdk_with_max_edks(2)
+        .decrypt()
+        .ciphertext(&ct)
+        .keyring(test_keyring().await)
+        .send()
+        .await
+        .unwrap()
+        .into_plaintext()
+        .into_inner();
+    assert_eq!(decrypted, pt);
+}
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_encrypt_data_key_derived_from_plaintext_data_key() {

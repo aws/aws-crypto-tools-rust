@@ -177,18 +177,10 @@ verus! {
 /// as a mutable slice of exactly `message.len()` bytes — the in-place target
 /// the AES-GCM seal writes the ciphertext into.
 ///
-/// This is the verified core of [`aes_encrypt`]'s buffer bookkeeping (VR-006,
-/// part (b)). The slice obligation it discharges is the one that would panic
-/// in the shipped code: `extend_from_slice` makes
-/// `cipher_text.len() == old_size + message.len()`, so `old_size` is in range
-/// for `split_at_mut` and the returned tail is exactly `message.len()` bytes.
-/// Verus proves both facts; no index operation here can be out of bounds. The
-/// AES-GCM crypto itself is not in scope — the returned slice is handed to the
-/// `aws-lc-rs` seal in the [`aes_encrypt`] adapter, outside `verus!`.
-///
-/// VR-014 (BUG-07(a)) adds two conjuncts, labeled below: the returned tail
-/// holds the plaintext, and the final buffer is the old buffer followed by
-/// the final contents of the tail.
+/// Verus proves that `split_at_mut` cannot panic and that the returned slice
+/// is `message.len()` bytes long (VR-006). It also proves that the slice holds
+/// the plaintext and that `cipher_text` ends up as its old contents followed
+/// by the slice (VR-014). It proves nothing about AES-GCM itself.
 fn aes_encrypt_extend_core<'a>(cipher_text: &'a mut Vec<u8>, message: &[u8]) -> (slice: &'a mut [u8])
     ensures
         slice@.len() == message@.len(),
@@ -207,9 +199,8 @@ fn aes_encrypt_extend_core<'a>(cipher_text: &'a mut Vec<u8>, message: &[u8]) -> 
     tail
 }
 
-/// Why [`aes_decrypt_len_ok`] rejected its inputs, kept inside `verus!` so the
-/// crate [`Error`] — which Verus does not model — never enters the verified
-/// region (the same device T1 uses with `SignCoreError`).
+/// Why [`aes_decrypt_len_ok`] rejected its inputs. Verus does not model the
+/// crate [`Error`], so the verified code returns this enum instead.
 enum AesDecryptLenError {
     /// The plaintext buffer is shorter than the ciphertext.
     PlainTooShort,

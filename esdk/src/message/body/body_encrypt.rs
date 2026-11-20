@@ -149,10 +149,204 @@ fn write_frame_prefix(
     ));
 }
 
-} // verus!
-
+// ---------------------------------------------------------------------------
+// VR-017: encrypt-side limits. The plaintext budget (MAX_DATA and the
+// Plaintext Length Bound) and the frame sequence numbers. The async loop in
+// `encrypt_and_serialize_body` is the unverified adapter: it calls these once
+// per frame and maps the rejections to errors.
+// ---------------------------------------------------------------------------
 /// Maximum plaintext bytes per message: 2^36 - 32 (AES-GCM safety bound).
-const MAX_DATA: usize = (1usize << 36) - 32;
+/// Same value as the old `(1usize << 36) - 32` and `header::SAFE_MAX_ENCRYPT`.
+/// It is a `u64` because 2^36 does not fit a 32-bit `usize`, so Verus rejects
+/// it as a `usize`. The budget counts in `u64`; every `usize` converts to
+/// `u64` without loss.
+pub(crate) const MAX_DATA: u64 = 0x000F_FFFF_FFE0;
+
+/// Why `PlaintextBudget::add` rejected a chunk, in check order.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum BudgetError {
+    /// The total plaintext would exceed `MAX_DATA`.
+    TooLarge,
+    /// The total plaintext would exceed the caller's Plaintext Length Bound.
+    OverBound,
+}
+
+/// The number of plaintext bytes encrypted so far. It never exceeds
+/// `MAX_DATA`.
+pub(crate) struct PlaintextBudget {
+    total: u64,
+}
+
+impl PlaintextBudget {
+    /// The plaintext bytes counted so far.
+    pub(crate) closed spec fn total(&self) -> nat {
+        self.total as nat
+    }
+
+    /// The total never exceeds `MAX_DATA`.
+    #[verifier::type_invariant]
+    spec fn inv(&self) -> bool {
+        self.total <= MAX_DATA
+    }
+
+    /// An empty budget, before any plaintext is read.
+    pub(crate) fn new() -> (b: Self)
+        ensures
+            b.total() == 0,
+    {
+        Self { total: 0 }
+    }
+
+    /// Count `chunk` more plaintext bytes. Rejects with `TooLarge` exactly when
+    /// the new total would exceed `MAX_DATA`, otherwise with `OverBound`
+    /// exactly when it would exceed `bound`. On a rejection the total is
+    /// unchanged. Works for every `chunk`: the check cannot overflow.
+    pub(crate) fn add(&mut self, chunk: usize, bound: Option<usize>) -> (r: Result<(), BudgetError>)
+        ensures
+            (r matches Err(BudgetError::TooLarge)) <==> old(self).total() + chunk > MAX_DATA,
+            (r matches Err(BudgetError::OverBound)) <==> (old(self).total() + chunk <= MAX_DATA
+                && (bound matches Some(b) && old(self).total() + chunk > b)),
+            r is Ok ==> final(self).total() == old(self).total() + chunk,
+            r is Err ==> final(self).total() == old(self).total(),
+            final(self).total() <= MAX_DATA,
+    {
+        proof {
+            use_type_invariant(&*self);
+        }
+        // `self.total <= MAX_DATA`, so the subtraction cannot underflow, and
+        // this is the same test as `self.total + chunk > MAX_DATA`.
+        let chunk = chunk as u64;
+        if chunk > MAX_DATA - self.total {
+            return Err(BudgetError::TooLarge);
+        }
+        let new_total = self.total + chunk;
+        match bound {
+            Some(b) if new_total > b as u64 => return Err(BudgetError::OverBound),
+            _ => {},
+        }
+        self.total = new_total;
+        Ok(())
+    }
+}
+
+/// The sequence number for the next frame on encrypt. It starts at 1, goes up
+/// by 1 per regular frame and never wraps. The final frame takes the current
+/// value, which is the total number of frames. The encrypt counterpart of
+/// VR-004's `next_expected_frame` / `final_frame_seq_ok` on decrypt.
+pub(crate) struct EncryptFrameSeq {
+    next: u32,
+    #[allow(dead_code, reason = "ghost field: read only by specs")]
+    frames: Ghost<nat>,
+}
+
+impl EncryptFrameSeq {
+    /// The number the next frame will get.
+    pub(crate) closed spec fn next(&self) -> u32 {
+        self.next
+    }
+
+    /// How many regular frames have been numbered so far.
+    pub(crate) closed spec fn frames(&self) -> nat {
+        self.frames@
+    }
+
+    /// The next number is one more than the number of frames so far, so it is
+    /// at least 1.
+    #[verifier::type_invariant]
+    spec fn inv(&self) -> bool {
+        self.next as nat == self.frames@ + 1
+    }
+
+    /// The counter before the first frame.
+    pub(crate) fn start() -> (s: Self)
+        ensures
+            s.next() == START_SEQUENCE_NUMBER,
+            s.frames() == 0,
+    {
+        //= spec/data-format/message-body.md#regular-frame-sequence-number
+        //= reason=START_SEQUENCE_NUMBER is defined as 1
+        //# Framed Data MUST start at Sequence Number 1.
+        //
+        //= spec/client-apis/encrypt.md#construct-a-frame
+        //= reason=START_SEQUENCE_NUMBER is defined as 1
+        //# If this is the first frame sequentially, the sequence number value MUST be 1.
+        Self { next: START_SEQUENCE_NUMBER, frames: Ghost(0) }
+    }
+
+    /// The number for the next regular frame. Returns `None`, and leaves the
+    /// counter unchanged, when that number would be `ENDFRAME_SEQUENCE_NUMBER`
+    /// (`u32::MAX`): the frame count would then pass `2^32 - 1` once the final
+    /// frame is added. Otherwise returns the current number and adds 1.
+    pub(crate) fn take_regular(&mut self) -> (r: Option<u32>)
+        ensures
+            (r is None) <==> old(self).next() == ENDFRAME_SEQUENCE_NUMBER,
+            r is None ==> *final(self) == *old(self),
+            r matches Some(n) ==> (n == old(self).next() && n < u32::MAX && final(self).next()
+                == n + 1 && final(self).frames() == old(self).frames() + 1),
+    {
+        proof {
+            use_type_invariant(&*self);
+        }
+        //= spec/data-format/message-body.md#framed-data
+        //# - The number of frames in a single message MUST be less than or equal to `2^32 - 1`.
+        if self.next == ENDFRAME_SEQUENCE_NUMBER {
+            return None;
+        }
+        let n = self.next;
+        //= spec/data-format/message-body.md#regular-frame-sequence-number
+        //# Subsequent frames MUST be in order and MUST contain an increment of 1 from the previous frame.
+        //
+        //= spec/client-apis/encrypt.md#construct-a-frame
+        //# Otherwise, the sequence number value MUST be 1 greater than the value of the sequence number
+        //# of the previous frame.
+        *self = Self { next: n + 1, frames: Ghost(self.frames@ + 1) };
+        Some(n)
+    }
+
+    /// The number for the final frame: the current value, which is the number
+    /// of regular frames plus 1, i.e. the total number of frames.
+    pub(crate) fn final_seq(&self) -> (n: u32)
+        ensures
+            n == self.next(),
+            n as nat == self.frames() + 1,
+            n >= START_SEQUENCE_NUMBER,
+    {
+        proof {
+            use_type_invariant(self);
+        }
+        self.next
+    }
+}
+
+/// For a frame length of 17 bytes or more, the MAX_DATA budget stops the
+/// message before the frame-count guard in `take_regular` can fire: if `k`
+/// full regular frames fit in MAX_DATA, the next number `k + 1` is below
+/// `ENDFRAME_SEQUENCE_NUMBER`. For smaller frames the guard is the only stop
+/// (see `lemma_frame_guard_needed_at_16`), so the code does not rely on
+/// MAX_DATA for this.
+pub(crate) proof fn lemma_max_data_bounds_frames(frame_length: nat, k: nat)
+    requires
+        frame_length >= 17,
+        k * frame_length <= MAX_DATA,
+    ensures
+        k + 1 < ENDFRAME_SEQUENCE_NUMBER,
+{
+    assert(k * 17 <= k * frame_length) by (nonlinear_arith)
+        requires
+            frame_length >= 17,
+    ;
+}
+
+/// With 16-byte frames, `2^32 - 2` regular frames (the most `take_regular`
+/// numbers) hold exactly MAX_DATA bytes, so the budget accepts them all and
+/// the frame-count guard is what stops the next one.
+pub(crate) proof fn lemma_frame_guard_needed_at_16()
+    ensures
+        (ENDFRAME_SEQUENCE_NUMBER - 1) * 16 == MAX_DATA,
+{
+}
+
+} // verus!
 
 /// Input for constructing a single frame (regular or final).
 pub(crate) struct ConstructFrameInput<'a> {
@@ -351,7 +545,10 @@ pub(crate) async fn encrypt_and_serialize_body(
 ) -> Result<(), Error> {
     let max_plaintext_length =
         max_plaintext_length.map(|len| usize::try_from(len).unwrap_or(usize::MAX));
-    let mut total_data_size: usize = 0;
+    // `PlaintextBudget` and `EncryptFrameSeq` (VR-017) are the verified
+    // limits; this loop calls them once per frame and maps their rejections
+    // to errors.
+    let mut budget = PlaintextBudget::new();
     let Ok(frame_length) = usize::try_from(header.body.frame_length()) else {
         return ser_err(&format!(
             "frame length {} exceeds usize::MAX",
@@ -363,14 +560,7 @@ pub(crate) async fn encrypt_and_serialize_body(
     let frame_len = frame_length + iv_len + auth_len + 4;
     let mut frame_buf = Vec::with_capacity(frame_len);
 
-    //= spec/data-format/message-body.md#regular-frame-sequence-number
-    //= reason=START_SEQUENCE_NUMBER is defined as 1
-    //# Framed Data MUST start at Sequence Number 1.
-    //
-    //= spec/client-apis/encrypt.md#construct-a-frame
-    //= reason=START_SEQUENCE_NUMBER is defined as 1
-    //# If this is the first frame sequentially, the sequence number value MUST be 1.
-    let mut sequence_number = START_SEQUENCE_NUMBER;
+    let mut frame_seq = EncryptFrameSeq::start();
     let mut yielder = super::FrameYielder::new(frame_length);
     let alg_suite = get_alg_suite(&header.suite)?;
 
@@ -420,19 +610,13 @@ pub(crate) async fn encrypt_and_serialize_body(
         //# such that creating a regular frame does not processes all consumable bytes,
         //# then this operation MUST [construct a regular frame](#construct-a-frame)
         //# using the consumable plaintext bytes.
-        if sequence_number == ENDFRAME_SEQUENCE_NUMBER {
-            //= spec/data-format/message-body.md#framed-data
-            //# - The number of frames in a single message MUST be less than or equal to `2^32 - 1`.
+        let Some(sequence_number) = frame_seq.take_regular() else {
             return Err(val_err("too many frames"));
-        }
+        };
 
-        total_data_size += frame_length;
-        if total_data_size > MAX_DATA {
-            return Err(val_err("plaintext too large"));
-        }
-        if let Some(max_plaintext_len) = max_plaintext_length
-            && total_data_size > max_plaintext_len
-        {
+        match budget.add(frame_length, max_plaintext_length) {
+            Ok(()) => {}
+            Err(BudgetError::TooLarge) => return Err(val_err("plaintext too large")),
             //= spec/client-apis/encrypt.md#plaintext-length-bound
             //# If this input is provided, this operation MUST NOT encrypt a plaintext with length
             //# greater than this value.
@@ -442,9 +626,11 @@ pub(crate) async fn encrypt_and_serialize_body(
             //# and this operation determines at any time that the plaintext being encrypted
             //# has a length greater than this value,
             //# this operation MUST immediately fail.
-            return Err(val_err(
-                "plaintext length exceeds configured Plaintext Length Bound",
-            ));
+            Err(BudgetError::OverBound) => {
+                return Err(val_err(
+                    "plaintext length exceeds configured Plaintext Length Bound",
+                ));
+            }
         }
 
         //= spec/client-apis/encrypt.md#construct-a-frame
@@ -483,31 +669,22 @@ pub(crate) async fn encrypt_and_serialize_body(
             sig_digest,
         )
         .await?;
-
-        //= spec/data-format/message-body.md#regular-frame-sequence-number
-        //# Subsequent frames MUST be in order and MUST contain an increment of 1 from the previous frame.
-        //
-        //= spec/client-apis/encrypt.md#construct-a-frame
-        //# Otherwise, the sequence number value MUST be 1 greater than the value of the sequence number
-        //# of the previous frame.
-        sequence_number += 1;
     }
 
     //= spec/client-apis/encrypt.md#construct-the-body
     //# When the end of the input is indicated,
     //# this operation MUST perform the following until all consumable plaintext bytes are processed:
     // Final frame
-    total_data_size += in_size;
-    if total_data_size > MAX_DATA {
-        return Err(val_err("plaintext too large"));
+    match budget.add(in_size, max_plaintext_length) {
+        Ok(()) => {}
+        Err(BudgetError::TooLarge) => return Err(val_err("plaintext too large")),
+        Err(BudgetError::OverBound) => {
+            return Err(val_err(
+                "plaintext length exceeds specified Plaintext Length Bound",
+            ));
+        }
     }
-    if let Some(max_len) = max_plaintext_length
-        && total_data_size > max_len
-    {
-        return Err(val_err(
-            "plaintext length exceeds specified Plaintext Length Bound",
-        ));
-    }
+    let sequence_number = frame_seq.final_seq();
 
     //= spec/data-format/message-body.md#final-frame
     //= reason=in_size is the plaintext length for the final frame; this asserts it is <= frame_length
@@ -544,6 +721,7 @@ pub(crate) async fn encrypt_and_serialize_body(
             message_id: header.body.message_id(),
             aad_content: BodyAADContent::FinalFrame,
             //= spec/data-format/message-body.md#final-frame-sequence-number
+            //= reason=frame_seq.final_seq() (VR-017) returns the regular frame count plus 1
             //# The Final Frame Sequence number MUST be equal to the total number of frames in the Framed Data.
             sequence_number,
             is_final: true,
@@ -595,5 +773,34 @@ mod tests {
             expected.extend(old_prefix(seq, &iv, final_content_len));
             assert_eq!(buf, expected, "seq={seq} final={final_content_len:?}");
         }
+    }
+
+    // MAX_DATA + 1 does not fit a 32-bit `usize`.
+    #[cfg(target_pointer_width = "64")]
+    #[test]
+    fn plaintext_budget_rejects_over_max_data() {
+        let max = usize::try_from(MAX_DATA).unwrap();
+        assert_eq!(
+            PlaintextBudget::new().add(max + 1, None),
+            Err(BudgetError::TooLarge)
+        );
+        let mut b = PlaintextBudget::new();
+        assert_eq!(b.add(max, None), Ok(()));
+        assert_eq!(b.add(1, None), Err(BudgetError::TooLarge));
+    }
+
+    #[test]
+    fn frame_seq_stops_at_endframe() {
+        assert_eq!(EncryptFrameSeq::start().take_regular(), Some(1));
+        // Reaching ENDFRAME_SEQUENCE_NUMBER through `take_regular` takes
+        // 2^32 - 2 calls, so the test builds the counter there directly. The
+        // ghost frame count is erased at runtime and this module is not
+        // verified.
+        let mut s = EncryptFrameSeq {
+            next: ENDFRAME_SEQUENCE_NUMBER,
+            frames: Ghost::assume_new(),
+        };
+        assert_eq!(s.take_regular(), None);
+        assert_eq!(s.final_seq(), ENDFRAME_SEQUENCE_NUMBER);
     }
 }

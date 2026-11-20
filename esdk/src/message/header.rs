@@ -12,6 +12,7 @@ use super::v2_header_body::{
     commit_key_length, has_commitment, read_v2_header_body, write_v2_header_body,
 };
 use super::{DigestWriter, Error, header_auth, ser_err, serialize_functions};
+use crate::decrypt_gate::{CommitmentAccepted, commitment_gate};
 use crate::error::{Kind, err, val_err};
 use crate::shapes::{EncryptionContext, Sink, Source, Tee};
 use aws_crypto_mpl::types::AlgorithmSuite;
@@ -61,28 +62,23 @@ pub(crate) enum SuiteDataError {
     LengthMismatch,
 }
 
-/// The verified accept/reject decision for key-commitment validation (VR-001,
-/// property (a)). The result is `Ok` exactly when the header's suite data
-/// equals the derived (expected) suite data **and** the suite's committed
-/// length agrees with the expected length; otherwise it rejects, commitment
-/// first.
+/// Decide whether the header's key commitment is valid (VR-001).
 ///
-/// `bytes_equal` is the outcome of the slice comparison, which the
-/// `validate_suite_data` adapter performs at the trusted boundary with
-/// `aws_lc_rs::constant_time::verify_slices_are_equal`. The `requires` ties
-/// `bytes_equal` to real `Seq<u8>` equality of the two buffers, so the
-/// `ensures` constrains the decision against the actual byte sequences and
-/// lengths, not against an opaque flag:
+/// Returns `Ok` only when the header's suite data equals the expected commit
+/// key and the suite's commit length equals the expected length. A byte
+/// mismatch is reported before a length mismatch.
 ///
-/// - `Ok` iff `header@ == expected@` and `commit_len == expected.len()`;
-/// - `Err(CommitmentMismatch)` iff `header@ != expected@` (checked first);
-/// - `Err(LengthMismatch)` iff `header@ == expected@` but the lengths disagree.
+/// `bytes_equal` is the result of comparing `header` and `expected` with
+/// `aws_lc_rs::constant_time::verify_slices_are_equal` in
+/// `validate_suite_data`. The `requires` says it is true exactly when the two
+/// byte sequences are equal.
 ///
-/// NOT proven here, and trusted/structural by design:
-/// - constant time: the timing behavior of `verify_slices_are_equal` is an
-///   aws-lc-rs API contract; Verus does not model timing;
-/// - ordering (validation before frame decryption): enforced by call-site
-///   structure and code review, not by this proof.
+/// This proof does not cover:
+/// - constant-time comparison, which comes from aws-lc-rs;
+/// - checking the commitment before decrypting any frame. That order is
+///   covered by the tokens in `crate::decrypt_gate` (VR-001 property (b)):
+///   `commitment_gate` wraps this function and returns a token only on `Ok`,
+///   and the compiler stops frame decryption from running without it.
 pub(crate) fn suite_data_check(
     bytes_equal: bool,
     header: &[u8],
@@ -304,7 +300,7 @@ pub(crate) fn validate_suite_data(
     suite: &AlgorithmSuite,
     header_body: &HeaderBody,
     expected_suite_data: &[u8],
-) -> Result<(), Error> {
+) -> Result<CommitmentAccepted, Error> {
     let header_suite_data = header_body.suite_data();
 
     //= spec/framework/transitive-requirements.md#hkdf-commit-key
@@ -325,15 +321,18 @@ pub(crate) fn validate_suite_data(
     //
     // `suite_data_check` is the verified decision (VR-001 property (a)): it
     // accepts iff the commitment matches and the committed length agrees, and
-    // rejects commitment-first otherwise. This adapter owns the crate `Error`
-    // type and maps each rejection to the message it previously produced.
-    match suite_data_check(
+    // rejects commitment-first otherwise. `commitment_gate` runs it and, only
+    // when it accepts, returns the `CommitmentAccepted` token that frame
+    // decryption needs (VR-001 property (b)). This adapter owns the crate
+    // `Error` type and maps each rejection to the message it previously
+    // produced.
+    match commitment_gate(
         bytes_equal,
         header_suite_data,
         expected_suite_data,
         commit_key_length(suite),
     ) {
-        Ok(()) => Ok(()),
+        Ok(accepted) => Ok(accepted),
         Err(SuiteDataError::CommitmentMismatch) => Err(err(
             Kind::Cryptographic,
             "the key commitment in the message header does not match the derived commit key",
@@ -418,5 +417,52 @@ mod tests {
         assert_eq!(edk_count_check(3, Some(3)), EdkCount::Ok);
         assert_eq!(edk_count_check(4, Some(3)), EdkCount::OverMax);
         assert_eq!(edk_count_check(2, Some(3)), EdkCount::Ok);
+    }
+
+    // Defense-in-depth test of esdk's own fallback check: the MPL rejects
+    // encryption materials with zero EDKs before the public API hands them to
+    // esdk.
+    #[test]
+    fn validate_max_edks_rejects_empty() {
+        let e = validate_max_encrypted_data_keys(None, &[]).unwrap_err();
+        assert_eq!(e.kind(), Kind::InvalidMaterials);
+        assert_eq!(
+            e.message(),
+            "encrypted data key count must be greater than 0"
+        );
+    }
+
+    // Defense-in-depth test: `header_version_supports_commitment` already
+    // rejects a V2 header whose suite data is not the commit key length, so
+    // only a hand-built header reaches the LengthMismatch arm.
+    #[test]
+    fn validate_suite_data_reports_length_mismatch() {
+        use super::super::header_types::V2HeaderBody;
+        use crate::shapes::AlgorithmSuiteId;
+        let suite = AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey.specification();
+        let body = |suite_data: Vec<u8>| {
+            HeaderBody::V2Body(V2HeaderBody {
+                algorithm_suite: suite,
+                message_id: vec![0; MESSAGE_ID_LEN_V2],
+                encryption_context: EncryptionContext::new(),
+                encrypted_data_keys: Vec::new(),
+                content_type: ContentType::Framed,
+                frame_length: 4096,
+                suite_data,
+            })
+        };
+
+        // The bytes match, but 16 is not the suite's 32-byte commit key length.
+        let Err(e) = validate_suite_data(&suite, &body(vec![7; 16]), &[7; 16]) else {
+            panic!("a 16-byte suite data must be rejected for a 32-byte commit key");
+        };
+        assert_eq!(e.kind(), Kind::Internal);
+        assert_eq!(
+            e.message(),
+            "algorithm suite data length does not match the algorithm suite's declared suite-data length"
+        );
+
+        // Matching bytes at the declared length are accepted.
+        assert!(validate_suite_data(&suite, &body(vec![7; 32]), &[7; 32]).is_ok());
     }
 }

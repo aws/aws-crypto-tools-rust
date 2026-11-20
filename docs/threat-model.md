@@ -4,7 +4,7 @@
 **Date:** September 2026  
 **Scope:** AWS Encryption SDK (Rust implementation — `aws-esdk` crate, v2.0.0)  
 **Code Baseline:** commit `d8c1c3d` ("feat(esdk-cpp): C++ shim types, raw AES keyring round trip (#66)")  
-**Revised:** November 2026, against `2fb844fa` (branch `Mahnush_Verus`). Rechecked at that commit: the MPL dependency path (§1, §3.1a), commitment-policy enforcement (§7.2, E3, §15.2), key zeroization (I1, §15.2), in-tree `unsafe` (§12.2), the dependency table (§12.3), FIPS features (§12.4), the spec source (§16) and the verification status (§14). The verification status reflects the in-crate prim proofs (VR-006/008/009 prim half) and VR-001 properties (a) in-crate and (b) model-only. The threat analysis in the other sections is the `d8c1c3d` analysis and was not re-audited.  
+**Revised:** November 2026, against `2fb844fa` (branch `Mahnush_Verus`). Rechecked at that commit: the MPL dependency path (§1, §3.1a), commitment-policy enforcement (§7.2, E3, §15.2), key zeroization (I1, §15.2), in-tree `unsafe` (§12.2), the dependency table (§12.3), FIPS features (§12.4), the spec source (§16) and the verification status (§14). The verification status reflects the in-crate prim proofs (VR-006/008/009 prim half) and VR-001 properties (a) in-crate and (b) model-only; VR-001 (b) and VR-002 were later moved in-crate on branch `vr001b-vr002-stage2` (§14, T1/E3 residual risk). The threat analysis in the other sections is the `d8c1c3d` analysis and was not re-audited.  
 **Methodology:** STRIDE + Attack Trees + Risk-Based Verification Prioritization  
 **Classification:** Internal  
 **Pipeline Reference:** `.kiro/agents/ai-verification-pipeline.md`
@@ -400,6 +400,13 @@ Root Goal: Recover AES-GCM plaintext
 
 **Feasibility:** Low — IV is derived from sequential frame number, not random. Would require >2^32 frames.  
 **Existing Mitigation:** Spec limits frames to 2^32 - 1 per message (sequence number is u32).
+**Verification (VR-017, branch `verus-encrypt-limits-and-lengths`):** the "implementation wraps the
+32-bit sequence number" leaf is now Verus-proven not to happen on encrypt. `EncryptFrameSeq`
+(`esdk/src/message/body/body_encrypt.rs`) starts at 1, adds exactly 1 per regular frame, refuses
+the regular frame that would be numbered `u32::MAX`, and gives the final frame the next number, so
+no two frames of a message get the same number (and so the same IV). For frame lengths of 1 to 16
+bytes this guard, not the 2^36 - 32 plaintext limit, is what stops the counter (also proven).
+Still unverified: the async loop that passes each number to `construct_frame`.
 
 ### Attack Tree 2: Process Data with Tampered Header (Tampering)
 
@@ -482,9 +489,14 @@ or modifies the encryption context.
 
 **Residual Risk:** None if implemented correctly. The header auth tag is computed/verified over
 the full header via the AES-GCM path, and the commitment policy is checked before decryption.
-The ordering (verify header before decrypting the body) has a Verus proof only over a standalone
-model (`verification/header_auth_ordering_proofs.rs`, VR-002), not over the shipped async
-`decrypt_steps` — see [Verification Recommendations](#14-verification-recommendations-prioritized).
+The ordering (verify header before decrypting the body, VR-002) now holds for the shipped decrypt
+path. `step_decrypt_body` needs a `HeaderVerified` token, which only `esdk/src/decrypt_gate.rs`
+can create. Verus proves the token is created only when the header tag check returned `Ok`, and
+the compiler enforces that frames cannot be decrypted without it. Still trusted: that the real tag
+check result is passed in, that aws-lc-rs AES-GCM accepts only a valid tag, and that frames are
+decrypted only through `step_decrypt_body`. The earlier model
+(`verification/header_auth_ordering_proofs.rs`) is superseded — see
+[Verification Recommendations](#14-verification-recommendations-prioritized).
 
 ---
 
@@ -509,7 +521,7 @@ ciphertext that decrypts to different plaintexts depending on which data key is 
 - `FORBID_ENCRYPT_ALLOW_DECRYPT` only exists for backward compatibility with pre-commitment messages
 - Commitment-policy enforcement is implemented: `CommitmentPolicy::allows_for_encrypt` / `allows_for_decrypt` (`mpl/src/structures/commitment_policy.rs`) are checked by the ESDK on the input suite (`esdk/src/encrypt.rs`), the parsed suite (`esdk/src/decrypt.rs`) and the materials' suite (`esdk/src/materials.rs`), and by the default CMM (`mpl/src/cmm/default_cmm.rs`). (History: at the `d8c1c3d` baseline the linked legacy shim's `validate_commitment_policy_on_*` returned `Ok(())`; that shim was removed in `cdd5980`.)
 
-**Residual Risk:** Systems that explicitly configure `FORBID_ENCRYPT_ALLOW_DECRYPT` remain vulnerable to this attack class (a conscious spec trade-off). The commit-key comparison decision is now Verus-proven (VR-001, property (a): accept iff the header suite data equals the derived value and the lengths agree); its placement before frame decryption (property (b)) is now proven **model only** (`verification/commitment_ordering_proofs.rs`, same status as VR-002) — over a model of the decrypt pipeline, **not** over the shipped async `decrypt_steps` (what stays trusted is that `decrypt_steps` is the real pipeline and that the async frame loop runs after the synchronous commitment step returns; an in-place / typestate Stage 2 proof was deliberately not taken). Its constant-time execution (property (c)) is trusted to aws-lc-rs. The policy checks remain unproven.
+**Residual Risk:** Systems that explicitly configure `FORBID_ENCRYPT_ALLOW_DECRYPT` remain vulnerable to this attack class (a conscious spec trade-off). The commit-key comparison decision is now Verus-proven (VR-001, property (a): accept iff the header suite data equals the derived value and the lengths agree); its placement before frame decryption (property (b)) now holds for the shipped decrypt path: a `CommitmentAccepted` token (`esdk/src/decrypt_gate.rs`) is Verus-proven to be created only when the check passed (or the suite does not commit), and the compiler enforces that frames cannot be decrypted without it. Still trusted: that the unverified callers pass the real comparison result and `has_commitment` value, and that frames are decrypted only through `step_decrypt_body`. The earlier model (`verification/commitment_ordering_proofs.rs`) is superseded. Its constant-time execution (property (c)) is trusted to aws-lc-rs. The policy checks remain unproven.
 
 ---
 
@@ -626,6 +638,39 @@ potentially tampered data.
 - SDK should document this constraint prominently
 
 **Residual Risk:** Application-level responsibility. The SDK cannot enforce how callers handle streamed output.
+
+**Verification (VR-015, branch `signature-release-gate`):** the SDK side of the first spec
+mitigation is now checked in-crate. The final plaintext (final frame, the last full frame before
+an empty final frame, or a non-framed body) is held in a `HeldFinalPlaintext` and can only be
+written to the caller through `release`, which needs a `SignatureVerified` token
+(`esdk/src/decrypt_gate.rs`). Verus proves the token is created only when the signature check
+returned `true` for a signed suite with a verification key, or the suite is unsigned and there is
+no key; the compiler enforces that the final plaintext cannot be written before the token exists.
+Since VR-015 (b) (branch `sizing-and-sigpresence`), the check that the key is present exactly
+when the suite is signed is the verified `signature_presence_gate`, and step 5 needs the
+`SignaturePresence` token it mints, so a CMM that drops the verification key for a signed suite
+cannot make decrypt skip the signature check. Still trusted: aws-lc-rs signature verification;
+that the callers pass the real check result, suite flag and key-present flag; that the decryption
+materials do not change between the presence check and step 5; and that the final plaintext
+reaches the caller only through the gated write. ("No verification key means unsigned suite" is
+no longer trusted.) Regular non-final frames are still
+released before the signature, as the spec allows, so the residual risk above (callers acting on
+streamed frames before the operation finishes) is unchanged.
+
+**Encrypt side (VR-019, branch `verus-encrypt-signing-key-presence`; also relevant to R1):** the
+encrypt signing step gets the signing key only through a `SigningKeyPresent` token
+(`esdk/src/encrypt_gate.rs`). Verus proves that `signing_key_gate` makes the token iff the suite
+signs and the encryption materials have a signing key, and that the token holds exactly that key.
+The compiler enforces that `ecdsa_sign_digest` cannot get the key any other way. This is the
+counterpart of VR-015 (b), but it covers one direction only (finding F3). esdk rejects a signing
+suite with no signing key only in `step_construct_signature`, after the header and body are
+written, and it does not reject a non-signing suite whose materials have a signing key. Both the
+reverse direction and early rejection rely on the MPL (`GetEncryptionMaterials::send` /
+`check_encryption_materials` and `EncryptionMaterialsBuilder::build`), which is trusted code
+reading. So the residual risk that a misbehaving CMM makes encrypt omit the signature for a
+signing suite, or sign for a non-signing suite, now rests on the MPL checks plus the proven esdk
+gate in step 4. Also trusted: that `encrypt_steps` runs step 4 for every signing suite and that
+step 4 writes the footer.
 
 ---
 
@@ -817,34 +862,47 @@ All targets reference real files in this repository. Scores below are the origin
 the current coverage gaps, full scoring and agent assignments see
 `docs/verification-recommendations.md`.
 
-**Verification status on branch `vr011-confinement`** (in-crate counts; the model results are
-unchanged since `5ea2a804`). Verus checks two things:
+**Verification status on branch `verus-encrypt-signing-key-presence`** (in-crate counts; the model
+results are unchanged since `5ea2a804`). Verus checks two things:
 
 - **In-crate (shipped `esdk` code).** `make -C esdk verus` verifies the `verus!` blocks in
-  `esdk/src/message/`, `esdk/src/key_derivation.rs` and `esdk/src/secret.rs` (34 exec fns,
-  3 proof fns): `57 verified, 0 errors` for both the default features and
-  `--no-default-features --features aws-lc-sys` (40 at `5ea2a804`, 45 after VR-009). This
+  `esdk/src/message/`, `esdk/src/key_derivation.rs`, `esdk/src/secret.rs` and
+  `esdk/src/decrypt_gate.rs`, `esdk/src/encrypt.rs` and `esdk/src/encrypt_gate.rs` (54 exec fns,
+  11 proof fns): `97 verified,
+  0 errors` for both the default features and `--no-default-features --features aws-lc-sys` (40 at
+  `5ea2a804`, 45 after VR-009, 57 after VR-011, 69 after VR-012, 73 after the VR-001 (b) / VR-002
+  tokens, 77 after VR-015, 81 after VR-016, 94 after VR-017 / VR-018). This
   covers parts of VR-003 (big-endian decoding, bounded readers, header-field decisions, the 0x41
   Base64 hint), VR-004 (regular- and final-frame sequence checks, frames-start-at-1 lemmas),
   VR-005 (body AAD, IV, frame prefix layout), VR-007 (EDK count check), the esdk half of VR-009
-  (key-derivation length checks) and the secret-type accessors of VR-011. The async readers and
-  loops around these cores are unverified glue.
+  (key-derivation length checks), the secret-type accessors of VR-011, the VR-012 codec lemmas, and
+  the decrypt-order tokens of VR-001 (b) and VR-002, the VR-015 signature release gate
+  (threat R3) with its presence check (VR-015 (b)), and VR-016 (every esdk AES-GCM decryption
+  gets a plaintext buffer as long as its ciphertext, so BUG-07(b) is unreachable from esdk),
+  VR-017 (encrypt-side MAX_DATA budget and frame sequence numbers; Attack Tree 1) and VR-018
+  (encrypt-side suite-data and data-key length checks), and VR-019 (the encrypt signing-key
+  check, one direction only; threat R3/R1). The async readers and loops around these cores
+  are unverified glue.
+- **Decrypt order (VR-001 (b), VR-002), Verus plus the compiler.** Verus proves that the
+  `CommitmentAccepted` and `HeaderVerified` tokens in `esdk/src/decrypt_gate.rs` are created only
+  when the commitment check and the header tag check passed. The compiler enforces the order: only
+  `decrypt_gate` can build a token, and `step_decrypt_body` cannot be called without a
+  `&HeaderVerified`. Trusted: the unverified callers pass the real check results, aws-lc-rs, frames
+  are decrypted only through `step_decrypt_body`, and a token is not tied to one message.
 - **VR-011 confinement (compiler- and lint-checked, not Verus).** esdk code outside
   `esdk/src/secret.rs` cannot read the bytes of the plaintext data key or the derived message key
   (Rust privacy, plus clippy `disallowed-methods` in `esdk/clippy.toml`). VR-011 as a whole is not
   Verus-proven.
 - **Model only (standalone files in `verification/`).** `make -C verification verify`: 11 files,
-  78 verified, 0 errors. VR-002 (header-auth ordering), VR-001 property (b) (key-commitment
-  ordering, `commitment_ordering_proofs.rs`), VR-006 (AES-GCM buffer bounds in `prim`),
-  the EDK list loop, the frame `ct ‖ tag` append and VR-010 (zeroization) are checked only here.
+  78 verified, 0 errors. The EDK list loop, the frame `ct ‖ tag` append and VR-010
+  (zeroization) are checked only here. The VR-002, VR-001 (b) and VR-006 models
+  (`header_auth_ordering_proofs.rs`, `commitment_ordering_proofs.rs`,
+  `aes_gcm_bounds_proofs.rs`) are superseded by in-crate proofs and kept as history.
   The VR-010 model describes a `write_volatile` loop that no longer exists (removed in
   `a864ad87`); it is deferred and unchanged.
-- **Partly in-crate:** VR-001 (key commitment) — the commitment equality/length decision in
-  `validate_suite_data` is Verus-proven in-crate (property a); the validation-before-frame-decryption
-  ordering (property b) is now proven **model only** (`verification/commitment_ordering_proofs.rs`,
-  same status as VR-002) over a model of the decrypt pipeline, **not** over the shipped async
-  `decrypt_steps` (an in-place / typestate Stage 2 proof was deliberately not taken); constant-time
-  (property c) is trusted to aws-lc-rs.
+- **VR-001 (key commitment):** the commitment equality/length decision in `validate_suite_data`
+  is Verus-proven in-crate (property a); the check-before-frame-decryption order (property b) is
+  in-crate through the tokens above; constant time (property c) is trusted to aws-lc-rs.
 - **Done (in-crate):** VR-008 (ECDSA length) and the prim half of VR-009 (HKDF length,
   `prim/src/hkdf.rs`) are proven in-crate since Verus was enabled in `prim`.
 

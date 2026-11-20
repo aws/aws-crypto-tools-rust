@@ -32,12 +32,10 @@ verus! {
 /// cargo build.
 const MAX_SALT_SIZE: usize = 64;
 
-/// The AES-GCM key size an HKDF output-length maps to, for the three lengths
-/// HKDF accepts. Kept inside `verus!` so the crate [`Error`] and the external
-/// `aws-lc-rs` `aead::Algorithm` — neither of which Verus models — stay out of
-/// the verified decision (the device T1 uses with `SignCoreError` and T2 with
-/// `AesDecryptLenError`). The unverified [`get_len`] adapter maps each variant
-/// to the matching `aws-lc-rs` algorithm.
+/// The AES-GCM key size for each HKDF output length that HKDF accepts. Verus
+/// does not model the crate [`Error`] or `aws-lc-rs`'s `aead::Algorithm`, so
+/// the verified code returns this enum and [`get_len`] maps it to the
+/// `aws-lc-rs` algorithm.
 enum HkdfKeyLen {
     /// A 16-byte key: AES-128-GCM.
     Aes128,
@@ -68,18 +66,10 @@ enum HkdfDigest {
     Sha512,
 }
 
-/// The verified HKDF key-length decision (VR-009, prim half): accept an
-/// output length iff it is one of the three AES-GCM key sizes — 16, 24, or
-/// 32 — and report which one. This closes the cross-crate pair with esdk's
-/// already-verified VR-009 esdk half (`identity_kdf_key_len_ok` /
-/// `check_v2_key_lengths`), which keys off the same `{16, 24, 32}` shape.
-///
-/// The `ensures` pins the decision to the exact `usize` value from
-/// `okm.len()`: the result is `Ok` for exactly `{16, 24, 32}` (each mapped to
-/// its algorithm) and `Err` for every other length. The decision is therefore
-/// total and correct; no length can fall through unhandled. No crypto
-/// property is proven — the chosen algorithm is handed to the external
-/// `aws-lc-rs` expand in the [`get_len`] adapter, outside `verus!`.
+/// Accept an HKDF output length only if it is 16, 24, or 32 bytes, and return
+/// the matching AES-GCM key size (VR-009). The esdk side of VR-009
+/// (`identity_kdf_key_len_ok`, `check_v2_key_lengths`) checks the same three
+/// lengths.
 fn hkdf_key_len_ok(len: usize) -> (r: Result<HkdfKeyLen, HkdfKeyLenError>)
     ensures
         (r is Ok) <==> (len == 16 || len == 24 || len == 32),
@@ -114,16 +104,9 @@ fn salt_size_core(d: HkdfDigest) -> (sz: usize)
     }
 }
 
-/// The verified no-salt slice (VR-009, prim half, part (b)): take the first
-/// `sz` bytes of the all-zero salt buffer, where `sz` is the digest's default
-/// salt length. This is the slice operation that would panic in
-/// [`hkdf_no_salt`] if `sz` could exceed the buffer length.
-///
-/// The caller supplies the `MAX_SALT_SIZE`-byte buffer and the digest; the
-/// `requires` records that the buffer is exactly `MAX_SALT_SIZE` long, and
-/// `salt_size_core` guarantees `sz <= MAX_SALT_SIZE`. So `sz <= salt.len()`
-/// and the subrange `salt[..sz]` is proven in range — the slice cannot panic.
-/// The `ensures` fixes the returned length to the digest's salt size.
+/// Return the first `sz` bytes of the all-zero salt buffer, where `sz` is the
+/// digest's default salt length (VR-009). Because `sz <= MAX_SALT_SIZE`, which
+/// is the buffer length, the slice cannot panic.
 fn no_salt_slice_core(salt: &[u8], d: HkdfDigest) -> (s: &[u8])
     requires
         salt@.len() == MAX_SALT_SIZE,
@@ -134,11 +117,7 @@ fn no_salt_slice_core(salt: &[u8], d: HkdfDigest) -> (s: &[u8])
         d is Sha512 ==> s@.len() == 64,
 {
     let sz = salt_size_core(d);
-    // `salt_size_core` gives `sz <= MAX_SALT_SIZE` and the precondition gives
-    // `salt.len() == MAX_SALT_SIZE`, so `sz <= salt.len()` and the subrange is
-    // in bounds. Verus discharges the slice-bounds obligation here. The
-    // `0..sz` form is `&salt[..sz]` spelled out: Verus models `Range` but not
-    // the `RangeTo` sugar.
+    // Written as `0..sz` because Verus supports `Range` but not `..sz`.
     &salt[0..sz]
 }
 
@@ -156,12 +135,8 @@ const fn digest_to_hkdf(alg: DigestAlg) -> HkdfDigest {
 
 /// Select the `aws-lc-rs` AEAD algorithm for an HKDF output length.
 ///
-/// The `{16, 24, 32}` decision is the verified [`hkdf_key_len_ok`] core
-/// (VR-009, prim half); this thin adapter maps each verified variant to the
-/// matching external `aws-lc-rs` algorithm and turns a rejection into the
-/// crate [`Error`] — the pieces Verus does not model. The length decision is
-/// proven total and correct; the algorithm bytes and the downstream expand are
-/// the trusted `aws-lc-rs` boundary.
+/// The length check is the verified [`hkdf_key_len_ok`]. This function maps
+/// its result to an `aws-lc-rs` algorithm or an [`Error`].
 ///
 /// # Errors
 ///
