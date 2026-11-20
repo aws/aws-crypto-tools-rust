@@ -29,6 +29,16 @@
 #include <span>
 #endif
 
+// The C++ shim build process writes Config.h to match the Cargo features.
+// If Config.h isn't on the include path, assume default Cargo features, which means all features are on (except FIPS).
+#if __has_include("aws/esdk/Config.h")
+#include "aws/esdk/Config.h"
+#else
+#define AWS_ESDK_CPP_KMS 1
+#define AWS_ESDK_CPP_DDB 1
+#define AWS_ESDK_CPP_RT_TOKIO 1
+#endif
+
 namespace Aws::Esdk {
 
 // File-wide invariants.
@@ -499,6 +509,7 @@ std::chrono::nanoseconds to_nanoseconds(std::chrono::duration<Rep, Period> d) {
 }
 }  // namespace detail
 
+#if AWS_ESDK_CPP_KMS || AWS_ESDK_CPP_DDB
 /// Static AWS credentials, such as temporary credentials issued for a single request.
 /// The library never puts the secret access key or session token in an exception message.
 class Credentials {
@@ -552,7 +563,9 @@ public:
     /// Unset gives each service client its own connection pool.
     AwsSdkClientConfig& with_http_client(const HttpClient& http_client);
 };
+#endif  // AWS_ESDK_CPP_KMS || AWS_ESDK_CPP_DDB
 
+#if AWS_ESDK_CPP_KMS
 /// KMS Client.
 /// Each client has its own connection pool unless its AwsSdkClientConfig sets an HttpClient.
 /// Clients without explicit credentials share one default credential chain.
@@ -575,7 +588,9 @@ public:
     /// Throws ValidationException if `headers` is empty, or a name or value is empty, invalid, or repeated.
     KmsClient with_headers(const std::vector<std::pair<std::string, std::string>>& headers) const;
 };
+#endif  // AWS_ESDK_CPP_KMS
 
+#if AWS_ESDK_CPP_DDB
 /// DynamoDB client.
 /// Each client has its own connection pool unless its AwsSdkClientConfig sets an HttpClient.
 /// Clients without explicit credentials share one default credential chain.
@@ -592,7 +607,9 @@ public:
     /// This client is unchanged.
     DdbClient with_credentials(const Credentials& credentials) const;
 };
+#endif  // AWS_ESDK_CPP_DDB
 
+#if AWS_ESDK_CPP_KMS && AWS_ESDK_CPP_DDB
 /// Optional Key Store parameters.
 /// A field left unset is omitted from the ESDK Rust's Key Store configuration.
 class KeyStoreOptions {
@@ -634,6 +651,7 @@ public:
              const std::string& kms_arn,
              const KeyStoreOptions& options = {});
 };
+#endif  // AWS_ESDK_CPP_KMS && AWS_ESDK_CPP_DDB
 
 /// Base Keyring type.
 /// Every concrete keyring must derive from this type.
@@ -676,6 +694,7 @@ protected:
         : impl_(std::move(impl)) {}
 };
 
+#if AWS_ESDK_CPP_RT_TOKIO
 /// Optional StormTrackingCmc parameters.
 /// A field left unset keeps the ESDK Rust's default.
 class StormTrackingCmcOptions {
@@ -739,6 +758,7 @@ public:
     /// \param options Parameters to change; unset ones keep their defaults.
     explicit StormTrackingCmc(const StormTrackingCmcOptions& options = {});
 };
+#endif  // AWS_ESDK_CPP_RT_TOKIO
 
 /// An LRU cache with no storm tracking.
 class LocalCmc : public CryptographicMaterialsCache {
@@ -748,6 +768,7 @@ public:
     explicit LocalCmc(std::uint32_t entry_capacity);
 };
 
+#if AWS_ESDK_CPP_KMS && AWS_ESDK_CPP_DDB
 /// Optional hierarchical keyring parameters.
 /// A field left unset keeps the ESDK Rust's default.
 class HierarchicalKeyringOptions {
@@ -804,6 +825,7 @@ private:
                         const HierarchicalKeyringOptions& options,
                         Tag);
 };
+#endif  // AWS_ESDK_CPP_KMS && AWS_ESDK_CPP_DDB
 
 /// Keyring that wraps and unwraps data keys locally with AES-GCM.
 class RawAesKeyring : public Keyring {

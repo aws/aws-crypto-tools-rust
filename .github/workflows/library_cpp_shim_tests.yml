@@ -34,6 +34,12 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      # aws-lc-fips-sys builds AWS-LC's FIPS module with CMake.
+      - name: Install CMake
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y cmake
+        working-directory: .
+
       - uses: ./.github/actions/setup-rust
         with:
           components: clippy, rustfmt
@@ -53,6 +59,20 @@ jobs:
       - name: Clippy
         run: cargo clippy --all-targets -- -D warnings
 
+      - name: Clippy with FIPS
+        run: cargo clippy --all-targets --features fips -- -D warnings
+
+      - name: Install cargo-hack
+        uses: taiki-e/install-action@cargo-hack
+
+      - name: Clippy every feature combination
+        run: >-
+          cargo hack clippy --lib --feature-powerset --no-dev-deps
+          --exclude-features default
+          --mutually-exclusive-features aws-lc-sys,fips
+          --at-least-one-of aws-lc-sys,fips
+          -- -D warnings
+
       - name: Build
         run: cargo build --verbose
 
@@ -62,3 +82,9 @@ jobs:
       - name: Build and run C++ facade, example, and integration and local-correctness tests
         if: runner.os == 'Linux'
         run: make test-ci-cpp
+
+      - name: Build and run the raw AES example with only the raw AES keyring
+        run: |
+          cargo build --no-default-features --features aws-lc-sys
+          make raw_aes_example
+          ./raw_aes_keyring_example
