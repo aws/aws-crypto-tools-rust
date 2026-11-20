@@ -243,6 +243,9 @@ auto guard(F&& f) -> decltype(f()) {
 ::ffi::OptString to_opt(const std::optional<std::string>& o, const std::string& name) {
     return o ? ::ffi::OptString{true, to_rust_string(*o, name)} : ::ffi::OptString{false, {}};
 }
+::ffi::OptDuration to_opt(const std::optional<std::chrono::nanoseconds>& o, const char* field) {
+    return o ? ::ffi::OptDuration{true, to_ffi(*o, field)} : ::ffi::OptDuration{false, {}};
+}
 ::ffi::OptAlgId to_opt(const std::optional<AlgorithmSuiteId>& o) {
     return o ? ::ffi::OptAlgId{true, to_ffi(*o)} : ::ffi::OptAlgId{false, {}};
 }
@@ -307,6 +310,7 @@ Ciphertext make_ciphertext(::rust::Vec<std::uint8_t> buf) {
     return BytesFactory::make<Ciphertext>(std::move(buf));
 }
 
+#if AWS_ESDK_CPP_KMS || AWS_ESDK_CPP_DDB
 // MPL Client Config
 
 struct HttpClientImpl {
@@ -332,6 +336,7 @@ struct CredentialsAccess {
         return out;
     }
 };
+#endif  // AWS_ESDK_CPP_KMS || AWS_ESDK_CPP_DDB
 
 // Resources
 
@@ -342,6 +347,7 @@ struct CredentialsAccess {
 // an HKeyring may retain a Key Store and cache, while a raw AES keyring may retain nothing.
 using Retained = std::vector<std::shared_ptr<void>>;
 
+#if AWS_ESDK_CPP_KMS
 struct KmsClientImpl {
     // `retained` must be declared before the handle so its resources are destroyed last.
     // In C++, destructor behavior is declared first -> destroyed last.
@@ -351,20 +357,25 @@ struct KmsClientImpl {
     KmsClientImpl(Retained deps, ::rust::Box<::ffi::MplKmsClient> h)
         : retained(std::move(deps)), handle(std::move(h)) {}
 };
+#endif  // AWS_ESDK_CPP_KMS
 
+#if AWS_ESDK_CPP_DDB
 struct DdbClientImpl {
     Retained retained;
     ::rust::Box<::ffi::MplDdbClient> handle;
     DdbClientImpl(Retained deps, ::rust::Box<::ffi::MplDdbClient> h)
         : retained(std::move(deps)), handle(std::move(h)) {}
 };
+#endif  // AWS_ESDK_CPP_DDB
 
+#if AWS_ESDK_CPP_KMS && AWS_ESDK_CPP_DDB
 struct KeyStoreImpl {
     Retained retained;
     ::rust::Box<::ffi::KeyStore> handle;
     KeyStoreImpl(Retained deps, ::rust::Box<::ffi::KeyStore> h)
         : retained(std::move(deps)), handle(std::move(h)) {}
 };
+#endif  // AWS_ESDK_CPP_KMS && AWS_ESDK_CPP_DDB
 
 struct CryptographicMaterialsCacheImpl {
     Retained retained;
@@ -397,6 +408,7 @@ struct DecryptStreamImpl {
 
 }  // namespace detail
 
+#if AWS_ESDK_CPP_KMS || AWS_ESDK_CPP_DDB
 // AwsSdkClientConfig
 
 HttpClient::HttpClient()
@@ -424,9 +436,11 @@ AwsSdkClientConfig& AwsSdkClientConfig::with_credentials(const Credentials& cred
     impl_->cfg.credentials = ::ffi::OptCredentials{true, detail::CredentialsAccess::to_ffi(credentials)};
     return *this;
 }
+#endif  // AWS_ESDK_CPP_KMS || AWS_ESDK_CPP_DDB
 
 // Service clients
 
+#if AWS_ESDK_CPP_KMS
 KmsClient::KmsClient(const AwsSdkClientConfig& cfg)
     : impl_(std::make_shared<detail::KmsClientImpl>(
           detail::Retained{},
@@ -454,7 +468,9 @@ KmsClient KmsClient::with_headers(
         detail::Retained{},
         detail::guard([&] { return ::ffi::kms_client_with_headers(*impl_->handle, std::move(ffi_headers)); })));
 }
+#endif  // AWS_ESDK_CPP_KMS
 
+#if AWS_ESDK_CPP_DDB
 DdbClient::DdbClient(const AwsSdkClientConfig& cfg)
     : impl_(std::make_shared<detail::DdbClientImpl>(
           detail::Retained{},
@@ -470,9 +486,11 @@ DdbClient DdbClient::with_credentials(const Credentials& credentials) const {
         detail::Retained{},
         detail::guard([&] { return ::ffi::ddb_client_with_credentials(*impl_->handle, ffi_credentials); })));
 }
+#endif  // AWS_ESDK_CPP_DDB
 
 // KeyStore
 
+#if AWS_ESDK_CPP_KMS && AWS_ESDK_CPP_DDB
 KeyStore::KeyStore(const std::string& table_name,
                    const std::string& logical_key_store_name,
                    const std::string& kms_arn,
@@ -502,15 +520,11 @@ KeyStore::KeyStore(const std::string& table_name,
               if (options.ddb_client_) c.ddb_client = &*options.ddb_client_->impl_->handle;
               return ::ffi::create_keystore(c);
           }))) {}
+#endif  // AWS_ESDK_CPP_KMS && AWS_ESDK_CPP_DDB
 
 // Cryptographic materials caches
 
-namespace detail {
-::ffi::OptDuration to_opt(const std::optional<std::chrono::nanoseconds>& o, const char* field) {
-    return o ? ::ffi::OptDuration{true, to_ffi(*o, field)} : ::ffi::OptDuration{false, {}};
-}
-}  // namespace detail
-
+#if AWS_ESDK_CPP_RT_TOKIO
 StormTrackingCmc::StormTrackingCmc(const StormTrackingCmcOptions& options)
     : CryptographicMaterialsCache(std::make_shared<detail::CryptographicMaterialsCacheImpl>(
           detail::Retained{}, detail::guard([&] {
@@ -529,6 +543,7 @@ DefaultCmc::DefaultCmc(std::uint32_t entry_capacity)
     : CryptographicMaterialsCache(std::make_shared<detail::CryptographicMaterialsCacheImpl>(
           detail::Retained{},
           detail::guard([&] { return ::ffi::create_default_cmc(entry_capacity); }))) {}
+#endif  // AWS_ESDK_CPP_RT_TOKIO
 
 LocalCmc::LocalCmc(std::uint32_t entry_capacity)
     : CryptographicMaterialsCache(std::make_shared<detail::CryptographicMaterialsCacheImpl>(
@@ -546,6 +561,7 @@ Keyring Keyring::adopt(void* raw_handle) {
         ::rust::Box<::ffi::Keyring>::from_raw(static_cast<::ffi::Keyring*>(raw_handle))));
 }
 
+#if AWS_ESDK_CPP_KMS && AWS_ESDK_CPP_DDB
 HierarchicalKeyring::HierarchicalKeyring(KeyStore key_store,
                                          const std::string& branch_key_id,
                                          std::chrono::nanoseconds ttl,
@@ -564,6 +580,7 @@ HierarchicalKeyring::HierarchicalKeyring(KeyStore key_store,
               if (options.cache_) in.cache = &*options.cache_->impl_->handle;
               return ::ffi::create_hierarchical_keyring(in);
           }))) {}
+#endif  // AWS_ESDK_CPP_KMS && AWS_ESDK_CPP_DDB
 
 RawAesKeyring::RawAesKeyring(const std::string& key_namespace,
                              const std::string& key_name,
