@@ -93,6 +93,7 @@ fn key_store_request(kms_configuration: KmsConfiguration) -> CreateKeyStoreClien
         kms_configuration,
         kms_client_region: "us-west-2".to_owned(),
         ddb_client_region: "us-west-2".to_owned(),
+        ddb_endpoint: None,
     }
 }
 

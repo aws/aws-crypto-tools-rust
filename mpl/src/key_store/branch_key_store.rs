@@ -182,7 +182,22 @@ impl DynamoDbKeyStore {
             )
         })?;
 
-        record_from_ddb_item(item, branch_key_id)
+        let record = record_from_ddb_item(item, branch_key_id)?;
+        // KMS checks the record against its own attributes, not against the
+        // request, so a DynamoDB client that returns the wrong item would
+        // otherwise hand back another key's materials.
+        let matches = |attr: &str, expected: &str| {
+            record.attributes.get(attr).map(String::as_str) == Some(expected)
+        };
+        if !matches(ATTR_BRANCH_KEY_ID, branch_key_id) || !matches(ATTR_TYPE, sort_key) {
+            return Err(malformed_record(
+                branch_key_id,
+                format!(
+                    "record's '{ATTR_BRANCH_KEY_ID}' and '{ATTR_TYPE}' do not match the requested key"
+                ),
+            ));
+        }
+        Ok(record)
     }
 }
 
