@@ -100,6 +100,28 @@ pub(crate) async fn read_bytes(
     write_bytes(raw, buf)
 }
 
+/// Replace `data` with the next `length` bytes of `r`.
+/// `data` grows as bytes arrive,
+/// so a length read from a message can't make decrypt allocate more than the message holds.
+pub(crate) async fn read_into_vec(
+    r: &mut dyn Source,
+    length: usize,
+    data: &mut Vec<u8>,
+    raw: &mut Tee,
+) -> Result<(), Error> {
+    // 1 MiB matches serde's (Rust serialization library's) up-front allocation.
+    // But this value is arbitrary and we can change it at any time.
+    const CHUNK: usize = 1 << 20;
+    data.clear();
+    while data.len() < length {
+        let start = data.len();
+        let end = start + CHUNK.min(length - start);
+        data.resize(end, 0);
+        read_bytes(r, &mut data[start..end], raw).await?;
+    }
+    Ok(())
+}
+
 /// Read exactly `length` bytes into a fresh Vec.
 pub(crate) async fn read_vec(
     r: &mut dyn Source,
@@ -169,8 +191,7 @@ pub(crate) async fn read_seq_u32_bounded(
     let Ok(len_usize) = usize::try_from(len) else {
         return ser_err("length too large for platform");
     };
-    data.resize(len_usize, 0);
-    read_bytes(r, &mut data[..], raw).await
+    read_into_vec(r, len_usize, data, raw).await
 }
 
 /// Read a `UInt64` length prefix followed by that many bytes, rejecting lengths
@@ -188,7 +209,9 @@ pub(crate) async fn read_seq_u64_bounded(
     let Ok(len_usize) = usize::try_from(len) else {
         return ser_err("length too large for platform");
     };
-    read_vec(r, len_usize, raw).await
+    let mut data = Vec::new();
+    read_into_vec(r, len_usize, &mut data, raw).await?;
+    Ok(data)
 }
 
 /// Read a UInt16-prefixed UTF-8 string.

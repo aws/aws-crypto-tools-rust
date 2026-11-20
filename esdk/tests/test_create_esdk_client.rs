@@ -5,7 +5,6 @@ use aws_crypto_mpl::cmm::DefaultCmm;
 use aws_crypto_mpl::keyring::RawAesKeyring;
 use aws_crypto_mpl::types::AesWrappingAlg;
 use aws_esdk::types::EncryptionContext;
-use std::num::{NonZeroU32, NonZeroUsize};
 
 #[allow(clippy::duplicate_mod)]
 mod fixtures;
@@ -130,15 +129,54 @@ async fn test_frame_length_accepts_max_u32() {
     //= type=test
     //= reason=encrypt accepts a frame length of u32::MAX and writes it to the header, proving the implementation accepts the maximum allowed value
     //# - The total bytes allowed in a single frame MUST be less than or equal to `2^32 - 1`.
+    //
+    //= spec/client-apis/encrypt.md#frame-length
+    //= type=test
+    //= reason=The setter takes a u32, so no value above 2^32 - 1 can be passed; this test sends the largest one.
+    //# This value MUST be greater than 0 and MUST NOT exceed the value 2^32 - 1.
     let out = Client::default()
         .encrypt()
         .plaintext(b"pt")
         .keyring(test_keyring().await)
-        .frame_length(NonZeroU32::MAX)
+        .frame_length(u32::MAX)
         .send()
         .await
         .unwrap();
     assert_eq!(header_frame_length(out.ciphertext()), u32::MAX);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_frame_length_rejects_zero() {
+    let keyring = test_keyring().await;
+    //= spec/client-apis/encrypt.md#frame-length
+    //= type=test
+    //# This value MUST be greater than 0 and MUST NOT exceed the value 2^32 - 1.
+    let err = Client::default()
+        .encrypt()
+        .plaintext(b"pt")
+        .keyring(keyring.clone())
+        .frame_length(0)
+        .send()
+        .await
+        .expect_err("encrypt must fail with a frame length of 0");
+    assert!(
+        err.is_validation(),
+        "expected Validation error, got {err:?}"
+    );
+
+    let err = Client::default()
+        .encrypt_stream()
+        .plaintext(&b"pt"[..])
+        .ciphertext(Vec::new())
+        .keyring(keyring)
+        .frame_length(0)
+        .send()
+        .await
+        .expect_err("encrypt_stream must fail with a frame length of 0");
+    assert!(
+        err.is_validation(),
+        "expected Validation error, got {err:?}"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -180,7 +218,7 @@ async fn test_encrypt_decrypt_accepts_all_optional_inputs() {
         //= reason=the EDK cap is set to 5; encrypt() succeeds
         //# - On client initialization,
         //# the caller MUST have the option to provide a [maximum number of encrypted data keys](#maximum-number-of-encrypted-data-keys).
-        .max_encrypted_data_keys(std::num::NonZeroUsize::new(5).unwrap())
+        .max_encrypted_data_keys(5)
         .build()
         .unwrap();
 
@@ -195,7 +233,7 @@ async fn test_encrypt_decrypt_accepts_all_optional_inputs() {
         //= type=test
         //= reason=the frame length is set to a non-default 1024; encrypt() succeeds
         //# - Encrypt operation input MUST accept an optional [Frame Length](#frame-length) argument.
-        .frame_length(NonZeroU32::new(1024).unwrap())
+        .frame_length(1024)
         //= spec/client-apis/encrypt.md#input
         //= type=test
         //= reason=encrypt() returns Ok with plaintext populated, proving the required plaintext argument is accepted
@@ -419,7 +457,7 @@ fn test_esdk_builder_sets_commitment_policy() {
 
 #[test]
 fn test_esdk_builder_sets_max_encrypted_data_keys() {
-    let cap = std::num::NonZeroUsize::new(3).unwrap();
+    let cap = 3;
     //= spec/client-apis/client.md#initialization
     //= type=test
     //# - On client initialization,
@@ -436,30 +474,58 @@ fn test_esdk_builder_sets_max_encrypted_data_keys() {
 }
 
 #[test]
-fn test_esdk_from_conf_takes_built_config() {
-    let config = Config::builder()
-        .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt)
-        .max_encrypted_data_keys(std::num::NonZeroUsize::new(7).unwrap())
+fn test_max_encrypted_data_keys_rejects_zero() {
+    let err = Client::builder()
+        .max_encrypted_data_keys(0)
         .build()
-        .unwrap();
-    let esdk = Client::from_conf(config.clone());
-    assert_eq!(esdk.config(), &config);
-    assert_eq!(
-        esdk.config().commitment_policy(),
-        CommitmentPolicy::ForbidEncryptAllowDecrypt
+        .expect_err("Client::builder must reject a max of 0 encrypted data keys");
+    assert!(
+        err.is_validation(),
+        "expected Validation error, got {err:?}"
     );
-    assert_eq!(
-        esdk.config().max_encrypted_data_keys(),
-        std::num::NonZeroUsize::new(7)
+
+    let err = Config::builder()
+        .max_encrypted_data_keys(0)
+        .build()
+        .expect_err("Config::builder must reject a max of 0 encrypted data keys");
+    assert!(
+        err.is_validation(),
+        "expected Validation error, got {err:?}"
     );
 }
 
 #[test]
-fn test_config_builder_defaults_match_client_default() {
-    assert_eq!(Config::builder().build().unwrap(), Config::default());
+fn test_esdk_from_conf_takes_built_config() {
+    let config = Config::builder()
+        .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt)
+        .max_encrypted_data_keys(7)
+        .build()
+        .unwrap();
+    let esdk = Client::from_conf(config);
     assert_eq!(
-        Client::builder().build().unwrap().config(),
-        Client::default().config()
+        esdk.config().commitment_policy(),
+        CommitmentPolicy::ForbidEncryptAllowDecrypt
+    );
+    assert_eq!(esdk.config().max_encrypted_data_keys(), Some(7));
+}
+
+#[test]
+fn test_config_builder_defaults_match_client_default() {
+    let built = Config::builder().build().unwrap();
+    let default = Config::default();
+    assert_eq!(built.commitment_policy(), default.commitment_policy());
+    assert_eq!(
+        built.max_encrypted_data_keys(),
+        default.max_encrypted_data_keys()
+    );
+    let client = Client::builder().build().unwrap();
+    assert_eq!(
+        client.config().commitment_policy(),
+        Client::default().config().commitment_policy()
+    );
+    assert_eq!(
+        client.config().max_encrypted_data_keys(),
+        Client::default().config().max_encrypted_data_keys()
     );
 }
 
@@ -467,23 +533,31 @@ fn test_config_builder_defaults_match_client_default() {
 fn test_config_to_builder_round_trips_and_overrides_one_field() {
     let config = Config::builder()
         .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt)
-        .max_encrypted_data_keys(NonZeroUsize::new(3).unwrap())
+        .max_encrypted_data_keys(3)
         .build()
         .unwrap();
-    assert_eq!(config.to_builder().build().unwrap(), config);
+    let round_tripped = config.to_builder().build().unwrap();
+    assert_eq!(
+        round_tripped.commitment_policy(),
+        config.commitment_policy()
+    );
+    assert_eq!(
+        round_tripped.max_encrypted_data_keys(),
+        config.max_encrypted_data_keys()
+    );
 
     let changed = config
         .to_builder()
-        .max_encrypted_data_keys(NonZeroUsize::new(5).unwrap())
+        .max_encrypted_data_keys(5)
         .build()
         .unwrap();
     assert_eq!(changed.commitment_policy(), config.commitment_policy());
-    assert_eq!(changed.max_encrypted_data_keys(), NonZeroUsize::new(5));
+    assert_eq!(changed.max_encrypted_data_keys(), Some(5));
 }
 
 #[test]
 fn test_builder_getters_track_setters() {
-    let cap = std::num::NonZeroUsize::new(2).unwrap();
+    let cap = 2;
     let policy = CommitmentPolicy::RequireEncryptAllowDecrypt;
     let mut config = Config::builder()
         .commitment_policy(policy)

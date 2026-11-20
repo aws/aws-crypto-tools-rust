@@ -172,25 +172,21 @@ pub use aws_mpl_primitives::error::{
 };
 pub use aws_smithy_types::error::display::DisplayErrorContext;
 pub use aws_smithy_types::error::metadata::{ErrorMetadata, ProvideErrorMetadata};
-pub use aws_smithy_types::retry::{ErrorKind as RetryErrorKind, ProvideErrorKind};
+pub use aws_smithy_types::retry::ProvideErrorKind;
 pub use aws_types::request_id::RequestId;
 
 impl Error {
-    /// Classify a failed AWS SDK call to `service` about `resource`.
+    /// Classify a failed AWS SDK call to `service`.
     ///
     /// The variant, retry kind, error code, and request ID come from the SDK error,
     /// the same way this library's own keyrings and key store classify theirs.
     /// The message is "`operation` failed", and the source is the SDK error.
+    /// To name the resource the call was about, add [`with_resource`](Self::with_resource).
     ///
     /// A custom keyring or CMM that calls an AWS service returns this,
     /// so callers can match its failures by variant and [`service`](Self::service).
     #[track_caller]
-    pub fn from_sdk<E>(
-        service: Service,
-        operation: &str,
-        resource: Option<Resource>,
-        err: SdkError<E, HttpResponse>,
-    ) -> Self
+    pub fn from_sdk<E>(service: Service, operation: &str, err: SdkError<E, HttpResponse>) -> Self
     where
         E: ProvideErrorMetadata + std::error::Error + Send + Sync + 'static,
     {
@@ -198,11 +194,20 @@ impl Error {
         let meta = err.as_service_error().map(|e| e.meta().clone());
         let code = meta.as_ref().and_then(|m| m.code()).map(str::to_owned);
         let request_id = err.request_id().map(str::to_owned);
-        let mut error = Self::with_cause(kind, format!("{operation} failed"), err)
-            .about(Some(service), resource);
+        let mut error =
+            Self::with_cause(kind, format!("{operation} failed"), err).about(Some(service), None);
         error.set_retry(retry);
         error.set_sdk(code, request_id, meta);
         error
+    }
+
+    /// Set the resource this error is about, which [`resource`](Self::resource) returns.
+    ///
+    /// Only a variant that reports a resource keeps it; any other variant is returned unchanged.
+    #[must_use]
+    pub fn with_resource(mut self, resource: impl Into<Resource>) -> Self {
+        self.set_resource(Some(resource.into()));
+        self
     }
 
     /// Add `version` to the branch key `id` this error names, if it names that branch key without one.
@@ -468,12 +473,7 @@ mod tests {
     }
 
     fn from_kms(err: SdkError<DecryptError, HttpResponse>) -> Error {
-        Error::from_sdk(
-            Service::Kms,
-            "AWS KMS Decrypt",
-            Some(Resource::KmsKey(KmsKey::new("arn"))),
-            err,
-        )
+        Error::from_sdk(Service::Kms, "AWS KMS Decrypt", err).with_resource(KmsKey::new("arn"))
     }
 
     #[test]
@@ -534,7 +534,7 @@ mod tests {
         let err = from_kms(service_error("ThrottlingException", 400));
         assert_eq!(
             err.retryable_error_kind(),
-            Some(RetryErrorKind::ThrottlingError)
+            Some(aws_smithy_types::retry::ErrorKind::ThrottlingError)
         );
         assert!(err.is_throttling());
     }

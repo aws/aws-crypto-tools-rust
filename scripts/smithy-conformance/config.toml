@@ -1,0 +1,932 @@
+# Smithy conformance config for aws-crypto-tools-rust: the model sources, and
+# every deviation from the model with its reason. The checked crates are found
+# by the script. Run from anywhere in the repo:
+#   python3 scripts/smithy-conformance/conform.py
+
+[smithy]
+version = "1.74.1"
+sha256 = "6b50c0b9f2443400bb7115b9badb54b3609816ec5fb4f625954eadd2f6b2f52a"
+
+[[model]]
+repo = "https://github.com/aws/aws-cryptographic-material-providers-library"
+ref = "d34518bddb71e09790a734da08120093149252a3"
+paths = [
+  "model/traits.smithy",
+  "ComAmazonawsKms/Model/kms/model.json",
+  "ComAmazonawsDynamodb/Model/dynamodb/model.json",
+  "AwsCryptographyPrimitives/Model",
+  "AwsCryptographicMaterialProviders/dafny/AwsCryptographicMaterialProviders/Model",
+  "AwsCryptographicMaterialProviders/dafny/AwsCryptographyKeyStore/Model",
+]
+
+[[model]]
+repo = "https://github.com/aws/aws-encryption-sdk"
+ref = "99f54cbc6945a5bad1b19d5412bbb9b5e457ff69"
+paths = ["AwsEncryptionSDK/dafny/AwsEncryptionSdk/Model/esdk.smithy"]
+
+[checks]
+docs = true
+
+[lint]
+# fixed values stay const; getters and setters don't.
+# AlgorithmSuite is a fixed table looked up from a suite ID, and the const
+# enum methods (allows_for_encrypt, ...) read it.
+const_ok = ["AlgorithmSuite"]
+
+# ---------------------------------------------------------------------------
+# Deviations. Every entry needs a reason. status:
+#   accepted  - approved in review (default)
+#   proposed  - drafted, not yet reviewed; still fails the run
+#   deferred  - known, fix later; tracked, does not fail the run
+# ---------------------------------------------------------------------------
+
+# ---- Renames: where the Rust name differs from the model name ----
+
+[[rename]]
+shape = "aws.cryptography.keyStore#KeyStore"
+example_strict = '''
+let ks = KeyStore::from_conf(
+    KeyStoreConfig::builder()
+        .ddb_table_name("t").logical_key_store_name("t")
+        .kms_configuration(kms).build()?,
+)?;'''
+example_ours = '''
+let ks = DynamoDbKeyStore::builder()
+    .ddb_table_name("t").logical_key_store_name("t")
+    .kms_configuration(kms)
+    .build().await?;'''
+rust = "DynamoDbKeyStore"
+reason = "The key store client is the DynamoDB key store; KeyStore is the trait customers implement."
+what_differs = "The model calls the key store client KeyStore."
+justification = "In Rust, KeyStore is the trait customers implement; the client is the DynamoDB one."
+later = "breaking"
+later_why = "Renaming the type later breaks callers of the old name."
+
+[[rename]]
+shape = "aws.cryptography.materialProviders#CryptographicMaterialsManager"
+example_strict = '''
+impl CryptographicMaterialsManager for MyCmm { .. }'''
+example_ours = '''
+impl Cmm for MyCmm { .. }'''
+rust = "Cmm"
+reason = "Short trait name; the handle is SharedCmm."
+what_differs = "The model's trait name is CryptographicMaterialsManager."
+justification = "Cmm is the common short name and reads well in signatures; a coin flip."
+later = "breaking"
+later_why = "Renaming the type later breaks callers of the old name."
+
+[[rename]]
+shape = "aws.cryptography.materialProviders#CryptographicMaterialsCache"
+example_strict = '''
+impl CryptographicMaterialsCache for MyCache { .. }'''
+example_ours = '''
+impl Cmc for MyCache { .. }'''
+rust = "Cmc"
+reason = "Short trait name; the handle is SharedCmc."
+what_differs = "The model's trait name is CryptographicMaterialsCache."
+justification = "Cmc matches Cmm; a coin flip."
+later = "breaking"
+later_why = "Renaming the type later breaks callers of the old name."
+
+[[rename]]
+shape = "aws.cryptography.keyStore#BranchKeyMaterials$branchKeyIdentifier"
+rust = "branch_key_id"
+reason = "keep branch_key_id everywhere."
+what_differs = "The Rust name differs from the model name."
+justification = "See the reason above."
+later = "breaking"
+later_why = "Renaming the member later breaks callers of the old name."
+[[rename]]
+shape = "aws.cryptography.keyStore#CreateKeyInput$branchKeyIdentifier"
+rust = "branch_key_id"
+reason = "keep branch_key_id everywhere."
+what_differs = "The Rust name differs from the model name."
+justification = "See the reason above."
+later = "breaking"
+later_why = "Renaming the member later breaks callers of the old name."
+[[rename]]
+shape = "aws.cryptography.keyStore#CreateKeyOutput$branchKeyIdentifier"
+rust = "branch_key_id"
+reason = "keep branch_key_id everywhere."
+what_differs = "The Rust name differs from the model name."
+justification = "See the reason above."
+later = "breaking"
+later_why = "Renaming the member later breaks callers of the old name."
+[[rename]]
+shape = "aws.cryptography.keyStore#GetActiveBranchKeyInput$branchKeyIdentifier"
+rust = "branch_key_id"
+reason = "keep branch_key_id everywhere."
+what_differs = "The Rust name differs from the model name."
+justification = "See the reason above."
+later = "breaking"
+later_why = "Renaming the member later breaks callers of the old name."
+[[rename]]
+shape = "aws.cryptography.keyStore#GetBeaconKeyInput$branchKeyIdentifier"
+rust = "branch_key_id"
+reason = "keep branch_key_id everywhere."
+what_differs = "The Rust name differs from the model name."
+justification = "See the reason above."
+later = "breaking"
+later_why = "Renaming the member later breaks callers of the old name."
+[[rename]]
+shape = "aws.cryptography.keyStore#GetBranchKeyVersionInput$branchKeyIdentifier"
+rust = "branch_key_id"
+reason = "keep branch_key_id everywhere."
+what_differs = "The Rust name differs from the model name."
+justification = "See the reason above."
+later = "breaking"
+later_why = "Renaming the member later breaks callers of the old name."
+[[rename]]
+shape = "aws.cryptography.keyStore#VersionKeyInput$branchKeyIdentifier"
+rust = "branch_key_id"
+reason = "keep branch_key_id everywhere."
+what_differs = "The Rust name differs from the model name."
+justification = "See the reason above."
+later = "breaking"
+later_why = "Renaming the member later breaks callers of the old name."
+[[rename]]
+shape = "aws.cryptography.keyStore#BeaconKeyMaterials$beaconKeyIdentifier"
+rust = "beacon_key_id"
+reason = "Same rule as branch_key_id."
+what_differs = "The model says beaconKeyIdentifier."
+justification = "Matches branch_key_id."
+later = "breaking"
+later_why = "Renaming the member later breaks callers of the old name."
+
+[[rename]]
+shape = "aws.cryptography.encryptionSdk#EncryptInput$materialsManager"
+rust = "cmm"
+reason = "Matches the Cmm trait name."
+what_differs = "The model says materialsManager."
+justification = "Matches the Cmm trait name."
+later = "breaking"
+later_why = "Renaming the member later breaks callers of the old name."
+[[rename]]
+shape = "aws.cryptography.encryptionSdk#DecryptInput$materialsManager"
+rust = "cmm"
+reason = "Matches the Cmm trait name."
+
+# ---- MPL operations: built with builders, not an MPL client ----
+# keyrings via X::builder(), no MPL client, is normal Rust.
+what_differs = "The model says materialsManager."
+justification = "Matches the Cmm trait name."
+later = "breaking"
+later_why = "Renaming the member later breaks callers of the old name."
+
+[[rename]]
+shape = "aws.cryptography.materialProviders#CreateRawAesKeyring"
+rust = "RawAesKeyring::builder"
+reason = "build keyrings with X::builder(), no MPL client."
+what_differs = "The Rust name differs from the model name."
+justification = "See the reason above."
+later = "not breaking"
+later_why = "The model's operation could be added next to it."
+[[rename]]
+shape = "aws.cryptography.materialProviders#CreateAwsKmsHierarchicalKeyring"
+rust = "HierarchicalKeyring::builder"
+reason = "build keyrings with X::builder(), no MPL client."
+what_differs = "The Rust name differs from the model name."
+justification = "See the reason above."
+later = "not breaking"
+later_why = "The model's operation could be added next to it."
+[[rename]]
+shape = "aws.cryptography.materialProviders#CreateDefaultCryptographicMaterialsManager"
+rust = "DefaultCmm::new"
+reason = "build keyrings with X::builder(), no MPL client."
+what_differs = "The Rust name differs from the model name."
+justification = "See the reason above."
+later = "not breaking"
+later_why = "The model's operation could be added next to it."
+[[rename]]
+shape = "aws.cryptography.materialProviders#CreateCryptographicMaterialsCache"
+rust = "DefaultCmc::builder"
+reason = "Each cache type has its own builder (DefaultCmc, LocalCmc, StormTrackingCmc)."
+what_differs = "The model has one create-cache operation on the MPL client."
+justification = "Each cache type has its own builder; no client needed."
+later = "not breaking"
+later_why = "The model's operation could be added next to it."
+[[rename]]
+shape = "aws.cryptography.materialProviders#InitializeEncryptionMaterials"
+rust = "EncryptionMaterials::builder"
+reason = "Materials are built with their builder."
+what_differs = "The model has an initialize operation on the MPL client."
+justification = "The materials builder does the same job."
+later = "not breaking"
+later_why = "The model's operation could be added next to it."
+[[rename]]
+shape = "aws.cryptography.materialProviders#InitializeDecryptionMaterials"
+rust = "DecryptionMaterials::builder"
+reason = "Materials are built with their builder."
+what_differs = "The model has an initialize operation on the MPL client."
+justification = "The materials builder does the same job."
+later = "not breaking"
+later_why = "The model's operation could be added next to it."
+[[rename]]
+shape = "aws.cryptography.materialProviders#GetAlgorithmSuiteInfo"
+rust = "AlgorithmSuiteId::specification"
+reason = "A method on the suite ID."
+what_differs = "The model has a client operation to look up a suite."
+justification = "A method on the suite ID needs no client."
+later = "not breaking"
+later_why = "The model's operation could be added next to the method."
+[[rename]]
+shape = "aws.cryptography.materialProviders#ValidateCommitmentPolicyOnEncrypt"
+rust = "CommitmentPolicy::allows_for_encrypt"
+reason = "A method on the policy."
+what_differs = "The model has a client operation that fails on a bad pairing."
+justification = "A method on the policy that returns true/false needs no client."
+later = "not breaking"
+later_why = "The model's operation could be added next to the method."
+[[rename]]
+shape = "aws.cryptography.materialProviders#ValidateCommitmentPolicyOnDecrypt"
+rust = "CommitmentPolicy::allows_for_decrypt"
+reason = "A method on the policy."
+
+# ---- Not ported yet ----
+what_differs = "The model has a client operation that fails on a bad pairing."
+justification = "A method on the policy that returns true/false needs no client."
+later = "not breaking"
+later_why = "The model's operation could be added next to the method."
+
+[[out_of_scope]]
+shape = "aws.cryptography.materialProviders#CreateAwsKmsKeyring"
+reason = "AWS KMS keyring is not ported yet."
+what_differs = "The model has this; the Rust crate doesn't yet."
+justification = "Not ported yet; adding it later is not breaking."
+later = "not breaking"
+later_why = "Adding it later only adds API."
+[[out_of_scope]]
+shape = "aws.cryptography.materialProviders#CreateAwsKmsMultiKeyring"
+reason = "AWS KMS keyrings are not ported yet."
+what_differs = "The model has this; the Rust crate doesn't yet."
+justification = "Not ported yet; adding it later is not breaking."
+later = "not breaking"
+later_why = "Adding it later only adds API."
+[[out_of_scope]]
+shape = "aws.cryptography.materialProviders#CreateAwsKmsDiscoveryKeyring"
+reason = "AWS KMS keyrings are not ported yet."
+what_differs = "The model has this; the Rust crate doesn't yet."
+justification = "Not ported yet; adding it later is not breaking."
+later = "not breaking"
+later_why = "Adding it later only adds API."
+[[out_of_scope]]
+shape = "aws.cryptography.materialProviders#CreateAwsKmsDiscoveryMultiKeyring"
+reason = "AWS KMS keyrings are not ported yet."
+what_differs = "The model has this; the Rust crate doesn't yet."
+justification = "Not ported yet; adding it later is not breaking."
+later = "not breaking"
+later_why = "Adding it later only adds API."
+[[out_of_scope]]
+shape = "aws.cryptography.materialProviders#CreateAwsKmsMrkKeyring"
+reason = "AWS KMS keyrings are not ported yet."
+what_differs = "The model has this; the Rust crate doesn't yet."
+justification = "Not ported yet; adding it later is not breaking."
+later = "not breaking"
+later_why = "Adding it later only adds API."
+[[out_of_scope]]
+shape = "aws.cryptography.materialProviders#CreateAwsKmsMrkMultiKeyring"
+reason = "AWS KMS keyrings are not ported yet."
+what_differs = "The model has this; the Rust crate doesn't yet."
+justification = "Not ported yet; adding it later is not breaking."
+later = "not breaking"
+later_why = "Adding it later only adds API."
+[[out_of_scope]]
+shape = "aws.cryptography.materialProviders#CreateAwsKmsMrkDiscoveryKeyring"
+reason = "AWS KMS keyrings are not ported yet."
+what_differs = "The model has this; the Rust crate doesn't yet."
+justification = "Not ported yet; adding it later is not breaking."
+later = "not breaking"
+later_why = "Adding it later only adds API."
+[[out_of_scope]]
+shape = "aws.cryptography.materialProviders#CreateAwsKmsMrkDiscoveryMultiKeyring"
+reason = "AWS KMS keyrings are not ported yet."
+what_differs = "The model has this; the Rust crate doesn't yet."
+justification = "Not ported yet; adding it later is not breaking."
+later = "not breaking"
+later_why = "Adding it later only adds API."
+[[out_of_scope]]
+shape = "aws.cryptography.materialProviders#CreateAwsKmsRsaKeyring"
+reason = "RSA keyrings are not ported yet."
+what_differs = "The model has this; the Rust crate doesn't yet."
+justification = "Not ported yet; adding it later is not breaking."
+later = "not breaking"
+later_why = "Adding it later only adds API."
+[[out_of_scope]]
+shape = "aws.cryptography.materialProviders#CreateAwsKmsEcdhKeyring"
+reason = "ECDH keyrings are not ported yet."
+what_differs = "The model has this; the Rust crate doesn't yet."
+justification = "Not ported yet; adding it later is not breaking."
+later = "not breaking"
+later_why = "Adding it later only adds API."
+[[out_of_scope]]
+shape = "aws.cryptography.materialProviders#CreateRawRsaKeyring"
+reason = "RSA keyrings are not ported yet."
+what_differs = "The model has this; the Rust crate doesn't yet."
+justification = "Not ported yet; adding it later is not breaking."
+later = "not breaking"
+later_why = "Adding it later only adds API."
+[[out_of_scope]]
+shape = "aws.cryptography.materialProviders#CreateRawEcdhKeyring"
+reason = "ECDH keyrings are not ported yet."
+what_differs = "The model has this; the Rust crate doesn't yet."
+justification = "Not ported yet; adding it later is not breaking."
+later = "not breaking"
+later_why = "Adding it later only adds API."
+[[out_of_scope]]
+shape = "aws.cryptography.materialProviders#CreateMultiKeyring"
+reason = "The multi-keyring is not ported yet."
+what_differs = "The model has this; the Rust crate doesn't yet."
+justification = "Not ported yet; adding it later is not breaking."
+later = "not breaking"
+later_why = "Adding it later only adds API."
+[[out_of_scope]]
+shape = "aws.cryptography.materialProviders#CreateRequiredEncryptionContextCMM"
+reason = "The required encryption context CMM is not ported yet."
+what_differs = "The model has this; the Rust crate doesn't yet."
+justification = "Not ported yet; adding it later is not breaking."
+later = "not breaking"
+later_why = "Adding it later only adds API."
+[[out_of_scope]]
+shape = "aws.cryptography.materialProviders#CreateDefaultClientSupplier"
+reason = "Client suppliers are not ported yet."
+what_differs = "The model has this; the Rust crate doesn't yet."
+justification = "Not ported yet; adding it later is not breaking."
+later = "not breaking"
+later_why = "Adding it later only adds API."
+[[out_of_scope]]
+shape = "aws.cryptography.materialProviders#ClientSupplier"
+reason = "Client suppliers are not ported yet."
+what_differs = "The model has this; the Rust crate doesn't yet."
+justification = "Not ported yet; adding it later is not breaking."
+later = "not breaking"
+later_why = "Adding it later only adds API."
+[[out_of_scope]]
+shape = "aws.cryptography.materialProviders#ValidAlgorithmSuiteInfo"
+reason = "No public operation: a suite description is only ever built from its ID."
+what_differs = "The model has an operation that checks a hand-built suite description is self-consistent."
+justification = "AlgorithmSuiteId::specification() is the only way to get an AlgorithmSuite, so an inconsistent one can't exist."
+later = "not breaking"
+later_why = "Adding it later only adds API."
+[[out_of_scope]]
+shape = "aws.cryptography.materialProviders#ValidEncryptionMaterialsTransition"
+reason = "Checked internally by default; no public operation yet."
+what_differs = "The model has a public operation that checks a keyring changed encryption materials only in allowed ways."
+justification = "The MPL runs this check internally on every keyring call; a public operation can be added later."
+later = "not breaking"
+later_why = "Adding it later only adds API."
+status = "rejected"
+[[out_of_scope]]
+shape = "aws.cryptography.materialProviders#ValidDecryptionMaterialsTransition"
+reason = "Checked internally by default; no public operation yet."
+what_differs = "The model has a public operation that checks a keyring changed decryption materials only in allowed ways."
+justification = "The MPL runs this check internally on every keyring call; a public operation can be added later."
+later = "not breaking"
+later_why = "Adding it later only adds API."
+status = "rejected"
+[[out_of_scope]]
+shape = "aws.cryptography.materialProviders#EncryptionMaterialsHasPlaintextDataKey"
+reason = "Checked internally by default; no public operation yet."
+what_differs = "The model has a public operation that checks encryption materials are complete."
+justification = "The MPL runs this check internally on every CMM call; a public operation can be added later."
+later = "not breaking"
+later_why = "Adding it later only adds API."
+status = "rejected"
+[[out_of_scope]]
+shape = "aws.cryptography.materialProviders#DecryptionMaterialsWithPlaintextDataKey"
+reason = "Checked internally by default; no public operation yet."
+what_differs = "The model has a public operation that checks decryption materials are complete."
+justification = "The MPL runs this check internally on every CMM call; a public operation can be added later."
+later = "not breaking"
+later_why = "Adding it later only adds API."
+status = "rejected"
+[[out_of_scope]]
+shape = "aws.cryptography.keyStore#CreateKeyStore"
+reason = "Creating the DynamoDB table is not ported yet."
+
+# ---- Findings accepted by id ----
+what_differs = "The model has this; the Rust crate doesn't yet."
+justification = "Not ported yet; adding it later is not breaking."
+later = "not breaking"
+later_why = "Adding it later only adds API."
+
+[[deviation]]
+id = "*:primitives#*"
+example_strict = '''
+let prim = AtomicPrimitives::from_conf(CryptoConfig::builder().build()?)?;
+let out = prim.aes_encrypt()
+    .enc_alg(AesGcm::Aes256Gcm)
+    .iv(iv).key(key).msg(msg).aad(aad)
+    .send()?;
+let ciphertext = out.cipher_text();'''
+example_ours = '''
+let mut ciphertext = Vec::new();
+aws_mpl_primitives::aes_encrypt(
+    AesGcm::Aes256Gcm, &iv, &key, &msg, &aad, &mut ciphertext,
+)?;'''
+reason = "the prim crate can be plain functions; it does not have to be a client."
+what_differs = "The model wraps every primitive in a client with input/output structs."
+justification = "The primitives are internal building blocks; plain functions are simpler and nothing outside the crates calls them."
+later = "not breaking"
+later_why = "A primitives client could be added next to the functions."
+
+[[deviation]]
+id = "variant_type:keyStore#KMSConfiguration$kmsKeyArn"
+example_strict = '''
+KmsConfiguration::KmsKeyArn("arn:aws:kms:...".to_string())
+
+// can never take a second setting'''
+example_ours = '''
+KmsConfiguration::KmsKeyArn(
+    KmsKeyArn::builder().arn("arn:aws:kms:...").build()?,
+)
+// or the shortcut
+KmsConfiguration::kms_key_arn("arn:aws:kms:...")'''
+reason = "config enum variants wrap a struct so they can gain fields."
+what_differs = "The model puts a bare ARN string in the variant."
+justification = "A struct can gain fields later without breaking callers; a string can't."
+later = "breaking"
+later_why = "Going back to a bare String changes the variant's payload."
+[[deviation]]
+id = "variant_type:keyStore#KMSConfiguration$kmsMRKeyArn"
+reason = "config enum variants wrap a struct so they can gain fields."
+what_differs = "The model puts a bare ARN string in the variant."
+justification = "A struct can gain fields later without breaking callers; a string can't."
+later = "breaking"
+later_why = "Going back to a bare String changes the variant's payload."
+
+[[deviation]]
+id = "member_type:encryptionSdk#EncryptOutput$ciphertext"
+example_strict = '''
+let bytes: &[u8] = out.ciphertext();'''
+example_ours = '''
+let ct: &Ciphertext = out.ciphertext();
+let bytes: &[u8] = ct.as_ref();   // or out.into_ciphertext().into_inner()'''
+reason = "Ciphertext/Plaintext wrappers keep secrets out of Debug."
+what_differs = "The model returns raw bytes."
+justification = "The wrapper is still one .as_ref() away from bytes and keeps big buffers out of Debug output."
+later = "breaking"
+later_why = "Returning &[u8] instead of &Ciphertext changes the getter's type."
+[[deviation]]
+id = "member_type:encryptionSdk#DecryptOutput$plaintext"
+reason = "Ciphertext/Plaintext wrappers keep secrets out of Debug."
+what_differs = "The model returns raw bytes."
+justification = "The wrapper keeps decrypted data out of Debug output and logs."
+later = "breaking"
+later_why = "Returning &[u8] instead of &Plaintext changes the getter's type."
+[[deviation]]
+id = "*:materialProviders#*Materials$algorithmSuite*"
+example_strict = '''
+EncryptionMaterials::builder()
+    .algorithm_suite(AlgorithmSuiteInfo { id, encrypt, kdf, commitment, signature, .. })
+    ...
+let suite = materials.algorithm_suite();  // the info you passed in'''
+example_ours = '''
+EncryptionMaterials::builder()
+    .algorithm_suite_id(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
+    ...
+let id = materials.algorithm_suite_id();
+let suite = materials.algorithm_suite();  // looked up from the id; can't disagree'''
+reason = "Materials hold the suite ID; algorithm_suite() derives the full suite."
+what_differs = "The model stores the full suite description in the materials."
+justification = "The description follows from the ID; storing only the ID means the two can never disagree."
+later = "breaking"
+later_why = "Taking a full suite description instead of an ID changes the setter and getter."
+[[deviation]]
+id = "*:materialProviders#*CacheEntry*"
+example_strict = '''
+cmc.put_cache_entry()
+    .identifier(id)
+    .materials(materials)
+    .creation_time(now).expiry_time(later)
+    .messages_used(0).bytes_used(0)
+    .send().await?;
+
+match cmc.get_cache_entry().identifier(id).send().await {
+    Ok(out) => use_it(out.materials()),
+    Err(e) if e.is_entry_does_not_exist() => miss(),
+    Err(e) => return Err(e),
+}'''
+example_ours = '''
+cmc.put_cache_entry()
+    .identifier(id)
+    .entry(CacheEntry::builder()
+        .materials(materials)
+        .creation_time(now).expiry_time(later)
+        .usage_metadata(usage)
+        .build()?)
+    .send().await?;
+
+match cmc.get_cache_entry().identifier(id).send().await?.entry() {
+    Some(entry) => use_it(entry.materials()),
+    None => miss(),
+}'''
+reason = "Cache inputs/outputs wrap one CacheEntry instead of flat fields; a miss is None."
+what_differs = "The model uses flat fields on put/get and an EntryDoesNotExist error for a miss."
+justification = "A miss is a normal result, so it returns None, never an error; one CacheEntry carries the materials, times and usage together from put to get."
+later = "breaking"
+later_why = "Flat fields replace the entry setter and getter."
+[[deviation]]
+id = "variant_missing:materialProviders#*$DBE"
+reason = "DB-ESDK suites and policies are not ported yet."
+what_differs = "The model includes DB-ESDK suites and policies."
+justification = "Not ported yet; adding a variant later is not breaking because the enums are non_exhaustive."
+later = "not breaking"
+later_why = "The enums are non_exhaustive, so a new variant breaks no one."
+[[deviation]]
+id = "variant_*:materialProviders#SymmetricSignatureAlgorithm$*"
+reason = "Only HMAC-SHA384 exists; the model's HMAC(DigestAlgorithm) and None are folded into one variant plus Option."
+what_differs = "The model has HMAC(digest) and None as a union."
+justification = "Only HMAC-SHA384 exists; a new variant later is not breaking."
+later = "breaking"
+later_why = "Turning the enum into the model's union changes its variants."
+[[deviation]]
+id = "type_missing:encryptionSdk#*crypt*Input"
+example_strict = '''
+let input = EncryptInput::builder()
+    .plaintext(data).keyring(keyring)
+    .build()?;
+esdk.encrypt().set_input(input).send().await?;'''
+example_ours = '''
+esdk.encrypt()
+    .plaintext(data).keyring(keyring)
+    .send().await?;
+// EncryptInput exists, but only inside the crate'''
+reason = "EncryptInput/DecryptInput are crate-private; callers use the fluent builders."
+what_differs = "The model has public EncryptInput/DecryptInput types."
+justification = "Callers only ever use the fluent builders; exposing the input types can be added later without breaking."
+later = "not breaking"
+later_why = "Making the input types public only adds API."
+[[deviation]]
+id = "type_missing:[ek][ne]*Exception"
+example_strict = '''
+match err {
+    Error::InvalidEncryptionMaterials(e) => ..,
+    Error::InvalidAlgorithmSuiteInfoOnEncrypt(e) => ..,
+    Error::AwsCryptographicMaterialProvidersException(e) => ..,
+    ..
+}'''
+example_ours = '''
+match err {
+    Error::InvalidMaterials(e) => ..,
+    Error::Validation(e) => ..,
+    Error::AccessDenied(e) => ..,
+    ..   // one variant per kind of failure, not per modeled error
+}'''
+reason = "Errors are one categorical Error enum per crate, not one type per modeled error."
+what_differs = "The model has one error type per failure (InvalidEncryptionMaterials, ...)."
+justification = "Callers act on the kind of failure (retry, bad input, access denied); one enum of kinds is easier to match."
+later = "breaking"
+later_why = "One error type per failure replaces the Error enum's variants."
+[[deviation]]
+id = "type_missing:materialProviders#*"
+reason = "Remaining unported or folded MPL shapes; triage one by one."
+
+# ---- Deferred: fix later ----
+what_differs = "A catch-all for every MPL shape with no Rust type."
+justification = "These are MPL shapes the crate hasn't ported yet or has folded into other types."
+later = "not breaking"
+later_why = "Adding a type only adds API."
+
+[[deviation]]
+id = "lint.debug:*"
+reason = "Easy add later: HierarchicalKeyring and DefaultCmm have no Debug."
+what_differs = "HierarchicalKeyring and DefaultCmm have no Debug."
+justification = "Fix later; adding Debug is not breaking."
+later = "not breaking"
+later_why = "Adding Debug only adds API."
+[[deviation]]
+id = "lint.builder_clone:*Stream*FluentBuilder"
+reason = "Stream builders hold a reader and a writer, which can't be cloned."
+what_differs = "The stream builders have no Clone."
+justification = "They hold a reader and a writer, which can't be copied."
+later = "not breaking"
+later_why = "Nothing to switch: a reader and writer can't be cloned."
+
+[[rename]]
+shape = "aws.cryptography.materialProviders#CreateAwsKmsHierarchicalKeyringInput$ttlSeconds"
+rust = "ttl"
+reason = "Duration, the Rust time type, not a seconds count."
+what_differs = "The Rust name differs from the model name."
+justification = "See the reason above."
+later = "breaking"
+later_why = "Renaming the member later breaks callers of the old name."
+
+[[deviation]]
+id = "client_missing:materialProviders#AwsCryptographicMaterialProviders"
+example_strict = '''
+let mpl = MaterialProviders::from_conf(
+    MaterialProvidersConfig::builder().build()?,
+)?;
+let keyring = mpl.create_raw_aes_keyring()
+    .key_namespace("ns").key_name("name")
+    .wrapping_key(key).wrapping_alg(alg)
+    .send().await?;'''
+example_ours = '''
+let keyring = RawAesKeyring::builder()
+    .key_namespace("ns").key_name("name")
+    .wrapping_key(key).wrapping_alg(alg)
+    .build()?;'''
+reason = "build keyrings with X::builder(), no MPL client."
+what_differs = "The model creates keyrings and CMMs through an MPL client."
+justification = "Building each type with its own builder is normal Rust and needs no client object."
+later = "not breaking"
+later_why = "An MPL client could be added next to the builders."
+[[deviation]]
+id = "member_extra:materialProviders#*Materials$algorithm_suite_id"
+reason = "Materials hold the suite ID; algorithm_suite() derives the full suite."
+what_differs = "Materials have an algorithm_suite_id field the model lacks."
+justification = "Same as the suite card: the ID is what's stored."
+later = "breaking"
+later_why = "Removing algorithm_suite_id() breaks callers of it."
+[[deviation]]
+id = "operation_input_missing:materialProviders#CreateCryptographicMaterialsCacheInput$cache"
+reason = "Each cache type has its own builder, so there is no cache-type union to pass."
+
+# ---- Rust-only operations, checked as if modeled like an existing one ----
+what_differs = "The model picks the cache type with a union input."
+justification = "Each cache type has its own builder, so there's nothing to pick."
+later = "not breaking"
+later_why = "A create-cache operation taking the union could be added."
+
+[[mirror]]
+like = "aws.cryptography.encryptionSdk#Encrypt"
+rust = "EncryptStream"
+drop_members = ["plaintext", "ciphertext"]
+reason = "Streaming encrypt: Encrypt's input and output, reading from and writing to streams."
+what_differs = "Streaming encrypt isn't in the model."
+justification = "Rust needs streaming for big data; it's checked like Encrypt."
+later = "not breaking"
+later_why = "Nothing to switch: the model has no such operation."
+
+[[mirror]]
+like = "aws.cryptography.encryptionSdk#Decrypt"
+rust = "DecryptStream"
+drop_members = ["plaintext", "ciphertext"]
+reason = "Streaming decrypt: Decrypt's input and output, reading from and writing to streams."
+
+# ---- Cache and key store config types: map them so their members are checked ----
+what_differs = "Streaming decrypt isn't in the model."
+justification = "Rust needs streaming for big data; it's checked like Decrypt."
+later = "not breaking"
+later_why = "Nothing to switch: the model has no such operation."
+
+[[rename]]
+shape = "aws.cryptography.materialProviders#DefaultCache"
+rust = "DefaultCmc"
+reason = "Each cache config is its cache type; the Rust name is the cache."
+what_differs = "The model calls the settings DefaultCache."
+justification = "In Rust the settings are the cache's own builder, DefaultCmc."
+later = "breaking"
+later_why = "Renaming the type later breaks callers of the old name."
+
+[[rename]]
+shape = "aws.cryptography.materialProviders#StormTrackingCache"
+rust = "StormTrackingCmc"
+reason = "Each cache config is its cache type; the Rust name is the cache."
+what_differs = "The model calls the settings StormTrackingCache."
+justification = "In Rust the settings are the cache's own builder, StormTrackingCmc."
+later = "breaking"
+later_why = "Renaming the type later breaks callers of the old name."
+
+[[rename]]
+shape = "aws.cryptography.keyStore#KeyStoreConfig"
+rust = "DynamoDbKeyStore"
+reason = "The key store is built from its own builder; there is no separate config type."
+
+what_differs = "The model has a separate KeyStoreConfig."
+justification = "The key store's own builder holds the settings."
+later = "breaking"
+later_why = "Renaming the type later breaks callers of the old name."
+
+[[deviation]]
+id = "*_type:keyStore#BranchKeyMaterials$branchKey*"
+reason = "A branch key is always 32 bytes; [u8; 32] rules out bad lengths."
+what_differs = "The model says raw bytes of any length."
+justification = "A branch key is always 32 bytes; [u8; 32] rules out bad lengths."
+later = "breaking"
+later_why = "Changing [u8; 32] to bytes changes the setter and getter."
+[[deviation]]
+id = "*_type:materialProviders#*Cache$entryCapacity*"
+reason = "Counts are usize; they can't be negative."
+what_differs = "The model can only say signed i32."
+justification = "A count can't be negative; usize says so."
+later = "breaking"
+later_why = "Changing usize to i32 changes the setter and getter."
+[[deviation]]
+id = "*_type:materialProviders#StormTrackingCache$entryPruningTailSize*"
+reason = "Counts are usize; they can't be negative."
+what_differs = "The model can only say signed i32."
+justification = "A count can't be negative; usize says so."
+later = "breaking"
+later_why = "Changing usize to i32 changes the setter and getter."
+[[deviation]]
+id = "*_type:materialProviders#StormTrackingCache$fanOut*"
+reason = "Counts are usize; they can't be negative."
+what_differs = "The model can only say signed i32."
+justification = "A count can't be negative; usize says so."
+later = "breaking"
+later_why = "Changing usize to i32 changes the setter and getter."
+[[deviation]]
+id = "*_type:encryptionSdk#AwsEncryptionSdkConfig$maxEncryptedDataKeys*"
+reason = "Counts are usize; they can't be negative."
+what_differs = "The model can only say signed i64."
+justification = "A count can't be negative; usize says so."
+later = "breaking"
+later_why = "Changing usize to i64 changes the setter and getter."
+[[deviation]]
+id = "*_type:encryptionSdk#*Input$frameLength*"
+reason = "Frame length is 4 bytes on the wire; u32."
+what_differs = "The model can only say signed i64."
+justification = "The frame length is 4 bytes on the wire, so u32 fits exactly."
+later = "breaking"
+later_why = "Changing u32 to i64 changes the setter and getter."
+[[deviation]]
+id = "*_type:materialProviders#*$maxPlaintextLength*"
+reason = "Sizes are unsigned; u64."
+what_differs = "The model can only say signed i64."
+justification = "A size can't be negative; u64 says so."
+later = "breaking"
+later_why = "Changing u64 to i64 changes the setter and getter."
+[[deviation]]
+id = "*_type:materialProviders#UpdateUsageMetadataInput$bytesUsed*"
+reason = "Sizes are unsigned; u64."
+what_differs = "The model can only say signed i32."
+justification = "A size can't be negative; u64 says so."
+later = "breaking"
+later_why = "Changing u64 to i32 changes the setter and getter."
+[[deviation]]
+id = "*_type:materialProviders#StormTrackingCache$g*"
+reason = "Spans of time are Duration."
+what_differs = "The model uses a number plus a separate time unit."
+justification = "Duration carries its unit, so seconds and milliseconds can't be mixed up."
+later = "breaking"
+later_why = "Changing Duration to a number changes the setter and getter."
+[[deviation]]
+id = "*_type:materialProviders#StormTrackingCache$inFlightTTL*"
+reason = "Spans of time are Duration."
+what_differs = "The model uses a number plus a separate time unit."
+justification = "Duration carries its unit, so seconds and milliseconds can't be mixed up."
+later = "breaking"
+later_why = "Changing Duration to a number changes the setter and getter."
+[[deviation]]
+id = "*_type:materialProviders#CreateAwsKmsHierarchicalKeyringInput$ttlSeconds*"
+reason = "Spans of time are Duration."
+what_differs = "The model uses a count of seconds."
+justification = "Duration is Rust's time type and carries its unit."
+later = "breaking"
+later_why = "Changing Duration to seconds changes the setter and getter."
+[[deviation]]
+id = "[!d]*:materialProviders#StormTrackingCache$sleep*"
+reason = "One Duration `sleep` replaces the model's sleepMilli number."
+what_differs = "The model uses a millisecond number."
+justification = "A Duration replaces the number and its unit."
+later = "breaking"
+later_why = "Replacing sleep(Duration) with sleep_milli removes a setter."
+[[deviation]]
+id = "[!d]*:materialProviders#StormTrackingCache$timeUnits*"
+example_strict = '''
+StormTrackingCmc::builder()
+    .grace_period(10).grace_interval(1).in_flight_ttl(10)
+    .time_units(TimeUnits::Seconds)
+    .sleep_milli(20)'''
+example_ours = '''
+StormTrackingCmc::builder()
+    .grace_period(Duration::from_secs(10))
+    .grace_interval(Duration::from_secs(1))
+    .in_flight_ttl(Duration::from_secs(10))
+    .sleep(Duration::from_millis(20))'''
+reason = "Durations carry their own unit, so there is no timeUnits."
+what_differs = "The model has a separate time-units setting."
+justification = "Durations carry their own unit, so the setting has nothing to do."
+later = "not breaking"
+later_why = "A time_units setting could be added, though it would do nothing."
+[[deviation]]
+id = "*_type:materialProviders#*Materials*$plaintextDataKey*"
+reason = "Key wrapper types wipe the key from memory on drop and keep it out of Debug."
+what_differs = "The model uses raw bytes for keys."
+justification = "The wrapper wipes the key from memory when dropped and never prints it."
+later = "breaking"
+later_why = "Changing the key wrapper to bytes changes the setter and getter."
+[[deviation]]
+id = "*_type:materialProviders#*Materials*$signingKey*"
+reason = "Key wrapper types wipe the key from memory on drop and keep it out of Debug."
+what_differs = "The model uses raw bytes for keys."
+justification = "The wrapper wipes the key from memory when dropped and never prints it."
+later = "breaking"
+later_why = "Changing the key wrapper to bytes changes the setter and getter."
+[[deviation]]
+id = "*_type:materialProviders#*Materials*$symmetricSigningKey*"
+reason = "Key wrapper types wipe the key from memory on drop and keep it out of Debug."
+what_differs = "The model uses raw bytes for keys."
+justification = "The wrapper wipes the key from memory when dropped and never prints it."
+later = "breaking"
+later_why = "Changing the key wrapper to bytes changes the setter and getter."
+[[deviation]]
+id = "*_type:materialProviders#*Materials*$verificationKey*"
+reason = "Key wrapper types wipe the key from memory on drop and keep it out of Debug."
+what_differs = "The model uses raw bytes for keys."
+justification = "Same wrapper as the other keys, for one consistent API."
+later = "breaking"
+later_why = "Changing the key wrapper to bytes changes the setter and getter."
+[[deviation]]
+id = "*_type:keyStore#KeyStoreConfig$*Client*"
+reason = "AWS SDK clients are already cheap to clone and share; no extra handle."
+what_differs = "The model wraps the AWS clients in a shared handle."
+justification = "AWS SDK clients are already cheap to clone and share."
+later = "breaking"
+later_why = "Taking a shared handle instead of the AWS client changes the setter."
+[[deviation]]
+id = "*_type:materialProviders#CreateAwsKmsHierarchicalKeyringInput$cache*"
+reason = "The keyring takes a shared cache handle; the model's CacheType union is folded into the cache builders."
+what_differs = "The model takes a CacheType union."
+justification = "The keyring takes a ready cache handle, built with that cache's own builder."
+later = "breaking"
+later_why = "Taking the CacheType union instead of a cache handle changes the setter."
+[[deviation]]
+id = "doc_missing:*"
+reason = "Our doc wording is kept; the model's has typos and stale names."
+what_differs = "The model's doc strings are not copied into the Rust docs."
+justification = "Ours are clearer; the model's have typos like 'A identifier'."
+later = "not breaking"
+later_why = "Docs aren't part of the API."
+[[deviation]]
+id = "builder_missing:encryptionSdk#*Output"
+reason = "Output builders only help test mocks; adding them later is not breaking."
+what_differs = "The model's outputs have builders."
+justification = "Only test mocks need them; adding them later is not breaking."
+later = "not breaking"
+later_why = "Adding a builder only adds API."
+[[deviation]]
+id = "operation_input_missing:materialProviders#InitializeEncryptionMaterialsInput$verificationKey"
+reason = "The verification key travels in the encryption context."
+what_differs = "The model passes a verification key when building encryption materials."
+justification = "That key travels in the encryption context, so there's no separate field."
+later = "not breaking"
+later_why = "A verification_key setter only adds API."
+[[deviation]]
+id = "config_missing:materialProviders#AwsCryptographicMaterialProviders"
+reason = "There is no MPL client, so no MPL config."
+what_differs = "The model has an MPL client config."
+justification = "There is no MPL client, so there's nothing to configure."
+later = "not breaking"
+later_why = "An MPL config could be added with a client."
+[[deviation]]
+id = "lint.positional_constructor:*Error::*"
+reason = "Error helpers; tracked with audit item 6 (internal helpers that are public)."
+what_differs = "Some error helpers take several values instead of a builder."
+justification = "Fix later with audit item 6 (internal helpers that are public)."
+later = "not breaking"
+later_why = "A builder could be added next to the helpers."
+[[deviation]]
+id = "lint.positional_constructor:aws_mpl_primitives::error::DataKeyInfo::new"
+reason = "Both values are required; a later optional field can be a with_ method."
+
+what_differs = "DataKeyInfo::new takes two values instead of a builder."
+justification = "Both are required; a later optional field can be a with_ method."
+later = "not breaking"
+later_why = "A builder could be added next to new()."
+
+[[deviation]]
+id = "*:encryptionSdk#AwsEncryptionSdkConfig$netV4_0_0_RetryPolicy*"
+reason = "A .NET-only retry flag for ESDK-NET 4.0.0 messages; not in other languages."
+what_differs = "The model has a retry flag for ESDK-NET 4.0.0 messages."
+justification = "It works around one .NET release; it means nothing in Rust."
+later = "not breaking"
+later_why = "A new setter only adds API."
+[[deviation]]
+id = "lint.const_fn:aws_crypto_mpl::types::RequiredEncryptionContextKeys::new"
+reason = "The empty set is a fixed value: a getter returns a static empty one when the input has none."
+what_differs = "A public const fn on a struct."
+justification = "The static needs a const constructor; an empty set stays const-constructible whatever the type holds inside."
+later = "breaking"
+later_why = "Dropping const breaks callers that build one in a const or static."
+
+[[deviation]]
+id = "*_type:materialProviders#*$requiredEncryptionContextKeys*"
+example_strict = '''
+let keys: &[String] = materials.required_encryption_context_keys();
+builder.set_required_encryption_context_keys(Some(vec!["a".into()]))'''
+example_ours = '''
+let keys: &RequiredEncryptionContextKeys = materials.required_encryption_context_keys();
+builder.set_required_encryption_context_keys(Some(RequiredEncryptionContextKeys::from(["a"])))
+// adding one key is the same: .required_encryption_context_keys("a")'''
+reason = "Its own type: a sorted set of keys, like the sorted encryption context."
+what_differs = "The model uses a list of keys; Rust has a RequiredEncryptionContextKeys type."
+justification = "The type can't hold a key twice, keeps keys sorted like the encryption context, and can change inside without breaking callers."
+later = "breaking"
+later_why = "Changing the type to a list changes the setter and getter."
+
+[[deviation]]
+id = "lint.renamed_reexport:aws_esdk::types::*"
+example_strict = '''
+use aws_esdk::types::EsdkAlgorithmSuiteId;
+esdk.encrypt().algorithm_suite_id(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)'''
+example_ours = '''
+use aws_esdk::types::AlgorithmSuiteId;   // the same type, shorter name
+esdk.encrypt().algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)'''
+reason = "ESDK callers write AlgorithmSuiteId and CommitmentPolicy; they are the MPL's EsdkAlgorithmSuiteId and EsdkCommitmentPolicy."
+what_differs = "The ESDK re-exports EsdkAlgorithmSuiteId as AlgorithmSuiteId (and the commitment policy too)."
+justification = "ESDK callers only ever see ESDK suites and policies, so the shorter name drops a prefix that tells them nothing."
+later = "breaking"
+later_why = "Removing the AlgorithmSuiteId name breaks callers; adding EsdkAlgorithmSuiteId next to it would not."
+

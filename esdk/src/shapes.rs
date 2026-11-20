@@ -52,6 +52,16 @@ fn validate_material_source(
 //# This value MUST default to 4096 bytes.
 const DEFAULT_FRAME_LENGTH: NonZeroU32 = NonZeroU32::new(4096).expect("4096 is non-zero");
 
+/// The frame length to encrypt with: the default when unset, an error when 0.
+//= spec/client-apis/encrypt.md#frame-length
+//# This value MUST be greater than 0 and MUST NOT exceed the value 2^32 - 1.
+fn frame_length_or_default(frame_length: Option<u32>) -> Result<NonZeroU32, Error> {
+    match frame_length {
+        None => Ok(DEFAULT_FRAME_LENGTH),
+        Some(n) => NonZeroU32::new(n).ok_or_else(|| val_err("frame_length must be greater than 0")),
+    }
+}
+
 /// The output a streaming encrypt or decrypt writes to:
 /// any [`AsyncWrite`](tokio::io::AsyncWrite) that is `Unpin + Send`.
 //= spec/client-apis/streaming.md#outputs
@@ -173,13 +183,13 @@ macro_rules! output_bytes {
 
             /// The number of bytes.
             #[must_use]
-            pub const fn len(&self) -> usize {
+            pub fn len(&self) -> usize {
                 self.0.len()
             }
 
             /// Whether there are no bytes.
             #[must_use]
-            pub const fn is_empty(&self) -> bool {
+            pub fn is_empty(&self) -> bool {
                 self.0.is_empty()
             }
         }
@@ -290,19 +300,19 @@ pub struct EncryptOutput {
 impl EncryptOutput {
     /// The algorithm suite the message is encrypted with.
     #[must_use]
-    pub const fn algorithm_suite_id(&self) -> AlgorithmSuiteId {
+    pub fn algorithm_suite_id(&self) -> AlgorithmSuiteId {
         self.algorithm_suite_id
     }
 
     /// The encryption context bound to the message.
     #[must_use]
-    pub const fn encryption_context(&self) -> &EncryptionContext {
+    pub fn encryption_context(&self) -> &EncryptionContext {
         &self.encryption_context
     }
 
     /// The encrypted message bytes.
     #[must_use]
-    pub const fn ciphertext(&self) -> &Ciphertext {
+    pub fn ciphertext(&self) -> &Ciphertext {
         &self.ciphertext
     }
 
@@ -325,13 +335,13 @@ pub struct EncryptStreamOutput {
 impl EncryptStreamOutput {
     /// The algorithm suite the message is encrypted with.
     #[must_use]
-    pub const fn algorithm_suite_id(&self) -> AlgorithmSuiteId {
+    pub fn algorithm_suite_id(&self) -> AlgorithmSuiteId {
         self.algorithm_suite_id
     }
 
     /// The encryption context bound to the message.
     #[must_use]
-    pub const fn encryption_context(&self) -> &EncryptionContext {
+    pub fn encryption_context(&self) -> &EncryptionContext {
         &self.encryption_context
     }
 }
@@ -354,19 +364,19 @@ pub struct DecryptOutput {
 impl DecryptOutput {
     /// The algorithm suite the message is encrypted with.
     #[must_use]
-    pub const fn algorithm_suite_id(&self) -> AlgorithmSuiteId {
+    pub fn algorithm_suite_id(&self) -> AlgorithmSuiteId {
         self.algorithm_suite_id
     }
 
     /// The encryption context bound to the message.
     #[must_use]
-    pub const fn encryption_context(&self) -> &EncryptionContext {
+    pub fn encryption_context(&self) -> &EncryptionContext {
         &self.encryption_context
     }
 
     /// The decrypted plaintext.
     #[must_use]
-    pub const fn plaintext(&self) -> &Plaintext {
+    pub fn plaintext(&self) -> &Plaintext {
         &self.plaintext
     }
 
@@ -389,13 +399,13 @@ pub struct DecryptStreamOutput {
 impl DecryptStreamOutput {
     /// The algorithm suite the message is encrypted with.
     #[must_use]
-    pub const fn algorithm_suite_id(&self) -> AlgorithmSuiteId {
+    pub fn algorithm_suite_id(&self) -> AlgorithmSuiteId {
         self.algorithm_suite_id
     }
 
     /// The encryption context bound to the message.
     #[must_use]
-    pub const fn encryption_context(&self) -> &EncryptionContext {
+    pub fn encryption_context(&self) -> &EncryptionContext {
         &self.encryption_context
     }
 }
@@ -475,7 +485,7 @@ macro_rules! getters {
 pub(crate) struct EncryptInputBuilder<'a> {
     algorithm_suite_id: Option<AlgorithmSuiteId>,
     encryption_context: Option<EncryptionContext>,
-    frame_length: Option<NonZeroU32>,
+    frame_length: Option<u32>,
     keyring: Option<SharedKeyring>,
     cmm: Option<SharedCmm>,
     plaintext: Option<&'a [u8]>,
@@ -520,7 +530,7 @@ impl<'a> EncryptInputBuilder<'a> {
         get_keyring: keyring -> SharedKeyring,
         get_cmm: cmm -> SharedCmm,
         get_algorithm_suite_id: algorithm_suite_id -> AlgorithmSuiteId,
-        get_frame_length: frame_length -> NonZeroU32,
+        get_frame_length: frame_length -> u32,
     );
 
     /// Set the algorithm suite.
@@ -557,13 +567,8 @@ impl<'a> EncryptInputBuilder<'a> {
 
     /// Set the bytes of plaintext data per frame.
     /// Default is 4096.
-    //
-    //= spec/client-apis/encrypt.md#frame-length
-    //= type=implication
-    //= reason=NonZeroU32 is greater than 0 and at most u32::MAX = 2^32 - 1
-    //# This value MUST be greater than 0 and MUST NOT exceed the value 2^32 - 1.
     #[must_use]
-    pub(crate) const fn frame_length(mut self, frame_length: NonZeroU32) -> Self {
+    pub(crate) const fn frame_length(mut self, frame_length: u32) -> Self {
         self.frame_length = Some(frame_length);
         self
     }
@@ -572,7 +577,7 @@ impl<'a> EncryptInputBuilder<'a> {
     /// `None` leaves it unset.
     /// To set a value, use [`Self::frame_length`].
     #[must_use]
-    pub(crate) const fn set_frame_length(mut self, frame_length: Option<NonZeroU32>) -> Self {
+    pub(crate) const fn set_frame_length(mut self, frame_length: Option<u32>) -> Self {
         self.frame_length = frame_length;
         self
     }
@@ -654,7 +659,7 @@ impl<'a> EncryptInputBuilder<'a> {
     ///
     /// # Errors
     ///
-    /// - [`Validation`](crate::Error::Validation): no plaintext was set, or not exactly one of a keyring or CMM was set.
+    /// - [`Validation`](crate::Error::Validation): no plaintext was set, not exactly one of a keyring or CMM was set, or `frame_length` is 0.
     pub(crate) fn build(self) -> Result<EncryptInput<'a>, Error> {
         let plaintext = required(self.plaintext, "plaintext")?;
         //= spec/client-apis/encrypt.md#input
@@ -666,7 +671,7 @@ impl<'a> EncryptInputBuilder<'a> {
         Ok(EncryptInput {
             algorithm_suite_id: self.algorithm_suite_id,
             encryption_context: self.encryption_context.unwrap_or_default(),
-            frame_length: self.frame_length.unwrap_or(DEFAULT_FRAME_LENGTH),
+            frame_length: frame_length_or_default(self.frame_length)?,
             keyring: self.keyring,
             cmm: self.cmm,
             plaintext,
@@ -688,10 +693,10 @@ pub(crate) struct EncryptStreamInput {
     /// The cryptographic materials manager (CMM) to use for this operation.
     pub(crate) cmm: Option<SharedCmm>,
     //= spec/client-apis/encrypt.md#input
-    //= reason=EncryptStreamInput accepts unknown-length plaintext via a stream; data_size serves as the optional Plaintext Length Bound
+    //= reason=EncryptStreamInput accepts unknown-length plaintext via a stream; plaintext_length_bound is the optional Plaintext Length Bound
     //# If the [plaintext](#plaintext) is of unknown length, the caller MAY also input a
     //# [Plaintext Length Bound](#plaintext-length-bound).
-    pub(crate) data_size: Option<usize>,
+    pub(crate) plaintext_length_bound: Option<u64>,
     pub(crate) max_encrypted_data_keys: Option<NonZeroUsize>,
     pub(crate) commitment_policy: CommitmentPolicy,
 }
@@ -713,10 +718,10 @@ impl EncryptStreamInput {
 pub(crate) struct EncryptStreamInputBuilder {
     algorithm_suite_id: Option<AlgorithmSuiteId>,
     encryption_context: Option<EncryptionContext>,
-    frame_length: Option<NonZeroU32>,
+    frame_length: Option<u32>,
     keyring: Option<SharedKeyring>,
     cmm: Option<SharedCmm>,
-    data_size: Option<usize>,
+    plaintext_length_bound: Option<u64>,
     max_encrypted_data_keys: Option<NonZeroUsize>,
     commitment_policy: Option<CommitmentPolicy>,
 }
@@ -727,8 +732,8 @@ impl EncryptStreamInputBuilder {
         get_keyring: keyring -> SharedKeyring,
         get_cmm: cmm -> SharedCmm,
         get_algorithm_suite_id: algorithm_suite_id -> AlgorithmSuiteId,
-        get_frame_length: frame_length -> NonZeroU32,
-        get_data_size: data_size -> usize,
+        get_frame_length: frame_length -> u32,
+        get_plaintext_length_bound: plaintext_length_bound -> u64,
     );
 
     /// Set the algorithm suite.
@@ -766,7 +771,7 @@ impl EncryptStreamInputBuilder {
     /// Set the bytes of plaintext data per frame.
     /// Default is 4096.
     #[must_use]
-    pub(crate) const fn frame_length(mut self, frame_length: NonZeroU32) -> Self {
+    pub(crate) const fn frame_length(mut self, frame_length: u32) -> Self {
         self.frame_length = Some(frame_length);
         self
     }
@@ -775,7 +780,7 @@ impl EncryptStreamInputBuilder {
     /// `None` leaves it unset.
     /// To set a value, use [`Self::frame_length`].
     #[must_use]
-    pub(crate) const fn set_frame_length(mut self, frame_length: Option<NonZeroU32>) -> Self {
+    pub(crate) const fn set_frame_length(mut self, frame_length: Option<u32>) -> Self {
         self.frame_length = frame_length;
         self
     }
@@ -820,17 +825,20 @@ impl EncryptStreamInputBuilder {
     /// CMM or keyring requires the plaintext length up front (e.g. for a
     /// signing scheme that pre-computes a digest size).
     #[must_use]
-    pub(crate) const fn data_size(mut self, data_size: usize) -> Self {
-        self.data_size = Some(data_size);
+    pub(crate) const fn plaintext_length_bound(mut self, plaintext_length_bound: u64) -> Self {
+        self.plaintext_length_bound = Some(plaintext_length_bound);
         self
     }
 
     /// Set the expected plaintext stream size from an `Option`.
     /// `None` leaves it unset.
-    /// To set a value, use [`Self::data_size`].
+    /// To set a value, use [`Self::plaintext_length_bound`].
     #[must_use]
-    pub(crate) const fn set_data_size(mut self, data_size: Option<usize>) -> Self {
-        self.data_size = data_size;
+    pub(crate) const fn set_plaintext_length_bound(
+        mut self,
+        plaintext_length_bound: Option<u64>,
+    ) -> Self {
+        self.plaintext_length_bound = plaintext_length_bound;
         self
     }
 
@@ -860,16 +868,16 @@ impl EncryptStreamInputBuilder {
     ///
     /// # Errors
     ///
-    /// - [`Validation`](crate::Error::Validation): not exactly one of a keyring or CMM was set.
+    /// - [`Validation`](crate::Error::Validation): not exactly one of a keyring or CMM was set, or `frame_length` is 0.
     pub(crate) fn build(self) -> Result<EncryptStreamInput, Error> {
         validate_material_source(self.keyring.as_ref(), self.cmm.as_ref())?;
         Ok(EncryptStreamInput {
             algorithm_suite_id: self.algorithm_suite_id,
             encryption_context: self.encryption_context.unwrap_or_default(),
-            frame_length: self.frame_length.unwrap_or(DEFAULT_FRAME_LENGTH),
+            frame_length: frame_length_or_default(self.frame_length)?,
             keyring: self.keyring,
             cmm: self.cmm,
-            data_size: self.data_size,
+            plaintext_length_bound: self.plaintext_length_bound,
             max_encrypted_data_keys: self.max_encrypted_data_keys,
             commitment_policy: self.commitment_policy.unwrap_or(DEFAULT_COMMITMENT_POLICY),
         })

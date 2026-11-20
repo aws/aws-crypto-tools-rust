@@ -60,8 +60,28 @@ async fn dispatch(
         "CreateRawAesKeyring" => dispatch_op::<CreateRawAesKeyringRequest, _>(&body, |req| {
             state.create_raw_aes_keyring(req)
         }),
+        "CreateStaticKeyring" => dispatch_op::<CreateStaticKeyringRequest, _>(&body, |req| {
+            state.create_static_keyring(req)
+        }),
         "CreateDefaultCmm" => {
             dispatch_op::<CreateDefaultCmmRequest, _>(&body, |req| state.create_default_cmm(req))
+        }
+        "CreateKeyStoreClient" => {
+            dispatch_op_async::<CreateKeyStoreClientRequest, _, _>(&body, |req| {
+                state.create_key_store_client(req)
+            })
+            .await
+        }
+        "CreateCryptographicMaterialsCache" => {
+            dispatch_op::<CreateCryptographicMaterialsCacheRequest, _>(&body, |req| {
+                state.create_cryptographic_materials_cache(req)
+            })
+        }
+        "CreateAwsKmsHierarchicalKeyring" => {
+            dispatch_op_async::<CreateAwsKmsHierarchicalKeyringRequest, _, _>(&body, |req| {
+                state.create_aws_kms_hierarchical_keyring(req)
+            })
+            .await
         }
         "InitializeEncryptionMaterials" => {
             dispatch_op::<InitializeEncryptionMaterialsRequest, _>(&body, |req| {

@@ -37,6 +37,10 @@ async fn test_signature_uses_signing_algorithm() {
     //= reason=Verify succeeds with P-384, fails with P-256; proves correct algorithm was used
     //# To calculate a signature, this operation MUST use the [signature algorithm](../framework/algorithm-suites.md#signature-algorithm)
     //# specified by the [algorithm suite](../framework/algorithm-suites.md), with the following input:
+    //
+    //= spec/framework/transitive-requirements.md#ecdsa
+    //= type=test
+    //# If specified to use ECDSA, the AWS Encryption SDK MUST use ECDSA with the following specifics:
 
     // Strategy: encrypt with a P-384 signing suite, extract the footer signature,
     // and verify it succeeds with EcdsaP384 but fails with EcdsaP256. This proves
