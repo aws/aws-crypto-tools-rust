@@ -417,8 +417,6 @@ jobs:
       # Only run tests that involve the focus language (ex. skip Python <--> Java tests for this Rust repo)
       focus: ${{ matrix.focus }}
       checkout-languages: ${{ matrix.focus }}
-    secrets:
-      repo-pat: ${{ secrets.COMMONS_REPO_PAT }}
 
   mpl-test-server:
     name: MPL TestServer
@@ -440,8 +438,6 @@ jobs:
       # This repository's CI role; it already reads the key store fixtures
       # in the mpl crate's integration tests.
       aws-role-arn: arn:aws:iam::370957321024:role/GitHub-CI-Public-ESDK-Dafny-Role-us-west-2
-    secrets:
-      repo-pat: ${{ secrets.COMMONS_REPO_PAT }}
 
   prim-test-server:
     name: Primitives TestServer
@@ -455,8 +451,6 @@ jobs:
       runner: *codebuild-linux
       focus: rust
       checkout-languages: rust
-    secrets:
-      repo-pat: ${{ secrets.COMMONS_REPO_PAT }}
 
   # Benchmarks only upload to CloudWatch on the daily run.
   # Not in pr-ci-all-required, so a slow or noisy benchmark can't block a merge.
