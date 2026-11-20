@@ -40,6 +40,12 @@
 //# validation, error propagation, and lifetime safety — rather than by re-testing
 //# the core library's own behavior.
 //
+//= spec/shim/esdk-shim.md#conformance-and-testing
+//= type=implication
+//= reason=esdk-cpp-test-server runs this shim against the shared cross-language ESDK test-server suite
+//# - The ESDK shim SHOULD demonstrate message interoperability with other ESDK
+//# implementations (for example via a shared test-vector suite).
+//
 //= spec/shim/shim.md#type-translation
 //= type=implication
 //= reason=Every translation returns a Result
@@ -225,7 +231,7 @@ mod ffi {
     //
     //= spec/shim/shim.md#error-classification
     //= reason=These are exactly the Rust ESDK's errors.
-    //# - When the core library distinguishes kinds of errors, the shim SHOULD expose
+    //# - When the core library distinguishes kinds of errors, the shim MUST expose
     //# the same kinds under the core library's own names, expressed in the target
     //# language's error mechanism.
     //
@@ -375,7 +381,7 @@ mod ffi {
         grace_period: OptDuration,
         grace_interval: OptDuration,
         fan_out: OptU32,
-        inflight_ttl: OptDuration,
+        in_flight_ttl: OptDuration,
         sleep: OptDuration,
     }
 
@@ -767,28 +773,26 @@ fn alg_id_target_to_core(e: ffi::EsdkAlgorithmSuiteId) -> Result<EsdkAlgorithmSu
 //# - The shim MUST translate a core ESDK algorithm suite to the target algorithm
 //# suite identifier that has the same two-byte ID.
 fn alg_id_core_to_target(e: EsdkAlgorithmSuiteId) -> Result<ffi::EsdkAlgorithmSuiteId, String> {
-    use EsdkAlgorithmSuiteId as Core;
+    alg_id_bytes_to_target(e.id_bytes())
+}
+
+fn alg_id_bytes_to_target(id: [u8; 2]) -> Result<ffi::EsdkAlgorithmSuiteId, String> {
     use ffi::EsdkAlgorithmSuiteId as Target;
-    match e {
-        Core::AlgAes128GcmIv12Tag16NoKdf => Ok(Target::AlgAes128GcmIv12Tag16NoKdf),
-        Core::AlgAes192GcmIv12Tag16NoKdf => Ok(Target::AlgAes192GcmIv12Tag16NoKdf),
-        Core::AlgAes256GcmIv12Tag16NoKdf => Ok(Target::AlgAes256GcmIv12Tag16NoKdf),
-        Core::AlgAes128GcmIv12Tag16HkdfSha256 => Ok(Target::AlgAes128GcmIv12Tag16HkdfSha256),
-        Core::AlgAes192GcmIv12Tag16HkdfSha256 => Ok(Target::AlgAes192GcmIv12Tag16HkdfSha256),
-        Core::AlgAes256GcmIv12Tag16HkdfSha256 => Ok(Target::AlgAes256GcmIv12Tag16HkdfSha256),
-        Core::AlgAes128GcmIv12Tag16HkdfSha256EcdsaP256 => {
-            Ok(Target::AlgAes128GcmIv12Tag16HkdfSha256EcdsaP256)
-        }
-        Core::AlgAes192GcmIv12Tag16HkdfSha384EcdsaP384 => {
-            Ok(Target::AlgAes192GcmIv12Tag16HkdfSha384EcdsaP384)
-        }
-        Core::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384 => {
-            Ok(Target::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384)
-        }
-        Core::AlgAes256GcmHkdfSha512CommitKey => Ok(Target::AlgAes256GcmHkdfSha512CommitKey),
-        Core::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384 => {
-            Ok(Target::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
-        }
+    let target = Target {
+        repr: u16::from_be_bytes(id),
+    };
+    match target {
+        Target::AlgAes128GcmIv12Tag16NoKdf
+        | Target::AlgAes192GcmIv12Tag16NoKdf
+        | Target::AlgAes256GcmIv12Tag16NoKdf
+        | Target::AlgAes128GcmIv12Tag16HkdfSha256
+        | Target::AlgAes192GcmIv12Tag16HkdfSha256
+        | Target::AlgAes256GcmIv12Tag16HkdfSha256
+        | Target::AlgAes128GcmIv12Tag16HkdfSha256EcdsaP256
+        | Target::AlgAes192GcmIv12Tag16HkdfSha384EcdsaP384
+        | Target::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384
+        | Target::AlgAes256GcmHkdfSha512CommitKey
+        | Target::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384 => Ok(target),
         //= spec/shim/esdk-shim.md#algorithm-suite-identifier
         //# - The shim MUST return an error when the core ESDK produces an algorithm suite
         //# the shim does not define.
@@ -871,8 +875,8 @@ fn encryption_context_core_to_target(
 //# The shim MUST translate zero
 //# to the core ESDK's "no limit" representation, and a positive value `n` to a
 //# limit of `n`.
-fn max_edks_target_to_core(n: u32) -> Option<std::num::NonZeroUsize> {
-    std::num::NonZeroUsize::new(usize::try_from(n).unwrap_or(usize::MAX))
+fn max_edks_target_to_core(n: u32) -> Option<usize> {
+    (n != 0).then(|| usize::try_from(n).unwrap_or(usize::MAX))
 }
 
 // C++ to Rust for Frame Length
@@ -904,10 +908,10 @@ fn make_kms_config(
         )),
         //= spec/shim/esdk-shim.md#kms-configuration
         //# - The shim MUST translate a KMS key ARN configuration.
-        ffi::KmsConfigurationType::KmsKeyArn => Ok(KmsConfiguration::KmsKeyArn(value.into())),
+        ffi::KmsConfigurationType::KmsKeyArn => Ok(KmsConfiguration::kms_key_arn(value)),
         //= spec/shim/esdk-shim.md#kms-configuration
         //# - The shim MUST translate a KMS multi-Region-key ARN configuration.
-        ffi::KmsConfigurationType::KmsMrKeyArn => Ok(KmsConfiguration::KmsMrKeyArn(value.into())),
+        ffi::KmsConfigurationType::KmsMrKeyArn => Ok(KmsConfiguration::kms_mr_key_arn(value)),
         //= spec/shim/esdk-shim.md#kms-configuration
         //# - The shim MUST translate a discovery configuration.
         ffi::KmsConfigurationType::Discovery => Ok(KmsConfiguration::Discovery(
@@ -986,7 +990,10 @@ fn apply_storm_tracking_options(
             options.grace_interval.to_option(),
         )?)
         .set_fan_out(count("fan_out", options.fan_out.to_option())?)
-        .set_inflight_ttl(duration("inflight_ttl", options.inflight_ttl.to_option())?)
+        .set_in_flight_ttl(duration(
+            "in_flight_ttl",
+            options.in_flight_ttl.to_option(),
+        )?)
         .set_sleep(duration("sleep", options.sleep.to_option())?))
 }
 
@@ -1299,7 +1306,7 @@ fn encrypt(input: &ffi::EncryptInput) -> Result<ffi::EncryptOutput, String> {
         //# source (see [Resources](#resources)).
         .keyring(keyring.inner.clone())
         .set_algorithm_suite_id(settings.algorithm_suite_id)
-        .set_frame_length(settings.frame_length)
+        .set_frame_length(settings.frame_length.map(NonZeroU32::get))
         .send();
     let output = TOKIO_RUNTIME.block_on(output).map_err(core_err)?;
     Ok(ffi::EncryptOutput {
@@ -1401,8 +1408,14 @@ fn ddb_client(
     //# - Creating a DynamoDB client MUST apply the target-supplied client configuration,
     //# as defined in [Service client configuration](#service-client-configuration).
     let sdk_config = create_sdk_config(input, http_client)?;
+    let mut config = aws_sdk_dynamodb::config::Builder::from(&sdk_config);
+    // The DynamoDB client ignores the SdkConfig's retry config and uses its own default.
+    // Setting it on the client config makes the caller's retry config apply.
+    if let Some(retry_config) = make_retry_config(&input.retry) {
+        config = config.retry_config(retry_config);
+    }
     Ok(Box::new(MplDdbClient {
-        inner: aws_sdk_dynamodb::Client::new(&sdk_config),
+        inner: aws_sdk_dynamodb::Client::from_conf(config.build()),
     }))
 }
 
@@ -1567,8 +1580,8 @@ fn non_empty(tokens: &[String]) -> Option<Vec<String>> {
 }
 
 //= spec/shim/esdk-shim.md#aes-wrapping-algorithm
-//# - The shim MUST translate the target AES wrapping algorithm to the core ESDK
-//# wrapping algorithm of the same meaning.
+//# - The shim MUST translate the target AES wrapping algorithm configuration to
+//# the core ESDK wrapping algorithm configuration.
 fn wrapping_alg_target_to_core(
     alg: ffi::AesWrappingAlg,
 ) -> Result<aws_crypto_mpl::types::AesWrappingAlg, String> {
@@ -1588,8 +1601,8 @@ fn wrapping_alg_target_to_core(
             Ok(aws_crypto_mpl::types::AesWrappingAlg::AlgAes256GcmIv12Tag16)
         }
         //= spec/shim/esdk-shim.md#aes-wrapping-algorithm
-        //# - The shim MUST return an error when the target wrapping algorithm is not a
-        //# supported value.
+        //# - The shim MUST return an error when the target wrapping algorithm configuration is not
+        //# supported.
         _ => Err(shim_err(
             ffi::ShimErrorKind::Validation,
             "create_raw_aes_keyring",
@@ -1639,14 +1652,10 @@ fn create_hierarchical_keyring(
     let key_store = require_handle(input.key_store, "key_store", "create_hierarchical_keyring")?;
 
     //= spec/shim/esdk-shim.md#create-hierarchical-keyring
-    //= reason=The builder receives a cache only when the target supplied one; otherwise it keeps the core ESDK's default cache.
-    //# - When no cache is supplied, creating a hierarchical keyring MUST defer to the
-    //# core ESDK's default cache.
-    //
-    //= spec/shim/esdk-shim.md#create-hierarchical-keyring
-    //= reason=The cache handle's SharedCmc is passed to the builder, so the keyring refers to that exact cache.
-    //# - When a cache is supplied, creating a hierarchical keyring MUST reference that
-    //# exact cache, so several keyrings given the same cache share it.
+    //# - Creating a hierarchical keyring MAY be supplied with a
+    //# [cryptographic materials cache](#create-cryptographic-materials-cache),
+    //# checked as defined in
+    //# [Shim Specification: Handles and lifetimes](./shim.md#handles-and-lifetimes).
     //
     // SAFETY: a non-null handle is a valid cache borrowed for this call.
     let cache = unsafe { input.cache.as_ref() }.map(|c| c.inner.clone());
@@ -1665,7 +1674,14 @@ fn create_hierarchical_keyring(
         //# and time-to-live to the core ESDK.
         .ttl(ttl)
         .branch_key_id(input.branch_key_id.clone());
+    //= spec/shim/esdk-shim.md#create-hierarchical-keyring
+    //= reason=Without a cache the builder is left unset, and ESDK Rust builds its default cache
+    //# - When no cache is supplied, creating a hierarchical keyring MUST defer to the
+    //# core ESDK's default cache.
     if let Some(cache) = cache {
+        //= spec/shim/esdk-shim.md#create-hierarchical-keyring
+        //# - When a cache is supplied, creating a hierarchical keyring MUST reference that
+        //# exact cache, so several keyrings given the same cache share it.
         builder = builder.cache(cache);
     }
     if let Some(partition_id) = partition_id {
@@ -1917,7 +1933,7 @@ struct DecryptStream {
     state: StreamState,
 }
 
-//= spec/shim/esdk-shim.md#encrypt-stream-and-decrypt-stream
+//= spec/shim/esdk-shim.md#encrypt-decrypt-streams
 //# - The ESDK shim SHOULD provide streaming encrypt and decrypt operations,
 //# accepting the same inputs as [encrypt](#encrypt-inputs) and
 //# [decrypt](#decrypt-inputs) except the plaintext or ciphertext, which the
@@ -1933,22 +1949,8 @@ fn create_encrypt_stream(input: &ffi::EncryptInput) -> Result<Box<EncryptStream>
             &input.encryption_context,
         )))
         .set_algorithm_suite_id(settings.algorithm_suite_id)
-        .set_frame_length(settings.frame_length)
-        .set_data_size(
-            input
-                .plaintext_length_bound
-                .to_option()
-                .map(|bound| {
-                    usize::try_from(bound).map_err(|e| {
-                        shim_err(
-                            ffi::ShimErrorKind::Validation,
-                            "plaintext length bound translation",
-                            e,
-                        )
-                    })
-                })
-                .transpose()?,
-        );
+        .set_frame_length(settings.frame_length.map(NonZeroU32::get))
+        .set_plaintext_length_bound(input.plaintext_length_bound.to_option());
     Ok(Box::new(EncryptStream {
         state: StreamState::spawn("encrypt_stream", move |mut reader, mut writer| {
             let output = TOKIO_RUNTIME
@@ -1959,7 +1961,7 @@ fn create_encrypt_stream(input: &ffi::EncryptInput) -> Result<Box<EncryptStream>
                         .send(),
                 )
                 .map_err(core_err)?;
-            //= spec/shim/esdk-shim.md#encrypt-stream-and-decrypt-stream
+            //= spec/shim/esdk-shim.md#encrypt-decrypt-streams
             //# - A successful finish step MUST return the same non-payload outputs as
             //# [encrypt outputs](#encrypt-outputs) or [decrypt outputs](#decrypt-outputs).
             Ok(ffi::StreamFinishOutput {
@@ -2003,7 +2005,7 @@ fn create_decrypt_stream(input: &ffi::DecryptInput) -> Result<Box<DecryptStream>
                         .plaintext(&mut writer)
                         .send(),
                 )
-                //= spec/shim/esdk-shim.md#encrypt-stream-and-decrypt-stream
+                //= spec/shim/esdk-shim.md#encrypt-decrypt-streams
                 //= reason=The core's refusal (and every other core error) propagates through this map_err; the shim releases only what the core's writer produced.
                 //# - Streamed decrypt MUST NOT release plaintext the core ESDK would not release,
                 //# and the shim MUST surface the core ESDK's refusal to stream a message whose
@@ -2032,20 +2034,20 @@ fn decrypt_stream_finish(stream: &mut DecryptStream) -> Result<ffi::StreamFinish
 // converts it to a handle using these methods,
 // and adopts the pointer in its C++ with the interface's C++ `adopt` methods.
 //
-//= spec/shim/shim.md#custom-implementations-of-core-library-interfaces
+//= spec/shim/shim.md#adopting-custom-implementations
 //# - The shim MAY let the target adopt a consumer-written implementation of a
 //# core-library interface.
 //
-//= spec/shim/shim.md#custom-implementations-of-core-library-interfaces
+//= spec/shim/shim.md#adopting-custom-implementations
 //= type=implication
 //# - Anything the core library accepts for that interface MUST be adoptable.
 //
-//= spec/shim/shim.md#custom-implementations-of-core-library-interfaces
+//= spec/shim/shim.md#adopting-custom-implementations
 //= type=implication
 //# - Errors an adopted implementation returns during an operation MUST be
 //# reported like any core-library error (see [Delegation](#delegation)).
 //
-//= spec/shim/shim.md#custom-implementations-of-core-library-interfaces
+//= spec/shim/shim.md#adopting-custom-implementations
 //= type=exception
 //= reason=Target obligation: adopt's documentation states it, and the shim cannot detect a violation.
 //# - The target MUST adopt only values produced by the shim's conversion, and

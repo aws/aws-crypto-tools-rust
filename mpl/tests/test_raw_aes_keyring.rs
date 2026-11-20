@@ -473,7 +473,7 @@ async fn test_round_trip_every_wrapping_algorithm() {
             RawAesKeyring::builder()
                 .key_namespace(namespace)
                 .key_name(name)
-                .wrapping_key(vec![0x2A; usize::from(alg.key_len())])
+                .wrapping_key(vec![0x2A; alg.key_length()])
                 .wrapping_alg(alg)
                 .build()
                 .unwrap_or_else(|e| panic!("constructing a keyring for {alg:?}: {e}")),
@@ -751,7 +751,7 @@ fn test_build_accepts_every_wrapping_key_length() {
         (AesWrappingAlg::AlgAes256GcmIv12Tag16, 32),
     ] {
         assert_eq!(
-            usize::from(alg.key_len()),
+            alg.key_length(),
             expected_len,
             "{alg:?} key length in bytes"
         );

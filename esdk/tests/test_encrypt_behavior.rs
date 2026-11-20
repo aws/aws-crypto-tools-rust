@@ -17,7 +17,6 @@ use aws_crypto_mpl::cmm::{
 };
 use aws_esdk::types::*;
 use aws_esdk::*;
-use std::num::NonZeroU32;
 use std::sync::Arc;
 use test_helpers::*;
 
@@ -441,7 +440,7 @@ async fn test_frame_length_input_used() {
         .encrypt()
         .plaintext(b"custom frame length")
         .keyring(keyring.clone())
-        .frame_length(NonZeroU32::new(512).unwrap())
+        .frame_length(512)
         .send()
         .await
         .unwrap()
@@ -857,7 +856,7 @@ async fn test_step_failure_must_halt_and_indicate_failure() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_plaintext_length_bound_used_for_unknown_length() {
     // A spy CMM records the max_plaintext_length it receives. For an unknown-length
-    // stream with data_size=Some(100), the bound (100) must reach the CMM.
+    // stream with plaintext_length_bound=Some(100), the bound (100) must reach the CMM.
     let keyring = test_keyring().await;
     let inner_cmm = DefaultCmm::new(keyring);
     let observed_len = std::sync::Arc::new(std::sync::Mutex::new(None));
@@ -868,7 +867,7 @@ async fn test_plaintext_length_bound_used_for_unknown_length() {
     };
     //= spec/client-apis/encrypt.md#input
     //= type=test
-    //= reason=data_size sets the optional Plaintext Length Bound; the spy below confirms it reaches the CMM
+    //= reason=plaintext_length_bound sets the optional Plaintext Length Bound; the spy below confirms it reaches the CMM
     //# If the [plaintext](#plaintext) is of unknown length, the caller MAY also input a
     //# [Plaintext Length Bound](#plaintext-length-bound).
 
@@ -878,7 +877,7 @@ async fn test_plaintext_length_bound_used_for_unknown_length() {
     Client::default()
         .encrypt_stream()
         .cmm(cmm_ref)
-        .data_size(100)
+        .plaintext_length_bound(100)
         .plaintext(&mut reader)
         .ciphertext(&mut output)
         .send()
@@ -901,7 +900,7 @@ async fn test_plaintext_length_bound_used_for_unknown_length() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_no_plaintext_length_bound_field_not_included() {
     // A spy CMM records the max_plaintext_length it receives. For an unknown-length
-    // stream with data_size=None, no bound must reach the CMM (the field is omitted).
+    // stream with plaintext_length_bound=None, no bound must reach the CMM (the field is omitted).
     let keyring = test_keyring().await;
     let inner_cmm = DefaultCmm::new(keyring);
     let observed_len = std::sync::Arc::new(std::sync::Mutex::new(None));
@@ -944,7 +943,7 @@ async fn test_streaming_header_released_after_serialization() {
     Client::default()
         .encrypt_stream()
         .keyring(keyring.clone())
-        .data_size(20)
+        .plaintext_length_bound(20)
         .plaintext(&mut reader)
         .ciphertext(&mut output)
         .send()
@@ -1116,22 +1115,3 @@ async fn test_frame_fields_serialized_per_spec() {
     let decrypted = decrypt_ciphertext(&ct).await.into_plaintext().into_inner();
     assert_eq!(decrypted, pt, "round-trip must recover the plaintext");
 }
-
-// TODO(native-mpl): DBE suites not modeled
-// #[test]
-// fn test_non_esdk_materials_suite_yields_error() {
-//     // The ESDK-support guard that encrypt applies to the retrieved materials suite
-//     // (get_esdk_algorithm_suite_id) must reject a non-ESDK (DBE) algorithm suite.
-//     use aws_esdk::__test_internals::get_esdk_algorithm_suite_id;
-//
-//     let non_esdk = aws_mpl_legacy::suites::AlgorithmSuiteId::Dbe(
-//         aws_mpl_legacy::suites::DbeAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeySymsigHmacSha384,
-//     );
-//     let err = get_esdk_algorithm_suite_id(non_esdk)
-//         .expect_err("non-ESDK materials suite must be rejected");
-//     assert_eq!(
-//         err.kind,
-//         ErrorKind::Internal,
-//         "non-ESDK materials suite must yield an error, got: {err:?}"
-//     );
-// }

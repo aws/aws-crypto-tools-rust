@@ -8,7 +8,7 @@ use crate::builder::required;
 use crate::structures::{DecryptionMaterials, EncryptedDataKey, EncryptionMaterials};
 
 /// Input for [`Keyring::on_encrypt`](super::Keyring::on_encrypt).
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct OnEncryptInput {
     pub(crate) materials: EncryptionMaterials,
@@ -23,7 +23,7 @@ impl OnEncryptInput {
 
     /// The encryption materials to add a data key to.
     #[must_use]
-    pub const fn materials(&self) -> &EncryptionMaterials {
+    pub fn materials(&self) -> &EncryptionMaterials {
         &self.materials
     }
 
@@ -35,7 +35,7 @@ impl OnEncryptInput {
 }
 
 /// Builder for [`OnEncryptInput`].
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct OnEncryptInputBuilder {
     materials: Option<EncryptionMaterials>,
 }
@@ -59,7 +59,7 @@ impl OnEncryptInputBuilder {
 
     /// The materials, if set.
     #[must_use]
-    pub const fn get_materials(&self) -> &Option<EncryptionMaterials> {
+    pub fn get_materials(&self) -> &Option<EncryptionMaterials> {
         &self.materials
     }
 
@@ -76,7 +76,7 @@ impl OnEncryptInputBuilder {
 }
 
 /// Output of [`Keyring::on_encrypt`](super::Keyring::on_encrypt).
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct OnEncryptOutput {
     pub(crate) materials: EncryptionMaterials,
@@ -91,7 +91,7 @@ impl OnEncryptOutput {
 
     /// The encryption materials with the keyring's data key added.
     #[must_use]
-    pub const fn materials(&self) -> &EncryptionMaterials {
+    pub fn materials(&self) -> &EncryptionMaterials {
         &self.materials
     }
 
@@ -103,7 +103,7 @@ impl OnEncryptOutput {
 }
 
 /// Builder for [`OnEncryptOutput`].
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct OnEncryptOutputBuilder {
     materials: Option<EncryptionMaterials>,
 }
@@ -127,7 +127,7 @@ impl OnEncryptOutputBuilder {
 
     /// The materials, if set.
     #[must_use]
-    pub const fn get_materials(&self) -> &Option<EncryptionMaterials> {
+    pub fn get_materials(&self) -> &Option<EncryptionMaterials> {
         &self.materials
     }
 
@@ -144,7 +144,7 @@ impl OnEncryptOutputBuilder {
 }
 
 /// Input for [`Keyring::on_decrypt`](super::Keyring::on_decrypt).
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct OnDecryptInput {
     pub(crate) materials: DecryptionMaterials,
@@ -160,7 +160,7 @@ impl OnDecryptInput {
 
     /// The decryption materials to add the plaintext data key to.
     #[must_use]
-    pub const fn materials(&self) -> &DecryptionMaterials {
+    pub fn materials(&self) -> &DecryptionMaterials {
         &self.materials
     }
 
@@ -184,7 +184,7 @@ impl OnDecryptInput {
 }
 
 /// Builder for [`OnDecryptInput`].
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct OnDecryptInputBuilder {
     materials: Option<DecryptionMaterials>,
     encrypted_data_keys: Option<Vec<EncryptedDataKey>>,
@@ -209,7 +209,7 @@ impl OnDecryptInputBuilder {
 
     /// The materials, if set.
     #[must_use]
-    pub const fn get_materials(&self) -> &Option<DecryptionMaterials> {
+    pub fn get_materials(&self) -> &Option<DecryptionMaterials> {
         &self.materials
     }
 
@@ -238,7 +238,7 @@ impl OnDecryptInputBuilder {
 
     /// The encrypted data keys, if set.
     #[must_use]
-    pub const fn get_encrypted_data_keys(&self) -> &Option<Vec<EncryptedDataKey>> {
+    pub fn get_encrypted_data_keys(&self) -> &Option<Vec<EncryptedDataKey>> {
         &self.encrypted_data_keys
     }
 
@@ -256,7 +256,7 @@ impl OnDecryptInputBuilder {
 }
 
 /// Output of [`Keyring::on_decrypt`](super::Keyring::on_decrypt).
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct OnDecryptOutput {
     pub(crate) materials: DecryptionMaterials,
@@ -271,7 +271,7 @@ impl OnDecryptOutput {
 
     /// The decryption materials with the plaintext data key added.
     #[must_use]
-    pub const fn materials(&self) -> &DecryptionMaterials {
+    pub fn materials(&self) -> &DecryptionMaterials {
         &self.materials
     }
 
@@ -283,7 +283,7 @@ impl OnDecryptOutput {
 }
 
 /// Builder for [`OnDecryptOutput`].
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct OnDecryptOutputBuilder {
     materials: Option<DecryptionMaterials>,
 }
@@ -307,7 +307,7 @@ impl OnDecryptOutputBuilder {
 
     /// The materials, if set.
     #[must_use]
-    pub const fn get_materials(&self) -> &Option<DecryptionMaterials> {
+    pub fn get_materials(&self) -> &Option<DecryptionMaterials> {
         &self.materials
     }
 

@@ -59,7 +59,7 @@ async fn key_store_with(
     DynamoDbKeyStore::builder()
         .ddb_table_name(table)
         .logical_key_store_name(TABLE)
-        .kms_configuration(KmsConfiguration::KmsKeyArn(kms_key_arn.into()))
+        .kms_configuration(KmsConfiguration::kms_key_arn(kms_key_arn))
         .kms_client(kms)
         .ddb_client(ddb)
         .build()

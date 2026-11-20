@@ -9,7 +9,7 @@ use aws_crypto_mpl::async_trait;
 use aws_crypto_mpl::cmc::{LocalCmc, SharedCmc};
 use aws_crypto_mpl::cmm::{DefaultCmm, SharedCmm};
 use aws_crypto_mpl::keyring::{
-    BranchKeySupplier, RawAesKeyring, SharedBranchKeySupplier, SharedKeyring,
+    BranchKeyIdSupplier, RawAesKeyring, SharedBranchKeyIdSupplier, SharedKeyring,
 };
 use aws_crypto_mpl::keyring::{GetBranchKeyIdInput, GetBranchKeyIdOutput};
 use aws_crypto_mpl::shared::IntoShared;
@@ -42,7 +42,7 @@ fn cache() -> LocalCmc {
 struct Supplier;
 
 #[async_trait]
-impl BranchKeySupplier for Supplier {
+impl BranchKeyIdSupplier for Supplier {
     async fn get_branch_key_id(
         &self,
         input: GetBranchKeyIdInput,
@@ -90,8 +90,8 @@ fn shared_cmc_reuses_handle() {
 }
 
 #[test]
-fn shared_branch_key_supplier_reuses_handle() {
-    assert_reuses_handle!(SharedBranchKeySupplier, Supplier);
+fn shared_branch_key_id_supplier_reuses_handle() {
+    assert_reuses_handle!(SharedBranchKeyIdSupplier, Supplier);
 }
 
 #[test]
@@ -145,8 +145,8 @@ async fn shared_cmc_fluent_builders_reach_the_cache() {
         .into_entry()
         .expect("the entry put above")
         .usage_metadata();
-    assert_eq!(usage.messages_used().get(), 1);
-    assert_eq!(usage.bytes_used().get(), 7);
+    assert_eq!(usage.messages_used(), 1);
+    assert_eq!(usage.bytes_used(), 7);
 
     cache
         .delete_cache_entry()
@@ -163,11 +163,29 @@ async fn shared_cmc_fluent_builders_reach_the_cache() {
     assert!(after_delete.entry().is_none());
 }
 
+#[test]
+fn a_cache_entry_clone_shares_usage_counters() {
+    let now = SystemTime::now();
+    let materials = EncryptionMaterials::builder()
+        .algorithm_suite_id(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
+        .build()
+        .unwrap();
+    let entry = CacheEntry::builder()
+        .materials(CachedMaterials::Encryption(materials))
+        .creation_time(now)
+        .expiry_time(now + Duration::from_secs(3600))
+        .build()
+        .unwrap();
+    assert!(entry.clone().record_use(7));
+    assert_eq!(entry.usage_metadata().messages_used(), 1);
+    assert_eq!(entry.usage_metadata().bytes_used(), 7);
+}
+
 #[tokio::test]
-async fn shared_branch_key_supplier_fluent_builder_reaches_the_supplier() {
+async fn shared_branch_key_id_supplier_fluent_builder_reaches_the_supplier() {
     let mut encryption_context = EncryptionContext::new();
     encryption_context.insert("tenant", "tenant-a");
-    let output = SharedBranchKeySupplier::new(Supplier)
+    let output = SharedBranchKeyIdSupplier::new(Supplier)
         .get_branch_key_id()
         .set_encryption_context(Some(encryption_context))
         .send()

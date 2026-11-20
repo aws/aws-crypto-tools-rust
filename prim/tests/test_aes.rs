@@ -125,11 +125,11 @@ fn test_aes_192_gcm_round_trip() -> Result<(), Error> {
 }
 
 #[test]
-fn test_aes_gcm_key_len() {
-    assert_eq!(AesGcm::Aes128Gcm.key_len(), 16);
-    assert_eq!(AesGcm::Aes192Gcm.key_len(), 24);
-    assert_eq!(AesGcm::Aes256Gcm.key_len(), 32);
-    assert_eq!(AesGcm::default().key_len(), 32); // default is Aes256Gcm
+fn test_aes_gcm_key_length() {
+    assert_eq!(AesGcm::Aes128Gcm.key_length(), 16);
+    assert_eq!(AesGcm::Aes192Gcm.key_length(), 24);
+    assert_eq!(AesGcm::Aes256Gcm.key_length(), 32);
+    assert_eq!(AesGcm::default().key_length(), 32); // default is Aes256Gcm
 }
 
 // Error paths — not in Dafny but required to reach 100% line coverage.
