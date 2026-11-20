@@ -64,17 +64,17 @@ jobs:
         if: runner.os != 'Linux'
         run: make test-ci-rust
 
-      # On Linux the same tests run instrumented, so the test server dashboard
-      # can merge this report with the test server's coverage of the shim.
-      # Paths are made relative to the repository. `-C debuginfo=0` keeps the
-      # instrumented link within the runner's memory.
+      # On Linux the same tests run instrumented,
+      # so the test server dashboard can merge this report with the test server's coverage of the shim.
       - name: Test (Rust unit + integration tests) + line coverage report
         if: runner.os == 'Linux'
         env:
+          # Keeps the instrumented link within the runner's memory.
           RUSTFLAGS: "-C debuginfo=0"
         run: |
           cargo llvm-cov --lcov --output-path "$RUNNER_TEMP/lcov.info"
           mkdir -p "$RUNNER_TEMP/local-coverage"
+          # Keep only files in this repository, with paths relative to its root.
           awk -v root="$GITHUB_WORKSPACE/" '
             /^SF:/ { keep = index($0, "SF:" root) == 1; if (keep) $0 = "SF:" substr($0, length(root) + 4) }
             keep' "$RUNNER_TEMP/lcov.info" > "$RUNNER_TEMP/local-coverage/cpp-shim.lcov"

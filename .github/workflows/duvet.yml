@@ -3,8 +3,7 @@
 #   name      job name
 #   project   directory, e.g. esdk/shims/aws-esdk-cpp; needs a .duvet/config.toml and a `make duvet` target
 #   artifact  artifact name; GitHub rejects slashes, so it can't be the directory
-#   test-server-duvet  optional artifact from the commons test-server-duvet-reusable.yml
-#             workflow, downloaded into <project>/build/test-server-duvet/
+#   test-server-duvet  optional artifact from commons' test-server-duvet-reusable.yml; goes in <project>/build/test-server-duvet/
 name: Duvet Report
 
 on:

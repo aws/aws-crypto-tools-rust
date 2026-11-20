@@ -9,6 +9,26 @@
 
 pub mod mutant;
 
+/// Resolves on SIGTERM or Ctrl-C.
+///
+/// The orchestrator stops servers with SIGTERM.
+/// A server that shuts down gracefully on this returns from `main` instead of dying on the signal,
+/// so a coverage-instrumented build writes its profile at exit.
+#[cfg(feature = "server")]
+pub async fn shutdown_signal() {
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{signal, SignalKind};
+        let mut term = signal(SignalKind::terminate()).expect("failed to listen for SIGTERM");
+        tokio::select! {
+            _ = term.recv() => {}
+            _ = tokio::signal::ctrl_c() => {}
+        }
+    }
+    #[cfg(not(unix))]
+    tokio::signal::ctrl_c().await.ok();
+}
+
 #[cfg(testserver_coverage)]
 mod llvm {
     use std::ffi::{c_char, c_int};

@@ -91,10 +91,11 @@ test-server: check-java ## Run the complete cross-language TestServer via the co
 	cd "$(CLONE_ORCH_DIR)" && ./gradlew --console=plain run \
 		--args="context=language:rust languageRepoRoot=$(REPO_ROOT) commonsOrigin.url=$$url commonsOrigin.branch=$$branch commonsOrigin.reason=$$reason"
 
-# A dry run of the commons Tests for Rust (no servers, a few seconds once
-# built), then copy the duvet test annotations of the Tests that run for Rust
-# into ../build/test-server-duvet/, which ../.duvet/config.toml reads. Needs a
-# JDK 21+ and network access to clone commons; no AWS credentials.
+# The local version of CI's test-server-duvet job.
+# It dry-runs the commons Tests for Rust, which starts no servers.
+# Then it writes the duvet test annotations of the Tests that ran into ../build/test-server-duvet/,
+# where ../.duvet/config.toml reads them.
+# Needs a JDK 21+ and network access to clone commons, but no AWS credentials.
 DUVET_OUT := $(abspath $(MAKEFILE_DIR)/../build/test-server-duvet)
 test-server-duvet: check-java ## Write the shared Tests' duvet annotations that run for Rust; COMMONS_BRANCH=<b> overrides
 	@set -eo pipefail; \
