@@ -2,6 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! Generates each library's error types from `errors.toml`.
+//!
+//! [`verification`] builds `docs/verification-status.json`, and
+//! [`proof_coverage`] says which source lines Verus checks.
+
+pub mod proof_coverage;
+pub mod verification;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
