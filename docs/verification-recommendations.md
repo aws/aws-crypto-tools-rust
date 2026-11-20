@@ -1259,7 +1259,7 @@ recommendation:
       - "trusted (TCB row T-cmp, approved by the user): obeys_cmp::<String>(), String's Eq and Ord agree with Verus equality and form a total order"
       - "code reading: the adapter (EncryptionContext::as_map, RequiredEncryptionContextKeys::as_set, EncryptionContext::from) and the call site in step_get_decryption_materials pass the materials' own fields; skipping the core there is caught by neither tool (mutation M7)"
       - "review only: loop invariant 2 is redundant under Verus's for loop (dropping it still verifies) and is not counted"
-      - "tested: esdk/tests/test_verify_header.rs and esdk/tests/test_required_encryption_context.rs (Duvet test annotations)"
+      - "tested (unit only): decrypt::tests::only_authenticate_keeps_exactly_the_required_entries; the Duvet-annotated tests in esdk/tests/test_verify_header.rs and esdk/tests/test_required_encryption_context.rs are commented out (TODO(native-mpl)), so no live end-to-end test covers the clause"
   trace_to_spec: "spec/client-apis/decrypt.md (the encryption context to only authenticate MUST be the encryption context in the decryption materials filtered to the required encryption context keys)"
   tool: Verus
   agent: verus-header-parsing-proofs

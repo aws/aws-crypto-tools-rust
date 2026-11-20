@@ -1015,9 +1015,13 @@ relative to the trusted row T-cmp and vstd's `BTreeMap` / `BTreeSet` /
 - vstd's btree and `String::clone` specs are part of Verus's own trust base,
   not rows in this repo's TCB table.
 
-The end-to-end behavior is also tested (Duvet test annotations in
+**Not tested end to end:** Duvet test annotations for the clause exist in
 `esdk/tests/test_verify_header.rs` and
-`esdk/tests/test_required_encryption_context.rs`).
+`esdk/tests/test_required_encryption_context.rs` (the latter for the
+encrypt-side clause), but both tests sit inside `/* ... */` blocks, disabled
+pending a native required encryption context CMM (`TODO(native-mpl)`). No
+live end-to-end test covers the clause. The live test evidence is the
+in-module unit test `decrypt::tests::only_authenticate_keeps_exactly_the_required_entries`.
 
 **Mutation tests** (both feature sets gave the same result for every row;
 each reverted byte for byte; log `.agents/tasks/r1-validate-vr020/logs/mutations.md`):
@@ -1509,7 +1513,7 @@ independent evidence beyond that.
 | VR-018 encrypt header length checks | **in-crate** (`esdk/src/encrypt.rs`): `check_v2_suite_data` (present and exactly `algorithm_suite_data_length()` bytes, in that order) and `data_key_len_ok` (accept iff equal) | the expected lengths come from MPL (`algorithm_suite_data_length`) and the const table `get_encrypt_key_length`; the adapters map variants to today's errors |
 | VR-019 encrypt signing-key check (threat R3; counterpart of VR-015 (b)) | **in-crate, one direction** (`esdk/src/encrypt_gate.rs`): `signing_key_gate` returns a `SigningKeyPresent` iff the suite signs and a signing key is present, and the token holds that key; the compiler enforces that `ecdsa_sign_digest` in step 4 gets the key only through the token. Same error, message, order and place as before | **finding VR-019 F1:** esdk rejects a missing key only in step 4, after the header and body are written, and does not reject a key for a non-signing suite. Both rely on the MPL (`GetEncryptionMaterials::send` / `check_encryption_materials`, `EncryptionMaterialsBuilder::build`), which is trusted code reading. Also trusted: the real suite flag and key are passed; `encrypt_steps` runs step 4 for every signing suite; aws-lc-rs signing |
 | VR-016 decrypt buffer sizing (BUG-07(b) in esdk) | **in-crate** (`esdk/src/secret.rs`): `secret::open` takes only an `OpenBuffers`, built only by the verified `open_buffers`; its type invariant says the plaintext buffer is as long as the ciphertext. All 5 esdk open sites go through it, so BUG-07(b) is unreachable from esdk, Verus-proven | trusted: the TB-A body of `secret::open` passes the two fields to `aes_decrypt` unchanged; what aws-lc-rs does with a mismatch stays under A-OPEN |
-| VR-020 encryption context to only authenticate (`client-apis/decrypt.md`) | **in-crate** (`esdk/src/decrypt.rs`, branch `r1-validate-vr020`): `required_ec_entries` returns the materials' encryption context restricted to the required encryption context keys (`out@ == ec@.restrict(keys@)`), relative to TCB row T-cmp; mutation-tested (loop invariant 2 is redundant and review-only) | **trusted:** T-cmp (`obeys_cmp::<String>()`) and vstd's btree / `String` specs. **Code reading:** the adapter `build_encryption_context_to_only_authenticate` (`as_map`, `as_set`, `EncryptionContext::from`) and its call site pass the materials' own fields; no tool catches a change there (mutation M7). End-to-end behavior is tested |
+| VR-020 encryption context to only authenticate (`client-apis/decrypt.md`) | **in-crate** (`esdk/src/decrypt.rs`, branch `r1-validate-vr020`): `required_ec_entries` returns the materials' encryption context restricted to the required encryption context keys (`out@ == ec@.restrict(keys@)`), relative to TCB row T-cmp; mutation-tested (loop invariant 2 is redundant and review-only) | **trusted:** T-cmp (`obeys_cmp::<String>()`) and vstd's btree / `String` specs. **Code reading:** the adapter `build_encryption_context_to_only_authenticate` (`as_map`, `as_set`, `EncryptionContext::from`) and its call site pass the materials' own fields; no tool catches a change there (mutation M7). No live end-to-end test: the Duvet-annotated tests are disabled (`TODO(native-mpl)`); the live test is the in-module unit test |
 | Infra: I/O seam | `esdk` is Verus-buildable; sync `verus!` cores are verified in-crate behind the async `Source`/`Tee` adapters (see "In-crate proofs") | the async adapters themselves stay unverified glue |
 
 ---
