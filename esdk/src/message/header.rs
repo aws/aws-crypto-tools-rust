@@ -453,9 +453,9 @@ mod tests {
         };
 
         // The bytes match, but 16 is not the suite's 32-byte commit key length.
-        let Err(e) = validate_suite_data(&suite, &body(vec![7; 16]), &[7; 16]) else {
-            panic!("a 16-byte suite data must be rejected for a 32-byte commit key");
-        };
+        let e = validate_suite_data(&suite, &body(vec![7; 16]), &[7; 16])
+            .err()
+            .expect("a 16-byte suite data must be rejected for a 32-byte commit key");
         assert_eq!(e.kind(), Kind::Internal);
         assert_eq!(
             e.message(),

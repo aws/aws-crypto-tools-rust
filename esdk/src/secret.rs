@@ -564,9 +564,9 @@ mod tests {
             .algorithm_suite_id(suite)
             .build()
             .unwrap();
-        let Err(e) = data_key_from_encryption_materials(&enc) else {
-            panic!("encryption materials without a plaintext data key must be rejected");
-        };
+        let e = data_key_from_encryption_materials(&enc)
+            .err()
+            .expect("encryption materials without a plaintext data key must be rejected");
         assert_eq!(e.kind(), Kind::InvalidMaterials);
         assert_eq!(
             e.message(),
@@ -577,9 +577,9 @@ mod tests {
             .algorithm_suite_id(suite)
             .build()
             .unwrap();
-        let Err(e) = data_key_from_decryption_materials(&dec) else {
-            panic!("decryption materials without a plaintext data key must be rejected");
-        };
+        let e = data_key_from_decryption_materials(&dec)
+            .err()
+            .expect("decryption materials without a plaintext data key must be rejected");
         assert_eq!(e.kind(), Kind::InvalidMaterials);
         assert_eq!(
             e.message(),

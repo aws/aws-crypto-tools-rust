@@ -552,8 +552,7 @@ mod tests {
         let mut attempts = 0u32;
         let e = sign_fixed_len(&mut [0; 1], || {
             attempts += 1;
-            kp.sign(&rng, b"m")
-                .map_err(|_| serr("ECDSA signing failed".to_owned()))
+            Ok(kp.sign(&rng, b"m").expect("ECDSA signing must succeed"))
         })
         .unwrap_err();
         assert_eq!(

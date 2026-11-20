@@ -885,12 +885,13 @@ mod tests {
             "suite data length must match the commitment key output length for a committing suite"
         );
 
-        let Ok(HeaderBody::V2Body(body)) = build(Some(PublicBytes::from_commitment(
+        let body = build(Some(PublicBytes::from_commitment(
             &CommitmentValue::zeroed(32),
-        ))) else {
-            panic!("32 bytes of suite data must build a V2 header body");
-        };
-        assert_eq!(body.suite_data, vec![0; 32]);
+        )));
+        assert!(
+            matches!(&body, Ok(HeaderBody::V2Body(b)) if b.suite_data == vec![0; 32]),
+            "32 bytes of suite data must build a V2 header body"
+        );
     }
 
     // Defense-in-depth test of esdk's own fallback check: the MPL rejects a
@@ -935,6 +936,6 @@ mod tests {
             e.message(),
             "encryption materials must contain a signing key for signature algorithm"
         );
-        assert!(sink.is_empty());
+        assert_eq!(sink, Vec::<u8>::new());
     }
 }
