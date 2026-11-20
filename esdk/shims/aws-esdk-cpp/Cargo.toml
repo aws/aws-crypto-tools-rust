@@ -17,7 +17,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 [dependencies]
 aws-crypto-mpl = { path = "../../../mpl", default-features = false }
 aws-mpl-primitives = { path = "../../../prim", default-features = false }
-cxx = "1.0.202"
+cxx = "1.0.205"
 tokio = {version = "1.49", features = ["full"] }
 aws-esdk = { path = "../..", default-features = false }
 aws-smithy-runtime = { version = "1.16", features = ["client", "default-https-client"], optional = true }
@@ -41,7 +41,7 @@ default-aws-sdk-clients = [
 rt-tokio = ["aws-esdk/rt-tokio", "aws-crypto-mpl/rt-tokio"]
 
 [build-dependencies]
-cxx-build = "1.0.202"
+cxx-build = "1.0.205"
 cc = "1.6.0"
 
 # Declare this crate as its own workspace root so cargo builds it standalone.

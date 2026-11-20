@@ -19,7 +19,7 @@ axum = "0.8"
 ciborium = "0.2"
 serde = { version = "1", features = ["derive"] }
 uuid = { version = "1", features = ["v4"] }
-cxx = "1.0.202"
+cxx = "1.0.205"
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
