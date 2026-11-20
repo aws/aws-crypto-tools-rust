@@ -80,6 +80,10 @@ Encrypt header length checks in `esdk/src/encrypt.rs`: `check_v2_suite_data` and
 
 Encrypt signing-key check, one direction only: `signing_key_gate` and `SigningKeyPresent` in `esdk/src/encrypt_gate.rs`. Finding VR-019 F1: esdk rejects a missing key only in step 4. Status and residual: `docs/verus-proofs-report.md` §3.
 
+## VR-020
+
+Decrypt keeps exactly the required-key encryption-context entries: the verified core `required_ec_entries` in `esdk/src/decrypt.rs`, called by the unverified adapter `build_encryption_context_to_only_authenticate`. It relies on TCB row T-cmp (`obeys_cmp::<String>()`). Status and residual: `docs/verus-proofs-report.md` §3.
+
 ## Repository grounding
 
 Source: `.kiro/agents/verus-capabilities.md` §Repository grounding.

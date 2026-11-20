@@ -98,7 +98,7 @@ crates:
     cache_bust: ""
     test_cmd: "cargo test (in mpl/; there is no mpl/Makefile)"
     lint_cmds: []
-    known_test_failures: []
+    known_test_failures: ["mpl/tests/test_aws_kms_hierarchical_keyring_integ.rs: needs AWS credentials and KMS access", "mpl/tests/test_key_store_branch_key_store_integ.rs: needs AWS credentials and DynamoDB/KMS access"]
     unsafe: "none in mpl/src"
 
 # Standalone Verus models that do not import the shipped code; read by: capabilities, update, proof agents (model-only harness), pipeline, R1, proof-reviewer
@@ -337,10 +337,11 @@ tcb:
   modules:
     - "prim/src/aws_lc_specs.rs (VR-013, VR-014; AES calls are A14-A20)"
     - "prim/src/ecdsa.rs (VR-008 specs: ExSignature, Signature::as_ref, copy_from_slice; reused by VR-013)"
+    - "esdk/src/decrypt.rs (VR-020: T-cmp is the `requires obeys_cmp::<String>()` of required_ec_entries; no external spec)"
   # Doc section with the TCB table; read by: ffi, update, proof-reviewer
   doc_section: "docs/verus-proofs-report.md, section \"VR-013 / VR-014 TCB (`prim/src/aws_lc_specs.rs`)\""
   # Row ids of the TCB table; read by: ffi, update, capabilities
-  row_ids: "T-ty, T-AsRef, T-uf, A1-A20"
+  row_ids: "T-ty, T-AsRef, T-uf, A1-A20, T-cmp"
   # TCB rows that are labeled assumptions (ladder level 8); read by: ffi, capabilities, update
   labeled_assumptions:
     - # Assumption id; read by: ffi, capabilities, update
@@ -386,9 +387,9 @@ ids:
   # Format of ids in the YAML recommendations; read by: recommender, update
   yaml_id_format: "VR-2026-NNN"
   # Next free target id; read by: recommender, update, R1
-  next_free: "VR-020 (YAML VR-2026-020)"
+  next_free: "VR-021 (YAML VR-2026-021)"
   # Command that confirms next_free is still free; read by: recommender, update, R1, proof-reviewer
-  next_free_check: "grep -rnoE 'VR-0(2[0-9]|[3-9][0-9])' docs verification esdk/src prim/src mpl/src (expect no hits), and git grep -nE 'VR-0(2[0-9])' origin/MPL-Verus -- docs"
+  next_free_check: "grep -rnoE 'VR-0(2[1-9]|[3-9][0-9])' docs verification esdk/src prim/src mpl/src (expect no hits), and git grep -nE 'VR-0(2[1-9])' origin/MPL-Verus -- docs"
   # Format of finding ids; read by: SKILL, proof agents, recommender, R1, proof-reviewer
   finding_format: "VR-0NN Fk (never a bare Fk)"
   # Ids used by other repositories that must not be confused with ours; read by: recommender, update, R1, proof-reviewer
@@ -600,6 +601,14 @@ targets:
         where: "esdk/src/encrypt_gate.rs"
     agent: "verus-header-parsing-proofs"
     details: "targets.md §VR-019"
+  - id: "VR-020"
+    title: "Decrypt keeps exactly the required-key encryption-context entries"
+    parts:
+      - part: "required_ec_entries: result == ec restricted to the required keys; relies on TCB row T-cmp"
+        level: "verus_in_crate"
+        where: "esdk/src/decrypt.rs"
+    agent: "verus-header-parsing-proofs"
+    details: "targets.md §VR-020"
 
 # Proven cores per agent area, not to be redone; read by: proof agents
 do_not_redo:
@@ -610,6 +619,7 @@ do_not_redo:
     - "VR-001 (a) key-commitment decision"
     - "VR-012 codec round-trip lemmas"
     - "VR-001 (b), VR-002, VR-015 decrypt-order tokens"
+    - "VR-020 required_ec_entries (encryption context to only authenticate)"
   # Done zero-panic work; read by: zero-panic
   zero_panic:
     - "VR-005 body AAD and frame prefix (body_aad_core, iv_seq_core, body_aad_content_type_string, write_frame_prefix)"

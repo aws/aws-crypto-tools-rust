@@ -771,7 +771,8 @@ broadcast use vstd::std_specs::btree::group_btree_axioms;
 /// result is in both `ec` and `keys`, every key in both is in the result,
 /// and each value is the value `ec` holds for that key.
 ///
-/// Trusted (TCB row T-cmp, approved in the VR-020 task decisions): `String`'s
+/// Trusted (TCB row T-cmp in docs/verus-proofs-report.md, approved by the
+/// owner when VR-020 was added): `String`'s
 /// `Eq` and `Ord` agree with Verus equality and form a total order
 /// (`obeys_cmp::<String>()`). The pinned vstd gives `BTreeMap` and `BTreeSet`
 /// their specs only under this law and does not prove it for `String`; std
