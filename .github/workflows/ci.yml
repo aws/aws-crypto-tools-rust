@@ -191,6 +191,56 @@ jobs:
       projects: ${{ toJSON(fromJSON(needs.detect.outputs.jobs)['rust-tests'].*.project) }}
       platforms: '[{"os": "ubuntu", "runner": "codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}"}]'
 
+  rust-tests-msrv:
+    name: Rust tests (MSRV)
+    needs: detect
+    if: fromJSON(needs.detect.outputs.jobs)['rust-tests'] != null
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/library_rust_tests.yml
+    with:
+      projects: ${{ toJSON(fromJSON(needs.detect.outputs.jobs)['rust-tests'].*.project) }}
+      platforms: '[{"os": "ubuntu", "runner": "codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}"}]'
+      toolchain: msrv
+      lint: false
+
+  # Rust beta becomes the next stable release about six weeks later.
+  # A PR doesn't cause a beta break, so only daily runs test it, and it doesn't block merges.
+  rust-tests-beta:
+    name: Rust tests (beta)
+    needs: detect
+    if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && fromJSON(needs.detect.outputs.jobs)['rust-tests'] != null
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/library_rust_tests.yml
+    with:
+      projects: ${{ toJSON(fromJSON(needs.detect.outputs.jobs)['rust-tests'].*.project) }}
+      platforms: '[{"os": "ubuntu", "runner": "codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}"}]'
+      toolchain: beta
+      lint: false
+
+  rust-minimal-versions:
+    name: Rust minimal versions
+    needs: detect
+    if: fromJSON(needs.detect.outputs.jobs)['rust-tests'] != null
+    permissions:
+      contents: read
+    uses: ./.github/workflows/library_rust_minimal_versions.yml
+    with:
+      projects: ${{ toJSON(fromJSON(needs.detect.outputs.jobs)['rust-tests'].*.project) }}
+
+  cpp-shim-minimal-versions:
+    name: C++ shim minimal versions
+    needs: detect
+    if: fromJSON(needs.detect.outputs.jobs)['cpp-shim'] != null
+    permissions:
+      contents: read
+    uses: ./.github/workflows/library_rust_minimal_versions.yml
+    with:
+      projects: '["esdk/shims/aws-esdk-cpp"]'
+
   # macOS and Windows jobs run and show red on failure,
   # but pr-ci-all-required does not wait on them.
   rust-tests-macos-windows:
@@ -225,6 +275,33 @@ jobs:
     uses: ./.github/workflows/library_cpp_shim_tests.yml
     with:
       platforms: '[{"os": "ubuntu", "runner": "codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}"}]'
+
+  cpp-shim-msrv:
+    name: C++ shim (MSRV)
+    needs: detect
+    if: fromJSON(needs.detect.outputs.jobs)['cpp-shim'] != null
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/library_cpp_shim_tests.yml
+    with:
+      platforms: '[{"os": "ubuntu", "runner": "codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}"}]'
+      toolchain: msrv
+      lint: false
+
+  # Rust beta: daily runs only, and it doesn't block merges.
+  cpp-shim-beta:
+    name: C++ shim (beta)
+    needs: detect
+    if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && fromJSON(needs.detect.outputs.jobs)['cpp-shim'] != null
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/library_cpp_shim_tests.yml
+    with:
+      platforms: '[{"os": "ubuntu", "runner": "codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}"}]'
+      toolchain: beta
+      lint: false
 
   # Not in pr-ci-all-required; see rust-tests-macos-windows.
   cpp-shim-macos:
@@ -292,6 +369,19 @@ jobs:
     uses: ./.github/workflows/test_server_build.yml
     with:
       builds: ${{ toJSON(fromJSON(needs.detect.outputs.jobs)['test-server-builds']) }}
+
+  # Rust beta: daily runs only, and it doesn't block merges.
+  test-server-builds-beta:
+    name: TestServer builds (beta)
+    needs: detect
+    if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && fromJSON(needs.detect.outputs.jobs)['test-server-builds'] != null
+    permissions:
+      contents: read
+    uses: ./.github/workflows/test_server_build.yml
+    with:
+      builds: ${{ toJSON(fromJSON(needs.detect.outputs.jobs)['test-server-builds']) }}
+      toolchain: beta
+      lint: false
 
   # Not in pr-ci-all-required; see rust-tests-macos-windows.
   test-server-builds-macos:
@@ -429,9 +519,13 @@ jobs:
     needs:
       - detect
       - rust-tests
+      - rust-tests-msrv
+      - rust-minimal-versions
       - supply-chain
       - coverage
       - cpp-shim
+      - cpp-shim-msrv
+      - cpp-shim-minimal-versions
       - cpp-coverage
       - duvet
       - smithy-conformance

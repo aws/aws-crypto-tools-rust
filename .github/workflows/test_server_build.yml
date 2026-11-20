@@ -13,6 +13,14 @@ on:
         description: "JSON array of {name, server, prebuild, runner} objects."
         required: true
         type: string
+      toolchain:
+        description: "Rust toolchain to build and test with."
+        type: string
+        default: stable
+      lint:
+        description: "Run fmt and clippy. Turn off for non-stable Rust, because lints change between versions."
+        type: boolean
+        default: true
 
 jobs:
   build:
@@ -34,6 +42,7 @@ jobs:
 
       - uses: ./.github/actions/setup-rust
         with:
+          toolchain: ${{ inputs.toolchain }}
           components: clippy, rustfmt
           workspaces: |
             ${{ matrix.server }}
@@ -46,9 +55,11 @@ jobs:
         run: cargo build
 
       - name: Format check
+        if: inputs.lint
         run: cargo fmt --all -- --check
 
       - name: Clippy
+        if: inputs.lint
         run: cargo clippy --all-targets -- -D warnings
 
       - name: Build

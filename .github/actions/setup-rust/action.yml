@@ -1,10 +1,16 @@
 name: Set up Rust
 description: >
-  Install Go and the stable Rust toolchain, check or update each workspace's
+  Install Go and a Rust toolchain (stable by default), check or update each workspace's
   Cargo.lock, and restore the cargo build cache.
   aws-lc-sys and aws-lc-fips-sys need Go to build their native code.
 
 inputs:
+  toolchain:
+    description: >
+      Rust toolchain to install (e.g. "stable", "beta", "1.94.1").
+      "msrv" installs the rust-version from the first workspace's Cargo.toml.
+    required: false
+    default: stable
   components:
     description: "Comma-separated rustup components (e.g. \"clippy, rustfmt\")."
     required: false
@@ -40,9 +46,28 @@ runs:
       with:
         go-version: "stable"
 
-    - name: Install Rust toolchain
-      uses: dtolnay/rust-toolchain@stable
+    - name: Pick Rust toolchain
+      id: toolchain
+      shell: bash
+      env:
+        TOOLCHAIN: ${{ inputs.toolchain }}
+        WORKSPACES: ${{ inputs.workspaces }}
+      run: |
+        set -euo pipefail
+        if [[ "$TOOLCHAIN" == "msrv" ]]; then
+          ws=$(head -n1 <<< "$WORKSPACES")
+          TOOLCHAIN=$(sed -n 's/^rust-version = "\(.*\)"$/\1/p' "$ws/Cargo.toml")
+          if [[ -z "$TOOLCHAIN" ]]; then
+            echo "::error::$ws/Cargo.toml has no rust-version"
+            exit 1
+          fi
+        fi
+        echo "toolchain=$TOOLCHAIN" >> "$GITHUB_OUTPUT"
+
+    - name: Install Rust ${{ steps.toolchain.outputs.toolchain }}
+      uses: dtolnay/rust-toolchain@master
       with:
+        toolchain: ${{ steps.toolchain.outputs.toolchain }}
         components: ${{ inputs.components }}
 
     # Workspaces without a committed Cargo.lock (e.g. the C++ shim) resolve fresh on every build.

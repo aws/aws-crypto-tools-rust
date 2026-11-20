@@ -15,6 +15,14 @@ on:
           [{"os": "ubuntu", "runner": "codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}"},
            {"os": "macos", "runner": "macos-latest"},
            {"os": "windows", "runner": "windows-latest"}]
+      toolchain:
+        description: "Rust toolchain to build and test with. \"msrv\" reads rust-version from Cargo.toml."
+        type: string
+        default: stable
+      lint:
+        description: "Run fmt, clippy and rustdoc. Turn off for non-stable Rust, because lints change between versions."
+        type: boolean
+        default: true
 
 jobs:
   testRust:
@@ -53,10 +61,12 @@ jobs:
 
       - uses: ./.github/actions/setup-rust
         with:
+          toolchain: ${{ inputs.toolchain }}
           components: clippy, rustfmt
           workspaces: ${{ matrix.project }}
 
       - name: Install cargo-hack
+        if: inputs.lint
         uses: taiki-e/install-action@cargo-hack
 
       - name: Configure AWS Credentials
@@ -68,13 +78,16 @@ jobs:
           special-characters-workaround: "true" # Some environments (example: windowsOS) cannot tolerate special characters in a secret key.
 
       - name: Format check
+        if: inputs.lint
         run: cargo fmt --all -- --check
 
       # Match the coverage step's features so clippy lints feature-gated tests.
       - name: Clippy
+        if: inputs.lint
         run: cargo clippy --all-targets -- -D warnings
 
       - name: Clippy every feature combination
+        if: inputs.lint
         run: >-
           cargo hack clippy --lib --feature-powerset --no-dev-deps
           --exclude-features default
@@ -83,12 +96,13 @@ jobs:
           -- -D warnings
 
       - name: Clippy with default features plus fips
+        if: inputs.lint
         run: cargo clippy --lib --features fips -- -D warnings
 
       # Broken intra-doc links and other rustdoc warnings fail the build.
       # Docs don't vary by OS, so only Linux builds them.
       - name: Docs
-        if: runner.os == 'Linux'
+        if: inputs.lint && runner.os == 'Linux'
         env:
           RUSTDOCFLAGS: -D warnings
         run: cargo doc --no-deps --all-features
