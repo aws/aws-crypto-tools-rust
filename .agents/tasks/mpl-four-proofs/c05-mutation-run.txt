@@ -1,0 +1,103 @@
+BASELINE: verification results:: 22 verified, 0 errors (exit 0)
+BASELINE copy-check: exit 0, 0 failing checks
+
+m01_wrong_key_length [predicted: reject] code row 00 46: key_len 24 -> 32 (spec says 192 bits)
+    -> 21 verified, 1 errors  REJECTED
+    failing lemmas: ['theorem_table_refines_spec']
+    copy-check on the mutant: catches it (1 failing checks)
+m02_duplicate_id [predicted: reject] code row 01 78 given the id 01 46 (a duplicate of the 192-bit HKDF suite)
+    -> 19 verified, 3 errors  REJECTED
+    failing lemmas: ['theorem_table_refines_spec', 'theorem_ids_injective', 'lemma_id_val_ascends']
+    copy-check on the mutant: catches it (1 failing checks)
+m03_wrong_commitment_flag [predicted: reject] code row 04 78: commit_kdf Some(HkdfSha512) -> None (format 2 and data length 32 kept)
+    -> 20 verified, 2 errors  REJECTED
+    failing lemmas: ['theorem_table_refines_spec', 'theorem_commitment_consistent']
+    copy-check on the mutant: catches it (1 failing checks)
+m04_reserved_id [predicted: reject] code row 00 14: id bytes 00 14 -> 00 00 (the reserved id)
+    -> 20 verified, 2 errors  REJECTED
+    failing lemmas: ['theorem_table_refines_spec', 'theorem_ids_never_reserved']
+    copy-check on the mutant: catches it (1 failing checks)
+m05_wrong_format_version [predicted: reject] code row 05 78: fmt 0x02 -> 0x01
+    -> 20 verified, 2 errors  REJECTED
+    failing lemmas: ['theorem_table_refines_spec', 'theorem_commitment_consistent']
+    copy-check on the mutant: catches it (1 failing checks)
+m06_wrong_data_len [predicted: reject] code row 05 78: data_len 32 -> 16
+    -> 20 verified, 2 errors  REJECTED
+    failing lemmas: ['theorem_table_refines_spec', 'theorem_commitment_consistent']
+    copy-check on the mutant: catches it (1 failing checks)
+m07_wrong_kdf_hash [predicted: reject] code row 03 46: HkdfSha384 -> HkdfSha256
+    -> 21 verified, 1 errors  REJECTED
+    failing lemmas: ['theorem_table_refines_spec']
+    copy-check on the mutant: catches it (1 failing checks)
+m08_symmetric_signature_present [predicted: reject] code row 01 14: sym None -> Some(HmacSha384)
+    -> 21 verified, 1 errors  REJECTED
+    failing lemmas: ['theorem_table_refines_spec']
+    copy-check on the mutant: catches it (1 failing checks)
+m09_wrong_curve [predicted: reject] code row 02 14: asym EcdsaP256 -> EcdsaP384
+    -> 21 verified, 1 errors  REJECTED
+    failing lemmas: ['theorem_table_refines_spec']
+    copy-check on the mutant: catches it (1 failing checks)
+m10_wrong_vk_len_constant [predicted: reject] verification_key_length constant for P-256: 33 -> 32
+    -> 21 verified, 1 errors  REJECTED
+    failing lemmas: ['theorem_vk_length_agrees']
+    copy-check on the mutant: catches it (1 failing checks)
+m11_all_order_swapped [predicted: reject] ALL order: entries 0 and 1 swapped in all_at
+    -> 20 verified, 2 errors  REJECTED
+    failing lemmas: ['lemma_all_at_idx', 'lemma_idx_all_at']
+    copy-check on the mutant: catches it (1 failing checks)
+m12_all_misses_a_suite [predicted: reject] ALL lists suite 04 78 twice and omits 05 78 (entry 10)
+    -> 20 verified, 2 errors  REJECTED
+    failing lemmas: ['lemma_all_at_idx', 'lemma_idx_all_at']
+    copy-check on the mutant: catches it (1 failing checks)
+m13_prim_key_length_wrong [predicted: reject] prim copy: Aes192Gcm key length 24 -> 32
+    -> 21 verified, 1 errors  REJECTED
+    failing lemmas: ['theorem_key_length_agrees']
+    copy-check on the mutant: catches it (1 failing checks)
+m14_get_alg_suite_wrong [predicted: reject] esdk get_alg_suite copy: 24 maps to Aes256Gcm
+    -> 21 verified, 1 errors  REJECTED
+    failing lemmas: ['theorem_key_length_agrees']
+    copy-check on the mutant: catches it (1 failing checks)
+m15_spec_row_wrong_id [predicted: reject] spec copy: row 00 78 typed as 0x0079
+    -> 21 verified, 1 errors  REJECTED
+    failing lemmas: ['theorem_table_refines_spec']
+    copy-check on the mutant: catches it (1 failing checks)
+m16_wrong_iv_length [predicted: reject] code row 00 14: iv_len 12 -> 16
+    -> 21 verified, 1 errors  REJECTED
+    failing lemmas: ['theorem_table_refines_spec']
+    copy-check on the mutant: catches it (1 failing checks)
+m17_other_format_id_collides [predicted: reject] spec_other_id(2): S3EC id 00 70 -> 00 14 (collides with an ESDK id)
+    -> 21 verified, 1 errors  REJECTED
+    failing lemmas: ['theorem_ids_unique_across_spec']
+    copy-check on the mutant: catches it (1 failing checks)
+m18_search_skips_first [predicted: reject] from_id_bytes model: the search starts at index 1
+    -> 20 verified, 2 errors  REJECTED
+    failing lemmas: ['theorem_from_id_bytes_inverse', 'theorem_from_id_bytes_sound']
+    copy-check on the mutant: does not catch it
+m19_wrong_spec_commit_hash [predicted: reject] spec copy: commit hash of row 04 78 typed as Sha256
+    -> 21 verified, 1 errors  REJECTED
+    failing lemmas: ['theorem_table_refines_spec']
+    copy-check on the mutant: catches it (1 failing checks)
+m20_key_length_not_aes [predicted: reject] code and spec both changed for row 00 46: 20 bytes / 160 bits (a consistent copy error)
+    -> 20 verified, 2 errors  REJECTED
+    failing lemmas: ['lemma_spec_table_consistent', 'theorem_key_length_agrees']
+    copy-check on the mutant: catches it (2 failing checks)
+m21_consistent_id_change [predicted: survive] code and spec both changed for row 00 14: id 00 14 -> 00 15 (a consistent copy error of an id)
+    -> 22 verified, 0 errors  SURVIVED
+    failing lemmas: []
+    copy-check on the mutant: catches it (2 failing checks)
+m22_spec_ids_dropped_from_refinement [predicted: survive] refinement without the id comparison (weakened relation)
+    -> 22 verified, 0 errors  SURVIVED
+    failing lemmas: []
+    copy-check on the mutant: does not catch it
+m23_id_out_of_order [predicted: reject] code row 01 14 given id 00 15 (not the spec id; ids no longer ascend in ALL order)
+    -> 20 verified, 2 errors  REJECTED
+    failing lemmas: ['theorem_table_refines_spec', 'lemma_id_val_ascends']
+    copy-check on the mutant: catches it (1 failing checks)
+
+SURVIVORS (expected, with the reason):
+  m21: the same wrong id is typed into both copies, so the model is self-consistent and Verus has nothing to compare it with.
+       Only the script that reads the Rust source and the spec file catches it (copy-check column). This is the copied-by-hand limit A_CODE_COPY / A_SPEC_COPY.
+  m22: the definition of the refinement relation was weakened. Verus proves what the file states; it cannot tell that a relation
+       is missing a field. Only a reader of row_refines (header R1 lists every field) catches it. Neither Verus nor the copy-check script does.
+
+SUMMARY: 23 mutants, 21 rejected by Verus, 2 survived; unexpected outcomes: []

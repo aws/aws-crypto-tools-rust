@@ -1,0 +1,16 @@
+DEF-MISMATCH	docs/chorus/MPL-Threat-Model.md:246	check cited :360	defined at mpl/tests/test_builder_getters.rs:32, prim/tests/test_error.rs:256
+DEF-MISMATCH	docs/chorus/MPL-Threat-Model.md:308	check cited :1000	defined at mpl/tests/test_builder_getters.rs:32, prim/tests/test_error.rs:256
+DEF-MISMATCH	docs/chorus/MPL-Threat-Model.md:309	BranchKey cited :700	defined at prim/src/error.rs:238
+DEF-MISMATCH	docs/chorus/MPL-Threat-Model.md:316	SymmetricSigningKey cited :505	defined at mpl/src/structures/algorithm_suite.rs:656
+DEF-MISMATCH	docs/chorus/MPL-Threat-Model.md:359	allows_for_encrypt cited :97	defined at mpl/src/structures/commitment_policy.rs:62
+DEF-MISMATCH	docs/chorus/MPL-Threat-Model.md:359	allows_for_decrypt cited :184	defined at mpl/src/structures/commitment_policy.rs:77
+DEF-MISMATCH	docs/chorus/MPL-Threat-Model.md:408	cache cited :1570	defined at mpl/src/aws_kms/hierarchical_keyring.rs:347, mpl/src/aws_kms/hierarchical_keyring.rs:485, mpl/src/aws_kms/mod.rs:44, mpl/tests/test_builder_getters.rs:132
+DEF-MISMATCH	docs/chorus/MPL-Bug-Reports.md:127	validation cited :150	defined at mpl/src/error/generated.rs:1021
+DEF-MISMATCH	docs/chorus/MPL-Bug-Reports.md:204	decrypt_branch_key cited :179	defined at mpl/src/key_store/kms_ops.rs:162
+DEF-MISMATCH	docs/chorus/MPL-Bug-Reports.md:204	version_key cited :663	defined at mpl/src/key_store/branch_key_store.rs:641, mpl/src/key_store/client_impl.rs:65, mpl/src/key_store/client_impl.rs:448, mpl/src/key_store/mod.rs:231
+DEF-MISMATCH	docs/chorus/MPL-Bug-Reports.md:290	unwrap cited :236	defined at mpl/src/aws_kms/branch_key_wrap.rs:230
+DEF-MISMATCH	docs/chorus/MPL-Bug-Reports.md:625	add_data_key cited :60	defined at mpl/src/structures/decryption_materials.rs:45, mpl/src/structures/encryption_materials.rs:48, mpl/tests/test_materials_checks.rs:180
+DEF-MISMATCH	docs/chorus/MPL-Bug-Reports.md:626	check cited :199	defined at mpl/tests/test_builder_getters.rs:32, prim/tests/test_error.rs:256
+DEF-MISMATCH	docs/chorus/MPL-Bug-Reports.md:626	check cited :205	defined at mpl/tests/test_builder_getters.rs:32, prim/tests/test_error.rs:256
+DEF-MISMATCH	docs/chorus/MPL-Bug-Reports.md:626	check cited :230	defined at mpl/tests/test_builder_getters.rs:32, prim/tests/test_error.rs:256
+SUMMARY	def-ok=9	def-mismatch=15

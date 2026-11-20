@@ -1,0 +1,189 @@
+   Compiling libc v0.2.190
+   Compiling proc-macro2 v1.0.107
+   Compiling quote v1.0.47
+   Compiling unicode-ident v1.0.26
+   Compiling shlex v2.0.1
+   Compiling find-msvc-tools v0.1.14
+   Compiling dunce v1.0.5
+   Compiling pkg-config v0.3.34
+   Compiling fs_extra v1.3.0
+   Compiling autocfg v1.5.1
+   Compiling verus_prettyplease v0.0.0-2026-05-31-0205
+   Compiling hashbrown v0.12.3
+   Compiling vstd v0.0.0-2026-06-14-0213
+   Compiling aws-lc-rs v1.18.1
+   Compiling zeroize v1.9.1
+   Compiling verus_builtin v0.0.0-2026-05-17-0151
+   Compiling indexmap v1.9.3
+   Compiling jobserver v0.1.35
+   Compiling cc v1.6.0
+   Compiling verus_syn v0.0.0-2026-05-31-0205
+   Compiling syn v2.0.119
+   Compiling cmake v0.1.58
+   Compiling aws-lc-sys v0.45.0
+   Compiling synstructure v0.13.2
+   Compiling verus_state_machines_macros v0.0.0-2026-06-14-0213
+   Compiling verus_builtin_macros v0.0.0-2026-06-14-0213
+   Compiling aws-mpl-primitives v0.1.0 (/private/tmp/review-mahnush-verus-base/prim)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 17.36s
+     Running unittests src/lib.rs (target/debug/deps/aws_mpl_primitives-7ad0d1101e007d6d)
+
+running 2 tests
+test error::generated::tests::is_internal_builder_and_accessors ... ok
+test error::generated::tests::is_cryptographic_builder_and_accessors ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/test_aes.rs (target/debug/deps/test_aes-b81ce6ed938a5119)
+
+running 12 tests
+test test_aes_256_gcm_encrypt_kat ... ok
+test test_aes_decrypt_bad_key_length ... ok
+test test_aes_decrypt_bad_iv_length ... ok
+test test_aes_decrypt_output_buffer_too_small ... ok
+test test_aes_256_gcm_round_trip ... ok
+test test_aes_decrypt_tampered_auth_tag ... ok
+test test_aes_128_gcm_round_trip ... ok
+test test_aes_256_gcm_decrypt_kat ... ok
+test test_aes_192_gcm_round_trip ... ok
+test test_aes_encrypt_bad_key_length ... ok
+test test_aes_encrypt_bad_iv_length ... ok
+test test_aes_gcm_key_length ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/test_constant_time.rs (target/debug/deps/test_constant_time-f5b066a4f16b7b0b)
+
+running 7 tests
+test test_constant_time_equal_length_mismatch ... ok
+test test_constant_time_equal_empty_slices ... ok
+test test_constant_time_equal_single_byte_mismatch ... ok
+test test_constant_time_equal_single_byte_match ... ok
+test test_constant_time_equal_three_bytes_match ... ok
+test test_constant_time_equal_three_bytes_mismatch_head ... ok
+test test_constant_time_equal_three_bytes_mismatch_tail ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/test_digest.rs (target/debug/deps/test_digest-c89b4cf6f36ec6e1)
+
+running 6 tests
+test test_digest_alg_default_is_sha512 ... ok
+test test_digest_rejects_wrong_length_output_buffer ... ok
+test test_digest_sha256_asdf ... ok
+test test_digest_sha384_asdf ... ok
+test test_digest_sha512_asdf ... ok
+test test_digest_alg_output_len ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/test_ecdsa.rs (target/debug/deps/test_ecdsa-eeb791121a0083f3)
+
+running 17 tests
+test test_digest_context_new_from_ecdsa_p256_matches_sha256 ... ok
+test test_digest_context_new_from_ecdsa_p384_matches_sha384 ... ok
+test test_digest_context_new_and_finish ... ok
+test test_digest_context_new_for_all_algs ... ok
+test test_digest_context_clone_and_debug ... ok
+test test_ecdsa_sign_with_bad_private_key ... ok
+test test_ecdsa_sign_digest_with_bad_private_key ... ok
+test test_ecdsa_signature_algorithm_default_is_p384 ... ok
+test test_ecdsa_sign_rejects_wrong_length_buffer ... ok
+test test_ecdsa_sign_digest_rejects_wrong_length_buffer ... ok
+test test_signature_key_pair_debug_redacts_signing_key ... ok
+test test_ecdsa_p256_signature_length_is_71 ... ok
+test test_ecdsa_generate_keypair_p256_shape ... ok
+test test_ecdsa_p384_signature_length_is_103 ... ok
+test test_ecdsa_p256_round_trip_and_tamper ... ok
+test test_ecdsa_generate_keypair_p384_shape ... ok
+test test_ecdsa_p384_round_trip_and_tamper ... ok
+
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/test_error.rs (target/debug/deps/test_error-b53919e2bfe56f31)
+
+running 17 tests
+test errors_are_send_sync_and_static ... ok
+test a_primitive_failure_is_a_non_retryable_cryptographic_error ... ok
+test debug_shows_the_variant_message_and_source ... ok
+test a_single_error_is_its_own_only_failure ... ok
+test each_resource_payload_converts_into_its_variant ... ok
+test a_struct_converts_into_its_variant ... ok
+test find_source_searches_the_chain_including_self ... ok
+test a_clone_keeps_the_source_chain ... ok
+test alternate_display_prints_the_source_chain ... ok
+test a_branch_key_has_a_version_only_when_given_one ... ok
+test data_key_info_debug_shows_utf8_info_as_text_and_other_info_as_hex ... ok
+test display_is_the_variant_then_the_message ... ok
+test a_kms_key_reads_its_region_and_account_from_a_kms_arn ... ok
+test retry_kinds_print_their_names ... ok
+test service_and_resource_display ... ok
+test the_builder_sets_the_message_source_and_retry_kind ... ok
+test with_source_on_the_error_sets_the_source ... ok
+
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/test_generate_random_bytes.rs (target/debug/deps/test_generate_random_bytes-3e39c49684b15ad9)
+
+running 1 test
+test test_generate_random_bytes_larger_buffer ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/test_hkdf.rs (target/debug/deps/test_hkdf-2c884138d3f0255d)
+
+running 12 tests
+test test_hkdf_bad_okm_length ... ok
+test test_hkdf_expand_bad_okm_length ... ok
+test test_hkdf_no_salt_sha384 ... ok
+test test_hkdf_rfc5869_a1 ... ok
+test test_hkdf_extract_then_expand_a1 ... ok
+test test_hkdf_rfc5869_a2 ... ok
+test test_hkdf_rfc5869_a3 ... ok
+test test_hkdf_no_salt_sha512 ... ok
+test test_hkdf_no_salt_matches_a3 ... ok
+test test_hkdf_extract_then_expand_a3 ... ok
+test test_prk_clone_and_debug ... ok
+test test_hkdf_extract_then_expand_a2 ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/test_hmac.rs (target/debug/deps/test_hmac-f46f7e8fa5c8333d)
+
+running 7 tests
+test test_hmac_rejects_wrong_length_output_buffer ... ok
+test test_hmac_sha256_key_1234 ... ok
+test test_hmac_sha384_key_1111 ... ok
+test test_hmac_sha256_key_1111 ... ok
+test test_hmac_sha512_key_1234 ... ok
+test test_hmac_sha384_key_1234 ... ok
+test test_hmac_sha512_key_1111 ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/test_kbkdf_ctr_hmac.rs (target/debug/deps/test_kbkdf_ctr_hmac-1238ea50ad4b9f31)
+
+running 4 tests
+test test_kbkdf_ctr_hmac_empty_okm ... ok
+test test_kbkdf_ctr_hmac_sha512_smoke ... ok
+test test_kbkdf_ctr_hmac_purpose_nonce_vectors ... ok
+test test_kbkdf_ctr_hmac_raw_vectors ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests aws_mpl_primitives
+
+running 8 tests
+test src/error.rs - error::BranchKey (line 225) ... ok
+test src/error.rs - error::KmsKey (line 113) ... ok
+test src/error/generated.rs - error::generated::Error::find_source (line 636) ... ok
+test src/error.rs - error::DataKeyInfo (line 366) ... ok
+test src/error.rs - error::Resource (line 67) ... ok
+test src/error/generated.rs - error::generated::InternalError (line 790) ... ok
+test src/error/generated.rs - error::generated::CryptographicError (line 697) ... ok
+test src/error.rs - error::Service (line 16) ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+all doctests ran in 0.67s; merged doctests compilation took 0.25s
+exit 0

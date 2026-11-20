@@ -1,0 +1,42 @@
+DEF-MISMATCH	docs/bug-reports/BUG-02-plaintext-data-key-length-not-enforced.md:18	add_data_key cited :60	defined at mpl/src/structures/decryption_materials.rs:45, mpl/src/structures/encryption_materials.rs:48, mpl/tests/test_materials_checks.rs:180
+DEF-MISMATCH	docs/bug-reports/BUG-02-plaintext-data-key-length-not-enforced.md:50	unwrap cited :225	defined at mpl/src/aws_kms/branch_key_wrap.rs:230
+DEF-MISMATCH	docs/bug-reports/BUG-03-encryption-context-deserialize-accepts-unsorted.md:45	serialize cited :69	defined at esdk/test-server/src/model.rs:488, mpl/test-server/src/model.rs:489
+DEF-MISMATCH	docs/bug-reports/BUG-04-mrdiscovery-rewrites-non-mrk-arn-region.md:44	get_beacon_key cited :801	defined at mpl/src/key_store/branch_key_store.rs:868, mpl/src/key_store/client_impl.rs:89, mpl/src/key_store/client_impl.rs:463, mpl/src/key_store/mod.rs:279
+DEF-MISMATCH	docs/bug-reports/BUG-05-keygen-expect-and-short-edk-keystore-lookup.md:34	unwrap cited :236	defined at mpl/src/aws_kms/branch_key_wrap.rs:230
+DEF-MISMATCH	docs/bug-reports/RECHECK-main-620771c.md:18	validation cited :547	defined at mpl/src/error/generated.rs:1021
+DEF-MISMATCH	docs/bug-reports/RECHECK-main-620771c.md:18	validation cited :606	defined at mpl/src/error/generated.rs:1021
+DEF-MISMATCH	docs/bug-reports/RECHECK-main-620771c.md:20	check cited :205	defined at mpl/tests/test_builder_getters.rs:32, prim/tests/test_error.rs:256
+DEF-MISMATCH	docs/bug-reports/RECHECK-main-620771c.md:54	in_flight_ttl cited :333	defined at mpl/src/cmc/storm_tracking.rs:169, mpl/src/cmc/storm_tracking.rs:475
+DEF-MISMATCH	docs/bug-reports/RECHECK-main-620771c.md:54	grace_interval cited :680	defined at mpl/src/cmc/storm_tracking.rs:157, mpl/src/cmc/storm_tracking.rs:459
+DEF-MISMATCH	docs/bug-reports/RECHECK-main-620771c.md:64	add_data_key cited :60	defined at mpl/src/structures/decryption_materials.rs:45, mpl/src/structures/encryption_materials.rs:48, mpl/tests/test_materials_checks.rs:180
+DEF-MISMATCH	docs/bug-reports/RECHECK-main-620771c.md:72	check cited :199	defined at mpl/tests/test_builder_getters.rs:32, prim/tests/test_error.rs:256
+DEF-MISMATCH	docs/bug-reports/RECHECK-main-620771c.md:72	check cited :205	defined at mpl/tests/test_builder_getters.rs:32, prim/tests/test_error.rs:256
+DEF-MISMATCH	docs/bug-reports/RECHECK-main-620771c.md:94	unwrap cited :236	defined at mpl/src/aws_kms/branch_key_wrap.rs:230
+DEF-MISMATCH	docs/bug-reports/RECHECK-main-620771c.md:101	NULL_BYTE cited :49	defined at mpl/src/aws_kms/cache_entry_identifier.rs:20
+DEF-MISMATCH	docs/bug-reports/RECHECK-main-620771c.md:149	check cited :547	defined at mpl/tests/test_builder_getters.rs:32, prim/tests/test_error.rs:256
+DEF-MISMATCH	docs/bug-reports/RECHECK-main-620771c.md:150	check cited :205	defined at mpl/tests/test_builder_getters.rs:32, prim/tests/test_error.rs:256
+DEF-MISMATCH	docs/bug-reports/RECHECK-main-620771c.md:151	call cited :179	defined at esdk/shims/aws-esdk-cpp/test-server/tests/hierarchical_round_trip.rs:28, esdk/shims/aws-esdk-cpp/test-server/tests/raw_aes_round_trip.rs:21, esdk/shims/aws-esdk-cpp/test-server/tests/stream_round_trip.rs:25, esdk/test-server/tests/stream_round_trip.rs:21
+DEF-MISMATCH	docs/bug-reports/RECHECK-main-620771c.md:154	check cited :236	defined at mpl/tests/test_builder_getters.rs:32, prim/tests/test_error.rs:256
+DEF-MISMATCH	docs/spec-security-analysis.md:21	in_flight_ttl cited :379	defined at mpl/src/cmc/storm_tracking.rs:169, mpl/src/cmc/storm_tracking.rs:475
+DEF-MISMATCH	docs/spec-security-analysis.md:55	BranchKeyIdSupplier cited :442	defined at mpl/src/aws_kms/hierarchical_keyring.rs:187
+DEF-MISMATCH	docs/spec-security-analysis.md:72	BeaconKeyMaterials cited :211	defined at mpl/src/structures/beacon_key_materials.rs:18
+DEF-MISMATCH	docs/spec-security-analysis.md:76	check cited :622	defined at mpl/tests/test_builder_getters.rs:32, prim/tests/test_error.rs:256
+DEF-MISMATCH	docs/spec-security-analysis.md:77	error cited :517	defined at esdk/tests/fake_aws/mod.rs:49
+DEF-MISMATCH	docs/spec-security-analysis.md:134	CachedMaterials cited :6	defined at mpl/src/cmc/entry.rs:24
+DEF-MISMATCH	docs/spec-security-analysis.md:184	check_decryption_transition cited :82	defined at mpl/src/structures/materials_checks.rs:117
+DEF-MISMATCH	docs/spec-security-analysis.md:187	get_key_store_info cited :600	defined at mpl/src/key_store/branch_key_store.rs:436, mpl/src/key_store/client_impl.rs:41, mpl/src/key_store/client_impl.rs:433, mpl/src/key_store/mod.rs:181
+DEF-MISMATCH	docs/spec-security-analysis.md:187	check cited :989	defined at mpl/tests/test_builder_getters.rs:32, prim/tests/test_error.rs:256
+DEF-MISMATCH	docs/spec-security-analysis.md:187	check cited :1000	defined at mpl/tests/test_builder_getters.rs:32, prim/tests/test_error.rs:256
+DEF-MISMATCH	docs/spec-security-analysis.md:188	parse cited :92	defined at esdk/tests/test_v1_header_body.rs:28, esdk/tests/test_v2_header_body.rs:24
+DEF-MISMATCH	docs/spec-security-analysis.md:191	check cited :97	defined at mpl/tests/test_builder_getters.rs:32, prim/tests/test_error.rs:256
+DEF-MISMATCH	docs/spec-security-analysis.md:191	check cited :184	defined at mpl/tests/test_builder_getters.rs:32, prim/tests/test_error.rs:256
+DEF-MISMATCH	docs/spec-security-analysis.md:202	StormTrackingCmc cited :98	defined at mpl/src/cmc/storm_tracking.rs:77
+DEF-MISMATCH	docs/spec-security-analysis.md:251	allows_for_encrypt cited :97	defined at mpl/src/structures/commitment_policy.rs:62
+DEF-MISMATCH	docs/spec-security-analysis.md:253	get_active_branch_key cited :692	defined at mpl/src/key_store/branch_key_store.rs:792, mpl/src/key_store/client_impl.rs:73, mpl/src/key_store/client_impl.rs:453, mpl/src/key_store/mod.rs:245
+DEF-MISMATCH	docs/spec-security-analysis.md:255	check_encryption_transition cited :82	defined at mpl/src/structures/materials_checks.rs:72
+DEF-MISMATCH	docs/spec-security-analysis.md:255	check_encryption_materials_complete cited :171	defined at mpl/src/structures/materials_checks.rs:157
+DEF-MISMATCH	docs/spec-security-analysis.md:259	allows_for_decrypt cited :184	defined at mpl/src/structures/commitment_policy.rs:77
+DEF-MISMATCH	docs/spec-security-analysis.md:261	get_branch_key_version cited :934	defined at mpl/src/key_store/branch_key_store.rs:827, mpl/src/key_store/client_impl.rs:81, mpl/src/key_store/client_impl.rs:362, mpl/src/key_store/client_impl.rs:458
+DEF-MISMATCH	docs/spec-security-analysis.md:264	check_decryption_transition cited :163	defined at mpl/src/structures/materials_checks.rs:117
+DEF-MISMATCH	docs/spec-security-analysis.md:264	check_decryption_materials_complete cited :319	defined at mpl/src/structures/materials_checks.rs:177
+SUMMARY	def-ok=64	def-mismatch=41

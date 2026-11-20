@@ -1,0 +1,51 @@
+PASS code table: 11 variants in the Rust source
+PASS code table: 11 variants in the proof
+PASS code table: same variant names
+PASS code row AlgAes128GcmIv12Tag16HkdfSha256
+PASS code row AlgAes128GcmIv12Tag16HkdfSha256EcdsaP256
+PASS code row AlgAes128GcmIv12Tag16NoKdf
+PASS code row AlgAes192GcmIv12Tag16HkdfSha256
+PASS code row AlgAes192GcmIv12Tag16HkdfSha384EcdsaP384
+PASS code row AlgAes192GcmIv12Tag16NoKdf
+PASS code row AlgAes256GcmHkdfSha512CommitKey
+PASS code row AlgAes256GcmHkdfSha512CommitKeyEcdsaP384
+PASS code row AlgAes256GcmIv12Tag16HkdfSha256
+PASS code row AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384
+PASS code row AlgAes256GcmIv12Tag16NoKdf
+PASS ALL_SUITES order equals all_at order
+PASS idx order equals ALL_SUITES order
+PASS enum EsdkAlgorithmSuiteId has 11 variants
+PASS AlgorithmSuiteId has only the Esdk variant (H_ONLY_ESDK)
+PASS id_bytes is specification().id
+PASS from_id_bytes is ALL.iter().copied().find on id_bytes
+PASS verification_key_length constants 33 and 49
+PASS proof c_vk_len constants 33 and 49
+PASS key_commitment is commit_kdf.is_some()
+PASS H_TABLE_ONLY: every `AlgorithmSuite {` literal is in algorithm_suite.rs (11 of them)
+PASS spec rows in the proof: 11
+PASS spec row AlgAes128GcmIv12Tag16HkdfSha256
+PASS spec row AlgAes128GcmIv12Tag16HkdfSha256EcdsaP256
+PASS spec row AlgAes128GcmIv12Tag16NoKdf
+PASS spec row AlgAes192GcmIv12Tag16HkdfSha256
+PASS spec row AlgAes192GcmIv12Tag16HkdfSha384EcdsaP384
+PASS spec row AlgAes192GcmIv12Tag16NoKdf
+PASS spec row AlgAes256GcmHkdfSha512CommitKey
+PASS spec row AlgAes256GcmHkdfSha512CommitKeyEcdsaP384
+PASS spec row AlgAes256GcmIv12Tag16HkdfSha256
+PASS spec row AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384
+PASS spec row AlgAes256GcmIv12Tag16NoKdf
+PASS spec_other_id: 7 non-ESDK ids equal the spec table
+PASS spec table has 11 ESDK rows
+PASS spec reserved text present
+PASS agent shared constants: 11 ids equal the 11 ESDK spec ids
+PASS agent constants by name
+PASS prim AesGcm::key_length 16, 24, 32
+PASS proof prim_key_length 16, 24, 32
+PASS prim field_size 33, 49
+PASS proof prim_field_size 33, 49
+PASS esdk get_alg_suite 16/24/32 -> Aes128/192/256Gcm
+PASS proof get_alg_suite 16/24/32
+PASS default_cmm curve map P256->P256, P384->P384
+PASS esdk suites.rs curve map
+
+49/49 checks passed

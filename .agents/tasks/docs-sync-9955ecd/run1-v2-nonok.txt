@@ -1,0 +1,178 @@
+docs/verification-targets.md	15	MISS	esdk/shims/aws-esdk-cpp/src/lib.rs:2054	ids=['into_keyring_handle'] line=//# MUST adopt each at most once; the shim does not detect violations.	:1564-1565` → `:1570-1571`, `:1655` → `:1661`, `into_keyring_handle` `
+docs/verification-targets.md	16	MISS	prim/src/ecdsa.rs:387	ids=['ecdsa_generate_keypair'] line=let signing_key = der.as_ref().to_vec();	iped private-key `Vec` on the `ecdsa_generate_keypair` error return, `
+docs/verification-targets.md	17	NOFILE	:690		sion`, otherwise the operation MUST fail (`branch-key-store.md:677`, `
+docs/verification-targets.md	17	NOFILE	:692		therwise the operation MUST fail (`branch-key-store.md:677`, `:690`, `
+docs/verification-targets.md	17	NOFILE	:531		fail (`branch-key-store.md:677`, `:690`, `:692`; MUST-fail sentences `
+docs/verification-targets.md	17	NOFILE	:553		ranch-key-store.md:677`, `:690`, `:692`; MUST-fail sentences `:531`, `
+docs/verification-targets.md	17	NOFILE	:574		y-store.md:677`, `:690`, `:692`; MUST-fail sentences `:531`, `:553`, `
+docs/verification-targets.md	36	MISS	mpl/src/cmc/entry.rs:201-205	ids=['Duvet'] line=//= spec/framework/cryptographic-materials-cache.md#usage-metadata	- **Duvet**: one annotation block (`
+docs/verification-targets.md	66	MISS	mpl/src/key_store/branch_key_store.rs:132	ids=['kms_ops'] line=fn build_auth_ec(&self, record: &EncryptedRecord) -> BTreeMap<String, String> {	| 1 | 8.96 | T | T01 key-store auth-EC builders (`kms_ops.rs:49`, `
+docs/verification-targets.md	66	MISS	mpl/src/key_store/branch_key_store.rs:1089	ids=['kms_ops', 'branch_key_store'] line=fn item_from_ec_and_enc(	-store auth-EC builders (`kms_ops.rs:49`, `branch_key_store.rs:132`, `
+docs/verification-targets.md	66	MISS	mpl/src/key_store/branch_key_store.rs:1141	ids=['branch_key_store', 'kms_ops'] line=fn record_from_ddb_item(	th-EC builders (`kms_ops.rs:49`, `branch_key_store.rs:132`, `:1089`, `
+docs/verification-targets.md	73	NOFILE	:157		| 8 | 4.48 | T | T04 `branch_key_wrap::wrap` (`
+docs/verification-targets.md	75	NOFILE	:122		| 10 | 4.32 | T | T05 `branch_key_wrap::derive_branch_key` (`
+docs/verification-targets.md	76	MISS	mpl/src/cmc/storm_tracking.rs:333	ids=['hierarchical_keyring'] line=deadline: Some(now + self.inner.in_flight_ttl),	 T06 `SystemTime + Duration` (`hierarchical_keyring.rs:702`, `:945`; `
+docs/verification-targets.md	78	NOFILE	:1000		| 13 | 3.78 | T | T14 `as_branch_key_materials` (`
+docs/verification-targets.md	78	NOFILE	:989		14 `as_branch_key_materials` (`:1000`), `cache_entry_within_limits` (`
+docs/verification-targets.md	78	NOFILE	:626		00`), `cache_entry_within_limits` (`:989`), `generate_partition_id` (`
+docs/verification-targets.md	79	MISS	mpl/src/aws_kms/hierarchical_keyring.rs:734	ids=['try_decrypt_edk', 'decrypt_edk_at_version'] line=async fn on_decrypt(&self, input: OnDecryptInput) -> Result<OnDecryptOutput, Error> {	on_decrypt` EDK loop → `try_decrypt_ed
+docs/verification-targets.md	79	MISS	mpl/src/aws_kms/hierarchical_keyring.rs:751-772	ids=['decrypt_edk_at_version', 'hierarchical_keyring'] line=for edk in &encrypted_data_keys {	rypt_edk` → `decrypt_edk_at_version` (`hierarchical_keyring.rs:734`, `
+docs/verification-targets.md	81	NOFILE	:61		| 16 | 2.88 | T | T10 `compute_aad` (`
+docs/verification-targets.md	89	NOFILE	:91		| 24 | 1.92 | T | T15 `EncryptionContext::{to_bytes, from_bytes}` (`
+docs/verification-targets.md	89	NOFILE	:145		| 1.92 | T | T15 `EncryptionContext::{to_bytes, from_bytes}` (`:91`, `
+docs/verification-targets.md	91	MISS	mpl/src/key_store/branch_key_store.rs:706-722	ids=['version_key', 'branch_key_store'] line=let mut new_decrypt_only_ec = old_active_ec;	92 | T | T18 `version_key` EC derivation (`branch_key_store.rs:641`, `
+docs/verification-targets.md	93	NOFILE	:129		| 28 | 1.68 | T | T20 raw-AES provider-info codec (`
+docs/verification-targets.md	93	NOFILE	:191		| 28 | 1.68 | T | T20 raw-AES provider-info codec (`:129`, `
+docs/verification-targets.md	97	NOFILE	:350		| 32 | 1.20 | T | T24 `RawAesKeyringBuilder::build` (`
+docs/verification-targets.md	97	NOFILE	:360		| 32 | 1.20 | T | T24 `RawAesKeyringBuilder::build` (`:350`, check `
+docs/verification-targets.md	151	RANGE	mpl/src/key_store/record.rs:677	len=205	-key-materials-from-authenticated-encryption-context, #record-format (
+docs/verification-targets.md	151	RANGE	mpl/src/key_store/record.rs:690	len=205	m-authenticated-encryption-context, #record-format (:677, create-time 
+docs/verification-targets.md	151	RANGE	mpl/src/key_store/record.rs:692	len=205	on-context, #record-format (:677, create-time :690, hierarchy-version 
+docs/verification-targets.md	151	RANGE	mpl/src/key_store/record.rs:531	len=205	 (:677, create-time :690, hierarchy-version :692; MUST-fail sentences 
+docs/verification-targets.md	151	RANGE	mpl/src/key_store/record.rs:553	len=205	, create-time :690, hierarchy-version :692; MUST-fail sentences :531, 
+docs/verification-targets.md	151	RANGE	mpl/src/key_store/record.rs:574	len=205	te-time :690, hierarchy-version :692; MUST-fail sentences :531, :553, 
+docs/verification-targets.md	216	RANGE	prim/src/hkdf.rs:241	len=110	    function: hmac (
+docs/verification-targets.md	216	RANGE	prim/src/hkdf.rs:272	len=110	    function: hmac (:241), digest (
+docs/verification-targets.md	240	MISS	mpl/src/key_store/kms_ops.rs:179	ids=['decrypt_branch_key'] line=let resolved_key_id = resolve_key_store_arn(kms_config, record_kms_arn, branch_key_id)?;	rms :94-95; compat check :105); caller decrypt_branch_key (:162, cal
+docs/verification-targets.md	362	RANGE	mpl/src/cmc/storm_tracking.rs:879	len=775	 :751-772; per-EDK attempt :764); try_decrypt_edk (:867; length guard 
+docs/verification-targets.md	362	RANGE	mpl/src/cmc/storm_tracking.rs:889-894	len=775	ttempt :764); try_decrypt_edk (:867; length guard :879; version bytes 
+docs/verification-targets.md	363	RANGE	mpl/src/cmc/storm_tracking.rs:908	len=775	      decrypt_edk_at_version (:901; cache id 
+docs/verification-targets.md	363	RANGE	mpl/src/cmc/storm_tracking.rs:916-924	len=775	      decrypt_edk_at_version (:901; cache id :908; cache lookup 
+docs/verification-targets.md	363	RANGE	mpl/src/cmc/storm_tracking.rs:947-953	len=775	 lookup :916-924; key-store read get_branch_key_version :934-938; put 
+docs/verification-targets.md	374	MISS	mpl/tests/test_keyring_memory.rs:100	ids=['coverage_evidence', 'test_keyring_memory'] line=async fn raw_aes_keyring() {	  coverage_evidence: "test_keyring_memory.rs 
+docs/verification-targets.md	374	MISS	mpl/tests/test_keyring_memory.rs:113	ids=['coverage_evidence', 'test_keyring_memory'] line=async fn hierarchical_keyring() {	  coverage_evidence: "test_keyring_memory.rs :100, 
+docs/verification-targets.md	389	RANGE	mpl/src/key_store/kms_ops.rs:489	len=302	    function: raw-AES on_decrypt buffer (:471, 
+docs/verification-targets.md	389	MISS	mpl/src/key_store/kms_ops.rs:162	ids=['wrap_data_key'] line=pub(crate) async fn decrypt_branch_key(	on: raw-AES on_decrypt buffer (:471, :489); wrap_data_key output Vec (
+docs/verification-targets.md	389	MISS	mpl/src/key_store/kms_ops.rs:230	ids=['branch_key_wrap'] line=.key_id(key_arn)	s_encrypt (:175, copy :185 before Err :188); branch_key_wrap::unwrap (
+docs/verification-targets.md	398	MISS	prim/src/ecdsa.rs:248	ids=['coverage_evidence', 'Zeroize'] line=///	  coverage_evidence: "Zeroize tests cover types only (
+docs/verification-targets.md	398	MISS	prim/src/ecdsa.rs:228	ids=['coverage_evidence', 'Zeroize'] line=signature: &mut [u8],	  coverage_evidence: "Zeroize tests cover types only (:248, 
+docs/verification-targets.md	422	MISS	esdk/shims/aws-esdk-cpp/src/tests.rs:733	ids=['nd_borrows_non_null'] line=fn encrypt_rejects_null_keyring() {	cts_null_and_borrows_non_null (:715), null keyring / key-store tests (
+docs/verification-targets.md	422	MISS	esdk/shims/aws-esdk-cpp/src/tests.rs:746	ids=['rows_non_null'] line=fn decrypt_rejects_null_keyring() {	ll_and_borrows_non_null (:715), null keyring / key-store tests (:733, 
+docs/verification-targets.md	422	MISS	esdk/shims/aws-esdk-cpp/src/tests.rs:791	ids=['on_null'] line=fn create_hierarchical_keyring_rejects_null_key_store() {	_borrows_non_null (:715), null keyring / key-store tests (:733, :746, 
+docs/verification-targets.md	448	MISS	mpl/tests/test_local_cmc.rs:465	ids=['test_local_cmc'] line=async fn test_pruning_does_not_evict_outside_tail() {	yption_materials.rs; test_decryption_materials.rs; test_local_cmc.rs (
+docs/verification-targets.md	456	MISS	mpl/tests/test_storm_tracking_cmc.rs:388	ids=['Tests'] line=fn test_durations_are_stored_exactly() {	orm_tracking_cmc.rs (33) | 0.8 | Tests encode the regressed contract (
+docs/verification-targets.md	466	MISS	mpl/tests/test_local_cmc.rs:729	ids=['test_local_cmc'] line=async fn test_update_usage_metadata_deletes_entry_on_overflow() {	| C08 | test_local_cmc.rs (
+docs/verification-targets.md	506	MISS	mpl/test-server/src/handlers.rs:425-430	ids=['server', 'main', 'handlers'] line=/// provider chain.	6-27`; AWS clients built from request data at `handlers.rs:137-147`, `
+docs/verification-targets.md	511	MISS	esdk/shims/aws-esdk-cpp/include/aws/esdk/EncryptionSDK.h:656-663	ids=['Reason'] line=/// Adopts a custom keyring defined in Rust.	d pointer. Reason: caller obligation across the FFI boundary (header `
+docs/verification-targets.md	527	MISS	mpl/src/cmc/local.rs:166	ids=['LocalCmc', 'local'] line=fn prune_tail(&self, cache: &mut Inner) {	expired `LocalCmc` entries stay resident until read (`local.rs:131`, `
+docs/verification-targets.md	527	MISS	prim/src/ecdsa.rs:387	ids=['ecdsa_generate_keypair'] line=let signing_key = der.as_ref().to_vec();	_keypair` leaves the private-key `Vec` un-wiped on its error return (`
+docs/verification-targets.md	527	MISS	prim/src/ecdsa.rs:391-392	ids=['ecdsa'] line=if verification_key.len() != field_size(alg) {	 the private-key `Vec` un-wiped on its error return (`ecdsa.rs:387`, `
+docs/verification-targets/01-threat-driven.md	18	MISS	esdk/shims/aws-esdk-cpp/src/lib.rs:2054	ids=['into_keyring_handle'] line=//# MUST adopt each at most once; the shim does not detect violations.	:1564-1565` → `:1570-1571`, `:1655` → `:1661`, `into_keyring_h
+docs/verification-targets/01-threat-driven.md	36	MISS	mpl/tests/test_keyring_memory.rs:100	ids=['Feasibility', 'Likelihood', 'Medium', 'Coverage'] line=async fn raw_aes_keyring() {	provisional). Feasibility 0.7 (Likelihood Medium). Coverage gap 0.9: `
+docs/verification-targets/01-threat-driven.md	36	MISS	mpl/tests/test_keyring_memory.rs:113	ids=['test_keyring_memory'] line=async fn hierarchical_keyring() {	edium). Coverage gap 0.9: `mpl/tests/test_keyring_memory.rs:100` and `
+docs/verification-targets/01-threat-driven.md	62	MISS	esdk/shims/aws-esdk-cpp/src/lib.rs:1570	ids=['reaching', 'objects', 'shim'] line=.set_kms_client(unsafe { input.kms_client.as_ref() }.map(|c| c.inner.clone()))	bjects is in the C++ shim (`esdk/shims/aws-esd
+docs/verification-targets/01-threat-driven.md	64	MISS	mpl/src/cmc/entry.rs:201-205	ids=['Duvet'] line=//= spec/framework/cryptographic-materials-cache.md#usage-metadata	- **Duvet:** one annotation block in `mpl/`/`prim/` (`
+docs/verification-targets/01-threat-driven.md	219	MISS	mpl/src/key_store/kms_ops.rs:172	ids=['decrypt_branch_key'] line=let record_kms_arn = record.attributes.get(ATTR_KMS_ARN).ok_or_else(|| {	 `kms-arn` is already required one step later, by decrypt_branch_ke
+docs/verification-targets/01-threat-driven.md	228	RANGE	mpl/src/key_store/kms_ops.rs:677	len=302	    #record-format (
+docs/verification-targets/01-threat-driven.md	228	RANGE	mpl/src/key_store/kms_ops.rs:690	len=302	record-format (:677 "A branch key record MUST include", `create-time` 
+docs/verification-targets/01-threat-driven.md	228	RANGE	mpl/src/key_store/kms_ops.rs:692	len=302	nch key record MUST include", `create-time` :690, `hierarchy-version` 
+docs/verification-targets/01-threat-driven.md	230	RANGE	mpl/src/key_store/kms_ops.rs:531	len=302	    defined fields, this operation MUST fail": 
+docs/verification-targets/01-threat-driven.md	230	RANGE	mpl/src/key_store/kms_ops.rs:553	len=302	    defined fields, this operation MUST fail": :531, 
+docs/verification-targets/01-threat-driven.md	230	RANGE	mpl/src/key_store/kms_ops.rs:574	len=302	    defined fields, this operation MUST fail": :531, :553, 
+docs/verification-targets/01-threat-driven.md	245	MISS	mpl/src/key_store/branch_key_store.rs:1098	ids=['branch_key_store'] line=let attr = if key == ATTR_HIERARCHY_VERSION {	    write paths (branch_key_store.rs:711, 
+docs/verification-targets/01-threat-driven.md	356	RANGE	mpl/src/aws_kms/cache_entry_identifier.rs:908	len=66	tes HierarchicalKeyring on_encrypt (:665) and decrypt_edk_at_version (
+docs/verification-targets/01-threat-driven.md	357	RANGE	mpl/src/aws_kms/cache_entry_identifier.rs:595-599	len=66	      field sources: partition id (
+docs/verification-targets/01-threat-driven.md	358	RANGE	mpl/src/aws_kms/cache_entry_identifier.rs:605	len=66	      logical name from the key store (
+docs/verification-targets/01-threat-driven.md	458	MISS	mpl/src/cmc/storm_tracking.rs:535	ids=['HierarchicalKeyringBuilder'] line=self	      bounds would live in HierarchicalKeyringBuilder::build (
+docs/verification-targets/01-threat-driven.md	458	MISS	mpl/src/cmc/storm_tracking.rs:547	ids=['is_zero'] line=pub fn set_fan_out(mut self, v: Option<usize>) -> Self {	ive in HierarchicalKeyringBuilder::build (:535; only ttl.is_zero() at 
+docs/verification-targets/01-threat-driven.md	459	MISS	mpl/src/cmc/storm_tracking.rs:606	ids=['StormTrackingCmcBuilder'] line=pub fn build(self) -> Result<StormTrackingCmc, Error> {	      StormTrackingCmcBuilder::build (
+docs/verification-targets/01-threat-driven.md	508	RANGE	prim/src/lib.rs:350	len=329	      RawAesKeyringBuilder::build (
+docs/verification-targets/01-threat-driven.md	509	RANGE	prim/src/lib.rs:399	len=329	      <Builtin<RawAesKeyring> as Keyring>::on_encrypt (
+docs/verification-targets/01-threat-driven.md	556	MISS	mpl/src/aws_kms/hierarchical_keyring.rs:943	ids=['on_encrypt', 'decrypt_edk_at_version'] line=.materials(CachedMaterials::BranchKey(bkm.clone()))	d (:626); cache puts in on_encrypt (:700) and decrypt_edk_a
+docs/verification-targets/01-threat-driven.md	608	MISS	mpl/src/cmc/storm_tracking.rs:734	ids=['Builtin', 'HierarchicalKeyring', 'Keyring', 'on_decrypt'] line=let cached = self.inner.local.get_fresh(cache_id)?;	      <Builtin<HierarchicalKeyring> as Keyring>::o
+docs/verification-targets/01-threat-driven.md	610	RANGE	mpl/src/cmc/storm_tracking.rs:879	len=775	      try_decrypt_edk (:867; length guard 
+docs/verification-targets/01-threat-driven.md	610	RANGE	mpl/src/cmc/storm_tracking.rs:889-894	len=775	      try_decrypt_edk (:867; length guard :879; version bytes 
+docs/verification-targets/01-threat-driven.md	611	RANGE	mpl/src/cmc/storm_tracking.rs:908	len=775	      decrypt_edk_at_version (:901; cache id 
+docs/verification-targets/01-threat-driven.md	611	RANGE	mpl/src/cmc/storm_tracking.rs:916-924	len=775	      decrypt_edk_at_version (:901; cache id :908; cache lookup 
+docs/verification-targets/01-threat-driven.md	612	RANGE	mpl/src/cmc/storm_tracking.rs:947-953	len=775	      put after a successful read 
+docs/verification-targets/01-threat-driven.md	650	RANGE	esdk/src/config.rs:236-249	len=151	    spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#ondecrypt (
+docs/verification-targets/01-threat-driven.md	657	MISS	mpl/tests/test_aws_kms_hierarchical_keyring.rs:1764	ids=['ierarchical_keyring'] line=assert_eq!(key_store.get_version_calls(), 1);	_aws_kms_hierarchical_keyring.rs:1306) and asserts single-EDK counts (
+docs/verification-targets/01-threat-driven.md	657	MISS	mpl/tests/test_aws_kms_hierarchical_keyring.rs:2192	ids=['ical_keyring'] line=assert_eq!(key_store.get_version_calls(), 1);	s_hierarchical_keyring.rs:1306) and asserts single-EDK counts (:1764, 
+docs/verification-targets/01-threat-driven.md	691	RANGE	prim/src/ecdsa.rs:471	len=403	AesKeyring> as Keyring>::on_decrypt (plaintext buffer `vec![0u8; ..]` 
+docs/verification-targets/01-threat-driven.md	691	RANGE	prim/src/ecdsa.rs:489	len=403	 buffer `vec![0u8; ..]` :471, aes_decrypt-Err path, wrong-length path 
+docs/verification-targets/01-threat-driven.md	694	MISS	prim/src/ecdsa.rs:230	ids=['branch_key_wrap'] line=check_sig_len(alg, signature)?;	      branch_key_wrap::unwrap (
+docs/verification-targets/01-threat-driven.md	719	MISS	mpl/src/aws_kms/hierarchical_keyring.rs:767	ids=['caller_obligation_wrap'] line=materials.add_data_key(PlaintextDataKey::new(plaintext_dk_bytes))?;	matches Ok(v) ==> caller_obligation_wrap(v)          // d
+docs/verification-targets/01-threat-driven.md	720	MISS	prim/src/ecdsa.rs:391-392	ids=['ve_unwiped', 'ghost_signing_key_vec', 'FAILS'] line=if verification_key.len() != field_size(alg) {	 ==> no_live_unwiped(ghost_signing_key_vec)   // expected: FAILS (F5, 
+docs/verification-targets/01-threat-driven.md	842	MISS	mpl/src/cmm/default_cmm.rs:198	ids=['decrypt_materials'] line=let (ec, required_encryption_context_keys) = merge_reproduced_encryption_context(	yption_context (:273, private); call in decrypt_materials (:1
+docs/verification-targets/01-threat-driven.md	882	MISS	mpl/src/structures/materials_checks.rs:97	ids=['DefaultCmm', 'get_encryption_materials'] line=));	tion / key_commitment; DefaultCmm get_encryption_materials (:85, gate 
+docs/verification-targets/01-threat-driven.md	883	MISS	mpl/src/structures/materials_checks.rs:184	ids=['decrypt_materials'] line=}	      decrypt_materials (:177, gate 
+docs/verification-targets/01-threat-driven.md	915	MISS	esdk/src/materials.rs:130	ids=['default_cmm', 'ESDK'] line=if !policy.allows_for_decrypt(materials.algorithm_suite_id()) {	    (default_cmm.rs:97, :184) plus the ESDK re-check (
+docs/verification-targets/01-threat-driven.md	915	MISS	esdk/src/materials.rs:202	ids=['ESDK'] line=if !policy.allows_for_encrypt(materials.algorithm_suite_id()) {	:97, :184) plus the ESDK re-check (esdk/src/materials.rs:130 decrypt, 
+docs/verification-targets/01-threat-driven.md	939	RANGE	mpl/src/aws_kms/user_agent.rs:236	len=19	      unwrap (guard 
+docs/verification-targets/01-threat-driven.md	939	RANGE	mpl/src/aws_kms/user_agent.rs:249	len=19	      unwrap (guard :236, .expect 
+docs/verification-targets/01-threat-driven.md	939	RANGE	mpl/src/aws_kms/user_agent.rs:252	len=19	      unwrap (guard :236, .expect :249/
+docs/verification-targets/01-threat-driven.md	939	RANGE	mpl/src/aws_kms/user_agent.rs:256	len=19	      unwrap (guard :236, .expect :249/:252/
+docs/verification-targets/01-threat-driven.md	939	RANGE	mpl/src/aws_kms/user_agent.rs:879	len=19	  unwrap (guard :236, .expect :249/:252/:256); try_decrypt_edk (guard 
+docs/verification-targets/01-threat-driven.md	939	RANGE	mpl/src/aws_kms/user_agent.rs:892	len=19	d :236, .expect :249/:252/:256); try_decrypt_edk (guard :879, .expect 
+docs/verification-targets/01-threat-driven.md	942	RANGE	mpl/src/aws_kms/user_agent.rs:64	len=19	      build_cache_identifier .expect (
+docs/verification-targets/01-threat-driven.md	965	MISS	mpl/src/key_store/branch_key_store.rs:101-108	ids=['expect', 'Option'] line=fn kms_client(&self) -> &KmsClient {	 client `.expect` sites are gone (clients are non-Option after build, 
+docs/verification-targets/01-threat-driven.md	966	MISS	mpl/src/key_store/branch_key_store.rs:199	ids=['expect'] line=grant_tokens: Option<Vec<String>>,	    The storm-tracking `.expect`s (
+docs/verification-targets/01-threat-driven.md	966	MISS	mpl/src/key_store/branch_key_store.rs:213	ids=['expect'] line=/// Set or clear the DynamoDB table name from an `Option`.	    The storm-tracking `.expect`s (:199, 
+docs/verification-targets/01-threat-driven.md	966	MISS	mpl/src/key_store/branch_key_store.rs:227	ids=['expect'] line=/// Set the logical name cryptographically bound to all keys in the	    The storm-tracking `.expect`s (:199, :213, 
+docs/verification-targets/01-threat-driven.md	988	MISS	mpl/src/aws_kms/hierarchical_keyring.rs:606	ids=['StormTrackingCmcBuilder'] line=	      StormTrackingCmcBuilder::build (
+docs/verification-targets/01-threat-driven.md	993	MISS	mpl/src/aws_kms/hierarchical_keyring.rs:934-938	ids=['HierarchicalKeyring', 'decrypt_edk_at_version'] line=.get_branch_key_version()	ath leaves a mark behind: HierarchicalKeyring decrypt_edk_at_version (
+docs/verification-targets/01-threat-driven.md	1029	MISS	mpl/src/aws_kms/hierarchical_keyring.rs:322-323	ids=['FAILS'] line=self.inner.branch_key_id.as_deref()	k is never a fixed point of a same-key get            // FAILS today (
+docs/verification-targets/01-threat-driven.md	1033	MISS	mpl/src/aws_kms/hierarchical_keyring.rs:313	ids=['FAILS'] line=#[must_use]	                                                      // FAILS today (
+docs/verification-targets/01-threat-driven.md	1090	RANGE	mpl/src/structures/encryption_context.rs:468	len=323	r the owner, not a proof failure: from_bytes accepts empty keys (test 
+docs/verification-targets/01-threat-driven.md	1101	MISS	mpl/tests/test_encryption_context.rs:502-533	ids=['er_keys_rejected_on_deserialize'] line=fn test_deserialize_rejects_invalid_utf8_key() {	out_of_order_keys_rejected_on_deserialize (:68), invalid-UTF-8 te
+docs/verification-targets/01-threat-driven.md	1208	MISS	mpl/src/aws_kms/hierarchical_keyring.rs:908	ids=['decrypt_edk_at_version'] line=let cache_id = cache_entry_identifier::build_cache_identifier(	      decrypt_edk_at_version (:901, cache id 
+docs/verification-targets/01-threat-driven.md	1208	MISS	mpl/src/aws_kms/hierarchical_keyring.rs:722	ids=['on_encrypt'] line=.key_provider_info(branch_key_id.into_bytes())	t_edk_at_version (:901, cache id :908); on_encrypt EDK provider info (
+docs/verification-targets/01-threat-driven.md	1224	RANGE	mpl/src/aws_kms/hierarchical_keyring.rs:1640	len=1008	), on_encrypt/on_decrypt_uses_branch_key_id_supplier_when_configured (
+docs/verification-targets/01-threat-driven.md	1225	RANGE	mpl/src/cmm/default_cmm.rs:760	len=304	which is unauthenticated until a data key is recovered. The filter at 
+docs/verification-targets/01-threat-driven.md	1289	MISS	esdk/src/error/generated.rs:271	ids=['NoMatchingDataKey', 'Debug'] line=if let Some(resource) = &r.resource {	s() :1591; shown by the NoMatchingDataKey Debug impl, :1596, field at 
+docs/verification-targets/01-threat-driven.md	1331	MISS	esdk/shims/aws-esdk-cpp/src/lib.rs:1287	ids=['unsafe'] line=let keyring = require_handle(input.keyring, "keyring", "encrypt")?;	quire_handle (:715; null check :720; `unsafe { &*ptr }` :728; callers 
+docs/verification-targets/01-threat-driven.md	1331	MISS	esdk/shims/aws-esdk-cpp/src/lib.rs:1331	ids=['unsafe'] line=let keyring = require_handle(input.keyring, "keyring", "decrypt")?;	andle (:715; null check :720; `unsafe { &*ptr }` :728; callers :1287, 
+docs/verification-targets/01-threat-driven.md	1331	MISS	esdk/shims/aws-esdk-cpp/src/lib.rs:1652	ids=['unsafe'] line=let key_store = require_handle(input.key_store, "key_store", "create_hierarchical_keyring"	:715; null check :720; `unsafe { &*ptr }` :728; calle
+docs/verification-targets/01-threat-driven.md	1331	MISS	esdk/shims/aws-esdk-cpp/src/lib.rs:1942	ids=['unsafe'] line=let keyring = require_handle(input.keyring, "keyring", "encrypt_stream")?;	ull check :720; `unsafe { &*ptr }` :728; callers :1287, :1331, :1652,
+docs/verification-targets/01-threat-driven.md	1331	MISS	esdk/shims/aws-esdk-cpp/src/lib.rs:1985	ids=['unsafe'] line=let keyring = require_handle(input.keyring, "keyring", "decrypt_stream")?;	ck :720; `unsafe { &*ptr }` :728; callers :1287, :1331, :1652, :1942,
+docs/verification-targets/01-threat-driven.md	1337	MISS	esdk/shims/aws-esdk-cpp/include/aws/esdk/EncryptionSDK.h:656-663	ids=['EncryptionSDK'] line=/// Adopts a custom keyring defined in Rust.	      include/aws/esdk/EncryptionSDK.h:664, contract 
+docs/verification-targets/01-threat-driven.md	1369	MISS	esdk/shims/aws-esdk-cpp/src/lib.rs:180-204	ids=['Custom'] line=}	im.md, section \"Custom implementations of core-library interfaces\" (
+docs/verification-targets/01-threat-driven.md	1442	MISS	mpl/src/keyring/raw_aes_keyring.rs:350	ids=['RawAesKeyringBuilder'] line=pub fn build(mut self) -> Result<RawAesKeyring, Error> {	    function: RawAesKeyringBuilder::build (
+docs/verification-targets/01-threat-driven.md	1473	MISS	mpl/src/structures/algorithm_suite.rs:439	ids=['write_volatile'] line=#[must_use]	get: "PlaintextDataKey::zeroize — the unsafe write_volatile loop (was 
+docs/verification-targets/01-threat-driven.md	1491	MISS	mpl/test-server/src/handlers.rs:137-147	ids=['clients', 'built', 'request', 'data'] line=let kms = aws_sdk_kms::Client::new(&sdk_config(req.kms_client_region).await);	st-server/src/main.rs:26-27`; AWS cli
+docs/verification-targets/01-threat-driven.md	1491	MISS	mpl/test-server/src/handlers.rs:425-430	ids=['server', 'main', 'handlers'] line=/// provider chain.	uilt from request data at `mpl/test-server/src/handlers.rs:137-147`, `
+docs/verification-targets/01-threat-driven.md	1513	MISS	esdk/shims/aws-esdk-cpp/include/aws/esdk/EncryptionSDK.h:656-663	ids=['Caller'] line=/// Adopts a custom keyring defined in Rust.	 code; `cxx` bridge internals | Caller obligation across FFI (header `
+docs/verification-targets/01-threat-driven.md	1520	MISS	mpl/src/aws_kms/branch_key_wrap.rs:236	ids=['branch_key_wrap'] line=if ciphertext.len() < FIXED_OVERHEAD_LEN {	sted `branch_key_wrap.rs:240` as the 60-byte guard | The guard is at `
+docs/verification-targets/01-threat-driven.md	1520	MISS	mpl/src/aws_kms/branch_key_wrap.rs:236	ids=['inside', 'error', 'message', 'cites', 'Resolved'] line=if ciphertext.len() < FIXED_OVERHEAD_LEN {	`. **Resolved** in the verification pass: the threat model no
+docs/verification-targets/01-threat-driven.md	1521	MISS	mpl/src/structures/branch_key_materials.rs:205	ids=['beacon_key_materials'] line=impl Drop for BranchKeyMaterials {	y_materials.rs` | Re-checked with `sed -n` in the verification pass: `
+docs/verification-targets/01-threat-driven.md	1522	RANGE	mpl/src/keyring/raw_aes_keyring.rs:552	len=545	 work list cite the "MUST fail" clause at `branch-key-store.md:530`, `
+docs/verification-targets/01-threat-driven.md	1522	RANGE	mpl/src/keyring/raw_aes_keyring.rs:573	len=545	st cite the "MUST fail" clause at `branch-key-store.md:530`, `:552`, `
+docs/verification-targets/01-threat-driven.md	1522	RANGE	mpl/src/keyring/raw_aes_keyring.rs:677	len=545	 `branch-key-store.md:530`, `:552`, `:573`, and the record fields at `
+docs/verification-targets/01-threat-driven.md	1522	RANGE	mpl/src/keyring/raw_aes_keyring.rs:688-691	len=545	-key-store.md:530`, `:552`, `:573`, and the record fields at `:677`, `
+docs/verification-targets/01-threat-driven.md	1522	RANGE	mpl/src/keyring/raw_aes_keyring.rs:552	len=545	On HEAD the "response MUST contain the fields" sentences are `:530`, `
+docs/verification-targets/01-threat-driven.md	1522	RANGE	mpl/src/keyring/raw_aes_keyring.rs:573	len=545	the "response MUST contain the fields" sentences are `:530`, `:552`, `
+docs/verification-targets/01-threat-driven.md	1522	MISS	mpl/src/keyring/raw_aes_keyring.rs:531	ids=['MUST'] line=}	 contain the defined fields, this operation MUST fail" sentences are `
+docs/verification-targets/01-threat-driven.md	1522	RANGE	mpl/src/keyring/raw_aes_keyring.rs:553	len=545	 the defined fields, this operation MUST fail" sentences are `:531`, `
+docs/verification-targets/01-threat-driven.md	1522	RANGE	mpl/src/keyring/raw_aes_keyring.rs:574	len=545	ined fields, this operation MUST fail" sentences are `:531`, `:553`, `
+docs/verification-targets/01-threat-driven.md	1522	RANGE	mpl/src/keyring/raw_aes_keyring.rs:677	len=545	es are `:531`, `:553`, `:574`. "A branch key record MUST include" is `
+docs/verification-targets/01-threat-driven.md	1522	RANGE	mpl/src/keyring/raw_aes_keyring.rs:690	len=545	574`. "A branch key record MUST include" is `:677`; `create-time` is `
+docs/verification-targets/01-threat-driven.md	1522	RANGE	mpl/src/keyring/raw_aes_keyring.rs:692	len=545	clude" is `:677`; `create-time` is `:690` and `hierarchy-version` is `
+docs/verification-targets/01-threat-driven.md	1522	RANGE	mpl/src/keyring/raw_aes_keyring.rs:693	len=545	reate-time` is `:690` and `hierarchy-version` is `:692` (Number type `
+docs/verification-targets/01-threat-driven.md	1522	MISS	mpl/src/keyring/raw_aes_keyring.rs:530	ids=['Number'] line=}	 and `hierarchy-version` is `:692` (Number type `:693`). The audit's `
+docs/verification-targets/01-threat-driven.md	1522	RANGE	mpl/src/keyring/raw_aes_keyring.rs:552	len=545	ierarchy-version` is `:692` (Number type `:693`). The audit's `:530`/`
+docs/verification-targets/01-threat-driven.md	1522	RANGE	mpl/src/keyring/raw_aes_keyring.rs:573	len=545	y-version` is `:692` (Number type `:693`). The audit's `:530`/`:552`/`
+docs/verification-targets/02-capability-driven.md	15	MISS	prim/src/ecdsa.rs:387	ids=['ecdsa_generate_keypair'] line=let signing_key = der.as_ref().to_vec();	entries and the un-wiped `ecdsa_generate_keypair` private-key `Vec` (`
+docs/verification-targets/02-capability-driven.md	15	MISS	prim/src/ecdsa.rs:391-392	ids=['ecdsa', 'erate_keypair'] line=if verification_key.len() != field_size(alg) {	`ecdsa_generate_keypair` private-key `Vec` (`prim/src/ecdsa.rs:387`, `
+docs/verification-targets/02-capability-driven.md	15	MISS	esdk/shims/aws-esdk-cpp/src/lib.rs:1564-1565	ids=['ecdsa'] line=//# [Shim Specification: Handles and lifetimes](./shim.md#handles-and-lifetimes); a	7`, `:391-392`), which no C target scopes. T25 row: ci
+docs/verification-targets/02-capability-driven.md	15	MISS	esdk/shims/aws-esdk-cpp/src/lib.rs:1570-1571	ids=['which', 'target', 'scopes', 'citations', 'moved'] line=.set_kms_client(unsafe { input.kms_client.as_ref() }.map(|c| c.inner.clone()))	h no C target sco
+docs/verification-targets/02-capability-driven.md	23	NOFILE	:59		ographic-materials-cache.md:136-137`) and at least 1 for each value (`
+docs/verification-targets/02-capability-driven.md	23	NOFILE	:71		c-materials-cache.md:136-137`) and at least 1 for each value (`:59`, `
+docs/verification-targets/02-capability-driven.md	23	NOFILE	:92		ials-cache.md:136-137`) and at least 1 for each value (`:59`, `:71`, `
+docs/verification-targets/02-capability-driven.md	42	MISS	mpl/src/cmc/entry.rs:201-205	ids=['Duvet'] line=//= spec/framework/cryptographic-materials-cache.md#usage-metadata	- **Duvet:** one annotation (`
+docs/verification-targets/02-capability-driven.md	93	MISS	mpl/src/key_store/branch_key_store.rs:814	ids=['branch_key_store', 'get_'] line=branch_key_materials_from_authenticated_encryption_context(&auth_ec, plaintext)?;	_key builders (branch_key_store.rs:569-5
+docs/verification-targets/02-capability-driven.md	93	MISS	mpl/src/key_store/branch_key_store.rs:852	ids=['ranch_key_store', 'get_'] line=branch_key_materials_from_authenticated_encryption_context(&auth_ec, plaintext)?;	uilders (branch_key_store.rs:569-572) and
+docs/verification-targets/02-capability-driven.md	310	MISS	mpl/src/structures/encryption_materials.rs:358	ids=['EncryptionMaterialsBuilder'] line=pub fn build(self) -> Result<EncryptionMaterials, Error> {	      EncryptionMaterialsBuilder::build (
+docs/verification-targets/02-capability-driven.md	310	MISS	mpl/src/structures/encryption_materials.rs:365	ids=['EncryptionMaterialsBuilder'] line=check_data_key_length(&algorithm_suite_id.specification(), key)?;	      EncryptionMaterialsBuilder::build (:358, c
+docs/verification-targets/02-capability-driven.md	311	MISS	mpl/src/structures/decryption_materials.rs:295	ids=['DecryptionMaterialsBuilder'] line=pub fn build(self) -> Result<DecryptionMaterials, Error> {	      DecryptionMaterialsBuilder::build (
+docs/verification-targets/02-capability-driven.md	311	MISS	mpl/src/structures/decryption_materials.rs:303	ids=['DecryptionMaterialsBuilder'] line=check_data_key_length(&algorithm_suite_id.specification(), key)?;	      DecryptionMaterialsBuilder::build (:295, c
+docs/verification-targets/02-capability-driven.md	312	MISS	mpl/src/aws_kms/hierarchical_keyring.rs:489	ids=['on_decrypt'] line=	      raw-AES on_decrypt length check (
+docs/verification-targets/02-capability-driven.md	400	MISS	mpl/src/cmc/entry.rs:201-205	ids=['Duvet'] line=//= spec/framework/cryptographic-materials-cache.md#usage-metadata	ry::record_use (entry.rs:206; checked_add :213-214; Duvet implication 
+docs/verification-targets/02-capability-driven.md	443	MISS	mpl/src/aws_kms/hierarchical_keyring.rs:178-190	ids=['Seconds', 'Milliseconds'] line=}	ng grace-vs-TTL check with Seconds/Milliseconds integer division (was 
+docs/verification-targets/02-capability-driven.md	459	MISS	mpl/src/cmc/local.rs:166	ids=['LocalCmc', 'local'] line=fn prune_tail(&self, cache: &mut Inner) {	alCmc` entries stay resident until read (`mpl/src/cmc/local.rs:131`, `
+docs/verification-targets/02-capability-driven.md	459	MISS	prim/src/ecdsa.rs:391-392	ids=['ecdsa'] line=if verification_key.len() != field_size(alg) {	ate-key `Vec` un-wiped on its error return (`prim/src/ecdsa.rs:387`, `
+docs/verification-targets/02-capability-driven.md	463	MISS	mpl/src/cmc/storm_tracking.rs:333	ids=['hierarchical_keyring'] line=deadline: Some(now + self.inner.in_flight_ttl),	`SystemTime + Duration` adds (`hierarchical_keyring.rs:702`, `:945`; `
+docs/verification-targets/02-capability-driven.md	474	MISS	mpl/src/aws_kms/hierarchical_keyring.rs:934	ids=['hierarchical_keyring', 'l_keyring'] line=.get_branch_key_version()	ierarchical_keyring.rs:751-772`) and the per-version key-store read (`
+docs/verification-targets/02-capability-driven.md	474	MISS	mpl/src/aws_kms/hierarchical_keyring.rs:947	ids=['hierarchical_keyring'] line=self.inner	cal_keyring.rs:751-772`) and the per-version key-store read (`:934`, `
+docs/verification-targets/02-capability-driven.md	482	MISS	mpl/src/structures/algorithm_suite.rs:607	ids=['algorithm_suite'] line=pub fn ct_eq(&self, other: &Self) -> bool {	` is constant-time (`prim/src/lib.rs:291`; `algorithm_suite.rs:541`, `
+docs/verification-targets/02-capability-driven.md	501	MISS	mpl/src/key_store/encryption_context.rs:95-101	ids=['build_base'] line=return Err(Error::new(	- C01(c): BUG-08 dead collision `Err` in `build_base` (`
+docs/verification-targets/02-capability-driven.md	502	MISS	prim/src/lib.rs:215	ids=['aes_decrypt'] line=if plain_text.len() < cipher_text.len() {	) `aes_decrypt` guard weaker than its callee; misleading error text (`

@@ -1,0 +1,81 @@
+28	MISS	mpl/src/cmc/entry.rs:201-205	ids=['Duvet'] line=//= spec/framework/cryptographic-materials-cache.md#usage-metadata
+204	ALT	mpl/src/key_store/kms_ops.rs:88	resolve_key_store_arn
+204	ALT	mpl/src/key_store/kms_ops.rs:94-95	KmsKeyArn,KmsMrKeyArn
+204	ALT	mpl/src/key_store/kms_config.rs (+1):105	KmsMrKeyArn
+290	ALT	mpl/tests/test_aws_kms_hierarchical_keyring_integ.rs (+1):665	HierarchicalKeyring
+290	RANGE	mpl/src/aws_kms/cache_entry_identifier.rs:908	len=66
+291	RANGE	mpl/src/aws_kms/cache_entry_identifier.rs:595-599	len=66
+291	ALT	mpl/src/aws_kms/hierarchical_keyring.rs:626	generate_partition_id
+292	RANGE	mpl/src/aws_kms/cache_entry_identifier.rs:605	len=66
+292	ALT	mpl/src/aws_kms/hierarchical_keyring.rs:831	resolve_branch_key_id
+392	MISS	mpl/src/cmc/storm_tracking.rs:535	ids=['HierarchicalKeyringBuilder'] line=self
+392	MISS	mpl/src/cmc/storm_tracking.rs:547	ids=['is_zero'] line=pub fn set_fan_out(mut self, v: Option<usize>) -> Self {
+393	MISS	mpl/src/cmc/storm_tracking.rs:606	ids=['StormTrackingCmcBuilder'] line=pub fn build(self) -> Result<StormTrackingCmc, Error> {
+416	ALT	mpl/tests/test_aws_kms_hierarchical_keyring.rs:225	build_with_sub_second_ttl_keeps_it_exactly
+438	RANGE	prim/src/lib.rs:350	len=329
+438	ALT	esdk/shims/aws-esdk-cpp/src/lib.rs (+1):146	RawAesKeyring
+438	ALT	mpl/src/keyring/raw_aes_keyring.rs:163	aes_encrypt
+439	RANGE	prim/src/lib.rs:399	len=329
+439	ALT	esdk/tests/test_helpers.rs:422	RawAesKeyring,Keyring
+439	ALT	esdk/src/message/body/body_decrypt.rs (+1):472	aes_decrypt
+486	ALT	mpl/tests/test_raw_aes_keyring.rs:700	on_encrypt
+486	MISS	mpl/src/aws_kms/hierarchical_keyring.rs:943	ids=['on_encrypt', 'decrypt_edk_at_version'] line=.materials(CachedMaterials::BranchKey(bkm.clone()))
+533	RANGE	mpl/src/key_store/kms_ops.rs:471	len=302
+533	RANGE	mpl/src/key_store/kms_ops.rs:489	len=302
+534	ALT	esdk/shims/aws-esdk-cpp/test-server/tests/stream_round_trip.rs (+12):162	ciphertext
+534	ALT	esdk/shims/aws-esdk-cpp/test-server/tests/stream_round_trip.rs (+13):163	ciphertext
+535	ALT	mpl/src/aws_kms/branch_key_wrap.rs:185	aes_encrypt
+536	MISS	mpl/src/key_store/kms_ops.rs:230	ids=['branch_key_wrap'] line=.key_id(key_arn)
+536	ALT	mpl/tests/test_builder_getters.rs:767	on_decrypt
+551	MISS	mpl/src/aws_kms/hierarchical_keyring.rs:767	ids=['caller_obligation_wrap'] line=materials.add_data_key(PlaintextDataKey::new(plaintext_dk_bytes))?;
+666	MISS	mpl/src/cmm/default_cmm.rs:198	ids=['decrypt_materials'] line=let (ec, required_encryption_context_keys) = merge_reproduced_encryption_context(
+705	ALT	esdk/shims/aws-esdk-cpp/src/tests.rs (+7):43	CommitmentPolicy
+705	ALT	mpl/src/structures/commitment_policy.rs:62	allows_for_encrypt
+706	ALT	esdk/tests/test_cmm_algorithm_suite_override.rs (+5):85	DefaultCmm
+706	MISS	mpl/src/structures/materials_checks.rs:97	ids=['DefaultCmm', 'get_encryption_materials'] line=));
+707	MISS	mpl/src/structures/materials_checks.rs:184	ids=['decrypt_materials'] line=}
+760	RANGE	mpl/src/aws_kms/user_agent.rs:236	len=19
+760	RANGE	mpl/src/aws_kms/user_agent.rs:249	len=19
+760	RANGE	mpl/src/aws_kms/user_agent.rs:252	len=19
+760	RANGE	mpl/src/aws_kms/user_agent.rs:256	len=19
+760	RANGE	mpl/src/aws_kms/user_agent.rs:879	len=19
+760	RANGE	mpl/src/aws_kms/user_agent.rs:892	len=19
+761	ALT	mpl/src/aws_kms/hierarchical_keyring.rs:734	on_decrypt
+761	ALT	mpl/src/keyring/raw_aes_keyring.rs (+1):469	split_at
+761	ALT	mpl/src/keyring/raw_aes_keyring.rs (+2):201	split_at
+761	ALT	mpl/src/keyring/raw_aes_keyring.rs:206	split_at
+761	ALT	mpl/src/keyring/raw_aes_keyring.rs:212	split_at
+762	ALT	esdk/shims/aws-esdk-cpp/test-server/src/seam.rs (+9):145	EncryptionContext
+762	ALT	esdk/src/client.rs (+21):166-197	EncryptionContext
+762	ALT	mpl/tests/test_aws_kms_mrk_match.rs:40-41	aws_kms_mrk_match_for_decrypt
+763	RANGE	mpl/src/aws_kms/user_agent.rs:64	len=19
+763	ALT	mpl/test-server/tests/static_keyring.rs (+1):123	DefaultCmm
+763	ALT	mpl/src/cmm/default_cmm.rs (+2):138	ecdsa_generate_keypair
+764	ALT	mpl/src/key_store/branch_key_store.rs:719	new_decrypt_only_ec,ATTR_TYPE
+774	ALT	prim/tests/test_aes.rs:138	EXPECTED
+783	ALT	mpl/tests/test_aws_kms_hierarchical_keyring.rs:1187	unwrap_too_short_ciphertext_returns_error
+783	ALT	mpl/tests/test_aws_kms_hierarchical_keyring.rs:1841	on_decrypt_skips_edks_with_non_utf8_provider_info
+786	MISS	mpl/src/key_store/branch_key_store.rs:101-108	ids=['expect', 'Option'] line=fn kms_client(&self) -> &KmsClient {
+787	MISS	mpl/src/key_store/branch_key_store.rs:199	ids=['expect'] line=grant_tokens: Option<Vec<String>>,
+787	MISS	mpl/src/key_store/branch_key_store.rs:213	ids=['expect'] line=/// Set or clear the DynamoDB table name from an `Option`.
+787	MISS	mpl/src/key_store/branch_key_store.rs:227	ids=['expect'] line=/// Set the logical name cryptographically bound to all keys in the
+809	MISS	mpl/src/cmc/storm_tracking.rs:606	ids=['StormTrackingCmcBuilder'] line=pub fn build(self) -> Result<StormTrackingCmc, Error> {
+866	RANGE	mpl/src/structures/encryption_context.rs:468	len=323
+877	MISS	mpl/tests/test_encryption_context.rs:502-533	ids=['er_keys_rejected_on_deserialize'] line=fn test_deserialize_rejects_invalid_utf8_key() {
+899	ALT	mpl/src/key_store/kms_ops.rs:118	reject_alias_arn
+899	ALT	mpl/src/key_store/kms_ops.rs:144	rewrite_arn_region
+983	ALT	mpl/tests/test_builder_getters.rs:760	on_decrypt
+984	MISS	mpl/src/aws_kms/hierarchical_keyring.rs:908	ids=['decrypt_edk_at_version'] line=let cache_id = cache_entry_identifier::build_cache_identifier(
+984	MISS	mpl/src/aws_kms/hierarchical_keyring.rs:722	ids=['on_encrypt'] line=.key_provider_info(branch_key_id.into_bytes())
+1000	ALT	mpl/tests/test_aws_kms_hierarchical_keyring.rs:1872	on_decrypt_skips_edks_with_wrong_branch_key_id
+1000	ALT	mpl/tests/test_aws_kms_hierarchical_keyring.rs:1841	_non_utf8_provider_info
+1000	RANGE	mpl/src/aws_kms/hierarchical_keyring.rs:1640	len=1008
+1000	ALT	mpl/tests/test_aws_kms_hierarchical_keyring.rs:2161	decrypt_uses_branch_key_id_supplier_when_configured
+1099	ALT	esdk/shims/aws-esdk-cpp/src/tests.rs:1565	kms_client
+1100	MISS	esdk/shims/aws-esdk-cpp/src/lib.rs:2054	ids=['into_keyring_handle'] line=//# MUST adopt each at most once; the shim does not detect violations.
+1118	RANGE	mpl/src/lib.rs:718-719	len=43
+1184	MISS	mpl/src/keyring/raw_aes_keyring.rs:350	ids=['RawAesKeyringBuilder'] line=pub fn build(mut self) -> Result<RawAesKeyring, Error> {
+1215	MISS	mpl/src/structures/algorithm_suite.rs:439	ids=['write_volatile'] line=#[must_use]
+1260	MISS	mpl/src/aws_kms/branch_key_wrap.rs:236	ids=['branch_key_wrap'] line=if ciphertext.len() < FIXED_OVERHEAD_LEN {
+1260	MISS	mpl/src/aws_kms/branch_key_wrap.rs:236	ids=['inside', 'error', 'message', 'cites', 'Resolved'] line=if ciphertext.len() < FIXED_OVERHEAD_LEN {
+1261	MISS	mpl/src/structures/branch_key_materials.rs:205	ids=['beacon_key_materials'] line=impl Drop for BranchKeyMaterials {

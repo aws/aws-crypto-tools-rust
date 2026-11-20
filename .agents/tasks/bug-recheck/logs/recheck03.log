@@ -1,0 +1,43 @@
+=== [1/2] ORIGINAL reproducer (.agents/tasks/bug-reports/reproducers/zz_bugrepro_03_ec_unsorted.rs) copied unchanged into mpl/tests; cargo test --test zz_bugrepro_03_ec_unsorted -- --nocapture ===
+   Compiling aws-crypto-mpl v0.1.0 (/Users/mahnush/Desktop/ESDK-Rust-Verus/MPL/esdk-native-mpl/mpl)
+error[E0603]: module `structures` is private
+  --> tests/zz_bugrepro_03_ec_unsorted.rs:2:21
+   |
+ 2 | ...pto_mpl::structures::EncryptionContext;
+   |             ^^^^^^^^^^ private module
+   |
+note: the module `structures` is defined here
+  --> src/lib.rs:14:1
+   |
+14 | mod structures;
+   | ^^^^^^^^^^^^^^
+
+For more information about this error, try `rustc --explain E0603`.
+error: could not compile `aws-crypto-mpl` (test "zz_bugrepro_03_ec_unsorted") due to 1 previous error
+[exit code: 101]
+
+=== [2/2] ADAPTED reproducer (.agents/tasks/bug-recheck/reproducers/zz_bugrepro_03_ec_unsorted.rs); same command ===
+   Compiling aws-crypto-mpl v0.1.0 (/Users/mahnush/Desktop/ESDK-Rust-Verus/MPL/esdk-native-mpl/mpl)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.61s
+     Running tests/zz_bugrepro_03_ec_unsorted.rs (target/debug/deps/zz_bugrepro_03_ec_unsorted-dc3eef739d108142)
+
+running 2 tests
+REPRO BUG-03 deserialize(unsorted) is_ok = false
+REPRO BUG-03 deserialize(unsorted) Err = Validation: encryption context keys are not in ascending order
+
+thread 'deserialize_accepts_unsorted_entries' (6401694) panicked at tests/zz_bugrepro_03_ec_unsorted.rs:18:21:
+called `Result::unwrap()` on an `Err` value: Validation(ValidationError { message: "encryption context keys are not in ascending order" })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+REPRO BUG-03 (related) deserialize(non-UTF-8 key) is_ok = false
+test deserialize_accepts_unsorted_entries ... FAILED
+test related_deserialize_accepts_non_utf8 ... ok
+
+failures:
+
+failures:
+    deserialize_accepts_unsorted_entries
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `--test zz_bugrepro_03_ec_unsorted`
+[exit code: 101]

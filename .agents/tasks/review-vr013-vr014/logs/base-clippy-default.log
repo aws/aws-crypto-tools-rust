@@ -1,0 +1,8 @@
+    Checking verus_builtin v0.0.0-2026-05-17-0151
+    Checking zeroize v1.9.1
+    Checking aws-lc-sys v0.45.0
+    Checking vstd v0.0.0-2026-06-14-0213
+    Checking aws-lc-rs v1.18.1
+    Checking aws-mpl-primitives v0.1.0 (/private/tmp/review-mahnush-verus-base/prim)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.66s
+exit 0

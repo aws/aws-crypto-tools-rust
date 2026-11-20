@@ -1,0 +1,156 @@
+[INFO] [KRS] <-- GenerateAssistantResponseCommand done totalEvents=11
+[tool] Tool Load
+[tool] status: Completed
+Atlas first.
+[tool] Tool Load
+[tool] status: Completed
+[tool] Tool Load
+[tool] status: Completed
+[tool] @builder-mcp/Atlas
+[tool] status: InProgress
+[tool] status: Completed
+[tool] @sage-plus-service-mcp/SearchRelevantContentAsync
+[tool] status: InProgress
+[tool] @sage-plus-service-mcp/SearchRelevantContentAsync
+[tool] status: InProgress
+[tool] status: Completed
+[tool] @sage-plus-service-mcp/SearchRelevantContentAsync
+[tool] status: InProgress
+[tool] status: Completed
+[tool] status: Completed
+[tool] @sage-plus-service-mcp/SearchRelevantContentAsync
+[tool] status: InProgress
+[tool] @sage-plus-service-mcp/SearchRelevantContentAsync
+[tool] status: InProgress
+[tool] status: Completed
+[tool] status: Completed
+[tool] @builder-mcp/ReadInternalWebsites
+[tool] status: InProgress
+[tool] status: Completed
+[tool] Extract section headings from fetched pages
+[tool] status: InProgress
+[tool] status: InProgress
+[tool] status: Completed
+[tool] Split fetched pages and list UIS threat model headings
+[tool] status: InProgress
+[tool] status: InProgress
+[tool] status: Completed
+[tool] List headings in UIS threat model page
+[tool] status: InProgress
+[tool] status: InProgress
+[tool] status: Completed
+[tool] Find wiki-syntax headings in HTML-escaped source
+[tool] status: InProgress
+[tool] status: InProgress
+[tool] status: Completed
+[tool] Inspect page format to locate headings
+[tool] status: InProgress
+[tool] status: InProgress
+[tool] status: Completed
+[tool] List headings and key-commitment definitions
+[tool] status: InProgress
+[tool] status: InProgress
+[tool] status: Completed
+[tool] Inspect ESDK QRR page headings
+[tool] status: InProgress
+[tool] status: InProgress
+[tool] status: Completed
+[tool] Print ESDK QRR headings and executive summary
+[tool] status: InProgress
+[tool] status: InProgress
+[tool] status: Completed
+[tool] @builder-mcp/ReadInternalWebsites
+[tool] status: InProgress
+[tool] status: Completed
+[tool] Split writing pages and print narrative guidance
+[tool] status: InProgress
+[tool] status: InProgress
+[tool] status: Completed
+[tool] View narrative and handbook page content
+[tool] status: InProgress
+[tool] status: InProgress
+[tool] status: Failed: View narrative and handbook page content
+[tool] @sage-plus-service-mcp/SearchRelevantContentAsync
+[tool] status: InProgress
+[tool] status: Completed
+[tool] Extract key rules from Senior Leadership Writing page
+[tool] status: InProgress
+[tool] status: InProgress
+[tool] status: Completed
+[tool] @sage-plus-service-mcp/SearchRelevantContentAsync
+[tool] status: InProgress
+[tool] status: Completed
+## (A) Crypto-team threat models and security summaries
+
+I didn't find a leadership-friendly or short-summary template from any AWS cryptography team. The closest material is engineer-facing:
+
+- **The Encryption SDK has no first-party threat model.** The AWS Crypto BR Quantum Readiness Review of the SDK says so and recommends writing one: [AWSCryptoBR/QRR/AWSEncryptionSDK](https://w.amazon.com/bin/view/AWSCryptoBR/QRR/AWSEncryptionSDK).
+- **The Quantum Readiness Review itself has a reusable structure.** It is AI-assisted, and its executive summary uses plain framing such as "a library, not a deployed service." Its headings:
+  1. Executive Summary
+  2. Recommendations
+  3. Service Architecture
+  4. Cryptographic Design (4.1 Key Management, 4.2 Key Hierarchy, 4.3 Keys & Secrets, 4.4 Certificates, 4.5 Protocols, 4.6 Crypto Libraries)
+  5. Public Statements Assessment
+  6. Cryptographic Findings
+  7. API Cryptographic Flows
+  8. PQ Readiness Assessment
+  9. Migration Plan
+  10. Risk Summary
+  11. References
+  - Appendices A–E
+- **A service team's threat model of its Encryption SDK integration** uses the standard AWS AppSec template: [UIS Client-side Encryption threat model](https://w.amazon.com/bin/view/AWS/Universal_Identity_Store/Multi_Region_Replication/DecisionLog/ThreatModelCSE), based on the [AWS Threat Model template](https://quip-amazon.com/U68gAawbeZbB/AWS-Threat-Model-Template). Its top-level headings:
+  - Glossary
+  - 1. Introduction (Purpose, Project background, Service Overview, Security Tenets, Assumptions, Admin)
+  - 2. System Architecture
+  - Data Flow Diagrams
+  - APIs
+  - Assets
+  - Threat Actors
+  - Security Anti-Patterns
+  - Threats
+  - Mitigations (Baseline / System Specific)
+  - Security Tests
+  - Appendix
+  - References
+
+**How these sources describe the three risks in plain language:**
+
+- **Key commitment.** The public [Encryption SDK concepts guide](https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/concepts.html#key-commitment) says it guarantees each encrypted message can be decrypted to only one plaintext. Its example: without key commitment, a crafted message could decrypt to "false" for one user and "true" for another. The stated cost is about 30 extra bytes and slower processing, and the guide says to opt out "only if you must."
+- **Key caching.** [Crypto Tools Caching Guidance](https://w.amazon.com/bin/view/AWSCryptography/AWSCryptoTools/CryptoToolsCachingGuidance) has a section titled "Threats / Security Considerations while using a Shared cache across Hierarchical Keyring." It names two threats:
+  - If keyrings share a cache and a partition ID, a keyring without access can reuse a key another keyring fetched. Until the cache entry expires, this "effectively by-pass[es] KMS Access Control."
+  - Wrong settings can lead to data being encrypted with the wrong key.
+  - With the default random partition ID, neither threat applies.
+- **Key management.** The UIS threat model explains it through a glossary and a key table. A data key is used once per item and changes with every write. The service rotates tenant keys. KMS rotates the top-level key automatically once a year.
+
+**What I could not find:**
+- Any short or leadership summary from the Database Encryption SDK, S3 Encryption Client, AWS-LC, s2n, or KMS client library teams. No AWS-LC or s2n material came up in my searches.
+- The [KMS Data Key Caching Guidance](https://quip-amazon.com/vTFfALjIjhZK/KMS-Data-Key-Caching-Guidance) Quip document. It is cited as the source for the caching rules, but I didn't open it.
+
+## (B) Amazon writing guidance for a short security summary
+
+- **Length.**
+  - [Writing Handbook: Formatting](https://w.amazon.com/bin/view/WritingHub/Writing_Handbook/Formatting), rule 7 "Length": no document over six pages excluding appendices, and "as short as possible and as long as necessary."
+  - [Narratives](https://w.amazon.com/bin/view/WritingHub/Document_Repository/Narrative), "Must haves": "a one-pager is often actually a two-pager." Don't move text the reader needs into an appendix, because there's no guarantee anyone reads appendices.
+- **Lead with the conclusion.** [Narratives](https://w.amazon.com/bin/view/WritingHub/Document_Repository/Narrative), "Typical structure of a narrative":
+  1. Purpose of the document (summary recommendation and the immediate action required)
+  2. Background
+  3. Problem/Opportunity
+  4. Recommendations
+  5. Next steps
+  6. Appendices
+
+  The same page says a one-pager should let readers "evaluate its benefits and risks, and make high-level decisions."
+- **Define terms and avoid jargon.**
+  - [Avoid jargon, spell out acronyms](https://w.amazon.com/bin/view/EE/Learn/CWID/Writing/Technical_writing/Style_guide/Avoid_jargon_acronyms): spell out each acronym on first use, with the short form in parentheses.
+  - The [Field Engineering checklist](https://w.amazon.com/bin/view/Field_Engineering/Process/DocAndNarrativeWriting), under "Is it clear?", asks whether you stated the purpose, outlined the decisions needed, recommended a solution, spelled out acronyms, and avoided jargon.
+- **Present risks and decisions.** [Writing for Senior Leadership](https://w.amazon.com/bin/view/XLDS_OI_INTERNAL_RESOURCES/Senior_Leadership_Writing) collects quotes from directors:
+  - Lead with the conclusion or recommendation.
+  - Present recommendations, not just problems.
+  - Assume the reader isn't an expert.
+  - Define acronyms.
+  - Use tables for numbers.
+  - Close with calls to action.
+  - Write as if the meeting will never happen and say what you would decide.
+
+**Tool limitations:** No tool returned an authentication error. The Atlas knowledge graph had entries for AWS Cryptography, narratives and six-pagers, but none for the Encryption SDK or threat models. The [Writing a Narrative](https://w.amazon.com/index.php/Writing_a_Narrative) and [Writing Handbook](https://w.amazon.com/bin/view/WritingHub/Resources/Writing_Handbook/) root pages returned only an empty wiki page when fetched. For the Narratives and Formatting pages I used the search index's text excerpts, which list the headings above.
+exit: 0

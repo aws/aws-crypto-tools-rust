@@ -1,0 +1,24 @@
+.agents/tasks/docs-c03-status/rank_score_diff.sh	docs-prefixed=3	bare=0
+.agents/tasks/docs-proof-status/check_proof_status.py	docs-prefixed=21	bare=0
+.agents/tasks/docs-sync-9955ecd/check_bug_xrefs.py	docs-prefixed=7	bare=0
+.agents/tasks/docs-sync-9955ecd/check_chorus_consistency.py	docs-prefixed=5	bare=0
+.agents/tasks/docs-sync-9955ecd/check_citations.py	docs-prefixed=6	bare=0
+.agents/tasks/docs-sync-9955ecd/check_citations_bugdocs.py	docs-prefixed=2	bare=0
+.agents/tasks/docs-sync-9955ecd/check_citations_chorus.py	docs-prefixed=0	bare=0
+.agents/tasks/docs-sync-9955ecd/check_citations_v2.py	docs-prefixed=6	bare=0
+.agents/tasks/docs-sync-9955ecd/check_citations_v3.py	docs-prefixed=6	bare=0
+.agents/tasks/docs-sync-9955ecd/check_extras.py	docs-prefixed=3	bare=0
+.agents/tasks/docs-sync-9955ecd/check_fn_defs.py	docs-prefixed=6	bare=0
+.agents/tasks/docs-sync-9955ecd/check_fn_defs_bugdocs.py	docs-prefixed=2	bare=0
+.agents/tasks/docs-sync-9955ecd/check_fn_defs_chorus.py	docs-prefixed=0	bare=0
+.agents/tasks/docs-sync-9955ecd/check_fn_defs_v2.py	docs-prefixed=6	bare=0
+.agents/tasks/docs-sync-9955ecd/check_misc.py	docs-prefixed=3	bare=0
+.agents/tasks/docs-sync-9955ecd/check_prose_scores.py	docs-prefixed=3	bare=0
+.agents/tasks/docs-sync-9955ecd/check_ratings.py	docs-prefixed=4	bare=0
+.agents/tasks/docs-sync-9955ecd/check_scores.py	docs-prefixed=3	bare=0
+.agents/tasks/docs-sync-9955ecd/check_stride_map.py	docs-prefixed=3	bare=0
+.agents/tasks/docs-sync-9955ecd/check_threat_refs.py	docs-prefixed=5	bare=0
+.agents/tasks/pipeline-rerun-620771c/check_citations.py	docs-prefixed=6	bare=0
+.agents/tasks/pipeline-rerun-620771c/check_fn_defs.py	docs-prefixed=6	bare=0
+.agents/tasks/pipeline-rerun-620771c/check_scores.py	docs-prefixed=3	bare=0
+TOTAL 109

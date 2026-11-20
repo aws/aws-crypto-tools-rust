@@ -1,0 +1,18 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.21s
+     Running tests/zz_bugrepro_02_pdk_length.rs (target/debug/deps/zz_bugrepro_02_pdk_length-8b688b4cbe1eb4d0)
+
+running 2 tests
+REPRO BUG-02 F1 suite AlgAes256GcmIv12Tag16NoKdf encryption_key_length = 32
+REPRO BUG-02 F2 EncryptionMaterials::new(5-byte PDK, suite needs 32) is_ok = true
+REPRO BUG-02 F2 DecryptionMaterials::new(5-byte PDK, suite needs 32) is_ok = true
+REPRO BUG-02 F2 HierarchicalKeyring::on_encrypt Ok: pdk len = 5, edk ciphertext len = 65
+REPRO BUG-02 F1 edk_ciphertext_len=65 -> on_decrypt Ok, plaintext_data_key len = 5
+REPRO BUG-02 F2 RawAesKeyring::on_encrypt(5-byte PDK) is_ok = true
+REPRO BUG-02 RawAesKeyring::on_decrypt Err: RawAesKeyring::on_decrypt: unable to decrypt any encrypted data key | first nested: Some("EncryptedDataKey 0: decrypted data key is 5 bytes, expected 32 for the algorithm suite")
+REPRO BUG-02 F1 edk_ciphertext_len=60 -> on_decrypt Ok, plaintext_data_key len = 0
+REPRO BUG-02 F1 edk_ciphertext_len=124 -> on_decrypt Ok, plaintext_data_key len = 64
+test f2_constructors_accept_wrong_length_pdk_and_keyrings_pass_it_through ... ok
+test f1_hierarchical_on_decrypt_returns_wrong_length_pdk ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+

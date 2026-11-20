@@ -1,0 +1,90 @@
+=== [1/2] ORIGINAL reproducer (.agents/tasks/bug-reports/reproducers/zz_bugrepro_09_ttl_truncation.rs) copied unchanged into mpl/tests; cargo test --test zz_bugrepro_09_ttl_truncation -- --nocapture ===
+   Compiling aws-crypto-mpl v0.1.0 (/Users/mahnush/Desktop/ESDK-Rust-Verus/MPL/esdk-native-mpl/mpl)
+error[E0432]: unresolved import `aws_crypto_mpl::cmc::cache_config`
+ --> tests/zz_bugrepro_09_ttl_truncation.rs:6:26
+  |
+6 | use aws_crypto_mpl::cmc::cache_config::CacheType;
+  |                          ^^^^^^^^^^^^ could not find `cache_config` in `cmc`
+
+error[E0432]: unresolved import `aws_crypto_mpl::keystore`
+ --> tests/zz_bugrepro_09_ttl_truncation.rs:7:21
+  |
+7 | ...ws_crypto_mpl::keystore::{KeyStoreInfo, Keys...
+  |                   ^^^^^^^^ could not find `keystore` in `aws_crypto_mpl`
+
+error[E0432]: unresolved imports `aws_crypto_mpl::CacheEntry`, `aws_crypto_mpl::CachedMaterials`, `aws_crypto_mpl::Cmc`, `aws_crypto_mpl::CmcError`, `aws_crypto_mpl::HierarchicalKeyring`, `aws_crypto_mpl::Keyring`, `aws_crypto_mpl::LocalCmc`, `aws_crypto_mpl::UsageMetadata`
+  --> tests/zz_bugrepro_09_ttl_truncation.rs:13:5
+   |
+13 |     CacheEntry, CachedMaterials, Cmc, CmcError, HierarchicalKeyring, Keyring, LocalCmc,
+   |     ^^^^^^^^^^  ^^^^^^^^^^^^^^^  ^^^  ^^^^^^^^  ^^^^^^^^^^^^^^^^^^^  ^^^^^^^  ^^^^^^^^ no `LocalCmc` in the root
+   |     |           |                |    |         |                    |
+   |     |           |                |    |         |                    no `Keyring` in the root
+   |     |           |                |    |         no `HierarchicalKeyring` in the root
+   |     |           |                |    no `CmcError` in the root
+   |     |           |                no `Cmc` in the root
+   |     |           no `CachedMaterials` in the root
+   |     no `CacheEntry` in the root
+14 |     UsageMetadata,
+   |     ^^^^^^^^^^^^^ no `UsageMetadata` in the root
+   |
+help: a similar name exists in the module (notice the capitalization)
+   |
+13 -     CacheEntry, CachedMaterials, Cmc, CmcError, HierarchicalKeyring, Keyring, LocalCmc,
+13 +     CacheEntry, CachedMaterials, cmc, CmcError, HierarchicalKeyring, Keyring, LocalCmc,
+   |
+help: a similar name exists in the module (notice the capitalization)
+   |
+13 -     CacheEntry, CachedMaterials, Cmc, CmcError, HierarchicalKeyring, Keyring, LocalCmc,
+13 +     CacheEntry, CachedMaterials, Cmc, CmcError, HierarchicalKeyring, keyring, LocalCmc,
+   |
+
+error[E0603]: module `structures` is private
+  --> tests/zz_bugrepro_09_ttl_truncation.rs:8:21
+   |
+ 8 | use aws_crypto_mpl::structures::{
+   |                     ^^^^^^^^^^ private module
+ 9 |     AlgorithmSuiteId, BeaconKeyMaterials, Bran...
+   |     ---------------- enum `AlgorithmSuiteId` is not publicly re-exported
+   |
+note: the module `structures` is defined here
+  --> src/lib.rs:14:1
+   |
+14 | mod structures;
+   | ^^^^^^^^^^^^^^
+
+error[E0603]: module `structures` is private
+  --> tests/zz_bugrepro_09_ttl_truncation.rs:8:21
+   |
+ 8 | use aws_crypto_mpl::structures::{
+   |                     ^^^^^^^^^^ private module
+   |
+note: the module `structures` is defined here
+  --> src/lib.rs:14:1
+   |
+14 | mod structures;
+   | ^^^^^^^^^^^^^^
+
+Some errors have detailed explanations: E0432, E0603.
+For more information about an error, try `rustc --explain E0432`.
+error: could not compile `aws-crypto-mpl` (test "zz_bugrepro_09_ttl_truncation") due to 5 previous errors
+[exit code: 101]
+
+=== [2/2] ADAPTED reproducer (.agents/tasks/bug-recheck/reproducers/zz_bugrepro_09_ttl_truncation.rs); same command ===
+   Compiling aws-crypto-mpl v0.1.0 (/Users/mahnush/Desktop/ESDK-Rust-Verus/MPL/esdk-native-mpl/mpl)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.82s
+     Running tests/zz_bugrepro_09_ttl_truncation.rs (target/debug/deps/zz_bugrepro_09_ttl_truncation-835a470b313525f7)
+
+running 2 tests
+REPRO BUG-09 after ttl=100 keyring populates shared LocalCmc: keystore calls = 1
+REPRO BUG-09 ttl_seconds=1, entry age=900 ms -> cache entry USED (keystore calls=0)
+REPRO BUG-09 ttl_seconds=1, entry age=1500 ms -> treated as expired (keystore calls=1)
+REPRO BUG-09 ttl_seconds=1, entry age=1950 ms -> treated as expired (keystore calls=1)
+REPRO BUG-09 ttl_seconds=1, entry age=2050 ms -> treated as expired (keystore calls=1)
+test backdated_entry_older_than_ttl_is_used ... ok
+REPRO BUG-09 ttl=1 keyring at ~1.5 s: keystore calls = 2 (1 = cache entry used)
+REPRO BUG-09 ttl=1 keyring at ~2.2 s: keystore calls = 2 (2 = treated as expired)
+test shared_local_cmc_two_keyrings_different_ttls ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.23s
+
+[exit code: 0]

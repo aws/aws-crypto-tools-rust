@@ -1,0 +1,322 @@
+# ABBR | nums | status | anchors | threats | targets | c-reason | note
+# status: E enforced, P partial, D documented deviation, U unenforced MUST, N not implemented in crate, X other layer / caller, S structural (types/builders), B boilerplate
+# c-reason (only when neither threat nor target): DESC NOCODE ESDK EXT LOWSEC NOTPROV GAP
+ALG|1|S|alg_ids|-|-|DESC|Overview sentence; no testable property
+ALG|2|B|-|-|-|-|RFC 2119 boilerplate
+ALG|3|E|alg_spec|-|C05|-|Suite table is the spec table (11 ESDK suites)
+ALG|4-9|N|alg_ids|-|-|NOCODE|S3EC CBC/CTR suites are not in the crate: only the 11 ESDK suites exist (ALL_SUITES); `algorithm_suite.rs` header says only ESDK is implemented
+ALG|10|X|esdk_hkdf|-|-|ESDK|Identity KDF / NO_KDF handling is in the ESDK key derivation (esdk/), not the MPL; MPL only tabulates the KDF per suite
+ALG|11|E|alg_keylen|-|C05,C04|-|Identity-KDF suites: key length == KDF input length
+ALG|12|S|alg_spec|-|C05|-|Names are enum variants (compiler-unique); ids unique via C05
+ALG|13-14|S|alg_ids|-|C05|-|Per-format and union enums
+ALG|15-16|E|alg_idb,alg_from|-|C05|-|`00 00` never produced; ids injective (C05 lemma)
+ALG|17-23|N|alg_symsign|-|-|NOCODE|Symmetric signature + intermediate key wrapping exist only for DBE suites; no such suite in the crate (`has_symmetric_signing` is always false)
+ALG|24-26|E|alg_spec|-|C05|-|Suite structure fields
+ALG|27|E|pdk_chk|-|C04,C05|-|Data key length == suite key length
+ALG|28-29|E|alg_spec,prim_aesenc|-|C05,C03|-|IV/tag lengths from the table; prim checks lengths
+ALG|30-31|X|esdk_hkdf|-|-|ESDK|HKDF encryption/commit key derivation is in esdk/src (Duvet-annotated against transitive-requirements.md)
+ALG|32-33|X|esdk_sign,esdk_verify,prim_sign|-|C02|-|ECDSA sign/verify are called from esdk; the prim sign loop is C02
+ALG|34-35|E|em_build,dm_build|TM-MPL-006|C07|-|Signing/verification key present only for signing suites (builders + check_*_materials)
+ALG|36-40|E|em_build,dm_build,alg_symsign|-|C07|-|Symmetric signing: builders reject sym keys because no suite has the algorithm; the generate/verify clauses have no code
+ALG|41|E|alg_spec|-|C05|-|message_format_version in the table
+ALG|42-43|E|alg_sdlen|-|C05|-|Suite-data length 32 for the two commit-key suites; storage is ESDK-level
+STR|1|B|-|-|-|-|RFC 2119 boilerplate
+STR|2-3|S|em_build,dm_build|-|C07|-|Builders and transition checks uphold the structure properties
+STR|4|S|edk_build|-|-|DESC|Descriptive: some key provider must be able to recover the key
+STR|5-7|X|-|-|-|EXT|Caller guidance on what to put in the encryption context (SHOULD / MUST NOT store secrets); not checkable by the library
+STR|8-12|E|ec_to,ec_from|TM-MPL-013,TM-MPL-017|T15,C01|-|EC serialization: empty, count>0, no duplicates, sorted (BTreeMap)
+STR|13|S|em_build|-|C07|-|Required fields
+STR|14|E|raw_wrap,bw_wrap|TM-MPL-013|T04,T07|-|EDK ciphertext derived from the PDK by wrap
+STR|15|E|em_build|-|C07|-|EDKs empty without a PDK
+STR|16-18|E|em_pubkey,mc_pk|TM-MPL-006|C07,T12|-|aws-crypto-public-key vs signing key consistency
+STR|19|E|pdk_chk|-|C04|-|PDK length
+STR|20-21|E|pdk_struct|TM-MPL-015|T26|-|Immutable bytes; ZeroizeOnDrop
+STR|22|P|em_build|-|-|LOWSEC|Signing key length deliberately not validated (documented in code comment; Dafny parity). A malformed key fails at sign time in prim
+STR|23|E|em_build|-|C07|-|No signing key without an asymmetric algorithm
+STR|24|E|sk_struct|TM-MPL-015,TM-MPL-021|T26,T22|-|Signing key zeroized and redacted in Debug
+STR|25|E|em_build|TM-MPL-017|T12,C07|-|RECK subset of EC
+STR|26|E|em_build|-|C07|-|No symmetric keys without a symmetric algorithm
+STR|27-28|N|em_build|-|-|NOCODE|Symmetric signature key list: no suite uses it
+STR|29|E|ssk_struct|TM-MPL-015|T26|-|Secret kept: zeroize/redact
+STR|30|S|dm_build|-|C07|-|Required fields
+STR|31-33|E|dm_pubkey,mc_pk|TM-MPL-006|C07,T12|-|aws-crypto-public-key vs verification key
+STR|34|E|pdk_chk|-|C04|-|PDK length
+STR|35-36|E|pdk_struct|TM-MPL-015|T26|-|Immutable; zeroize
+STR|37|E|dm_build,alg_vklen|TM-MPL-006|C05,C07|-|Verification key length vs suite
+STR|38|E|dm_build|TM-MPL-017|C07,T12|-|RECK subset of EC
+STR|39|E|dm_build|-|C07|-|No symmetric key without a symmetric algorithm
+STR|40-41|N|dm_build|-|-|NOCODE|Symmetric signing key iff PDK: no suite uses it
+STR|42|E|ssk_struct|TM-MPL-015|T26|-|Secret kept
+STR|43|S|bkm_build|TM-MPL-005|T02|-|Branch key materials fields
+STR|44|E|kms_gen|-|-|NOTPROV|Branch key generated only through KMS GenerateDataKeyWithoutPlaintext: a call-selection fact about an external API, test-level; documented in spec-security-analysis.md (branch key paragraph)
+STR|45|E|rec_32|TM-MPL-005|T02|-|32-byte branch key
+STR|46|P|bw_uuid|-|T10|-|Version must be a UUID; the check accepts any UUID version, not only v4 (see findings, not-a-gap list)
+STR|47|S|bcn_build|TM-MPL-015|T26|-|Beacon key materials fields; zeroized on drop
+CPO|1-2|S|cp_enum|TM-MPL-006|T09|-|Policy enum per format and union
+CPO|3|D|cp_default|TM-MPL-006|T09|-|FORBID default: code uses 03 78 (documented deviation)
+CPO|4|E|cp_enc|TM-MPL-006|T09|-|FORBID: encrypt only non-committing
+CPO|5|E|cp_dec|TM-MPL-006|T09|-|Decrypt all suites
+CPO|6|E|cp_default|TM-MPL-006|T09|-|REQUIRE_ALLOW default 05 78
+CPO|7|E|cp_enc|TM-MPL-006|T09|-|Encrypt only committing
+CPO|8|E|cp_dec|TM-MPL-006|T09|-|Decrypt all
+CPO|9|E|cp_default|TM-MPL-006|T09|-|REQUIRE_REQUIRE default 05 78
+CPO|10|E|cp_enc|TM-MPL-006,TM-MPL-008|T09|-|Encrypt only committing
+CPO|11|E|cp_dec|TM-MPL-006,TM-MPL-008|T09|-|Decrypt only committing
+CPO|12-14|N|cp_enum|-|-|NOCODE|DBE.REQUIRE_ENCRYPT_REQUIRE_DECRYPT is excluded (commitment_policy.rs header)
+KRI|1|S|kr_send_enc|-|-|DESC|Overview
+KRI|2|B|-|-|-|-|RFC 2119 boilerplate
+KRI|3-4|S|raw_build|-|T24|-|Namespace and name are strings (builder inputs)
+KRI|5|E|raw_info|-|T20|-|Provider id equals namespace bytes
+KRI|6|E|raw_nscheck|TM-MPL-001|T24|-|Must not be or start with aws-kms
+KRI|7|E|raw_info|-|T20|-|Provider info is name-based
+KRI|8|S|kr_send_enc|-|C07|-|OnEncrypt input is materials
+KRI|9-11|E|kr_send_enc,mc_et|-|C07|-|Keyring must modify; unchanged-on-failure; see findings note on "at least one" not enforced by send()
+KRI|12|E|raw_info|-|-|LOWSEC|SHOULD NOT store the EC in the EDK: no built-in keyring does; the EC is non-secret by definition
+KRI|13-15|E|mc_et,hk_gen,raw_gen|-|C07,C04|-|Generate the data key only when none exists
+KRI|16|E|pdk_chk|-|C04|-|Length equals the KDF input length
+KRI|17|E|prim_rand|-|-|NOTPROV|Cryptographically secure random bits: entropy quality is not Verus-provable (decision aid); all randomness goes through prim::generate_random_bytes (threat-model 9a)
+KRI|18-20|E|mc_et|-|C07|-|Encrypt the data key only when a PDK exists
+KRI|21|E|raw_wrap,bw_wrap|TM-MPL-013|T04,T07|-|EDK decryptable to the PDK (wrap layout)
+KRI|22-23|S|kr_send_dec|-|C07|-|OnDecrypt input
+KRI|24-29|E|hk_existpdk,raw_exist,mc_dt|-|C07|-|Existing PDK fails; transition fields
+KRI|30|E|raw_dec|-|-|LOWSEC|SHOULD set one PDK: returns on first success
+KRI|31|E|mc_dt|-|C07|-|Failure leaves materials unmodified
+KRI|32|E|bw_wrap,raw_wrap|TM-MPL-013|T04,T07|-|EDK integrity via AES-GCM
+KRI|33|E|bw_aad,raw_aad_e|TM-MPL-013,TM-MPL-017|T10,T15|-|EC bound as AAD
+KRI|34|X|-|-|-|EXT|Guidance to users on secure boundaries
+KRI|35|S|-|-|-|DESC|Appendix note on master keys
+RAK|1|B|-|-|-|-|Changelog line
+RAK|2|B|-|-|-|-|RFC 2119 boilerplate
+RAK|3|S|raw_build|-|T24|-|Required builder inputs
+RAK|4-5|X|-|TM-MPL-015|-|-|Wrapping key must be random and secret: caller supplies it; zeroize on drop is TM-MPL-015
+RAK|6|E|raw_keylen|-|T24|-|Wrapping key length
+RAK|7|S|raw_alg|-|T24|-|Supported algorithm configs
+RAK|8|E|raw_keylen|-|T24|-|Init fails on mismatch
+RAK|9-10|E|raw_tagbits,raw_info|TM-MPL-011|T20|-|Provider info tag/IV length fields
+RAK|11-12|E|raw_enc,raw_gen|-|T07|-|Generate PDK when absent
+RAK|13|E|raw_wrap|TM-MPL-011|T07|-|AES-GCM wrap
+RAK|14-15|E|raw_aad_e|-|T15,T07|-|EC serialized before wrap; failure aborts
+RAK|16-17|E|raw_wrap|-|T07|-|AAD is the serialized EC; wrapping key is the cipher key
+RAK|18|E|raw_ivrand|TM-MPL-011|T07|-|Random 12-byte IV
+RAK|19-20|E|raw_wrap,raw_info|-|T07,T20|-|Tag length; EDK layout
+RAK|21-22|E|raw_enc,kr_send_enc|-|C07|-|Append EDK; output materials
+RAK|23|S|raw_dec|-|C07|-|OnDecrypt input
+RAK|24|E|raw_exist|-|C07|-|Existing PDK fails
+RAK|25-26|E|raw_aad_d|-|T15|-|Serialize EC; failure aborts
+RAK|27|E|raw_serial|TM-MPL-023|T16|-|Serial attempts (EDK count uncapped, N3)
+RAK|28-33|E|raw_edkiv|TM-MPL-011,TM-MPL-001,TM-MPL-023|T20|-|EDK filter and deserialization
+RAK|34-38|E|raw_dec|TM-MPL-011|T07|-|AES-GCM decrypt inputs
+RAK|39|E|dm_adddk|-|C04|-|Add the PDK (length-checked)
+RAK|40|E|raw_fail|-|C07|-|Failure leaves materials unmodified
+DCM|1|B|-|-|-|-|RFC 2119 boilerplate
+DCM|2|S|dcm_new|-|-|LOWSEC|Constructor takes a keyring
+DCM|3|E|dcm_copy|-|-|LOWSEC|EC copied before the reserved key is added; caller context not mutated
+DCM|4|E|dcm_res|TM-MPL-006|T09|-|Reserved key present => fail
+DCM|5|D|dcm_pol,cp_default|TM-MPL-006|T09|-|Default suite from policy (FORBID default deviation)
+DCM|6|E|dcm_alg_enc|TM-MPL-006,TM-MPL-008|T09|-|Suite must be allowed for encrypt
+DCM|7|E|dcm_enc|-|T09|-|Same suite returned
+DCM|8|E|dcm_sigkey|TM-MPL-023|T16|-|Generate signing key (`expect` on keygen: BUG-05a)
+DCM|9|E|dcm_enc|-|T09|-|Add base64 verification key
+DCM|10-12|E|dcm_kr_enc|-|C07|-|Call keyring OnEncrypt; take PDK and EDKs
+DCM|13-14|E|dcm_ver|TM-MPL-006|T09|-|Extract verification key; fail when absent
+DCM|15|E|dcm_nonsign|TM-MPL-006|T09|-|Non-signing suite with the key => fail
+DCM|16|E|dcm_alg_dec|TM-MPL-006,TM-MPL-008|T09|-|Decrypt suite must be allowed
+DCM|17-18|E|dcm_kr_dec|-|C07|-|Call keyring OnDecrypt; take PDK
+DCM|19-26|N|dcm_new|-|-|NOCODE|Legacy master-key-provider behavior; not implemented (spec says SHOULD NOT include in new implementations)
+CMI|1|S|dcm_enc|-|-|DESC|Overview
+CMI|2|B|-|-|-|-|RFC 2119 boilerplate
+CMI|3|S|cmm_in_enc|-|-|LOWSEC|Request fields (struct)
+CMI|4|U|cmm_maxpt|TM-MPL-006|-|-|max_plaintext_length accepted, never read (threat-model F10)
+CMI|5-6|S|dcm_dec|-|-|LOWSEC|Decrypt request fields; interface behaviors
+CMI|7-8|E|dcm_enc|-|T09|-|Returns materials for the request
+CMI|9|E|dcm_enc|-|T09|-|Same suite when requested
+CMI|10|P|cmm_send_enc|TM-MPL-006|C07,T09|-|EDK/PDK correspondence not re-checked by SharedCmm send() (threat-model scope note)
+CMI|11|E|dcm_sigkey|-|T09|-|Signing key included
+CMI|12-13|E|dcm_res,dcm_nonsign|-|T09,T12|-|aws-crypto-public-key handling (SHOULD)
+CMI|14-16|E|cmm_send_enc,mc_ec|-|C07|-|Returned materials valid; PDK non-null
+CMI|17|E|pdk_chk|-|C04|-|PDK length
+CMI|18-19|E|mc_ec|-|C07|-|At least one EDK; signing key for signing suite
+CMI|20|E|em_build|TM-MPL-017|T12,C07|-|RECK keys in EC
+CMI|21|P|dcm_enc|TM-MPL-006|T09,T12|-|RECK superset of request not re-checked by send() (DefaultCmm passes the request RECK through)
+CMI|22|E|dcm_dec|-|T09|-|Returns decryption materials
+CMI|23-24|E|dcm_ver,dcm_nonsign|TM-MPL-006|T09|-|Public-key / signing-suite mismatch fails
+CMI|25-26|E|dcm_merge|TM-MPL-017|T12|-|Reproduced EC must agree on shared keys
+CMI|27|S|dcm_dec|-|C07|-|Decryption materials fields
+CMI|28-29|E|dcm_merge|TM-MPL-017|T12|-|Invert EC operations; append reproduced-only pairs
+CMI|30|E|dcm_dec|-|T09|-|Same suite
+CMI|31|E|dcm_merge|TM-MPL-017|T12|-|RECK includes added keys
+CMI|32|E|dm_build|TM-MPL-017|C07|-|RECK keys exist in EC
+CMI|33|E|dcm_ver,mc_dc|-|C07|-|Verification key for signing suite
+CMI|34-36|E|cmm_send_dec,mc_dc|-|C07|-|Decryption materials valid
+CMI|37|P|cmm_send_dec|TM-MPL-006|C07|-|PDK-corresponds-to-an-EDK is inherent for built-in keyrings; SharedCmm send() does not verify it
+CMC|1|S|cmc_trait|-|-|DESC|Overview
+CMC|2|B|-|-|-|-|RFC 2119 boilerplate
+CMC|3|S|entry_build|-|T23|-|Cache entry fields
+CMC|4|E|rec_use|-|C08|-|Usage metadata update atomic (the only Duvet annotation)
+CMC|5-6|E|lc_fresh|TM-MPL-010|T23,T14|-|TTL-expired entries are not returned
+CMC|7-9|S|lc_put|TM-MPL-022|T23|-|Put creates entry; returns nothing; carries usage metadata
+CMC|10|E|lc_get,lc_fresh|TM-MPL-010|T23,T14|-|Get validates TTL
+CMC|11|P|lc_prune|TM-MPL-015,TM-MPL-022|T26|-|Only tail pruning on get; expired entries stay resident until read (threat-model TM-MPL-015 residual)
+LCM|1|B|-|-|-|-|RFC 2119 boilerplate
+LCM|2-3|S|lc_cap0|-|T23|-|Init inputs
+LCM|4|E|lc_lru|TM-MPL-022|T23|-|Capacity bound
+LCM|5|E|lc_cap0|TM-MPL-023|T23|-|Capacity 0 supported (no-store)
+LCM|6|E|lc_tail|-|T23|-|Pruning tail size
+LCM|7|E|lc_lru|TM-MPL-022|T23|-|LRU eviction on put
+LCM|8-9|E|lc_get,lc_fresh|TM-MPL-010|T23|-|Get prunes; no expired entry returned
+LCM|10|E|lc_prune|-|T23|-|Prune N least recently used
+LCM|11|P|lc_prune|TM-MPL-015|T26|-|No periodic eviction (SHOULD)
+STC|1|B|-|-|-|-|RFC 2119 boilerplate
+STC|2-5|S|st_build,st_inner|TM-MPL-018|T21|-|Init inputs; wraps a LocalCmc
+STC|6-9|N|st_build|-|-|NOCODE|Time units are not modeled: all durations are std::time::Duration, so there is no seconds/milliseconds ambiguity to check
+STC|10-12|P|st_build,st_chk_gi|TM-MPL-018|T21|-|Only grace interval <= in-flight TTL is enforced (known regression)
+STC|13|E|st_inner|TM-MPL-018|T21|-|Same interface as LocalCmc plus exceptions
+STC|14|E|st_peek|TM-MPL-018|T21|-|In-flight time tracked per key
+STC|15|E|st_put|TM-MPL-018|T21|-|Put clears in-flight
+STC|16|E|st_gp|TM-MPL-018,TM-MPL-023|T21,T06|-|Within-grace-period formula
+STC|17|E|st_gi|TM-MPL-018,TM-MPL-023|T21,T06|-|Within-grace-interval formula
+STC|18-23|E|st_classify|TM-MPL-018|T21|-|Get state machine (fan-out, grace period, interval)
+STC|24|P|st_wait|TM-MPL-018,TM-MPL-025|T21|-|Blocks without own deadline when the key is not in flight (N2)
+STC|25|E|st_classify|TM-MPL-018|T21|-|Mark in flight
+STC|26|E|st_ifttl|TM-MPL-018|T21|-|In-flight TTL failure
+STC|27-28|E|st_wait,st_classify|TM-MPL-018|T21|-|In-flight within / outside interval
+HKR|1|B|-|-|-|-|RFC 2119 boilerplate
+HKR|2|S|hk_enc|-|-|DESC|Implements the Keyring trait
+HKR|3-5|E|hk_build,hk_both|TM-MPL-003|-|-|Key store, TTL, id-or-supplier required
+HKR|6|E|hk_grace|TM-MPL-018|-|-|Grace period < TTL (generalized to any cache reporting a grace period; C06 retired, one Duration compare)
+HKR|7-10|E|hk_build,hk_cap|TM-MPL-022|T23|-|Cache initialization; default capacity 1000
+HKR|11|E|hk_exp|TM-MPL-010|T14,T06|-|Entry lifetime = TTL (SystemTime + Duration)
+HKR|12-13|E|hk_ttl|TM-MPL-010|T14|-|TTL set and > 0
+HKR|14-15|E|hk_partbytes,hk_part|TM-MPL-009|T14|-|Partition id bytes / default v4 UUID
+HKR|16|S|hk_build|TM-MPL-009|-|-|Partition id private, set at build
+HKR|17|S|hk_enc|-|-|DESC|OnEncrypt input
+HKR|18|E|hk_gen|-|C04|-|Random PDK of suite key length
+HKR|19|E|prim_rand|-|-|NOTPROV|Secure randomness: entropy quality not Verus-provable; routed through prim
+HKR|20-21|E|hk_cid|TM-MPL-009|T13|-|Cache id from Appendix A formula
+HKR|22-24|E|hk_within|TM-MPL-010|T14|-|Use cached materials only within TTL
+HKR|25-26|E|hk_getactive|TM-MPL-005,TM-MPL-002|T01|-|Fall back to the key store; fail otherwise
+HKR|27|E|bw_wrap|TM-MPL-012|T04|-|Wrap with the branch key
+HKR|28-29|E|hk_enc,kr_send_enc|-|C07|-|Failure leaves materials; EDK appended
+HKR|30|E|bw_wrap|TM-MPL-013|T04|-|EDK ciphertext layout
+HKR|31|E|hk_pid|TM-MPL-001|T19|-|Provider id aws-kms-hierarchy
+HKR|32|P|hk_edkinfo|TM-MPL-003|T19|-|Provider info is the resolved bkid, not bkm.branch_key_id() (documented deviation)
+HKR|33|E|hk_getactive|TM-MPL-002|T03|-|GetActiveBranchKey on encrypt
+HKR|34|E|hk_put|TM-MPL-009|T13,T14|-|Cache the returned materials under the Appendix A id
+HKR|35|E|hk_enc|-|-|LOWSEC|Fail on key store error; no partial output
+HKR|36-41|E|bw_wrap,bw_derive|TM-MPL-012,TM-MPL-014|T04,T05|-|Wrapping steps and AES-GCM inputs
+HKR|42|E|bw_wrap|-|T04|-|Any failure fails OnEncrypt
+HKR|43|S|hk_dec|-|-|DESC|OnDecrypt input
+HKR|44|E|hk_existpdk|-|C07|-|Existing PDK fails
+HKR|45-48|E|hk_filter,hk_infomatch|TM-MPL-003|T19|-|EDK filter: provider id, deserializable info, info == bkid
+HKR|49-50|E|hk_collect|TM-MPL-021|T22|-|One at a time; collect errors
+HKR|51-52|E|hk_cid|TM-MPL-009|T13|-|Cache lookup with the decrypt formula
+HKR|53-55|E|hk_within|TM-MPL-010|T14|-|TTL check on decrypt
+HKR|56-57|E|hk_at|TM-MPL-005|T01|-|Key store fallback; fail on error
+HKR|58|E|bw_unwrap|TM-MPL-013|T04,T10|-|Unwrap per section
+HKR|59|E|dm_adddk|-|C04|-|Add the PDK
+HKR|60|E|hk_allfail|TM-MPL-021|T22|-|All collected errors; materials unmodified
+HKR|61|E|hk_ver_off,bw_uuid|TM-MPL-013|T10|-|Version bytes from the EDK ciphertext
+HKR|62|E|hk_getver|TM-MPL-005|T01|-|GetBranchKeyVersion call
+HKR|63|E|hk_put|TM-MPL-009|T13|-|Cache the result
+HKR|64|E|hk_at|-|-|LOWSEC|Fail on key store error
+HKR|65|E|bw_unwrap|TM-MPL-013|T04|-|Unwrap steps
+HKR|66-70|E|bw_unwrap,bw_derive|TM-MPL-014|T04,T05|-|AES-GCM decrypt inputs
+HKR|71|E|bw_unwrap|-|T04|-|Any failure fails OnDecrypt
+HKR|72-73|E|bw_aad|TM-MPL-013|T10|-|AAD layout
+HKR|74|E|ec_to|-|T15|-|EC serialization failure fails
+HKR|75|E|ci|TM-MPL-009|T13|-|Appendix A formulas
+HKR|76-77|E|hk_partbytes,hk_build|TM-MPL-009|T13,T14|-|Partition id bytes recorded at construction
+HKR|78-91|E|ci|TM-MPL-009,TM-MPL-010|T13|-|Hash input order and parts
+HKR|92-93|X|ci|TM-MPL-009|T13|-|Users must align shared-cache identity inputs and never reuse a logical name across physical stores (threat-model TM-MPL-009 residual)
+HKR|94|E|ci|TM-MPL-009|T13|-|Logical name as UTF-8 bytes
+HKR|95|E|hk_resolve|TM-MPL-003|T19|-|Supplier maps EC to a branch key id
+BKS|1|B|-|-|-|-|RFC 2119 boilerplate
+BKS|2|S|bks_build|-|-|LOWSEC|Required builder inputs
+BKS|3|E|bks_id|-|-|LOWSEC|Key store id defaults to a v4 UUID
+BKS|4-9|E|bks_region,bks_sdkcfg,bks_kmsdft|-|-|LOWSEC|Default clients built in the configured region; no integrity effect
+BKS|10|E|kms_ua|TM-MPL-020|-|-|User agent appended on every KMS request
+BKS|11-13|E|kcfg_validate|TM-MPL-002,TM-MPL-004|T03,T11,T16|-|Configured ARN valid and not an alias
+BKS|14|S|bks_build|-|-|LOWSEC|MRDiscovery carries a region
+BKS|15|E|kec_base|TM-MPL-005|T01,C01|-|Logical name bound as tablename in every EC
+BKS|16-18|S|bks_info|-|-|LOWSEC|Operation set and GetKeyStoreInfo contents
+BKS|19-24|E|bks_cks,bks_schema|-|-|LOWSEC|CreateKeyStore: provisioning of the table; wrong schema fails, no key material involved
+BKS|25|S|bks_ck|-|-|LOWSEC|CreateKey inputs
+BKS|26|E|bks_ecreq|-|-|LOWSEC|Caller-supplied id requires an EC
+BKS|27|E|bks_cfg1|TM-MPL-002|-|-|CreateKey refuses Discovery/MRDiscovery (single-key config required)
+BKS|28|E|bks_ckuuid|-|-|LOWSEC|Default branch key id is a v4 UUID
+BKS|29-32|E|bks_ck|TM-MPL-005|C01|-|CreateKey flow and result
+BKS|33-35|E|bks_vkuuid,bks_ts|TM-MPL-005|C01|-|Version v4 UUID; create-time in ISO 8601 microseconds
+BKS|36|E|bks_ck|TM-MPL-005|C01|-|Wrapped branch keys per Wrapped Branch Key Creation
+BKS|37-39|E|kms_gen|-|-|LOWSEC|GenerateDataKeyWithoutPlaintext via the configured client: external API call sequence, test-level
+BKS|40|E|kms_gen|TM-MPL-002|T03|-|KeyId is the configured ARN
+BKS|41|E|kms_gen32|TM-MPL-005|T02|-|NumberOfBytes 32
+BKS|42|E|kec_beacon|TM-MPL-005|T01,C01|-|EC for beacon keys
+BKS|43|E|kms_grant|-|-|LOWSEC|Grant tokens plumbed to the call
+BKS|44|E|kms_gen|-|-|LOWSEC|CiphertextBlob is the wrapped beacon key
+BKS|45-47|E|kms_gen|-|-|LOWSEC|GDKwoP call procedure (external API)
+BKS|48|E|kms_gen|TM-MPL-002|T03|-|KeyId is the configured ARN
+BKS|49|E|kms_gen32|TM-MPL-005|T02|-|NumberOfBytes 32
+BKS|50|E|kec_do|TM-MPL-005|T01,C01|-|DECRYPT_ONLY EC
+BKS|51|E|kms_grant|-|-|LOWSEC|Grant tokens
+BKS|52|E|kms_gen|-|-|LOWSEC|CiphertextBlob is the wrapped DECRYPT_ONLY key
+BKS|53|E|kms_reenc|TM-MPL-005|T01|-|ReEncrypt DECRYPT_ONLY to ACTIVE
+BKS|54|E|kec_do|TM-MPL-005|T01,C01|-|SourceEncryptionContext
+BKS|55|E|kms_reenc|TM-MPL-002|T03|-|SourceKeyId
+BKS|56-57|E|kms_reenc|-|-|LOWSEC|CiphertextBlob and grant tokens
+BKS|58|E|kms_reenc|TM-MPL-002|T03|-|DestinationKeyId
+BKS|59|E|kec_active|TM-MPL-005|T01,C01|-|DestinationEncryptionContext
+BKS|60|E|kms_reenc|-|-|LOWSEC|Result is the wrapped ACTIVE key
+BKS|61-63|E|bks_trans,bks_item|TM-MPL-005|T01,C01|-|TransactWriteItems with the item layout
+BKS|64-66|E|bks_item,kec_prefix|TM-MPL-005|C01|-|Custom EC stored as aws-crypto-ec: attributes
+BKS|67-68|E|bks_ck|-|-|LOWSEC|Success / error result
+BKS|69|S|bks_vk|-|-|LOWSEC|VersionKey takes a branch-key-id
+BKS|70|E|bks_cfg1|TM-MPL-002|-|-|VersionKey refuses Discovery/MRDiscovery
+BKS|71|E|bks_fetch|TM-MPL-016|T18|-|Read the ACTIVE record
+BKS|72|E|bks_vk_arn|TM-MPL-002,TM-MPL-004|T03,T11|-|Stored kms-arn compatible with configuration
+BKS|73|E|bks_vk_keep|TM-MPL-016|T18|-|Stored kms-arn unchanged
+BKS|74-75|E|bks_reenc_auth|TM-MPL-005,TM-MPL-016|T01,T18|-|Authenticate the ACTIVE record before rotating
+BKS|76|E|bks_vk|TM-MPL-016|T18|-|New wrapped branch keys
+BKS|77-79|E|bks_trans,bks_lock|TM-MPL-016|T18|-|TransactWriteItems with the optimistic lock
+BKS|80-81|E|bks_vk_keep|TM-MPL-016|T18,C01|-|Custom EC carried to the new version
+BKS|82-83|E|bks_vk|-|-|LOWSEC|Success / error result
+BKS|84|E|bks_reenc_auth|TM-MPL-005|T01|-|Authenticate with the KMS client
+BKS|85-87|E|bks_authec,kms_authec|TM-MPL-005|T01|-|Auth EC rules (tablename, enc excluded)
+BKS|88|E|kms_reenc|TM-MPL-005|T01|-|ReEncrypt call
+BKS|89-94|E|kms_reenc,bks_vk_arn|TM-MPL-005,TM-MPL-002|T01,T03|-|ReEncrypt inputs
+BKS|95|S|bks_gab|-|-|LOWSEC|GetActiveBranchKey input
+BKS|96|E|bks_fetch|-|T01|-|GetItem by id and branch:ACTIVE
+BKS|97-98|U|bks_rec,rec_from|-|-|GAP|Record must contain the defined fields: create-time and hierarchy-version are never required on read (see candidate gap G1); other fields are checked
+BKS|99-100|E|kms_decrypt|TM-MPL-005|T01|-|Decrypt per the KMS decryption section
+BKS|101|E|rec_from|TM-MPL-005|T02|-|Build materials from the authenticated EC
+BKS|102|E|bks_gab|-|T02|-|Return the materials
+BKS|103-104|S|bks_gbv|-|-|LOWSEC|GetBranchKeyVersion inputs
+BKS|105|E|bks_gbv|TM-MPL-005|T01|-|GetItem by id and branch:version:v
+BKS|106-107|U|bks_rec,rec_from|-|-|GAP|Record fields (same as 97-98; candidate gap G1)
+BKS|108-109|E|kms_decrypt|TM-MPL-005|T01|-|Decrypt; fail on error
+BKS|110-111|E|rec_from|TM-MPL-005|T02|-|Materials from the authenticated EC
+BKS|112|S|bks_gbk|-|-|LOWSEC|GetBeaconKey input
+BKS|113|E|bks_gbk,bks_getbeacon_ec|TM-MPL-005|C01|-|GetItem for beacon:ACTIVE
+BKS|114-115|U|bks_rec|-|-|GAP|Record fields (same as 97-98; candidate gap G1)
+BKS|116-117|E|kms_decrypt|TM-MPL-005|T01|-|Decrypt beacon key; fail on error
+BKS|118-119|E|bks_gbk|TM-MPL-005|C01|-|Beacon key materials built from the decrypted key and the record's branch-key-id
+BKS|120-128|E|kec_base,kec_empty|TM-MPL-005|T01,C01|-|Required EC attributes; non-empty id and type; no enc
+BKS|129|E|bks_authec|TM-MPL-005|T01|-|Extra item attributes join the EC (and are authenticated)
+BKS|130-136|E|kec_active,kec_do,kec_beacon|TM-MPL-005|T01,C01|-|ACTIVE / DECRYPT_ONLY / beacon EC shapes
+BKS|137-138|E|kec_prefix|TM-MPL-005|C01|-|Custom EC added with the aws-crypto-ec: prefix
+BKS|139|E|bks_vk_keep|TM-MPL-016|T18|-|Custom EC equal across versions
+BKS|140|E|kms_decrypt|TM-MPL-005|T01|-|Decrypt with the KMS client
+BKS|141-144|E|kms_authec,bks_authec|TM-MPL-005|T01|-|Every attribute but enc authenticated; EC construction rules
+BKS|145|E|kms_resolve,kcfg_compat|TM-MPL-002,TM-MPL-004|T03,T11|-|kms-arn compatible with the configured key
+BKS|146|E|kms_alias|TM-MPL-007|T17|-|Discovery: alias kms-arn rejected
+BKS|147|E|kms_decrypt|TM-MPL-005|T01|-|Decrypt request shape
+BKS|148|E|kms_resolve,kms_rewrite|TM-MPL-002,TM-MPL-007|T03,T17|-|KeyId per configuration (BUG-04: MRDiscovery rewrite)
+BKS|149-151|E|kms_decrypt|TM-MPL-005|T01|-|CiphertextBlob, EC, grant tokens
+BKS|152|U|bks_rec,rec_from|-|-|GAP|Record format fields (candidate gap G1)
+BKS|153-155|E|rec_type,rec_ver|TM-MPL-005|T02|-|type / version rules
+BKS|156-159|E|rec_from|TM-MPL-005|T02|-|Materials fields
+BKS|160-161|E|rec_custom|TM-MPL-005|T02,C01|-|Custom EC from the authenticated EC
+MRK|1|B|-|-|-|-|RFC 2119 boilerplate
+MRK|2|S|mrk|TM-MPL-004|T11|-|Caller provides two identifiers
+MRK|3|D|mrk|TM-MPL-004|T11|-|Identical ids => true (code returns false for identical alias ARNs; documented, fails closed)
+MRK|4|E|mrk_mr|TM-MPL-004|T11|-|Not both MRK => false
+MRK|5|E|mrk|TM-MPL-004|T11|-|Both MRK => compare partition, service, account, type, resource

@@ -1,0 +1,104 @@
+{
+ "stats": {
+  "c": 111,
+  "boilerplate": 13,
+  "b": 120,
+  "ab": 298,
+  "a": 11
+ },
+ "cr": {
+  "DESC": 9,
+  "NOCODE": 32,
+  "ESDK": 3,
+  "EXT": 4,
+  "LOWSEC": 53,
+  "NOTPROV": 3,
+  "GAP": 7
+ },
+ "st": {
+  "S": 56,
+  "E": 416,
+  "N": 32,
+  "X": 13,
+  "P": 12,
+  "D": 3,
+  "U": 8
+ },
+ "per": {
+  "ALG": {
+   "c": 17,
+   "boilerplate": 1,
+   "b": 23,
+   "ab": 2
+  },
+  "STR": {
+   "boilerplate": 1,
+   "b": 11,
+   "c": 10,
+   "ab": 25
+  },
+  "CPO": {
+   "ab": 11,
+   "c": 3
+  },
+  "KRI": {
+   "c": 6,
+   "boilerplate": 1,
+   "b": 24,
+   "ab": 4
+  },
+  "RAK": {
+   "boilerplate": 2,
+   "b": 20,
+   "a": 2,
+   "ab": 16
+  },
+  "HKR": {
+   "boilerplate": 1,
+   "c": 6,
+   "a": 5,
+   "ab": 75,
+   "b": 8
+  },
+  "MRK": {
+   "boilerplate": 1,
+   "ab": 4
+  },
+  "CMI": {
+   "c": 4,
+   "boilerplate": 1,
+   "a": 1,
+   "b": 19,
+   "ab": 12
+  },
+  "DCM": {
+   "boilerplate": 1,
+   "c": 10,
+   "ab": 8,
+   "b": 7
+  },
+  "CMC": {
+   "c": 1,
+   "boilerplate": 1,
+   "b": 2,
+   "ab": 7
+  },
+  "LCM": {
+   "boilerplate": 1,
+   "b": 4,
+   "ab": 6
+  },
+  "STC": {
+   "boilerplate": 1,
+   "ab": 23,
+   "c": 4
+  },
+  "BKS": {
+   "boilerplate": 1,
+   "c": 50,
+   "a": 3,
+   "ab": 105,
+   "b": 2
+  }
+ }
+}

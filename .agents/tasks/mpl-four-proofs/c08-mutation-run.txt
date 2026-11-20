@@ -1,0 +1,98 @@
+BASELINE: 20 verified, 0 errors (exit 0) for verus-proofs/c08_cache_usage_counters.rs
+m01_unchecked_add [predicted: reject] would_overflow is always false (the overflow guard is gone; the spec cast `as u64` wraps)
+    -> 12 verified, 8 errors  REJECTED
+    failing: ['theorem_record_use_spec', 'theorem_overflow_cases', 'lemma_no_partial_update', 'record_use', 'theorem_update_step', 'theorem_run_entry', 'lemma_boundary_witnesses', 'lemma_evicted_handle_is_not_frozen']
+m02_exec_wrapping_add_bytes [predicted: reject] record_use (exec): `bytes.checked_add(b)` replaced by `Some(bytes.wrapping_add(b))`
+    -> 19 verified, 1 errors  REJECTED
+    failing: ['record_use']
+m03_exec_wrong_increment [predicted: reject] record_use (exec): `messages.checked_add(1)` replaced by `checked_add(2)`
+    -> 19 verified, 1 errors  REJECTED
+    failing: ['record_use']
+m04_narrower_message_width [predicted: reject] would_overflow: the message counter limit is u32::MAX instead of u64::MAX (narrower width)
+    -> 16 verified, 4 errors  REJECTED
+    failing: ['theorem_overflow_cases', 'record_use', 'theorem_run_entry', 'lemma_boundary_witnesses']
+m05_wider_byte_width [predicted: reject] would_overflow: the byte limit is u64::MAX + 1 (one bit too wide; the spec cast wraps)
+    -> 12 verified, 8 errors  REJECTED
+    failing: ['theorem_record_use_spec', 'theorem_overflow_cases', 'lemma_no_partial_update', 'record_use', 'theorem_update_step', 'theorem_run_entry', 'lemma_boundary_witnesses', 'lemma_evicted_handle_is_not_frozen']
+m06_evict_on_success [predicted: reject] update_spec: the branches are swapped, so the entry is evicted when record_use succeeds
+    -> 19 verified, 1 errors  REJECTED
+    failing: ['theorem_update_step']
+m07_no_eviction_on_failure [predicted: reject] update_spec: on failure the entry is kept (inserted unchanged) instead of removed
+    -> 19 verified, 1 errors  REJECTED
+    failing: ['theorem_update_step']
+m08_reset_on_overflow [predicted: reject] record_use_spec: on overflow the counters are reset to zero (not left unchanged)
+    -> 16 verified, 4 errors  REJECTED
+    failing: ['theorem_record_use_spec', 'lemma_no_partial_update', 'record_use', 'lemma_evicted_handle_is_not_frozen']
+m09_saturate_on_overflow [predicted: reject] record_use_spec: on overflow the counters saturate at u64::MAX and the call reports success
+    -> 13 verified, 7 errors  REJECTED
+    failing: ['theorem_record_use_spec', 'lemma_no_partial_update', 'record_use', 'theorem_update_step', 'theorem_run_entry', 'lemma_boundary_witnesses', 'lemma_evicted_handle_is_not_frozen']
+m10_off_by_one_messages [predicted: reject] would_overflow: `messages + 1 >= u64::MAX` (rejects one value too early)
+    -> 16 verified, 4 errors  REJECTED
+    failing: ['theorem_overflow_cases', 'record_use', 'theorem_run_entry', 'lemma_boundary_witnesses']
+m11_off_by_one_bytes [predicted: reject] would_overflow: `bytes + b >= u64::MAX` (rejects exactly u64::MAX too early)
+    -> 15 verified, 5 errors  REJECTED
+    failing: ['theorem_overflow_cases', 'record_use', 'theorem_run_entry', 'lemma_boundary_witnesses', 'lemma_evicted_handle_is_not_frozen']
+m12_partial_update_spec [predicted: reject] record_use_spec: on overflow the message count is still incremented (partial update)
+    -> 16 verified, 4 errors  REJECTED
+    failing: ['theorem_record_use_spec', 'lemma_no_partial_update', 'record_use', 'lemma_evicted_handle_is_not_frozen']
+m13_partial_update_exec [predicted: reject] record_use (exec): messages is stored before the byte sum is checked (partial update)
+    -> 19 verified, 1 errors  REJECTED
+    failing: ['record_use']
+m14_exec_message_not_stored [predicted: reject] record_use (exec): the new message count is not stored (counter not updated)
+    -> 19 verified, 1 errors  REJECTED
+    failing: ['record_use']
+m15_exec_bytes_not_stored [predicted: reject] record_use (exec): the new byte total is not stored (counter not updated)
+    -> 19 verified, 1 errors  REJECTED
+    failing: ['record_use']
+m16_exec_true_on_overflow [predicted: reject] record_use (exec): returns true when a sum overflows (no eviction signal)
+    -> 19 verified, 1 errors  REJECTED
+    failing: ['record_use']
+m17_poisoned_store_returns_ok [predicted: reject] update_spec: a poisoned store returns Ok instead of Err(Internal)
+    -> 19 verified, 1 errors  REJECTED
+    failing: ['lemma_poisoned_store_is_noop']
+m18_absent_id_creates_entry [predicted: reject] update_spec: an absent identifier gets a new entry {1, bytes}
+    -> 19 verified, 1 errors  REJECTED
+    failing: ['theorem_update_step']
+m19_eviction_flushes_cache [predicted: reject] update_spec: a failed record_use empties the whole map (evicts the wrong entries)
+    -> 19 verified, 1 errors  REJECTED
+    failing: ['theorem_update_step']
+m20_eviction_returns_error [predicted: reject] update_spec: eviction returns Err(Internal) instead of Ok
+    -> 19 verified, 1 errors  REJECTED
+    failing: ['theorem_update_step']
+m21_evicted_entry_resurrected [predicted: reject] step_entry: an absent entry becomes Some({0,0}) on a call (an evicted entry comes back)
+    -> 17 verified, 3 errors  REJECTED
+    failing: ['lemma_run_entry_absent_stays_absent', 'lemma_update_simulates', 'update_slot']
+m22_sum_ignores_bytes [predicted: reject] sum_bytes: the first byte count is dropped from the sum
+    -> 19 verified, 1 errors  REJECTED
+    failing: ['theorem_run_entry']
+m23_total_bound_strict [predicted: reject] theorem_run_entry: the message total bound is `<` instead of `<=`
+    -> 18 verified, 2 errors  REJECTED
+    failing: ['theorem_run_entry', 'theorem_no_wrap_any_calls']
+m24_bytes_for_ignores_id [predicted: reject] bytes_for: every call is counted for every identifier
+    -> 19 verified, 1 errors  REJECTED
+    failing: ['theorem_cache_refines_entry_run']
+m25_refine_without_unpoisoned [predicted: reject] theorem_cache_refines_entry_run: the `!c.poisoned` premise is dropped
+    -> 19 verified, 1 errors  REJECTED
+    failing: ['theorem_cache_refines_entry_run']
+m26_exec_slot_evicts_on_success [predicted: reject] update_slot (exec): keeps the slot on failure and drops it on success
+    -> 19 verified, 1 errors  REJECTED
+    failing: ['update_slot']
+m27_hand_checked_add_off_by_one [predicted: reject] checked_add_by_hand: `a < MAX - b` instead of `a <= MAX - b`
+    -> 19 verified, 1 errors  REJECTED
+    failing: ['checked_add_by_hand']
+m28_witness_wrong_boundary [predicted: reject] lemma_boundary_witnesses: the accepted byte witness is `MAX - 5` plus 6 (should be rejected, claimed accepted)
+    -> 19 verified, 1 errors  REJECTED
+    failing: ['lemma_boundary_witnesses']
+s01_identifier_type_changed [predicted: survive] Id is Seq<u16> instead of Seq<u8> (the model never reads the identifier bytes)
+    -> 20 verified, 0 errors  SURVIVED
+s02_redundant_hint_removed [predicted: survive] theorem_update_step: the hint `assert(c.entries.insert(call.id, r.0).contains_key(call.id))` is removed
+    -> 20 verified, 0 errors  SURVIVED
+SUMMARY: 30 mutants, 28 rejected, 2 survived, 0 differ from prediction
+SURVIVORS: s01_identifier_type_changed, s02_redundant_hint_removed
+SURVIVOR REASONS (both predicted before the run)
+s01: the model never reads the bytes of an identifier. It only compares identifiers for equality and uses them as map keys, so the element type of `Id` can change without changing any result. The identifier is `Vec<u8>` in the code (operation.rs :365).
+s02: the removed `assert(... contains_key ...)` is a redundant hint. Z3 proves the same fact from the vstd `Map::insert` axioms without it. Removing a hint cannot change what is claimed.
+NOTE m10: `messages + 1 >= MAX` is not caught by `theorem_record_use_spec` (the sums stay exact on every accepted input). It is caught by `theorem_overflow_cases`, the exec `record_use` contract, `theorem_run_entry` and `lemma_boundary_witnesses`, which pin the exact boundary.
+NOTE m02/m05: with the guard removed or widened, the spec cast `as u64` truncates, so the exact-sum claims fail. The exec model with `wrapping_add` fails the `record_use` contract only; the cache-level theorems use the spec `record_use_spec`, not the exec function, so they do not see an edit to the exec body. The link between the exec model and the spec is the `ensures` of `record_use` (R2).
+These checks cover edits to the model only, not edits to the shipped code.
+RE-RUN after proofs-review F1 (A_NO_ALIAS added; comments only, no proof text changed): same 30 mutants, same result (28 rejected, 2 survived, 0 differ from prediction). The base file still gives 20 verified, 0 errors.

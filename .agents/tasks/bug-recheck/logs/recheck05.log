@@ -1,0 +1,69 @@
+=== [1/2] ORIGINAL reproducer (.agents/tasks/bug-reports/reproducers/zz_bugrepro_05_short_edk_lookup.rs) copied unchanged into mpl/tests; cargo test --test zz_bugrepro_05_short_edk_lookup -- --nocapture ===
+   Compiling aws-crypto-mpl v0.1.0 (/Users/mahnush/Desktop/ESDK-Rust-Verus/MPL/esdk-native-mpl/mpl)
+error[E0432]: unresolved import `aws_crypto_mpl::keystore`
+ --> tests/zz_bugrepro_05_short_edk_lookup.rs:5:21
+  |
+5 | ...ws_crypto_mpl::keystore::{KeyStoreInfo, Keys...
+  |                   ^^^^^^^^ could not find `keystore` in `aws_crypto_mpl`
+
+error[E0432]: unresolved imports `aws_crypto_mpl::HierarchicalKeyring`, `aws_crypto_mpl::Keyring`
+  --> tests/zz_bugrepro_05_short_edk_lookup.rs:10:22
+   |
+10 | ...pl::{HierarchicalKeyring, Keyring};
+   |         ^^^^^^^^^^^^^^^^^^^  ^^^^^^^ no `Keyring` in the root
+   |         |
+   |         no `HierarchicalKeyring` in the root
+   |
+help: a similar name exists in the module (notice the capitalization)
+   |
+10 - use aws_crypto_mpl::{HierarchicalKeyring, Keyring};
+10 + use aws_crypto_mpl::{HierarchicalKeyring, keyring};
+   |
+
+error[E0603]: module `structures` is private
+  --> tests/zz_bugrepro_05_short_edk_lookup.rs:6:21
+   |
+ 6 | use aws_crypto_mpl::structures::{
+   |                     ^^^^^^^^^^ private module
+ 7 |     AlgorithmSuiteId, BeaconKeyMaterials, Bran...
+   |     ---------------- enum `AlgorithmSuiteId` is not publicly re-exported
+   |
+note: the module `structures` is defined here
+  --> src/lib.rs:14:1
+   |
+14 | mod structures;
+   | ^^^^^^^^^^^^^^
+
+error[E0603]: module `structures` is private
+  --> tests/zz_bugrepro_05_short_edk_lookup.rs:6:21
+   |
+ 6 | use aws_crypto_mpl::structures::{
+   |                     ^^^^^^^^^^ private module
+   |
+note: the module `structures` is defined here
+  --> src/lib.rs:14:1
+   |
+14 | mod structures;
+   | ^^^^^^^^^^^^^^
+
+Some errors have detailed explanations: E0432, E0603.
+For more information about an error, try `rustc --explain E0432`.
+error: could not compile `aws-crypto-mpl` (test "zz_bugrepro_05_short_edk_lookup") due to 4 previous errors
+[exit code: 101]
+
+=== [2/2] ADAPTED reproducer (.agents/tasks/bug-recheck/reproducers/zz_bugrepro_05_short_edk_lookup.rs); same command ===
+   Compiling aws-crypto-mpl v0.1.0 (/Users/mahnush/Desktop/ESDK-Rust-Verus/MPL/esdk-native-mpl/mpl)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.78s
+     Running tests/zz_bugrepro_05_short_edk_lookup.rs (target/debug/deps/zz_bugrepro_05_short_edk_lookup-aca548dac356d20b)
+
+running 1 test
+REPRO BUG-05b ciphertext_len=43: on_decrypt is_err=true keystore get_branch_key_version calls=0 inner_error=Some("Cryptographic: encrypted data key ciphertext too short to contain the branch key version: 43 bytes (need at least 44)")
+REPRO BUG-05b ciphertext_len=44: on_decrypt is_err=true keystore get_branch_key_version calls=1 inner_error=Some("Cryptographic: ciphertext too short: 44 < 60")
+REPRO BUG-05b ciphertext_len=50: on_decrypt is_err=true keystore get_branch_key_version calls=1 inner_error=Some("Cryptographic: ciphertext too short: 50 < 60")
+REPRO BUG-05b ciphertext_len=59: on_decrypt is_err=true keystore get_branch_key_version calls=1 inner_error=Some("Cryptographic: ciphertext too short: 59 < 60")
+REPRO BUG-05b ciphertext_len=60: on_decrypt is_err=true keystore get_branch_key_version calls=1 inner_error=Some("Cryptographic: AES-256-GCM decrypt failed <- Cryptographic: authentication tag did not match")
+test short_edk_reaches_keystore_before_rejection ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+[exit code: 0]

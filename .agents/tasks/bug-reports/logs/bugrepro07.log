@@ -1,0 +1,16 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.04s
+     Running tests/zz_bugrepro_07_aes_buffers.rs (target/debug/deps/zz_bugrepro_07_aes_buffers-9bb519ce83e327c4)
+
+running 2 tests
+REPRO BUG-07a bad key: is_err=true err=Some("Error { message: \"new Unspecified\", backtrace: <disabled> }")
+REPRO BUG-07a buffer after Err = "HDR:SECRET-PLAINTEXT"
+REPRO BUG-07a bad iv: is_err=true buffer after Err = "SECRET-PLAINTEXT"
+REPRO BUG-07b plain_text len = ct len + 0: Ok(())
+REPRO BUG-07b plain_text len = ct len + 1: Err("Error { message: \"gather Unspecified\", backtrace: <disabled> }")
+REPRO BUG-07b plain_text len = ct len + 16: Err("Error { message: \"gather Unspecified\", backtrace: <disabled> }")
+REPRO BUG-07b plain_text len = ct len - 1: Err("Error { message: \"aes_decrypt : Plain text buffer length of 15 is less than cipher text length of 16.\", backtrace: <disabled> }")
+test aes_encrypt_leaves_plaintext_in_buffer_on_err ... ok
+test aes_decrypt_longer_buffer_rejected_by_callee_not_guard ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

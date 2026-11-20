@@ -1,0 +1,3 @@
+=== git status --porcelain
+?? .agents/tasks/docs-sync-9955ecd/
+=== git diff --stat HEAD

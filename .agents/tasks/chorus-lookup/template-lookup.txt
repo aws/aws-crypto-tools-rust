@@ -1,0 +1,156 @@
+[INFO] [KRS] <-- GenerateAssistantResponseCommand done totalEvents=8
+[tool] Tool Load
+[tool] status: Completed
+Atlas first, per rules.
+[tool] Tool Load
+[tool] status: Completed
+[tool] Tool Load
+[tool] status: Completed
+[tool] @builder-mcp/Atlas
+[tool] status: InProgress
+[tool] status: Completed
+[tool] @builder-mcp/ReadInternalWebsites
+[tool] status: InProgress
+[tool] status: Completed
+[tool] Read saved threat model template output
+[tool] status: InProgress
+[tool] status: InProgress
+[tool] status: Failed: Read saved threat model template output
+[tool] Print both fetched documents
+[tool] status: InProgress
+[tool] status: InProgress
+[tool] status: Completed
+[tool] Print remainder of resources wiki
+[tool] status: InProgress
+[tool] status: InProgress
+[tool] status: Completed
+[tool] @sage-plus-service-mcp/SearchRelevantContentAsync
+[tool] status: InProgress
+[tool] @sage-plus-service-mcp/SearchRelevantContentAsync
+[tool] status: InProgress
+[tool] @sage-plus-service-mcp/SearchRelevantContentAsync
+[tool] status: InProgress
+[tool] status: Completed
+[tool] status: Completed
+[tool] @builder-mcp/ReadInternalWebsites
+[tool] status: InProgress
+[tool] status: Completed
+[tool] status: Completed
+[tool] Fetch URL
+[tool] status: InProgress
+[tool] @builder-mcp/ReadInternalWebsites
+[tool] status: InProgress
+[tool] status: Completed
+[tool] status: Completed
+[tool] @sage-plus-service-mcp/SearchRelevantContentAsync
+[tool] status: InProgress
+[tool] status: Completed
+[tool] @sage-plus-service-mcp/SearchRelevantContentAsync
+[tool] status: InProgress
+[tool] status: Completed
+[tool] @builder-mcp/ReadInternalWebsites
+[tool] status: InProgress
+[tool] Fetch URL
+[tool] status: InProgress
+[tool] status: Completed
+[tool] status: Completed
+[tool] @sage-plus-service-mcp/SearchRelevantContentAsync
+[tool] status: InProgress
+[tool] status: Completed
+[tool] Look up Threat Composer report section components
+[tool] status: InProgress
+[tool] status: InProgress
+[tool] status: Completed
+[tool] @sage-plus-service-mcp/SearchRelevantContentAsync
+[tool] status: InProgress
+[tool] status: Completed
+[tool] List Threat Composer threat model report files
+[tool] status: InProgress
+[tool] status: InProgress
+[tool] status: Completed
+[tool] Find Threat Composer document sections
+[tool] status: InProgress
+[tool] status: InProgress
+[tool] status: Completed
+[tool] Locate Threat Composer markdown generators
+[tool] status: InProgress
+[tool] status: InProgress
+[tool] status: Completed
+[tool] Locate markdown export generators
+[tool] status: InProgress
+[tool] status: InProgress
+[tool] status: Completed
+[tool] Extract Threat Composer markdown section headings
+[tool] status: InProgress
+[tool] status: InProgress
+[tool] status: Completed
+[tool] Fetch URL
+[tool] status: InProgress
+[tool] Fetch URL
+[tool] status: InProgress
+[tool] status: Completed
+[tool] status: Completed
+[tool] @sage-plus-service-mcp/SearchRelevantContentAsync
+[tool] status: InProgress
+[tool] status: Completed
+[tool] @builder-mcp/ReadInternalWebsites
+[tool] status: InProgress
+[tool] status: Completed
+The template, the Threat Composer sections and the risk-rating method are all confirmed from the source pages. Two things were not found: AWS AppSec guidance on writing an executive summary of a threat model, and any Crypto Tools threat model of the Material Providers Library (MPL), Rust or otherwise. No tool returned an authentication error. The Atlas knowledge-graph lookup returned no entries, so everything below comes from wiki pages, code and public docs.
+
+## 1. AWS Threat Model Template
+[Chorus copy](https://chorus.aws.dev/doc/s20rbfcdYSZv), owner deagleb. The [Resources page](https://w.amazon.com/bin/view/AWS_IT_Security/Security_Reviews/Threat_Modeling/Resources/) lists Word, Loop, Threat Composer, Quip and Chorus versions. It calls this "a general purpose template" that is "actively maintained" and says "There are no mandated templates at AWS." The headings, in order:
+
+1. **Introduction**
+   - **Purpose**: the four questions: "What are we working on? What can go wrong? What are we going to do about it? Did we do a good job?"
+   - **Project background**: "the reasons for your project… the problem(s) you're solving for your customer."
+   - **Service Overview**: the service at a high level, citing a PRFAQ if you have one.
+   - **Security Tenets**: "you should have at least one."
+   - **Assumptions**: a table with columns ID / Assumption / Comments. The examples are A-01 SigV4/IAM, A-02 "KMS is a secure cryptographic root", and A-03 TLS with Crypto Bar Raiser cipher suites.
+   - **Admin**: AppSec review link, team code name, design documentation.
+2. **System Architecture** ("What are we working on?")
+   - **High Level Design**
+   - **Low Level Design**: Microservice A, B, C, User Interface, Authentication / Authorization.
+   - **Data Flow Diagrams**
+   - **APIs**: columns API / Method / Status / Mutating vs Non-Mutating / Functionality.
+   - **Assets**: columns Asset Name / Asset Usage / Data Type / Comments.
+3. **Security Anti-Patterns**: review the published list and flag the ones that apply.
+4. **Threats** ("What can go wrong?"). Use AWS threat grammar.
+   - **Threat Actors** (optional): from the internet, with AWS customer permissions, with service-team permissions.
+   - Threat table: columns Threat Number / Priority / Threat / STRIDE / Affected Assets / Mitigations / Comments / Status. "Document threats that have no or limited mitigations and raise them with your AppSec engineer."
+5. **Mitigations** ("What are we going to do about it?"): columns Mitigation Number / Mitigation / Threats Mitigating / Status / Related BSC (Baseline Security Control) / Ticket/Artifact/CR/Tests / Comments.
+6. **Security Tests**: columns Test Number / Mitigation / Test Case / Scenario / Action / Result / Test Type / Status.
+7. **Did we do a good enough job?** (optional)
+
+The template has **no executive summary, risk-rating or residual-risk section**. Its only rating is a Priority column (High/Low in the examples).
+
+## 2. Threat Composer sections
+I took these from the markdown export code (`convertToMarkdown`) in [awslabs/threat-composer](https://github.com/awslabs/threat-composer). The internal tool is at [threat-composer.security.aws.dev](https://threat-composer.security.aws.dev/) and its wiki is [here](https://w.amazon.com/bin/view/Threat-composer/). The wiki says the output is based on the AWS template. In order:
+
+1. Application name, then **Application Info**
+2. **Architecture**: Introduction, Architecture Diagram
+3. **Dataflow**: Introduction, Dataflow Diagram
+4. **Assumptions**: columns Assumption Number / Assumption / Linked Threats / Linked Mitigations / Comments
+5. **Threats**: columns Threat Number / Threat / Mitigations / Assumptions / Status / Priority / STRIDE / Comments
+6. **Mitigations**: columns Mitigation Number / Mitigation / Threats Mitigating / Assumptions / Status / Comments
+7. **Impacted Assets**: columns Assets Number / Asset / Related Threats
+
+The tool also has an Insights dashboard. It flags threats with no linked mitigation, threats with no priority, and how threats are spread across categories.
+
+## 3. Leadership-facing summaries and risk rating
+- **No AppSec page on executive summaries for threat models.** I searched AppSec wikis and Sage+ and found nothing.
+- **Risk formula.** [How to threat model](https://w.amazon.com/bin/view/AWS_IT_Security/Security_Reviews/Threat_Modeling/How): "Security risk is equal to the likelihood of an event occurring, multiplied by the impact of that event." A mitigation lowers likelihood, impact, or both.
+- **Risk matrix.** The most complete matrix I found belongs to InfoSec (SDO) AppSec, not AWS AppSec: [AppSec Risk Severity](https://w.amazon.com/bin/view/InfoSec/Application_Security/RESA/risk_severity).
+  - Impact is rated Critical / High / Medium / Low on five factors: Data, Integrity, Availability, Legal & regulatory compliance, and Control expectations. The control-expectations factor includes "promises in our customer facing documentations."
+  - Likelihood is rated Almost Certain / Likely / Possible / Unlikely on two factors: Discovery & Exploitation, and Dependency.
+  - A 4×4 matrix combines them into a risk level. For example, Unlikely + Critical = High, and Possible + Medium = Medium.
+  - Critical and High findings block launch. Any residual risk goes through formal risk acceptance.
+  - It is a usable model, but label it as SDO guidance if you use it.
+- **Residual risk acceptance (AWS ProdSec).** [Accepting (Calibrating) Risks](https://w.amazon.com/bin/view/AWS_IT_Security/Secure/ProdSec/Stormbreaker/Accepting-Risks) lists the questions to answer:
+  - What is the risk, and how does it affect customers?
+  - What are the countermeasures, and what is the residual risk?
+  - Why can't we do the right thing now?
+  - What will the team do about the residual risk (monitor, alarm, manual tests)?
+  - How is the risk tracked?
+  - Do customers need to be notified?
+- **Leadership escalation format.** The [Risk calibration template](https://w.amazon.com/bin/view/AWS_IT_exit: 130

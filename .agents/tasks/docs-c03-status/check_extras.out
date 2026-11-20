@@ -1,0 +1,8 @@
+quick wins computed: ['C01', 'C02', 'T02'] listed in merged s5: ['C01', 'C02', 'T02']
+agent totals: {'verus-header-parsing-proofs': 20, 'verus-unsafe-ffi-safety': 5, 'verus-zero-panic': 8} total 33
+merged refresh agent claim (20, 8, 5) computed (20, 8, 5)
+merged s1 ranks: 33 max 33
+01 ranked table rows: 26 order matches merged: True rank col sequential: True
+02 ranked table rows: 7 order matches merged: True rank col sequential: True
+01 claims T27 at rank 10 table has 10
+PROBLEMS: none

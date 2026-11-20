@@ -1,0 +1,4 @@
+    Checking aws-mpl-primitives v0.1.0 (/private/tmp/review-mahnush-verus-base/prim)
+verification results:: 10 verified, 0 errors
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.86s
+exit 0

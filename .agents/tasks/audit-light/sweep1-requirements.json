@@ -1,0 +1,4426 @@
+[
+ {
+  "id": "ALG-001",
+  "file": "algorithm-suites.md",
+  "line": 39,
+  "heading": "Overview",
+  "kw": "MUST",
+  "text": "The algorithm suite defines the behaviors supported formats MUST follow for cryptographic operations."
+ },
+ {
+  "id": "ALG-002",
+  "file": "algorithm-suites.md",
+  "line": 46,
+  "heading": "Definitions > Conventions used in this document",
+  "kw": "MUST/MUST NOT/REQUIRED/SHALL/SHALL NOT/SHOULD/SHOULD NOT",
+  "text": "The key words \"MUST\", \"MUST NOT\", \"REQUIRED\", \"SHALL\", \"SHALL NOT\", \"SHOULD\", \"SHOULD NOT\", \"RECOMMENDED\", \"MAY\", and \"OPTIONAL\" in this document are to be interpreted as described in RFC 2119."
+ },
+ {
+  "id": "ALG-003",
+  "file": "algorithm-suites.md",
+  "line": 61,
+  "heading": "Definitions > GCM",
+  "kw": "MUST",
+  "text": "If specified to use GCM, the AWS Encryption SDK MUST use GCM with the following specifics:"
+ },
+ {
+  "id": "ALG-004",
+  "file": "algorithm-suites.md",
+  "line": 71,
+  "heading": "Definitions > CBC",
+  "kw": "MUST",
+  "text": "If specified to use CBC, the S3 Encryption Client MUST use CBC with the following specifics:"
+ },
+ {
+  "id": "ALG-005",
+  "file": "algorithm-suites.md",
+  "line": 73,
+  "heading": "Definitions > CBC",
+  "kw": "MUST",
+  "text": "- CBC MUST only be used to decrypt existing ciphertexts."
+ },
+ {
+  "id": "ALG-006",
+  "file": "algorithm-suites.md",
+  "line": 74,
+  "heading": "Definitions > CBC",
+  "kw": "MUST NOT",
+  "text": "- CBC MUST NOT be used to encrypt new ciphertexts."
+ },
+ {
+  "id": "ALG-007",
+  "file": "algorithm-suites.md",
+  "line": 82,
+  "heading": "Definitions > CTR",
+  "kw": "MUST",
+  "text": "If specified to use CTR, the S3 Encryption Client MUST use CTR with the following specifics:"
+ },
+ {
+  "id": "ALG-008",
+  "file": "algorithm-suites.md",
+  "line": 84,
+  "heading": "Definitions > CTR",
+  "kw": "MUST",
+  "text": "- CTR MUST only be used to decrypt existing ciphertexts."
+ },
+ {
+  "id": "ALG-009",
+  "file": "algorithm-suites.md",
+  "line": 85,
+  "heading": "Definitions > CTR",
+  "kw": "MUST NOT",
+  "text": "- CTR MUST NOT be used to encrypt new ciphertexts."
+ },
+ {
+  "id": "ALG-010",
+  "file": "algorithm-suites.md",
+  "line": 91,
+  "heading": "Definitions > Identity KDF",
+  "kw": "MUST",
+  "text": "The Identity KDF MUST take a byte sequence as input, and MUST return the input, unchanged, as output."
+ },
+ {
+  "id": "ALG-011",
+  "file": "algorithm-suites.md",
+  "line": 94,
+  "heading": "Definitions > Identity KDF",
+  "kw": "MUST",
+  "text": "If included in the algorithm suite, the algorithm suite's encryption key length MUST equal the algorithm suite's key derivation input length."
+ },
+ {
+  "id": "ALG-012",
+  "file": "algorithm-suites.md",
+  "line": 106,
+  "heading": "Supported Formats",
+  "kw": "MUST",
+  "text": "Both short and long name MUST be unique."
+ },
+ {
+  "id": "ALG-013",
+  "file": "algorithm-suites.md",
+  "line": 117,
+  "heading": "Supported Format Algorithm Suites ENUM",
+  "kw": "MUST",
+  "text": "The Material Providers Library MUST provide a set of algorithm suite ENUM for each supported format."
+ },
+ {
+  "id": "ALG-014",
+  "file": "algorithm-suites.md",
+  "line": 152,
+  "heading": "Supported Algorithm Suites ENUM",
+  "kw": "MUST",
+  "text": "The Material Providers Library MUST provide an ENUM that is the super set of all the supported format algorithm suites enum called the Algorithm Suite ENUM."
+ },
+ {
+  "id": "ALG-015",
+  "file": "algorithm-suites.md",
+  "line": 185,
+  "heading": "Supported Algorithm Suites",
+  "kw": "MUST NOT",
+  "text": "The value `00 00` is reserved and MUST NOT be used as an Algorithm Suite ID in the future."
+ },
+ {
+  "id": "ALG-016",
+  "file": "algorithm-suites.md",
+  "line": 185,
+  "heading": "Supported Algorithm Suites",
+  "kw": "MUST",
+  "text": "Algorithm Suite ID MUST be a unique hex value across all supported algorithm suites."
+ },
+ {
+  "id": "ALG-017",
+  "file": "algorithm-suites.md",
+  "line": 294,
+  "heading": "Algorithm Suites Signature Settings",
+  "kw": "MUST",
+  "text": "An algorithm suite with a symmetric signature algorithm MUST use intermediate key wrapping."
+ },
+ {
+  "id": "ALG-018",
+  "file": "algorithm-suites.md",
+  "line": 370,
+  "heading": "Algorithm Suitees EDK Wrapping Settings > Supported EDK Wrapping Algorithms > Intermediate Key Wrapping",
+  "kw": "MUST",
+  "text": "- For each encrypted data key, a distinct `intermediate key` MUST be generated using cryptographically secure random bytes. This intermediate key MUST have length equal to the encryption key length of the algorithm suite."
+ },
+ {
+  "id": "ALG-019",
+  "file": "algorithm-suites.md",
+  "line": 372,
+  "heading": "Algorithm Suitees EDK Wrapping Settings > Supported EDK Wrapping Algorithms > Intermediate Key Wrapping",
+  "kw": "MUST",
+  "text": "- For each encrypted data key, a symmetric signing key MUST be derived from the `intermediate key` using the key derivation algorithm in the algorithm suite, with the following specifics:"
+ },
+ {
+  "id": "ALG-020",
+  "file": "algorithm-suites.md",
+  "line": 377,
+  "heading": "Algorithm Suitees EDK Wrapping Settings > Supported EDK Wrapping Algorithms > Intermediate Key Wrapping",
+  "kw": "MUST",
+  "text": "- For each encrypted data key, a `key encryption key` MUST be derived from the `intermediate key` using the key derivation algorithm in the algorithm suite, with the following specifics:"
+ },
+ {
+  "id": "ALG-021",
+  "file": "algorithm-suites.md",
+  "line": 382,
+  "heading": "Algorithm Suitees EDK Wrapping Settings > Supported EDK Wrapping Algorithms > Intermediate Key Wrapping",
+  "kw": "MUST",
+  "text": "- The EDK ciphertext MUST be the following serialization:"
+ },
+ {
+  "id": "ALG-022",
+  "file": "algorithm-suites.md",
+  "line": 391,
+  "heading": "Algorithm Suitees EDK Wrapping Settings > Supported EDK Wrapping Algorithms > Intermediate Key Wrapping > Wrapped Plaintext Data Key",
+  "kw": "MUST",
+  "text": "The wrapped plaintext data key MUST be the result of the following AES GCM 256 Encrypt operation:"
+ },
+ {
+  "id": "ALG-023",
+  "file": "algorithm-suites.md",
+  "line": 399,
+  "heading": "Algorithm Suitees EDK Wrapping Settings > Supported EDK Wrapping Algorithms > Intermediate Key Wrapping > Wrapped Plaintext Data Key",
+  "kw": "MUST",
+  "text": "This value MUST be equal to the algorithm suite's encryption key length + 16."
+ },
+ {
+  "id": "ALG-024",
+  "file": "algorithm-suites.md",
+  "line": 408,
+  "heading": "Structure",
+  "kw": "REQUIRED",
+  "text": "The fields described below are REQUIRED to be specified by algorithm suites, unless otherwise specified."
+ },
+ {
+  "id": "ALG-025",
+  "file": "algorithm-suites.md",
+  "line": 416,
+  "heading": "Structure > Algorithm Suite ID",
+  "kw": "MUST",
+  "text": "A 2-byte hex value that MUST uniquely identify an algorithm suite."
+ },
+ {
+  "id": "ALG-026",
+  "file": "algorithm-suites.md",
+  "line": 416,
+  "heading": "Structure > Algorithm Suite ID",
+  "kw": "SHOULD",
+  "text": "This 2-byte value SHOULD be used to bind algorithm suites to ciphertext."
+ },
+ {
+  "id": "ALG-027",
+  "file": "algorithm-suites.md",
+  "line": 423,
+  "heading": "Structure > Encryption Algorithm",
+  "kw": "MUST",
+  "text": "The length of the input encryption key MUST equal the encryption key length specified by the algorithm suite."
+ },
+ {
+  "id": "ALG-028",
+  "file": "algorithm-suites.md",
+  "line": 433,
+  "heading": "Structure > Encryption Algorithm Mode",
+  "kw": "MUST",
+  "text": "The length of the input IV MUST equal the IV length specified by the algorithm suite."
+ },
+ {
+  "id": "ALG-029",
+  "file": "algorithm-suites.md",
+  "line": 433,
+  "heading": "Structure > Encryption Algorithm Mode",
+  "kw": "MUST",
+  "text": "The length of the authentication tag MUST equal the authentication tag length specified by the algorithm suite."
+ },
+ {
+  "id": "ALG-030",
+  "file": "algorithm-suites.md",
+  "line": 456,
+  "heading": "Structure > Encryption Key Derivation Algorithm",
+  "kw": "MUST",
+  "text": "The specified KDF algorithm MUST be used to generate the encryption algorithm encryption key input."
+ },
+ {
+  "id": "ALG-031",
+  "file": "algorithm-suites.md",
+  "line": 486,
+  "heading": "Structure > Commit Key Derivation Algorithm",
+  "kw": "MUST",
+  "text": "The specified KDF algorithm MUST be used to generate the commit key."
+ },
+ {
+  "id": "ALG-032",
+  "file": "algorithm-suites.md",
+  "line": 505,
+  "heading": "Structure > Asymmetric Signature Algorithm",
+  "kw": "MUST",
+  "text": "- Asymmetric signatures MUST be generated using the specified asymmetric signature algorithm."
+ },
+ {
+  "id": "ALG-033",
+  "file": "algorithm-suites.md",
+  "line": 506,
+  "heading": "Structure > Asymmetric Signature Algorithm",
+  "kw": "MUST",
+  "text": "- Asymmetric signatures MUST be verified using the specified asymmetric signature algorithm."
+ },
+ {
+  "id": "ALG-034",
+  "file": "algorithm-suites.md",
+  "line": 510,
+  "heading": "Structure > Asymmetric Signature Algorithm",
+  "kw": "MUST NOT",
+  "text": "- Asymmetric signatures MUST NOT be generated."
+ },
+ {
+  "id": "ALG-035",
+  "file": "algorithm-suites.md",
+  "line": 511,
+  "heading": "Structure > Asymmetric Signature Algorithm",
+  "kw": "MUST NOT",
+  "text": "- Asymmetric signatures MUST NOT be verified."
+ },
+ {
+  "id": "ALG-036",
+  "file": "algorithm-suites.md",
+  "line": 526,
+  "heading": "Structure > Symmetric Signature Algorithm",
+  "kw": "MUST",
+  "text": "- Symmetric signatures MUST be generated using the specified symmetric signature algorithm."
+ },
+ {
+  "id": "ALG-037",
+  "file": "algorithm-suites.md",
+  "line": 527,
+  "heading": "Structure > Symmetric Signature Algorithm",
+  "kw": "MUST",
+  "text": "- Symmetric signatures MUST be verified using the specified symmetric signature algorithm."
+ },
+ {
+  "id": "ALG-038",
+  "file": "algorithm-suites.md",
+  "line": 528,
+  "heading": "Structure > Symmetric Signature Algorithm",
+  "kw": "MUST",
+  "text": "- The algorithm suite MUST also use Intermediate Key Wrapping."
+ },
+ {
+  "id": "ALG-039",
+  "file": "algorithm-suites.md",
+  "line": 532,
+  "heading": "Structure > Symmetric Signature Algorithm",
+  "kw": "MUST NOT",
+  "text": "- Symmetric signatures MUST NOT be generated."
+ },
+ {
+  "id": "ALG-040",
+  "file": "algorithm-suites.md",
+  "line": 533,
+  "heading": "Structure > Symmetric Signature Algorithm",
+  "kw": "MUST NOT",
+  "text": "- Symmetric signatures MUST NOT be verified."
+ },
+ {
+  "id": "ALG-041",
+  "file": "algorithm-suites.md",
+  "line": 541,
+  "heading": "Structure > Message Format Version",
+  "kw": "MUST",
+  "text": "This MUST be used to branch any serialization/deserialization logic in supported formats."
+ },
+ {
+  "id": "ALG-042",
+  "file": "algorithm-suites.md",
+  "line": 569,
+  "heading": "Structure > Algorithm Suite Data > Supported Algorithm Suite Data",
+  "kw": "MUST",
+  "text": "- Algorithm Suite 05 78 MUST store the commit key in the suite data"
+ },
+ {
+  "id": "ALG-043",
+  "file": "algorithm-suites.md",
+  "line": 570,
+  "heading": "Structure > Algorithm Suite Data > Supported Algorithm Suite Data",
+  "kw": "MUST",
+  "text": "- Algorithm Suite 04 78 MUST store the commit key in the suite data"
+ },
+ {
+  "id": "STR-001",
+  "file": "structures.md",
+  "line": 46,
+  "heading": "Definitions > Conventions used in this document",
+  "kw": "MUST/MUST NOT/REQUIRED/SHALL/SHALL NOT/SHOULD/SHOULD NOT",
+  "text": "The key words \"MUST\", \"MUST NOT\", \"REQUIRED\", \"SHALL\", \"SHALL NOT\", \"SHOULD\", \"SHOULD NOT\", \"RECOMMENDED\", \"MAY\", and \"OPTIONAL\" in this document are to be interpreted as described in RFC 2119."
+ },
+ {
+  "id": "STR-002",
+  "file": "structures.md",
+  "line": 51,
+  "heading": "Overview",
+  "kw": "MUST",
+  "text": "These structures define a group of related fields that MUST hold certain properties."
+ },
+ {
+  "id": "STR-003",
+  "file": "structures.md",
+  "line": 51,
+  "heading": "Overview",
+  "kw": "MUST",
+  "text": "Wherever these structures are referenced in this specification, implementations MUST ensure that all properties of a structure's fields are upheld."
+ },
+ {
+  "id": "STR-004",
+  "file": "structures.md",
+  "line": 108,
+  "heading": "Overview > Encrypted Data Key > Structure > Ciphertext",
+  "kw": "MUST",
+  "text": "Some key provider MUST be capable of deterministically obtaining the plaintext key from the ciphertext."
+ },
+ {
+  "id": "STR-005",
+  "file": "structures.md",
+  "line": 128,
+  "heading": "Overview > Encryption Context > Structure",
+  "kw": "SHOULD",
+  "text": "Users SHOULD use the encryption context to store:"
+ },
+ {
+  "id": "STR-006",
+  "file": "structures.md",
+  "line": 130,
+  "heading": "Overview > Encryption Context > Structure",
+  "kw": "MUST",
+  "text": "- Non-secret data that MUST remain associated with the message ciphertext."
+ },
+ {
+  "id": "STR-007",
+  "file": "structures.md",
+  "line": 133,
+  "heading": "Overview > Encryption Context > Structure",
+  "kw": "MUST NOT",
+  "text": "Users MUST NOT use the encryption context to store secret data."
+ },
+ {
+  "id": "STR-008",
+  "file": "structures.md",
+  "line": 137,
+  "heading": "Overview > Encryption Context > Serialization",
+  "kw": "MUST",
+  "text": "If the encryption context is empty, its serialization MUST be an empty byte sequence."
+ },
+ {
+  "id": "STR-009",
+  "file": "structures.md",
+  "line": 140,
+  "heading": "Overview > Encryption Context > Serialization",
+  "kw": "MUST",
+  "text": "If the encryption context is not empty, its serialization MUST take the following form:"
+ },
+ {
+  "id": "STR-010",
+  "file": "structures.md",
+  "line": 150,
+  "heading": "Overview > Encryption Context > Serialization > Key Value Pair Count",
+  "kw": "MUST",
+  "text": "The value of this field MUST be greater than 0."
+ },
+ {
+  "id": "STR-011",
+  "file": "structures.md",
+  "line": 157,
+  "heading": "Overview > Encryption Context > Serialization > Key Value Pair Count > Key Value Pair Entries",
+  "kw": "MUST NOT",
+  "text": "This sequence MUST NOT contain duplicate entries."
+ },
+ {
+  "id": "STR-012",
+  "file": "structures.md",
+  "line": 159,
+  "heading": "Overview > Encryption Context > Serialization > Key Value Pair Count > Key Value Pair Entries",
+  "kw": "MUST",
+  "text": "These entries MUST be sorted, by key, in ascending order according to the UTF-8 encoded binary value."
+ },
+ {
+  "id": "STR-013",
+  "file": "structures.md",
+  "line": 185,
+  "heading": "Overview > Encryption Materials > Structure",
+  "kw": "MUST",
+  "text": "This structure MUST include the following fields:"
+ },
+ {
+  "id": "STR-014",
+  "file": "structures.md",
+  "line": 207,
+  "heading": "Overview > Encryption Materials > Structure > Encrypted Data Keys",
+  "kw": "MUST",
+  "text": "The ciphertext of each encrypted data key in this list MUST be an opaque form of the plaintext data key from this set of encryption materials."
+ },
+ {
+  "id": "STR-015",
+  "file": "structures.md",
+  "line": 210,
+  "heading": "Overview > Encryption Materials > Structure > Encrypted Data Keys",
+  "kw": "MUST",
+  "text": "If the plaintext data key is not included in this set of encryption materials, this list MUST be empty."
+ },
+ {
+  "id": "STR-016",
+  "file": "structures.md",
+  "line": 216,
+  "heading": "Overview > Encryption Materials > Structure > Encryption Context",
+  "kw": "SHOULD",
+  "text": "If an encryption material contains a signing key, the encryption context SHOULD include the reserved key `aws-crypto-public-key`."
+ },
+ {
+  "id": "STR-017",
+  "file": "structures.md",
+  "line": 216,
+  "heading": "Overview > Encryption Materials > Structure > Encryption Context",
+  "kw": "SHOULD",
+  "text": "The mapped value from the reserved key `aws-crypto-public-key` SHOULD be the signature verification key corresponding to the signing key stored on the encryption material."
+ },
+ {
+  "id": "STR-018",
+  "file": "structures.md",
+  "line": 216,
+  "heading": "Overview > Encryption Materials > Structure > Encryption Context",
+  "kw": "SHOULD NOT",
+  "text": "If an encryption material does not contains a signing key, the encryption context SHOULD NOT include the reserved key `aws-crypto-public-key`."
+ },
+ {
+  "id": "STR-019",
+  "file": "structures.md",
+  "line": 227,
+  "heading": "Overview > Encryption Materials > Structure > Plaintext Data Key",
+  "kw": "MUST",
+  "text": "The plaintext data key MUST:"
+ },
+ {
+  "id": "STR-020",
+  "file": "structures.md",
+  "line": 234,
+  "heading": "Overview > Encryption Materials > Structure > Plaintext Data Key",
+  "kw": "SHOULD",
+  "text": "The plaintext data key SHOULD be stored as immutable data."
+ },
+ {
+  "id": "STR-021",
+  "file": "structures.md",
+  "line": 236,
+  "heading": "Overview > Encryption Materials > Structure > Plaintext Data Key",
+  "kw": "SHOULD",
+  "text": "The plaintext data key SHOULD offer an interface to zero the plaintext data key."
+ },
+ {
+  "id": "STR-022",
+  "file": "structures.md",
+  "line": 242,
+  "heading": "Overview > Encryption Materials > Structure > Signing Key",
+  "kw": "MUST",
+  "text": "The signing key MUST fit the specification described by the asymmetric signature algorithm included in this encryption material's algorithm suite."
+ },
+ {
+  "id": "STR-023",
+  "file": "structures.md",
+  "line": 242,
+  "heading": "Overview > Encryption Materials > Structure > Signing Key",
+  "kw": "MUST NOT",
+  "text": "If the algorithm suite does not contain an asymmetric signing algorithm, the signing key MUST NOT be present."
+ },
+ {
+  "id": "STR-024",
+  "file": "structures.md",
+  "line": 246,
+  "heading": "Overview > Encryption Materials > Structure > Signing Key",
+  "kw": "MUST",
+  "text": "The value of this key MUST be kept secret."
+ },
+ {
+  "id": "STR-025",
+  "file": "structures.md",
+  "line": 259,
+  "heading": "Overview > Encryption Materials > Structure > Required Encryption Context Keys",
+  "kw": "MUST",
+  "text": "Every key in Required Encryption Context Keys MUST be a key in the encryption context."
+ },
+ {
+  "id": "STR-026",
+  "file": "structures.md",
+  "line": 267,
+  "heading": "Overview > Encryption Materials > Structure > Symmetric Signing Keys",
+  "kw": "MUST NOT",
+  "text": "If the algorithm suite does not contain a symmetric signing algorithm, this list MUST NOT be included in the materials."
+ },
+ {
+  "id": "STR-027",
+  "file": "structures.md",
+  "line": 267,
+  "heading": "Overview > Encryption Materials > Structure > Symmetric Signing Keys",
+  "kw": "MUST",
+  "text": "If the algorithm suite does contain a symmetric signing algorithm, this list MUST have length equal to the encrypted data key list."
+ },
+ {
+  "id": "STR-028",
+  "file": "structures.md",
+  "line": 273,
+  "heading": "Overview > Encryption Materials > Structure > Symmetric Signing Keys",
+  "kw": "MUST",
+  "text": "The symmetric signature keys MUST adhere to the specification for symmetric signature algorithms included in this encryption material's algorithm suite."
+ },
+ {
+  "id": "STR-029",
+  "file": "structures.md",
+  "line": 276,
+  "heading": "Overview > Encryption Materials > Structure > Symmetric Signing Keys",
+  "kw": "MUST",
+  "text": "The value of keys in this list MUST be kept secret."
+ },
+ {
+  "id": "STR-030",
+  "file": "structures.md",
+  "line": 291,
+  "heading": "Overview > Decryption Materials > Fields",
+  "kw": "MUST",
+  "text": "This structure MUST include the following fields:"
+ },
+ {
+  "id": "STR-031",
+  "file": "structures.md",
+  "line": 312,
+  "heading": "Overview > Decryption Materials > Fields > Encryption Context",
+  "kw": "SHOULD",
+  "text": "If a decryption materials contains a verification key, the encryption context SHOULD include the reserved key `aws-crypto-public-key`."
+ },
+ {
+  "id": "STR-032",
+  "file": "structures.md",
+  "line": 312,
+  "heading": "Overview > Decryption Materials > Fields > Encryption Context",
+  "kw": "SHOULD",
+  "text": "The mapped value from the reserved key `aws-crypto-public-key` SHOULD be the signature verification key stored on the decryption materials."
+ },
+ {
+  "id": "STR-033",
+  "file": "structures.md",
+  "line": 312,
+  "heading": "Overview > Decryption Materials > Fields > Encryption Context",
+  "kw": "SHOULD NOT",
+  "text": "If a decryption materials does not contain a verification key, the encryption context SHOULD NOT include the reserved key `aws-crypto-public-key`."
+ },
+ {
+  "id": "STR-034",
+  "file": "structures.md",
+  "line": 323,
+  "heading": "Overview > Decryption Materials > Fields > Plaintext Data Key",
+  "kw": "MUST",
+  "text": "The plaintext data key MUST:"
+ },
+ {
+  "id": "STR-035",
+  "file": "structures.md",
+  "line": 330,
+  "heading": "Overview > Decryption Materials > Fields > Plaintext Data Key",
+  "kw": "SHOULD",
+  "text": "The plaintext data key SHOULD be stored as immutable data."
+ },
+ {
+  "id": "STR-036",
+  "file": "structures.md",
+  "line": 332,
+  "heading": "Overview > Decryption Materials > Fields > Plaintext Data Key",
+  "kw": "SHOULD",
+  "text": "The plaintext data key SHOULD offer an interface to zero the plaintext data key."
+ },
+ {
+  "id": "STR-037",
+  "file": "structures.md",
+  "line": 338,
+  "heading": "Overview > Decryption Materials > Fields > Verification Key",
+  "kw": "MUST",
+  "text": "The verification key MUST fit the specification for the asymmetric signature algorithm included in this decryption material's algorithm suite."
+ },
+ {
+  "id": "STR-038",
+  "file": "structures.md",
+  "line": 353,
+  "heading": "Overview > Decryption Materials > Fields > Required Encryption Context Keys",
+  "kw": "MUST",
+  "text": "Every key in Required Encryption Context Keys MUST be a key in the encryption context."
+ },
+ {
+  "id": "STR-039",
+  "file": "structures.md",
+  "line": 360,
+  "heading": "Overview > Decryption Materials > Fields > Symmetric Signing Key",
+  "kw": "MUST NOT",
+  "text": "If the algorithm suite does not contain a symmetric signing algorithm, the symmetric signing key MUST NOT be included in the materials."
+ },
+ {
+  "id": "STR-040",
+  "file": "structures.md",
+  "line": 363,
+  "heading": "Overview > Decryption Materials > Fields > Symmetric Signing Key",
+  "kw": "MUST",
+  "text": "If the algorithm suite does contain a symmetric signing algorithm, the symmetric signing key MUST also be included in the materials if and only if the materials also include a plaintext data key."
+ },
+ {
+  "id": "STR-041",
+  "file": "structures.md",
+  "line": 367,
+  "heading": "Overview > Decryption Materials > Fields > Symmetric Signing Key",
+  "kw": "MUST",
+  "text": "If included, the symmetric signature key MUST fit the specification for the symmetric signature algorithm included in this decryption material's algorithm suite."
+ },
+ {
+  "id": "STR-042",
+  "file": "structures.md",
+  "line": 370,
+  "heading": "Overview > Decryption Materials > Fields > Symmetric Signing Key",
+  "kw": "MUST",
+  "text": "This value MUST be kept secret."
+ },
+ {
+  "id": "STR-043",
+  "file": "structures.md",
+  "line": 381,
+  "heading": "Overview > Branch Key Materials > Structure",
+  "kw": "MUST",
+  "text": "This structure MUST include all of the following fields:"
+ },
+ {
+  "id": "STR-044",
+  "file": "structures.md",
+  "line": 392,
+  "heading": "Overview > Branch Key Materials > Structure > Branch Key",
+  "kw": "MUST",
+  "text": "This data key MUST only be generated through AWS KMS using the `GenerateDataKeyWithoutPlaintext` API."
+ },
+ {
+  "id": "STR-045",
+  "file": "structures.md",
+  "line": 392,
+  "heading": "Overview > Branch Key Materials > Structure > Branch Key",
+  "kw": "MUST",
+  "text": "This key MUST be 32 bytes long."
+ },
+ {
+  "id": "STR-046",
+  "file": "structures.md",
+  "line": 404,
+  "heading": "Overview > Branch Key Materials > Structure > Branch Key Version",
+  "kw": "MUST",
+  "text": "This value MUST be a version 4 UUID."
+ },
+ {
+  "id": "STR-047",
+  "file": "structures.md",
+  "line": 426,
+  "heading": "Beacon Key Materials > Implementations > Structure",
+  "kw": "MUST",
+  "text": "This structure MUST include the following fields:"
+ },
+ {
+  "id": "CPO-001",
+  "file": "commitment-policy.md",
+  "line": 43,
+  "heading": "Supported Format Commitment Policy ENUM",
+  "kw": "MUST",
+  "text": "The Material Providers Library MUST provide a distinct commitment policy ENUM for each format."
+ },
+ {
+  "id": "CPO-002",
+  "file": "commitment-policy.md",
+  "line": 62,
+  "heading": "Supported Commitment Policy ENUM",
+  "kw": "MUST",
+  "text": "The Material Providers Library also MUST provide a union ENUM for all distinct commitment policy ENUMs called the Commitment Policy ENUM."
+ },
+ {
+  "id": "CPO-003",
+  "file": "commitment-policy.md",
+  "line": 83,
+  "heading": "Supported Commitment Policy ENUM > ESDK.FORBID_ENCRYPT_ALLOW_DECRYPT",
+  "kw": "MUST",
+  "text": "- `ESDK.ALG_AES_256_GCM_IV12_TAG16_NO_KDF` MUST be the default algorithm suite"
+ },
+ {
+  "id": "CPO-004",
+  "file": "commitment-policy.md",
+  "line": 84,
+  "heading": "Supported Commitment Policy ENUM > ESDK.FORBID_ENCRYPT_ALLOW_DECRYPT",
+  "kw": "MUST",
+  "text": "- Get Encryption Materials MUST only support algorithm suites that have a Key Commitment value of False"
+ },
+ {
+  "id": "CPO-005",
+  "file": "commitment-policy.md",
+  "line": 85,
+  "heading": "Supported Commitment Policy ENUM > ESDK.FORBID_ENCRYPT_ALLOW_DECRYPT",
+  "kw": "MUST",
+  "text": "- Decrypt Materials MUST support all algorithm suites"
+ },
+ {
+  "id": "CPO-006",
+  "file": "commitment-policy.md",
+  "line": 91,
+  "heading": "Supported Commitment Policy ENUM > ESDK.FORBID_ENCRYPT_ALLOW_DECRYPT > ESDK.REQUIRE_ENCRYPT_ALLOW_DECRYPT",
+  "kw": "MUST",
+  "text": "- `05 78` MUST be the default algorithm suite"
+ },
+ {
+  "id": "CPO-007",
+  "file": "commitment-policy.md",
+  "line": 92,
+  "heading": "Supported Commitment Policy ENUM > ESDK.FORBID_ENCRYPT_ALLOW_DECRYPT > ESDK.REQUIRE_ENCRYPT_ALLOW_DECRYPT",
+  "kw": "MUST",
+  "text": "- Get Encryption Materials MUST only support algorithm suites that have a Key Commitment value of True"
+ },
+ {
+  "id": "CPO-008",
+  "file": "commitment-policy.md",
+  "line": 93,
+  "heading": "Supported Commitment Policy ENUM > ESDK.FORBID_ENCRYPT_ALLOW_DECRYPT > ESDK.REQUIRE_ENCRYPT_ALLOW_DECRYPT",
+  "kw": "MUST",
+  "text": "- Decrypt Materials MUST support all algorithm suites"
+ },
+ {
+  "id": "CPO-009",
+  "file": "commitment-policy.md",
+  "line": 99,
+  "heading": "Supported Commitment Policy ENUM > ESDK.FORBID_ENCRYPT_ALLOW_DECRYPT > ESDK.REQUIRE_ENCRYPT_REQUIRE_DECRYPT",
+  "kw": "MUST",
+  "text": "- `05 78` MUST be the default algorithm suite"
+ },
+ {
+  "id": "CPO-010",
+  "file": "commitment-policy.md",
+  "line": 100,
+  "heading": "Supported Commitment Policy ENUM > ESDK.FORBID_ENCRYPT_ALLOW_DECRYPT > ESDK.REQUIRE_ENCRYPT_REQUIRE_DECRYPT",
+  "kw": "MUST",
+  "text": "- Get Encryption Materials MUST only support algorithm suites that have a Key Commitment value of True"
+ },
+ {
+  "id": "CPO-011",
+  "file": "commitment-policy.md",
+  "line": 101,
+  "heading": "Supported Commitment Policy ENUM > ESDK.FORBID_ENCRYPT_ALLOW_DECRYPT > ESDK.REQUIRE_ENCRYPT_REQUIRE_DECRYPT",
+  "kw": "MUST",
+  "text": "- Decrypt Materials MUST only support algorithm suites that have a Key Commitment value of True"
+ },
+ {
+  "id": "CPO-012",
+  "file": "commitment-policy.md",
+  "line": 108,
+  "heading": "Supported Commitment Policy ENUM > ESDK.FORBID_ENCRYPT_ALLOW_DECRYPT > DBE.REQUIRE_ENCRYPT_REQUIRE_DECRYPT",
+  "kw": "MUST",
+  "text": "- `67 01` MUST be the default algorithm suite"
+ },
+ {
+  "id": "CPO-013",
+  "file": "commitment-policy.md",
+  "line": 109,
+  "heading": "Supported Commitment Policy ENUM > ESDK.FORBID_ENCRYPT_ALLOW_DECRYPT > DBE.REQUIRE_ENCRYPT_REQUIRE_DECRYPT",
+  "kw": "MUST",
+  "text": "- Get Encryption Materials MUST only support algorithm suites that have a Key Commitment value of True"
+ },
+ {
+  "id": "CPO-014",
+  "file": "commitment-policy.md",
+  "line": 110,
+  "heading": "Supported Commitment Policy ENUM > ESDK.FORBID_ENCRYPT_ALLOW_DECRYPT > DBE.REQUIRE_ENCRYPT_REQUIRE_DECRYPT",
+  "kw": "MUST",
+  "text": "- Decrypt Materials MUST only support algorithm suites that have a Key Commitment value of True"
+ },
+ {
+  "id": "KRI-001",
+  "file": "keyring-interface.md",
+  "line": 50,
+  "heading": "Overview",
+  "kw": "MUST",
+  "text": "The keyring interface specified in this document describes the interface all keyrings MUST implement."
+ },
+ {
+  "id": "KRI-002",
+  "file": "keyring-interface.md",
+  "line": 56,
+  "heading": "Definitions > Conventions used in this document",
+  "kw": "MUST/MUST NOT/REQUIRED/SHALL/SHALL NOT/SHOULD/SHOULD NOT",
+  "text": "The key words \"MUST\", \"MUST NOT\", \"REQUIRED\", \"SHALL\", \"SHALL NOT\", \"SHOULD\", \"SHOULD NOT\", \"RECOMMENDED\", \"MAY\", and \"OPTIONAL\" in this document are to be interpreted as described in RFC 2119."
+ },
+ {
+  "id": "KRI-003",
+  "file": "keyring-interface.md",
+  "line": 65,
+  "heading": "Definitions > key namespace",
+  "kw": "MUST",
+  "text": "The key namespace MUST be a string value."
+ },
+ {
+  "id": "KRI-004",
+  "file": "keyring-interface.md",
+  "line": 73,
+  "heading": "Definitions > key name",
+  "kw": "MUST",
+  "text": "The key name MUST be a string value."
+ },
+ {
+  "id": "KRI-005",
+  "file": "keyring-interface.md",
+  "line": 82,
+  "heading": "Definitions > key provider ID",
+  "kw": "MUST/SHOULD",
+  "text": "The key provider ID MUST be a binary value and SHOULD be equal to a UTF-8 encoding of the key namespace."
+ },
+ {
+  "id": "KRI-006",
+  "file": "keyring-interface.md",
+  "line": 85,
+  "heading": "Definitions > key provider ID",
+  "kw": "MUST NOT",
+  "text": "This value MUST NOT be or start with \"aws-kms\" unless this encrypted data key was produced by one of the AWS KMS Keyrings."
+ },
+ {
+  "id": "KRI-007",
+  "file": "keyring-interface.md",
+  "line": 95,
+  "heading": "Definitions > key provider info",
+  "kw": "MUST/SHOULD",
+  "text": "The key provider info MUST be a binary value and SHOULD be equal to a UTF-8 encoding of the key name."
+ },
+ {
+  "id": "KRI-008",
+  "file": "keyring-interface.md",
+  "line": 117,
+  "heading": "Interface > OnEncrypt",
+  "kw": "MUST",
+  "text": "This interface MUST take encryption materials as input."
+ },
+ {
+  "id": "KRI-009",
+  "file": "keyring-interface.md",
+  "line": 117,
+  "heading": "Interface > OnEncrypt",
+  "kw": "MUST",
+  "text": "It MUST modify it with at least one of the following behaviors:"
+ },
+ {
+  "id": "KRI-010",
+  "file": "keyring-interface.md",
+  "line": 123,
+  "heading": "Interface > OnEncrypt",
+  "kw": "MUST",
+  "text": "If this keyring attempted any of the above behaviors, and successfully completed those behaviors, it MUST output the modified encryption materials."
+ },
+ {
+  "id": "KRI-011",
+  "file": "keyring-interface.md",
+  "line": 126,
+  "heading": "Interface > OnEncrypt",
+  "kw": "MUST/MUST NOT",
+  "text": "If the keyring did not attempt any of the above behaviors, it MUST fail and it MUST NOT modify the encryption materials."
+ },
+ {
+  "id": "KRI-012",
+  "file": "keyring-interface.md",
+  "line": 129,
+  "heading": "Interface > OnEncrypt",
+  "kw": "SHOULD NOT",
+  "text": "The keyring SHOULD NOT attempt to store the encryption context in the encrypted data key's properties."
+ },
+ {
+  "id": "KRI-013",
+  "file": "keyring-interface.md",
+  "line": 136,
+  "heading": "Interface > OnEncrypt > Generate Data Key",
+  "kw": "MUST",
+  "text": "If the encryption materials do not contain a plaintext data key, OnEncrypt MUST generate a data key."
+ },
+ {
+  "id": "KRI-014",
+  "file": "keyring-interface.md",
+  "line": 136,
+  "heading": "Interface > OnEncrypt > Generate Data Key",
+  "kw": "MUST NOT",
+  "text": "If the encryption materials contain a plaintext data key, OnEncrypt MUST NOT generate a data key."
+ },
+ {
+  "id": "KRI-015",
+  "file": "keyring-interface.md",
+  "line": 140,
+  "heading": "Interface > OnEncrypt > Generate Data Key",
+  "kw": "MUST",
+  "text": "Generate Data Key MUST modify the following fields in the encryption materials:"
+ },
+ {
+  "id": "KRI-016",
+  "file": "keyring-interface.md",
+  "line": 147,
+  "heading": "Interface > OnEncrypt > Generate Data Key",
+  "kw": "MUST",
+  "text": "The length of the output plaintext data key MUST be equal to the KDF input length of the algorithm suite specified in the encryption materials."
+ },
+ {
+  "id": "KRI-017",
+  "file": "keyring-interface.md",
+  "line": 147,
+  "heading": "Interface > OnEncrypt > Generate Data Key",
+  "kw": "MUST",
+  "text": "The value of the plaintext data key MUST consist of cryptographically secure (pseudo-)random bits."
+ },
+ {
+  "id": "KRI-018",
+  "file": "keyring-interface.md",
+  "line": 156,
+  "heading": "Interface > OnEncrypt > Encrypt Data Key",
+  "kw": "MUST",
+  "text": "If the encryption materials contain a plaintext data key, OnEncrypt MUST encrypt a data key."
+ },
+ {
+  "id": "KRI-019",
+  "file": "keyring-interface.md",
+  "line": 156,
+  "heading": "Interface > OnEncrypt > Encrypt Data Key",
+  "kw": "MUST NOT",
+  "text": "If the encryption materials do not contain a plaintext data key, OnEncrypt MUST NOT encrypt a data key."
+ },
+ {
+  "id": "KRI-020",
+  "file": "keyring-interface.md",
+  "line": 160,
+  "heading": "Interface > OnEncrypt > Encrypt Data Key",
+  "kw": "MUST",
+  "text": "Encrypt Data Key MUST modify the following fields in the encryption materials:"
+ },
+ {
+  "id": "KRI-021",
+  "file": "keyring-interface.md",
+  "line": 169,
+  "heading": "Interface > OnEncrypt > Encrypt Data Key",
+  "kw": "MUST",
+  "text": "The encrypted data keys produced by this keyring MUST have ciphertexts that can be decrypted to the plaintext data key in the encryption materials."
+ },
+ {
+  "id": "KRI-022",
+  "file": "keyring-interface.md",
+  "line": 175,
+  "heading": "Interface > OnDecrypt",
+  "kw": "MUST",
+  "text": "This interface MUST take decryption materials and a list of encrypted data keys as input."
+ },
+ {
+  "id": "KRI-023",
+  "file": "keyring-interface.md",
+  "line": 175,
+  "heading": "Interface > OnDecrypt",
+  "kw": "MUST",
+  "text": "It MUST modify it with the following behavior:"
+ },
+ {
+  "id": "KRI-024",
+  "file": "keyring-interface.md",
+  "line": 181,
+  "heading": "Interface > OnDecrypt",
+  "kw": "MUST/MUST NOT",
+  "text": "If the decryption materials already contain a plaintext data key, the keyring MUST fail and MUST NOT modify the decryption materials."
+ },
+ {
+  "id": "KRI-025",
+  "file": "keyring-interface.md",
+  "line": 185,
+  "heading": "Interface > OnDecrypt",
+  "kw": "MUST",
+  "text": "If this keyring attempted the above behavior, and succeeded, it MUST output the modified decryption materials."
+ },
+ {
+  "id": "KRI-026",
+  "file": "keyring-interface.md",
+  "line": 187,
+  "heading": "Interface > OnDecrypt",
+  "kw": "MUST/MUST NOT",
+  "text": "If the keyring did not attempt the above behavior, the keyring MUST fail and MUST NOT modify the decryption materials."
+ },
+ {
+  "id": "KRI-027",
+  "file": "keyring-interface.md",
+  "line": 193,
+  "heading": "Interface > OnDecrypt > Decrypt Data Key",
+  "kw": "MUST NOT",
+  "text": "If the encryption materials do contain a plaintext data key, OnDecrypt MUST NOT decrypt a data key."
+ },
+ {
+  "id": "KRI-028",
+  "file": "keyring-interface.md",
+  "line": 193,
+  "heading": "Interface > OnDecrypt > Decrypt Data Key",
+  "kw": "MUST",
+  "text": "If the decryption materials do not include a plaintext data key, OnDecrypt MUST decrypt a data key."
+ },
+ {
+  "id": "KRI-029",
+  "file": "keyring-interface.md",
+  "line": 197,
+  "heading": "Interface > OnDecrypt > Decrypt Data Key",
+  "kw": "MUST",
+  "text": "The decrypt data key MUST modify the following fields in the decryption materials:"
+ },
+ {
+  "id": "KRI-030",
+  "file": "keyring-interface.md",
+  "line": 204,
+  "heading": "Interface > OnDecrypt > Decrypt Data Key",
+  "kw": "SHOULD",
+  "text": "If the keyring is able to successfully get at least one plaintext data key from any encrypted data key and the decryption materials still do not include a plaintext data key, it SHOULD set one resulting plaintext data key on the decryption materials."
+ },
+ {
+  "id": "KRI-031",
+  "file": "keyring-interface.md",
+  "line": 208,
+  "heading": "Interface > OnDecrypt > Decrypt Data Key",
+  "kw": "MUST/MUST NOT",
+  "text": "If the keyring is unable to get any plaintext data key using the input encrypted data keys, the keyring MUST NOT not update the decryption materials and MUST return failure."
+ },
+ {
+  "id": "KRI-032",
+  "file": "keyring-interface.md",
+  "line": 213,
+  "heading": "Security Considerations",
+  "kw": "SHOULD",
+  "text": "Keyring implementations SHOULD provide integrity guarantees for the encrypted data keys they return on OnEncrypt such that tampered versions of those encrypted data keys, if input into OnDecrypt, are overwhelmingly likely to cause a decryption failure (i.e. the chance of a successful decryption in this case is negligible)."
+ },
+ {
+  "id": "KRI-033",
+  "file": "keyring-interface.md",
+  "line": 218,
+  "heading": "Security Considerations",
+  "kw": "SHOULD",
+  "text": "Such integrity guarantees SHOULD include the integrity of the encryption context such that, if the encryption context used as input to OnEncrypt to produce an encrypted data key is different than the encryption context input to OnDecrypt to decrypt that encrypted data key, the decryption is overwhelmingly likely to fail."
+ },
+ {
+  "id": "KRI-034",
+  "file": "keyring-interface.md",
+  "line": 223,
+  "heading": "Security Considerations",
+  "kw": "SHOULD",
+  "text": "Users SHOULD use a keyring that protects wrapping keys and performs cryptographic operations within a secure boundary."
+ },
+ {
+  "id": "KRI-035",
+  "file": "keyring-interface.md",
+  "line": 253,
+  "heading": "Appendix > Why should I use Keyrings instead of Master Key Providers and Master Keys?",
+  "kw": "SHOULD",
+  "text": "Due to this simplified architecture, master keys and master key providers are going to be deprecated in the future, and new implementations SHOULD use keyrings."
+ },
+ {
+  "id": "RAK-001",
+  "file": "raw-aes-keyring.md",
+  "line": 22,
+  "heading": "Version > Changelog",
+  "kw": "MUST NOT",
+  "text": "- Raw AES keyring MUST NOT accept a key namespace of \"aws-kms\"."
+ },
+ {
+  "id": "RAK-002",
+  "file": "raw-aes-keyring.md",
+  "line": 50,
+  "heading": "Definitions > Conventions used in this document",
+  "kw": "MUST/MUST NOT/REQUIRED/SHALL/SHALL NOT/SHOULD/SHOULD NOT",
+  "text": "The key words \"MUST\", \"MUST NOT\", \"REQUIRED\", \"SHALL\", \"SHALL NOT\", \"SHOULD\", \"SHOULD NOT\", \"RECOMMENDED\", \"MAY\", and \"OPTIONAL\" in this document are to be interpreted as described in RFC 2119."
+ },
+ {
+  "id": "RAK-003",
+  "file": "raw-aes-keyring.md",
+  "line": 63,
+  "heading": "Initialization",
+  "kw": "MUST",
+  "text": "On keyring initialization, the caller MUST provide the following:"
+ },
+ {
+  "id": "RAK-004",
+  "file": "raw-aes-keyring.md",
+  "line": 75,
+  "heading": "Initialization > Wrapping Key",
+  "kw": "MUST",
+  "text": "The wrapping key MUST be a secret value consisting of cryptographically secure pseudo-random bytes."
+ },
+ {
+  "id": "RAK-005",
+  "file": "raw-aes-keyring.md",
+  "line": 75,
+  "heading": "Initialization > Wrapping Key",
+  "kw": "MUST",
+  "text": "It MUST be randomly generated from a cryptographically secure entropy source."
+ },
+ {
+  "id": "RAK-006",
+  "file": "raw-aes-keyring.md",
+  "line": 75,
+  "heading": "Initialization > Wrapping Key",
+  "kw": "MUST",
+  "text": "The length of the wrapping key MUST be 128, 192, or 256."
+ },
+ {
+  "id": "RAK-007",
+  "file": "raw-aes-keyring.md",
+  "line": 83,
+  "heading": "Initialization > Wrapping Algorithm",
+  "kw": "MUST",
+  "text": "The keyring MUST support the following algorithm configurations:"
+ },
+ {
+  "id": "RAK-008",
+  "file": "raw-aes-keyring.md",
+  "line": 89,
+  "heading": "Initialization > Wrapping Algorithm",
+  "kw": "MUST",
+  "text": "Initialization MUST fail if the length of the wrapping key does not match the length specified by the wrapping algorithm."
+ },
+ {
+  "id": "RAK-009",
+  "file": "raw-aes-keyring.md",
+  "line": 117,
+  "heading": "Structure > Key Provider Information > Authentication Tag Length",
+  "kw": "MUST",
+  "text": "This value MUST match the authentication tag length of the keyring's configured wrapping algorithm."
+ },
+ {
+  "id": "RAK-010",
+  "file": "raw-aes-keyring.md",
+  "line": 123,
+  "heading": "Structure > Key Provider Information > IV Length",
+  "kw": "MUST",
+  "text": "This value MUST match the IV length of the keyring's configured wrapping algorithm."
+ },
+ {
+  "id": "RAK-011",
+  "file": "raw-aes-keyring.md",
+  "line": 155,
+  "heading": "Operation > OnEncrypt",
+  "kw": "MUST",
+  "text": "OnEncrypt MUST take encryption materials as input."
+ },
+ {
+  "id": "RAK-012",
+  "file": "raw-aes-keyring.md",
+  "line": 157,
+  "heading": "Operation > OnEncrypt",
+  "kw": "MUST",
+  "text": "If the encryption materials do not contain a plaintext data key, OnEncrypt MUST generate a random plaintext data key and set it on the encryption materials."
+ },
+ {
+  "id": "RAK-013",
+  "file": "raw-aes-keyring.md",
+  "line": 160,
+  "heading": "Operation > OnEncrypt",
+  "kw": "MUST",
+  "text": "The keyring MUST encrypt the plaintext data key in the encryption materials using AES-GCM."
+ },
+ {
+  "id": "RAK-014",
+  "file": "raw-aes-keyring.md",
+  "line": 163,
+  "heading": "Operation > OnEncrypt",
+  "kw": "MUST",
+  "text": "The keyring MUST attempt to serialize the encryption materials' encryption context according to the encryption context serialization specification."
+ },
+ {
+  "id": "RAK-015",
+  "file": "raw-aes-keyring.md",
+  "line": 163,
+  "heading": "Operation > OnEncrypt",
+  "kw": "MUST",
+  "text": "If the keyring cannot serialize the encryption context, OnEncrypt MUST fail."
+ },
+ {
+  "id": "RAK-016",
+  "file": "raw-aes-keyring.md",
+  "line": 169,
+  "heading": "Operation > OnEncrypt",
+  "kw": "MUST",
+  "text": "- It MUST use the serialized encryption context as the additional authenticated data (AAD)."
+ },
+ {
+  "id": "RAK-017",
+  "file": "raw-aes-keyring.md",
+  "line": 170,
+  "heading": "Operation > OnEncrypt",
+  "kw": "MUST",
+  "text": "- It MUST use this keyring's wrapping key as the AES-GCM cipher key."
+ },
+ {
+  "id": "RAK-018",
+  "file": "raw-aes-keyring.md",
+  "line": 171,
+  "heading": "Operation > OnEncrypt",
+  "kw": "MUST",
+  "text": "- It MUST use a cryptographically random generated IV of length specified by this keyring's wrapping algorithm."
+ },
+ {
+  "id": "RAK-019",
+  "file": "raw-aes-keyring.md",
+  "line": 172,
+  "heading": "Operation > OnEncrypt",
+  "kw": "MUST",
+  "text": "- It MUST use an authentication tag bit of length specified by this keyring's wrapping algorithm."
+ },
+ {
+  "id": "RAK-020",
+  "file": "raw-aes-keyring.md",
+  "line": 174,
+  "heading": "Operation > OnEncrypt",
+  "kw": "MUST",
+  "text": "Based on the ciphertext output of the AES-GCM decryption, the keyring MUST construct an encrypted data key with the following specifics:"
+ },
+ {
+  "id": "RAK-021",
+  "file": "raw-aes-keyring.md",
+  "line": 183,
+  "heading": "Operation > OnEncrypt",
+  "kw": "MUST",
+  "text": "The keyring MUST append the constructed encrypted data key to the encrypted data key list in the encryption materials."
+ },
+ {
+  "id": "RAK-022",
+  "file": "raw-aes-keyring.md",
+  "line": 186,
+  "heading": "Operation > OnEncrypt",
+  "kw": "MUST",
+  "text": "OnEncrypt MUST output the modified encryption materials."
+ },
+ {
+  "id": "RAK-023",
+  "file": "raw-aes-keyring.md",
+  "line": 190,
+  "heading": "Operation > OnDecrypt",
+  "kw": "MUST",
+  "text": "OnDecrypt MUST take decryption materials and a list of encrypted data keys as input."
+ },
+ {
+  "id": "RAK-024",
+  "file": "raw-aes-keyring.md",
+  "line": 193,
+  "heading": "Operation > OnDecrypt",
+  "kw": "MUST/MUST NOT",
+  "text": "If the decryption materials already contain a plaintext data key, the keyring MUST fail and MUST NOT modify the decryption materials."
+ },
+ {
+  "id": "RAK-025",
+  "file": "raw-aes-keyring.md",
+  "line": 197,
+  "heading": "Operation > OnDecrypt",
+  "kw": "MUST",
+  "text": "The keyring MUST attempt to serialize the decryption materials' encryption context according to the encryption context serialization specification."
+ },
+ {
+  "id": "RAK-026",
+  "file": "raw-aes-keyring.md",
+  "line": 197,
+  "heading": "Operation > OnDecrypt",
+  "kw": "MUST",
+  "text": "If the keyring cannot serialize the encryption context, OnDecrypt MUST fail."
+ },
+ {
+  "id": "RAK-027",
+  "file": "raw-aes-keyring.md",
+  "line": 201,
+  "heading": "Operation > OnDecrypt",
+  "kw": "MUST",
+  "text": "The keyring MUST perform the following actions on each encrypted data key in the input encrypted data key list, serially, until it successfully decrypts one."
+ },
+ {
+  "id": "RAK-028",
+  "file": "raw-aes-keyring.md",
+  "line": 204,
+  "heading": "Operation > OnDecrypt",
+  "kw": "MUST",
+  "text": "For each encrypted data key, the keyring MUST first attempt to deserialize the serialized ciphertext to obtain the encrypted key and authentication tag, and deserialize the serialized key provider info to obtain the key name, IV, IV length, and authentication tag length."
+ },
+ {
+  "id": "RAK-029",
+  "file": "raw-aes-keyring.md",
+  "line": 212,
+  "heading": "Operation > OnDecrypt",
+  "kw": "MUST",
+  "text": "- The ciphertext and key provider information MUST be successfully deserialized."
+ },
+ {
+  "id": "RAK-030",
+  "file": "raw-aes-keyring.md",
+  "line": 213,
+  "heading": "Operation > OnDecrypt",
+  "kw": "MUST",
+  "text": "- The key name obtained from the encrypted data key's key provider information MUST have a value equal to this keyring's key name."
+ },
+ {
+  "id": "RAK-031",
+  "file": "raw-aes-keyring.md",
+  "line": 214,
+  "heading": "Operation > OnDecrypt",
+  "kw": "MUST",
+  "text": "- The key provider ID of the encrypted data key MUST have a value equal to this keyring's key namespace."
+ },
+ {
+  "id": "RAK-032",
+  "file": "raw-aes-keyring.md",
+  "line": 215,
+  "heading": "Operation > OnDecrypt",
+  "kw": "MUST",
+  "text": "- The IV length obtained from the encrypted data key's key provider information MUST have a value equal to the length specified by this keyring's wrapping algorithm."
+ },
+ {
+  "id": "RAK-033",
+  "file": "raw-aes-keyring.md",
+  "line": 216,
+  "heading": "Operation > OnDecrypt",
+  "kw": "MUST",
+  "text": "- The authentication tag length obtained from the key provider information MUST have a value equal to the length specified by this keyring's wrapping algorithm."
+ },
+ {
+  "id": "RAK-034",
+  "file": "raw-aes-keyring.md",
+  "line": 220,
+  "heading": "Operation > OnDecrypt",
+  "kw": "MUST",
+  "text": "- It MUST use the encrypt key obtained from deserialization as the AES-GCM input ciphertext."
+ },
+ {
+  "id": "RAK-035",
+  "file": "raw-aes-keyring.md",
+  "line": 221,
+  "heading": "Operation > OnDecrypt",
+  "kw": "MUST",
+  "text": "- It MUST use the authentication tag obtained from deserialization as the AES-GCM input authentication tag."
+ },
+ {
+  "id": "RAK-036",
+  "file": "raw-aes-keyring.md",
+  "line": 222,
+  "heading": "Operation > OnDecrypt",
+  "kw": "MUST",
+  "text": "- It MUST use this keyring's wrapping key as the AES-GCM cipher key."
+ },
+ {
+  "id": "RAK-037",
+  "file": "raw-aes-keyring.md",
+  "line": 223,
+  "heading": "Operation > OnDecrypt",
+  "kw": "MUST",
+  "text": "- It MUST use the IV obtained from deserialization as the AES-GCM IV."
+ },
+ {
+  "id": "RAK-038",
+  "file": "raw-aes-keyring.md",
+  "line": 224,
+  "heading": "Operation > OnDecrypt",
+  "kw": "MUST",
+  "text": "- It MUST use the serialized encryption context as the AES-GCM AAD."
+ },
+ {
+  "id": "RAK-039",
+  "file": "raw-aes-keyring.md",
+  "line": 226,
+  "heading": "Operation > OnDecrypt",
+  "kw": "MUST",
+  "text": "If a decryption succeeds, this keyring MUST add the resulting plaintext data key to the decryption materials and return the modified materials."
+ },
+ {
+  "id": "RAK-040",
+  "file": "raw-aes-keyring.md",
+  "line": 229,
+  "heading": "Operation > OnDecrypt",
+  "kw": "MUST/MUST NOT",
+  "text": "If no decryption succeeds, the keyring MUST fail and MUST NOT modify the decryption materials."
+ },
+ {
+  "id": "HKR-001",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 42,
+  "heading": "Definitions > Conventions used in this document",
+  "kw": "MUST/MUST NOT/REQUIRED/SHALL/SHALL NOT/SHOULD/SHOULD NOT",
+  "text": "The key words \"MUST\", \"MUST NOT\", \"REQUIRED\", \"SHALL\", \"SHALL NOT\", \"SHOULD\", \"SHOULD NOT\", \"RECOMMENDED\", \"MAY\", and \"OPTIONAL\" in this document are to be interpreted as described in RFC 2119."
+ },
+ {
+  "id": "HKR-002",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 47,
+  "heading": "Interface",
+  "kw": "MUST",
+  "text": "MUST implement the AWS Encryption SDK Keyring interface"
+ },
+ {
+  "id": "HKR-003",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 53,
+  "heading": "Initialization",
+  "kw": "MUST",
+  "text": "- MUST provide a Keystore"
+ },
+ {
+  "id": "HKR-004",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 54,
+  "heading": "Initialization",
+  "kw": "MUST",
+  "text": "- MUST provide a cache limit TTL"
+ },
+ {
+  "id": "HKR-005",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 55,
+  "heading": "Initialization",
+  "kw": "MUST",
+  "text": "- MUST provide either a Branch Key Identifier or a Branch Key Supplier"
+ },
+ {
+  "id": "HKR-006",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 66,
+  "heading": "Initialization",
+  "kw": "MUST",
+  "text": "If the cache to initialize is a Storm Tracking Cryptographic Materials Cache then the Grace Period MUST be less than the cache limit TTL."
+ },
+ {
+  "id": "HKR-007",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 69,
+  "heading": "Initialization",
+  "kw": "MUST",
+  "text": "On initialization the Hierarchical Keyring MUST initialize a cryptographic-materials-cache with the configured cache limit TTL and the max cache size."
+ },
+ {
+  "id": "HKR-008",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 69,
+  "heading": "Initialization",
+  "kw": "MUST",
+  "text": "If no max cache size is provided, the cryptographic materials cache MUST be configured to a max cache size of 1000."
+ },
+ {
+  "id": "HKR-009",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 73,
+  "heading": "Initialization",
+  "kw": "MUST",
+  "text": "If the Hierarchical Keyring does NOT get a `Shared` cache on initialization, it MUST initialize a cryptographic-materials-cache with the user provided cache limit TTL and the entry capacity."
+ },
+ {
+  "id": "HKR-010",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 73,
+  "heading": "Initialization",
+  "kw": "MUST",
+  "text": "If no `cache` is provided, a `DefaultCache` MUST be configured with entry capacity of 1000."
+ },
+ {
+  "id": "HKR-011",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 80,
+  "heading": "Initialization > Cache Limit TTL",
+  "kw": "MUST",
+  "text": "The maximum amount of time in seconds that an entry within the cache may be used before it MUST be evicted."
+ },
+ {
+  "id": "HKR-012",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 80,
+  "heading": "Initialization > Cache Limit TTL",
+  "kw": "MUST",
+  "text": "The client MUST set a time-to-live (TTL) for branch key materials in the underlying cache."
+ },
+ {
+  "id": "HKR-013",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 80,
+  "heading": "Initialization > Cache Limit TTL",
+  "kw": "MUST",
+  "text": "This value MUST be greater than zero."
+ },
+ {
+  "id": "HKR-014",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 98,
+  "heading": "Initialization > Partition ID",
+  "kw": "MUST",
+  "text": "If provided, it MUST be interpreted as UTF8 bytes."
+ },
+ {
+  "id": "HKR-015",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 98,
+  "heading": "Initialization > Partition ID",
+  "kw": "MUST",
+  "text": "If the PartitionId is NOT provided by the user, it MUST be set to the 16 byte representation of a v4 UUID."
+ },
+ {
+  "id": "HKR-016",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 101,
+  "heading": "Initialization > Partition ID",
+  "kw": "MUST NOT",
+  "text": "The Partition ID MUST NOT be changed after initialization."
+ },
+ {
+  "id": "HKR-017",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 145,
+  "heading": "Operation > OnEncrypt",
+  "kw": "MUST",
+  "text": "OnEncrypt MUST take encryption materials as input."
+ },
+ {
+  "id": "HKR-018",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 150,
+  "heading": "Operation > OnEncrypt",
+  "kw": "MUST",
+  "text": "If the input encryption materials do not contain a plaintext data key, OnEncrypt MUST generate a random plaintext data key, according to the key length defined in the algorithm suite."
+ },
+ {
+  "id": "HKR-019",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 150,
+  "heading": "Operation > OnEncrypt",
+  "kw": "MUST",
+  "text": "The process used to generate this random plaintext data key MUST use a secure source of randomness."
+ },
+ {
+  "id": "HKR-020",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 154,
+  "heading": "Operation > OnEncrypt",
+  "kw": "MUST",
+  "text": "The hierarchical keyring MUST attempt to find branch key materials from the underlying cryptographic materials cache."
+ },
+ {
+  "id": "HKR-021",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 154,
+  "heading": "Operation > OnEncrypt",
+  "kw": "MUST",
+  "text": "The hierarchical keyring MUST use the formulas specified in Appendix A to compute the cache entry identifier."
+ },
+ {
+  "id": "HKR-022",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 159,
+  "heading": "Operation > OnEncrypt",
+  "kw": "MUST",
+  "text": "If a cache entry is found and the entry's TTL has not expired, the hierarchical keyring MUST use those branch key materials for key wrapping."
+ },
+ {
+  "id": "HKR-023",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 161,
+  "heading": "Operation > OnEncrypt",
+  "kw": "MUST",
+  "text": "There MUST be a check (cacheEntryWithinLimits) to make sure that for the cache entry found, who's TTL has NOT expired, `time.now() - cacheEntryCreationTime <= ttlSeconds` is true and valid for TTL of the Hierarchical Keyring getting the cache entry."
+ },
+ {
+  "id": "HKR-024",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 161,
+  "heading": "Operation > OnEncrypt",
+  "kw": "MUST",
+  "text": "If this is NOT true, then we MUST treat the cache entry as expired."
+ },
+ {
+  "id": "HKR-025",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 169,
+  "heading": "Operation > OnEncrypt",
+  "kw": "MUST",
+  "text": "If a cache entry is not found or the cache entry is expired, the hierarchical keyring MUST attempt to obtain the branch key materials by querying the backing branch keystore specified in the retrieve OnEncrypt branch key materials section."
+ },
+ {
+  "id": "HKR-026",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 172,
+  "heading": "Operation > OnEncrypt",
+  "kw": "MUST",
+  "text": "If the keyring is not able to retrieve branch key materials through the underlying cryptographic materials cache or it no longer has access to them through the backing keystore, OnEncrypt MUST fail."
+ },
+ {
+  "id": "HKR-027",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 178,
+  "heading": "Operation > OnEncrypt",
+  "kw": "MUST",
+  "text": "- MUST wrap a data key with the branch key materials according to the branch key wrapping section."
+ },
+ {
+  "id": "HKR-028",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 180,
+  "heading": "Operation > OnEncrypt",
+  "kw": "MUST/MUST NOT",
+  "text": "If the keyring is unable to wrap a plaintext data key, OnEncrypt MUST fail and MUST NOT modify the decryption materials."
+ },
+ {
+  "id": "HKR-029",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 183,
+  "heading": "Operation > OnEncrypt",
+  "kw": "MUST",
+  "text": "Otherwise, OnEncrypt MUST append a new encrypted data key to the encrypted data key list in the encryption materials, constructed as follows:"
+ },
+ {
+  "id": "HKR-030",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 186,
+  "heading": "Operation > OnEncrypt",
+  "kw": "MUST",
+  "text": "- ciphertext: MUST be serialized as the hierarchical keyring ciphertext"
+ },
+ {
+  "id": "HKR-031",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 187,
+  "heading": "Operation > OnEncrypt",
+  "kw": "MUST",
+  "text": "- key provider id: MUST be UTF8 Encoded \"aws-kms-hierarchy\""
+ },
+ {
+  "id": "HKR-032",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 188,
+  "heading": "Operation > OnEncrypt",
+  "kw": "MUST",
+  "text": "- key provider info: MUST be the UTF8 Encoded AWS DDB response `branch-key-id`"
+ },
+ {
+  "id": "HKR-033",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 196,
+  "heading": "Operation > OnEncrypt > Query Branch Keystore OnEncrypt",
+  "kw": "MUST",
+  "text": "OnEncrypt MUST call the Keystore's GetActiveBranchKey operation with the following inputs:"
+ },
+ {
+  "id": "HKR-034",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 200,
+  "heading": "Operation > OnEncrypt > Query Branch Keystore OnEncrypt",
+  "kw": "MUST",
+  "text": "If the Keystore's GetActiveBranchKey operation succeeds the keyring MUST put the returned branch key materials in the cache using the formula defined in Appendix A."
+ },
+ {
+  "id": "HKR-035",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 204,
+  "heading": "Operation > OnEncrypt > Query Branch Keystore OnEncrypt",
+  "kw": "MUST",
+  "text": "Otherwise, OnEncrypt MUST fail."
+ },
+ {
+  "id": "HKR-036",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 210,
+  "heading": "Operation > OnEncrypt > Branch Key Wrapping",
+  "kw": "MUST",
+  "text": "The hierarchical keyring MUST:"
+ },
+ {
+  "id": "HKR-037",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 219,
+  "heading": "Operation > OnEncrypt > Branch Key Wrapping",
+  "kw": "MUST",
+  "text": "- MUST use the `derivedBranchKey` as the AES-GCM cipher key."
+ },
+ {
+  "id": "HKR-038",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 220,
+  "heading": "Operation > OnEncrypt > Branch Key Wrapping",
+  "kw": "MUST",
+  "text": "- MUST use the plain text data key that will be wrapped by the `derivedBranchKey` as the AES-GCM message."
+ },
+ {
+  "id": "HKR-039",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 221,
+  "heading": "Operation > OnEncrypt > Branch Key Wrapping",
+  "kw": "MUST",
+  "text": "- MUST use the derived `IV` as the AES-GCM IV."
+ },
+ {
+  "id": "HKR-040",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 222,
+  "heading": "Operation > OnEncrypt > Branch Key Wrapping",
+  "kw": "MUST",
+  "text": "- MUST use an authentication tag byte of length 16."
+ },
+ {
+  "id": "HKR-041",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 223,
+  "heading": "Operation > OnEncrypt > Branch Key Wrapping",
+  "kw": "MUST",
+  "text": "- MUST use the serialized AAD as the AES-GCM AAD."
+ },
+ {
+  "id": "HKR-042",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 225,
+  "heading": "Operation > OnEncrypt > Branch Key Wrapping",
+  "kw": "MUST",
+  "text": "If OnEncrypt fails to do any of the above, OnEncrypt MUST fail."
+ },
+ {
+  "id": "HKR-043",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 229,
+  "heading": "Operation > OnDecrypt",
+  "kw": "MUST",
+  "text": "OnDecrypt MUST take decryption materials and a list of encrypted data keys as input."
+ },
+ {
+  "id": "HKR-044",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 234,
+  "heading": "Operation > OnDecrypt",
+  "kw": "MUST",
+  "text": "If the decryption materials already contain a `PlainTextDataKey`, OnDecrypt MUST fail."
+ },
+ {
+  "id": "HKR-045",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 236,
+  "heading": "Operation > OnDecrypt",
+  "kw": "MUST",
+  "text": "The set of encrypted data keys MUST first be filtered to match this keyring\u2019s configuration."
+ },
+ {
+  "id": "HKR-046",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 238,
+  "heading": "Operation > OnDecrypt",
+  "kw": "MUST",
+  "text": "- Its provider ID MUST match the UTF8 Encoded value of \u201caws-kms-hierarchy\u201d."
+ },
+ {
+  "id": "HKR-047",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 239,
+  "heading": "Operation > OnDecrypt",
+  "kw": "MUST",
+  "text": "- Deserialize the key provider info, if deserialization fails the next EDK in the set MUST be attempted."
+ },
+ {
+  "id": "HKR-048",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 240,
+  "heading": "Operation > OnDecrypt",
+  "kw": "MUST",
+  "text": "- The deserialized key provider info MUST be UTF8 Decoded and MUST match this keyring's configured `Branch Key Identifier`."
+ },
+ {
+  "id": "HKR-049",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 242,
+  "heading": "Operation > OnDecrypt",
+  "kw": "MUST",
+  "text": "For each encrypted data key in the filtered set, one at a time, OnDecrypt MUST attempt to decrypt the encrypted data key."
+ },
+ {
+  "id": "HKR-050",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 242,
+  "heading": "Operation > OnDecrypt",
+  "kw": "MUST",
+  "text": "If this attempt results in an error, then these errors MUST be collected."
+ },
+ {
+  "id": "HKR-051",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 245,
+  "heading": "Operation > OnDecrypt",
+  "kw": "MUST",
+  "text": "To decrypt each encrypted data key in the filtered set, the hierarchical keyring MUST attempt to find the corresponding branch key materials from the underlying cryptographic materials cache."
+ },
+ {
+  "id": "HKR-052",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 245,
+  "heading": "Operation > OnDecrypt",
+  "kw": "MUST",
+  "text": "The hierarchical keyring MUST use the OnDecrypt formula specified in Appendix A in order to compute the cache entry identifier."
+ },
+ {
+  "id": "HKR-053",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 251,
+  "heading": "Operation > OnDecrypt",
+  "kw": "MUST",
+  "text": "If a cache entry is found and the entry's TTL has not expired, the hierarchical keyring MUST use those branch key materials for key unwrapping."
+ },
+ {
+  "id": "HKR-054",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 253,
+  "heading": "Operation > OnDecrypt",
+  "kw": "MUST",
+  "text": "There MUST be a check (cacheEntryWithinLimits) to make sure that for the cache entry found, who's TTL has NOT expired, `time.now() - cacheEntryCreationTime <= ttlSeconds` is true and valid for TTL of the Hierarchical Keyring getting the cache entry."
+ },
+ {
+  "id": "HKR-055",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 253,
+  "heading": "Operation > OnDecrypt",
+  "kw": "MUST",
+  "text": "If this is NOT true, then we MUST treat the cache entry as expired."
+ },
+ {
+  "id": "HKR-056",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 261,
+  "heading": "Operation > OnDecrypt",
+  "kw": "MUST",
+  "text": "If a cache entry is not found or the cache entry is expired, the hierarchical keyring MUST attempt to obtain the branch key materials by calling the backing branch key store specified in the retrieve OnDecrypt branch key materials section."
+ },
+ {
+  "id": "HKR-057",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 265,
+  "heading": "Operation > OnDecrypt",
+  "kw": "MUST",
+  "text": "If the keyring is not able to retrieve `branch key materials` from the backing keystore then OnDecrypt MUST fail."
+ },
+ {
+  "id": "HKR-058",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 269,
+  "heading": "Operation > OnDecrypt",
+  "kw": "MUST",
+  "text": "- MUST unwrap the encrypted data key with the branch key materials according to the branch key unwrapping section."
+ },
+ {
+  "id": "HKR-059",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 271,
+  "heading": "Operation > OnDecrypt",
+  "kw": "MUST",
+  "text": "If a decryption succeeds, this keyring MUST add the resulting plaintext data key to the decryption materials and return the modified materials."
+ },
+ {
+  "id": "HKR-060",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 274,
+  "heading": "Operation > OnDecrypt",
+  "kw": "MUST/MUST NOT",
+  "text": "If OnDecrypt fails to successfully decrypt any encrypted data key, then it MUST yield an error that includes all the collected errors and MUST NOT modify the decryption materials."
+ },
+ {
+  "id": "HKR-061",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 284,
+  "heading": "Operation > OnDecrypt > GetItem Branch Keystore OnDecrypt",
+  "kw": "MUST",
+  "text": "OnDecrypt MUST calculate the following values:"
+ },
+ {
+  "id": "HKR-062",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 290,
+  "heading": "Operation > OnDecrypt > GetItem Branch Keystore OnDecrypt",
+  "kw": "MUST",
+  "text": "OnDecrypt MUST call the Keystore's GetBranchKeyVersion operation with the following inputs:"
+ },
+ {
+  "id": "HKR-063",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 295,
+  "heading": "Operation > OnDecrypt > GetItem Branch Keystore OnDecrypt",
+  "kw": "MUST",
+  "text": "If the Keystore's GetBranchKeyVersion operation succeeds the keyring MUST put the returned branch key materials in the cache using the formula defined in Appendix A."
+ },
+ {
+  "id": "HKR-064",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 299,
+  "heading": "Operation > OnDecrypt > GetItem Branch Keystore OnDecrypt",
+  "kw": "MUST",
+  "text": "Otherwise, OnDecrypt MUST fail."
+ },
+ {
+  "id": "HKR-065",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 303,
+  "heading": "Operation > OnDecrypt > Branch Key Unwrapping",
+  "kw": "MUST",
+  "text": "To decrypt an encrypted data key with a branch key, the hierarchical keyring MUST:"
+ },
+ {
+  "id": "HKR-066",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 316,
+  "heading": "Operation > OnDecrypt > Branch Key Unwrapping",
+  "kw": "MUST",
+  "text": "- It MUST use the `encrypted key` obtained from deserialization as the AES-GCM input ciphertext."
+ },
+ {
+  "id": "HKR-067",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 317,
+  "heading": "Operation > OnDecrypt > Branch Key Unwrapping",
+  "kw": "MUST",
+  "text": "- It MUST use the `authentication tag` obtained from deserialization as the AES-GCM input authentication tag."
+ },
+ {
+  "id": "HKR-068",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 318,
+  "heading": "Operation > OnDecrypt > Branch Key Unwrapping",
+  "kw": "MUST",
+  "text": "- It MUST use the `derivedBranchKey` as the AES-GCM cipher key."
+ },
+ {
+  "id": "HKR-069",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 319,
+  "heading": "Operation > OnDecrypt > Branch Key Unwrapping",
+  "kw": "MUST",
+  "text": "- It MUST use the `IV` obtained from deserialization as the AES-GCM input IV."
+ },
+ {
+  "id": "HKR-070",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 320,
+  "heading": "Operation > OnDecrypt > Branch Key Unwrapping",
+  "kw": "MUST",
+  "text": "- It MUST use the serialized encryption context as the AES-GCM AAD."
+ },
+ {
+  "id": "HKR-071",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 322,
+  "heading": "Operation > OnDecrypt > Branch Key Unwrapping",
+  "kw": "MUST",
+  "text": "If OnDecrypt fails to do any of the above, OnDecrypt MUST fail."
+ },
+ {
+  "id": "HKR-072",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 326,
+  "heading": "Operation > Branch Key Wrapping and Unwrapping AAD",
+  "kw": "MUST",
+  "text": "To Encrypt and Decrypt the `wrappedDerivedBranchKey` the keyring MUST include the following values as part of the AAD for the AES Encrypt/Decrypt calls."
+ },
+ {
+  "id": "HKR-073",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 329,
+  "heading": "Operation > Branch Key Wrapping and Unwrapping AAD",
+  "kw": "MUST",
+  "text": "To construct the AAD, the keyring MUST concatenate the following values"
+ },
+ {
+  "id": "HKR-074",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 344,
+  "heading": "Operation > Branch Key Wrapping and Unwrapping AAD",
+  "kw": "MUST",
+  "text": "If the keyring cannot serialize the encryption context, the operation MUST fail."
+ },
+ {
+  "id": "HKR-075",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 348,
+  "heading": "Appendix A: Cache Entry Identifier Formulas",
+  "kw": "MUST",
+  "text": "When accessing the underlying cryptographic materials cache, the hierarchical keyring MUST use the formulas specified in this appendix in order to compute the cache entry identifier."
+ },
+ {
+  "id": "HKR-076",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 380,
+  "heading": "Appendix A: Cache Entry Identifier Formulas > Preliminaries > Partition ID",
+  "kw": "MUST/SHOULD",
+  "text": "It can either be a String provided by the user, which MUST be interpreted as the bytes of UTF-8 Encoding of the String, or a v4 UUID, which SHOULD be interpreted as the 16 byte representation of the UUID."
+ },
+ {
+  "id": "HKR-077",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 385,
+  "heading": "Appendix A: Cache Entry Identifier Formulas > Preliminaries > Partition ID",
+  "kw": "MUST",
+  "text": "The constructor of the Hierarchical Keyring MUST record these bytes at construction time."
+ },
+ {
+  "id": "HKR-078",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 404,
+  "heading": "Appendix A: Cache Entry Identifier Formulas > Preliminaries > Resource Suffix",
+  "kw": "MUST",
+  "text": "The aforementioned 4 definitions (Resource Identifier, Scope Identifier, Partition ID, and Resource Suffix) MUST be appended together with the null byte, 0x00, and the SHA384 of the result should be taken as the final cache identifier."
+ },
+ {
+  "id": "HKR-079",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 411,
+  "heading": "Appendix A: Cache Entry Identifier Formulas > Encryption Materials",
+  "kw": "MUST",
+  "text": "When the hierarchical keyring receives an OnEncrypt request, the cache entry identifier MUST be calculated as the SHA-384 hash of the following byte strings, in the order listed:"
+ },
+ {
+  "id": "HKR-080",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 415,
+  "heading": "Appendix A: Cache Entry Identifier Formulas > Encryption Materials",
+  "kw": "MUST",
+  "text": "- MUST be the Resource ID for the Hierarchical Keyring (0x02)"
+ },
+ {
+  "id": "HKR-081",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 416,
+  "heading": "Appendix A: Cache Entry Identifier Formulas > Encryption Materials",
+  "kw": "MUST",
+  "text": "- MUST be the Scope ID for Encrypt (0x01)"
+ },
+ {
+  "id": "HKR-082",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 417,
+  "heading": "Appendix A: Cache Entry Identifier Formulas > Encryption Materials",
+  "kw": "MUST",
+  "text": "- MUST be the Partition ID for the Hierarchical Keyring"
+ },
+ {
+  "id": "HKR-083",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 419,
+  "heading": "Appendix A: Cache Entry Identifier Formulas > Encryption Materials",
+  "kw": "MUST",
+  "text": "- MUST be the UTF8 encoded Logical Key Store Name of the keystore for the Hierarchical Keyring"
+ },
+ {
+  "id": "HKR-084",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 420,
+  "heading": "Appendix A: Cache Entry Identifier Formulas > Encryption Materials",
+  "kw": "MUST",
+  "text": "- MUST be the UTF8 encoded branch-key-id"
+ },
+ {
+  "id": "HKR-085",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 460,
+  "heading": "Appendix A: Cache Entry Identifier Formulas > Decryption Materials",
+  "kw": "MUST",
+  "text": "When the hierarchical keyring receives an OnDecrypt request, it MUST calculate the cache entry identifier as the SHA-384 hash of the following byte strings, in the order listed:"
+ },
+ {
+  "id": "HKR-086",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 464,
+  "heading": "Appendix A: Cache Entry Identifier Formulas > Decryption Materials",
+  "kw": "MUST",
+  "text": "- MUST be the Resource ID for the Hierarchical Keyring (0x02)"
+ },
+ {
+  "id": "HKR-087",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 465,
+  "heading": "Appendix A: Cache Entry Identifier Formulas > Decryption Materials",
+  "kw": "MUST",
+  "text": "- MUST be the Scope ID for Decrypt (0x02)"
+ },
+ {
+  "id": "HKR-088",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 466,
+  "heading": "Appendix A: Cache Entry Identifier Formulas > Decryption Materials",
+  "kw": "MUST",
+  "text": "- MUST be the Partition ID for the Hierarchical Keyring"
+ },
+ {
+  "id": "HKR-089",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 468,
+  "heading": "Appendix A: Cache Entry Identifier Formulas > Decryption Materials",
+  "kw": "MUST",
+  "text": "- MUST be the UTF8 encoded Logical Key Store Name of the keystore for the Hierarchical Keyring"
+ },
+ {
+  "id": "HKR-090",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 469,
+  "heading": "Appendix A: Cache Entry Identifier Formulas > Decryption Materials",
+  "kw": "MUST",
+  "text": "- MUST be the UTF8 encoded branch-key-id"
+ },
+ {
+  "id": "HKR-091",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 470,
+  "heading": "Appendix A: Cache Entry Identifier Formulas > Decryption Materials",
+  "kw": "MUST",
+  "text": "- MUST be the UTF8 encoded branch-key-version"
+ },
+ {
+  "id": "HKR-092",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 526,
+  "heading": "Shared Cache Considerations",
+  "kw": "MUST",
+  "text": "Users MUST make sure that all of Partition ID, Logical Key Store Name of the Key Store for the Hierarchical Keyring and Branch Key ID are set to be the same for two Hierarchical Keyrings if and only they want the keyrings to share cache entries."
+ },
+ {
+  "id": "HKR-093",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 547,
+  "heading": "Shared Cache Considerations > Logical Key Store Name",
+  "kw": "MUST",
+  "text": "> Note: Users MUST NEVER have two different physical Key Stores with the same Logical Key Store Name."
+ },
+ {
+  "id": "HKR-094",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 549,
+  "heading": "Shared Cache Considerations > Logical Key Store Name",
+  "kw": "MUST",
+  "text": "Logical Key Store Name MUST be converted to UTF8 Bytes to be used in the cache identifiers."
+ },
+ {
+  "id": "HKR-095",
+  "file": "aws-kms/aws-kms-hierarchical-keyring.md",
+  "line": 566,
+  "heading": "Branch Key Supplier",
+  "kw": "MUST",
+  "text": "This operation MUST take in an encryption context as input, and return a branch key id (string) as output."
+ },
+ {
+  "id": "MRK-001",
+  "file": "aws-kms/aws-kms-mrk-match-for-decrypt.md",
+  "line": 33,
+  "heading": "Definitions > Conventions used in this document",
+  "kw": "MUST/MUST NOT/REQUIRED/SHALL/SHALL NOT/SHOULD/SHOULD NOT",
+  "text": "The key words \"MUST\", \"MUST NOT\", \"REQUIRED\", \"SHALL\", \"SHALL NOT\", \"SHOULD\", \"SHOULD NOT\", \"RECOMMENDED\", \"MAY\", and \"OPTIONAL\" in this document are to be interpreted as described in RFC 2119."
+ },
+ {
+  "id": "MRK-002",
+  "file": "aws-kms/aws-kms-mrk-match-for-decrypt.md",
+  "line": 38,
+  "heading": "Implementation",
+  "kw": "MUST",
+  "text": "The caller MUST provide:"
+ },
+ {
+  "id": "MRK-003",
+  "file": "aws-kms/aws-kms-mrk-match-for-decrypt.md",
+  "line": 42,
+  "heading": "Implementation",
+  "kw": "MUST",
+  "text": "If both identifiers are identical, this function MUST return `true`."
+ },
+ {
+  "id": "MRK-004",
+  "file": "aws-kms/aws-kms-mrk-match-for-decrypt.md",
+  "line": 42,
+  "heading": "Implementation",
+  "kw": "MUST",
+  "text": "Otherwise if either input is not identified as a multi-Region key, then this function MUST return `false`."
+ },
+ {
+  "id": "MRK-005",
+  "file": "aws-kms/aws-kms-mrk-match-for-decrypt.md",
+  "line": 42,
+  "heading": "Implementation",
+  "kw": "MUST",
+  "text": "Otherwise if both inputs are identified as a multi-Region keys, this function MUST return the result of comparing the `partition`, `service`, `accountId`, `resourceType`, and `resource` parts of both ARN inputs."
+ },
+ {
+  "id": "CMI-001",
+  "file": "cmm-interface.md",
+  "line": 35,
+  "heading": "Overview",
+  "kw": "MUST",
+  "text": "The CMM interface describes the interface that all CMMs MUST implement."
+ },
+ {
+  "id": "CMI-002",
+  "file": "cmm-interface.md",
+  "line": 44,
+  "heading": "Definitions > Conventions used in this document",
+  "kw": "MUST/MUST NOT/REQUIRED/SHALL/SHALL NOT/SHOULD/SHOULD NOT",
+  "text": "The key words \"MUST\", \"MUST NOT\", \"REQUIRED\", \"SHALL\", \"SHALL NOT\", \"SHOULD\", \"SHOULD NOT\", \"RECOMMENDED\", \"MAY\", and \"OPTIONAL\" in this document are to be interpreted as described in RFC 2119."
+ },
+ {
+  "id": "CMI-003",
+  "file": "cmm-interface.md",
+  "line": 70,
+  "heading": "Interface > Inputs > Encryption Materials Request",
+  "kw": "MUST",
+  "text": "The encryption materials request MUST include the following:"
+ },
+ {
+  "id": "CMI-004",
+  "file": "cmm-interface.md",
+  "line": 81,
+  "heading": "Interface > Inputs > Encryption Materials Request",
+  "kw": "MUST",
+  "text": "- This value represents the maximum length of the plaintext to be encrypted using the returned materials. The length of the plaintext to be encrypted MUST not be larger than this value."
+ },
+ {
+  "id": "CMI-005",
+  "file": "cmm-interface.md",
+  "line": 89,
+  "heading": "Interface > Inputs > Decrypt Materials Request",
+  "kw": "MUST",
+  "text": "The decrypt materials request MUST include the following:"
+ },
+ {
+  "id": "CMI-006",
+  "file": "cmm-interface.md",
+  "line": 103,
+  "heading": "Interface > Behaviors",
+  "kw": "MUST",
+  "text": "The CMM Interface MUST support the following behaviors:"
+ },
+ {
+  "id": "CMI-007",
+  "file": "cmm-interface.md",
+  "line": 110,
+  "heading": "Interface > Behaviors > Get Encryption Materials",
+  "kw": "MUST",
+  "text": "When the CMM gets an encryption materials request, it MUST return encryption materials appropriate for the request."
+ },
+ {
+  "id": "CMI-008",
+  "file": "cmm-interface.md",
+  "line": 113,
+  "heading": "Interface > Behaviors > Get Encryption Materials",
+  "kw": "MUST",
+  "text": "The encryption materials returned MUST include the following:"
+ },
+ {
+  "id": "CMI-009",
+  "file": "cmm-interface.md",
+  "line": 116,
+  "heading": "Interface > Behaviors > Get Encryption Materials",
+  "kw": "SHOULD",
+  "text": "- If the encryption materials request contains an algorithm suite, the encryption materials returned SHOULD contain the same algorithm suite."
+ },
+ {
+  "id": "CMI-010",
+  "file": "cmm-interface.md",
+  "line": 119,
+  "heading": "Interface > Behaviors > Get Encryption Materials",
+  "kw": "MUST",
+  "text": "- Every encrypted data key in this list MUST correspond to the above plaintext data key."
+ },
+ {
+  "id": "CMI-011",
+  "file": "cmm-interface.md",
+  "line": 126,
+  "heading": "Interface > Behaviors > Get Encryption Materials",
+  "kw": "MUST",
+  "text": "- The CMM MUST include a signing key."
+ },
+ {
+  "id": "CMI-012",
+  "file": "cmm-interface.md",
+  "line": 127,
+  "heading": "Interface > Behaviors > Get Encryption Materials",
+  "kw": "SHOULD",
+  "text": "- The CMM SHOULD also add a key-value pair using the reserved key `aws-crypto-public-key` to the encryption context. If it does, the mapped value SHOULD be the signature verification key corresponding to the signing key."
+ },
+ {
+  "id": "CMI-013",
+  "file": "cmm-interface.md",
+  "line": 132,
+  "heading": "Interface > Behaviors > Get Encryption Materials",
+  "kw": "SHOULD NOT",
+  "text": "- The CMM SHOULD NOT add a key-value pair using the reserved key `aws-crypto-public-key` to the encryption context."
+ },
+ {
+  "id": "CMI-014",
+  "file": "cmm-interface.md",
+  "line": 134,
+  "heading": "Interface > Behaviors > Get Encryption Materials",
+  "kw": "MUST",
+  "text": "The CMM MUST ensure that the encryption materials returned are valid."
+ },
+ {
+  "id": "CMI-015",
+  "file": "cmm-interface.md",
+  "line": 136,
+  "heading": "Interface > Behaviors > Get Encryption Materials",
+  "kw": "MUST",
+  "text": "- The encryption materials returned MUST follow the specification for encryption-materials."
+ },
+ {
+  "id": "CMI-016",
+  "file": "cmm-interface.md",
+  "line": 137,
+  "heading": "Interface > Behaviors > Get Encryption Materials",
+  "kw": "MUST",
+  "text": "- The value of the plaintext data key MUST be non-NULL."
+ },
+ {
+  "id": "CMI-017",
+  "file": "cmm-interface.md",
+  "line": 138,
+  "heading": "Interface > Behaviors > Get Encryption Materials",
+  "kw": "MUST",
+  "text": "- The plaintext data key length MUST be equal to the key derivation input length."
+ },
+ {
+  "id": "CMI-018",
+  "file": "cmm-interface.md",
+  "line": 139,
+  "heading": "Interface > Behaviors > Get Encryption Materials",
+  "kw": "MUST",
+  "text": "- The encrypted data keys list MUST contain at least one encrypted data key."
+ },
+ {
+  "id": "CMI-019",
+  "file": "cmm-interface.md",
+  "line": 140,
+  "heading": "Interface > Behaviors > Get Encryption Materials",
+  "kw": "MUST",
+  "text": "- If the algorithm suite contains a signing algorithm, the encryption materials returned MUST include the generated signing key."
+ },
+ {
+  "id": "CMI-020",
+  "file": "cmm-interface.md",
+  "line": 141,
+  "heading": "Interface > Behaviors > Get Encryption Materials",
+  "kw": "MUST",
+  "text": "- For every key in Required Encryption Context Keys there MUST be a matching key in the Encryption Context."
+ },
+ {
+  "id": "CMI-021",
+  "file": "cmm-interface.md",
+  "line": 143,
+  "heading": "Interface > Behaviors > Get Encryption Materials",
+  "kw": "MUST",
+  "text": "- The Required Encryption Context Keys MUST be a super set of the Required Encryption Context Keys in the encryption materials request."
+ },
+ {
+  "id": "CMI-022",
+  "file": "cmm-interface.md",
+  "line": 148,
+  "heading": "Interface > Behaviors > Decrypt Materials",
+  "kw": "MUST",
+  "text": "When the CMM gets a decrypt materials request, it MUST return decryption materials appropriate for the request."
+ },
+ {
+  "id": "CMI-023",
+  "file": "cmm-interface.md",
+  "line": 151,
+  "heading": "Interface > Behaviors > Decrypt Materials",
+  "kw": "SHOULD",
+  "text": "If the requested algorithm suite does not include a signing algorithm but the encryption context includes the reserved `aws-crypto-public-key` key, the operation SHOULD fail."
+ },
+ {
+  "id": "CMI-024",
+  "file": "cmm-interface.md",
+  "line": 151,
+  "heading": "Interface > Behaviors > Decrypt Materials",
+  "kw": "SHOULD",
+  "text": "Likewise, if the requested algorithm suite includes a signing algorithm but the encryption context does not include the reserved `aws-crypto-public-key` key, the operation SHOULD fail."
+ },
+ {
+  "id": "CMI-025",
+  "file": "cmm-interface.md",
+  "line": 154,
+  "heading": "Interface > Behaviors > Decrypt Materials",
+  "kw": "MUST",
+  "text": "The CMM MUST validate the Encryption Context by comparing it to the customer supplied Reproduced Encryption Context in decrypt materials request."
+ },
+ {
+  "id": "CMI-026",
+  "file": "cmm-interface.md",
+  "line": 154,
+  "heading": "Interface > Behaviors > Decrypt Materials",
+  "kw": "MUST",
+  "text": "For every key that exists in both Reproduced Encryption Context and Encryption Context, the values MUST be equal or the operation MUST fail."
+ },
+ {
+  "id": "CMI-027",
+  "file": "cmm-interface.md",
+  "line": 165,
+  "heading": "Interface > Behaviors > Decrypt Materials",
+  "kw": "MUST",
+  "text": "The decryption materials returned MUST include the following:"
+ },
+ {
+  "id": "CMI-028",
+  "file": "cmm-interface.md",
+  "line": 170,
+  "heading": "Interface > Behaviors > Decrypt Materials",
+  "kw": "SHOULD",
+  "text": "- The operations made on the encryption context on the Get Encryption Materials call SHOULD be inverted on the Decrypt Materials call."
+ },
+ {
+  "id": "CMI-029",
+  "file": "cmm-interface.md",
+  "line": 172,
+  "heading": "Interface > Behaviors > Decrypt Materials",
+  "kw": "SHOULD",
+  "text": "- All key-value pairs that exist in Reproduced Encryption Context but do not exist in encryption context on the decrypt materials request SHOULD be appended to the decryption materials."
+ },
+ {
+  "id": "CMI-030",
+  "file": "cmm-interface.md",
+  "line": 176,
+  "heading": "Interface > Behaviors > Decrypt Materials",
+  "kw": "SHOULD",
+  "text": "- If the decrypt materials request contains an algorithm suite, the decryption materials returned SHOULD contain the same algorithm suite."
+ },
+ {
+  "id": "CMI-031",
+  "file": "cmm-interface.md",
+  "line": 179,
+  "heading": "Interface > Behaviors > Decrypt Materials",
+  "kw": "MUST",
+  "text": "- This set MUST include all keys added to the decryption materials encryption context that existed in the decrypt materials request's reproduced encryption context but did not exist in the decrypt materials request's encryption context."
+ },
+ {
+  "id": "CMI-032",
+  "file": "cmm-interface.md",
+  "line": 182,
+  "heading": "Interface > Behaviors > Decrypt Materials",
+  "kw": "MUST",
+  "text": "- All keys in this set MUST exist in the decryption materials encryption context."
+ },
+ {
+  "id": "CMI-033",
+  "file": "cmm-interface.md",
+  "line": 184,
+  "heading": "Interface > Behaviors > Decrypt Materials",
+  "kw": "MUST",
+  "text": "If the algorithm suite obtained from the decryption request contains a signing algorithm, the decryption materials MUST include the signature verification key."
+ },
+ {
+  "id": "CMI-034",
+  "file": "cmm-interface.md",
+  "line": 187,
+  "heading": "Interface > Behaviors > Decrypt Materials",
+  "kw": "MUST",
+  "text": "The CMM MUST ensure that the decryption materials returned are valid."
+ },
+ {
+  "id": "CMI-035",
+  "file": "cmm-interface.md",
+  "line": 189,
+  "heading": "Interface > Behaviors > Decrypt Materials",
+  "kw": "MUST",
+  "text": "- The decryption materials returned MUST follow the specification for decryption-materials."
+ },
+ {
+  "id": "CMI-036",
+  "file": "cmm-interface.md",
+  "line": 190,
+  "heading": "Interface > Behaviors > Decrypt Materials",
+  "kw": "MUST",
+  "text": "- The value of the plaintext data key MUST be non-NULL."
+ },
+ {
+  "id": "CMI-037",
+  "file": "cmm-interface.md",
+  "line": 191,
+  "heading": "Interface > Behaviors > Decrypt Materials",
+  "kw": "MUST",
+  "text": "- The plaintext data key returned MUST correspond with at least one of the encrypted data keys."
+ },
+ {
+  "id": "DCM-001",
+  "file": "default-cmm.md",
+  "line": 50,
+  "heading": "Definitions > Conventions used in this document",
+  "kw": "MUST/MUST NOT/REQUIRED/SHALL/SHALL NOT/SHOULD/SHOULD NOT",
+  "text": "The key words \"MUST\", \"MUST NOT\", \"REQUIRED\", \"SHALL\", \"SHALL NOT\", \"SHOULD\", \"SHOULD NOT\", \"RECOMMENDED\", \"MAY\", and \"OPTIONAL\" in this document are to be interpreted as described in RFC 2119."
+ },
+ {
+  "id": "DCM-002",
+  "file": "default-cmm.md",
+  "line": 55,
+  "heading": "Initialization",
+  "kw": "MUST",
+  "text": "On default CMM initialization, the caller MUST provide the following value:"
+ },
+ {
+  "id": "DCM-003",
+  "file": "default-cmm.md",
+  "line": 69,
+  "heading": "Behaviors > Get Encryption Materials",
+  "kw": "SHOULD",
+  "text": "Adding the key `aws-crypto-public-key` SHOULD be done to a copy of the encryption context so that the caller's encryption context is not mutated."
+ },
+ {
+  "id": "DCM-004",
+  "file": "default-cmm.md",
+  "line": 69,
+  "heading": "Behaviors > Get Encryption Materials",
+  "kw": "MUST",
+  "text": "If the encryption context included in the encryption materials request already contains the `aws-crypto-public-key` key, this operation MUST fail rather than overwrite the associated value."
+ },
+ {
+  "id": "DCM-005",
+  "file": "default-cmm.md",
+  "line": 78,
+  "heading": "Behaviors > Get Encryption Materials",
+  "kw": "MUST",
+  "text": "- If the encryption materials request does not contain an algorithm suite, the operation MUST add the default algorithm suite for the commitment policy as the algorithm suite in the encryption materials returned."
+ },
+ {
+  "id": "DCM-006",
+  "file": "default-cmm.md",
+  "line": 81,
+  "heading": "Behaviors > Get Encryption Materials",
+  "kw": "MUST",
+  "text": "- If the encryption materials request does contain an algorithm suite, the request MUST fail if the algorithm suite is not supported by the commitment policy on the request."
+ },
+ {
+  "id": "DCM-007",
+  "file": "default-cmm.md",
+  "line": 83,
+  "heading": "Behaviors > Get Encryption Materials",
+  "kw": "MUST",
+  "text": "- If the encryption materials request does contain an algorithm suite, the encryption materials returned MUST contain the same algorithm suite."
+ },
+ {
+  "id": "DCM-008",
+  "file": "default-cmm.md",
+  "line": 86,
+  "heading": "Behaviors > Get Encryption Materials",
+  "kw": "MUST",
+  "text": "If the algorithm suite contains a signing algorithm, the default CMM MUST Generate a signing key."
+ },
+ {
+  "id": "DCM-009",
+  "file": "default-cmm.md",
+  "line": 89,
+  "heading": "Behaviors > Get Encryption Materials",
+  "kw": "MUST",
+  "text": "If the algorithm suite contains a signing algorithm, the default CMM MUST Add the key-value pair of key `aws-crypto-public-key`, value `base64-encoded public verification key` to the encryption context."
+ },
+ {
+  "id": "DCM-010",
+  "file": "default-cmm.md",
+  "line": 95,
+  "heading": "Behaviors > Get Encryption Materials",
+  "kw": "MUST",
+  "text": "On each call to Get Encryption Materials, the default CMM MUST make a call to its keyring's On Encrypt operation."
+ },
+ {
+  "id": "DCM-011",
+  "file": "default-cmm.md",
+  "line": 99,
+  "heading": "Behaviors > Get Encryption Materials",
+  "kw": "MUST",
+  "text": "The default CMM MUST obtain the Plaintext Data Key from the On Encrypt Response and include it in the encryption materials returned."
+ },
+ {
+  "id": "DCM-012",
+  "file": "default-cmm.md",
+  "line": 103,
+  "heading": "Behaviors > Get Encryption Materials",
+  "kw": "MUST",
+  "text": "The default CMM MUST obtain the Encrypted Data Keys from the On Encrypt Response and include it in the encryption materials returned."
+ },
+ {
+  "id": "DCM-013",
+  "file": "default-cmm.md",
+  "line": 110,
+  "heading": "Behaviors > Decrypt Materials",
+  "kw": "MUST",
+  "text": "If the algorithm suite contains a signing algorithm, the default CMM MUST extract the verification key from the encryption context under the reserved `aws-crypto-public-key` key."
+ },
+ {
+  "id": "DCM-014",
+  "file": "default-cmm.md",
+  "line": 110,
+  "heading": "Behaviors > Decrypt Materials",
+  "kw": "MUST",
+  "text": "If this key is not present in the encryption context, the operation MUST fail without returning any decryption materials."
+ },
+ {
+  "id": "DCM-015",
+  "file": "default-cmm.md",
+  "line": 116,
+  "heading": "Behaviors > Decrypt Materials",
+  "kw": "MUST",
+  "text": "If the algorithm suite does not contain a signing algorithm, but the encryption context includes the reserved `aws-crypto-public-key` key, the operation MUST fail without returning any decryption materials."
+ },
+ {
+  "id": "DCM-016",
+  "file": "default-cmm.md",
+  "line": 120,
+  "heading": "Behaviors > Decrypt Materials",
+  "kw": "MUST",
+  "text": "The request MUST fail if the algorithm suite on the request is not supported by the commitment policy on the request."
+ },
+ {
+  "id": "DCM-017",
+  "file": "default-cmm.md",
+  "line": 122,
+  "heading": "Behaviors > Decrypt Materials",
+  "kw": "MUST",
+  "text": "On each call to Decrypt Materials, the default CMM MUST make a call to its keyring's On Decrypt operation."
+ },
+ {
+  "id": "DCM-018",
+  "file": "default-cmm.md",
+  "line": 126,
+  "heading": "Behaviors > Decrypt Materials",
+  "kw": "MUST",
+  "text": "The default CMM MUST obtain the Plaintext Data Key from the On Decrypt response and include it in the decrypt materials returned."
+ },
+ {
+  "id": "DCM-019",
+  "file": "default-cmm.md",
+  "line": 132,
+  "heading": "Legacy Behavior : Master Key Providers",
+  "kw": "MUST",
+  "text": "For implementations that support master key providers, the default CMM MUST support generating, encrypting, and decrypting data keys using master key providers."
+ },
+ {
+  "id": "DCM-020",
+  "file": "default-cmm.md",
+  "line": 138,
+  "heading": "Legacy Behavior : Master Key Providers > Legacy",
+  "kw": "SHOULD NOT",
+  "text": "Master key providers SHOULD NOT be included in any additional implementations."
+ },
+ {
+  "id": "DCM-021",
+  "file": "default-cmm.md",
+  "line": 146,
+  "heading": "Legacy Behavior : Master Key Providers > Initialization",
+  "kw": "MUST",
+  "text": "On default CMM initialization, the caller MUST provide the following value:"
+ },
+ {
+  "id": "DCM-022",
+  "file": "default-cmm.md",
+  "line": 155,
+  "heading": "Legacy Behavior : Master Key Providers > Get Encryption Materials (master key provider)",
+  "kw": "MUST",
+  "text": "The default CMM MUST call its master key provider's Get Master Keys for Encryption operation to obtain a list of master keys to use."
+ },
+ {
+  "id": "DCM-023",
+  "file": "default-cmm.md",
+  "line": 159,
+  "heading": "Legacy Behavior : Master Key Providers > Get Encryption Materials (master key provider)",
+  "kw": "MUST",
+  "text": "If the master key provider does not identify which master key MUST generate the data key, the default CMM MUST use the first master key in the list for that purpose."
+ },
+ {
+  "id": "DCM-024",
+  "file": "default-cmm.md",
+  "line": 159,
+  "heading": "Legacy Behavior : Master Key Providers > Get Encryption Materials (master key provider)",
+  "kw": "MUST",
+  "text": "The default CMM MUST generate the data key using this master key's Generate Data Key operation."
+ },
+ {
+  "id": "DCM-025",
+  "file": "default-cmm.md",
+  "line": 164,
+  "heading": "Legacy Behavior : Master Key Providers > Get Encryption Materials (master key provider)",
+  "kw": "MUST",
+  "text": "For each remaining master key, the default CMM MUST call the master key's Encrypt Data Key operation with the plaintext data key."
+ },
+ {
+  "id": "DCM-026",
+  "file": "default-cmm.md",
+  "line": 173,
+  "heading": "Legacy Behavior : Master Key Providers > Decrypt Materials (master key provider)",
+  "kw": "MUST",
+  "text": "The default CMM MUST call its master key provider's Decrypt Data Key operation."
+ },
+ {
+  "id": "CMC-001",
+  "file": "cryptographic-materials-cache.md",
+  "line": 43,
+  "heading": "Overview",
+  "kw": "MUST",
+  "text": "This document describes the interface that all CMCs MUST implement."
+ },
+ {
+  "id": "CMC-002",
+  "file": "cryptographic-materials-cache.md",
+  "line": 51,
+  "heading": "Definitions > Conventions used in this document",
+  "kw": "MUST/MUST NOT/REQUIRED/SHALL/SHALL NOT/SHOULD/SHOULD NOT",
+  "text": "The key words \"MUST\", \"MUST NOT\", \"REQUIRED\", \"SHALL\", \"SHALL NOT\", \"SHOULD\", \"SHOULD NOT\", \"RECOMMENDED\", \"MAY\", and \"OPTIONAL\" in this document are to be interpreted as described in RFC 2119."
+ },
+ {
+  "id": "CMC-003",
+  "file": "cryptographic-materials-cache.md",
+  "line": 63,
+  "heading": "Concepts > Cache Entry",
+  "kw": "MUST",
+  "text": "A cache entry represents an entry in the cryptographic materials cache and MUST have the following information."
+ },
+ {
+  "id": "CMC-004",
+  "file": "cryptographic-materials-cache.md",
+  "line": 93,
+  "heading": "Concepts > Cache Entry > Usage Metadata",
+  "kw": "SHOULD",
+  "text": "Updating usage metadata SHOULD be atomic."
+ },
+ {
+  "id": "CMC-005",
+  "file": "cryptographic-materials-cache.md",
+  "line": 108,
+  "heading": "Concepts > Time-to-live (TTL)",
+  "kw": "MUST",
+  "text": "Each cache entry has a time-to-live (TTL) that represents a point in time at which the cache entry MUST be considered invalid."
+ },
+ {
+  "id": "CMC-006",
+  "file": "cryptographic-materials-cache.md",
+  "line": 108,
+  "heading": "Concepts > Time-to-live (TTL)",
+  "kw": "MUST NOT",
+  "text": "After a cache entry's TTL has elapsed, we say that the entry is _TTL-expired_, and a CMC MUST NOT return the entry to any caller."
+ },
+ {
+  "id": "CMC-007",
+  "file": "cryptographic-materials-cache.md",
+  "line": 147,
+  "heading": "Behaviors > Put Cache Entry",
+  "kw": "MUST",
+  "text": "The CMC MUST create a new cache entry for the specified cache ID."
+ },
+ {
+  "id": "CMC-008",
+  "file": "cryptographic-materials-cache.md",
+  "line": 147,
+  "heading": "Behaviors > Put Cache Entry",
+  "kw": "MUST NOT",
+  "text": "This operation MUST NOT return the inserted cache entry."
+ },
+ {
+  "id": "CMC-009",
+  "file": "cryptographic-materials-cache.md",
+  "line": 147,
+  "heading": "Behaviors > Put Cache Entry",
+  "kw": "MUST",
+  "text": "The cache entry MUST include all usage metadata since this information can not be updated after the put operation."
+ },
+ {
+  "id": "CMC-010",
+  "file": "cryptographic-materials-cache.md",
+  "line": 160,
+  "heading": "Behaviors > Get Cache Entry",
+  "kw": "MUST",
+  "text": "The CMC MUST validate that the cache entry has not exceeded it's stored TTL."
+ },
+ {
+  "id": "CMC-011",
+  "file": "cryptographic-materials-cache.md",
+  "line": 185,
+  "heading": "Background Processing",
+  "kw": "SHOULD",
+  "text": "An implementation SHOULD provide a way to avoid this, for example, by spawning a background thread to occasionally remove expired entries."
+ },
+ {
+  "id": "LCM-001",
+  "file": "local-cryptographic-materials-cache.md",
+  "line": 43,
+  "heading": "Definitions > Conventions used in this document",
+  "kw": "MUST/MUST NOT/REQUIRED/SHALL/SHALL NOT/SHOULD/SHOULD NOT",
+  "text": "The key words \"MUST\", \"MUST NOT\", \"REQUIRED\", \"SHALL\", \"SHALL NOT\", \"SHOULD\", \"SHOULD NOT\", \"RECOMMENDED\", \"MAY\", and \"OPTIONAL\" in this document are to be interpreted as described in RFC 2119."
+ },
+ {
+  "id": "LCM-002",
+  "file": "local-cryptographic-materials-cache.md",
+  "line": 48,
+  "heading": "Initialization",
+  "kw": "MUST",
+  "text": "On initialization of the local CMC, the caller MUST provide the following:"
+ },
+ {
+  "id": "LCM-003",
+  "file": "local-cryptographic-materials-cache.md",
+  "line": 53,
+  "heading": "Initialization",
+  "kw": "MUST",
+  "text": "The local CMC MUST also define the following:"
+ },
+ {
+  "id": "LCM-004",
+  "file": "local-cryptographic-materials-cache.md",
+  "line": 59,
+  "heading": "Initialization > Entry Capacity",
+  "kw": "MUST NOT",
+  "text": "The local CMC MUST NOT store more entries than this value, except temporarily while performing a Put Cache Entry operation."
+ },
+ {
+  "id": "LCM-005",
+  "file": "local-cryptographic-materials-cache.md",
+  "line": 59,
+  "heading": "Initialization > Entry Capacity",
+  "kw": "MUST",
+  "text": "The local CMC MUST accept entry capacity values between zero and an implementation-defined maximum, inclusive."
+ },
+ {
+  "id": "LCM-006",
+  "file": "local-cryptographic-materials-cache.md",
+  "line": 67,
+  "heading": "Initialization > Entry Pruning Tail Size",
+  "kw": "MUST",
+  "text": "The _entry pruning tail size_ is the number of least recently used entries that the local CMC MUST check during pruning for TTL-expired entries to evict."
+ },
+ {
+  "id": "LCM-007",
+  "file": "local-cryptographic-materials-cache.md",
+  "line": 81,
+  "heading": "Behaviors > Put Cache Entry",
+  "kw": "MUST",
+  "text": "However, before returning, the local CMC MUST evict least-recently used entries until the number of stored entries does not exceed the entry capacity."
+ },
+ {
+  "id": "LCM-008",
+  "file": "local-cryptographic-materials-cache.md",
+  "line": 88,
+  "heading": "Behaviors > Get Cache Entry",
+  "kw": "MUST",
+  "text": "When performing a Get Cache Entry operation, the local CMC MUST prune TTL-expired cache entries."
+ },
+ {
+  "id": "LCM-009",
+  "file": "local-cryptographic-materials-cache.md",
+  "line": 88,
+  "heading": "Behaviors > Get Cache Entry",
+  "kw": "MUST NOT",
+  "text": "The local CMC MUST NOT return any TTL-expired entry."
+ },
+ {
+  "id": "LCM-010",
+  "file": "local-cryptographic-materials-cache.md",
+  "line": 94,
+  "heading": "Pruning",
+  "kw": "MUST",
+  "text": "To prune TTL-expired cache entries, the local CMC MUST evict all TTL-expired entries among the `N` least recently used entries, where `N` is the Entry Pruning Tail Size."
+ },
+ {
+  "id": "LCM-011",
+  "file": "local-cryptographic-materials-cache.md",
+  "line": 101,
+  "heading": "Pruning",
+  "kw": "SHOULD",
+  "text": "The local CMC SHOULD also periodically evict all TTL-expired entries among the `N` least recently used entries."
+ },
+ {
+  "id": "STC-001",
+  "file": "storm-tracking-cryptographic-materials-cache.md",
+  "line": 33,
+  "heading": "Definitions > Conventions used in this document",
+  "kw": "MUST/MUST NOT/REQUIRED/SHALL/SHALL NOT/SHOULD/SHOULD NOT",
+  "text": "The key words \"MUST\", \"MUST NOT\", \"REQUIRED\", \"SHALL\", \"SHALL NOT\", \"SHOULD\", \"SHOULD NOT\", \"RECOMMENDED\", \"MAY\", and \"OPTIONAL\" in this document are to be interpreted as described in RFC 2119."
+ },
+ {
+  "id": "STC-002",
+  "file": "storm-tracking-cryptographic-materials-cache.md",
+  "line": 38,
+  "heading": "Initialization",
+  "kw": "MUST",
+  "text": "On initialization of the storm tracking CMC, the caller MUST provide exactly what is required by a Local CMC."
+ },
+ {
+  "id": "STC-003",
+  "file": "storm-tracking-cryptographic-materials-cache.md",
+  "line": 42,
+  "heading": "Initialization",
+  "kw": "MUST",
+  "text": "Initialization MUST also provide"
+ },
+ {
+  "id": "STC-004",
+  "file": "storm-tracking-cryptographic-materials-cache.md",
+  "line": 50,
+  "heading": "Initialization",
+  "kw": "MUST",
+  "text": "Initialization MUST optionally accept the following values:"
+ },
+ {
+  "id": "STC-005",
+  "file": "storm-tracking-cryptographic-materials-cache.md",
+  "line": 54,
+  "heading": "Initialization",
+  "kw": "MUST",
+  "text": "The implementation MUST instantiate a Local CMC to do the actual caching."
+ },
+ {
+  "id": "STC-006",
+  "file": "storm-tracking-cryptographic-materials-cache.md",
+  "line": 110,
+  "heading": "Initialization > SleepMilli",
+  "kw": "MUST NOT",
+  "text": "SleepMilli MUST NOT be affected by timeUnits"
+ },
+ {
+  "id": "STC-007",
+  "file": "storm-tracking-cryptographic-materials-cache.md",
+  "line": 114,
+  "heading": "Initialization > Time Units",
+  "kw": "MUST",
+  "text": "Time Units MUST be either `Seconds` or `Milliseconds` and applies to"
+ },
+ {
+  "id": "STC-008",
+  "file": "storm-tracking-cryptographic-materials-cache.md",
+  "line": 120,
+  "heading": "Initialization > Time Units",
+  "kw": "MUST",
+  "text": "If unset, or set to `Seconds`, the above values MUST be interpreted as seconds."
+ },
+ {
+  "id": "STC-009",
+  "file": "storm-tracking-cryptographic-materials-cache.md",
+  "line": 122,
+  "heading": "Initialization > Time Units",
+  "kw": "MUST",
+  "text": "If set to `Milliseconds`, the above values MUST be interpreted as milliseconds."
+ },
+ {
+  "id": "STC-010",
+  "file": "storm-tracking-cryptographic-materials-cache.md",
+  "line": 136,
+  "heading": "Consistency",
+  "kw": "MUST",
+  "text": "- The Grace Interval MUST be less than or equal to the Grace Period."
+ },
+ {
+  "id": "STC-011",
+  "file": "storm-tracking-cryptographic-materials-cache.md",
+  "line": 137,
+  "heading": "Consistency",
+  "kw": "MUST",
+  "text": "- The Inflight TTL MUST be less than or equal to the Grace Period."
+ },
+ {
+  "id": "STC-012",
+  "file": "storm-tracking-cryptographic-materials-cache.md",
+  "line": 138,
+  "heading": "Consistency",
+  "kw": "MUST",
+  "text": "- The Grace Interval MUST be less than or equal to the Inflight TTL."
+ },
+ {
+  "id": "STC-013",
+  "file": "storm-tracking-cryptographic-materials-cache.md",
+  "line": 144,
+  "heading": "Behaviors",
+  "kw": "MUST",
+  "text": "The interface MUST be exactly the same as a Local CMC, even if used in a multi-threaded context, with two exceptions"
+ },
+ {
+  "id": "STC-014",
+  "file": "storm-tracking-cryptographic-materials-cache.md",
+  "line": 157,
+  "heading": "Behaviors > In Flight",
+  "kw": "MUST",
+  "text": "For each in flight key, the storm tracking CMC MUST keep track of the most recent time that NoSuchEntry was returned, with accuracy to the second."
+ },
+ {
+  "id": "STC-015",
+  "file": "storm-tracking-cryptographic-materials-cache.md",
+  "line": 162,
+  "heading": "Behaviors > PutCacheEntry",
+  "kw": "MUST",
+  "text": "PutCacheEntry MUST mark the key as not in flight."
+ },
+ {
+  "id": "STC-016",
+  "file": "storm-tracking-cryptographic-materials-cache.md",
+  "line": 166,
+  "heading": "Behaviors > Within Grace Period",
+  "kw": "MUST",
+  "text": "A time `now` MUST be considered within the grace period for an entry that expires at a time `expiry` if `(expiry - gracePeriod) <= now`"
+ },
+ {
+  "id": "STC-017",
+  "file": "storm-tracking-cryptographic-materials-cache.md",
+  "line": 171,
+  "heading": "Behaviors > Within Grace Interval",
+  "kw": "MUST",
+  "text": "A time `now` MUST be considered within the grace interval of an inflight entry at `inflight` time if `now < (inflight + graceInterval)`"
+ },
+ {
+  "id": "STC-018",
+  "file": "storm-tracking-cryptographic-materials-cache.md",
+  "line": 179,
+  "heading": "Behaviors > GetCacheEntry",
+  "kw": "MUST",
+  "text": "The implementation MUST call the Local CMC to find the cached materials for the key, if any."
+ },
+ {
+  "id": "STC-019",
+  "file": "storm-tracking-cryptographic-materials-cache.md",
+  "line": 186,
+  "heading": "Behaviors > GetCacheEntry",
+  "kw": "MUST",
+  "text": "- If the number of things inflight is greater than or equal to the FanOut GetCacheEntry MUST return the cache entry."
+ },
+ {
+  "id": "STC-020",
+  "file": "storm-tracking-cryptographic-materials-cache.md",
+  "line": 189,
+  "heading": "Behaviors > GetCacheEntry",
+  "kw": "MUST",
+  "text": "- If the key's expiration _is not_ within the grace period, GetCacheEntry MUST return the cache entry."
+ },
+ {
+  "id": "STC-021",
+  "file": "storm-tracking-cryptographic-materials-cache.md",
+  "line": 192,
+  "heading": "Behaviors > GetCacheEntry",
+  "kw": "MUST",
+  "text": "- If the key's expiration _is_ within the grace period, and the key _is not_ inflight GetCacheEntry MUST return NoSuchEntry and mark that key as inflight at the current time."
+ },
+ {
+  "id": "STC-022",
+  "file": "storm-tracking-cryptographic-materials-cache.md",
+  "line": 196,
+  "heading": "Behaviors > GetCacheEntry",
+  "kw": "MUST",
+  "text": "- If the key's expiration _is_ within the grace period, and the key _is_ inflight and the inflight time _is_ within the grace interval GetCacheEntry MUST return the cache entry."
+ },
+ {
+  "id": "STC-023",
+  "file": "storm-tracking-cryptographic-materials-cache.md",
+  "line": 201,
+  "heading": "Behaviors > GetCacheEntry",
+  "kw": "MUST",
+  "text": "- If the key's expiration _is_ within the grace period, and the key _is_ inflight and the inflight time _is not_ within the grace interval GetCacheEntry MUST return NoSuchEntry and update the key as inflight at the current time."
+ },
+ {
+  "id": "STC-024",
+  "file": "storm-tracking-cryptographic-materials-cache.md",
+  "line": 209,
+  "heading": "Behaviors > GetCacheEntry",
+  "kw": "MUST",
+  "text": "- If the number of things inflight is greater than or equal to the FanOut GetCacheEntry MUST block until a FanOut slot is available, or the key appears in the cache."
+ },
+ {
+  "id": "STC-025",
+  "file": "storm-tracking-cryptographic-materials-cache.md",
+  "line": 212,
+  "heading": "Behaviors > GetCacheEntry",
+  "kw": "MUST",
+  "text": "- If the key _is not_ inflight GetCacheEntry MUST return NoSuchEntry and mark that key as inflight at the current time."
+ },
+ {
+  "id": "STC-026",
+  "file": "storm-tracking-cryptographic-materials-cache.md",
+  "line": 215,
+  "heading": "Behaviors > GetCacheEntry",
+  "kw": "MUST",
+  "text": "- If the key _is_ inflight and the time spent so far exceeds the Inflight TTL, the operation MUST fail."
+ },
+ {
+  "id": "STC-027",
+  "file": "storm-tracking-cryptographic-materials-cache.md",
+  "line": 218,
+  "heading": "Behaviors > GetCacheEntry",
+  "kw": "MUST",
+  "text": "- If the key _is_ inflight and the current time _is_ within the grace interval GetCacheEntry MUST block until a FanOut slot is available, or the key appears in the cache."
+ },
+ {
+  "id": "STC-028",
+  "file": "storm-tracking-cryptographic-materials-cache.md",
+  "line": 222,
+  "heading": "Behaviors > GetCacheEntry",
+  "kw": "MUST",
+  "text": "- If the key _is_ inflight and the current time _is not_ within the grace interval GetCacheEntry MUST return NoSuchEntry and update the key as inflight at the current time."
+ },
+ {
+  "id": "BKS-001",
+  "file": "branch-key-store.md",
+  "line": 69,
+  "heading": "Definitions > Conventions used in this document",
+  "kw": "MUST/MUST NOT/REQUIRED/SHALL/SHALL NOT/SHOULD/SHOULD NOT",
+  "text": "The key words \"MUST\", \"MUST NOT\", \"REQUIRED\", \"SHALL\", \"SHALL NOT\", \"SHOULD\", \"SHOULD NOT\", \"RECOMMENDED\", \"MAY\", and \"OPTIONAL\" in this document are to be interpreted as described in RFC 2119."
+ },
+ {
+  "id": "BKS-002",
+  "file": "branch-key-store.md",
+  "line": 81,
+  "heading": "Initialization",
+  "kw": "MUST",
+  "text": "The following inputs MUST be specified to create a KeyStore:"
+ },
+ {
+  "id": "BKS-003",
+  "file": "branch-key-store.md",
+  "line": 89,
+  "heading": "Initialization > Keystore ID",
+  "kw": "MUST",
+  "text": "If one is not supplied, then a version 4 UUID MUST be used."
+ },
+ {
+  "id": "BKS-004",
+  "file": "branch-key-store.md",
+  "line": 100,
+  "heading": "Initialization > DynamoDb Client",
+  "kw": "MUST",
+  "text": "If the AWS KMS Configuration is KMS Key ARN or KMS MRKey ARN, and no DynamoDb Client is provided, a new DynamoDb Client MUST be created with the region of the supplied KMS ARN."
+ },
+ {
+  "id": "BKS-005",
+  "file": "branch-key-store.md",
+  "line": 105,
+  "heading": "Initialization > DynamoDb Client",
+  "kw": "MUST",
+  "text": "If the AWS KMS Configuration is Discovery, and no DynamoDb Client is provided, a new DynamoDb Client MUST be created with the default configuration."
+ },
+ {
+  "id": "BKS-006",
+  "file": "branch-key-store.md",
+  "line": 110,
+  "heading": "Initialization > DynamoDb Client",
+  "kw": "MUST",
+  "text": "If the AWS KMS Configuration is MRDiscovery, and no DynamoDb Client is provided, a new DynamoDb Client MUST be created with the region configured in the MRDiscovery."
+ },
+ {
+  "id": "BKS-007",
+  "file": "branch-key-store.md",
+  "line": 119,
+  "heading": "Initialization > KMS Client",
+  "kw": "MUST",
+  "text": "If the AWS KMS Configuration is KMS Key ARN or KMS MRKey ARN, and no KMS Client is provided, a new KMS Client MUST be created with the region of the supplied KMS ARN."
+ },
+ {
+  "id": "BKS-008",
+  "file": "branch-key-store.md",
+  "line": 124,
+  "heading": "Initialization > KMS Client",
+  "kw": "MUST",
+  "text": "If the AWS KMS Configuration is Discovery, and no KMS Client is provided, a new KMS Client MUST be created with the default configuration."
+ },
+ {
+  "id": "BKS-009",
+  "file": "branch-key-store.md",
+  "line": 129,
+  "heading": "Initialization > KMS Client",
+  "kw": "MUST",
+  "text": "If the AWS KMS Configuration is MRDiscovery, and no KMS Client is provided, a new KMS Client MUST be created with the region configured in the MRDiscovery."
+ },
+ {
+  "id": "BKS-010",
+  "file": "branch-key-store.md",
+  "line": 134,
+  "heading": "Initialization > KMS Client",
+  "kw": "SHOULD",
+  "text": "On initialization the KeyStore SHOULD append a user agent string to the AWS KMS SDK Client with the value `aws-kms-hierarchy`."
+ },
+ {
+  "id": "BKS-011",
+  "file": "branch-key-store.md",
+  "line": 154,
+  "heading": "Initialization > AWS KMS Configuration",
+  "kw": "MUST",
+  "text": "`KMS Key ARN` and `KMS MRKey ARN` MUST take an additional argument that is a KMS ARN."
+ },
+ {
+  "id": "BKS-012",
+  "file": "branch-key-store.md",
+  "line": 154,
+  "heading": "Initialization > AWS KMS Configuration",
+  "kw": "MUST NOT",
+  "text": "This ARN MUST NOT be an Alias."
+ },
+ {
+  "id": "BKS-013",
+  "file": "branch-key-store.md",
+  "line": 154,
+  "heading": "Initialization > AWS KMS Configuration",
+  "kw": "MUST",
+  "text": "This ARN MUST be a valid AWS KMS Key ARN."
+ },
+ {
+  "id": "BKS-014",
+  "file": "branch-key-store.md",
+  "line": 167,
+  "heading": "Initialization > AWS KMS Configuration",
+  "kw": "MUST",
+  "text": "`MRDiscovery` MUST take an additional argument, which is a region."
+ },
+ {
+  "id": "BKS-015",
+  "file": "branch-key-store.md",
+  "line": 219,
+  "heading": "Initialization > Logical KeyStore Name",
+  "kw": "MUST",
+  "text": "The logical keystore name MUST be bound to every created key."
+ },
+ {
+  "id": "BKS-016",
+  "file": "branch-key-store.md",
+  "line": 229,
+  "heading": "Operations",
+  "kw": "MUST",
+  "text": "The Keystore MUST support the following operations:"
+ },
+ {
+  "id": "BKS-017",
+  "file": "branch-key-store.md",
+  "line": 241,
+  "heading": "Operations > GetKeyStoreInfo",
+  "kw": "MUST",
+  "text": "This operation MUST return the keystore information in this keystore configuration."
+ },
+ {
+  "id": "BKS-018",
+  "file": "branch-key-store.md",
+  "line": 243,
+  "heading": "Operations > GetKeyStoreInfo",
+  "kw": "MUST",
+  "text": "This MUST include:"
+ },
+ {
+  "id": "BKS-019",
+  "file": "branch-key-store.md",
+  "line": 253,
+  "heading": "Operations > CreateKeyStore",
+  "kw": "MUST",
+  "text": "This operation MUST first calls the DDB::DescribeTable API with the configured `tableName`."
+ },
+ {
+  "id": "BKS-020",
+  "file": "branch-key-store.md",
+  "line": 255,
+  "heading": "Operations > CreateKeyStore",
+  "kw": "MUST",
+  "text": "If the KeySchema does not match this operation MUST yield an error."
+ },
+ {
+  "id": "BKS-021",
+  "file": "branch-key-store.md",
+  "line": 262,
+  "heading": "Operations > CreateKeyStore",
+  "kw": "MUST",
+  "text": "If the client responds with a `ResourceNotFoundException`, then this operation MUST continue and MUST call AWS DDB CreateTable with the following specifics:"
+ },
+ {
+  "id": "BKS-022",
+  "file": "branch-key-store.md",
+  "line": 270,
+  "heading": "Operations > CreateKeyStore",
+  "kw": "MUST",
+  "text": "If the operation fails to create table, the operation MUST fail."
+ },
+ {
+  "id": "BKS-023",
+  "file": "branch-key-store.md",
+  "line": 272,
+  "heading": "Operations > CreateKeyStore",
+  "kw": "MUST",
+  "text": "If the operation successfully creates a table, the operation MUST return the AWS DDB Table Arn back to the caller."
+ },
+ {
+  "id": "BKS-024",
+  "file": "branch-key-store.md",
+  "line": 277,
+  "heading": "Operations > CreateKeyStore > KeySchema",
+  "kw": "MUST",
+  "text": "The following KeySchema MUST be configured on the table:"
+ },
+ {
+  "id": "BKS-025",
+  "file": "branch-key-store.md",
+  "line": 286,
+  "heading": "Operations > CreateKey",
+  "kw": "MUST",
+  "text": "The CreateKey caller MUST provide:"
+ },
+ {
+  "id": "BKS-026",
+  "file": "branch-key-store.md",
+  "line": 291,
+  "heading": "Operations > CreateKey",
+  "kw": "MUST",
+  "text": "If an optional branch key id is provided and no encryption context is provided this operation MUST fail."
+ },
+ {
+  "id": "BKS-027",
+  "file": "branch-key-store.md",
+  "line": 294,
+  "heading": "Operations > CreateKey",
+  "kw": "MUST",
+  "text": "If the Keystore's KMS Configuration is `Discovery` or `MRDiscovery`, this operation MUST fail."
+ },
+ {
+  "id": "BKS-028",
+  "file": "branch-key-store.md",
+  "line": 297,
+  "heading": "Operations > CreateKey",
+  "kw": "MUST",
+  "text": "If no branch key id is provided, then this operation MUST create a version 4 UUID to be used as the branch key id."
+ },
+ {
+  "id": "BKS-029",
+  "file": "branch-key-store.md",
+  "line": 301,
+  "heading": "Operations > CreateKey",
+  "kw": "MUST",
+  "text": "This operation MUST create a branch key and a beacon key according to the Branch Key and Beacon Key Creation section."
+ },
+ {
+  "id": "BKS-030",
+  "file": "branch-key-store.md",
+  "line": 304,
+  "heading": "Operations > CreateKey",
+  "kw": "MUST",
+  "text": "If creation of the keys are successful, the operation MUST call Amazon DynamoDB TransactWriteItems according to the write key material section."
+ },
+ {
+  "id": "BKS-031",
+  "file": "branch-key-store.md",
+  "line": 307,
+  "heading": "Operations > CreateKey",
+  "kw": "MUST",
+  "text": "If writing to the keystore succeeds, the operation MUST return the branch-key-id that maps to both the branch key and the beacon key."
+ },
+ {
+  "id": "BKS-032",
+  "file": "branch-key-store.md",
+  "line": 311,
+  "heading": "Operations > CreateKey",
+  "kw": "MUST",
+  "text": "Otherwise, this operation MUST yield an error."
+ },
+ {
+  "id": "BKS-033",
+  "file": "branch-key-store.md",
+  "line": 315,
+  "heading": "Operations > CreateKey > Branch Key and Beacon Key Creation",
+  "kw": "MUST",
+  "text": "To create a branch key, this operation MUST take the following:"
+ },
+ {
+  "id": "BKS-034",
+  "file": "branch-key-store.md",
+  "line": 322,
+  "heading": "Operations > CreateKey > Branch Key and Beacon Key Creation",
+  "kw": "MUST",
+  "text": "- `version`: a new guid. This guid MUST be version 4 UUID"
+ },
+ {
+  "id": "BKS-035",
+  "file": "branch-key-store.md",
+  "line": 323,
+  "heading": "Operations > CreateKey > Branch Key and Beacon Key Creation",
+  "kw": "MUST",
+  "text": "- `timestamp`: a timestamp for the current time. This timestamp MUST be in ISO 8601 format in UTC, to microsecond precision (e.g. \u201cYYYY-MM-DDTHH:mm:ss.ssssssZ\u201c)"
+ },
+ {
+  "id": "BKS-036",
+  "file": "branch-key-store.md",
+  "line": 326,
+  "heading": "Operations > CreateKey > Branch Key and Beacon Key Creation",
+  "kw": "MUST",
+  "text": "The wrapped Branch Keys, DECRYPT_ONLY and ACTIVE, MUST be created according to Wrapped Branch Key Creation."
+ },
+ {
+  "id": "BKS-037",
+  "file": "branch-key-store.md",
+  "line": 330,
+  "heading": "Operations > CreateKey > Branch Key and Beacon Key Creation",
+  "kw": "MUST",
+  "text": "The operation MUST call AWS KMS API GenerateDataKeyWithoutPlaintext."
+ },
+ {
+  "id": "BKS-038",
+  "file": "branch-key-store.md",
+  "line": 330,
+  "heading": "Operations > CreateKey > Branch Key and Beacon Key Creation",
+  "kw": "MUST",
+  "text": "The call to AWS KMS GenerateDataKeyWithoutPlaintext MUST use the configured AWS KMS client to make the call."
+ },
+ {
+  "id": "BKS-039",
+  "file": "branch-key-store.md",
+  "line": 330,
+  "heading": "Operations > CreateKey > Branch Key and Beacon Key Creation",
+  "kw": "MUST",
+  "text": "The operation MUST call AWS KMS GenerateDataKeyWithoutPlaintext with a request constructed as follows:"
+ },
+ {
+  "id": "BKS-040",
+  "file": "branch-key-store.md",
+  "line": 334,
+  "heading": "Operations > CreateKey > Branch Key and Beacon Key Creation",
+  "kw": "MUST",
+  "text": "- `KeyId` MUST be the configured `AWS KMS Key ARN` in the AWS KMS Configuration for this keystore."
+ },
+ {
+  "id": "BKS-041",
+  "file": "branch-key-store.md",
+  "line": 335,
+  "heading": "Operations > CreateKey > Branch Key and Beacon Key Creation",
+  "kw": "MUST",
+  "text": "- `NumberOfBytes` MUST be 32."
+ },
+ {
+  "id": "BKS-042",
+  "file": "branch-key-store.md",
+  "line": 336,
+  "heading": "Operations > CreateKey > Branch Key and Beacon Key Creation",
+  "kw": "MUST",
+  "text": "- `EncryptionContext` MUST be the encryption context for beacon keys."
+ },
+ {
+  "id": "BKS-043",
+  "file": "branch-key-store.md",
+  "line": 337,
+  "heading": "Operations > CreateKey > Branch Key and Beacon Key Creation",
+  "kw": "MUST",
+  "text": "- `GrantTokens` MUST be this keystore's grant tokens."
+ },
+ {
+  "id": "BKS-044",
+  "file": "branch-key-store.md",
+  "line": 339,
+  "heading": "Operations > CreateKey > Branch Key and Beacon Key Creation",
+  "kw": "MUST",
+  "text": "If the call to AWS KMS GenerateDataKeyWithoutPlaintext succeeds, the operation MUST use the `CiphertextBlob` as the wrapped Beacon Key."
+ },
+ {
+  "id": "BKS-045",
+  "file": "branch-key-store.md",
+  "line": 346,
+  "heading": "Operations > CreateKey > Wrapped Branch Key Creation",
+  "kw": "MUST",
+  "text": "The operation MUST call AWS KMS API GenerateDataKeyWithoutPlaintext."
+ },
+ {
+  "id": "BKS-046",
+  "file": "branch-key-store.md",
+  "line": 346,
+  "heading": "Operations > CreateKey > Wrapped Branch Key Creation",
+  "kw": "MUST",
+  "text": "The call to AWS KMS GenerateDataKeyWithoutPlaintext MUST use the configured AWS KMS client to make the call."
+ },
+ {
+  "id": "BKS-047",
+  "file": "branch-key-store.md",
+  "line": 346,
+  "heading": "Operations > CreateKey > Wrapped Branch Key Creation",
+  "kw": "MUST",
+  "text": "The operation MUST call AWS KMS GenerateDataKeyWithoutPlaintext with a request constructed as follows:"
+ },
+ {
+  "id": "BKS-048",
+  "file": "branch-key-store.md",
+  "line": 350,
+  "heading": "Operations > CreateKey > Wrapped Branch Key Creation",
+  "kw": "MUST",
+  "text": "- `KeyId` MUST be the configured `AWS KMS Key ARN` in the AWS KMS Configuration for this keystore."
+ },
+ {
+  "id": "BKS-049",
+  "file": "branch-key-store.md",
+  "line": 351,
+  "heading": "Operations > CreateKey > Wrapped Branch Key Creation",
+  "kw": "MUST",
+  "text": "- `NumberOfBytes` MUST be 32."
+ },
+ {
+  "id": "BKS-050",
+  "file": "branch-key-store.md",
+  "line": 352,
+  "heading": "Operations > CreateKey > Wrapped Branch Key Creation",
+  "kw": "MUST",
+  "text": "- `EncryptionContext` MUST be the DECRYPT_ONLY encryption context for branch keys."
+ },
+ {
+  "id": "BKS-051",
+  "file": "branch-key-store.md",
+  "line": 353,
+  "heading": "Operations > CreateKey > Wrapped Branch Key Creation",
+  "kw": "MUST",
+  "text": "- GenerateDataKeyWithoutPlaintext `GrantTokens` MUST be this keystore's grant tokens."
+ },
+ {
+  "id": "BKS-052",
+  "file": "branch-key-store.md",
+  "line": 355,
+  "heading": "Operations > CreateKey > Wrapped Branch Key Creation",
+  "kw": "MUST",
+  "text": "If the call to AWS KMS GenerateDataKeyWithoutPlaintext succeeds, the operation MUST use the GenerateDataKeyWithoutPlaintext result `CiphertextBlob` as the wrapped DECRYPT_ONLY Branch Key."
+ },
+ {
+  "id": "BKS-053",
+  "file": "branch-key-store.md",
+  "line": 359,
+  "heading": "Operations > CreateKey > Wrapped Branch Key Creation",
+  "kw": "MUST",
+  "text": "The operation MUST call AWS KMS API ReEncrypt with a request constructed as follows:"
+ },
+ {
+  "id": "BKS-054",
+  "file": "branch-key-store.md",
+  "line": 362,
+  "heading": "Operations > CreateKey > Wrapped Branch Key Creation",
+  "kw": "MUST",
+  "text": "- `SourceEncryptionContext` MUST be the DECRYPT_ONLY encryption context for branch keys."
+ },
+ {
+  "id": "BKS-055",
+  "file": "branch-key-store.md",
+  "line": 363,
+  "heading": "Operations > CreateKey > Wrapped Branch Key Creation",
+  "kw": "MUST",
+  "text": "- `SourceKeyId` MUST be the configured `AWS KMS Key ARN` in the AWS KMS Configuration for this keystore."
+ },
+ {
+  "id": "BKS-056",
+  "file": "branch-key-store.md",
+  "line": 364,
+  "heading": "Operations > CreateKey > Wrapped Branch Key Creation",
+  "kw": "MUST",
+  "text": "- `CiphertextBlob` MUST be the wrapped DECRYPT_ONLY Branch Key."
+ },
+ {
+  "id": "BKS-057",
+  "file": "branch-key-store.md",
+  "line": 365,
+  "heading": "Operations > CreateKey > Wrapped Branch Key Creation",
+  "kw": "MUST",
+  "text": "- ReEncrypt `GrantTokens` MUST be this keystore's grant tokens."
+ },
+ {
+  "id": "BKS-058",
+  "file": "branch-key-store.md",
+  "line": 366,
+  "heading": "Operations > CreateKey > Wrapped Branch Key Creation",
+  "kw": "MUST",
+  "text": "- `DestinationKeyId` MUST be the configured `AWS KMS Key ARN` in the AWS KMS Configuration for this keystore."
+ },
+ {
+  "id": "BKS-059",
+  "file": "branch-key-store.md",
+  "line": 367,
+  "heading": "Operations > CreateKey > Wrapped Branch Key Creation",
+  "kw": "MUST",
+  "text": "- `DestinationEncryptionContext` MUST be the ACTIVE encryption context for branch keys."
+ },
+ {
+  "id": "BKS-060",
+  "file": "branch-key-store.md",
+  "line": 369,
+  "heading": "Operations > CreateKey > Wrapped Branch Key Creation",
+  "kw": "MUST",
+  "text": "If the call to AWS KMS ReEncrypt succeeds, the operation MUST use the ReEncrypt result `CiphertextBlob` as the wrapped ACTIVE Branch Key."
+ },
+ {
+  "id": "BKS-061",
+  "file": "branch-key-store.md",
+  "line": 375,
+  "heading": "Operations > CreateKey > Writing Branch Key and Beacon Key to Keystore",
+  "kw": "MUST",
+  "text": "To add the branch keys and a beacon key to the keystore the operation MUST call Amazon DynamoDB API TransactWriteItems."
+ },
+ {
+  "id": "BKS-062",
+  "file": "branch-key-store.md",
+  "line": 375,
+  "heading": "Operations > CreateKey > Writing Branch Key and Beacon Key to Keystore",
+  "kw": "MUST",
+  "text": "The call to Amazon DynamoDB TransactWriteItems MUST use the configured Amazon DynamoDB Client to make the call."
+ },
+ {
+  "id": "BKS-063",
+  "file": "branch-key-store.md",
+  "line": 375,
+  "heading": "Operations > CreateKey > Writing Branch Key and Beacon Key to Keystore",
+  "kw": "MUST",
+  "text": "The operation MUST call Amazon DynamoDB TransactWriteItems with a request constructed as follows:"
+ },
+ {
+  "id": "BKS-064",
+  "file": "branch-key-store.md",
+  "line": 390,
+  "heading": "Operations > CreateKey > Writing Branch Key and Beacon Key to Keystore",
+  "kw": "MUST",
+  "text": "- Every key-value pair of the custom encryption context that is associated with the branch key MUST be added with an Attribute Name of `aws-crypto-ec:` + the Key and Attribute Value (S) of the value."
+ },
+ {
+  "id": "BKS-065",
+  "file": "branch-key-store.md",
+  "line": 402,
+  "heading": "Operations > CreateKey > Writing Branch Key and Beacon Key to Keystore",
+  "kw": "MUST",
+  "text": "- Every key-value pair of the custom encryption context that is associated with the branch key MUST be added with an Attribute Name of `aws-crypto-ec:` + the Key and Attribute Value (S) of the value."
+ },
+ {
+  "id": "BKS-066",
+  "file": "branch-key-store.md",
+  "line": 414,
+  "heading": "Operations > CreateKey > Writing Branch Key and Beacon Key to Keystore",
+  "kw": "MUST",
+  "text": "- Every key-value pair of the custom encryption context that is associated with the branch key MUST be added with an Attribute Name of `aws-crypto-ec:` + the Key and Attribute Value (S) of the value."
+ },
+ {
+  "id": "BKS-067",
+  "file": "branch-key-store.md",
+  "line": 423,
+  "heading": "Operations > CreateKey > Writing Branch Key and Beacon Key to Keystore",
+  "kw": "MUST",
+  "text": "If DDB TransactWriteItems is successful, this operation MUST return a successful response containing no additional data."
+ },
+ {
+  "id": "BKS-068",
+  "file": "branch-key-store.md",
+  "line": 423,
+  "heading": "Operations > CreateKey > Writing Branch Key and Beacon Key to Keystore",
+  "kw": "MUST",
+  "text": "Otherwise, this operation MUST yield an error."
+ },
+ {
+  "id": "BKS-069",
+  "file": "branch-key-store.md",
+  "line": 430,
+  "heading": "Operations > VersionKey",
+  "kw": "MUST",
+  "text": "- MUST supply a `branch-key-id`"
+ },
+ {
+  "id": "BKS-070",
+  "file": "branch-key-store.md",
+  "line": 432,
+  "heading": "Operations > VersionKey",
+  "kw": "MUST",
+  "text": "If the Keystore's KMS Configuration is `Discovery` or `MRDiscovery`, this operation MUST immediately fail."
+ },
+ {
+  "id": "BKS-071",
+  "file": "branch-key-store.md",
+  "line": 435,
+  "heading": "Operations > VersionKey",
+  "kw": "MUST",
+  "text": "VersionKey MUST first get the active version for the branch key from the keystore by calling AWS DDB `GetItem` using the `branch-key-id` as the Partition Key and `\"branch:ACTIVE\"` value as the Sort Key."
+ },
+ {
+  "id": "BKS-072",
+  "file": "branch-key-store.md",
+  "line": 439,
+  "heading": "Operations > VersionKey",
+  "kw": "MUST",
+  "text": "The `kms-arn` field of DDB response item MUST be compatible with the configured `KMS ARN` in the AWS KMS Configuration for this keystore."
+ },
+ {
+  "id": "BKS-073",
+  "file": "branch-key-store.md",
+  "line": 442,
+  "heading": "Operations > VersionKey",
+  "kw": "MUST NOT",
+  "text": "The `kms-arn` stored in the DDB table MUST NOT change as a result of this operation, even if the KeyStore is configured with a `KMS MRKey ARN` that does not exactly match the stored ARN."
+ },
+ {
+  "id": "BKS-074",
+  "file": "branch-key-store.md",
+  "line": 446,
+  "heading": "Operations > VersionKey",
+  "kw": "MUST",
+  "text": "The values on the AWS DDB response item MUST be authenticated according to authenticating a keystore item."
+ },
+ {
+  "id": "BKS-075",
+  "file": "branch-key-store.md",
+  "line": 446,
+  "heading": "Operations > VersionKey",
+  "kw": "MUST",
+  "text": "If the item fails to authenticate this operation MUST fail."
+ },
+ {
+  "id": "BKS-076",
+  "file": "branch-key-store.md",
+  "line": 450,
+  "heading": "Operations > VersionKey",
+  "kw": "MUST",
+  "text": "The wrapped Branch Keys, DECRYPT_ONLY and ACTIVE, MUST be created according to Wrapped Branch Key Creation."
+ },
+ {
+  "id": "BKS-077",
+  "file": "branch-key-store.md",
+  "line": 452,
+  "heading": "Operations > VersionKey",
+  "kw": "MUST",
+  "text": "To add the new branch key to the keystore, the operation MUST call Amazon DynamoDB API TransactWriteItems."
+ },
+ {
+  "id": "BKS-078",
+  "file": "branch-key-store.md",
+  "line": 452,
+  "heading": "Operations > VersionKey",
+  "kw": "MUST",
+  "text": "The call to Amazon DynamoDB TransactWriteItems MUST use the configured Amazon DynamoDB Client to make the call."
+ },
+ {
+  "id": "BKS-079",
+  "file": "branch-key-store.md",
+  "line": 452,
+  "heading": "Operations > VersionKey",
+  "kw": "MUST",
+  "text": "The operation MUST call Amazon DynamoDB TransactWriteItems with a request constructed as follows:"
+ },
+ {
+  "id": "BKS-080",
+  "file": "branch-key-store.md",
+  "line": 467,
+  "heading": "Operations > VersionKey",
+  "kw": "MUST",
+  "text": "- Every key-value pair of the custom encryption context that is associated with the branch key MUST be added with an Attribute Name of `aws-crypto-ec:` + the Key and Attribute Value (S) of the value."
+ },
+ {
+  "id": "BKS-081",
+  "file": "branch-key-store.md",
+  "line": 479,
+  "heading": "Operations > VersionKey",
+  "kw": "MUST",
+  "text": "- Every key-value pair of the custom encryption context that is associated with the branch key MUST be added with an Attribute Name of `aws-crypto-ec:` + the Key and Attribute Value (S) of the value."
+ },
+ {
+  "id": "BKS-082",
+  "file": "branch-key-store.md",
+  "line": 489,
+  "heading": "Operations > VersionKey",
+  "kw": "MUST",
+  "text": "If DDB TransactWriteItems is successful, this operation MUST return a successful response containing no additional data."
+ },
+ {
+  "id": "BKS-083",
+  "file": "branch-key-store.md",
+  "line": 489,
+  "heading": "Operations > VersionKey",
+  "kw": "MUST",
+  "text": "Otherwise, this operation MUST yield an error."
+ },
+ {
+  "id": "BKS-084",
+  "file": "branch-key-store.md",
+  "line": 498,
+  "heading": "Operations > VersionKey > Authenticating a Keystore item",
+  "kw": "MUST",
+  "text": "The operation MUST use the configured `KMS SDK Client` to authenticate the value of the keystore item."
+ },
+ {
+  "id": "BKS-085",
+  "file": "branch-key-store.md",
+  "line": 502,
+  "heading": "Operations > VersionKey > Authenticating a Keystore item",
+  "kw": "MUST",
+  "text": "Every key in the constructed encryption context except `tableName` MUST exist as a string attribute in the AWS DDB response item."
+ },
+ {
+  "id": "BKS-086",
+  "file": "branch-key-store.md",
+  "line": 502,
+  "heading": "Operations > VersionKey > Authenticating a Keystore item",
+  "kw": "MUST",
+  "text": "Every value in the constructed encryption context except the logical table name MUST equal the value with the same key in the AWS DDB response item."
+ },
+ {
+  "id": "BKS-087",
+  "file": "branch-key-store.md",
+  "line": 502,
+  "heading": "Operations > VersionKey > Authenticating a Keystore item",
+  "kw": "MUST NOT",
+  "text": "The key `enc` MUST NOT exist in the constructed encryption context."
+ },
+ {
+  "id": "BKS-088",
+  "file": "branch-key-store.md",
+  "line": 510,
+  "heading": "Operations > VersionKey > Authenticating a Keystore item",
+  "kw": "MUST",
+  "text": "The operation MUST call AWS KMS API ReEncrypt with a request constructed as follows:"
+ },
+ {
+  "id": "BKS-089",
+  "file": "branch-key-store.md",
+  "line": 513,
+  "heading": "Operations > VersionKey > Authenticating a Keystore item",
+  "kw": "MUST",
+  "text": "- `SourceEncryptionContext` MUST be the encryption context constructed above"
+ },
+ {
+  "id": "BKS-090",
+  "file": "branch-key-store.md",
+  "line": 514,
+  "heading": "Operations > VersionKey > Authenticating a Keystore item",
+  "kw": "MUST",
+  "text": "- `SourceKeyId` MUST be compatible with the configured KMS Key in the AWS KMS Configuration for this keystore."
+ },
+ {
+  "id": "BKS-091",
+  "file": "branch-key-store.md",
+  "line": 515,
+  "heading": "Operations > VersionKey > Authenticating a Keystore item",
+  "kw": "MUST",
+  "text": "- `CiphertextBlob` MUST be the `enc` attribute value on the AWS DDB response item"
+ },
+ {
+  "id": "BKS-092",
+  "file": "branch-key-store.md",
+  "line": 516,
+  "heading": "Operations > VersionKey > Authenticating a Keystore item",
+  "kw": "MUST",
+  "text": "- `GrantTokens` MUST be the configured grant tokens."
+ },
+ {
+  "id": "BKS-093",
+  "file": "branch-key-store.md",
+  "line": 517,
+  "heading": "Operations > VersionKey > Authenticating a Keystore item",
+  "kw": "MUST",
+  "text": "- `DestinationKeyId` MUST be compatible with the configured KMS Key in the AWS KMS Configuration for this keystore."
+ },
+ {
+  "id": "BKS-094",
+  "file": "branch-key-store.md",
+  "line": 518,
+  "heading": "Operations > VersionKey > Authenticating a Keystore item",
+  "kw": "MUST",
+  "text": "- `DestinationEncryptionContext` MUST be the encryption context constructed above"
+ },
+ {
+  "id": "BKS-095",
+  "file": "branch-key-store.md",
+  "line": 524,
+  "heading": "Operations > GetActiveBranchKey",
+  "kw": "MUST",
+  "text": "- MUST supply a `branch-key-id`"
+ },
+ {
+  "id": "BKS-096",
+  "file": "branch-key-store.md",
+  "line": 526,
+  "heading": "Operations > GetActiveBranchKey",
+  "kw": "MUST",
+  "text": "To get the active version for the branch key id from the keystore this operation MUST call AWS DDB `GetItem` using the `branch-key-id` as the Partition Key and `\"branch:ACTIVE\"` value as the Sort Key."
+ },
+ {
+  "id": "BKS-097",
+  "file": "branch-key-store.md",
+  "line": 530,
+  "heading": "Operations > GetActiveBranchKey",
+  "kw": "MUST",
+  "text": "The AWS DDB response MUST contain the fields defined in the branch keystore record format."
+ },
+ {
+  "id": "BKS-098",
+  "file": "branch-key-store.md",
+  "line": 530,
+  "heading": "Operations > GetActiveBranchKey",
+  "kw": "MUST",
+  "text": "If the record does not contain the defined fields, this operation MUST fail."
+ },
+ {
+  "id": "BKS-099",
+  "file": "branch-key-store.md",
+  "line": 533,
+  "heading": "Operations > GetActiveBranchKey",
+  "kw": "MUST",
+  "text": "The operation MUST decrypt the branch key according to the AWS KMS Branch Key Decryption section."
+ },
+ {
+  "id": "BKS-100",
+  "file": "branch-key-store.md",
+  "line": 535,
+  "heading": "Operations > GetActiveBranchKey",
+  "kw": "MUST",
+  "text": "If the branch key fails to decrypt, GetActiveBranchKey MUST fail."
+ },
+ {
+  "id": "BKS-101",
+  "file": "branch-key-store.md",
+  "line": 537,
+  "heading": "Operations > GetActiveBranchKey",
+  "kw": "MUST",
+  "text": "This GetActiveBranchKey MUST construct branch key materials according to Branch Key Materials From Authenticated Encryption Context."
+ },
+ {
+  "id": "BKS-102",
+  "file": "branch-key-store.md",
+  "line": 540,
+  "heading": "Operations > GetActiveBranchKey",
+  "kw": "MUST",
+  "text": "This operation MUST return the constructed branch key materials."
+ },
+ {
+  "id": "BKS-103",
+  "file": "branch-key-store.md",
+  "line": 546,
+  "heading": "Operations > GetBranchKeyVersion",
+  "kw": "MUST",
+  "text": "- MUST supply a `branch-key-id`"
+ },
+ {
+  "id": "BKS-104",
+  "file": "branch-key-store.md",
+  "line": 547,
+  "heading": "Operations > GetBranchKeyVersion",
+  "kw": "MUST",
+  "text": "- MUST supply a `branchKeyVersion`"
+ },
+ {
+  "id": "BKS-105",
+  "file": "branch-key-store.md",
+  "line": 549,
+  "heading": "Operations > GetBranchKeyVersion",
+  "kw": "MUST",
+  "text": "To get a branch key from the keystore this operation MUST call AWS DDB `GetItem` using the `branch-key-id` as the Partition Key and \"branch:version:\" + `branchKeyVersion` value as the Sort Key."
+ },
+ {
+  "id": "BKS-106",
+  "file": "branch-key-store.md",
+  "line": 552,
+  "heading": "Operations > GetBranchKeyVersion",
+  "kw": "MUST",
+  "text": "The AWS DDB response MUST contain the fields defined in the branch keystore record format."
+ },
+ {
+  "id": "BKS-107",
+  "file": "branch-key-store.md",
+  "line": 552,
+  "heading": "Operations > GetBranchKeyVersion",
+  "kw": "MUST",
+  "text": "If the record does not contain the defined fields, this operation MUST fail."
+ },
+ {
+  "id": "BKS-108",
+  "file": "branch-key-store.md",
+  "line": 555,
+  "heading": "Operations > GetBranchKeyVersion",
+  "kw": "MUST",
+  "text": "The operation MUST decrypt the branch key according to the AWS KMS Branch Key Decryption section."
+ },
+ {
+  "id": "BKS-109",
+  "file": "branch-key-store.md",
+  "line": 557,
+  "heading": "Operations > GetBranchKeyVersion",
+  "kw": "MUST",
+  "text": "If the branch key fails to decrypt, this operation MUST fail."
+ },
+ {
+  "id": "BKS-110",
+  "file": "branch-key-store.md",
+  "line": 559,
+  "heading": "Operations > GetBranchKeyVersion",
+  "kw": "MUST",
+  "text": "This GetBranchKeyVersion MUST construct branch key materials according to Branch Key Materials From Authenticated Encryption Context."
+ },
+ {
+  "id": "BKS-111",
+  "file": "branch-key-store.md",
+  "line": 562,
+  "heading": "Operations > GetBranchKeyVersion",
+  "kw": "MUST",
+  "text": "This operation MUST return the constructed branch key materials."
+ },
+ {
+  "id": "BKS-112",
+  "file": "branch-key-store.md",
+  "line": 568,
+  "heading": "Operations > GetBeaconKey",
+  "kw": "MUST",
+  "text": "- MUST supply a `branch-key-id`"
+ },
+ {
+  "id": "BKS-113",
+  "file": "branch-key-store.md",
+  "line": 570,
+  "heading": "Operations > GetBeaconKey",
+  "kw": "MUST",
+  "text": "To get a branch key from the keystore this operation MUST call AWS DDB `GetItem` using the `branch-key-id` as the Partition Key and \"beacon:ACTIVE\" value as the Sort Key."
+ },
+ {
+  "id": "BKS-114",
+  "file": "branch-key-store.md",
+  "line": 573,
+  "heading": "Operations > GetBeaconKey",
+  "kw": "MUST",
+  "text": "The AWS DDB response MUST contain the fields defined in the branch keystore record format."
+ },
+ {
+  "id": "BKS-115",
+  "file": "branch-key-store.md",
+  "line": 573,
+  "heading": "Operations > GetBeaconKey",
+  "kw": "MUST",
+  "text": "If the record does not contain the defined fields, this operation MUST fail."
+ },
+ {
+  "id": "BKS-116",
+  "file": "branch-key-store.md",
+  "line": 576,
+  "heading": "Operations > GetBeaconKey",
+  "kw": "MUST",
+  "text": "The operation MUST decrypt the beacon key according to the AWS KMS Branch Key Decryption section."
+ },
+ {
+  "id": "BKS-117",
+  "file": "branch-key-store.md",
+  "line": 578,
+  "heading": "Operations > GetBeaconKey",
+  "kw": "MUST",
+  "text": "If the beacon key fails to decrypt, this operation MUST fail."
+ },
+ {
+  "id": "BKS-118",
+  "file": "branch-key-store.md",
+  "line": 580,
+  "heading": "Operations > GetBeaconKey",
+  "kw": "MUST",
+  "text": "This GetBeaconKey MUST construct beacon key materials from the decrypted branch key material and the `branchKeyId` from the returned `branch-key-id` field."
+ },
+ {
+  "id": "BKS-119",
+  "file": "branch-key-store.md",
+  "line": 583,
+  "heading": "Operations > GetBeaconKey",
+  "kw": "MUST",
+  "text": "This operation MUST return the constructed beacon key materials."
+ },
+ {
+  "id": "BKS-120",
+  "file": "branch-key-store.md",
+  "line": 592,
+  "heading": "Encryption Context",
+  "kw": "MUST",
+  "text": "- MUST have a `branch-key-id` attribute"
+ },
+ {
+  "id": "BKS-121",
+  "file": "branch-key-store.md",
+  "line": 593,
+  "heading": "Encryption Context",
+  "kw": "MUST",
+  "text": "- The `branch-key-id` field MUST not be an empty string"
+ },
+ {
+  "id": "BKS-122",
+  "file": "branch-key-store.md",
+  "line": 594,
+  "heading": "Encryption Context",
+  "kw": "MUST",
+  "text": "- MUST have a `type` attribute"
+ },
+ {
+  "id": "BKS-123",
+  "file": "branch-key-store.md",
+  "line": 595,
+  "heading": "Encryption Context",
+  "kw": "MUST",
+  "text": "- The `type` field MUST not be an empty string"
+ },
+ {
+  "id": "BKS-124",
+  "file": "branch-key-store.md",
+  "line": 596,
+  "heading": "Encryption Context",
+  "kw": "MUST",
+  "text": "- MUST have a `create-time` attribute"
+ },
+ {
+  "id": "BKS-125",
+  "file": "branch-key-store.md",
+  "line": 597,
+  "heading": "Encryption Context",
+  "kw": "MUST",
+  "text": "- MUST have a `tablename` attribute to store the logicalKeyStoreName"
+ },
+ {
+  "id": "BKS-126",
+  "file": "branch-key-store.md",
+  "line": 598,
+  "heading": "Encryption Context",
+  "kw": "MUST",
+  "text": "- MUST have a `kms-arn` attribute"
+ },
+ {
+  "id": "BKS-127",
+  "file": "branch-key-store.md",
+  "line": 599,
+  "heading": "Encryption Context",
+  "kw": "MUST",
+  "text": "- MUST have a `hierarchy-version`"
+ },
+ {
+  "id": "BKS-128",
+  "file": "branch-key-store.md",
+  "line": 600,
+  "heading": "Encryption Context",
+  "kw": "MUST NOT",
+  "text": "- MUST NOT have a `enc` attribute"
+ },
+ {
+  "id": "BKS-129",
+  "file": "branch-key-store.md",
+  "line": 602,
+  "heading": "Encryption Context",
+  "kw": "MUST",
+  "text": "Any additionally attributes on the DynamoDB item MUST be added to the encryption context."
+ },
+ {
+  "id": "BKS-130",
+  "file": "branch-key-store.md",
+  "line": 612,
+  "heading": "Encryption Context > ACTIVE Encryption Context",
+  "kw": "MUST",
+  "text": "The ACTIVE encryption context value of the `type` attribute MUST equal to `\"branch:ACTIVE\"`."
+ },
+ {
+  "id": "BKS-131",
+  "file": "branch-key-store.md",
+  "line": 612,
+  "heading": "Encryption Context > ACTIVE Encryption Context",
+  "kw": "MUST",
+  "text": "The ACTIVE encryption context MUST have a `version` attribute."
+ },
+ {
+  "id": "BKS-132",
+  "file": "branch-key-store.md",
+  "line": 612,
+  "heading": "Encryption Context > ACTIVE Encryption Context",
+  "kw": "MUST",
+  "text": "The `version` attribute MUST store the branch key version formatted like `\"branch:version:\"` + `version`."
+ },
+ {
+  "id": "BKS-133",
+  "file": "branch-key-store.md",
+  "line": 620,
+  "heading": "Encryption Context > DECRYPT_ONLY Encryption Context",
+  "kw": "MUST NOT",
+  "text": "The DECRYPT_ONLY encryption context MUST NOT have a `version` attribute."
+ },
+ {
+  "id": "BKS-134",
+  "file": "branch-key-store.md",
+  "line": 620,
+  "heading": "Encryption Context > DECRYPT_ONLY Encryption Context",
+  "kw": "MUST",
+  "text": "The `type` attribute MUST stores the branch key version formatted like `\"branch:version:\"` + `version`."
+ },
+ {
+  "id": "BKS-135",
+  "file": "branch-key-store.md",
+  "line": 627,
+  "heading": "Encryption Context > Beacon Key Encryption Context",
+  "kw": "MUST",
+  "text": "The Beacon key encryption context value of the `type` attribute MUST equal to `\"beacon:ACTIVE\"`."
+ },
+ {
+  "id": "BKS-136",
+  "file": "branch-key-store.md",
+  "line": 627,
+  "heading": "Encryption Context > Beacon Key Encryption Context",
+  "kw": "MUST NOT",
+  "text": "The Beacon key encryption context MUST NOT have a `version` attribute."
+ },
+ {
+  "id": "BKS-137",
+  "file": "branch-key-store.md",
+  "line": 632,
+  "heading": "Encryption Context > Custom Encryption Context",
+  "kw": "MUST",
+  "text": "If custom encryption context is associated with the branch key these values MUST be added to the AWS KMS encryption context."
+ },
+ {
+  "id": "BKS-138",
+  "file": "branch-key-store.md",
+  "line": 632,
+  "heading": "Encryption Context > Custom Encryption Context",
+  "kw": "MUST",
+  "text": "To avoid name collisions each added attribute from the custom encryption context MUST be prefixed with `aws-crypto-ec:`."
+ },
+ {
+  "id": "BKS-139",
+  "file": "branch-key-store.md",
+  "line": 632,
+  "heading": "Encryption Context > Custom Encryption Context",
+  "kw": "MUST",
+  "text": "Across all versions of a Branch Key, the custom encryption context MUST be equal."
+ },
+ {
+  "id": "BKS-140",
+  "file": "branch-key-store.md",
+  "line": 640,
+  "heading": "AWS KMS Branch Key Decryption",
+  "kw": "MUST",
+  "text": "The operation MUST use the configured `KMS SDK Client` to decrypt the value of the branch key field."
+ },
+ {
+  "id": "BKS-141",
+  "file": "branch-key-store.md",
+  "line": 642,
+  "heading": "AWS KMS Branch Key Decryption",
+  "kw": "MUST",
+  "text": "Every attribute except for `enc` on the AWS DDB response item MUST be authenticated in the decryption of `enc`"
+ },
+ {
+  "id": "BKS-142",
+  "file": "branch-key-store.md",
+  "line": 645,
+  "heading": "AWS KMS Branch Key Decryption",
+  "kw": "MUST",
+  "text": "Every key in the constructed encryption context except `tableName` MUST exist as a string attribute in the AWS DDB response item."
+ },
+ {
+  "id": "BKS-143",
+  "file": "branch-key-store.md",
+  "line": 645,
+  "heading": "AWS KMS Branch Key Decryption",
+  "kw": "MUST",
+  "text": "Every value in the constructed encryption context except the logical table name MUST equal the value with the same key in the AWS DDB response item."
+ },
+ {
+  "id": "BKS-144",
+  "file": "branch-key-store.md",
+  "line": 645,
+  "heading": "AWS KMS Branch Key Decryption",
+  "kw": "MUST NOT",
+  "text": "The key `enc` MUST NOT exist in the constructed encryption context."
+ },
+ {
+  "id": "BKS-145",
+  "file": "branch-key-store.md",
+  "line": 653,
+  "heading": "AWS KMS Branch Key Decryption",
+  "kw": "MUST",
+  "text": "If the Keystore's AWS KMS Configuration is `KMS Key ARN` or `KMS MRKey ARN`, the `kms-arn` field of the DDB response item MUST be compatible with the configured KMS Key in the AWS KMS Configuration for this keystore, or the operation MUST fail."
+ },
+ {
+  "id": "BKS-146",
+  "file": "branch-key-store.md",
+  "line": 659,
+  "heading": "AWS KMS Branch Key Decryption",
+  "kw": "MUST/MUST NOT",
+  "text": "If the Keystore's AWS KMS Configuration is `Discovery` or `MRDiscovery`, the `kms-arn` field of DDB response item MUST NOT be an Alias or the operation MUST fail."
+ },
+ {
+  "id": "BKS-147",
+  "file": "branch-key-store.md",
+  "line": 665,
+  "heading": "AWS KMS Branch Key Decryption",
+  "kw": "MUST",
+  "text": "When calling AWS KMS Decrypt, the keystore operation MUST call with a request constructed as follows:"
+ },
+ {
+  "id": "BKS-148",
+  "file": "branch-key-store.md",
+  "line": 668,
+  "heading": "AWS KMS Branch Key Decryption",
+  "kw": "MUST",
+  "text": "- `KeyId`, if the KMS Configuration is Discovery, MUST be the `kms-arn` attribute value of the AWS DDB response item. If the KMS Configuration is MRDiscovery, `KeyId` MUST be the `kms-arn` attribute value of the AWS DDB response item, with the region replaced by the configured region. Otherwise, it MUST BE the Keystore's configured KMS Key."
+ },
+ {
+  "id": "BKS-149",
+  "file": "branch-key-store.md",
+  "line": 671,
+  "heading": "AWS KMS Branch Key Decryption",
+  "kw": "MUST",
+  "text": "- `CiphertextBlob` MUST be the `enc` attribute value on the AWS DDB response item"
+ },
+ {
+  "id": "BKS-150",
+  "file": "branch-key-store.md",
+  "line": 672,
+  "heading": "AWS KMS Branch Key Decryption",
+  "kw": "MUST",
+  "text": "- `EncryptionContext` MUST be the encryption context constructed above"
+ },
+ {
+  "id": "BKS-151",
+  "file": "branch-key-store.md",
+  "line": 673,
+  "heading": "AWS KMS Branch Key Decryption",
+  "kw": "MUST",
+  "text": "- `GrantTokens` MUST be this keystore's grant tokens."
+ },
+ {
+  "id": "BKS-152",
+  "file": "branch-key-store.md",
+  "line": 677,
+  "heading": "Record Format",
+  "kw": "MUST",
+  "text": "A branch key record MUST include the following key-value pairs:"
+ },
+ {
+  "id": "BKS-153",
+  "file": "branch-key-store.md",
+  "line": 700,
+  "heading": "Record Format > Branch Key Materials From Authenticated Encryption Context",
+  "kw": "MUST",
+  "text": "The `type` attribute MUST either be equal to `\"branch:ACTIVE\"` or start with `\"branch:version:\"`."
+ },
+ {
+  "id": "BKS-154",
+  "file": "branch-key-store.md",
+  "line": 702,
+  "heading": "Record Format > Branch Key Materials From Authenticated Encryption Context",
+  "kw": "MUST",
+  "text": "If the `type` attribute is equal to `\"branch:ACTIVE\"` then the authenticated encryption context MUST have a `version` attribute and the version string is this value."
+ },
+ {
+  "id": "BKS-155",
+  "file": "branch-key-store.md",
+  "line": 702,
+  "heading": "Record Format > Branch Key Materials From Authenticated Encryption Context",
+  "kw": "MUST",
+  "text": "If the `type` attribute start with `\"branch:version:\"` then the version string MUST be equal to this value."
+ },
+ {
+  "id": "BKS-156",
+  "file": "branch-key-store.md",
+  "line": 709,
+  "heading": "Record Format > Branch Key Materials From Authenticated Encryption Context",
+  "kw": "MUST",
+  "text": "- Branch Key MUST be the decrypted branch key material"
+ },
+ {
+  "id": "BKS-157",
+  "file": "branch-key-store.md",
+  "line": 710,
+  "heading": "Record Format > Branch Key Materials From Authenticated Encryption Context",
+  "kw": "MUST",
+  "text": "- Branch Key Id MUST be the `branch-key-id`"
+ },
+ {
+  "id": "BKS-158",
+  "file": "branch-key-store.md",
+  "line": 711,
+  "heading": "Record Format > Branch Key Materials From Authenticated Encryption Context",
+  "kw": "MUST",
+  "text": "- Branch Key Version The version string MUST start with `branch:version:`. The remaining string encoded as UTF8 bytes MUST be the Branch Key version."
+ },
+ {
+  "id": "BKS-159",
+  "file": "branch-key-store.md",
+  "line": 714,
+  "heading": "Record Format > Branch Key Materials From Authenticated Encryption Context",
+  "kw": "MUST",
+  "text": "- Encryption Context MUST be constructed by Custom Encryption Context From Authenticated Encryption Context"
+ },
+ {
+  "id": "BKS-160",
+  "file": "branch-key-store.md",
+  "line": 721,
+  "heading": "Record Format > Custom Encryption Context From Authenticated Encryption Context",
+  "kw": "MUST",
+  "text": "For every key in the encryption context the string `aws-crypto-ec:` + the UTF8 decode of this key MUST exist as a key in the authenticated encryption context."
+ },
+ {
+  "id": "BKS-161",
+  "file": "branch-key-store.md",
+  "line": 721,
+  "heading": "Record Format > Custom Encryption Context From Authenticated Encryption Context",
+  "kw": "MUST",
+  "text": "Also, the value in the encryption context for this key MUST equal the value in the authenticated encryption context for the constructed key."
+ }
+]

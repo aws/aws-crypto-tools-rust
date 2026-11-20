@@ -1,0 +1,66 @@
+[tool] Running: @builder-mcp/Atlas
+[tool] status: Completed
+[tool] Running: @sage-plus-service-mcp/SearchRelevantContentAsync
+[tool] Running: @builder-mcp/InternalSearch
+[tool] status: Completed
+[tool] status: Completed
+[tool] Running: @sage-plus-service-mcp/SearchRelevantContentAsync
+[tool] Running: @builder-mcp/InternalSearch
+[tool] Running: @sage-plus-service-mcp/SearchRelevantContentAsync
+[tool] status: Completed
+[tool] status: Completed
+[tool] status: Completed
+[tool] Running: @builder-mcp/ReadInternalWebsites
+[tool] status: Completed
+[tool] Running: @sage-plus-service-mcp/SearchRelevantContentAsync
+[tool] Running: @builder-mcp/ReadInternalWebsites
+[tool] status: Completed
+[tool] status: Completed
+[tool] Running: @sage-plus-service-mcp/SearchRelevantContentAsync
+[tool] Running: @builder-mcp/InternalCodeSearch
+[tool] status: Completed
+[tool] status: Completed
+Chorus is an internal real-time collaborative document editor at **https://chorus.aws.dev**, positioned as a Quip replacement. The simplest way to get your files in is to use the GitHub-flavored Markdown versions and skip the pandoc .docx. I found no native Word import.
+
+**Ambiguity.** Two internal tools are called Chorus:
+- **AWS Chorus (chorus.aws.dev)** is the document platform. This is the one you want.
+- **INTech/Altair Chorus** is an unrelated Python library (`amzn-chorus`) for GenAI evaluation work, such as judges and AutoEval ([docs](https://w.amazon.com/bin/view/INTech/Altair/Chorus/V2/Docs)).
+
+**1. What it is and who owns it**
+- It is a CRDT-based editor written in Rust. AI agents can edit alongside people through an MCP server (`aim mcp install chorus-mcp`). It stores content natively as rich text and Markdown.
+- Owner: the AWS Chorus team. The wiki's primary owner is the `igt-leads` POSIX group, and the founding SDM is askubel@. AWS has funded it since 2026-07-13.
+- Support: Slack `#aws-chorus-interest` and the [Chorus Taskei room](https://taskei.amazon.dev/rooms/b17eb01a-7fb0-4aee-bfde-e83ba82e44f4/overview).
+- It completed AppSec review and is approved for **Highly Confidential data and below**. Confirm your bug report fits that classification before you post it.
+- Sources: [Chorus wiki](https://w.amazon.com/bin/view/AWS/Chorus), [FAQ](https://w.amazon.com/bin/view/AWS/Chorus/Product/FAQ)
+
+**2. Formats and how documents get in**
+- **Markdown** is the native format. The editor has a Markdown mode, and a user on the [Sage comparison post](https://sage.amazon.dev/posts/2032093) reports that pasting Markdown renders fully.
+- **Word/.docx:** I found no native .docx import in the docs or code.
+- **HTML:** "Chorus Canvas" HTML pages exist ([example](https://chorus.aws.dev/doc/UfbqBNo2YXAf/HTML-Canvas-Example-to-get-started)).
+- Ways to create documents:
+  - **UI:** the "+ New" menu creates documents, folders, and spreadsheets. Pasting Markdown works.
+  - **Tampermonkey userscript:** adds "Import from Markdown" to "+ New". It takes .md files, .zip bundles, or .md plus images, and uploads the images ([ScriptForge page](https://w.amazon.com/bin/view/ScriptForge/Scripts/All/chorus-document-markdown-import)).
+  - **Chorus MCP:** this is the only programmatic path, with no public REST or Coral API. Creating a new document is reliable. Writing to existing documents via MCP is reported to blank content ([community skill page](https://w.amazon.com/bin/view/DTO/Team/UTRTech/UTRProductSkillRepo/ManageChorusDocs)).
+  - **Quip import:** one-click [Quip2Chorus](https://w.amazon.com/bin/view/AWS/Chorus/Product/Quip2Chorus).
+  - **Export to wiki:** the Chorus2Wiki script.
+  - **Git sync:** not available. Pulling Markdown from code.amazon.com and GitHub sync are on the roadmap only. An Obsidian sync plugin exists.
+
+**3. Templates**
+- **Threat model:** the official AWS Threat Model template has a Chorus copy at https://chorus.aws.dev/doc/s20rbfcdYSZv. AppSec says no template is mandated ([Threat Modeling Resources](https://w.amazon.com/bin/view/AWS_IT_Security/Security_Reviews/Threat_Modeling/Resources/)).
+- One team's AppSec guide lists the sections AppSec expects: assumptions, architecture with data flows, threat actors, a STRIDE threat table with mitigations, a risk summary, and security tests ([Feenix guide](https://w.amazon.com/bin/view/AWS/Marketplace/Feenix/Engineering/AppSecReviewGuide)).
+- **Bug write-up:** I found no Chorus template for bug write-ups.
+
+**4. Feature limits**
+- **Images:** PNG, JPEG, GIF, and WebP up to 10 MB. PDF up to 20 MB, video up to 50 MB ([FAQ](https://w.amazon.com/bin/view/AWS/Chorus/Product/FAQ)).
+- **Tables:** supported. Quip migration preserves them, and the MCP has table tools.
+- **Mermaid:** the user report says it renders inline, but the FAQ still lists Mermaid as roadmap. Test it with your files.
+- **Code blocks:** no documented limits found.
+- **Very long documents (~110 KB):** no documented size limit found. One team's SOP recommends building the whole .md locally and publishing it in a single MCP `create` call with the `file` parameter. It also notes small rendering quirks, such as escaped `|` characters and links losing their URL when they don't start the line.
+
+**5. Review process**
+- AWS AppSec security reviews are run as **Talos engagements** at https://talos.security.aws.a2z.com. Threat Composer is the approved structured tool for building threat models.
+- Chorus is not part of the review. It is just one place the template is hosted.
+- The Feenix guide says the Talos document uploader accepts only **.pdf, .txt, and .md**. Your Markdown files work there; the .docx files don't.
+- If the Rust library is open source, the Atlas entry for AppSec review describes a two-stage review in AWS Launch Manager instead.
+- I couldn't confirm a review path specific to Crypto Tools or to libraries. Ask your AppSec contact or `#threat-modeling-interest`.
+exit: 0

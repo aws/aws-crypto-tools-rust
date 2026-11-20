@@ -1,0 +1,212 @@
+=== [1/2] ORIGINAL reproducer placed unchanged as the in-crate module in the /tmp copy; cargo test --lib zz_bugrepro_04 -- --nocapture ===
+   Compiling aws-crypto-mpl v0.1.0 (/private/tmp/bugrecheck04/mpl)
+error[E0432]: unresolved import `super::resolve_keystore_arn`
+ --> src/key_store/zz_bugrepro_04.rs:6:5
+  |
+6 | use super::resolve_keystore_arn;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `resolve_keystore_arn` in `key_store::kms_ops`
+  |
+help: a similar name exists in the module
+  |
+6 | use super::resolve_key_store_arn;
+  |                       +
+
+error[E0432]: unresolved import `crate::keystore`
+ --> src/key_store/zz_bugrepro_04.rs:7:12
+  |
+7 | use crate::keystore::KmsConfiguration;
+  |            ^^^^^^^^ could not find `keystore` in the crate root
+
+For more information about this error, try `rustc --explain E0432`.
+error: could not compile `aws-crypto-mpl` (lib test) due to 2 previous errors
+[exit code: 101]
+
+=== [2/2] ADAPTED reproducer ===
+=== BUG-04 re-check. The original reproducer (.agents/tasks/bug-reports/reproducers/zz_bugrepro_04_mrdiscovery_non_mrk.rs) is an in-crate module for kms_ops.rs; it cannot compile against main because the module was renamed (keystore -> key_store), resolve_keystore_arn was renamed to resolve_key_store_arn and gained a branch_key_id argument, and KmsConfiguration::MrDiscovery became a tuple variant around an MrDiscovery struct. It was therefore run in ADAPTED form only (.agents/tasks/bug-recheck/reproducers/zz_bugrepro_04_mrdiscovery_non_mrk.rs).
+=== Method: throwaway copy of mpl/ and prim/ in /tmp/bugrecheck04; only change to the copy: the file above added as mpl/src/key_store/zz_bugrepro_04.rs and '#[cfg(test)] #[path = "zz_bugrepro_04.rs"] mod zz_bugrepro_04;' appended to the copy's mpl/src/key_store/kms_ops.rs. Repository source untouched. Copy deleted afterwards.
+=== Command: cd /tmp/bugrecheck04/mpl && cargo test --lib zz_bugrepro_04 -- --nocapture ===
+   Compiling proc-macro2 v1.0.107
+   Compiling unicode-ident v1.0.26
+   Compiling quote v1.0.47
+   Compiling libc v0.2.190
+   Compiling bytes v1.12.1
+   Compiling pin-project-lite v0.2.17
+   Compiling futures-core v0.3.34
+   Compiling itoa v1.0.18
+   Compiling once_cell v1.21.4
+   Compiling futures-sink v0.3.34
+   Compiling autocfg v1.5.1
+   Compiling futures-task v0.3.34
+   Compiling time-core v0.1.9
+   Compiling num-conv v0.2.2
+   Compiling find-msvc-tools v0.1.14
+   Compiling shlex v2.0.1
+   Compiling futures-util v0.3.34
+   Compiling deranged v0.5.8
+   Compiling tracing-core v0.1.36
+   Compiling vsimd v0.8.0
+   Compiling either v1.19.0
+   Compiling time-macros v0.2.32
+   Compiling powerfmt v0.2.1
+   Compiling outref v0.5.2
+   Compiling dunce v1.0.5
+   Compiling fs_extra v1.3.0
+   Compiling pin-utils v0.1.1
+   Compiling num-traits v0.2.19
+   Compiling ryu v1.0.23
+   Compiling http v1.5.0
+   Compiling bytes-utils v0.1.4
+   Compiling base64-simd v0.8.0
+   Compiling pkg-config v0.3.34
+   Compiling typenum v1.20.1
+   Compiling aws-lc-rs v1.18.1
+   Compiling foldhash v0.2.0
+   Compiling smallvec v1.16.2
+   Compiling hashbrown v0.17.1
+   Compiling percent-encoding v2.3.2
+   Compiling untrusted v0.7.1
+   Compiling stable_deref_trait v1.2.1
+   Compiling httparse v1.10.1
+   Compiling core-foundation-sys v0.8.7
+   Compiling equivalent v1.0.2
+   Compiling try-lock v0.2.5
+   Compiling atomic-waker v1.1.2
+   Compiling slab v0.4.12
+   Compiling fnv v1.0.7
+   Compiling http-body v1.1.0
+   Compiling untrusted v0.9.0
+   Compiling rustls v0.23.45
+   Compiling want v0.3.2
+   Compiling futures-channel v0.3.34
+   Compiling bitflags v2.13.2
+   Compiling http-body-util v0.1.5
+   Compiling indexmap v2.14.2
+   Compiling hybrid-array v0.4.15
+   Compiling tower-service v0.3.3
+   Compiling cmov v0.5.4
+   Compiling subtle v2.6.1
+   Compiling cfg-if v1.0.5
+   Compiling semver v1.0.28
+   Compiling base64 v0.23.1
+   Compiling ipnet v2.12.2
+   Compiling ctutils v0.4.3
+   Compiling const-oid v0.10.2
+   Compiling tower-layer v0.3.3
+   Compiling block-buffer v0.12.1
+   Compiling crypto-common v0.2.2
+   Compiling rustc_version v0.4.1
+   Compiling getrandom v0.4.3
+   Compiling tower v0.5.3
+   Compiling form_urlencoded v1.2.2
+   Compiling time v0.3.55
+   Compiling rustversion v1.0.23
+   Compiling litemap v0.8.3
+   Compiling writeable v0.6.4
+   Compiling aws-types v1.6.0
+   Compiling version_check v0.9.5
+   Compiling syn v3.0.6
+   Compiling syn v2.0.119
+   Compiling hex v0.4.3
+   Compiling utf8_iter v1.0.4
+   Compiling icu_properties_data v2.3.0
+   Compiling errno v0.3.14
+   Compiling socket2 v0.6.5
+   Compiling mio v1.2.4
+   Compiling jobserver v0.1.35
+   Compiling security-framework-sys v2.17.0
+   Compiling signal-hook-registry v1.4.8
+   Compiling core-foundation v0.10.1
+   Compiling cc v1.6.0
+   Compiling num-integer v0.1.47
+   Compiling cpufeatures v0.3.1
+   Compiling digest v0.11.3
+   Compiling icu_normalizer_data v2.3.0
+   Compiling security-framework v3.7.0
+   Compiling sha2 v0.11.0
+   Compiling hmac v0.13.0
+   Compiling fastrand v2.5.0
+   Compiling generic-array v0.14.7
+   Compiling uuid v1.27.0
+   Compiling regex-lite v0.1.9
+   Compiling xmlparser v0.13.6
+   Compiling urlencoding v2.1.3
+   Compiling cpufeatures v0.2.17
+   Compiling lru v0.18.5
+   Compiling cmake v0.1.58
+   Compiling aws-lc-sys v0.45.0
+   Compiling arc-swap v1.9.2
+   Compiling block-buffer v0.10.4
+   Compiling crypto-common v0.1.7
+   Compiling digest v0.10.7
+   Compiling sha1 v0.10.7
+   Compiling zeroize_derive v1.5.0
+   Compiling tracing-attributes v0.1.31
+   Compiling aws-smithy-runtime-api-macros v1.1.0
+   Compiling synstructure v0.14.0
+   Compiling tokio-macros v2.7.2
+   Compiling zerofrom-derive v0.1.8
+   Compiling yoke-derive v0.8.4
+   Compiling zerovec-derive v0.11.6
+   Compiling displaydoc v0.2.7
+   Compiling async-trait v0.1.92
+   Compiling zeroize v1.9.1
+   Compiling tracing v0.1.44
+   Compiling tokio v1.53.2
+   Compiling rustls-pki-types v1.15.1
+   Compiling zerofrom v0.1.8
+   Compiling rustls-native-certs v0.8.4
+   Compiling yoke v0.8.3
+   Compiling zerovec v0.11.8
+   Compiling zerotrie v0.2.5
+   Compiling tinystr v0.8.4
+   Compiling potential_utf v0.1.6
+   Compiling icu_collections v2.3.0
+   Compiling icu_locale_core v2.3.0
+   Compiling icu_provider v2.3.1
+   Compiling icu_properties v2.3.0
+   Compiling icu_normalizer v2.3.0
+   Compiling tokio-util v0.7.19
+   Compiling aws-smithy-async v1.3.0
+   Compiling aws-smithy-types v1.8.1
+   Compiling h2 v0.4.20
+   Compiling idna_adapter v1.2.2
+   Compiling idna v1.1.0
+   Compiling aws-smithy-runtime-api v1.19.0
+   Compiling url v2.5.8
+   Compiling hyper v1.12.0
+   Compiling aws-smithy-schema v0.2.1
+   Compiling aws-smithy-http v0.64.1
+   Compiling aws-credential-types v1.3.0
+   Compiling aws-smithy-observability v0.3.0
+   Compiling aws-smithy-json v0.63.1
+   Compiling aws-smithy-xml v0.62.1
+   Compiling aws-sigv4 v1.6.0
+   Compiling hyper-util v0.1.21
+   Compiling aws-smithy-query v0.62.1
+   Compiling rustls-webpki v0.103.15
+   Compiling aws-mpl-primitives v0.1.0 (/private/tmp/bugrecheck04/prim)
+   Compiling tokio-rustls v0.26.6
+   Compiling hyper-rustls v0.27.10
+   Compiling aws-smithy-http-client v1.5.0
+   Compiling aws-smithy-runtime v1.16.0
+   Compiling aws-runtime v1.10.0
+   Compiling aws-sdk-ssooidc v1.116.0
+   Compiling aws-sdk-sts v1.119.0
+   Compiling aws-sdk-sso v1.114.0
+   Compiling aws-sdk-kms v1.123.0
+   Compiling aws-sdk-dynamodb v1.130.0
+   Compiling aws-config v1.12.0
+   Compiling aws-crypto-mpl v0.1.0 (/private/tmp/bugrecheck04/mpl)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 30.16s
+     Running unittests src/lib.rs (target/debug/deps/aws_crypto_mpl-4de236fbd949f3d8)
+
+running 1 test
+REPRO BUG-04 MRDiscovery(us-west-2), record SRK  arn:aws:kms:us-east-1:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab -> Ok("arn:aws:kms:us-west-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab")
+REPRO BUG-04 MRDiscovery(us-west-2), record MRK  arn:aws:kms:us-east-1:111122223333:key/mrk-1234abcd-12ab-34cd-56ef-1234567890ab -> Ok("arn:aws:kms:us-west-2:111122223333:key/mrk-1234abcd-12ab-34cd-56ef-1234567890ab")
+REPRO BUG-04 Discovery,              record SRK  arn:aws:kms:us-east-1:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab -> Ok("arn:aws:kms:us-east-1:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab")
+REPRO BUG-04 SRK ARN changed by MRDiscovery: true
+test key_store::kms_ops::zz_bugrepro_04::mrdiscovery_rewrites_region_of_single_region_key ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 18 filtered out; finished in 0.00s
+
+[exit code: 0]
