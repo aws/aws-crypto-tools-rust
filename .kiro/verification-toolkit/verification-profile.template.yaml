@@ -1,0 +1,340 @@
+# Verification profile schema (template).
+# Copy this file to .kiro/verification-profile/verification-profile.yaml and fill
+# every value from the repository (grep, ls, the build files), never from memory.
+# Keep the comments. Never put a count ("N verified") in this file.
+# Readers: pipeline = ai-verification-pipeline, update = ai-verification-update,
+# spec-analyzer, threat-model = threat-model-generator, recommender =
+# verification-recommender, capabilities = verus-capabilities, header-parsing =
+# verus-header-parsing-proofs, zero-panic = verus-zero-panic, ffi =
+# verus-unsafe-ffi-safety, SKILL = the verus skill, steering = the steering pointer.
+# In a list, the comments on the first entry apply to every entry.
+
+# Version of this schema; read by: all
+schema_version: 1
+
+# Identity and kind of the library; read by: all
+library:
+  # Full name of the library; read by: all
+  name: ""
+  # Short name used in prose; read by: all
+  short_name: ""
+  # Repository name or URL; read by: pipeline, update
+  repo: ""
+  # Kind of system (library, service, ...); read by: pipeline Stage 1, threat-model, spec-analyzer
+  system_type: ""
+  # One-paragraph description of what the library does; read by: pipeline, threat-model, spec-analyzer
+  description: ""
+
+# Every crate the agents verify or read; read by: all agents, SKILL "Running Verus" and mutation recipe, update (live counts)
+crates:
+  - # Cargo package name, as printed in "Checking <name> v..."; read by: all
+    name: ""
+    # Crate directory from the repo root; read by: all
+    path: ""
+    # What the crate is for and how it is treated; read by: pipeline, capabilities, recommender
+    role: ""
+    # true if Verus checks the crate's verus! blocks; read by: all proof agents, recommender, update, capabilities
+    verus_enabled: false
+    # Source directories holding the code under verification; read by: recommender, update, proof agents
+    source_dirs: []
+    # Test directories; read by: spec-analyzer, recommender
+    test_dirs: []
+    # Command that runs Verus on the crate, from the repo root; read by: SKILL, proof agents, update
+    verify_cmd: ""
+    # Each feature set verify_cmd runs, with the reason; read by: SKILL, proof agents, update
+    feature_sets:
+      - # Cargo arguments for this feature set; read by: SKILL, proof agents, update
+        args: ""
+        # Why this feature set is checked; read by: SKILL, proof agents, update
+        note: ""
+    # Rule for picking this crate's "verification results::" line; read by: SKILL, proof agents, update
+    result_line: ""
+    # Command that forces a re-check of a cached crate; read by: SKILL mutation recipe, proof agents, update
+    cache_bust: ""
+    # Command that runs the crate's tests; read by: proof agents, update
+    test_cmd: ""
+    # Lint and format commands to run before delivery; read by: proof agents
+    lint_cmds: []
+    # Tests known to fail locally, with the reason; read by: proof agents, update
+    known_test_failures: []
+    # Where unsafe code is in this crate (or none); read by: ffi, capabilities, recommender
+    unsafe: ""
+
+# Standalone Verus models that do not import the shipped code; read by: capabilities, update, proof agents (model-only harness), pipeline
+models:
+  # Directory of the models; read by: capabilities, update, proof agents, pipeline
+  path: ""
+  # Command that verifies every model; read by: update, proof agents
+  verify_cmd: ""
+  # File that records each model's status; read by: update, capabilities
+  status_file: ""
+  # Each model file with its target and status (superseded, model_only, possibly_stale, deferred); read by: capabilities, update, recommender
+  files:
+    - # Model file name; read by: capabilities, update, recommender
+      file: ""
+      # Target id the model belongs to; read by: capabilities, update, recommender
+      target: ""
+      # Status of the model; read by: capabilities, update, recommender
+      status: ""
+  # Whether the models are kept or removed, and where that is decided; read by: update, pipeline
+  decision: ""
+
+# Version pins of the verification toolchain; read by: SKILL Environment, capabilities
+toolchain:
+  # Verus release version; read by: SKILL, capabilities
+  verus_version: ""
+  # Path of the Verus binary; read by: SKILL, capabilities, proof agents
+  verus_binary: ""
+  # Rust toolchain Verus needs; read by: SKILL, capabilities
+  rust_toolchain: ""
+  # vstd version pin in the crates; read by: SKILL, capabilities
+  vstd_pin: ""
+  # How cargo-verus treats dependencies and which crates it verifies; read by: SKILL, capabilities
+  cargo_verus: ""
+
+# The library's specification; read by: spec-analyzer, threat-model, pipeline, recommender, proof agents
+spec:
+  # Directory of the spec from the repo root; read by: spec-analyzer, threat-model, proof agents
+  location: ""
+  # Script that fetches the spec when it is absent; read by: spec-analyzer, threat-model
+  resolver: ""
+  # Upstream source of the spec (url and ref); read by: spec-analyzer
+  source: ""
+  # true if the spec directory may be missing in a local checkout; read by: spec-analyzer, threat-model
+  may_be_absent: false
+  # Spec documents the code is traced against; read by: spec-analyzer, threat-model, pipeline
+  tracked_documents: []
+  # Further spec documents agents read that are not in the trace config; read by: spec-analyzer, proof agents
+  extra_documents: []
+  # External standards the library relies on; read by: pipeline Stage 1, threat-model
+  standards: []
+  # Spec documents each proof agent reads first; read by: header-parsing, zero-panic
+  per_agent_documents:
+    # Spec documents for header parsing proofs; read by: header-parsing
+    header_parsing: []
+    # Spec documents for zero-panic proofs; read by: zero-panic
+    zero_panic: []
+
+# Spec-to-code annotations; read by: spec-analyzer, threat-model, recommender, pipeline
+traceability:
+  # Annotation tool; read by: spec-analyzer, threat-model, recommender, pipeline
+  tool: ""
+  # Tool config file listing the tracked documents; read by: spec-analyzer, threat-model
+  config: ""
+  # Comment markers that carry annotations; read by: spec-analyzer, SKILL Core/adapter pattern
+  markers: []
+  # Directories that carry annotations; read by: spec-analyzer, threat-model, recommender
+  annotated_dirs: []
+  # Honesty-ladder level for each annotation type; read by: spec-analyzer, recommender, threat-model
+  type_to_ladder:
+    # Ladder level of a test annotation; read by: spec-analyzer, recommender, threat-model
+    test: ""
+    # Ladder level of an implication annotation; read by: spec-analyzer, recommender, threat-model
+    implication: ""
+
+# What is in and out of scope; read by: pipeline Stage 1/2, spec-analyzer, threat-model
+scope:
+  # In-scope areas; read by: pipeline, spec-analyzer, threat-model
+  in_scope: []
+  # Out-of-scope areas and trusted dependencies; read by: pipeline, spec-analyzer, threat-model, recommender
+  out_of_scope: []
+  # Threat mindset for threat modeling; read by: pipeline, threat-model
+  threat_mindset: ""
+  # Literature on the primitives used; read by: pipeline Stage 2, threat-model
+  related_literature: []
+  # Sibling libraries whose vulnerabilities are relevant; read by: pipeline Stage 2, threat-model
+  sibling_libraries: []
+
+# Architecture inventory; read by: spec-analyzer, threat-model
+components:
+  - # Component name; read by: spec-analyzer, threat-model
+    name: ""
+    # Path of the component; read by: spec-analyzer, threat-model
+    path: ""
+    # What the component does; read by: spec-analyzer, threat-model
+    role: ""
+
+# Trust boundaries; read by: threat-model, spec-analyzer, ffi, capabilities
+trust_boundaries:
+  - # Boundary id; read by: threat-model, spec-analyzer, ffi, capabilities
+    id: ""
+    # What is trusted at this boundary; read by: threat-model, spec-analyzer, ffi, capabilities
+    what: ""
+    # Where the boundary is in the code; read by: threat-model, ffi, capabilities
+    where: ""
+    # What the library trusts it for; read by: threat-model, ffi, capabilities
+    trusted_for: ""
+    # Honesty-ladder level of facts that rest on this boundary; read by: threat-model, capabilities, ffi
+    ladder_level: ""
+
+# Where unsafe code is; read by: ffi, capabilities Cat 3, recommender
+unsafe_surface:
+  # unsafe inside the verified crates (or none); read by: ffi, capabilities, recommender
+  in_crate: ""
+  # unsafe outside the verified crates; read by: ffi, capabilities, recommender
+  elsewhere:
+    - # File with unsafe code; read by: ffi, capabilities, recommender
+      path: ""
+      # Number of unsafe expressions, from the confirm command; read by: ffi, capabilities
+      count: 0
+      # What the unsafe code does; read by: ffi, capabilities, recommender
+      what: ""
+      # Verification status of that code; read by: ffi, capabilities, recommender
+      status: ""
+  # Command that confirms the unsafe surface; read by: ffi
+  confirm_cmd: ""
+
+# The trusted-spec (TCB) list; read by: ffi (owner), SKILL "Trusted boundary", capabilities, update drift item 4
+tcb:
+  # Agent that owns the TCB list; read by: SKILL, ffi
+  owner_agent: ""
+  # Source files holding the trusted specs; read by: ffi, SKILL, capabilities
+  modules: []
+  # Doc section with the TCB table; read by: ffi, update
+  doc_section: ""
+  # Row ids of the TCB table; read by: ffi, update, capabilities
+  row_ids: ""
+  # TCB rows that are labeled assumptions (ladder level 8); read by: ffi, capabilities, update
+  labeled_assumptions:
+    - # Assumption id; read by: ffi, capabilities, update
+      id: ""
+      # TCB row the assumption is; read by: ffi, capabilities, update
+      row: ""
+      # Trusted item; read by: ffi, capabilities, update
+      item: ""
+      # Proof status of the assumption; read by: ffi, capabilities, update
+      status: ""
+  # Per-crate rules for trusted specs; read by: ffi, SKILL, header-parsing, zero-panic
+  crate_rules:
+    - # Crate the rule applies to; read by: ffi, SKILL, proof agents
+      crate: ""
+      # The rule; read by: ffi, SKILL, proof agents
+      rule: ""
+
+# Typestate gate modules (capabilities Category 1e); read by: capabilities 1e, header-parsing, recommender
+typestate_gates:
+  - # Gate module path; read by: capabilities, header-parsing, recommender
+    module: ""
+    # Token types the module defines; read by: capabilities, header-parsing, recommender
+    tokens: []
+    # Targets the tokens cover; read by: capabilities, header-parsing, recommender
+    targets: []
+
+# Platform facts the proofs or tests rely on; read by: ffi, zero-panic
+platform_assumptions: []
+
+# Numbering of targets and findings; read by: recommender, update, capabilities, SKILL "Stop and report"
+ids:
+  # Format of target ids; read by: recommender, update, capabilities
+  target_format: ""
+  # Format of ids in the YAML recommendations; read by: recommender, update
+  yaml_id_format: ""
+  # Next free target id; read by: recommender, update
+  next_free: ""
+  # Command that confirms next_free is still free; read by: recommender, update
+  next_free_check: ""
+  # Format of finding ids; read by: SKILL, proof agents, recommender
+  finding_format: ""
+  # Ids used by other repositories that must not be confused with ours; read by: recommender, update
+  external_ids: []
+  # Known gaps in the numbering; read by: recommender, update
+  known_gaps: []
+
+# Every target with the ladder level of each part; read by: recommender, capabilities, proof agents, update
+targets:
+  - # Target id; read by: recommender, capabilities, proof agents, update
+    id: ""
+    # Short title; read by: recommender, capabilities, proof agents, update
+    title: ""
+    # Each part of the target at its own ladder level; read by: recommender, capabilities, proof agents, update
+    parts:
+      - # Part label; read by: recommender, capabilities, update
+        part: ""
+        # Honesty-ladder label of the part; read by: recommender, capabilities, update
+        level: ""
+        # File or function the part is about; read by: recommender, capabilities, proof agents
+        where: ""
+    # Proof agent for the target; read by: recommender, capabilities
+    agent: ""
+    # Pointer to the detail (appendix section); read by: recommender, capabilities, proof agents
+    details: ""
+
+# Proven cores per agent area, not to be redone; read by: proof agents
+do_not_redo:
+  # Done header-parsing work; read by: header-parsing
+  header_parsing: []
+  # Done zero-panic work; read by: zero-panic
+  zero_panic: []
+  # Done or settled ffi work; read by: ffi
+  ffi: []
+
+# Docs that carry status and counts; read by: update, recommender, pipeline
+artifacts:
+  # Docs the update agent may edit after approval; read by: update, recommender, pipeline
+  maintained:
+    - # Doc path; read by: update, recommender, pipeline
+      path: ""
+      # What the doc holds; read by: update, recommender, pipeline
+      role: ""
+      # Path of the generated .docx twin, or empty; read by: update
+      docx_twin: ""
+  # Docs that carry status but are only reported, not edited; read by: update
+  report_only: []
+  # Where the live status of each target is; read by: update, recommender, capabilities
+  status_oracle: ""
+  # Where counts come from; read by: update, proof agents, capabilities
+  counts_source: ""
+  # Lines that record each doc's baseline commit; read by: update
+  baseline_markers:
+    - # Doc path; read by: update
+      file: ""
+      # Text pattern of the baseline line; read by: update
+      pattern: ""
+  # Command that regenerates a .docx twin; read by: update
+  docx_cmd: ""
+  # Directory for task notes and logs; read by: update, proof agents
+  task_notes_dir: ""
+
+# CI gates beyond Verus; read by: proof agents (verify step), update
+ci:
+  # Each CI check with what it enforces and its local command; read by: proof agents, update
+  checks:
+    - # Check name; read by: proof agents, update
+      name: ""
+      # What the check enforces and where it is defined; read by: proof agents, update
+      what: ""
+      # Command to run it locally; read by: proof agents
+      local_cmd: ""
+  # Lockfiles that must change together when a dependency changes; read by: proof agents, update
+  dependent_lockfiles: []
+
+# What cannot run locally and what that means; read by: proof agents, update
+local_env_limits:
+  - # The limit; read by: proof agents, update
+    limit: ""
+    # What follows from it; read by: proof agents, update
+    consequence: ""
+
+# Build and packaging choices that must stay explicit; read by: all agents before proposing build or packaging changes, SKILL
+packaging_decisions:
+  - # Decision id; read by: all agents, SKILL
+    id: ""
+    # The question; read by: all agents, SKILL
+    question: ""
+    # What the code does today; read by: all agents, SKILL
+    current_choice: ""
+    # Who decides; read by: all agents, SKILL
+    owner: ""
+    # open, on hold or decided; read by: all agents, SKILL
+    status: ""
+    # Where the discussion is; read by: all agents, SKILL
+    ref: ""
+
+# Paths of the prose appendices; read by: proof agents, spec-analyzer, threat-model, capabilities
+appendices:
+  # Domain tables and context (format constants, spec topics, threat context); read by: proof agents, spec-analyzer, threat-model
+  domain: ""
+  # Library-specific Verus idioms; read by: SKILL, proof agents, steering
+  idioms: ""
+  # Per-target detail, done lists and drift examples; read by: capabilities, proof agents, recommender, update
+  targets: ""
