@@ -7,13 +7,15 @@ description: Write, run, and debug Verus formal verification proofs for Rust cod
 
 Verus is a tool for verifying the correctness of Rust code. Developers write specifications (requires/ensures) and Verus statically proves the executable Rust always satisfies them for all possible inputs, using the Z3 SMT solver.
 
+**Library profile.** Everything specific to the library under verification (crates and paths, commands, result-line rule, spec and traceability, trust boundaries and the TCB, gate modules, target ids and done targets, maintained docs, CI checks, environment limits, packaging decisions, domain tables) is in the library profile at `.kiro/verification-profile/verification-profile.yaml`, with prose appendices next to it. Read it first. References below have the form profile `field.path`. This file holds only the generic method.
+
 ## ABSOLUTE INVARIANTS — NEVER VIOLATE
 
 These rules are non-negotiable. Violating any of them produces proofs that are unsound, misleading, or worthless — which is worse than no proof at all in a cryptographic library.
 
 1. **NEVER weaken a proof to make it pass.** Do not add `assume(...)`, `#[verifier::external_body]`, `#[verifier::external]`, or `admit()` to bypass a failing proof without asking the human who runs the agent. These tell Verus to trust an unproven claim. If a proof won't go through, ask to fix the code or the specification — do not silence the verifier. The one sanctioned use of `external_body` is on the wrapper struct that `#[verifier::external_type_specification]` requires; see "Trusted boundary" below.
 
-2. **NEVER report a proof as verified unless `~/verus/verus` prints `0 errors`.** Always run the tool and show the actual output. Do not claim success from reading the code alone.
+2. **NEVER report a proof as verified unless the Verus run prints `0 errors`.** (The default binary is `~/verus/verus`.) Always run the tool and show the actual output. Do not claim success from reading the code alone.
 
 3. **NEVER add a `requires` clause that the real callers cannot satisfy.** Preconditions must be satisfiable in the actual call sites. An over-constrained precondition creates a proof that is vacuously true but protects nothing.
 
@@ -82,11 +84,13 @@ If no mutation fails, the obligation is a tautology or does not reach the code. 
 **Recipe.**
 1. Run the crate's Verus command and record the baseline `verification results::` line.
 2. Save a copy of the file. Apply one mutation.
-3. Bust the cache (touch the file the crate's verify command watches) and run the same command. Record the result line and the first error lines.
+3. Bust the cache (profile `crates[].cache_bust`: touch the file the crate's verify command watches) and run the same command. Record the result line and the first error lines.
 4. Revert. Compare the file byte-for-byte with the saved copy (`cmp`, or `git diff --exit-code` on that file). Record "reverted: yes".
 5. Repeat for each new obligation. At least one mutation per new `ensures`, `requires`, type invariant, loop invariant and `decreases`.
 
-**Log format** (one row per mutation, kept in the task's `logs/mutations.md` and summarized in the commit message; the row below is an example from this repo):
+**Log format** (one row per mutation, kept in the task's `logs/mutations.md` and summarized in the commit message).
+
+**Example from the ESDK profile:**
 
 | Id | Mutation | Result line | Errors | Reverted |
 |---|---|---|---|---|
@@ -100,7 +104,7 @@ If no mutation fails, the obligation is a tautology or does not reach the code. 
 
 ## Trusted boundary
 
-Verus cannot see into third-party crates or most of std. The sanctioned way to reason about such code is to give it a spec and then prove the code around it. Everything given a spec this way is trusted, not proven.
+Verus cannot see into third-party crates or most of std. The sanctioned way to reason about such code is to give it a spec and then prove the code around it. Everything given a spec this way is trusted, not proven. For a function whose core is a third-party crypto call, only the logic around the call is provable, against trusted specs of the call.
 
 **Allowed constructs:**
 - `#[verifier::external_type_specification]` for an opaque type. Verus requires `#[verifier::external_body]` on its wrapper struct; that pairing is allowed.
@@ -114,13 +118,15 @@ Verus cannot see into third-party crates or most of std. The sanctioned way to r
 - **A function with no `requires` is trusted not to panic on any input.** Say this in the TCB list.
 - Each new TCB row needs the user's approval before it is committed. Record the approval in the task's "Decisions (do not re-decide)" block.
 
-**TCB table format.** Every trusted spec is one row (the row below is an example from this repo):
+**TCB table format.** Every trusted spec is one row.
+
+**Example from the ESDK profile:**
 
 | Id | Item | Spec (`requires` / `ensures`) | Why trusted (kind and source) |
 |---|---|---|---|
 | A2 | `digest::digest(algorithm, data)` | `ensures spec_digest_len(&d) == spec_digest_output_len(algorithm)` | TRUSTED length (`digest.rs:194-201`) |
 
-Kinds: *naming* (introduces a symbol, claims nothing), *TRUSTED* (a real assumption, with source), *labeled assumption* (not fully stated by the docs; ladder level 8), *Rust type fact* (for example, a `&mut [u8]` cannot change length). The `verus-unsafe-ffi-safety` agent owns the TCB list.
+Kinds: *naming* (introduces a symbol, claims nothing), *TRUSTED* (a real assumption, with source), *labeled assumption* (not fully stated by the docs; ladder level 8), *Rust type fact* (for example, a `&mut [u8]` cannot change length). The `verus-unsafe-ffi-safety` agent owns the TCB list (profile `tcb`).
 
 ## Stop and report findings
 
@@ -130,14 +136,15 @@ When the code does not match the target, stop. Do not fix behavior silently. Thi
 - the code is stricter or looser than the spec;
 - the proof would need a new check, a changed error, or a changed error order.
 
-Record it as a finding with an id prefixed by the target (`VR-0NN Fk`). Give the exact location, what the spec says, what the code does, and the options with a recommendation. Then wait for the user's decision. Write that decision word for word in a "Decisions (do not re-decide)" block in the task notes, and pass the block forward to later steps.
+Record it as a finding with an id prefixed by the target (profile `ids.finding_format`, for example `<target id> Fk`). Give the exact location, what the spec says, what the code does, and the options with a recommendation. Then wait for the user's decision. Write that decision word for word in a "Decisions (do not re-decide)" block in the task notes, and pass the block forward to later steps.
 
 ## Environment
 
 - **Binary:** `~/verus/verus` (installed via binary release)
 - **Version check:** `~/verus/verus --version`
-- **Required toolchain:** Rust 1.96.0 (installed via `rustup install 1.96.0-aarch64-apple-darwin`)
+- **Required toolchain:** the Rust version that the Verus release names (install with `rustup install <version>`)
 - **Z3:** bundled with the Verus release (no separate install)
+- **Pins** (Verus version, Rust toolchain, vstd, cargo-verus): profile `toolchain`
 
 ## Running Verus
 
@@ -150,12 +157,60 @@ Verify a crate in place via Cargo (`cargo-verus` must be on `PATH`):
 ```bash
 cargo verus verify
 ```
-In this repo, use the crate's make target instead (see "This repo (ESDK)" below).
+`cargo-verus` builds the dependencies with plain rustc and verifies only the crates whose `Cargo.toml` sets `[package.metadata.verus] verify = true`.
+
+In a library with a profile, run profile `crates[].verify_cmd` for each feature set in `crates[].feature_sets`, read the line chosen by `crates[].result_line` (never by position; dependencies such as vstd print their own lines first, and a cached crate prints none), and bust the cache with `crates[].cache_bust`. If a dependency's count differs between runs, explain it; compare like with like. Standalone models: profile `models.verify_cmd`.
 
 Success output looks like:
 ```
 verification results:: N verified, 0 errors
 ```
+Each verified crate prints its own `verification results::` line right after its `Checking <crate name> v...` line. Read that line for the crate you changed.
+
+## Core/adapter pattern
+
+Verus cannot verify async code or trait objects (`dyn`). When shipped code is async or works over `dyn` readers and writers:
+- Put the decision logic in pure synchronous cores inside `verus! { }`, with `requires`/`ensures`.
+- Keep the async fns as thin **unverified** adapters outside `verus!`: they read the bytes, call the core, and build the crate's error type. Name them as unverified glue in the docs.
+- Never hide exec code behind `#[cfg(not(verus_keep_ghost))]` (invariant 11). Keep one definition per type: move an enum into `verus!` unchanged, never duplicate it (invariant 12).
+- Keep traceability comments next to the code they annotate (markers in profile `traceability.markers`).
+- Ordering between async steps: typestate tokens, Category 1e in `verus-capabilities`; gate modules in profile `typestate_gates`.
+
+The library's core and adapter names are in profile appendix `idioms.md`.
+
+## Idioms (probe-confirmed on Verus 0.2026.07.12; re-probe on another version)
+
+- Slice element write: `slice[i] = v;` (the `.set()` method is deprecated).
+- Postconditions on `&mut` params: use `final(x)` and `old(x)`, not bare `x`.
+- `Seq` ops in `ensures`: apply the view first, e.g. `x@.subrange(a, b)`.
+- `u32::to_be_bytes` / `u64::to_be_bytes` are NOT modeled by vstd. Do not reach for `assume_specification`; instead define a `spec fn` big-endian source of truth and a verified exec helper, and document the one-line equivalence to std.
+- Take fixed-size `[u8; N]` params; spec indexing `b[0]` works as-is.
+- Big-endian: `u16::from(u8)` (and `u32`/`u64`) times constant multipliers. Avoid `as` casts in exec code where the crate enables the clippy `cast_*` lints.
+- `usize::try_from(u64)` / `usize::try_from(u32)` and `usize::from(u8)` are specified.
+- A const shift such as `1 << 20` must be written `1_048_576`.
+- `derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)` and `#[default]` on an enum inside `verus!` are accepted.
+- `ensures` may use `r is Variant` and `r matches E::V(n) ==> ...`.
+- Doc-comment every new item (where the crate enables `missing_docs`), and add in-module `#[cfg(test)] mod tests` for new cores.
+- `const`s inside `verus!` are accepted and can be named in specs.
+- `&str` consts inside `verus!` need an explicit `&'static str` (Verus rejects the elided lifetime); add `#[expect(clippy::redundant_static_lifetimes, reason = …)]`. Their bytes in specs: `vstd::string::StringSliceAdditionalSpecFns::spec_bytes(s)`; `str::as_bytes` ensures `b@ == s.spec_bytes()`. Call the trait by path: a plain `use` of it is an unused import in the cargo build.
+- Spec fns are erased in the cargo build, so do not `use` them from another module; import the module (`use … ::<module> as m;`) and write `m::spec_fn_name(..)`.
+- Cast-free byte from a value `< 256`: `match u8::try_from(v) { Ok(b) => b, Err(_) => 0 }` (vstd has no spec for `unwrap_or_default`).
+- `Vec::clear`, `Vec::extend_from_slice` and indexed slice writes are specified; prefer them over `to_be_bytes` / `copy_from_slice` for encoding.
+- Ghost values built from an expression: write `let ghost g: bool = a.s@ || b.s@;` then `Ghost(g)`. An inline `Ghost(a.s@ || b.s@)` is rejected ("unexpected ghost block attribute").
+- `zeroize::Zeroizing<_>` cannot be a field of a type inside `verus!`: Verus rejects it unless it gets an `external_type_specification`, which is a trusted spec (a TCB row). The per-crate choice is in profile `tcb.crate_rules`.
+- A `pub`/`pub(crate)` fn's `ensures` cannot read a private field ("field expression for an opaque datatype"). Add a `closed spec fn view(&self)` and write the `ensures` against `self.view()`.
+- A trait declared inside `verus!` but implemented outside it has its method `ensures` trusted silently (an impl that breaks them still verifies). Give such traits `requires` only, no `ensures`, unless a named trusted assumption is approved.
+- A verified fn cannot call a fn or name a type declared outside `verus!` (dependency types, the crate's error type, functions of another crate) unless that item is given a spec at the trusted boundary. Otherwise keep such calls in unverified adapters outside `verus!` and list them by name as the trusted base.
+
+Library-specific idioms (helper names, lint settings, per-crate decisions): profile appendix `idioms.md`.
+
+## Confinement is not Verus
+
+Confinement (private fields, no byte accessors, clippy `disallowed-methods` or other lint rules) is compiler- or lint-checked. Its ladder level is `compiler_lint`, never Verus-proven. Verus does not check that a function is absent; do not describe confinement as Verus-proven.
+
+## Packaging decisions
+
+Any nightly-only or Verus-only build attribute, a new dependency, or a CI change is a packaging decision: check profile `packaging_decisions`, record and ask.
 
 ## Core Concepts
 
@@ -360,15 +415,10 @@ Use `assert(expr);` liberally to probe what the verifier knows at each point. Ve
 | Call a lemma | `proof { lemma_name(args); }` |
 | Unbounded int | `int`, `nat` (spec/proof only) |
 
-## This repo (ESDK)
+## Library profile
 
-Library-specific facts, kept together so they can move to a library profile later. The example rows in the sections above (`digest_core`, A2) also come from this repo.
-
-- Verus-checked crates: `esdk` (`make -C esdk verus`) and `prim` (`make -C prim verus`). Standalone models: `make -C verification verify`. `mpl` is not Verus-checked.
-- Counts: see `docs/verus-proofs-report.md` and re-read them from the live make output. Dated snapshot at `578b1faa`: esdk 97 verified / 0 errors, prim 18 / 0, verification 78 / 0 over 11 files.
-- Typestate gates (ladder level 2): `esdk/src/decrypt_gate.rs` (`CommitmentAccepted`, `HeaderVerified`, `SignaturePresence`, `SignatureRequired`, `SignatureVerified`, `HeldFinalPlaintext`) and `esdk/src/encrypt_gate.rs` (`SigningKeyPresent`). Type-invariant chain example: `CommitmentAccepted` with `lemma_commitment_accepted`.
-- TCB list: `prim/src/aws_lc_specs.rs` (T-ty, T-AsRef, T-uf, A1–A20; A20 is the labeled assumption A-OPEN) and the "VR-013 / VR-014 TCB" section of `docs/verus-proofs-report.md`. `prim/src/ecdsa.rs` holds the VR-008 specs (`ExSignature`, `Signature::as_ref`, `copy_from_slice`).
-- Mutation log example: `.agents/tasks/verus-prim-c03/logs/mutations.md` (M1–M19).
+The library profile is at `.kiro/verification-profile/verification-profile.yaml`; read it before any proof work. This skill uses profile `crates` (commands, feature sets, result line, cache bust), `toolchain`, `tcb`, `typestate_gates`, `ids`, `packaging_decisions` and the appendix `idioms.md`.
+Counts are never in the profile: re-read them from the live run (profile `artifacts.counts_source`).
 
 ## References
 

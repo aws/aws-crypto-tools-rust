@@ -8,19 +8,13 @@ tools: ["read", "web"]
 
 **From Specification → Threat Model → Verification Targets**
 
-This document defines the systematic, repeatable approach for leveraging AI agents to produce specification-grounded threat models and prioritized formal verification targets for the **native-Rust AWS Encryption SDK (ESDK)** in this repository.
+This document defines the systematic, repeatable approach for leveraging AI agents to produce specification-grounded threat models and prioritized formal verification targets for the library named in profile `library.name`.
+
+**Library profile.** Everything specific to the library under verification (crates and paths, commands, result-line rule, spec and traceability, trust boundaries and the TCB, gate modules, target ids and done targets, maintained docs, CI checks, environment limits, packaging decisions, domain tables) is in the library profile at `.kiro/verification-profile/verification-profile.yaml`, with prose appendices next to it. Read it first. References below have the form profile `field.path`. This file holds only the generic method.
 
 ## Repository Layout
 
-| Crate / item | Path | Role |
-|--------------|------|------|
-| `aws-esdk` | `esdk/` | The Encryption SDK: client, encrypt/decrypt, message format (`esdk/src/message/`), key derivation, secret types (`esdk/src/secret.rs`). **Primary verification target. Verus-checked** (`verus!` blocks, `make -C esdk verus`). Typestate gates in `esdk/src/decrypt_gate.rs` and `esdk/src/encrypt_gate.rs`. |
-| `aws-crypto-mpl` | `mpl/` | The Material Providers Library: keyrings, CMMs, material structures. A dependency, treated as a trusted contract here; not Verus-checked. |
-| `aws-mpl-primitives` | `prim/` | Safe wrappers over `aws-lc-rs` (AES-GCM, HKDF, ECDSA, HMAC, digest, RNG). The cryptographic boundary. **Verus-checked** (`verus!` blocks, `make -C prim verus`); the trusted aws-lc-rs specs are in `prim/src/aws_lc_specs.rs`. |
-| Spec | `spec/` (repo root) | The ESDK specification, checked out by `scripts/resolve-spec.sh` (not a submodule; may be absent locally). Tracked documents are listed in `esdk/.duvet/config.toml`. |
-| Duvet annotations | `//=` / `//#` comments in `esdk/src` and `esdk/tests` | Requirement-to-code traceability. |
-| Standalone models | `verification/` | Self-contained Verus models (`make -C verification verify`); see `verification/README.md`. |
-| C++ shim | `esdk/shims/aws-esdk-cpp/` | C++ bindings; holds the only shipped-path `unsafe`. |
+Crates, standalone models, spec, traceability annotations and any FFI shim: profile `crates`, `models`, `spec`, `traceability`, `unsafe_surface` (architecture inventory: profile `components`; gate modules: profile `typestate_gates`).
 
 ## Pipeline Overview
 
@@ -49,7 +43,7 @@ There are **two entry paths** into verification targets, which merge at Step 3:
 2. **Incremental:** Pipeline runs continuously as specs and code evolve
 3. **Auditable:** Every recommendation traces back to a specification requirement. Threat-driven targets also trace to a threat; capability-driven targets trace to a Verus capability category and the code invariant they establish.
 4. **Tool-dependent:** Recommendations map to the Verus verification tool for Rust
-5. **Specification-grounded:** Threats are derived from the formal ESDK spec and its Duvet annotations, not documentation summaries
+5. **Specification-grounded:** Threats are derived from the library's formal spec (profile `spec`) and its traceability annotations (profile `traceability`), not documentation summaries
 6. **No overclaiming:** A property counts as verified only when Verus prints `0 errors` for it, with no `assume`, `admit`, `external_body` or `external` used to force the pass. Every claim carries its level from the **honesty ladder** in the `verus` skill (`.kiro/skills/verus/SKILL.md`, "Honesty ladder").
 
 ## Stage 1: Specification Ingestion
@@ -57,28 +51,30 @@ There are **two entry paths** into verification targets, which merge at Step 3:
 ### Establishing Scope and Threat Mindset
 
 Before ingestion, define:
-- **System type:** Client-side encryption library (not a managed service)
-- **In scope:** SDK cryptographic operations (encrypt/decrypt), message format (header, body, footer), key derivation and key commitment, commitment-policy enforcement at the ESDK boundary, the key-management interfaces the ESDK calls (CMM, keyring) as contracts, and data-key handling inside `esdk`
-- **Out of scope:** Underlying KMS security, application business logic, and the internals of the MPL keyrings/CMMs and `aws-lc-rs`, which are treated as trusted dependencies
-- **Threat mindset:** Application-level cryptography — local compute, memory management, KMS interaction
+- **System type:** profile `library.system_type`
+- **In scope:** profile `scope.in_scope`
+- **Out of scope:** profile `scope.out_of_scope` (trusted dependencies are listed there)
+- **Threat mindset:** profile `scope.threat_mindset`
+
+The library's own wording of this scope: profile appendix `domain.md` §Pipeline Stage 1 scope.
 
 ### Input Sources
 
-- Standards Documents: RFC 8446, FIPS 140-3, SP 800-56A/B, SP 800-38D (GCM), RFC 5869 (HKDF)
-- ESDK Specification (source of truth): `spec/` — the `esdk/.duvet/config.toml` set (`spec/data-format/*`, `spec/client-apis/*`, `spec/framework/transitive-requirements.md`) plus `spec/framework/algorithm-suites.md`
-- Duvet Annotations: the inline `//=` / `//#` comments in `esdk/src` and `esdk/tests`. Use them to locate the code that realizes a requirement and whether a test (`type=test`) or implication covers it
-- Dependency contracts: the native `mpl/src` and `prim/src` code the ESDK calls (material getters, `aes_encrypt` / `aes_decrypt`, HKDF, ECDSA)
-- Source Code: the implementation in `esdk/src` as an implicit specification
-- Existing Proofs: the in-crate `verus!` proofs in `esdk/src` and `prim/src` and the standalone models in `verification/` (see `docs/verus-proofs-report.md`). There are no in-repo Dafny proofs
+- Standards Documents: profile `spec.standards`
+- Library Specification (source of truth): profile `spec.location`, the documents in `spec.tracked_documents` plus `spec.extra_documents`
+- Traceability Annotations: profile `traceability` (`markers` in `annotated_dirs`). Use them to locate the code that realizes a requirement and whether a test or implication covers it (`traceability.type_to_ladder`)
+- Dependency contracts: the dependency crates the library calls (profile `crates[]` with role dependency or boundary)
+- Source Code: the implementation in profile `crates[].source_dirs` as an implicit specification
+- Existing Proofs: the in-crate `verus!` proofs in the crates with `verus_enabled: true` and the standalone models in profile `models` (status: profile `artifacts.status_oracle`). Proof systems that do not apply are named in profile `scope.out_of_scope`
 
-**Critical:** Feed the agent the formal specification (`spec/`) and the Duvet annotations — not just documentation. The spec is the source of truth.
+**Critical:** Feed the agent the formal specification (profile `spec`) and the traceability annotations — not just documentation. The spec is the source of truth.
 
 ### Extraction Outputs
 
 | Output | Format | Consumer |
 |--------|--------|----------|
 | Structured requirements | JSON/YAML | Threat model generator |
-| Requirement → code map | Markdown table (from Duvet annotations) | Verification recommender |
+| Requirement → code map | Markdown table (from traceability annotations) | Verification recommender |
 | State machines | DOT/TLA+ fragments | Protocol verification |
 | Pre/post-conditions | Verus `requires`/`ensures` sketches | Code-level verification |
 | Traceability matrix | Markdown table | Audit and compliance |
@@ -91,8 +87,8 @@ Before ingestion, define:
 Before generating new threats, ground the model in demonstrated exploitability:
 - CVEs with root cause analysis
 - AWS Security Bulletins
-- Academic literature on primitives used (AES-GCM non-commitment, HKDF misuse, Invisible Salamanders)
-- Related vulnerabilities in sibling libraries (S3 Encryption Client, Database Encryption SDK)
+- Academic literature on primitives used (profile `scope.related_literature`)
+- Related vulnerabilities in sibling libraries (profile `scope.sibling_libraries`)
 
 ### STRIDE: The "What" of Threat Modeling
 
@@ -117,7 +113,7 @@ Before generating new threats, ground the model in demonstrated exploitability:
 For each STRIDE threat, decompose into concrete exploitation paths:
 1. Take each STRIDE threat as a root goal
 2. Decompose into sub-goals using known attack patterns from literature
-3. Annotate leaf nodes with: Feasibility, Detectability, Existing mitigation (cite the spec section and, where present, the Duvet-annotated code/test)
+3. Annotate leaf nodes with: Feasibility, Detectability, Existing mitigation (cite the spec section and, where present, the annotated code/test (profile `traceability`))
 
 ### Adversary Models
 
@@ -152,13 +148,13 @@ This stage runs **in parallel** with threat modeling, not after it. Many valuabl
 Driven by `verus-capabilities`, not by the threat model. Sweep the code and the capability map for provable properties:
 
 1. **Enumerate provable surfaces** using the four Verus categories in `verus-capabilities.md`:
-   - *Functional correctness:* decision cores in `esdk/src/message/`, `esdk/src/key_derivation.rs` and `prim/src`. Many are done: the round-trip lemmas in `esdk/src/message/serialize_functions.rs` (VR-012) and the key-commitment decision behind `validate_suite_data` (VR-001 (a)) are in-crate. Check the report before scoping
-   - *Ordering (Category 1e):* an order between async steps that can be written as a token minted by a sync verified gate (done: VR-001 (b), VR-002, VR-015, VR-019)
-   - *Zero-panic:* indexing, slicing and arithmetic sites in `esdk/src` and `prim/src` that can be extracted into synchronous `verus!` cores (`clippy::indexing_slicing` is off in `esdk/src/lib.rs`); input-dependent `.expect` sites (re-check each before citing it)
-   - *Low-level & unsafe:* none in-crate (no `unsafe` in `esdk/src`, `mpl/src`, `prim/src`); the C++ shim's pointer validity is trusted, not provable
-   - *Concurrency:* not applicable in `esdk` (async/tokio is not verifiable; no hand-written lock protocol)
-2. **Filter with the decision aid** in `verus-capabilities.md`: keep only properties that are Verus-provable **and** provable in place here. Discard crypto hardness, external-service policy, probabilistic properties, timing, absence-of-code/confinement, an async order that cannot be written as a token, and anything that would need Verus inside `mpl` (record those as out of scope or model-only, with the reason).
-3. **Skip what is already proven:** check the target table in `docs/verus-proofs-report.md` §3 (VR-001…VR-019 at `578b1faa`) first.
+   - *Functional correctness:* decision cores in profile `crates[].source_dirs` (crates with `verus_enabled: true`). Done work: profile `targets` and appendix `targets.md` §Category 1a … §Category 1d. Check the status oracle (profile `artifacts.status_oracle`) before scoping
+   - *Ordering (Category 1e):* an order between async steps that can be written as a token minted by a sync verified gate (done: profile `typestate_gates` and appendix `targets.md` §Category 1e)
+   - *Zero-panic:* indexing, slicing and arithmetic sites in profile `crates[].source_dirs` that can be extracted into synchronous `verus!` cores (lint settings: profile appendix `idioms.md`); input-dependent `.expect` sites (re-check each before citing it)
+   - *Low-level & unsafe:* see profile `unsafe_surface`; pointer validity supplied by a foreign caller is trusted, not provable
+   - *Concurrency:* see appendix `targets.md` §Category 4 (async code is not verifiable; a hand-written lock protocol would be)
+2. **Filter with the decision aid** in `verus-capabilities.md`: keep only properties that are Verus-provable **and** provable in place here. Discard crypto hardness, external-service policy, probabilistic properties, timing, absence-of-code/confinement, an async order that cannot be written as a token, and anything inside a crate with `verus_enabled: false` (record those as out of scope or model-only, with the reason).
+3. **Skip what is already proven:** check profile `targets` and the status oracle (profile `artifacts.status_oracle`) first.
 4. **Prefer quick wins and blast radius:** a small sync core called on every encrypt or decrypt protects every caller.
 
 ### How capability-driven targets are justified
@@ -166,7 +162,7 @@ Driven by `verus-capabilities`, not by the threat model. Sweep the code and the 
 Because there is no threat to cite, a capability-driven target traces to:
 - the **Verus capability category** it exercises (1–4), and
 - the **code invariant** it establishes (e.g. "for all `x: u32`, decoding the big-endian bytes of `x` yields `x`"), and
-- optionally the **spec requirement** it supports (e.g. `spec/data-format/message-header.md` big-endian field encoding).
+- optionally the **spec requirement** it supports (a clause in profile `spec.tracked_documents`).
 
 Its severity in the Step 3 formula is set from the **consequence of the latent defect** (a panic → DoS; a wrong length or layout → interop failure or tampering acceptance), and its `Coverage_Gap` and `Feasibility` are assessed the same way as threat-driven targets.
 
@@ -188,7 +184,7 @@ Priority Score = Severity × Coverage_Gap × Feasibility × Blast_Radius
 | Factor | Scale | Description |
 |--------|-------|-------------|
 | Severity | 1–4 | Critical=4, High=3, Medium=2, Low=1. For **threat-driven** targets this is the threat severity; for **capability-driven** targets it is the consequence of the latent defect the proof rules out. |
-| Coverage_Gap | 0–1 | 1 = no existing verification; 0 = fully proven in-crate. Model-only proofs reduce the gap for the shipped code only partly. Duvet `type=test` annotations lower the gap but never close it — tests are not proofs. |
+| Coverage_Gap | 0–1 | 1 = no existing verification; 0 = fully proven in-crate. Model-only proofs reduce the gap for the shipped code only partly. Test-type traceability annotations (profile `traceability.type_to_ladder`) lower the gap but never close it — tests are not proofs. |
 | Feasibility | 0–1 | For threat-driven targets: feasibility of the attack (higher = more urgent). For capability-driven targets: likelihood the latent defect is reachable on some input (`1.0` for an all-inputs property such as panic-freedom). |
 | Blast_Radius | 1–4 | Number of services/customers affected. Cores on every encrypt/decrypt path score high. |
 
@@ -202,11 +198,13 @@ Every candidate, from either path, first passes the provability gate in `verus-c
 | Functional Correctness | Verus | Algorithm matches spec, state machine compliance |
 | Serialization Correctness | Verus | Message format compliance, round-trip fidelity |
 | Panic Freedom | Verus | No runtime panics on any input |
-| FFI Safety | Verus | Unsafe block soundness, pointer validity (no in-crate `unsafe` today; see `verus-capabilities.md`) |
+| FFI Safety | Verus | Unsafe block soundness, pointer validity (see profile `unsafe_surface` and `verus-capabilities.md`) |
 
 ### Output Format
 
-Each recommendation includes the fields below. **Historical sample:** this VR-002 entry was written before VR-002 was proven in-crate (`3195f86f`). VR-002 is now a Verus-proven gate with a compiler-enforced order (the `HeaderVerified` token in `esdk/src/decrypt_gate.rs`). Copy the shape, not the status or the rationale.
+Each recommendation includes the fields below.
+
+**Example from the ESDK profile (historical):** this VR-002 entry was written before VR-002 was proven in-crate (`3195f86f`). VR-002 is now a Verus-proven gate with a compiler-enforced order (the `HeaderVerified` token in `esdk/src/decrypt_gate.rs`). Copy the shape, not the status or the rationale.
 ```yaml
 recommendation:
   id: VR-2026-002
@@ -225,7 +223,9 @@ recommendation:
   rationale: "(historical, before 3195f86f) High severity tampering threat. Proven on a model only (verification/header_auth_ordering_proofs.rs); the shipped async order is not Verus-verifiable."
 ```
 
-A **capability-driven** recommendation has the same shape but carries a `capability_reference` instead of a `threat_reference`. The example below is a **historical sample** to show the shape. It was a candidate when written; it is now VR-012, proven in-crate (`b30bb367`):
+A **capability-driven** recommendation has the same shape but carries a `capability_reference` instead of a `threat_reference`.
+
+**Example from the ESDK profile (historical):** this sample shows the shape. It was a candidate when written; it is now VR-012, proven in-crate (`b30bb367`):
 
 ```yaml
 recommendation:
@@ -259,7 +259,7 @@ recommendation:
 
 The pipeline runs continuously:
 - On spec change: New requirements trigger STRIDE re-analysis
-- On code change: Modified functions re-evaluated against the threat model **and** re-swept with `verus-capabilities` for newly introduced provable surfaces (new indexing/arithmetic, new codec, new `unsafe`), and re-run `make -C esdk verus` and `make -C prim verus` so recorded counts stay current
+- On code change: Modified functions re-evaluated against the threat model **and** re-swept with `verus-capabilities` for newly introduced provable surfaces (new indexing/arithmetic, new codec, new `unsafe`), and re-run every profile `crates[].verify_cmd` with `verus_enabled: true` so recorded counts stay current
 - On new CVE: Emerging attack patterns update feasibility scores
 - On proof completion: Coverage gaps recalculated, next target promoted — from either the threat-driven or capability-driven queue
 
@@ -267,7 +267,7 @@ The pipeline runs continuously:
 
 | Pipeline Stage | Agent | Role |
 |---------------|-------|------|
-| Step 1: Specification Ingestion | `spec-analyzer` | Extract security properties from `spec/` + Duvet annotations |
+| Step 1: Specification Ingestion | `spec-analyzer` | Extract security properties from profile `spec` + `traceability` annotations |
 | Step 2: Threat Modeling | `threat-model-generator` | STRIDE + attack trees |
 | Step 2': Capability-Driven Discovery | `verification-recommender` using `verus-capabilities` | Sweep the code for provable baseline targets |
 | Step 3: Prioritization | `verification-recommender` | Gate, score and assign targets to the Verus agents |
@@ -289,7 +289,7 @@ Before finalizing any output, verify:
 - ☐ Backward-compatibility mechanisms are called out as potential downgrade vectors
 - ☐ Trust boundaries are explicitly identified
 - ☐ Each verification target is tagged `threat-driven` or `capability-driven`
-- ☐ Threat-driven targets trace to a threat and a specification requirement (cite the Duvet annotation where one exists)
+- ☐ Threat-driven targets trace to a threat and a specification requirement (cite the traceability annotation where one exists)
 - ☐ Capability-driven targets trace to a Verus capability category and the code invariant they establish (spec citation optional but preferred)
 - ☐ The capability-driven sweep (Stage 2') was run, not just threat modeling, and every candidate passed the `verus-capabilities.md` provability gate
 - ☐ Nothing is described as verified without a `0 errors` Verus result; every claim carries its honesty-ladder level (`verus` skill)
