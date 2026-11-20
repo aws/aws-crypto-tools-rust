@@ -41,7 +41,7 @@ targets consume.
 ### Cargo features
 
 The shim has the same features as the Rust ESDK and passes them through.
-Each has a CMake option of the same name, such as `-DESDK_FEATURE_KMS=OFF`.
+Each has a CMake option, such as `-DESDK_FEATURE_KMS=OFF` for `kms`.
 
 | Feature | Default | What it adds |
 |---|---|---|
@@ -56,10 +56,30 @@ Each has a CMake option of the same name, such as `-DESDK_FEATURE_KMS=OFF`.
 `CryptographicMaterialsCache`, `LocalCmc` and the raw AES keyring need no feature.
 With `kms` and `ddb` off, the library does not link the AWS SDK.
 
-For example, a FIPS build with only the raw AES keyring:
+All default features:
 
 ```bash
-cargo build --no-default-features --features fips
+cmake -B build
+```
+
+All default features, with FIPS:
+
+```bash
+cmake -B build -DESDK_FEATURE_FIPS=ON
+```
+
+No default features:
+
+```bash
+cmake -B build -DESDK_FEATURE_KMS=OFF -DESDK_FEATURE_DDB=OFF \
+  -DESDK_FEATURE_DEFAULT_AWS_SDK_CLIENTS=OFF -DESDK_FEATURE_RT_TOKIO=OFF
+```
+
+No default features, with FIPS:
+
+```bash
+cmake -B build -DESDK_FEATURE_FIPS=ON -DESDK_FEATURE_KMS=OFF -DESDK_FEATURE_DDB=OFF \
+  -DESDK_FEATURE_DEFAULT_AWS_SDK_CLIENTS=OFF -DESDK_FEATURE_RT_TOKIO=OFF
 ```
 
 Without CMake, a build with non-default features must also put
