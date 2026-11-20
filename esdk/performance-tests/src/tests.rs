@@ -12,6 +12,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 use log::{info, warn};
 use memory_stats::memory_stats;
 use rand::RngExt;
+use std::sync::Arc;
 use std::time::Instant;
 
 use crate::benchmark::{EsdkBenchmark, MEMORY_TEST_ITERATIONS};
@@ -173,11 +174,13 @@ impl EsdkBenchmark {
             data_size, MEMORY_TEST_ITERATIONS
         );
 
-        // Boxed: 50 MiB on the stack would overflow.
-        let data = {
+        // One shared copy of the plaintext, allocated before any baseline is
+        // read. Each spawned task gets an Arc handle instead of a fresh clone,
+        // so the measured delta is the ESDK's memory, not the harness's.
+        let data: Arc<[u8]> = {
             let mut data = vec![0u8; data_size];
             rand::rng().fill(&mut data[..]);
-            data.into_boxed_slice()
+            data.into()
         };
 
         let mut peak_memory_delta_mb = 0.0;
@@ -198,7 +201,7 @@ impl EsdkBenchmark {
 
             let operation_start = Instant::now();
 
-            let data_clone = data.clone();
+            let data_clone = Arc::clone(&data);
             let esdk_client = self.esdk_client.clone();
             let keyring = self.keyring.clone();
 
