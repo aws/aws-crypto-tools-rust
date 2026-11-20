@@ -162,6 +162,91 @@ const fn get_aes_alg(alg: AesGcm) -> &'static aws_lc_rs::aead::Algorithm {
     }
 }
 
+/// An AES-GCM key, expanded once for many encrypt or decrypt calls.
+///
+/// aws-lc clears the expanded key when this value is dropped.
+pub struct AesGcmKey {
+    key: LessSafeKey,
+}
+
+impl std::fmt::Debug for AesGcmKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AesGcmKey").finish_non_exhaustive()
+    }
+}
+
+impl AesGcmKey {
+    /// Expand `key` for `alg`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`Error`] if `key` is not the length required by `alg`
+    /// (see [`AesGcm::key_len`]).
+    pub fn new(alg: AesGcm, key: &[u8]) -> Result<Self, Error> {
+        let key = UnboundKey::new(get_aes_alg(alg), key)
+            .map_err(|_| serr("invalid AES-GCM key".to_owned()))?;
+        Ok(Self {
+            key: LessSafeKey::new(key),
+        })
+    }
+
+    /// Encrypt `message`, appending the ciphertext followed by the
+    /// authentication tag to `cipher_text`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`Error`] if `iv` is not a valid GCM nonce, or if the
+    /// underlying seal operation fails.
+    pub fn encrypt(
+        &self,
+        iv: &[u8],
+        message: &[u8],
+        aad: &[u8],
+        cipher_text: &mut Vec<u8>,
+    ) -> Result<(), Error> {
+        let nonce = Nonce::try_assume_unique_for_key(iv)
+            .map_err(|_| serr("invalid AES-GCM nonce".to_owned()))?;
+        let old_size = cipher_text.len();
+        cipher_text.extend_from_slice(message);
+        let cipher_slice = &mut cipher_text[old_size..];
+        let tag = self
+            .key
+            .seal_in_place_separate_tag(nonce, Aad::from(aad), cipher_slice)
+            .map_err(|_| serr("AES-GCM encryption failed".to_owned()))?;
+        cipher_text.extend_from_slice(tag.as_ref());
+        Ok(())
+    }
+
+    /// Decrypt `cipher_text` into the start of `plain_text`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`Error`] if `plain_text` is shorter than `cipher_text`, if
+    /// `iv` is not a valid GCM nonce, or if `auth_tag` fails to verify.
+    pub fn decrypt(
+        &self,
+        cipher_text: &[u8],
+        auth_tag: &[u8],
+        iv: &[u8],
+        aad: &[u8],
+        plain_text: &mut [u8],
+    ) -> Result<(), Error> {
+        if plain_text.len() < cipher_text.len() {
+            return err(format!(
+                "plaintext buffer of {} bytes is shorter than the {} byte ciphertext",
+                plain_text.len(),
+                cipher_text.len()
+            ));
+        }
+        let nonce = Nonce::try_assume_unique_for_key(iv)
+            .map_err(|_| serr("invalid AES-GCM nonce".to_owned()))?;
+        self.key
+            .open_separate_gather(nonce, Aad::from(aad), cipher_text, auth_tag, plain_text)
+            .map_err(|_| serr("authentication tag did not match".to_owned()))?;
+        Ok(())
+    }
+}
+
 /// Encrypt message with AES GCM
 ///
 /// On success, `cipher_text` is extended with the ciphertext followed by the
@@ -180,20 +265,7 @@ pub fn aes_encrypt(
     aad: &[u8],
     cipher_text: &mut Vec<u8>,
 ) -> Result<(), Error> {
-    let alg = get_aes_alg(alg);
-    let old_size = cipher_text.len();
-    cipher_text.extend_from_slice(message);
-    let cipher_slice = &mut cipher_text[old_size..];
-    let key = UnboundKey::new(alg, key).map_err(|_| serr("invalid AES-GCM key".to_owned()))?;
-    let nonce = Nonce::try_assume_unique_for_key(iv)
-        .map_err(|_| serr("invalid AES-GCM nonce".to_owned()))?;
-    let key = LessSafeKey::new(key);
-    let aad = Aad::from(aad);
-    let tag = key
-        .seal_in_place_separate_tag(nonce, aad, cipher_slice)
-        .map_err(|_| serr("AES-GCM encryption failed".to_owned()))?;
-    cipher_text.extend_from_slice(tag.as_ref());
-    Ok(())
+    AesGcmKey::new(alg, key)?.encrypt(iv, message, aad, cipher_text)
 }
 
 /// Decrypt message with AES GCM
@@ -212,22 +284,7 @@ pub fn aes_decrypt(
     aad: &[u8],
     plain_text: &mut [u8],
 ) -> Result<(), Error> {
-    if plain_text.len() < cipher_text.len() {
-        return err(format!(
-            "plaintext buffer of {} bytes is shorter than the {} byte ciphertext",
-            plain_text.len(),
-            cipher_text.len()
-        ));
-    }
-    let alg = get_aes_alg(alg);
-    let key = UnboundKey::new(alg, key).map_err(|_| serr("invalid AES-GCM key".to_owned()))?;
-    let nonce = Nonce::try_assume_unique_for_key(iv)
-        .map_err(|_| serr("invalid AES-GCM nonce".to_owned()))?;
-    let key = LessSafeKey::new(key);
-    let aad = Aad::from(aad);
-    key.open_separate_gather(nonce, aad, cipher_text, auth_tag, plain_text)
-        .map_err(|_| serr("authentication tag did not match".to_owned()))?;
-    Ok(())
+    AesGcmKey::new(alg, key)?.decrypt(cipher_text, auth_tag, iv, aad, plain_text)
 }
 
 /// Calculate HMAC into `out`.
