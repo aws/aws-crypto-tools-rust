@@ -126,7 +126,7 @@ Each step names the profile fields it reads, its template, its output and its id
 
 ### Step 8: gate G3b, push (workflow id `push_gate`)
 
-- Ask separately before any push and before any PR-body edit. If the merge was declined, report and end without asking.
+- Ask separately before any push and before any PR-body edit. If the merge was declined, report and end without asking. A "push the task branch and open a PR, do not merge locally" flow is out of scope for R1; run it outside the recipe.
 - Push only what the user named, to the remote the user named. Never force-push.
 - A PR-body edit follows standing rule 4.
 - Record the answer in `decisions.md`.
