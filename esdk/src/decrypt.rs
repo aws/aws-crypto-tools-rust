@@ -25,6 +25,8 @@ use crate::shapes::{
 use crate::suites::{algorithm_suite_id_from_bytes, get_ecdsa_alg, get_esdk_algorithm_suite_id};
 use aws_crypto_mpl::types::DecryptionMaterials;
 use aws_mpl_primitives::{DigestContext, ecdsa_verify_context};
+use std::collections::{BTreeMap, BTreeSet};
+use vstd::prelude::*;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum DecryptMode {
@@ -759,18 +761,86 @@ async fn step_verify_signature(
     }
 }
 
+verus! {
+
+broadcast use vstd::std_specs::btree::group_btree_axioms;
+
+/// Keeps exactly the entries of `ec` whose key is in `keys` (VR-020).
+///
+/// Verus-proven: the result is `ec` restricted to `keys`. Every key in the
+/// result is in both `ec` and `keys`, every key in both is in the result,
+/// and each value is the value `ec` holds for that key.
+///
+/// Trusted (TCB row T-cmp, approved in the VR-020 task decisions): `String`'s
+/// `Eq` and `Ord` agree with Verus equality and form a total order
+/// (`obeys_cmp::<String>()`). The pinned vstd gives `BTreeMap` and `BTreeSet`
+/// their specs only under this law and does not prove it for `String`; std
+/// documents that `String` compares its bytes lexicographically. No verified
+/// caller discharges the `requires`: the only caller is the unverified adapter
+/// `build_encryption_context_to_only_authenticate`.
+#[allow(
+    unused_qualifications,
+    reason = "Verus's `for` loop desugaring qualifies the iterator and each invariant; fires only in the Verus build"
+)]
+#[allow(
+    clippy::explicit_iter_loop,
+    reason = "vstd specifies `BTreeMap::iter` but not `IntoIterator for &BTreeMap`"
+)]
+fn required_ec_entries(
+    ec: &BTreeMap<String, String>,
+    keys: &BTreeSet<String>,
+) -> (out: BTreeMap<String, String>)
+    requires
+        vstd::laws_cmp::obeys_cmp::<String>(),
+    ensures
+        out@ == ec@.restrict(keys@),
+{
+    let mut out = BTreeMap::new();
+    for (k, v) in it: ec.iter()
+        invariant
+            vstd::laws_cmp::obeys_cmp::<String>(),
+            // The loop walks the entries of `ec`.
+            it.seq() == vstd::std_specs::iter::IteratorSpec::remaining(
+                &vstd::std_specs::btree::spec_btree_map_iter(ec),
+            ),
+            // `out` holds exactly the visited entries whose key is in `keys` ...
+            forall|kk: String| #[trigger] out@.contains_key(kk) <==> (keys@.contains(kk)
+                && exists|i: int|
+                #![trigger it.seq()[i]]
+                0 <= i < it.index() && *it.seq()[i].0 == kk),
+            // ... each with the value `ec` holds for it.
+            forall|kk: String| #[trigger]
+                out@.contains_key(kk) ==> ec@.contains_key(kk) && out@[kk] == ec@[kk],
+    {
+        if keys.contains(k) {
+            out.insert(k.clone(), v.clone());
+        }
+    }
+    proof {
+        assert(out@ =~= ec@.restrict(keys@));
+    }
+    out
+}
+
+} // verus!
+
 // The encryption context to only authenticate MUST be
 // the encryption context in the decryption materials filtered
 // to only contain key value pairs listed
 // in the decryption material's required encryption context keys.
+//
+// Unverified adapter (outside `verus!`, code reading): it passes the maps
+// inside the MPL types to the Verus-proven `required_ec_entries` and wraps the
+// result. `as_map` / `as_set` return the inner collections and
+// `EncryptionContext::from` wraps the map unchanged (mpl source).
 fn build_encryption_context_to_only_authenticate(
     encryption_context: &EncryptionContext,
     required_encryption_context_keys: &aws_crypto_mpl::types::RequiredEncryptionContextKeys,
 ) -> EncryptionContext {
-    encryption_context
-        .iter()
-        .filter(|(key, _)| required_encryption_context_keys.contains(key))
-        .collect()
+    EncryptionContext::from(required_ec_entries(
+        encryption_context.as_map(),
+        required_encryption_context_keys.as_set(),
+    ))
 }
 
 async fn verify_signature(
@@ -806,4 +876,25 @@ async fn verify_signature(
     // `SignatureVerified` token only if the signature verified.
     decrypt_gate::signature_gate(required, valid)
         .ok_or_else(|| err(Kind::Cryptographic, "signature verification failed"))
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use aws_crypto_mpl::types::RequiredEncryptionContextKeys;
+    #[test]
+    fn only_authenticate_keeps_exactly_the_required_entries() {
+        let ec: EncryptionContext = [("a", "1"), ("b", "2"), ("c", "3")].into_iter().collect();
+        let keys = RequiredEncryptionContextKeys::from(["a", "c", "z"]);
+        let got = build_encryption_context_to_only_authenticate(&ec, &keys);
+        let want: EncryptionContext = [("a", "1"), ("c", "3")].into_iter().collect();
+        assert_eq!(got, want);
+        // Same result as the filter the adapter replaced.
+        let old: EncryptionContext = ec.iter().filter(|(k, _)| keys.contains(k)).collect();
+        assert_eq!(got, old);
+        let none = build_encryption_context_to_only_authenticate(
+            &ec,
+            &RequiredEncryptionContextKeys::default(),
+        );
+        assert!(none.is_empty());
+    }
 }
