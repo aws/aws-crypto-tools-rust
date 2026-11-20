@@ -283,8 +283,10 @@ pub(crate) async fn encrypt_and_serialize_body(
     key: &[u8],
     ciphertext: &mut dyn Sink,
     sig_digest: &mut DigestWriter,
-    max_plaintext_length: Option<usize>,
+    max_plaintext_length: Option<u64>,
 ) -> Result<(), Error> {
+    let max_plaintext_length =
+        max_plaintext_length.map(|len| usize::try_from(len).unwrap_or(usize::MAX));
     let mut total_data_size: usize = 0;
     let Ok(frame_length) = usize::try_from(header.body.frame_length()) else {
         return ser_err(&format!(

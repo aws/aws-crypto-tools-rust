@@ -10,7 +10,6 @@ mod test_helpers;
 use aws_esdk::types::*;
 use aws_esdk::*;
 use fixtures::*;
-use std::num::NonZeroU32;
 use test_helpers::*;
 
 #[tokio::test(flavor = "multi_thread")]
@@ -69,11 +68,6 @@ async fn test_decrypt_output_includes_algorithm_suite() {
     //= spec/client-apis/decrypt.md#output
     //= type=test
     //# - Decrypt operation output MUST include an [algorithm suite](#algorithm-suite) value.
-    //
-    //= spec/client-apis/decrypt.md#algorithm-suite
-    //= type=test
-    //= reason=Output suite matches a supported ESDK suite (AlgAes256GcmHkdfSha512CommitKey)
-    //# This algorithm suite MUST be [supported for the ESDK](../framework/algorithm-suites.md#supported-algorithm-suites-enum).
     assert_eq!(result.algorithm_suite_id(), suite);
 }
 
@@ -89,7 +83,7 @@ async fn test_decrypt_no_unauthenticated_data_released() {
         .plaintext(&pt)
         .keyring(keyring.clone())
         .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
-        .frame_length(NonZeroU32::new(10).unwrap())
+        .frame_length(10)
         .send()
         .await
         .unwrap()
@@ -139,7 +133,7 @@ async fn test_streaming_callers_must_discard_on_failure() {
         .encrypt()
         .plaintext(plaintext)
         .keyring(keyring.clone())
-        .frame_length(NonZeroU32::new(4096).unwrap())
+        .frame_length(4096)
         .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
         .send()
         .await

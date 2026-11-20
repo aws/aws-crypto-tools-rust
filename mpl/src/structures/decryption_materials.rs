@@ -6,7 +6,7 @@
 use crate::Error;
 use crate::builder::required;
 use crate::error::Kind;
-use std::collections::BTreeSet;
+use crate::structures::RequiredEncryptionContextKeys;
 
 use super::algorithm_suite::{
     AlgorithmSuite, AlgorithmSuiteId, PlaintextDataKey, SymmetricSigningKey, VerificationKey,
@@ -16,10 +16,11 @@ use super::encryption_context::EncryptionContext;
 
 /// Materials needed for decryption.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct DecryptionMaterials {
     algorithm_suite_id: AlgorithmSuiteId,
     encryption_context: EncryptionContext,
-    required_encryption_context_keys: BTreeSet<String>,
+    required_encryption_context_keys: RequiredEncryptionContextKeys,
     plaintext_data_key: Option<PlaintextDataKey>,
     verification_key: Option<VerificationKey>,
     symmetric_signing_key: Option<SymmetricSigningKey>,
@@ -59,7 +60,7 @@ impl DecryptionMaterials {
 
     /// The algorithm suite.
     #[must_use]
-    pub const fn algorithm_suite_id(&self) -> AlgorithmSuiteId {
+    pub fn algorithm_suite_id(&self) -> AlgorithmSuiteId {
         self.algorithm_suite_id
     }
 
@@ -71,31 +72,31 @@ impl DecryptionMaterials {
 
     /// The encryption context.
     #[must_use]
-    pub const fn encryption_context(&self) -> &EncryptionContext {
+    pub fn encryption_context(&self) -> &EncryptionContext {
         &self.encryption_context
     }
 
     /// The encryption context keys the caller had to supply again.
     #[must_use]
-    pub const fn required_encryption_context_keys(&self) -> &BTreeSet<String> {
+    pub fn required_encryption_context_keys(&self) -> &RequiredEncryptionContextKeys {
         &self.required_encryption_context_keys
     }
 
     /// The plaintext data key, once a keyring has added one.
     #[must_use]
-    pub const fn plaintext_data_key(&self) -> Option<&PlaintextDataKey> {
+    pub fn plaintext_data_key(&self) -> Option<&PlaintextDataKey> {
         self.plaintext_data_key.as_ref()
     }
 
     /// The verification key, for an algorithm suite with asymmetric signing.
     #[must_use]
-    pub const fn verification_key(&self) -> Option<&VerificationKey> {
+    pub fn verification_key(&self) -> Option<&VerificationKey> {
         self.verification_key.as_ref()
     }
 
     /// The symmetric signing key, for an algorithm suite with symmetric signing.
     #[must_use]
-    pub const fn symmetric_signing_key(&self) -> Option<&SymmetricSigningKey> {
+    pub fn symmetric_signing_key(&self) -> Option<&SymmetricSigningKey> {
         self.symmetric_signing_key.as_ref()
     }
 
@@ -124,11 +125,11 @@ impl DecryptionMaterials {
 ///
 /// `algorithm_suite_id` is required.
 /// The encryption context and required encryption context keys default to empty.
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct DecryptionMaterialsBuilder {
     algorithm_suite_id: Option<AlgorithmSuiteId>,
     encryption_context: Option<EncryptionContext>,
-    required_encryption_context_keys: Option<BTreeSet<String>>,
+    required_encryption_context_keys: Option<RequiredEncryptionContextKeys>,
     plaintext_data_key: Option<PlaintextDataKey>,
     verification_key: Option<VerificationKey>,
     symmetric_signing_key: Option<SymmetricSigningKey>,
@@ -138,25 +139,22 @@ impl DecryptionMaterialsBuilder {
     /// Set the algorithm suite.
     /// Required.
     #[must_use]
-    pub const fn algorithm_suite_id(mut self, algorithm_suite_id: AlgorithmSuiteId) -> Self {
-        self.algorithm_suite_id = Some(algorithm_suite_id);
+    pub fn algorithm_suite_id(mut self, algorithm_suite_id: impl Into<AlgorithmSuiteId>) -> Self {
+        self.algorithm_suite_id = Some(algorithm_suite_id.into());
         self
     }
 
     /// Set or clear the algorithm suite from an `Option`.
     /// To set a value, use [`Self::algorithm_suite_id`].
     #[must_use]
-    pub const fn set_algorithm_suite_id(
-        mut self,
-        algorithm_suite_id: Option<AlgorithmSuiteId>,
-    ) -> Self {
+    pub fn set_algorithm_suite_id(mut self, algorithm_suite_id: Option<AlgorithmSuiteId>) -> Self {
         self.algorithm_suite_id = algorithm_suite_id;
         self
     }
 
     /// The algorithm suite ID, if set.
     #[must_use]
-    pub const fn get_algorithm_suite_id(&self) -> &Option<AlgorithmSuiteId> {
+    pub fn get_algorithm_suite_id(&self) -> &Option<AlgorithmSuiteId> {
         &self.algorithm_suite_id
     }
 
@@ -183,7 +181,7 @@ impl DecryptionMaterialsBuilder {
     /// The encryption context set so far.
     #[must_use]
     #[allow(clippy::ref_option)] // AWS SDK for Rust getter shape
-    pub const fn get_encryption_context(&self) -> &Option<EncryptionContext> {
+    pub fn get_encryption_context(&self) -> &Option<EncryptionContext> {
         &self.encryption_context
     }
 
@@ -194,7 +192,7 @@ impl DecryptionMaterialsBuilder {
     #[must_use]
     pub fn required_encryption_context_keys(mut self, input: impl Into<String>) -> Self {
         self.required_encryption_context_keys
-            .get_or_insert_with(BTreeSet::new)
+            .get_or_insert_with(RequiredEncryptionContextKeys::new)
             .insert(input.into());
         self
     }
@@ -204,7 +202,7 @@ impl DecryptionMaterialsBuilder {
     #[must_use]
     pub fn set_required_encryption_context_keys(
         mut self,
-        required_encryption_context_keys: Option<BTreeSet<String>>,
+        required_encryption_context_keys: Option<RequiredEncryptionContextKeys>,
     ) -> Self {
         self.required_encryption_context_keys = required_encryption_context_keys;
         self
@@ -213,7 +211,7 @@ impl DecryptionMaterialsBuilder {
     /// The required encryption context keys set so far.
     #[must_use]
     #[allow(clippy::ref_option)] // AWS SDK for Rust getter shape
-    pub const fn get_required_encryption_context_keys(&self) -> &Option<BTreeSet<String>> {
+    pub fn get_required_encryption_context_keys(&self) -> &Option<RequiredEncryptionContextKeys> {
         &self.required_encryption_context_keys
     }
 
@@ -234,7 +232,7 @@ impl DecryptionMaterialsBuilder {
 
     /// The plaintext data key, if set.
     #[must_use]
-    pub const fn get_plaintext_data_key(&self) -> &Option<PlaintextDataKey> {
+    pub fn get_plaintext_data_key(&self) -> &Option<PlaintextDataKey> {
         &self.plaintext_data_key
     }
 
@@ -255,7 +253,7 @@ impl DecryptionMaterialsBuilder {
 
     /// The verification key, if set.
     #[must_use]
-    pub const fn get_verification_key(&self) -> &Option<VerificationKey> {
+    pub fn get_verification_key(&self) -> &Option<VerificationKey> {
         &self.verification_key
     }
 
@@ -282,7 +280,7 @@ impl DecryptionMaterialsBuilder {
 
     /// The symmetric signing key, if set.
     #[must_use]
-    pub const fn get_symmetric_signing_key(&self) -> &Option<SymmetricSigningKey> {
+    pub fn get_symmetric_signing_key(&self) -> &Option<SymmetricSigningKey> {
         &self.symmetric_signing_key
     }
 

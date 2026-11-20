@@ -8,7 +8,7 @@ use crate::error::{Kind, err};
 use crate::message::header::{ENDFRAME_SEQUENCE_NUMBER, HeaderInfo, START_SEQUENCE_NUMBER};
 use crate::message::serializable_types::{get_iv_length, get_tag_length};
 use crate::message::serialize_functions::{
-    read_bytes, read_seq_u32_bounded, read_u32, write_to_sink,
+    read_bytes, read_into_vec, read_seq_u32_bounded, read_u32, write_to_sink,
 };
 use crate::message::{Error, header, ser_err, serialize_functions};
 use crate::shapes::{Sink, Source, Tee};
@@ -57,8 +57,8 @@ pub(crate) async fn read_and_decrypt_framed_message_body(
             header.body.frame_length()
         ));
     };
-    let mut enc_content = vec![0u8; frame_length_usize];
-    let mut result = vec![0; frame_length_usize];
+    let mut enc_content = Vec::new();
+    let mut result = Vec::new();
     let mut aad = Vec::new();
     let mut yielder = super::FrameYielder::new(frame_length_usize);
 
@@ -286,18 +286,12 @@ pub(crate) async fn read_and_decrypt_framed_message_body(
                     &aad,
                     &mut [],
                 )?;
-                // If this empty final frame is also the FIRST frame (i.e. the entire
-                // plaintext is empty), there is no "last full frame" to return. The
-                // preallocated `result` (vec![0; frame_length_usize]) would otherwise
-                // leak frame_length zero bytes to the caller. Truncate to empty.
-                if expected_frame == START_SEQUENCE_NUMBER {
-                    result.clear();
-                }
             } else {
                 // write previous frame's data, now that we know we have another frame.
                 if expected_frame != START_SEQUENCE_NUMBER {
                     release_previous_frame(w, &result, fail_if_multi_frame).await?;
                 }
+                result.resize(enc_content.len(), 0);
                 //= spec/client-apis/decrypt.md#decrypt-the-message-body
                 //= reason=`?` propagates AesGcmKey::decrypt errors, halting decryption immediately
                 //# If this decryption fails, this operation MUST immediately halt and fail.
@@ -306,9 +300,8 @@ pub(crate) async fn read_and_decrypt_framed_message_body(
                     &auth_tag,
                     &iv,
                     &aad,
-                    &mut result[0..enc_content.len()],
+                    &mut result,
                 )?;
-                result.resize(enc_content.len(), 0);
             }
 
             //= spec/data-format/message-body.md#final-frame
@@ -389,9 +382,10 @@ pub(crate) async fn read_and_decrypt_framed_message_body(
         //
         //= spec/data-format/message-body.md#regular-frame-encrypted-content
         //= type=implication
-        //= reason=read_bytes fills a &mut [u8] buffer; the bytes are not reinterpreted as any other type
+        //= reason=read_into_vec fills a Vec<u8>; the bytes are not reinterpreted as any other type
         //# The encrypted content MUST be interpreted as bytes.
-        read_bytes(ciphertext, &mut enc_content, sig_digest).await?;
+        read_into_vec(ciphertext, frame_length_usize, &mut enc_content, sig_digest).await?;
+        result.resize(frame_length_usize, 0);
 
         // Authentication Tag
 

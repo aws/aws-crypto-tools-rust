@@ -628,11 +628,7 @@ fn ec_pairs(ec: &EncryptionContext) -> Vec<(String, String)> {
 }
 
 fn reck_keys(materials: &DecryptionMaterials) -> Vec<String> {
-    materials
-        .required_encryption_context_keys()
-        .iter()
-        .cloned()
-        .collect()
+    materials.required_encryption_context_keys().to_vec()
 }
 
 #[tokio::test]

@@ -2,7 +2,6 @@
 PROFILE_DIR ?= target/debug
 
 STATICLIB   := $(PROFILE_DIR)/libaws_esdk_cpp.a
-CXXBRIDGE_RT = $$(find $(PROFILE_DIR)/build -path "*/cxx-*/out/libcxxbridge1.a" | head -n1)
 UNAME_S     := $(shell uname -s)
 
 PLATFORM_LIBS =
@@ -10,18 +9,18 @@ ifeq ($(UNAME_S),Darwin)
 PLATFORM_LIBS += -framework Security -framework CoreFoundation -framework SystemConfiguration
 endif
 
-LINK_LIBS = $(STATICLIB) $(CXXBRIDGE_RT) -lpthread -ldl $(PLATFORM_LIBS)
+LINK_LIBS = $(STATICLIB) -lpthread -ldl $(PLATFORM_LIBS)
 
 CXXFLAGS_COMMON = -Iinclude -std=c++17
 COV_CXXFLAGS ?=
 
 example: examples/basic_hierarchical_keyring_example.cpp include/aws/esdk/EncryptionSDK.h src/lib.rs $(STATICLIB)
-	g++ examples/basic_hierarchical_keyring_example.cpp \
+	$(CXX) examples/basic_hierarchical_keyring_example.cpp \
 		$(CXXFLAGS_COMMON) $(LINK_LIBS) \
 		-o basic_hierarchical_keyring_example
 
 raw_aes_example: examples/raw_aes_keyring_example.cpp include/aws/esdk/EncryptionSDK.h src/lib.rs $(STATICLIB)
-	g++ examples/raw_aes_keyring_example.cpp \
+	$(CXX) examples/raw_aes_keyring_example.cpp \
 		$(CXXFLAGS_COMMON) $(LINK_LIBS) \
 		-o raw_aes_keyring_example
 
@@ -36,12 +35,12 @@ per_request_credentials_example: examples/per_request_credentials_example.cpp in
 		-o per_request_credentials_example
 
 zero_copy_example: examples/zero_copy_comparison.cpp include/aws/esdk/EncryptionSDK.h src/lib.rs $(STATICLIB)
-	g++ examples/zero_copy_comparison.cpp \
+	$(CXX) examples/zero_copy_comparison.cpp \
 		$(CXXFLAGS_COMMON) -O2 $(LINK_LIBS) \
 		-o zero_copy_comparison
 
 shared_cache_example: examples/shared_cache_example.cpp include/aws/esdk/EncryptionSDK.h src/lib.rs $(STATICLIB)
-	g++ examples/shared_cache_example.cpp \
+	$(CXX) examples/shared_cache_example.cpp \
 		$(CXXFLAGS_COMMON) $(LINK_LIBS) \
 		-o shared_cache_example
 
@@ -56,18 +55,18 @@ set_commitment_policy_example: examples/set_commitment_policy_example.cpp includ
 		-o set_commitment_policy_example
 
 test_esdk: tests/test_esdk.cpp tests/esdk_test_support.h include/aws/esdk/EncryptionSDK.h src/lib.rs $(STATICLIB)
-	g++ tests/test_esdk.cpp \
+	$(CXX) tests/test_esdk.cpp \
 		$(CXXFLAGS_COMMON) $(COV_CXXFLAGS) $(LINK_LIBS) \
 		-o test_esdk
 
 adopt_keyring_test: tests/adopt_keyring_test.cpp tests/esdk_test_support.h include/aws/esdk/EncryptionSDK.h src/lib.rs $(STATICLIB)
-	g++ tests/adopt_keyring_test.cpp \
+	$(CXX) tests/adopt_keyring_test.cpp \
 		-Itarget/cxxbridge $(CXXFLAGS_COMMON) $(LINK_LIBS) \
 		-o adopt_keyring_test
 
 custom_keyring_example: examples/custom-keyring/src/lib.rs examples/custom-keyring/example.cpp include/aws/esdk/EncryptionSDK.h src/lib.rs
 	cd examples/custom-keyring && cargo build
-	g++ examples/custom-keyring/example.cpp \
+	$(CXX) examples/custom-keyring/example.cpp \
 		-Iinclude \
 		examples/custom-keyring/target/debug/libcustom_keyring_example.a \
 		-lpthread -ldl $(PLATFORM_LIBS) \
@@ -75,33 +74,33 @@ custom_keyring_example: examples/custom-keyring/src/lib.rs examples/custom-keyri
 		-o custom_keyring_example
 
 streaming_example: examples/streaming_example.cpp include/aws/esdk/EncryptionSDK.h src/lib.rs $(STATICLIB)
-	g++ examples/streaming_example.cpp \
+	$(CXX) examples/streaming_example.cpp \
 		$(CXXFLAGS_COMMON) $(LINK_LIBS) \
 		-o streaming_example
 
 streaming_chunks_example: examples/streaming_chunks_example.cpp include/aws/esdk/EncryptionSDK.h src/lib.rs $(STATICLIB)
-	g++ examples/streaming_chunks_example.cpp \
+	$(CXX) examples/streaming_chunks_example.cpp \
 		$(CXXFLAGS_COMMON) $(LINK_LIBS) \
 		-o streaming_chunks_example
 
 adopt_keyring_test: tests/adopt_keyring_test.cpp tests/esdk_test_support.h include/aws/esdk/EncryptionSDK.h src/lib.rs $(STATICLIB)
-	g++ tests/adopt_keyring_test.cpp \
+	$(CXX) tests/adopt_keyring_test.cpp \
 		-Itarget/cxxbridge $(CXXFLAGS_COMMON) $(LINK_LIBS) \
 		-o adopt_keyring_test
 
 test_concurrency: tests/test_concurrency.cpp tests/esdk_test_support.h include/aws/esdk/EncryptionSDK.h src/lib.rs $(STATICLIB)
-	g++ tests/test_concurrency.cpp \
+	$(CXX) tests/test_concurrency.cpp \
 		$(CXXFLAGS_COMMON) $(LINK_LIBS) \
 		-o test_concurrency
 
 test_resource_leaks: tests/test_resource_leaks.cpp tests/esdk_test_support.h include/aws/esdk/EncryptionSDK.h src/lib.rs $(STATICLIB)
-	g++ tests/test_resource_leaks.cpp \
+	$(CXX) tests/test_resource_leaks.cpp \
 		$(CXXFLAGS_COMMON) $(LINK_LIBS) \
 		-o test_resource_leaks
 
 # This test runs during compilation (static asserts)
 enum_parity: enum_parity_test.cpp include/aws/esdk/EncryptionSDK.h src/lib.rs $(STATICLIB)
-	g++ -c enum_parity_test.cpp \
+	$(CXX) -c enum_parity_test.cpp \
 		-Itarget/cxxbridge -Iinclude \
 		-std=c++17 \
 		-o enum_parity_test.o
