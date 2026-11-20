@@ -1,6 +1,6 @@
 # Template T-mutations-log: mutation log for one proof target
 
-Used by recipe R1 step 3 (`.kiro/verification-toolkit/recipes/R1-prove-target.md`). Write the log to `<task dir>/logs/mutations.md` and summarize it in the commit message. The method is the SKILL section "Mutation testing" (`.kiro/skills/verus/SKILL.md`): one mutation at a time, cache bust, run, record, revert, compare byte for byte.
+Used by recipe R1 step 3 (`.kiro/verification-toolkit/recipes/R1-prove-target.md`). Write the log to `<task dir>/logs/mutations.md`. Step 3 makes no commit; R1 step 5 summarizes the log in the docs commit message. The method is the SKILL section "Mutation testing" (`.kiro/skills/verus/SKILL.md`): one mutation at a time, cache bust, run, record, revert, compare byte for byte.
 
 Replace every `<...>`.
 

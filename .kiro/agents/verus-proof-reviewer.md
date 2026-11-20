@@ -17,6 +17,7 @@ The calling step gives you:
   - `feasibility.md` (template T-feasibility),
   - `logs/mutations.md` (template T-mutations-log),
   - `logs/ci-parity.md` (the CI-parity log of R1 step 4),
+  - `logs/docs.md` (the docs changed and the report-only drift, R1 step 5; used by C11),
   - `decisions.md` with the "Decisions (do not re-decide)" block;
 - the review doc path (`<task dir>/review.md`) and the verdict path (`<task dir>/verdict.json`).
 

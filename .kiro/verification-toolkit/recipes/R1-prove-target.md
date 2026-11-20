@@ -91,21 +91,21 @@ Each step names the profile fields it reads, its template, its output and its id
   - profile `ci.dependent_lockfiles` are updated together when a manifest changed.
 - Check new platform-dependent code against profile `platform_assumptions`.
 - List each item of profile `local_env_limits[]` that stops a check from running locally, with its profile `local_env_limits[].consequence`, under "Not run locally". The docs commit repeats this list.
-- Fix only what the change itself broke (format, lint) and commit; anything else goes to the user.
-- Output: `{{task_dir}}/logs/ci-parity.md` (HEAD sha, every command, its result line or summary, "Not run locally").
+- Fix only what the change itself broke (format, lint), re-run that check and commit; anything else goes to the user.
+- Output: `{{task_dir}}/logs/ci-parity.md` (the HEAD sha the checks ran on, after any fix commit; every command, its result line or summary; "Not run locally").
 
 ### Step 5: docs (workflow id `docs`)
 
 - Follow `.kiro/agents/ai-verification-update.md` for the doc edits.
 - Update every doc in profile `artifacts.maintained` that cites the target, and the status in profile `artifacts.status_oracle`. Counts come from the step 4 runs (profile `artifacts.counts_source`). Update the lines named by profile `artifacts.baseline_markers`. Regenerate each profile `artifacts.maintained[].docx_twin` with profile `artifacts.docx_cmd`.
 - Report drift in profile `artifacts.report_only` files; do not edit them.
-- Commit locally. The message carries the verification block from `logs/ci-parity.md`, including "Not run locally".
-- Output: a local commit; `{{task_dir}}/logs/docs.md` (docs changed, report-only drift).
+- Commit locally. The message carries the verification block from `logs/ci-parity.md`, including "Not run locally", and the mutation summary from `logs/mutations.md` (one line per row and the "Claims supported" line). This commit changes docs only.
+- Output: a local commit; `{{task_dir}}/logs/docs.md` (docs changed, report-only drift, the docs commit sha).
 
 ### Step 6: review loop, gate G2 (workflow id `review_loop`: `fix`, then `review`)
 
 - At most 2 iterations. The loop stops when `{{task_dir}}/verdict.json` has `"verdict": "APPROVED"`, and pauses for the user after the second iteration otherwise.
-- `fix` (first in each iteration): on iteration 1 there is no verdict file, so it only confirms the branch state (tree clean, HEAD is the sha in `logs/ci-parity.md`). Later, it fixes every `blocker` and `major` finding from `{{task_dir}}/verdict.json`, re-runs the step 4 checks the fix affects, updates the logs and commits. A fix that would change behavior goes to the user.
+- `fix` (first in each iteration): on iteration 1 there is no verdict file, so it only confirms the branch state: the tree is clean, HEAD is the docs commit sha in `logs/docs.md`, and `git diff <sha in logs/ci-parity.md>..HEAD` touches only the docs listed in `logs/docs.md`. If not, it re-runs the step 4 checks on HEAD and updates `logs/ci-parity.md`. Later, it fixes every `blocker` and `major` finding from `{{task_dir}}/verdict.json`, and the `minor` findings inside the target's scope, re-runs the step 4 checks the fix affects, updates the logs and commits. A fix that would change behavior goes to the user.
 - `review`: the `verus-proof-reviewer` agent (`.kiro/agents/verus-proof-reviewer.md`) runs checklist C1 to C13. It writes template T-review (`.kiro/verification-toolkit/templates/T-review.md`) to `{{task_dir}}/review.md` and the verdict file to `{{task_dir}}/verdict.json` on every iteration:
 
   ```json
