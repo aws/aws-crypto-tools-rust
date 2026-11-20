@@ -29,10 +29,8 @@
 #include <span>
 #endif
 
-// The library's build writes Config.h into <target>/<profile>/include.
-// It defines AWS_ESDK_CPP_KMS, AWS_ESDK_CPP_DDB and AWS_ESDK_CPP_RT_TOKIO as 1 or 0
-// to match the library's Cargo features.
-// A caller with only include/ on its include path gets the default features, which are all on.
+// build.rs writes Config.h to match the Cargo features.
+// Without it, assume the defaults: all on.
 #if __has_include("aws/esdk/Config.h")
 #include "aws/esdk/Config.h"
 #else
