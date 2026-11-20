@@ -81,7 +81,7 @@ async fn get_hierarchical_keyring(mpl: &MplClient) -> KeyringRef {
     let sdk_config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
     let kms_client = aws_sdk_kms::Client::new(&sdk_config);
     let ddb_client = aws_sdk_dynamodb::Client::new(&sdk_config);
-    let kms_config = KmsConfiguration::KmsKeyArn(HIERARCHY_KEY_ARN.to_string());
+    let kms_config = KmsConfiguration::kms_key_arn(HIERARCHY_KEY_ARN.to_string());
 
     let key_store_config = KeyStoreConfig::builder()
         .kms_client(kms_client)

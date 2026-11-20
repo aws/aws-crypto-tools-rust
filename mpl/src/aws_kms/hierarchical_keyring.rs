@@ -29,7 +29,7 @@ use crate::structures::{
     PlaintextDataKey,
 };
 
-/// Input for [`BranchKeySupplier::get_branch_key_id`].
+/// Input for [`BranchKeyIdSupplier::get_branch_key_id`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct GetBranchKeyIdInput {
@@ -45,7 +45,7 @@ impl GetBranchKeyIdInput {
 
     /// The encryption context of the message being encrypted or decrypted.
     #[must_use]
-    pub const fn encryption_context(&self) -> &EncryptionContext {
+    pub fn encryption_context(&self) -> &EncryptionContext {
         &self.encryption_context
     }
 }
@@ -79,7 +79,7 @@ impl GetBranchKeyIdInputBuilder {
 
     /// The encryption context, if set.
     #[must_use]
-    pub const fn get_encryption_context(&self) -> &Option<EncryptionContext> {
+    pub fn get_encryption_context(&self) -> &Option<EncryptionContext> {
         &self.encryption_context
     }
 
@@ -95,7 +95,7 @@ impl GetBranchKeyIdInputBuilder {
     }
 }
 
-/// Output of [`BranchKeySupplier::get_branch_key_id`].
+/// Output of [`BranchKeyIdSupplier::get_branch_key_id`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct GetBranchKeyIdOutput {
@@ -147,7 +147,7 @@ impl GetBranchKeyIdOutputBuilder {
 
     /// The branch key ID, if set.
     #[must_use]
-    pub const fn get_branch_key_id(&self) -> &Option<String> {
+    pub fn get_branch_key_id(&self) -> &Option<String> {
         &self.branch_key_id
     }
 
@@ -182,9 +182,9 @@ impl From<&str> for GetBranchKeyIdOutput {
 /// Implementations are typically used by callers running multi-tenant workloads
 /// who want to pick the branch key based on encryption-context metadata.
 ///
-/// To hold a supplier whose concrete type is chosen at runtime, use [`SharedBranchKeySupplier`].
+/// To hold a supplier whose concrete type is chosen at runtime, use [`SharedBranchKeyIdSupplier`].
 #[async_trait::async_trait]
-pub trait BranchKeySupplier: Send + Sync {
+pub trait BranchKeyIdSupplier: Send + Sync {
     /// Return the branch key id to use for a given encryption context.
     async fn get_branch_key_id(
         &self,
@@ -193,18 +193,18 @@ pub trait BranchKeySupplier: Send + Sync {
 }
 
 crate::shared::shared_handle!(
-    /// A branch key supplier whose concrete type is chosen at runtime.
+    /// A branch key ID supplier whose concrete type is chosen at runtime.
     ///
-    /// Pass it anywhere a branch key supplier is accepted.
-    /// Callers that know their branch key supplier's type pass it directly and never need this one.
+    /// Pass it anywhere a branch key ID supplier is accepted.
+    /// Callers that know their branch key ID supplier's type pass it directly and never need this one.
     ///
     /// Its operation returns a fluent builder: set the input, then call `send`.
-    SharedBranchKeySupplier,
-    BranchKeySupplier
+    SharedBranchKeyIdSupplier,
+    BranchKeyIdSupplier
 );
 
-impl SharedBranchKeySupplier {
-    /// Start a [`BranchKeySupplier::get_branch_key_id`] call.
+impl SharedBranchKeyIdSupplier {
+    /// Start a [`BranchKeyIdSupplier::get_branch_key_id`] call.
     pub fn get_branch_key_id(&self) -> GetBranchKeyIdFluentBuilder {
         GetBranchKeyIdFluentBuilder {
             handle: self.clone(),
@@ -213,18 +213,18 @@ impl SharedBranchKeySupplier {
     }
 }
 
-/// Fluent builder for [`SharedBranchKeySupplier::get_branch_key_id`].
+/// Fluent builder for [`SharedBranchKeyIdSupplier::get_branch_key_id`].
 #[derive(Debug, Clone)]
 #[must_use = "does nothing until `send` is called"]
 pub struct GetBranchKeyIdFluentBuilder {
-    handle: SharedBranchKeySupplier,
+    handle: SharedBranchKeyIdSupplier,
     inner: GetBranchKeyIdInputBuilder,
 }
 
 impl GetBranchKeyIdFluentBuilder {
     /// The input set so far.
     #[must_use]
-    pub const fn as_input(&self) -> &GetBranchKeyIdInputBuilder {
+    pub fn as_input(&self) -> &GetBranchKeyIdInputBuilder {
         &self.inner
     }
 
@@ -246,7 +246,7 @@ impl GetBranchKeyIdFluentBuilder {
 
     /// The encryption context, if set.
     #[must_use]
-    pub const fn get_encryption_context(&self) -> &Option<EncryptionContext> {
+    pub fn get_encryption_context(&self) -> &Option<EncryptionContext> {
         self.inner.get_encryption_context()
     }
 
@@ -256,10 +256,10 @@ impl GetBranchKeyIdFluentBuilder {
     ///
     /// - [`Validation`](crate::Error::Validation): `encryption_context` is unset.
     ///
-    /// Otherwise, the errors [`BranchKeySupplier::get_branch_key_id`] documents.
+    /// Otherwise, the errors [`BranchKeyIdSupplier::get_branch_key_id`] documents.
     pub async fn send(self) -> Result<GetBranchKeyIdOutput, Error> {
         let input = self.inner.build()?;
-        BranchKeySupplier::get_branch_key_id(&*self.handle.0, input).await
+        BranchKeyIdSupplier::get_branch_key_id(&*self.handle.0, input).await
     }
 }
 
@@ -283,7 +283,7 @@ struct HierarchicalKeyringInner {
 
     /// The supplier that chooses a branch key id per operation, when
     /// configured with one instead of a static `branch_key_id`.
-    branch_key_id_supplier: Option<SharedBranchKeySupplier>,
+    branch_key_id_supplier: Option<SharedBranchKeyIdSupplier>,
 
     partition_id_bytes: Vec<u8>,
 
@@ -316,7 +316,7 @@ impl HierarchicalKeyring {
     }
 
     /// The configured static branch key id, if this keyring was built with one
-    /// rather than with a [`BranchKeySupplier`].
+    /// rather than with a [`BranchKeyIdSupplier`].
     #[must_use]
     pub fn branch_key_id(&self) -> Option<&str> {
         self.inner.branch_key_id.as_deref()
@@ -325,7 +325,7 @@ impl HierarchicalKeyring {
     /// The configured branch key id supplier, if this keyring was built with
     /// one rather than with a static branch key id.
     #[must_use]
-    pub fn branch_key_id_supplier(&self) -> Option<&SharedBranchKeySupplier> {
+    pub fn branch_key_id_supplier(&self) -> Option<&SharedBranchKeyIdSupplier> {
         self.inner.branch_key_id_supplier.as_ref()
     }
 
@@ -355,12 +355,14 @@ const DEFAULT_CACHE_ENTRY_CAPACITY: usize = 1000;
 
 /// Builder for [`HierarchicalKeyring`], returned by
 /// [`HierarchicalKeyring::builder`].
-#[derive(Default)]
+///
+/// Clones share the same key store, cache and branch key ID supplier.
+#[derive(Clone, Default)]
 pub struct HierarchicalKeyringBuilder {
     key_store: Option<key_store::SharedKeyStore>,
     ttl: Option<Duration>,
     branch_key_id: Option<String>,
-    branch_key_id_supplier: Option<SharedBranchKeySupplier>,
+    branch_key_id_supplier: Option<SharedBranchKeyIdSupplier>,
     cache: Option<SharedCmc>,
     partition_id: Option<String>,
 }
@@ -396,7 +398,7 @@ impl HierarchicalKeyringBuilder {
 
     /// The key store, if set.
     #[must_use]
-    pub const fn get_key_store(&self) -> &Option<key_store::SharedKeyStore> {
+    pub fn get_key_store(&self) -> &Option<key_store::SharedKeyStore> {
         &self.key_store
     }
 
@@ -418,7 +420,7 @@ impl HierarchicalKeyringBuilder {
 
     /// The TTL, if set.
     #[must_use]
-    pub const fn get_ttl(&self) -> &Option<Duration> {
+    pub fn get_ttl(&self) -> &Option<Duration> {
         &self.ttl
     }
 
@@ -440,16 +442,16 @@ impl HierarchicalKeyringBuilder {
 
     /// The branch key ID, if set.
     #[must_use]
-    pub const fn get_branch_key_id(&self) -> &Option<String> {
+    pub fn get_branch_key_id(&self) -> &Option<String> {
         &self.branch_key_id
     }
 
-    /// A [`BranchKeySupplier`].
+    /// A [`BranchKeyIdSupplier`].
     /// Set this or [`branch_key_id`](Self::branch_key_id), not both.
     #[must_use]
     pub fn branch_key_id_supplier(
         mut self,
-        supplier: impl IntoShared<SharedBranchKeySupplier>,
+        supplier: impl IntoShared<SharedBranchKeyIdSupplier>,
     ) -> Self {
         self.branch_key_id_supplier = Some(supplier.into_shared());
         self
@@ -458,14 +460,17 @@ impl HierarchicalKeyringBuilder {
     /// Set or clear the branch key id supplier from an `Option`.
     /// To set a value, use [`Self::branch_key_id_supplier`].
     #[must_use]
-    pub fn set_branch_key_id_supplier(mut self, supplier: Option<SharedBranchKeySupplier>) -> Self {
+    pub fn set_branch_key_id_supplier(
+        mut self,
+        supplier: Option<SharedBranchKeyIdSupplier>,
+    ) -> Self {
         self.branch_key_id_supplier = supplier;
         self
     }
 
     /// The branch key ID supplier, if set.
     #[must_use]
-    pub const fn get_branch_key_id_supplier(&self) -> &Option<SharedBranchKeySupplier> {
+    pub fn get_branch_key_id_supplier(&self) -> &Option<SharedBranchKeyIdSupplier> {
         &self.branch_key_id_supplier
     }
 
@@ -492,7 +497,7 @@ impl HierarchicalKeyringBuilder {
 
     /// The cache, if set.
     #[must_use]
-    pub const fn get_cache(&self) -> &Option<SharedCmc> {
+    pub fn get_cache(&self) -> &Option<SharedCmc> {
         &self.cache
     }
 
@@ -514,7 +519,7 @@ impl HierarchicalKeyringBuilder {
 
     /// The partition ID, if set.
     #[must_use]
-    pub const fn get_partition_id(&self) -> &Option<String> {
+    pub fn get_partition_id(&self) -> &Option<String> {
         &self.partition_id
     }
 

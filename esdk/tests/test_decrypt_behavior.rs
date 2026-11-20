@@ -10,7 +10,6 @@ mod test_helpers;
 use aws_esdk::types::AlgorithmSuiteId;
 use aws_esdk::types::*;
 use aws_esdk::*;
-use std::num::NonZeroU32;
 use test_helpers::*;
 
 #[tokio::test(flavor = "multi_thread")]
@@ -158,7 +157,7 @@ async fn test_streaming_fails_for_multi_frame_signed() {
         .encrypt()
         .plaintext(&plaintext)
         .keyring(keyring.clone())
-        .frame_length(NonZeroU32::new(10).unwrap())
+        .frame_length(10)
         .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
         .send()
         .await

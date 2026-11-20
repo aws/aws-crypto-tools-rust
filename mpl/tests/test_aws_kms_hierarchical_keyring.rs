@@ -55,7 +55,7 @@ use aws_crypto_mpl::key_store::types::{Discovery, KmsConfiguration};
 use aws_crypto_mpl::key_store::{DynamoDbKeyStore, KeyStore};
 use aws_crypto_mpl::keyring::SharedKeyring;
 use aws_crypto_mpl::keyring::{
-    BranchKeySupplier, GetBranchKeyIdInput, GetBranchKeyIdOutput, HierarchicalKeyring,
+    BranchKeyIdSupplier, GetBranchKeyIdInput, GetBranchKeyIdOutput, HierarchicalKeyring,
     HierarchicalKeyringBuilder,
 };
 use aws_crypto_mpl::types::{
@@ -85,14 +85,14 @@ const FIXTURE_VERSION: &str = "caf0c508-e64d-4b6c-bffe-381cbc546c02";
 /// Logical key store name of that same fixture key store.
 const LOGICAL_KEY_STORE_NAME: &str = "KeyStoreDdbTable";
 
-/// Reusable [`BranchKeySupplier`] fixture: always answers with the branch key
+/// Reusable [`BranchKeyIdSupplier`] fixture: always answers with the branch key
 /// id it was constructed with, ignoring the encryption context. Enough for any
 /// test that needs a supplier-configured keyring without caring how the
 /// decision is made.
-struct FixedBranchKeySupplier(&'static str);
+struct FixedBranchKeyIdSupplier(&'static str);
 
 #[async_trait]
-impl BranchKeySupplier for FixedBranchKeySupplier {
+impl BranchKeyIdSupplier for FixedBranchKeyIdSupplier {
     async fn get_branch_key_id(
         &self,
         _input: GetBranchKeyIdInput,
@@ -112,9 +112,8 @@ fn key_store_never_consulted() -> DynamoDbKeyStore {
     build_without_io(
         DynamoDbKeyStore::builder()
             .ddb_table_name("test-table")
-            .kms_configuration(KmsConfiguration::KmsKeyArn(
-                "arn:aws:kms:us-west-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab"
-                    .into(),
+            .kms_configuration(KmsConfiguration::kms_key_arn(
+                "arn:aws:kms:us-west-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab",
             ))
             .logical_key_store_name("test-logical")
             .kms_client(kms)
@@ -164,7 +163,7 @@ async fn build_with_both_branch_key_id_and_supplier_returns_validation_error() {
         .key_store(key_store_never_consulted())
         .ttl(Duration::from_secs(3600))
         .branch_key_id("branch-key-id")
-        .branch_key_id_supplier(FixedBranchKeySupplier("unused"))
+        .branch_key_id_supplier(FixedBranchKeyIdSupplier("unused"))
         .build()
         .await
     {
@@ -250,7 +249,7 @@ async fn build_compares_storm_tracking_grace_period_to_sub_second_ttl() {
             .grace_period(Duration::from_millis(grace_period_ms))
             .grace_interval(Duration::from_millis(100))
             .fan_out(4)
-            .inflight_ttl(Duration::from_millis(100))
+            .in_flight_ttl(Duration::from_millis(100))
             .sleep(Duration::from_millis(10))
             .build()
             .expect("valid StormTrackingCmc");
@@ -434,7 +433,7 @@ async fn build_with_branch_key_id_supplier_succeeds() {
     // Smoke test that configuring a supplier instead of a static branch key
     // id is usable — construct a no-op supplier, pass it as the
     // branch_key_id_supplier, and confirm the keyring can be built with it.
-    let supplier = FixedBranchKeySupplier("branch-id-from-supplier");
+    let supplier = FixedBranchKeyIdSupplier("branch-id-from-supplier");
     let keyring = HierarchicalKeyring::builder()
         .key_store(key_store_never_consulted())
         .ttl(Duration::from_secs(3600))
@@ -538,7 +537,7 @@ async fn build_with_storm_tracking_cache_succeeds() {
         .grace_period(Duration::from_secs(60))
         .grace_interval(Duration::from_secs(1))
         .fan_out(4)
-        .inflight_ttl(Duration::from_secs(30))
+        .in_flight_ttl(Duration::from_secs(30))
         .sleep(Duration::from_millis(10))
         .build()
         .expect("valid StormTrackingCmc");
@@ -560,7 +559,7 @@ async fn build_with_storm_tracking_grace_period_equal_to_ttl_fails() {
         .grace_period(Duration::from_secs(60))
         .grace_interval(Duration::from_secs(1))
         .fan_out(4)
-        .inflight_ttl(Duration::from_secs(30))
+        .in_flight_ttl(Duration::from_secs(30))
         .sleep(Duration::from_millis(10))
         .build()
         .expect("valid StormTrackingCmc");
@@ -586,7 +585,7 @@ async fn build_with_storm_tracking_grace_period_greater_than_ttl_fails() {
         .grace_period(Duration::from_secs(120))
         .grace_interval(Duration::from_secs(1))
         .fan_out(4)
-        .inflight_ttl(Duration::from_secs(30))
+        .in_flight_ttl(Duration::from_secs(30))
         .sleep(Duration::from_millis(10))
         .build()
         .expect("valid StormTrackingCmc");
@@ -607,14 +606,14 @@ async fn build_with_storm_tracking_grace_period_greater_than_ttl_fails() {
 #[tokio::test]
 async fn build_with_storm_tracking_milliseconds_grace_period_under_ttl_succeeds() {
     // grace_period = 5_000 ms = 5 s, less than the 60 s TTL.
-    // inflight_ttl <= grace_period is required by StormTrackingCmc.
+    // in_flight_ttl <= grace_period is required by StormTrackingCmc.
     let cache = StormTrackingCmc::builder()
         .entry_capacity(16)
         .entry_pruning_tail_size(4)
         .grace_period(Duration::from_millis(5_000))
         .grace_interval(Duration::from_millis(100))
         .fan_out(4)
-        .inflight_ttl(Duration::from_millis(1_000))
+        .in_flight_ttl(Duration::from_millis(1_000))
         .sleep(Duration::from_millis(10))
         .build()
         .expect("valid StormTrackingCmc");
@@ -868,7 +867,7 @@ fn compute_aad_appends_serialized_encryption_context() {
 
     let aad = compute_aad(branch_key_id, version, &ec).expect("AAD construction must succeed");
 
-    let serialized_ec = ec.serialize().expect("EC must serialize");
+    let serialized_ec = ec.to_bytes().expect("EC must serialize");
     assert!(
         aad.ends_with(&serialized_ec),
         "AAD must end with the serialized EC bytes"
@@ -886,7 +885,7 @@ fn compute_aad_fails_when_encryption_context_value_too_large() {
     let branch_key_id = "id-too-large";
     let version = "01234567-0123-4123-8123-0123456789ab";
     let mut ec = EncryptionContext::new();
-    // value length > u16::MAX makes EncryptionContext::serialize() fail.
+    // value length > u16::MAX makes EncryptionContext::to_bytes() fail.
     ec.insert("k", "\0".repeat(65_536));
 
     let result = compute_aad(branch_key_id, version, &ec);
@@ -1638,13 +1637,13 @@ mod onencrypt {
     }
 
     #[tokio::test]
-    async fn on_encrypt_uses_branch_key_supplier_when_configured() {
+    async fn on_encrypt_uses_branch_key_id_supplier_when_configured() {
         let key_store = FakeKeyStore::new(fake_branch_key_materials());
         let keyring = SharedKeyring::new(
             HierarchicalKeyring::builder()
                 .key_store(key_store.clone())
                 .ttl(Duration::from_secs(3600))
-                .branch_key_id_supplier(FixedBranchKeySupplier(FAKE_BRANCH_KEY_ID))
+                .branch_key_id_supplier(FixedBranchKeyIdSupplier(FAKE_BRANCH_KEY_ID))
                 .cache(LocalCmc::builder().entry_capacity(1000).build().unwrap())
                 .build()
                 .await
@@ -2159,13 +2158,13 @@ mod ondecrypt {
     }
 
     #[tokio::test]
-    async fn on_decrypt_uses_branch_key_supplier_when_configured() {
+    async fn on_decrypt_uses_branch_key_id_supplier_when_configured() {
         let key_store = FakeKeyStore::new(fake_branch_key_materials());
         let keyring = SharedKeyring::new(
             HierarchicalKeyring::builder()
                 .key_store(key_store.clone())
                 .ttl(Duration::from_secs(3600))
-                .branch_key_id_supplier(FixedBranchKeySupplier(FAKE_BRANCH_KEY_ID))
+                .branch_key_id_supplier(FixedBranchKeyIdSupplier(FAKE_BRANCH_KEY_ID))
                 .cache(LocalCmc::builder().entry_capacity(1000).build().unwrap())
                 .partition_id("partition-id")
                 .build()

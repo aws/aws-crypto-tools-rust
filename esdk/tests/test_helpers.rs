@@ -9,7 +9,6 @@ use aws_esdk::operation::encrypt::EncryptOutput;
 use aws_esdk::types::*;
 use aws_esdk::*;
 use fixtures::*;
-use std::num::NonZeroU32;
 
 pub const IV_LEN: usize = 12;
 pub const TAG_LEN: usize = 16;
@@ -69,7 +68,7 @@ pub fn esdk_for(version: Version) -> Client {
 /// A `Client` that caps each message at `max` encrypted data keys.
 pub fn esdk_with_max_edks(max: usize) -> Client {
     Client::builder()
-        .max_encrypted_data_keys(std::num::NonZeroUsize::new(max).unwrap())
+        .max_encrypted_data_keys(max)
         .build()
         .unwrap()
 }
@@ -141,7 +140,7 @@ pub async fn encrypt_framed_with_keyring(
         .encrypt()
         .plaintext(plaintext)
         .keyring(keyring.clone())
-        .frame_length(NonZeroU32::new(frame_length).unwrap())
+        .frame_length(frame_length)
         .send()
         .await
         .unwrap()
@@ -158,7 +157,7 @@ pub async fn encrypt_v1_with_frame_length(plaintext: &[u8], frame_length: u32) -
         .plaintext(plaintext)
         .keyring(keyring)
         .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256)
-        .frame_length(NonZeroU32::new(frame_length).unwrap())
+        .frame_length(frame_length)
         .send()
         .await
         .unwrap()
@@ -192,7 +191,7 @@ pub async fn multi_frame_signed_for_stream() -> (Vec<u8>, RawAesKeyring, Vec<u8>
         .encrypt()
         .plaintext(&plaintext)
         .keyring(keyring.clone())
-        .frame_length(NonZeroU32::new(10).unwrap())
+        .frame_length(10)
         .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
         .send()
         .await
@@ -242,7 +241,7 @@ pub async fn encrypt_nonsigning_with_frame_length(plaintext: &[u8], frame_length
         .plaintext(plaintext)
         .keyring(keyring)
         .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
-        .frame_length(NonZeroU32::new(frame_length).unwrap())
+        .frame_length(frame_length)
         .send()
         .await
         .unwrap()
@@ -260,7 +259,7 @@ pub async fn multi_frame_unsigned_for_stream() -> (Vec<u8>, RawAesKeyring, Vec<u
         .encrypt()
         .plaintext(&plaintext)
         .keyring(keyring.clone())
-        .frame_length(NonZeroU32::new(10).unwrap())
+        .frame_length(10)
         .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
         .send()
         .await

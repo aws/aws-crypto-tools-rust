@@ -105,7 +105,7 @@ pub struct GetKeyStoreInfoFluentBuilder {
 impl GetKeyStoreInfoFluentBuilder {
     /// The input set so far.
     #[must_use]
-    pub const fn as_input(&self) -> &GetKeyStoreInfoInputBuilder {
+    pub fn as_input(&self) -> &GetKeyStoreInfoInputBuilder {
         &self.inner
     }
 
@@ -131,7 +131,7 @@ pub struct CreateKeyStoreFluentBuilder {
 impl CreateKeyStoreFluentBuilder {
     /// The input set so far.
     #[must_use]
-    pub const fn as_input(&self) -> &CreateKeyStoreInputBuilder {
+    pub fn as_input(&self) -> &CreateKeyStoreInputBuilder {
         &self.inner
     }
 
@@ -157,7 +157,7 @@ pub struct CreateKeyFluentBuilder {
 impl CreateKeyFluentBuilder {
     /// The input set so far.
     #[must_use]
-    pub const fn as_input(&self) -> &CreateKeyInputBuilder {
+    pub fn as_input(&self) -> &CreateKeyInputBuilder {
         &self.inner
     }
 
@@ -177,7 +177,7 @@ impl CreateKeyFluentBuilder {
 
     /// The branch key id, if set.
     #[must_use]
-    pub const fn get_branch_key_id(&self) -> &Option<String> {
+    pub fn get_branch_key_id(&self) -> &Option<String> {
         self.inner.get_branch_key_id()
     }
 
@@ -197,7 +197,7 @@ impl CreateKeyFluentBuilder {
 
     /// The encryption context, if set.
     #[must_use]
-    pub const fn get_encryption_context(&self) -> &Option<EncryptionContext> {
+    pub fn get_encryption_context(&self) -> &Option<EncryptionContext> {
         self.inner.get_encryption_context()
     }
 
@@ -223,7 +223,7 @@ pub struct VersionKeyFluentBuilder {
 impl VersionKeyFluentBuilder {
     /// The input set so far.
     #[must_use]
-    pub const fn as_input(&self) -> &VersionKeyInputBuilder {
+    pub fn as_input(&self) -> &VersionKeyInputBuilder {
         &self.inner
     }
 
@@ -243,7 +243,7 @@ impl VersionKeyFluentBuilder {
 
     /// The branch key id, if set.
     #[must_use]
-    pub const fn get_branch_key_id(&self) -> &Option<String> {
+    pub fn get_branch_key_id(&self) -> &Option<String> {
         self.inner.get_branch_key_id()
     }
 
@@ -271,7 +271,7 @@ pub struct GetActiveBranchKeyFluentBuilder {
 impl GetActiveBranchKeyFluentBuilder {
     /// The input set so far.
     #[must_use]
-    pub const fn as_input(&self) -> &GetActiveBranchKeyInputBuilder {
+    pub fn as_input(&self) -> &GetActiveBranchKeyInputBuilder {
         &self.inner
     }
 
@@ -291,7 +291,7 @@ impl GetActiveBranchKeyFluentBuilder {
 
     /// The branch key id, if set.
     #[must_use]
-    pub const fn get_branch_key_id(&self) -> &Option<String> {
+    pub fn get_branch_key_id(&self) -> &Option<String> {
         self.inner.get_branch_key_id()
     }
 
@@ -319,7 +319,7 @@ pub struct GetBranchKeyVersionFluentBuilder {
 impl GetBranchKeyVersionFluentBuilder {
     /// The input set so far.
     #[must_use]
-    pub const fn as_input(&self) -> &GetBranchKeyVersionInputBuilder {
+    pub fn as_input(&self) -> &GetBranchKeyVersionInputBuilder {
         &self.inner
     }
 
@@ -339,7 +339,7 @@ impl GetBranchKeyVersionFluentBuilder {
 
     /// The branch key id, if set.
     #[must_use]
-    pub const fn get_branch_key_id(&self) -> &Option<String> {
+    pub fn get_branch_key_id(&self) -> &Option<String> {
         self.inner.get_branch_key_id()
     }
 
@@ -359,7 +359,7 @@ impl GetBranchKeyVersionFluentBuilder {
 
     /// The branch key version, if set.
     #[must_use]
-    pub const fn get_branch_key_version(&self) -> &Option<String> {
+    pub fn get_branch_key_version(&self) -> &Option<String> {
         self.inner.get_branch_key_version()
     }
 
@@ -387,7 +387,7 @@ pub struct GetBeaconKeyFluentBuilder {
 impl GetBeaconKeyFluentBuilder {
     /// The input set so far.
     #[must_use]
-    pub const fn as_input(&self) -> &GetBeaconKeyInputBuilder {
+    pub fn as_input(&self) -> &GetBeaconKeyInputBuilder {
         &self.inner
     }
 
@@ -407,7 +407,7 @@ impl GetBeaconKeyFluentBuilder {
 
     /// The branch key id, if set.
     #[must_use]
-    pub const fn get_branch_key_id(&self) -> &Option<String> {
+    pub fn get_branch_key_id(&self) -> &Option<String> {
         self.inner.get_branch_key_id()
     }
 

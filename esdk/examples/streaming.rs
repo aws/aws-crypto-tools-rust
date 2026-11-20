@@ -45,12 +45,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let esdk = aws_esdk::Client::default();
 
     let input = File::open(&plaintext_path).await?;
+    // Optional upper bound on the plaintext size, in bytes.
+    // The CMM sees it, and encrypt fails if the stream turns out longer.
+    let plaintext_size = input.metadata().await?.len();
     let output = File::create(&ciphertext_path).await?;
     let result = esdk
         .encrypt_stream()
         .set_encryption_context(Some(encryption_context.clone()))
         .keyring(keyring.clone())
         .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
+        .plaintext_length_bound(plaintext_size)
         .plaintext(input)
         .ciphertext(output)
         .send()

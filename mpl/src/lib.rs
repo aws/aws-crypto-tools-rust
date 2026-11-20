@@ -16,7 +16,7 @@ pub mod types;
 
 pub use error::generated::Error;
 
-/// Put `#[async_trait]` on an `impl` of a [`Keyring`](keyring::Keyring), [`Cmm`](cmm::Cmm), [`Cmc`](cmc::Cmc), [`KeyStore`](key_store::KeyStore), or [`BranchKeySupplier`](keyring::BranchKeySupplier).
+/// Put `#[async_trait]` on an `impl` of a [`Keyring`](keyring::Keyring), [`Cmm`](cmm::Cmm), [`Cmc`](cmc::Cmc), [`KeyStore`](key_store::KeyStore), or [`BranchKeyIdSupplier`](keyring::BranchKeyIdSupplier).
 pub use async_trait::async_trait;
 
 #[cfg(feature = "default-aws-sdk-clients")]
