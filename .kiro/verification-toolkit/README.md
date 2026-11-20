@@ -6,17 +6,24 @@ A set of Kiro agents, one skill and one steering file that take a Rust library f
 
 | Part | Path |
 |---|---|
-| 9 agents | `.kiro/agents/*.md` |
+| 10 agents | `.kiro/agents/*.md` |
 | Skill | `.kiro/skills/verus/SKILL.md` |
 | Steering pointer | `.kiro/steering/verus-verification.md` |
 | This README | `.kiro/verification-toolkit/README.md` |
 | Profile schema | `.kiro/verification-toolkit/verification-profile.template.yaml` |
+| Recipes | `.kiro/verification-toolkit/recipes/` |
+| Templates | `.kiro/verification-toolkit/templates/` |
+| Workflow (UNVALIDATED) | `.kiro/workflows/verus-prove-target.workflow.json` |
 
 The library profile is not part of the toolkit: `.kiro/verification-profile/verification-profile.yaml` plus the appendices `domain.md`, `idioms.md` and `targets.md` in the same directory.
 
 ## Layout and copy-out rule
 
-Kiro finds agents only in `.kiro/agents/`, skills in `.kiro/skills/` and steering in `.kiro/steering/`, so the generic files stay there. To move the toolkit to another repository, copy `.kiro/agents/`, `.kiro/skills/verus/`, `.kiro/steering/verus-verification.md` and `.kiro/verification-toolkit/`. Leave `.kiro/verification-profile/` behind: it belongs to the library.
+Kiro finds agents only in `.kiro/agents/`, skills in `.kiro/skills/` and steering in `.kiro/steering/`, so the generic files stay there. To move the toolkit to another repository, copy `.kiro/agents/`, `.kiro/skills/verus/`, `.kiro/steering/verus-verification.md`, `.kiro/verification-toolkit/` and `.kiro/workflows/verus-prove-target.workflow.json`. Leave `.kiro/verification-profile/` behind: it belongs to the library.
+
+## Recipes and templates
+
+A recipe is a fixed sequence of steps and gates that uses the agents. Recipe R1 (`.kiro/verification-toolkit/recipes/R1-prove-target.md`) takes one target through feasibility, proof, mutations, CI parity, docs and review, then asks before merge and asks again before push. The R1 spec is authoritative. `.kiro/workflows/verus-prove-target.workflow.json` is its machine-readable form and is UNVALIDATED: its schema has not been checked, and the spec lists the uncertain fields. The templates in `.kiro/verification-toolkit/templates/` (T-feasibility, T-mutations-log, T-review) give the shape of the notes R1 writes. The `verus-proof-reviewer` agent runs R1's review step.
 
 ## How agents find the profile
 
