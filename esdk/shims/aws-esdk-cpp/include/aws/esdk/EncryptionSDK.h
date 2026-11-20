@@ -30,7 +30,7 @@
 #endif
 
 // The C++ shim build process writes Config.h to match the Cargo features.
-// If it's not written, then we're using default Cargo features, which means all features are on (except FIPS).
+// If Config.h isn't on the include path, assume default Cargo features, which means all features are on (except FIPS).
 #if __has_include("aws/esdk/Config.h")
 #include "aws/esdk/Config.h"
 #else
