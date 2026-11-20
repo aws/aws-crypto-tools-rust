@@ -14,7 +14,8 @@
     clippy::boxed_local,
     reason = "destructors accept Box<T> to transfer ownership back to Rust for dropping"
 )]
-// Ungated helpers are unused when gated code is off.
+// With some features off, code that only those features call is unused.
+// Don't warn about unused code in those builds.
 #![cfg_attr(
     not(all(feature = "kms", feature = "ddb", feature = "rt-tokio")),
     allow(dead_code, unused_imports)
