@@ -2,7 +2,6 @@
 PROFILE_DIR ?= target/debug
 
 STATICLIB   := $(PROFILE_DIR)/libaws_esdk_cpp.a
-CXXBRIDGE_RT = $$(find $(PROFILE_DIR)/build -path "*/cxx-*/out/libcxxbridge1.a" | head -n1)
 UNAME_S     := $(shell uname -s)
 
 PLATFORM_LIBS =
@@ -10,7 +9,7 @@ ifeq ($(UNAME_S),Darwin)
 PLATFORM_LIBS += -framework Security -framework CoreFoundation -framework SystemConfiguration
 endif
 
-LINK_LIBS = $(STATICLIB) $(CXXBRIDGE_RT) -lpthread -ldl $(PLATFORM_LIBS)
+LINK_LIBS = $(STATICLIB) -lpthread -ldl $(PLATFORM_LIBS)
 
 CXXFLAGS_COMMON = -Iinclude -std=c++17
 COV_CXXFLAGS ?=
@@ -169,9 +168,11 @@ coverage:
 # Union of coverage from Rust tests and C++ unit/integ tests.
 # Requires creds. COV_CPP_REPORT picks the report format (see coverage-cpp-html).
 COV_CPP_REPORT ?= report
+# COV_ENV_ARGS adds cargo llvm-cov build options, such as --branch.
+COV_ENV_ARGS ?=
 coverage-cpp:
 	cargo llvm-cov clean --workspace
-	eval "$$(cargo llvm-cov show-env --export-prefix)" && \
+	eval "$$(cargo llvm-cov show-env --export-prefix $(COV_ENV_ARGS))" && \
 	cargo build && \
 	cargo test --lib && \
 	PROFILE_DIR="$${CARGO_TARGET_DIR:-target}/debug" && \
