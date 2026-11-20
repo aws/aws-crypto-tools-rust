@@ -41,6 +41,7 @@ fn main() {
         .file(&generated)
         .include(&cxxbridge)
         .include(shim.join("include"))
+        .include(profile_dir.join("include"))
         .compile("esdk_cpp_seam");
 
     println!("cargo:rustc-link-search=native={}", profile_dir.display());

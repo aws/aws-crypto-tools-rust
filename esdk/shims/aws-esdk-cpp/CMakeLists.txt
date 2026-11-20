@@ -26,6 +26,27 @@ else()
     list(APPEND ESDK_CARGO_ARGS --release)
 endif()
 
+# One option per Cargo feature. ESDK_FEATURE_KMS turns on `kms`, and so on.
+option(ESDK_FEATURE_FIPS "Use AWS-LC's FIPS module instead of AWS-LC" OFF)
+option(ESDK_FEATURE_KMS "Cargo feature kms" ON)
+option(ESDK_FEATURE_DDB "Cargo feature ddb" ON)
+option(ESDK_FEATURE_DEFAULT_AWS_SDK_CLIENTS "Cargo feature default-aws-sdk-clients" ON)
+option(ESDK_FEATURE_RT_TOKIO "Cargo feature rt-tokio" ON)
+if(ESDK_FEATURE_FIPS)
+    set(ESDK_FEATURES fips)
+else()
+    set(ESDK_FEATURES aws-lc-sys)
+endif()
+foreach(_esdk_feature kms ddb default-aws-sdk-clients rt-tokio)
+    string(TOUPPER "${_esdk_feature}" _esdk_option)
+    string(REPLACE "-" "_" _esdk_option "${_esdk_option}")
+    if(ESDK_FEATURE_${_esdk_option})
+        list(APPEND ESDK_FEATURES ${_esdk_feature})
+    endif()
+endforeach()
+list(JOIN ESDK_FEATURES "," _esdk_feature_list)
+list(APPEND ESDK_CARGO_ARGS --no-default-features --features ${_esdk_feature_list})
+
 # Build the Rust staticlib/cxx-generated source
 execute_process(
     COMMAND cargo ${ESDK_CARGO_ARGS}
@@ -43,6 +64,7 @@ set(ESDK_BRIDGE_CC ${ESDK_TARGET_DIR}/cxxbridge/aws-esdk-cpp/src/lib.rs.cc)
 add_library(aws_esdk_cpp STATIC ${ESDK_BRIDGE_CC})
 target_include_directories(aws_esdk_cpp PUBLIC
     ${ESDK_ROOT}/include
+    ${ESDK_TARGET_DIR}/${ESDK_PROFILE}/include
     ${ESDK_TARGET_DIR}/cxxbridge
 )
 target_link_libraries(aws_esdk_cpp PUBLIC

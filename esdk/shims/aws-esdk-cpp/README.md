@@ -28,17 +28,7 @@ through the public types in
 
 ## Building
 
-From this directory:
-
-```bash
-cargo build
-```
-
-That produces the static library and the cxx-generated C++ sources under
-`target/`, which the `AWS::esdk` CMake target and the `Makefile` example/test
-targets consume.
-
-## Using it in a CMake project
+Add the shim to your CMake project:
 
 ```cmake
 add_subdirectory(aws-esdk-cpp)
@@ -49,11 +39,69 @@ target_link_libraries(my_app PRIVATE AWS::esdk)
 #include <aws/esdk/EncryptionSDK.h>
 ```
 
+CMake runs `cargo build` and puts the headers on the include path.
 See [`CMakeLists.txt`](CMakeLists.txt) for how the target is assembled.
 
 Build the library from source together with your application, as `add_subdirectory` does.
 Releases keep source compatibility, not binary compatibility:
 after upgrading, rebuild everything that includes `EncryptionSDK.h`.
+
+### Features
+
+The shim has the same Cargo features as the Rust ESDK and passes them through.
+Each has a CMake option, such as `-DESDK_FEATURE_KMS=OFF` for `kms`.
+
+| Feature | Default | What it adds |
+|---|---|---|
+| `aws-lc-sys` | on | AWS-LC as the crypto backend |
+| `fips` | off | AWS-LC's FIPS module as the crypto backend |
+| `kms` | on | `KmsClient`, `AwsSdkClientConfig`, `HttpClient`, `Credentials` |
+| `ddb` | on | `DdbClient`, `AwsSdkClientConfig`, `HttpClient`, `Credentials` |
+| `kms` and `ddb` | on | `KeyStore`, `HierarchicalKeyring` |
+| `default-aws-sdk-clients` | on | nothing; `kms` and `ddb` turn it on |
+| `rt-tokio` | on | `DefaultCmc`, `StormTrackingCmc` |
+
+`CryptographicMaterialsCache`, `LocalCmc` and the raw AES keyring need no feature.
+With `kms` and `ddb` off, the library does not link the AWS SDK.
+
+All default features:
+
+```bash
+cmake -B build
+```
+
+All default features, with FIPS:
+
+```bash
+cmake -B build -DESDK_FEATURE_FIPS=ON
+```
+
+No default features:
+
+```bash
+cmake -B build -DESDK_FEATURE_KMS=OFF -DESDK_FEATURE_DDB=OFF \
+  -DESDK_FEATURE_DEFAULT_AWS_SDK_CLIENTS=OFF -DESDK_FEATURE_RT_TOKIO=OFF
+```
+
+No default features, with FIPS:
+
+```bash
+cmake -B build -DESDK_FEATURE_FIPS=ON -DESDK_FEATURE_KMS=OFF -DESDK_FEATURE_DDB=OFF \
+  -DESDK_FEATURE_DEFAULT_AWS_SDK_CLIENTS=OFF -DESDK_FEATURE_RT_TOKIO=OFF
+```
+
+### Without CMake
+
+From this directory:
+
+```bash
+cargo build
+```
+
+This writes the static library to `target/<profile>/libaws_esdk_cpp.a`.
+Put `include` and `target/<profile>/include` on the include path,
+and link the library with `-lpthread -ldl`.
+Cargo features work as usual, for example `cargo build --no-default-features --features fips`.
 
 ## Quick example
 

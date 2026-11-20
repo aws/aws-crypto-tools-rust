@@ -14,6 +14,12 @@
     clippy::boxed_local,
     reason = "destructors accept Box<T> to transfer ownership back to Rust for dropping"
 )]
+// With some features off, code that only those features call is unused.
+// Don't warn about unused code in those builds.
+#![cfg_attr(
+    not(all(feature = "kms", feature = "ddb", feature = "rt-tokio")),
+    allow(dead_code, unused_imports)
+)]
 
 // File-wide invariants.
 // Each requirement below holds for every type and operation in this file.
@@ -133,24 +139,42 @@
 //= spec/shim/shim.md#streaming
 //# If a core library resource or operation supports [streamed](../client-apis/streaming.md) inputs/outputs,
 //# the shim library SHOULD support it as well.
+#[cfg(any(feature = "kms", feature = "ddb"))]
+use aws_config::identity::IdentityCache;
+#[cfg(any(feature = "kms", feature = "ddb"))]
 use aws_config::{BehaviorVersion, FrameworkMetadata, Region, SdkConfig};
+#[cfg(any(feature = "kms", feature = "ddb"))]
 use aws_crypto_mpl::aws_config;
-use aws_crypto_mpl::cmc::{
-    DefaultCmc, LocalCmc, SharedCmc, StormTrackingCmc, StormTrackingCmcBuilder,
-};
+#[cfg(feature = "ddb")]
+use aws_crypto_mpl::aws_sdk_dynamodb;
+#[cfg(feature = "kms")]
+use aws_crypto_mpl::aws_sdk_kms;
+#[cfg(feature = "rt-tokio")]
+use aws_crypto_mpl::cmc::{DefaultCmc, StormTrackingCmc, StormTrackingCmcBuilder};
+use aws_crypto_mpl::cmc::{LocalCmc, SharedCmc};
+#[cfg(all(feature = "kms", feature = "ddb"))]
 use aws_crypto_mpl::key_store::DynamoDbKeyStore;
+#[cfg(all(feature = "kms", feature = "ddb"))]
 use aws_crypto_mpl::key_store::types::{Discovery, KmsConfiguration, MrDiscovery};
+#[cfg(all(feature = "kms", feature = "ddb"))]
 use aws_crypto_mpl::keyring::HierarchicalKeyring;
 use aws_crypto_mpl::keyring::{RawAesKeyring, SharedKeyring};
 use aws_crypto_mpl::types::{EsdkAlgorithmSuiteId, EsdkCommitmentPolicy};
-use aws_crypto_mpl::{aws_sdk_dynamodb, aws_sdk_kms};
 use aws_esdk::Client;
 use aws_esdk::error::{Resource, RetryKind, Service};
 use aws_esdk::types::SignedStreaming;
-use aws_sdk_kms::config::{IdentityCache, SharedCredentialsProvider, SharedHttpClient};
+#[cfg(any(feature = "kms", feature = "ddb"))]
 use aws_smithy_runtime::client::defaults::default_http_client_plugin_v2;
-use aws_smithy_runtime_api::client::runtime_components::RuntimeComponentsBuilder;
-use aws_smithy_runtime_api::client::runtime_plugin::RuntimePlugin;
+// The KMS and DynamoDB SDKs re-export the same config types, so either one works.
+#[cfg(all(feature = "ddb", not(feature = "kms")))]
+use aws_sdk_dynamodb::config as sdk_config;
+#[cfg(feature = "kms")]
+use aws_sdk_kms::config as sdk_config;
+#[cfg(any(feature = "kms", feature = "ddb"))]
+use sdk_config::{
+    Credentials, RuntimeComponentsBuilder, RuntimePlugin, SharedCredentialsProvider,
+    SharedHttpClient,
+};
 use std::num::NonZeroU32;
 use std::sync::LazyLock;
 use std::time::{Duration, SystemTime};
@@ -362,6 +386,7 @@ mod ffi {
         MrDiscovery,
     }
 
+    #[cfg(all(feature = "kms", feature = "ddb"))]
     struct KeyStoreConfig {
         ddb_table_name: String,
         kms_configuration_type: KmsConfigurationType,
@@ -393,6 +418,7 @@ mod ffi {
         nanos: u32,
     }
 
+    #[cfg(all(feature = "kms", feature = "ddb"))]
     struct HierarchicalKeyringInput {
         branch_key_id: String,
         key_store: *const KeyStore,
@@ -422,44 +448,60 @@ mod ffi {
     extern "Rust" {
         // No delete_* functions: C++ holds each resource as a rust::Box, whose
         // destructor runs cxx's generated drop glue and drops the Rust Box.
+        #[cfg(feature = "ddb")]
         type MplDdbClient;
+        #[cfg(feature = "ddb")]
         fn create_ddb_client(value: &MplAwsClientConfig) -> Result<Box<MplDdbClient>>;
+        #[cfg(feature = "ddb")]
         fn create_ddb_client_with_http_client(
             value: &MplAwsClientConfig,
             http_client: &HttpClient,
         ) -> Result<Box<MplDdbClient>>;
+        #[cfg(feature = "ddb")]
         fn ddb_client_with_credentials(
             base: &MplDdbClient,
             credentials: &Credentials,
         ) -> Result<Box<MplDdbClient>>;
 
+        #[cfg(all(feature = "kms", feature = "ddb"))]
         type KeyStore;
+        #[cfg(all(feature = "kms", feature = "ddb"))]
         fn create_keystore(value: &KeyStoreConfig) -> Result<Box<KeyStore>>;
 
         type CryptographicMaterialsCache;
+        #[cfg(feature = "rt-tokio")]
         fn create_storm_tracking_cmc(
             options: &StormTrackingCmcOptions,
         ) -> Result<Box<CryptographicMaterialsCache>>;
+        #[cfg(feature = "rt-tokio")]
         fn create_default_cmc(entry_capacity: u32) -> Result<Box<CryptographicMaterialsCache>>;
         fn create_local_cmc(entry_capacity: u32) -> Result<Box<CryptographicMaterialsCache>>;
 
         type Keyring;
+        #[cfg(all(feature = "kms", feature = "ddb"))]
         fn create_hierarchical_keyring(value: &HierarchicalKeyringInput) -> Result<Box<Keyring>>;
         fn create_raw_aes_keyring(value: &RawAesKeyringInput) -> Result<Box<Keyring>>;
 
+        #[cfg(any(feature = "kms", feature = "ddb"))]
         type HttpClient;
+        #[cfg(any(feature = "kms", feature = "ddb"))]
         fn create_http_client() -> Result<Box<HttpClient>>;
 
+        #[cfg(feature = "kms")]
         type MplKmsClient;
+        #[cfg(feature = "kms")]
         fn create_kms_client(value: &MplAwsClientConfig) -> Result<Box<MplKmsClient>>;
+        #[cfg(feature = "kms")]
         fn create_kms_client_with_http_client(
             value: &MplAwsClientConfig,
             http_client: &HttpClient,
         ) -> Result<Box<MplKmsClient>>;
+        #[cfg(feature = "kms")]
         fn kms_client_with_credentials(
             base: &MplKmsClient,
             credentials: &Credentials,
         ) -> Result<Box<MplKmsClient>>;
+        #[cfg(feature = "kms")]
         fn kms_client_with_headers(
             base: &MplKmsClient,
             headers: Vec<HttpHeader>,
@@ -511,17 +553,21 @@ impl ffi::OptCredentials {
 // Resources
 
 /// An HTTP client, with its connection pool, that service clients can share.
+#[cfg(any(feature = "kms", feature = "ddb"))]
 struct HttpClient {
     inner: SharedHttpClient,
 }
 
+#[cfg(feature = "kms")]
 struct MplKmsClient {
     inner: aws_sdk_kms::Client,
 }
+#[cfg(feature = "ddb")]
 struct MplDdbClient {
     inner: aws_sdk_dynamodb::Client,
 }
 
+#[cfg(all(feature = "kms", feature = "ddb"))]
 struct KeyStore {
     inner: DynamoDbKeyStore,
 }
@@ -895,6 +941,7 @@ fn make_frame_length(frame_length: u32) -> Result<NonZeroU32, String> {
     })
 }
 
+#[cfg(all(feature = "kms", feature = "ddb"))]
 // Create an ESDK Rust Key Store KmsConfiguration value from the given FFI KmsConfiguration value
 fn make_kms_config(
     kind: ffi::KmsConfigurationType,
@@ -967,6 +1014,7 @@ fn cache_count(field: &str, v: u32, op: &str) -> Result<usize, String> {
 }
 
 /// Apply each set option to `builder`.
+#[cfg(feature = "rt-tokio")]
 fn apply_storm_tracking_options(
     builder: StormTrackingCmcBuilder,
     options: &ffi::StormTrackingCmcOptions,
@@ -1015,6 +1063,7 @@ fn apply_storm_tracking_options(
 //
 //= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
 //# - The shim MUST support creating a storm tracking cache.
+#[cfg(feature = "rt-tokio")]
 fn create_storm_tracking_cmc(
     options: &ffi::StormTrackingCmcOptions,
 ) -> Result<Box<CryptographicMaterialsCache>, String> {
@@ -1031,6 +1080,7 @@ fn create_storm_tracking_cmc(
 
 //= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
 //# - The shim MUST support creating a default cache.
+#[cfg(feature = "rt-tokio")]
 fn create_default_cmc(entry_capacity: u32) -> Result<Box<CryptographicMaterialsCache>, String> {
     let op = "create_default_cmc";
     let cache = DefaultCmc::builder()
@@ -1054,6 +1104,7 @@ fn create_local_cmc(entry_capacity: u32) -> Result<Box<CryptographicMaterialsCac
 }
 
 /// C++ to Rust for AWS SDK call retry config
+#[cfg(any(feature = "kms", feature = "ddb"))]
 fn make_retry_config(config: &ffi::RetryConfig) -> Option<aws_config::retry::RetryConfig> {
     let max_attempts = config.max_attempts.to_option();
     if !config.mode_adaptive && max_attempts.is_none() {
@@ -1081,6 +1132,7 @@ const SHIM_FRAMEWORK_NAME: &str = "AwsEncryptionSdk-Shim-C++-Rust";
 //# `AwsEncryptionSdk-Shim-<target-language>-<core-language>-<version>`, where
 //# `<target-language>` is the target language, `<core-language>` is the core
 //# ESDK's implementation language, and `<version>` is the shim's published version.
+#[cfg(any(feature = "kms", feature = "ddb"))]
 fn shim_framework_metadata() -> FrameworkMetadata {
     FrameworkMetadata::new(SHIM_FRAMEWORK_NAME, Some(env!("CARGO_PKG_VERSION")))
         .expect("the shim framework metadata name and version are valid")
@@ -1088,22 +1140,26 @@ fn shim_framework_metadata() -> FrameworkMetadata {
 
 // Loaded once per process.
 // Every client config derives from it, so clients without explicit credentials share one credential chain.
+#[cfg(any(feature = "kms", feature = "ddb"))]
 static DEFAULT_SDK_CONFIG: LazyLock<Result<SdkConfig, String>> =
     LazyLock::new(load_default_sdk_config);
 
 /// The AWS SDK's default HTTPS client.
+#[cfg(any(feature = "kms", feature = "ddb"))]
 fn default_http_client() -> Option<SharedHttpClient> {
     default_http_client_plugin_v2(BehaviorVersion::latest())?
         .runtime_components(&RuntimeComponentsBuilder::new("aws-esdk-cpp"))
         .http_client()
 }
 
+#[cfg(any(feature = "kms", feature = "ddb"))]
 fn load_default_sdk_config() -> Result<SdkConfig, String> {
     let shared_config =
         TOKIO_RUNTIME.block_on(aws_config::defaults(BehaviorVersion::latest()).load());
     Ok(with_shim_user_agent(shared_config))
 }
 
+#[cfg(any(feature = "kms", feature = "ddb"))]
 fn with_shim_user_agent(loaded: SdkConfig) -> SdkConfig {
     //= spec/shim/esdk-shim.md#service-client-configuration
     //= type=implication
@@ -1117,10 +1173,11 @@ fn with_shim_user_agent(loaded: SdkConfig) -> SdkConfig {
 }
 
 /// Convert C++ static credentials to AWS SDK credentials.
+#[cfg(any(feature = "kms", feature = "ddb"))]
 fn credentials_target_to_core(
     input: &ffi::Credentials,
     operation: &str,
-) -> Result<aws_sdk_kms::config::Credentials, String> {
+) -> Result<Credentials, String> {
     // Messages name the empty field only; they never carry credential values.
     for (field, value) in [
         ("access key id", &input.access_key_id),
@@ -1148,7 +1205,7 @@ fn credentials_target_to_core(
             Some(expiration)
         }
     };
-    Ok(aws_sdk_kms::config::Credentials::new(
+    Ok(Credentials::new(
         input.access_key_id.as_str(),
         input.secret_access_key.as_str(),
         input.session_token.to_option(),
@@ -1162,6 +1219,7 @@ fn credentials_target_to_core(
 //= reason=create_kms_client and create_ddb_client each build their SdkConfig from the same MplAwsClientConfig, so one configuration can be applied to multiple clients.
 //# - The shim SHOULD allow one client configuration to be applied to multiple
 //# service clients.
+#[cfg(any(feature = "kms", feature = "ddb"))]
 fn create_sdk_config(
     input: &ffi::MplAwsClientConfig,
     http_client: Option<&HttpClient>,
@@ -1359,6 +1417,7 @@ fn decrypt(input: &ffi::DecryptInput) -> Result<ffi::DecryptOutput, String> {
     })
 }
 
+#[cfg(feature = "kms")]
 //= spec/shim/esdk-shim.md#create-kms-client
 //# - The shim MUST provide an operation that creates a KMS service client backed by
 //# the core ESDK.
@@ -1366,6 +1425,7 @@ fn create_kms_client(input: &ffi::MplAwsClientConfig) -> Result<Box<MplKmsClient
     kms_client(input, None)
 }
 
+#[cfg(feature = "kms")]
 fn create_kms_client_with_http_client(
     input: &ffi::MplAwsClientConfig,
     http_client: &HttpClient,
@@ -1373,6 +1433,7 @@ fn create_kms_client_with_http_client(
     kms_client(input, Some(http_client))
 }
 
+#[cfg(feature = "kms")]
 fn kms_client(
     input: &ffi::MplAwsClientConfig,
     http_client: Option<&HttpClient>,
@@ -1386,6 +1447,7 @@ fn kms_client(
     }))
 }
 
+#[cfg(feature = "ddb")]
 //= spec/shim/esdk-shim.md#create-dynamodb-client
 //# - The shim MUST provide an operation that creates a DynamoDB service client
 //# backed by the core ESDK.
@@ -1393,6 +1455,7 @@ fn create_ddb_client(input: &ffi::MplAwsClientConfig) -> Result<Box<MplDdbClient
     ddb_client(input, None)
 }
 
+#[cfg(feature = "ddb")]
 fn create_ddb_client_with_http_client(
     input: &ffi::MplAwsClientConfig,
     http_client: &HttpClient,
@@ -1400,6 +1463,7 @@ fn create_ddb_client_with_http_client(
     ddb_client(input, Some(http_client))
 }
 
+#[cfg(feature = "ddb")]
 fn ddb_client(
     input: &ffi::MplAwsClientConfig,
     http_client: Option<&HttpClient>,
@@ -1419,6 +1483,7 @@ fn ddb_client(
     }))
 }
 
+#[cfg(any(feature = "kms", feature = "ddb"))]
 fn create_http_client() -> Result<Box<HttpClient>, String> {
     let inner = default_http_client().ok_or_else(|| {
         shim_err(
@@ -1433,6 +1498,7 @@ fn create_http_client() -> Result<Box<HttpClient>, String> {
 // A derived client keeps the base client's configuration and HTTP client.
 // See create_sdk_config for why static credentials skip the identity cache.
 
+#[cfg(feature = "kms")]
 fn kms_client_with_credentials(
     base: &MplKmsClient,
     credentials: &ffi::Credentials,
@@ -1450,6 +1516,7 @@ fn kms_client_with_credentials(
     }))
 }
 
+#[cfg(feature = "kms")]
 fn kms_client_with_headers(
     base: &MplKmsClient,
     headers: Vec<ffi::HttpHeader>,
@@ -1500,6 +1567,7 @@ fn kms_client_with_headers(
 #[derive(Debug)]
 struct RequestHeaders(Vec<(String, String)>);
 
+#[cfg(feature = "kms")]
 impl aws_sdk_kms::config::Intercept for RequestHeaders {
     fn name(&self) -> &'static str {
         "RequestHeaders"
@@ -1520,6 +1588,7 @@ impl aws_sdk_kms::config::Intercept for RequestHeaders {
     }
 }
 
+#[cfg(feature = "ddb")]
 fn ddb_client_with_credentials(
     base: &MplDdbClient,
     credentials: &ffi::Credentials,
@@ -1537,6 +1606,7 @@ fn ddb_client_with_credentials(
     }))
 }
 
+#[cfg(all(feature = "kms", feature = "ddb"))]
 //= spec/shim/esdk-shim.md#create-key-store
 //# - The shim MUST provide an operation that creates a key store backed by the core ESDK.
 fn create_keystore(input: &ffi::KeyStoreConfig) -> Result<Box<KeyStore>, String> {
@@ -1638,6 +1708,7 @@ fn create_raw_aes_keyring(input: &ffi::RawAesKeyringInput) -> Result<Box<Keyring
     }))
 }
 
+#[cfg(all(feature = "kms", feature = "ddb"))]
 //= spec/shim/esdk-shim.md#create-hierarchical-keyring
 //# - The shim MUST provide an operation that creates a hierarchical keyring backed
 //# by the core ESDK.
