@@ -14,8 +14,7 @@
     clippy::boxed_local,
     reason = "destructors accept Box<T> to transfer ownership back to Rust for dropping"
 )]
-// Only items that need a feature's dependencies are gated.
-// A build without some features leaves the plain types and helpers for that API unused.
+// Ungated helpers are unused when gated code is off.
 #![cfg_attr(
     not(all(feature = "kms", feature = "ddb", feature = "rt-tokio")),
     allow(dead_code, unused_imports)
