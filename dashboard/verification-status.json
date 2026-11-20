@@ -1,11 +1,11 @@
 {
   "generated": {
-    "commit": "877ad2ea599eebd92afe842b4c008a7cb24e134e",
-    "commit_short": "877ad2e",
+    "commit": "2ddfefa7e71fc53147dec2c230853ffca0520f1a",
+    "commit_short": "2ddfefa",
     "branch": "MPL-Verus",
     "sources_clean": true,
     "dirty_paths": [],
-    "timestamp_utc": "2026-11-19T22:41:24Z",
+    "timestamp_utc": "2026-11-20T18:19:23Z",
     "generator": "dashboard/generate_dashboard.py",
     "schema_version": 1,
     "commit_meaning": "the commit whose docs/ and verus-proofs/ were read; the dashboard files are committed after it"
@@ -16,8 +16,8 @@
   "verus": {
     "version": "0.2026.07.12.0b42f4c",
     "platform": "release, macos_aarch64, 1.96.0-aarch64-apple-darwin",
-    "runs_recorded_at": "2026-11-19T22:40:46Z",
-    "runs_recorded_on_commit": "877ad2e",
+    "runs_recorded_at": "2026-11-20T18:19:09Z",
+    "runs_recorded_on_commit": "2ddfefa",
     "command": "~/verus/verus verus-proofs/<file>.rs, run from the repo root"
   },
   "scope_statement": "Every proof on this branch checks a hand-written model of the code. None checks the shipped code.",
@@ -74,14 +74,14 @@
     "level_counts": {
       "in_crate": 0,
       "in_crate_other_branch": 1,
-      "model_proved": 10,
-      "model_partly": 3,
-      "not_started": 19
+      "model_proved": 12,
+      "model_partly": 4,
+      "not_started": 16
     },
-    "targets_with_model_proof_on_this_branch": 13,
+    "targets_with_model_proof_on_this_branch": 16,
     "targets_with_proof_in_shipped_code_on_this_branch": 0,
     "targets_with_proof_on_other_branch_only": 1,
-    "targets_without_proof": 19,
+    "targets_without_proof": 16,
     "high_threat_count": 3,
     "high_threats_with_current_model_proof": 3,
     "threat_count": 26,
@@ -112,9 +112,10 @@
     "proofs_with_intentional_failures": [
       "T02",
       "T13",
-      "T06"
+      "T06",
+      "T10"
     ],
-    "intentional_failing_checks": 6,
+    "intentional_failing_checks": 7,
     "stale_proofs": [],
     "proofs_not_run": [],
     "unexpected_failures": [],
@@ -235,22 +236,22 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T01",
-            "line": 182
+            "line": 199
           },
           {
             "doc": "verus-proofs/README.md",
             "locator": "## T01: key-store authenticated encryption context",
-            "line": 186
+            "line": 192
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "**T01: no gap found at model level.**",
-            "line": 187
+            "line": 211
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 271
+            "line": 315
           }
         ]
       },
@@ -291,22 +292,22 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T02",
-            "line": 248
+            "line": 265
           },
           {
             "doc": "verus-proofs/README.md",
             "locator": "## T02: record reconstruction",
-            "line": 55
+            "line": 61
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "**G1 confirmed formally (T02).**",
-            "line": 183
+            "line": 207
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 271
+            "line": 315
           }
         ]
       },
@@ -347,22 +348,22 @@
           {
             "doc": "docs/mpl-verification-targets/02-capability-driven.md",
             "locator": "id: VR-2026-C01",
-            "line": 144
+            "line": 153
           },
           {
             "doc": "verus-proofs/README.md",
             "locator": "## C01: encryption-context builders",
-            "line": 92
+            "line": 98
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "- **BUG-08 (C01).**",
-            "line": 223
+            "line": 267
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 271
+            "line": 315
           }
         ]
       },
@@ -401,22 +402,22 @@
           {
             "doc": "docs/mpl-verification-targets/02-capability-driven.md",
             "locator": "id: VR-2026-C02",
-            "line": 209
+            "line": 218
           },
           {
             "doc": "verus-proofs/README.md",
             "locator": "## C02: bounded ECDSA signing loop",
-            "line": 140
+            "line": 146
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "C02 and VR-008.",
-            "line": 122
+            "line": 128
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 271
+            "line": 315
           }
         ]
       },
@@ -454,17 +455,17 @@
           {
             "doc": "docs/mpl-verification-targets/02-capability-driven.md",
             "locator": "id: VR-2026-C03",
-            "line": 256
+            "line": 265
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "### C03: in-crate proof on branch Mahnush_Verus (not on this branch)",
-            "line": 69
+            "line": 75
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 271
+            "line": 315
           }
         ]
       },
@@ -508,7 +509,7 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T03",
-            "line": 329
+            "line": 346
           },
           {
             "doc": "verus-proofs/README-t03-t05.md",
@@ -518,12 +519,12 @@
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "**O1, DEV-ALIAS (T03).**",
-            "line": 184
+            "line": 208
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 271
+            "line": 315
           }
         ]
       },
@@ -540,35 +541,53 @@
       "effort": "1 week",
       "agent": "mpl-verus-header-parsing-proofs",
       "technical_name": "materials_checks transitions + send() wiring",
-      "title": "A keyring or materials manager cannot silently change the suite or context",
+      "title": "The rules that stop a keyring from changing the suite or context are checked on a model. That every call runs them is not proved",
       "threats": [],
       "threats_note": "none cited in the targets docs",
       "bugs": [],
-      "level": "not_started",
-      "proof": null,
+      "level": "model_proved",
+      "proof": {
+        "file": "verus-proofs/c07_materials_checks.rs",
+        "state": "current"
+      },
       "card": {
-        "area": "The materials checks (materials_checks.rs) and the send() calls on shared keyrings and shared materials managers, which every MPL and ESDK path goes through.",
-        "risk": "A keyring passed through a shared wrapper, including a user's own keyring, could swap the algorithm suite or the encryption context without anyone noticing. The targets doc cites no threat for this target.",
-        "checks_label": "What a proof would check",
-        "checks": "That the encryption and decryption transition checks succeed exactly when the suite, context, required keys and signing key are unchanged and the data key is only added, never changed or removed. That the completeness checks require a data key (and on encrypt at least one encrypted data key). That every send() returns success only if its check did.",
-        "not_shown": "No proof exists yet, so nothing here is machine-checked. Calling a keyring or manager directly, without send(), bypasses the checks and is excluded. A proof would list the fields the checks do not constrain, such as symmetric signing keys and encrypted-key order, so the owner can compare them with the Dafny version.",
-        "result": "No proof exists yet, so there is no result.",
-        "notes": [],
+        "area": "The materials checks in materials_checks.rs and the send() calls on keyrings and on materials managers (CMMs). The checks are check_encryption_transition, check_decryption_transition, check_encryption_materials_complete and check_decryption_materials_complete. The last two are completeness checks: the output must have a plaintext data key, and on encrypt at least one encrypted data key. A keyring adds the data keys. A materials manager asks the keyring for them. send() is the library method that calls a keyring or a materials manager and then runs the check on the result. Materials are the bundle of suite, encryption context and keys that is passed along.",
+        "risk": "A keyring, including one that a user wrote, could change the algorithm suite or the encryption context while it adds keys, and nobody would notice. The targets doc cites no threat for this target.",
+        "checks_label": "What the proof checks",
+        "checks": "This is partly a consistency check against the target text. Eight of the nine encryption rules and all eight decryption rules are plain field comparisons. The model copies them from the code. The proof restates them in the words of the target. Verus checks that the two wordings agree. It does not check that the code does what the model says. The parts that are more than that follow. The transition checks compare the materials before and after a keyring call. They accept a pair only if the suite, the encryption context, the required keys and the signing key (on encrypt) or the verification key (on decrypt) are unchanged. The required keys are the encryption context keys that the caller must supply again on decrypt. They also require that the plaintext data key (PDK, the unencrypted key that protects the message) is only added. The encrypted data keys (EDKs, the locked copies of that key) may only be added. Repeats count: a key listed twice before must be listed twice after. Order does not matter. An accepted pair differs only in the PDK and the EDK list on encrypt, and only in the PDK on decrypt. This covers all 7 fields of the encryption materials and all 6 of the decryption materials. This holds under two assumptions that a person checked by reading the code. First, the builders (the build() functions that make materials) keep the shared-key signing keys empty for all 11 suites. Second, every materials value comes from build(), from a copy (Clone) or from the add methods. A keyring that changes the materials only through add_data_key and add_encrypted_data_key is accepted, if the materials it received passed the basic validity check. Accepted encrypt steps can be chained. After one accepted decrypt step, no second one is accepted. The proof also checks a model of the four send() calls, written as the docs describe them. In that model, a keyring returns success only after the transition check passed. A materials manager returns success only after the completeness check passed. That follows from how the model is written. It shows the property is well formed. It does not show that the real send() has it. No check was written to fail.",
+        "not_shown": "It does not show that the real code has these properties. A person compared the model with the code by reading. It does not show that every call reaches a send() that runs the check. That comes from searching and reading the code only. The model does not contain the list of call paths. Anyone who writes their own keyring or manager type can call its method directly and skip the check. No such call was found in the library, the ESDK, the examples or the tests. Five scratch bug-reproduction programs outside any crate do call a keyring directly. A new call would break that finding. The send() of a materials manager runs only the completeness check, on the output alone. It has no earlier copy to compare with. That is target T09 and is not proved. It does not show that a keyring is correct. That the key is random is not covered by any proof. The key length is target C04. That an encrypted key decrypts to the plaintext key is not covered. It does not show that any threat is handled, because C07 cites none. The 27 existing tests were read, not run.",
+        "result": "Verus reports 65 passing checks and 0 failing checks on a model of this code, not on the shipped code; no check fails, and one latent finding (F1, a field the checks do not read) is recorded; part of the result is a consistency check of the rules against the target text, and that every send() path runs the check rests on code reading.",
+        "notes": [
+          "Latent finding F1 (present in the check but not reachable today), not a defect today: neither transition check reads the symmetric signing keys (keys for signing with a shared secret). With all 11 suites, the builders (the build() functions that make materials) keep that field empty, so no real pair can differ there. The protection is in the builders, not in the check. A future suite with that kind of signing would remove it. The proof states this as a fact about the check. It is not a failing check.",
+          "Observation, not a gap: the target text writes the EDK rule as a subset test. The code counts repeats, and so does the proof.",
+          "Observation, for the owner: if the old materials already hold a PDK, an unchanged copy is accepted. The spec (keyring-interface.md lines 126 to 127) says a keyring that attempted neither behavior must fail. The check does not enforce that. It is not a failing check, because the check's own comment says what a keyring may do.",
+          "Observation: neither transition check looks at the length of the PDK. That is target C04."
+        ],
         "expected_failure_explanation": "",
         "sources": [
           {
             "doc": "docs/mpl-verification-targets/02-capability-driven.md",
             "locator": "id: VR-2026-C07",
-            "line": 319
+            "line": 328
+          },
+          {
+            "doc": "verus-proofs/README.md",
+            "locator": "## C07: materials transition checks",
+            "line": 504
+          },
+          {
+            "doc": "docs/mpl-verification-targets.md",
+            "locator": "**C07: no gap found that fails a proof at model level",
+            "line": 247
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 271
+            "line": 315
           }
         ]
       },
-      "docs_proof_status": "None yet"
+      "docs_proof_status": "Proved (model level, not the shipped code, under stated hypotheses): 65 verified, 0 errors"
     },
     {
       "id": "T04",
@@ -607,22 +626,22 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T04",
-            "line": 373
+            "line": 390
           },
           {
             "doc": "verus-proofs/README.md",
             "locator": "## T04: branch-key wrap",
-            "line": 268
+            "line": 274
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "**T04, what is not proved (TM-MPL-012).**",
-            "line": 194
+            "line": 218
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 271
+            "line": 315
           }
         ]
       },
@@ -666,22 +685,22 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T13",
-            "line": 418
+            "line": 435
           },
           {
             "doc": "verus-proofs/README.md",
             "locator": "## T13: cache identifier",
-            "line": 231
+            "line": 237
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "**BUG-06 confirmed formally (T13).**",
-            "line": 190
+            "line": 214
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 271
+            "line": 315
           }
         ]
       },
@@ -725,7 +744,7 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T05",
-            "line": 481
+            "line": 498
           },
           {
             "doc": "verus-proofs/README-t03-t05.md",
@@ -735,12 +754,12 @@
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "**F1 (T05).**",
-            "line": 186
+            "line": 210
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 271
+            "line": 315
           }
         ]
       },
@@ -785,22 +804,22 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T06",
-            "line": 523
+            "line": 540
           },
           {
             "doc": "verus-proofs/README.md",
             "locator": "## T06: `SystemTime + Duration` additions",
-            "line": 314
+            "line": 320
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "**BUG-01 confirmed formally (T06).**",
-            "line": 198
+            "line": 222
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 271
+            "line": 315
           }
         ]
       },
@@ -840,12 +859,12 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T07",
-            "line": 579
+            "line": 596
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 271
+            "line": 315
           }
         ]
       },
@@ -885,12 +904,12 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T14",
-            "line": 627
+            "line": 644
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 271
+            "line": 315
           }
         ]
       },
@@ -931,12 +950,12 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T27",
-            "line": 681
+            "line": 698
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 271
+            "line": 315
           }
         ]
       },
@@ -977,12 +996,12 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T26",
-            "line": 765
+            "line": 782
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 271
+            "line": 315
           }
         ]
       },
@@ -999,37 +1018,56 @@
       "effort": "1 week",
       "agent": "mpl-verus-header-parsing-proofs",
       "technical_name": "compute_aad (:61), UUID codec",
-      "title": "Wrap and unwrap build the same authenticated data (AAD) in one fixed layout",
+      "title": "In the model, the data that a wrapped branch key is bound to (the AAD) can be the same for key ids of different length (finding F1)",
       "threats": [
         "TM-MPL-013"
       ],
       "threats_note": "",
       "bugs": [],
-      "level": "not_started",
-      "proof": null,
+      "level": "model_partly",
+      "proof": {
+        "file": "verus-proofs/t10_compute_aad_uuid.rs",
+        "state": "current"
+      },
       "card": {
-        "area": "The branch key store's wrapping code. compute_aad builds the extra data that AES-GCM authenticates with each wrapped key, and a second helper converts the key version between text and 16 bytes.",
-        "risk": "If the authenticated data were built inconsistently, the binding of the wrapped key to its context would break. This is threat TM-MPL-013.",
-        "checks_label": "What a proof would check",
-        "checks": "That compute_aad succeeds exactly when the version is a 36-character UUID and the context can be written out. That the result is the label, the branch key id, the version bytes and the context bytes, and that for one branch key id different (version, context) pairs give different AAD. That converting a UUID to text and back returns the same 16 bytes.",
-        "not_shown": "No proof exists yet, so nothing here is machine-checked. The docs say a proof would show that different branch key ids can give the same AAD, because the layout has no length prefix. This is harmless, because each AAD is used only under its own branch key.",
-        "result": "No proof exists yet, so there is no result.",
-        "notes": [],
-        "expected_failure_explanation": "",
+        "area": "The branch key store's wrapping code. compute_aad (in branch_key_wrap.rs) builds the AAD, the extra data that AES-GCM authenticates with each wrapped branch key. A branch key is wrapped (encrypted) with AES-GCM, a standard way to encrypt and check data in one step. Wrap is the function that does this. Unwrap is the function that undoes it. The key version is a UUID, a 36-character text identifier such as 41424344-4546-4748-494a-4b4c4d4e4f50. uuid_str_to_16_bytes turns it into 16 bytes. uuid_16_bytes_to_str, in the hierarchical keyring, turns 16 bytes back into text.",
+        "risk": "The threat is that wrap and unwrap build the AAD differently, which breaks the binding of a wrapped key to its context. This is threat TM-MPL-013. The proof also found that the layout can give the same AAD for ids of different length (finding F1). Whether that matters is not shown. No severity is assigned and no exploit is claimed.",
+        "checks_label": "What the proof checks",
+        "checks": "That compute_aad succeeds exactly when the version is a 36-character hyphenated UUID and the encryption context can be written out. The version is checked first. That the result is the fixed label aws-kms-hierarchy (17 bytes), the branch key id, the version (16 bytes) and the written-out context, joined in that order. This part is a consistency check. The model is written as that joined sequence. The proof reads back the position of each field and checks the 17 and 16 byte sizes against the spec table. That for one branch key id, different (version, context) pairs give different AAD. That for ids of equal length, different (id, version, context) triples give different AAD. That two different inputs can share an AAD only if their ids differ in length, with the exact condition. That converting 16 bytes to text and back returns the same 16 bytes, for every input. That the UUID check accepts the hex digits (0 to 9 and a to f) in upper and lower case. So turning text into bytes and back gives the same text only for lowercase text. That if wrap accepted a version string and decrypt rebuilds the string from the version bytes, both sides build the same AAD. This relies on a code-reading assumption about where the version string comes from. One check fails on purpose. It claims that the AAD is unique for all inputs, which is false.",
+        "not_shown": "It does not show that the real code has these properties. The collision was also run once on the real compute_aad, with one pair of inputs, in a scratch program outside the repository. The two outputs were identical. That is one run, not a proof. It does not show that TM-MPL-013 is handled. It does not show whether the collision matters. That depends on whether different branch key ids and versions always give different AES-GCM keys. The target text relies on that. The proof neither uses nor proves it. It does not cover AES-GCM, crashes, error text, reading an encryption context back from bytes (T15), or the less common UUID text forms. It does not cover the key derivation either, which is the step that turns a branch key into an AES-GCM key. The 17 label bytes are typed twice and compared only with each other. So the proof does not show that they spell aws-kms-hierarchy. A person compared them with the real constant.",
+        "result": "Verus reports 55 passing checks and 1 failing check on a model of this code, not on the shipped code; the one failing check is the intentional one for finding F1 (the AAD can be equal for ids of different length), not a broken proof.",
+        "notes": [
+          "The failing check is the evidence for finding F1. Concrete pair: id b, version 41424344-4546-4748-494a-4b4c4d4e4f50 and context {\"k\": \"v\"}, against id bABCDEFGH, version 494a4b4c-4d4e-4f50-0001-00016b000176 and an empty context. Both give the same 42 bytes.",
+          "The spec fixes this layout (aws-kms-hierarchical-keyring.md lines 337 to 342 list the id with no length prefix). So the code follows the spec. This is not a mismatch between code and spec.",
+          "The same kind of weakness, no separator between variable fields, is BUG-06 in target T13, in a different structure. The two are not duplicates. No bug report was changed.",
+          "Observations, not gaps: two version strings that differ only in letter case give the same AAD. What the key store does with an uppercase string was not examined. The UUID check looks at the shape and not at the UUID version digit. Yet structures.md line 406 says the stored version must be a version 4 UUID (a randomly generated one). unwrap reads the version bytes from the ciphertext and discards them.",
+          "For T04: T04 took the results of compute_aad and uuid_str_to_16_bytes as given values. T10 gives the value each returns for all inputs. The T04 assumption H_AAD_PURE is not proved by this. It is reduced to code reading."
+        ],
+        "expected_failure_explanation": "The failing check claims that two different (branch key id, version, context) inputs never give the same AAD. That claim is false. A longer id can absorb the first bytes of the version and context that follow a shorter id, and the proof gives a concrete pair with the same 42 bytes. Verus rejects the claim. A second check shows that the claim is false and not only unproved. The check was left failing and was not weakened. It is a finding about the layout, which the spec fixes. It is not a broken proof and not a mismatch between code and spec.",
         "sources": [
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T10",
-            "line": 850
+            "line": 867
+          },
+          {
+            "doc": "verus-proofs/README.md",
+            "locator": "## T10: branch-key AAD and UUID codec",
+            "line": 544
+          },
+          {
+            "doc": "docs/mpl-verification-targets.md",
+            "locator": "**T10, F1: the branch-key AAD has no length or separator",
+            "line": 254
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 271
+            "line": 315
           }
         ]
       },
-      "docs_proof_status": "None yet"
+      "docs_proof_status": "Partly proved (model level, not the shipped code, under stated hypotheses): 55 verified, 1 errors"
     },
     {
       "id": "T11",
@@ -1063,12 +1101,12 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T11",
-            "line": 890
+            "line": 909
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 271
+            "line": 315
           }
         ]
       },
@@ -1085,37 +1123,53 @@
       "effort": "1 week",
       "agent": "mpl-verus-header-parsing-proofs",
       "technical_name": "merge_reproduced_encryption_context (default_cmm.rs:273)",
-      "title": "Merging the encryption context on decrypt keeps what the sender bound",
+      "title": "In the model, a successful merge of encryption contexts on decrypt keeps every entry of both inputs and changes none. The merge fails if the two contexts disagree on a shared key",
       "threats": [
         "TM-MPL-017"
       ],
       "threats_note": "",
       "bugs": [],
-      "level": "not_started",
-      "proof": null,
+      "level": "model_proved",
+      "proof": {
+        "file": "verus-proofs/t12_merge_reproduced_ec.rs",
+        "state": "current"
+      },
       "card": {
-        "area": "The default materials manager, in the step that merges the encryption context stored in the message with a context the caller supplies when decrypting (merge_reproduced_encryption_context).",
-        "risk": "A merge that drops or changes a value would let decryption use a different context than encryption bound. This is threat TM-MPL-017.",
-        "checks_label": "What a proof would check",
-        "checks": "That with no supplied context the message context is used. Otherwise the merge succeeds exactly when both agree on every shared key, and then the result is the union. That the context passed to the keyring is exactly the merged map.",
-        "not_shown": "No proof exists yet, so nothing here is machine-checked. The docs say the later materials checks (target C07) stop a keyring from changing the context afterwards, but the merge is the only guard that the decrypt context equals the encrypt context.",
-        "result": "No proof exists yet, so there is no result.",
-        "notes": [],
+        "area": "The default materials manager (CMM), in the step that merges the encryption context stored in the message with the reproduced encryption context. That is an extra context the caller supplies when decrypting. The function is merge_reproduced_encryption_context in default_cmm.rs. An encryption context is a set of labelled text values that is bound to the message.",
+        "risk": "A merge that dropped or changed a value could make decryption use a different context than the one bound at encryption. This is threat TM-MPL-017. The proof finds no gap in the model.",
+        "checks_label": "What the proof checks",
+        "checks": "The function is one loop. This is partly a consistency check against the spec text (cmm-interface.md). The proof restates the spec sentences without the loop and shows that the model of the loop equals them. The proof for the loop is a proof step repeated over the list of entries (an induction). The merge succeeds exactly when both contexts agree on every key they share. A conflicting key at any position makes it fail, and the error names a real conflict. On success, the result holds every message entry unchanged and every reproduced entry with its value, and nothing else. That is all entries of both contexts together, whichever one is listed first. The required keys are exactly the reproduced keys that the message context does not have. The required keys are the encryption context keys that the caller must supply again on decrypt. The verdict, the merged context and the required keys do not depend on the order in which the reproduced context is walked. Merging again with the same reproduced context changes nothing. The check in DecryptionMaterials::build that every required key is in the context cannot fail on the merge output. Three parts are more than the spec text. First, the loop never overwrites a message entry. The code throws away the result of the insert, so an overwrite would be silent. Second, the exact set of required keys. Third, the order independence. No check was written to fail, because no gap was found.",
+        "not_shown": "It does not show that the real code has these properties. A person compared the model with the code by reading. It does not show that TM-MPL-017 is handled. The model of the merge loses nothing of either input. That does not show that the decryptor's authenticated data equals the encryptor's. That also needs the encrypt side, the context the caller passes, the keyring's authenticated data, the ESDK header parse (T15) and the C07 checks. None of these is modeled. It does not cover how the sorted map and sorted set types that the code uses (BTreeMap and BTreeSet) behave, string comparison, error text or the rest of decrypt_materials. The spec has one optional sentence (it says MAY, which means optional, at cmm-interface.md lines 161 to 163). The code does not implement it. That is not a gap.",
+        "result": "Verus reports 20 passing checks and 0 failing checks on a model of this code, not on the shipped code; no gap was found, and part of the result is a consistency check against the spec text.",
+        "notes": [
+          "Observation, not a gap: the code does not claim order independence. The proof shows the verdict and the result do not depend on the order, but the key named in the error does. The shipped code walks the keys in ascending order, so it names the smallest conflicting key.",
+          "Observation, not a gap, no exploit claimed: for a signing suite, decrypt_materials reads the key aws-crypto-public-key from the merged context. If the message context lacks it and the reproduced context (the caller's own input) has it, the verification key comes from the reproduced context. The spec says only that the encryption context includes this key. It does not say which context. This follows from taking all entries of both contexts together."
+        ],
         "expected_failure_explanation": "",
         "sources": [
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T12",
-            "line": 929
+            "line": 948
+          },
+          {
+            "doc": "verus-proofs/README.md",
+            "locator": "## T12: reproduced encryption context merge",
+            "line": 590
+          },
+          {
+            "doc": "docs/mpl-verification-targets.md",
+            "locator": "**T12: no gap found at model level.**",
+            "line": 261
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 271
+            "line": 315
           }
         ]
       },
-      "docs_proof_status": "None yet"
+      "docs_proof_status": "Proved (model level, not the shipped code, under stated hypotheses): 20 verified, 0 errors"
     },
     {
       "id": "C04",
@@ -1156,22 +1210,22 @@
           {
             "doc": "docs/mpl-verification-targets/02-capability-driven.md",
             "locator": "id: VR-2026-C04",
-            "line": 383
+            "line": 394
           },
           {
             "doc": "verus-proofs/README.md",
             "locator": "## C04: plaintext data key length invariant",
-            "line": 461
+            "line": 467
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "**C04: no gap found at model level.**",
-            "line": 218
+            "line": 242
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 271
+            "line": 315
           }
         ]
       },
@@ -1210,12 +1264,12 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T09",
-            "line": 968
+            "line": 989
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 271
+            "line": 315
           }
         ]
       },
@@ -1257,22 +1311,22 @@
           {
             "doc": "docs/mpl-verification-targets/02-capability-driven.md",
             "locator": "id: VR-2026-C05",
-            "line": 440
+            "line": 451
           },
           {
             "doc": "verus-proofs/README.md",
             "locator": "## C05: algorithm suite table",
-            "line": 352
+            "line": 358
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "**C05: no gap found at model level",
-            "line": 204
+            "line": 228
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 271
+            "line": 315
           }
         ]
       },
@@ -1312,12 +1366,12 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T16",
-            "line": 1024
+            "line": 1045
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 271
+            "line": 315
           }
         ]
       },
@@ -1357,12 +1411,12 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T21",
-            "line": 1077
+            "line": 1098
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 271
+            "line": 315
           }
         ]
       },
@@ -1403,7 +1457,7 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T15",
-            "line": 1172
+            "line": 1193
           },
           {
             "doc": "docs/mpl-bug-reports/BUG-03-encryption-context-deserialize-accepts-unsorted.md",
@@ -1413,7 +1467,7 @@
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 271
+            "line": 315
           }
         ]
       },
@@ -1453,12 +1507,12 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T17",
-            "line": 1215
+            "line": 1236
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 271
+            "line": 315
           }
         ]
       },
@@ -1496,12 +1550,12 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T18",
-            "line": 1259
+            "line": 1280
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 271
+            "line": 315
           }
         ]
       },
@@ -1541,12 +1595,12 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T19",
-            "line": 1300
+            "line": 1321
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 271
+            "line": 315
           }
         ]
       },
@@ -1586,12 +1640,12 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T20",
-            "line": 1340
+            "line": 1361
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 271
+            "line": 315
           }
         ]
       },
@@ -1629,12 +1683,12 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T22",
-            "line": 1379
+            "line": 1400
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 271
+            "line": 315
           }
         ]
       },
@@ -1672,12 +1726,12 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T25",
-            "line": 1427
+            "line": 1448
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 271
+            "line": 315
           }
         ]
       },
@@ -1715,12 +1769,12 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T23",
-            "line": 1504
+            "line": 1525
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 271
+            "line": 315
           }
         ]
       },
@@ -1764,22 +1818,22 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T24",
-            "line": 1541
+            "line": 1562
           },
           {
             "doc": "verus-proofs/README.md",
             "locator": "## T24: reserved `aws-kms` namespace",
-            "line": 388
+            "line": 394
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "**T24: no gap found at model level.**",
-            "line": 208
+            "line": 232
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 271
+            "line": 315
           }
         ]
       },
@@ -1822,22 +1876,22 @@
           {
             "doc": "docs/mpl-verification-targets/02-capability-driven.md",
             "locator": "id: VR-2026-C08",
-            "line": 482
+            "line": 493
           },
           {
             "doc": "verus-proofs/README.md",
             "locator": "## C08: cache usage counters",
-            "line": 425
+            "line": 431
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "**C08: no gap found at model level.**",
-            "line": 212
+            "line": 236
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 271
+            "line": 315
           }
         ]
       },
@@ -1851,7 +1905,7 @@
       "state": "current",
       "file_sha256_now": "824216521e4359431dbd44088b1a940ec84978796717c7edc6e2f34e235184f1",
       "file_sha256_at_run": "824216521e4359431dbd44088b1a940ec84978796717c7edc6e2f34e235184f1",
-      "run_at": "2026-11-19T22:40:51Z",
+      "run_at": "2026-11-20T18:19:15Z",
       "verified": 52,
       "errors": 0,
       "exit_code": 0,
@@ -1928,7 +1982,7 @@
       "state": "current",
       "file_sha256_now": "241f1cd133aa408d80214282fd7738447e2ded553bbea53cef9e8108224ba191",
       "file_sha256_at_run": "241f1cd133aa408d80214282fd7738447e2ded553bbea53cef9e8108224ba191",
-      "run_at": "2026-11-19T22:40:52Z",
+      "run_at": "2026-11-20T18:19:16Z",
       "verified": 21,
       "errors": 1,
       "exit_code": 1,
@@ -1962,7 +2016,7 @@
       "state": "current",
       "file_sha256_now": "d266597083141d47ebcdb19bd9a0798cdadac455ce99969391039ef0e7665c94",
       "file_sha256_at_run": "d266597083141d47ebcdb19bd9a0798cdadac455ce99969391039ef0e7665c94",
-      "run_at": "2026-11-19T22:40:48Z",
+      "run_at": "2026-11-20T18:19:11Z",
       "verified": 40,
       "errors": 0,
       "exit_code": 0,
@@ -2009,7 +2063,7 @@
       "state": "current",
       "file_sha256_now": "1cee411299d29a1ec729745da81c83ca002fbc01052ec0def1707ce12464e820",
       "file_sha256_at_run": "1cee411299d29a1ec729745da81c83ca002fbc01052ec0def1707ce12464e820",
-      "run_at": "2026-11-19T22:40:48Z",
+      "run_at": "2026-11-20T18:19:11Z",
       "verified": 21,
       "errors": 0,
       "exit_code": 0,
@@ -2051,7 +2105,7 @@
       "state": "current",
       "file_sha256_now": "7508a1090fe6902a9eca7bcf19c754a3a0228acf1a7190c753090899c6f15795",
       "file_sha256_at_run": "7508a1090fe6902a9eca7bcf19c754a3a0228acf1a7190c753090899c6f15795",
-      "run_at": "2026-11-19T22:40:53Z",
+      "run_at": "2026-11-20T18:19:16Z",
       "verified": 39,
       "errors": 0,
       "exit_code": 0,
@@ -2093,12 +2147,119 @@
       ]
     },
     {
+      "target": "C07",
+      "file": "verus-proofs/c07_materials_checks.rs",
+      "state": "current",
+      "file_sha256_now": "2e7b175f337b7f1239301fc6f1021c63d9b000bf2d3e51d1f0f47949dbb7c0a8",
+      "file_sha256_at_run": "2e7b175f337b7f1239301fc6f1021c63d9b000bf2d3e51d1f0f47949dbb7c0a8",
+      "run_at": "2026-11-20T18:19:13Z",
+      "verified": 65,
+      "errors": 0,
+      "exit_code": 0,
+      "verus_output_line": "verification results:: 65 verified, 0 errors",
+      "failing_obligations": [],
+      "expected_failures": [],
+      "unexpected_failures": [],
+      "expected_failures_not_seen": [],
+      "docs_result_line": "verification results:: 65 verified, 0 errors",
+      "docs_match_run": true,
+      "level": "model_proved",
+      "failure_explanation": "",
+      "hypotheses": [
+        {
+          "name": "A_STR",
+          "kind": "assumed",
+          "text": "A string used as a context key, a context value, a required key or a provider id is a number in the model. Only equality is used. The one special value is the public key name aws-crypto-public-key."
+        },
+        {
+          "name": "A_BYTES",
+          "kind": "assumed",
+          "text": "A key held as bytes is a sequence of bytes in the model. Only equality is used."
+        },
+        {
+          "name": "A_EDK_ABS",
+          "kind": "assumed",
+          "text": "An encrypted data key is three abstract fields. The checks only compare keys for equality, as the code does, and never read their content."
+        },
+        {
+          "name": "A_CT_EQ",
+          "kind": "assumed",
+          "text": "Comparing two data keys or two signing keys is plain byte equality. The source of the Rust wrapper in aws-lc-rs 1.18.1 was read. The C function it calls was not read. Timing is not modeled."
+        },
+        {
+          "name": "A_SUITE_COPY",
+          "kind": "assumed",
+          "text": "Two yes/no facts for each of the 11 suites are typed in by hand from the suite table. The facts are whether it signs with a public key and whether it signs with a shared key. They are typed a second time to compare. The same mistake typed in both places would not be seen. C05 covers the whole table."
+        },
+        {
+          "name": "A_ERR",
+          "kind": "assumed",
+          "text": "Error kinds are not modeled. Only success against failure is claimed."
+        },
+        {
+          "name": "A_SPEC_FN",
+          "kind": "assumed",
+          "text": "A keyring or materials manager is modeled as a pure function from input to an optional output. Side effects, crashes, endless loops and concurrency are not modeled. The results hold for every such function."
+        },
+        {
+          "name": "A_VSTD",
+          "kind": "assumed",
+          "text": "Verus, Z3 (the solver that Verus uses) and the Verus library rules for sequences, maps and sets are correct."
+        },
+        {
+          "name": "H_MODEL_MATCH",
+          "kind": "code_reading",
+          "text": "The model equals the shipped code at the lines named in the proof file header. A person checked this by reading."
+        },
+        {
+          "name": "H_ALL_FIELDS",
+          "kind": "code_reading",
+          "text": "The 7 fields of the encryption materials and the 6 of the decryption materials in the model are all the fields of the two structs. A new field would not be compared by the check and would break the proof until the model is updated."
+        },
+        {
+          "name": "H_SUITE_ID",
+          "kind": "code_reading",
+          "text": "The suite id type has exactly one variant today (an ESDK suite). A second variant would add suites that the model does not have, and the proof would have to be redone."
+        },
+        {
+          "name": "H_ALL_BUILT",
+          "kind": "code_reading",
+          "text": "Every materials value comes from build() (the function that makes materials), from a copy (Clone) or from the add_data_key and add_encrypted_data_key methods. No other code in mpl/src changes a field. A person searched for this."
+        },
+        {
+          "name": "H_BUILD_SYM",
+          "kind": "code_reading",
+          "text": "The builders (the build() functions that make materials) return an error if a suite that has no shared-key signing is given symmetric signing keys. With all 11 suites, that field is empty on every built value. This is what keeps finding F1 closed."
+        },
+        {
+          "name": "H_SEND_BODY",
+          "kind": "code_reading",
+          "text": "The four send() bodies are as modeled. A copy of the input is taken before the call. An error from the keyring or manager is passed on. The check runs. The output is returned only if it passes. A person read them."
+        },
+        {
+          "name": "H_NO_INTERIOR",
+          "kind": "code_reading",
+          "text": "The materials cannot be changed through a shared reference (Rust calls this having no interior mutability). So the copy taken before the call equals what the keyring received, and the keyring cannot change it."
+        },
+        {
+          "name": "H_DIRECT_CALL",
+          "kind": "code_reading",
+          "text": "Keyring and Cmm are public traits, so a user's type can call its own method and skip the check. Only five scratch test programs outside any crate do so. No library code does."
+        },
+        {
+          "name": "H_WIRING",
+          "kind": "code_reading",
+          "text": "The table of call paths in the proof header is complete for mpl/ and esdk/ at the commit named there. It was found by searching and reading. A new call site would break it."
+        }
+      ]
+    },
+    {
       "target": "T04",
       "file": "verus-proofs/t04_branch_key_wrap.rs",
       "state": "current",
       "file_sha256_now": "9bef3d8ae2d91bd358557c170d1c11dd8a2725468235469e860ebe864fa2c0ab",
       "file_sha256_at_run": "9bef3d8ae2d91bd358557c170d1c11dd8a2725468235469e860ebe864fa2c0ab",
-      "run_at": "2026-11-19T22:40:54Z",
+      "run_at": "2026-11-20T18:19:17Z",
       "verified": 45,
       "errors": 0,
       "exit_code": 0,
@@ -2185,7 +2346,7 @@
       "state": "current",
       "file_sha256_now": "ee93828c47731a2c2bef1c020a53cb9e089f2c8cdde86d97cd541ab534d36261",
       "file_sha256_at_run": "ee93828c47731a2c2bef1c020a53cb9e089f2c8cdde86d97cd541ab534d36261",
-      "run_at": "2026-11-19T22:40:57Z",
+      "run_at": "2026-11-20T18:19:23Z",
       "verified": 42,
       "errors": 1,
       "exit_code": 1,
@@ -2249,7 +2410,7 @@
       "state": "current",
       "file_sha256_now": "986744de667b3fc939bc39285818fb82411a9b9cc04a876a1f5b7d1493b55cc0",
       "file_sha256_at_run": "986744de667b3fc939bc39285818fb82411a9b9cc04a876a1f5b7d1493b55cc0",
-      "run_at": "2026-11-19T22:40:55Z",
+      "run_at": "2026-11-20T18:19:18Z",
       "verified": 33,
       "errors": 0,
       "exit_code": 0,
@@ -2296,7 +2457,7 @@
       "state": "current",
       "file_sha256_now": "a21ec7e219eed1be289851a0ec71b9ce5367b7fa2a3c01e2f7401e3255ff16b6",
       "file_sha256_at_run": "a21ec7e219eed1be289851a0ec71b9ce5367b7fa2a3c01e2f7401e3255ff16b6",
-      "run_at": "2026-11-19T22:40:55Z",
+      "run_at": "2026-11-20T18:19:19Z",
       "verified": 28,
       "errors": 4,
       "exit_code": 1,
@@ -2405,12 +2566,158 @@
       ]
     },
     {
+      "target": "T10",
+      "file": "verus-proofs/t10_compute_aad_uuid.rs",
+      "state": "current",
+      "file_sha256_now": "17e34528cb23794cab1e3e94e226f5b842cc5199d67d6e8b95d8816deb469e18",
+      "file_sha256_at_run": "17e34528cb23794cab1e3e94e226f5b842cc5199d67d6e8b95d8816deb469e18",
+      "run_at": "2026-11-20T18:19:20Z",
+      "verified": 55,
+      "errors": 1,
+      "exit_code": 1,
+      "verus_output_line": "verification results:: 55 verified, 1 errors",
+      "failing_obligations": [
+        {
+          "function": "lemma_aad_injective_all_inputs_EXPECTED_FAIL",
+          "line": 1316
+        }
+      ],
+      "expected_failures": [
+        "lemma_aad_injective_all_inputs_EXPECTED_FAIL"
+      ],
+      "unexpected_failures": [],
+      "expected_failures_not_seen": [],
+      "docs_result_line": "verification results:: 55 verified, 1 errors",
+      "docs_match_run": true,
+      "level": "model_partly",
+      "failure_explanation": "The failing check claims that two different (branch key id, version, context) inputs never give the same AAD. That claim is false. A longer id can absorb the first bytes of the version and context that follow a shorter id, and the proof gives a concrete pair with the same 42 bytes. Verus rejects the claim. A second check shows that the claim is false and not only unproved. The check was left failing and was not weakened. It is a finding about the layout, which the spec fixes. It is not a broken proof and not a mismatch between code and spec.",
+      "hypotheses": [
+        {
+          "name": "A_ALLOC",
+          "kind": "assumed",
+          "text": "Allocating the output vector succeeds, and the sum of the field sizes does not overflow."
+        },
+        {
+          "name": "A_VSTD",
+          "kind": "assumed",
+          "text": "Verus, Z3 (the solver that Verus uses) and the Verus library rules for sequences, vectors, slices and arrays are correct. Two facts about single bytes are proved by bit-level reasoning in Z3."
+        },
+        {
+          "name": "H_MODEL_MATCH",
+          "kind": "code_reading",
+          "text": "The model equals the shipped code at the lines named in the proof file header. A person checked this by reading."
+        },
+        {
+          "name": "H_AAD_PURE",
+          "kind": "code_reading",
+          "text": "The helpers that build the AAD and the version bytes are pure functions."
+        },
+        {
+          "name": "H_BYTES",
+          "kind": "code_reading",
+          "text": "A string is its UTF-8 bytes. UTF-8 is the text encoding of Rust strings. Whether bytes form valid UTF-8 is not modeled. The concrete collision uses only ASCII bytes (plain English letters and digits), so each of its fields is a valid string. compute_aad does not check the branch key id."
+        },
+        {
+          "name": "H_EC_LIST",
+          "kind": "code_reading",
+          "text": "The encryption context is a sorted map and is written out by walking it in key order. Equal maps give equal lists, and the reverse. Sortedness is not used by any proof."
+        },
+        {
+          "name": "H_UUID_PARSE",
+          "kind": "code_reading",
+          "text": "The uuid crate (version 1.27.0) reads a 36-byte text as hex digits in either case with hyphens at four fixed places. The accept test is proved equal to the model's. Copying the parser into the model is code reading."
+        },
+        {
+          "name": "H_UUID_FMT",
+          "kind": "code_reading",
+          "text": "Turning 16 bytes into text with the uuid crate gives the 36-character lowercase hyphenated form."
+        },
+        {
+          "name": "H_VERSION_FLOW",
+          "kind": "code_reading",
+          "text": "On decrypt, the version string that unwrap uses comes from the stored record, not from the request. So wrap and unwrap build the same AAD only if the record's string parses to the bytes wrap wrote. The step from request to record belongs to the key store and is not shown."
+        },
+        {
+          "name": "H_KEY_SEPARATION",
+          "kind": "not_assumed",
+          "text": "That different branch key ids or versions give different AES-GCM keys. The target text uses this to call the collision harmless. It is not used and not proved here."
+        }
+      ]
+    },
+    {
+      "target": "T12",
+      "file": "verus-proofs/t12_merge_reproduced_ec.rs",
+      "state": "current",
+      "file_sha256_now": "7b1e3492fce0293484e87a509b12b8a1d10fa18b399a6b4d0168937b974bf68e",
+      "file_sha256_at_run": "7b1e3492fce0293484e87a509b12b8a1d10fa18b399a6b4d0168937b974bf68e",
+      "run_at": "2026-11-20T18:19:21Z",
+      "verified": 20,
+      "errors": 0,
+      "exit_code": 0,
+      "verus_output_line": "verification results:: 20 verified, 0 errors",
+      "failing_obligations": [],
+      "expected_failures": [],
+      "unexpected_failures": [],
+      "expected_failures_not_seen": [],
+      "docs_result_line": "verification results:: 20 verified, 0 errors",
+      "docs_match_run": true,
+      "level": "model_proved",
+      "failure_explanation": "",
+      "hypotheses": [
+        {
+          "name": "A_STR",
+          "kind": "assumed",
+          "text": "A string is a sequence of characters in the model. Only equality is used. Verus does not check that a Rust String behaves like this."
+        },
+        {
+          "name": "A_MAP",
+          "kind": "assumed",
+          "text": "Get, insert and clone on the sorted map type (BTreeMap), and insert on the sorted set type (BTreeSet), behave like the matching operations on a mathematical map and set. These are standard library contracts. Verus has no spec for them over strings."
+        },
+        {
+          "name": "A_ITER",
+          "kind": "assumed",
+          "text": "Walking through the reproduced context visits every key at least once, with its value. The proof needs less than the BTreeMap guarantee of exactly once, in order."
+        },
+        {
+          "name": "H_MODEL_MATCH",
+          "kind": "code_reading",
+          "text": "The model equals the shipped code at the lines named in the proof file header. A person checked this by reading."
+        },
+        {
+          "name": "H_LOOKUP_ORIGINAL",
+          "kind": "code_reading",
+          "text": "The key lookup in the loop is on the original message context. That is a separate value from the result and is not changed."
+        },
+        {
+          "name": "H_ONE_ERROR_SITE",
+          "kind": "code_reading",
+          "text": "The loop has exactly one place where it returns an error, and no path that panics (crashes) in the cases reached."
+        },
+        {
+          "name": "H_WIRING",
+          "kind": "code_reading",
+          "text": "In decrypt_materials, an error from the merge is returned before the keyring is called. The merged context is only read, then stored unchanged in the materials. A person read this."
+        },
+        {
+          "name": "H_BUILD_CHECK",
+          "kind": "code_reading",
+          "text": "DecryptionMaterials::build rejects a required key that is not in the context. The proof only states that this check cannot fire. It does not depend on the check existing."
+        },
+        {
+          "name": "H_ASC",
+          "kind": "code_reading",
+          "text": "The context is walked in ascending key order. This is used only to say which conflicting key the real code names. No theorem depends on it."
+        }
+      ]
+    },
+    {
       "target": "C04",
       "file": "verus-proofs/c04_pdk_length_invariant.rs",
       "state": "current",
       "file_sha256_now": "f21902c0dac5cf7b4eff00a30b9059e0ea093853a767343183624b16101d546f",
       "file_sha256_at_run": "f21902c0dac5cf7b4eff00a30b9059e0ea093853a767343183624b16101d546f",
-      "run_at": "2026-11-19T22:40:49Z",
+      "run_at": "2026-11-20T18:19:12Z",
       "verified": 24,
       "errors": 0,
       "exit_code": 0,
@@ -2542,7 +2849,7 @@
       "state": "current",
       "file_sha256_now": "f4ac8ddd77869ef116bfcc2c9c747463416f845aea39b6b2ae434a6c844aaa9f",
       "file_sha256_at_run": "f4ac8ddd77869ef116bfcc2c9c747463416f845aea39b6b2ae434a6c844aaa9f",
-      "run_at": "2026-11-19T22:40:49Z",
+      "run_at": "2026-11-20T18:19:12Z",
       "verified": 22,
       "errors": 0,
       "exit_code": 0,
@@ -2644,7 +2951,7 @@
       "state": "current",
       "file_sha256_now": "5079d2fa38e8ea851025fbff988566d00c23dbfa9f9efb4be0352724c2bca585",
       "file_sha256_at_run": "5079d2fa38e8ea851025fbff988566d00c23dbfa9f9efb4be0352724c2bca585",
-      "run_at": "2026-11-19T22:40:58Z",
+      "run_at": "2026-11-20T18:19:23Z",
       "verified": 19,
       "errors": 0,
       "exit_code": 0,
@@ -2726,7 +3033,7 @@
       "state": "current",
       "file_sha256_now": "898a969dcbd0eb033d17e0c695bf38125d2eeb73d8859724c59a4a2f6bbde2c6",
       "file_sha256_at_run": "898a969dcbd0eb033d17e0c695bf38125d2eeb73d8859724c59a4a2f6bbde2c6",
-      "run_at": "2026-11-19T22:40:50Z",
+      "run_at": "2026-11-20T18:19:13Z",
       "verified": 20,
       "errors": 0,
       "exit_code": 0,
@@ -3095,8 +3402,8 @@
       "related_targets": [
         {
           "id": "T10",
-          "level": "not_started",
-          "state": null
+          "level": "model_partly",
+          "state": "current"
         },
         {
           "id": "T15",
@@ -3181,8 +3488,8 @@
       "related_targets": [
         {
           "id": "T12",
-          "level": "not_started",
-          "state": null
+          "level": "model_proved",
+          "state": "current"
         },
         {
           "id": "T15",
@@ -3420,7 +3727,7 @@
         {
           "doc": "docs/mpl-verification-targets.md",
           "locator": "BUG-01 confirmed formally (T06)",
-          "line": 198
+          "line": 222
         }
       ]
     },
@@ -3587,7 +3894,7 @@
         {
           "doc": "docs/mpl-verification-targets.md",
           "locator": "BUG-06 confirmed formally (T13)",
-          "line": 190
+          "line": 214
         }
       ]
     },
@@ -3627,7 +3934,7 @@
         {
           "doc": "docs/mpl-verification-targets.md",
           "locator": "BUG-07(a), prim side (C03, VR-014; not on this branch)",
-          "line": 225
+          "line": 269
         }
       ]
     },
@@ -3663,7 +3970,7 @@
         {
           "doc": "docs/mpl-verification-targets.md",
           "locator": "**BUG-08 (C01).**",
-          "line": 223
+          "line": 267
         }
       ]
     },
@@ -3850,24 +4157,36 @@
     {
       "term": "Mahnush_Verus",
       "text": "Another branch of the repository that holds in-crate Verus proofs (VR-013, VR-014 for C03). Nothing from it is merged here."
+    },
+    {
+      "term": "Consistency check",
+      "text": "A proof that compares two descriptions of the same thing and finds that they agree, for example a table in the code and the matching table in the spec text. Both were written by hand. It does not show that the code is right, and it cannot see a mistake that was typed into both."
+    },
+    {
+      "term": "PDK and materials",
+      "text": "A PDK is a plaintext data key, the unencrypted key that protects the message. Materials are the bundle of algorithm suite, encryption context and keys that the keyrings and the materials manager pass to each other."
+    },
+    {
+      "term": "UUID",
+      "text": "A 16-byte identifier, written as 36 characters of hex digits and hyphens, for example 41424344-4546-4748-494a-4b4c4d4e4f50. The branch key store uses one as the version of a branch key."
     }
   ],
   "sources": [
     {
       "path": "docs/mpl-verification-targets.md",
-      "sha256": "9d90f0f4fe28af75c8a70dca7a73191df66863da11b7dcc86b411a2cb5ba6212"
+      "sha256": "d69f54a2ca9ca781bb5567b10638ec1ce6ad7d328e5bc6aec9a3a4009067aa3f"
     },
     {
       "path": "docs/mpl-verification-targets/01-threat-driven.md",
-      "sha256": "2195b2ac619f286a4bbe011161331b2b91b36be3b9cd05f1e1ad32cf3e5e5109"
+      "sha256": "b63cabef865e21252953b51288b2e22015a93816f005156d60060aa64d20dce0"
     },
     {
       "path": "docs/mpl-verification-targets/02-capability-driven.md",
-      "sha256": "0a4dc47a8bf8c8c95fdb686144a5a4f6e42231ce5348d5fb3c3de8a64a90a2cf"
+      "sha256": "77d965d970d2fe72eb28e9c5b4a7f882a89cef52188387adffc5c78162bf82cb"
     },
     {
       "path": "docs/mpl-threat-model.md",
-      "sha256": "ef6a7b3c3897e5881538bce553005e65aa42d98160e0847ea73fc2cdc8b0037d"
+      "sha256": "9bb91244179148813060876429a983249ceb334094744fe70c703c146680f187"
     },
     {
       "path": "docs/mpl-bug-reports/README.md",
@@ -3875,7 +4194,7 @@
     },
     {
       "path": "verus-proofs/README.md",
-      "sha256": "54bac077c0d70c0f5bed10b33fb6c1cc5a162099293f720549a81d0063e9bac9"
+      "sha256": "d8d222d47267114a3fc223a6654f05ab951d34354b84df2f527e22e2f316ff18"
     },
     {
       "path": "verus-proofs/README-t03-t05.md",
@@ -3902,6 +4221,10 @@
       "sha256": "7508a1090fe6902a9eca7bcf19c754a3a0228acf1a7190c753090899c6f15795"
     },
     {
+      "path": "verus-proofs/c07_materials_checks.rs",
+      "sha256": "2e7b175f337b7f1239301fc6f1021c63d9b000bf2d3e51d1f0f47949dbb7c0a8"
+    },
+    {
       "path": "verus-proofs/t04_branch_key_wrap.rs",
       "sha256": "9bef3d8ae2d91bd358557c170d1c11dd8a2725468235469e860ebe864fa2c0ab"
     },
@@ -3916,6 +4239,14 @@
     {
       "path": "verus-proofs/t06_systemtime_add_overflow.rs",
       "sha256": "a21ec7e219eed1be289851a0ec71b9ce5367b7fa2a3c01e2f7401e3255ff16b6"
+    },
+    {
+      "path": "verus-proofs/t10_compute_aad_uuid.rs",
+      "sha256": "17e34528cb23794cab1e3e94e226f5b842cc5199d67d6e8b95d8816deb469e18"
+    },
+    {
+      "path": "verus-proofs/t12_merge_reproduced_ec.rs",
+      "sha256": "7b1e3492fce0293484e87a509b12b8a1d10fa18b399a6b4d0168937b974bf68e"
     },
     {
       "path": "verus-proofs/c04_pdk_length_invariant.rs",
@@ -3935,7 +4266,7 @@
     },
     {
       "path": "dashboard/plain-english.json",
-      "sha256": "0e63f1f76854b0492856f1ef6491c3e4c6247a3e7937ea978bf859c3579fc6bf"
+      "sha256": "91802fe6f2bb81612bb03d9bc33c94bd097b7ab9cf4e988bf99b23922bc92fce"
     }
   ]
 }

@@ -87,6 +87,32 @@ def split_row(line):
     return [c.strip() for c in re.split(r"(?<!\\)\|", line)]
 
 
+def split_row_code(line):
+    """Like split_row, but a pipe inside a backtick code span does not split the row."""
+    line = line.strip()
+    if line.startswith("|"):
+        line = line[1:]
+    if line.endswith("|") and not line.endswith("\\|"):
+        line = line[:-1]
+    cells, cur, in_code, i = [], "", False, 0
+    while i < len(line):
+        ch = line[i]
+        if ch == "\\" and i + 1 < len(line) and line[i + 1] == "|":
+            cur += "\\|"
+            i += 2
+            continue
+        if ch == "`":
+            in_code = not in_code
+        if ch == "|" and not in_code:
+            cells.append(cur.strip())
+            cur = ""
+        else:
+            cur += ch
+        i += 1
+    cells.append(cur.strip())
+    return cells
+
+
 def section(text, start, end=None):
     m = re.search(start, text, re.M)
     if not m:
@@ -206,7 +232,7 @@ def parse_doc_proof_rows(md):
     for line in body.split("\n"):
         if not line.startswith("| "):
             continue
-        cells = split_row(line)
+        cells = split_row_code(line)
         if len(cells) != 5 or not re.fullmatch(r"[TC]\d{2}", cells[0]) or not cells[1].startswith("[`"):
             continue
         fm = re.match(r"\[`([^`]+)`\]", cells[1])
@@ -539,7 +565,8 @@ def build_status(timestamp, plain, runs_data, check_files=True):
             hyps = []
             for name in plain["proofs"][tid]["hypotheses"]:
                 h = plain["hypotheses"][name]
-                hyps.append({"name": name, "kind": h["kind"], "text": h["text"]})
+                ov = plain["proofs"][tid].get("hypothesis_overrides", {}).get(name, {})
+                hyps.append({"name": name, "kind": ov.get("kind", h["kind"]), "text": ov.get("text", h["text"])})
             proof_text = read_text(proof_file) + "\n" + (doc_row["assumptions_cell"] if doc_row else "")
             for h in hyps:
                 if not re.search(r"\b%s\b" % re.escape(h["name"]), proof_text) and not re.search(r"\b%s\b" % re.escape(h["name"]), read_text("verus-proofs/README.md") + read_text("verus-proofs/README-t03-t05.md")):

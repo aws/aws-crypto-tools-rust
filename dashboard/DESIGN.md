@@ -145,6 +145,6 @@ docs/*.md, verus-proofs/*.md      dashboard/plain-english.json     dashboard/pro
 
 `python3 dashboard/verify_dashboard.py` checks, among other things: all 33 targets appear in the
 JSON, the table and as cards; rank and score equal an independent parse of the docs table; no card
-field is empty; the nine results equal a fresh Verus run; two generator runs differ only in the
+field is empty; the recorded proof results equal a fresh Verus run, and their number equals the rows of the docs table "Proofs written"; two generator runs differ only in the
 timestamp; the HTML has no network references; a changed proof hash gives STALE; no banned claim
 wording is present; no tracked file changed.

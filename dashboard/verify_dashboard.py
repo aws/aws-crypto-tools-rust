@@ -8,14 +8,15 @@ Checks:
   1  all 33 active targets are in the JSON, in the HTML table and as HTML cards
   2  score and rank equal the values in docs/mpl-verification-targets.md (independent parse)
   3  no plain-English card field is empty; every card cites sources with line numbers
-  4  the 13 proof results equal a fresh Verus run (unless --no-verus)
+  4  the proof results equal a fresh Verus run (unless --no-verus); their number equals the
+     number of rows in the docs table "Proofs written"
   5  the JSON is current: a rebuild gives the same data (commit and timestamp fields excluded)
   6  the generator is deterministic: two runs differ only in the declared timestamp field
   7  the HTML makes no network or external resource references
   8  the HTML parses, and every JSON target id is present
   9  no banned claim wording; the model-level statement is present
   10 staleness rule: a changed proof hash marks the result STALE
-  11 no tracked file was changed (only new files under dashboard/)
+  11 no tracked file outside dashboard/ was changed
 """
 
 import argparse
@@ -55,6 +56,17 @@ def independent_ranked():
     return out
 
 
+def independent_proof_rows():
+    """Rows of the docs table 'Proofs written' (separate simple regex): target id -> (verified, errors)."""
+    text = (REPO / "docs/mpl-verification-targets.md").read_text(encoding="utf-8")
+    start = text.index("## Proofs written")
+    end = text.index("Canonical status strings", start)
+    out = {}
+    for line in text[start:end].split("\n"):
+        m = re.match(r"^\| ([TC]\d\d) \| \[`[^`]+`\]\([^)]*\) \| `verification results:: (\d+) verified, (\d+) errors`", line)
+        if m:
+            out[m.group(1)] = (int(m.group(2)), int(m.group(3)))
+    return out
 class IdCollector(html.parser.HTMLParser):
     def __init__(self):
         super().__init__()
@@ -96,6 +108,8 @@ def main():
     status = json.loads((DASH / "verification-status.json").read_text(encoding="utf-8"))
     page = (DASH / "verification-dashboard.html").read_text(encoding="utf-8")
     ranked = independent_ranked()
+    doc_rows = independent_proof_rows()
+    expected_fail_targets = sorted(t for t, (v, e) in doc_rows.items() if e > 0)
 
     # 1
     ids = [t["id"] for t in status["targets"]]
@@ -128,10 +142,16 @@ def main():
             empty.append((t["id"], "title/sources"))
     check("3 no plain-English card field is empty, every card cites sources with line numbers", not empty, str(empty))
     nopf = [t for t in status["targets"] if t["level"] == "not_started"]
-    check("3 targets with no proof say so plainly", all("No proof exists yet" in t["card"]["result"] for t in nopf) and len(nopf) == 19, "%d targets" % len(nopf))
+    other_branch = [t for t in status["targets"] if t["level"] == "in_crate_other_branch"]
+    check("3 targets with no proof say so plainly", all("No proof exists yet" in t["card"]["result"] for t in nopf) and len(nopf) == len(ids) - len(doc_rows) - len(other_branch), "%d targets" % len(nopf))
     failing_expl = [t["id"] for t in status["targets"] if t["card"]["expected_failure_explanation"]]
-    check("3 T02, T06, T13 explain the intentional failures", sorted(failing_expl) == ["T02", "T06", "T13"], str(failing_expl))
+    check("3 every proof with a failing check in the docs explains it, and no other card does", sorted(failing_expl) == expected_fail_targets and bool(expected_fail_targets), "%s vs docs %s" % (failing_expl, expected_fail_targets))
+    model_ids = sorted(t["id"] for t in status["targets"] if t["level"] in ("model_proved", "model_partly"))
+    check("3 targets with a model proof equal the rows of the docs table 'Proofs written'", model_ids == sorted(doc_rows) and status["executive"]["targets_with_model_proof_on_this_branch"] == len(doc_rows), "%d on the page, %d in the docs" % (len(model_ids), len(doc_rows)))
 
+    by_target = {p["target"]: p for p in status["proofs"]}
+    bad_match = sorted(t for t in doc_rows if not by_target.get(t) or by_target[t]["docs_result_line"] is None or by_target[t]["docs_match_run"] is not True)
+    check("3 every docs row of 'Proofs written' is read by the generator and matches the recorded run", not bad_match, str(bad_match))
     # 4
     if args.no_verus:
         print("SKIP  4 fresh Verus run (--no-verus)")
@@ -150,7 +170,7 @@ def main():
                 print("      %s %s -> %d verified, %d errors" % (p["target"], p["file"], r["verified"], r["errors"]))
                 if got != rec:
                     mism.append((p["target"], got, rec))
-            check("4 13 proof results equal a fresh Verus run", len(status["proofs"]) == 13 and not mism, str(mism))
+            check("4 %d proof results equal a fresh Verus run" % len(status["proofs"]), len(status["proofs"]) == len(doc_rows) and not mism, str(mism))
 
     # 5, 6
     with tempfile.TemporaryDirectory() as d1, tempfile.TemporaryDirectory() as d2, tempfile.TemporaryDirectory() as d3:
@@ -206,8 +226,8 @@ def main():
 
     # 11
     p = subprocess.run(["git", "status", "--porcelain"], cwd=str(REPO), capture_output=True, text=True)
-    changed_tracked = [l for l in p.stdout.split("\n") if l and not l.startswith("??")]
-    check("11 no tracked file is modified", not changed_tracked, str(changed_tracked))
+    changed_tracked = [l for l in p.stdout.split("\n") if l and not l.startswith("??") and not l[3:].startswith("dashboard/")]
+    check("11 no tracked file outside dashboard/ is modified", not changed_tracked, str(changed_tracked))
 
     failed = [r for r in RESULTS if not r[1]]
     print("\n%d checks, %d passed, %d failed" % (len(RESULTS), len(RESULTS) - len(failed), len(failed)))
