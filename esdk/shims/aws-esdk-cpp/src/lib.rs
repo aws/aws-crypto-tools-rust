@@ -144,10 +144,6 @@ use aws_config::identity::IdentityCache;
 #[cfg(any(feature = "kms", feature = "ddb"))]
 use aws_config::{BehaviorVersion, FrameworkMetadata, Region, SdkConfig};
 #[cfg(any(feature = "kms", feature = "ddb"))]
-use aws_credential_types::Credentials;
-#[cfg(any(feature = "kms", feature = "ddb"))]
-use aws_credential_types::provider::SharedCredentialsProvider;
-#[cfg(any(feature = "kms", feature = "ddb"))]
 use aws_crypto_mpl::aws_config;
 #[cfg(feature = "ddb")]
 use aws_crypto_mpl::aws_sdk_dynamodb;
@@ -169,12 +165,16 @@ use aws_esdk::error::{Resource, RetryKind, Service};
 use aws_esdk::types::SignedStreaming;
 #[cfg(any(feature = "kms", feature = "ddb"))]
 use aws_smithy_runtime::client::defaults::default_http_client_plugin_v2;
+// The KMS and DynamoDB SDKs re-export the same config types, so either one works.
+#[cfg(all(feature = "ddb", not(feature = "kms")))]
+use aws_sdk_dynamodb::config as sdk_config;
+#[cfg(feature = "kms")]
+use aws_sdk_kms::config as sdk_config;
 #[cfg(any(feature = "kms", feature = "ddb"))]
-use aws_smithy_runtime_api::client::http::SharedHttpClient;
-#[cfg(any(feature = "kms", feature = "ddb"))]
-use aws_smithy_runtime_api::client::runtime_components::RuntimeComponentsBuilder;
-#[cfg(any(feature = "kms", feature = "ddb"))]
-use aws_smithy_runtime_api::client::runtime_plugin::RuntimePlugin;
+use sdk_config::{
+    Credentials, RuntimeComponentsBuilder, RuntimePlugin, SharedCredentialsProvider,
+    SharedHttpClient,
+};
 use std::num::NonZeroU32;
 use std::sync::LazyLock;
 use std::time::{Duration, SystemTime};

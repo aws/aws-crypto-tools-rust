@@ -21,8 +21,6 @@ cxx = "1.0.202"
 tokio = {version = "1.49", features = ["full"] }
 aws-esdk = { path = "../..", default-features = false }
 aws-smithy-runtime = { version = "1.16", features = ["client", "default-https-client"], optional = true }
-aws-smithy-runtime-api = { version = "1.19", features = ["client"], optional = true }
-aws-credential-types = { version = "1.2", optional = true }
 
 [features]
 # The same features as the Rust ESDK, passed through to it.
@@ -39,8 +37,6 @@ default-aws-sdk-clients = [
     "aws-crypto-mpl/default-aws-sdk-clients",
     "rt-tokio",
     "dep:aws-smithy-runtime",
-    "dep:aws-smithy-runtime-api",
-    "dep:aws-credential-types",
 ]
 rt-tokio = ["aws-esdk/rt-tokio", "aws-crypto-mpl/rt-tokio"]
 

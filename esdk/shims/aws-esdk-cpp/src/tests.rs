@@ -1463,12 +1463,6 @@ struct SigningHeaders {
     security_token: Option<String>,
 }
 
-// The KMS and DynamoDB SDKs export the same interceptor types, so either one works.
-#[cfg(all(feature = "ddb", not(feature = "kms")))]
-use aws_sdk_dynamodb::config as sdk_config;
-#[cfg(feature = "kms")]
-use aws_sdk_kms::config as sdk_config;
-
 #[cfg(any(feature = "kms", feature = "ddb"))]
 impl sdk_config::Intercept for CaptureSigning {
     fn name(&self) -> &'static str {
@@ -1480,7 +1474,7 @@ impl sdk_config::Intercept for CaptureSigning {
         context: &sdk_config::interceptors::BeforeTransmitInterceptorContextRef<'_>,
         _runtime_components: &sdk_config::RuntimeComponents,
         _cfg: &mut sdk_config::ConfigBag,
-    ) -> Result<(), aws_smithy_runtime_api::box_error::BoxError> {
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let headers = context.request().headers();
         *self.0.lock().unwrap() = Some(SigningHeaders {
             authorization: headers.get("authorization").unwrap_or_default().to_string(),
