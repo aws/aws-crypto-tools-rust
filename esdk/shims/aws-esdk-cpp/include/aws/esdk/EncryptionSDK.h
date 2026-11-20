@@ -29,8 +29,8 @@
 #include <span>
 #endif
 
-// build.rs writes Config.h to match the Cargo features.
-// Without it, assume the defaults: all on.
+// The C++ shim build process writes Config.h to match the Cargo features.
+// If it's not written, then we're using default Cargo features, which means all features are on (except FIPS).
 #if __has_include("aws/esdk/Config.h")
 #include "aws/esdk/Config.h"
 #else
