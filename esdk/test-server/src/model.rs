@@ -265,6 +265,12 @@ pub struct CachingCmmConfig {
         skip_serializing_if = "Option::is_none"
     )]
     pub limit_messages: Option<i64>,
+    #[serde(
+        rename = "sharedCacheName",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub shared_cache_name: Option<String>,
 }
 
 // Keyrings (tagged union via optional members)

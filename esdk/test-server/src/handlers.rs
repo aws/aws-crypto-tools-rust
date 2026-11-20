@@ -3,13 +3,13 @@
 
 //! Operation handlers and the `clientId` registry.
 //!
-//! `CreateClient` builds the keyring from the modeled config (delegating to the
+//! `CreateClient` builds the CMM from the modeled config (delegating to the
 //! MPL), registers it under a fresh UUID, and returns the id. `Encrypt` and
 //! `Decrypt` (and their streaming forms) look the registered client up by
 //! `clientId` and run the operation on its `aws_esdk::Client`.
 
 use crate::error::ServerError;
-use crate::keyring::keyring_for_cmm;
+use crate::keyring::{cmm_for_config, SharedCaches};
 use crate::model::{
     CreateClientRequest, CreateClientResponse, DecryptRequest, DecryptResponse,
     DecryptStreamRequest, DecryptStreamResponse, EncryptRequest, EncryptResponse,
@@ -19,23 +19,25 @@ use crate::model::{
 use aws_esdk::types::AlgorithmSuiteId as MplAlgorithmSuiteId;
 use aws_esdk::types::CommitmentPolicy as MplCommitmentPolicy;
 use aws_esdk::{
-    keyring::SharedKeyring,
+    cmm::SharedCmm,
     types::{EncryptionContext, SignedStreaming},
     Client,
 };
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Mutex;
 
-/// The ESDK client and keyring a registered client encrypts/decrypts with.
+/// The ESDK client and CMM a registered client encrypts/decrypts with.
 struct ClientEntry {
     esdk: Client,
-    keyring: SharedKeyring,
+    cmm: SharedCmm,
 }
 
-/// Shared server state: the thread-safe `clientId -> ClientEntry` registry.
+/// Shared server state: the thread-safe `clientId -> ClientEntry` registry
+/// and the materials caches that Caching CMMs share by name.
 #[derive(Default)]
 pub struct AppState {
     clients: Mutex<HashMap<String, ClientEntry>>,
+    caches: SharedCaches,
 }
 
 fn map_commitment(policy: EsdkCommitmentPolicy) -> MplCommitmentPolicy {
@@ -147,14 +149,14 @@ impl AppState {
         &self,
         req: CreateClientRequest,
     ) -> Result<CreateClientResponse, ServerError> {
-        let keyring = keyring_for_cmm(&req.config.cmm).await?;
+        let cmm = cmm_for_config(&req.config.cmm, &self.caches).await?;
         let mut builder =
             Client::builder().commitment_policy(map_commitment(req.config.commitment_policy));
         builder.set_max_encrypted_data_keys(max_edks(&req.config)?);
         let esdk = builder
             .build()
             .map_err(|e| ServerError::esdk(e.to_string()))?;
-        let entry = ClientEntry { esdk, keyring };
+        let entry = ClientEntry { esdk, cmm };
         let client_id = uuid::Uuid::new_v4().to_string();
         self.clients
             .lock()
@@ -164,14 +166,14 @@ impl AppState {
     }
 
     pub async fn encrypt(&self, req: EncryptRequest) -> Result<EncryptResponse, ServerError> {
-        let (esdk, keyring) = self.client(&req.client_id)?;
+        let (esdk, cmm) = self.client(&req.client_id)?;
         let ec = encryption_context(req.encryption_context);
         let frame_length = req.frame_length.map(frame_length).transpose()?;
         let output = esdk
             .encrypt()
             .plaintext(&req.plaintext)
             .set_encryption_context(Some(ec))
-            .keyring(keyring)
+            .cmm(cmm)
             .set_algorithm_suite_id(req.algorithm_suite_id.map(map_algorithm_suite))
             .set_frame_length(frame_length)
             .send()
@@ -183,12 +185,12 @@ impl AppState {
     }
 
     pub async fn decrypt(&self, req: DecryptRequest) -> Result<DecryptResponse, ServerError> {
-        let (esdk, keyring) = self.client(&req.client_id)?;
+        let (esdk, cmm) = self.client(&req.client_id)?;
         let output = esdk
             .decrypt()
             .ciphertext(&req.ciphertext)
             .set_encryption_context(Some(encryption_context(req.encryption_context)))
-            .keyring(keyring)
+            .cmm(cmm)
             .send()
             .await
             .map_err(|e| ServerError::esdk(e.to_string()))?;
@@ -205,7 +207,7 @@ impl AppState {
         &self,
         req: EncryptStreamRequest,
     ) -> Result<EncryptStreamResponse, ServerError> {
-        let (esdk, keyring) = self.client(&req.client_id)?;
+        let (esdk, cmm) = self.client(&req.client_id)?;
         let frame_length = req.frame_length.map(frame_length).transpose()?;
         let plaintext_length_bound = req
             .plaintext_length_bound
@@ -222,7 +224,7 @@ impl AppState {
             .plaintext(req.plaintext.as_slice())
             .ciphertext(&mut ciphertext)
             .set_encryption_context(Some(encryption_context(req.encryption_context)))
-            .keyring(keyring)
+            .cmm(cmm)
             .set_algorithm_suite_id(req.algorithm_suite_id.map(map_algorithm_suite))
             .set_frame_length(frame_length)
             .set_plaintext_length_bound(plaintext_length_bound)
@@ -236,14 +238,14 @@ impl AppState {
         &self,
         req: DecryptStreamRequest,
     ) -> Result<DecryptStreamResponse, ServerError> {
-        let (esdk, keyring) = self.client(&req.client_id)?;
+        let (esdk, cmm) = self.client(&req.client_id)?;
         let mut plaintext = Vec::new();
         let output = esdk
             .decrypt_stream()
             .ciphertext(req.ciphertext.as_slice())
             .plaintext(&mut plaintext)
             .set_encryption_context(Some(encryption_context(req.encryption_context)))
-            .keyring(keyring)
+            .cmm(cmm)
             // The commons suite assumes the default is streamed decrypt on multi-frame signed messages.
             // The default for ESDK Rust/C++ is to reject this, so override the default.
             .signed_streaming(SignedStreaming::ReleaseRegularFrames)
@@ -257,8 +259,8 @@ impl AppState {
         })
     }
 
-    /// Look up a registered client by id, cloning the shared keyring handle.
-    fn client(&self, client_id: &str) -> Result<(Client, SharedKeyring), ServerError> {
+    /// Look up a registered client by id, cloning the shared CMM handle.
+    fn client(&self, client_id: &str) -> Result<(Client, SharedCmm), ServerError> {
         if client_id.is_empty() {
             return Err(ServerError::generic("clientId must be non-empty"));
         }
@@ -266,6 +268,6 @@ impl AppState {
         let entry = clients
             .get(client_id)
             .ok_or_else(|| ServerError::generic(format!("unknown clientId: {client_id}")))?;
-        Ok((entry.esdk.clone(), entry.keyring.clone()))
+        Ok((entry.esdk.clone(), entry.cmm.clone()))
     }
 }
