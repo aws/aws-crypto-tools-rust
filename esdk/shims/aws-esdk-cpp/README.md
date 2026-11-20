@@ -179,10 +179,9 @@ However, the hierarchical keyring requires an AWS account, a KMS key, and a Dyna
 
 ## Using the shim with fork()
 
-The shim does not support `fork()` after it is used.
+The shim is not safe to use across `fork()`.
 Don't use the shim in a process before it forks.
-Create keyrings, clients and caches in each child process, after `fork()`.
-In a process forked after the shim was used, shim calls throw `ValidationException`.
+Create clients, keyrings and caches in each child process, after `fork()`.
 
 ## FAQ
 

@@ -1936,18 +1936,3 @@ fn clients_without_a_shared_http_client_use_their_own_connections() {
 
     assert_eq!(accepted.load(std::sync::atomic::Ordering::SeqCst), 2);
 }
-
-#[test]
-fn same_process_rejects_only_a_process_forked_after_the_runtime_started() {
-    // Accepts a runtime that has not started yet
-    assert!(same_process(0, 42, "encrypt").is_ok());
-    // Accepts the process that started the runtime
-    assert!(same_process(42, 42, "encrypt").is_ok());
-    // Rejects a process forked after the runtime started
-    let err = expect_err(same_process(42, 43, "encrypt"));
-    assert!(
-        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, "")),
-        "{err}"
-    );
-    assert!(err.contains("before this process was forked"), "{err}");
-}
