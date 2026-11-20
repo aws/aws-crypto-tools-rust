@@ -28,19 +28,27 @@ through the public types in
 
 ## Building
 
-From this directory:
+Add the shim to your CMake project:
 
-```bash
-cargo build
+```cmake
+add_subdirectory(aws-esdk-cpp)
+target_link_libraries(my_app PRIVATE AWS::esdk)
 ```
 
-That produces the static library and the cxx-generated C++ sources under
-`target/`, which the `AWS::esdk` CMake target and the `Makefile` example/test
-targets consume.
+```cpp
+#include <aws/esdk/EncryptionSDK.h>
+```
 
-### Cargo features
+CMake runs `cargo build` and puts the headers on the include path.
+See [`CMakeLists.txt`](CMakeLists.txt) for how the target is assembled.
 
-The shim has the same features as the Rust ESDK and passes them through.
+Build the library from source together with your application, as `add_subdirectory` does.
+Releases keep source compatibility, not binary compatibility:
+after upgrading, rebuild everything that includes `EncryptionSDK.h`.
+
+### Features
+
+The shim has the same Cargo features as the Rust ESDK and passes them through.
 Each has a CMake option, such as `-DESDK_FEATURE_KMS=OFF` for `kms`.
 
 | Feature | Default | What it adds |
@@ -82,25 +90,18 @@ cmake -B build -DESDK_FEATURE_FIPS=ON -DESDK_FEATURE_KMS=OFF -DESDK_FEATURE_DDB=
   -DESDK_FEATURE_DEFAULT_AWS_SDK_CLIENTS=OFF -DESDK_FEATURE_RT_TOKIO=OFF
 ```
 
-Without CMake, a build with non-default features must also put
-`target/<profile>/include` on the include path.
+### Without CMake
 
-## Using it in a CMake project
+From this directory:
 
-```cmake
-add_subdirectory(aws-esdk-cpp)
-target_link_libraries(my_app PRIVATE AWS::esdk)
+```bash
+cargo build
 ```
 
-```cpp
-#include <aws/esdk/EncryptionSDK.h>
-```
-
-See [`CMakeLists.txt`](CMakeLists.txt) for how the target is assembled.
-
-Build the library from source together with your application, as `add_subdirectory` does.
-Releases keep source compatibility, not binary compatibility:
-after upgrading, rebuild everything that includes `EncryptionSDK.h`.
+This writes the static library to `target/<profile>/libaws_esdk_cpp.a`.
+Put `include` and `target/<profile>/include` on the include path,
+and link the library with `-lpthread -ldl`.
+Cargo features work as usual, for example `cargo build --no-default-features --features fips`.
 
 ## Quick example
 
