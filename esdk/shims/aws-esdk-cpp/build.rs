@@ -11,9 +11,7 @@ fn feature_on(feature: &str) -> bool {
 }
 
 fn main() {
-    // EncryptionSDK.h includes Config.h, so C++ callers see only the API this build has.
-    // Config.h goes in <target>/<profile>/include, next to the library.
-    // OUT_DIR is under <target>/<profile>/build, one level deeper from Rust 1.100 on.
+    // Write Config.h to <target>/<profile>/include.
     let out_dir = PathBuf::from(std::env::var_os("OUT_DIR").expect("OUT_DIR"));
     let include_dir = out_dir
         .ancestors()
@@ -33,7 +31,7 @@ fn main() {
             u8::from(feature_on(feature))
         );
     }
-    // Rewriting an unchanged file would make every C++ build that includes it rebuild.
+    // Only write Config.h if it changed.
     if std::fs::read_to_string(&config_h).ok().as_deref() != Some(config.as_str()) {
         std::fs::create_dir_all(&config_dir).expect("create the Config.h directory");
         std::fs::write(&config_h, config).expect("write Config.h");
@@ -50,6 +48,7 @@ fn main() {
     println!("cargo:rerun-if-changed=src/lib.rs");
     println!("cargo:rerun-if-changed=src/EncryptionSDK.cpp");
     println!("cargo:rerun-if-changed=include/aws/esdk/EncryptionSDK.h");
-    // A build with other features overwrites Config.h, so rerun to write this build's back.
+    // Builds with different features share this Config.h.
+    // If another build changes it, rerun this script to fix it.
     println!("cargo:rerun-if-changed={}", config_h.display());
 }
