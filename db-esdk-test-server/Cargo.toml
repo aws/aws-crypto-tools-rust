@@ -1,0 +1,24 @@
+# This crate sits at the repo top level so that the db-esdk library's CI coverage gate does not include it.
+[package]
+name = "aws-db-esdk-test-server"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+description = "Hand-rolled rpcv2Cbor Language_Server for the DB-ESDK TestServer, delegating to aws-db-esdk."
+
+[[bin]]
+name = "dbesdk-test-server"
+path = "src/main.rs"
+
+[dependencies]
+# The library under test, built from this repo's source.
+aws-db-esdk = { path = "../db-esdk" }
+
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal"] }
+axum = "0.8"
+base64 = "0.23.1"
+ciborium = "0.2"
+serde = { version = "1", features = ["derive"] }
+serde_bytes = "0.11"
+uuid = { version = "1", features = ["v4"] }

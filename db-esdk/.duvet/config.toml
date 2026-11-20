@@ -1,0 +1,82 @@
+'$schema' = "https://awslabs.github.io/duvet/config/v0.4.0.json"
+
+[[source]]
+pattern = "./src/**/*.rs"
+
+[[source]]
+pattern = "./tests/**/*.rs"
+
+[[specification]]
+source = "spec/dynamodb-encryption-client/ddb-attribute-serialization.md"
+
+[[specification]]
+source = "spec/dynamodb-encryption-client/ddb-encryption-branch-key-id-supplier.md"
+
+[[specification]]
+source = "spec/dynamodb-encryption-client/ddb-get-encrypted-data-key-description.md"
+
+[[specification]]
+source = "spec/dynamodb-encryption-client/ddb-get-number-of-queries.md"
+
+[[specification]]
+source = "spec/dynamodb-encryption-client/ddb-item-conversion.md"
+
+[[specification]]
+source = "spec/dynamodb-encryption-client/ddb-item-encryptor.md"
+
+[[specification]]
+source = "spec/dynamodb-encryption-client/ddb-sdk-integration.md"
+
+[[specification]]
+source = "spec/dynamodb-encryption-client/ddb-support.md"
+
+[[specification]]
+source = "spec/dynamodb-encryption-client/ddb-table-encryption-config.md"
+
+[[specification]]
+source = "spec/dynamodb-encryption-client/decrypt-item.md"
+
+[[specification]]
+source = "spec/dynamodb-encryption-client/encrypt-item.md"
+
+[[specification]]
+source = "spec/dynamodb-encryption-client/string-ordering.md"
+
+[[specification]]
+source = "spec/searchable-encryption/beacons.md"
+
+[[specification]]
+source = "spec/searchable-encryption/search-config.md"
+
+[[specification]]
+source = "spec/searchable-encryption/virtual.md"
+
+[[specification]]
+source = "spec/structured-encryption/decrypt-path-structure.md"
+
+[[specification]]
+source = "spec/structured-encryption/decrypt-structure.md"
+
+[[specification]]
+source = "spec/structured-encryption/encrypt-path-structure.md"
+
+[[specification]]
+source = "spec/structured-encryption/encrypt-structure.md"
+
+[[specification]]
+source = "spec/structured-encryption/footer.md"
+
+[[specification]]
+source = "spec/structured-encryption/header.md"
+
+[[specification]]
+source = "spec/structured-encryption/resolve-auth-actions.md"
+
+[[specification]]
+source = "spec/structured-encryption/structures.md"
+
+[report.html]
+enabled = true
+
+[report.snapshot]
+enabled = false

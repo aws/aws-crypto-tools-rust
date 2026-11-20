@@ -1,0 +1,18 @@
+# DynamoDB product and operation names read as prose in the docs, not as code.
+doc-valid-idents = [
+    "DynamoDB",
+    "PartiQL",
+    "PutItem",
+    "GetItem",
+    "UpdateItem",
+    "DeleteItem",
+    "BatchWriteItem",
+    "BatchGetItem",
+    "TransactWriteItems",
+    "TransactGetItems",
+    "ExecuteStatement",
+    "BatchExecuteStatement",
+    "ExecuteTransaction",
+    "ResolveAttributes",
+    "..",
+]

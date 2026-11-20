@@ -73,6 +73,19 @@ jobs:
               - 'prim/**'
               - 'mpl/**'
               - '!prim/test-server/**'
+            db-esdk:
+              - 'prim/**'
+              - 'mpl/**'
+              - 'db-esdk/**'
+              - '!prim/test-server/**'
+              - '!mpl/test-server/**'
+            db-esdk-test-server:
+              - 'prim/**'
+              - 'mpl/**'
+              - 'db-esdk/**'
+              - 'db-esdk-test-server/**'
+              - '!prim/test-server/**'
+              - '!mpl/test-server/**'
             esdk-test-server:
               - 'prim/**'
               - 'mpl/**'
@@ -120,11 +133,13 @@ jobs:
             {
               "rust-tests": [
                 {"when": "esdk", "project": "esdk"},
+                {"when": "db-esdk", "project": "db-esdk"},
                 {"when": "mpl", "project": "mpl"},
                 {"when": "prim", "project": "prim"}
               ],
               "supply-chain": [
                 {"when": "esdk", "project": "esdk"},
+                {"when": "db-esdk", "project": "db-esdk"},
                 {"when": "mpl", "project": "mpl"},
                 {"when": "prim", "project": "prim"}
               ],
@@ -141,13 +156,15 @@ jobs:
               ],
               "duvet": [
                 {"when": "esdk", "name": "esdk", "project": "esdk", "artifact": "esdk-duvet-report"},
-                {"when": "esdk", "name": "aws-esdk-cpp", "project": "esdk/shims/aws-esdk-cpp", "artifact": "aws-esdk-cpp-duvet-report"}
+                {"when": "esdk", "name": "aws-esdk-cpp", "project": "esdk/shims/aws-esdk-cpp", "artifact": "aws-esdk-cpp-duvet-report"},
+                {"when": "db-esdk", "name": "db-esdk", "project": "db-esdk", "artifact": "db-esdk-duvet-report"}
               ],
               "test-server-builds": [
                 {"when": "esdk-test-server", "name": "esdk-test-server", "server": "esdk/test-server", "runner": "codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}"},
                 {"when": "esdk-cpp-test-server", "name": "esdk-cpp-test-server (ubuntu)", "server": "esdk/shims/aws-esdk-cpp/test-server", "prebuild": "esdk/shims/aws-esdk-cpp", "runner": "codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}"},
                 {"when": "mpl-test-server", "name": "mpl-test-server", "server": "mpl/test-server", "runner": "codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}"},
-                {"when": "prim-test-server", "name": "prim-test-server", "server": "prim/test-server", "runner": "codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}"}
+                {"when": "prim-test-server", "name": "prim-test-server", "server": "prim/test-server", "runner": "codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}"},
+                {"when": "db-esdk-test-server", "name": "db-esdk-test-server", "server": "db-esdk-test-server", "runner": "codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}"}
               ],
               "test-server-builds-macos": [
                 {"when": "esdk-cpp-test-server", "name": "esdk-cpp-test-server (macos)", "server": "esdk/shims/aws-esdk-cpp/test-server", "prebuild": "esdk/shims/aws-esdk-cpp", "runner": "macos-latest"}
@@ -161,6 +178,9 @@ jobs:
               ],
               "prim-test-server": [
                 {"when": "prim-test-server"}
+              ],
+              "db-esdk-test-server": [
+                {"when": "db-esdk-test-server"}
               ],
               "benchmarks": [
                 {"when": "esdk"}
@@ -362,6 +382,25 @@ jobs:
       focus: rust
       checkout-languages: rust
 
+  db-esdk-test-server:
+    name: DB-ESDK TestServer
+    needs: detect
+    if: fromJSON(needs.detect.outputs.jobs)['db-esdk-test-server'] != null
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    # Builds the Rust server in db-esdk-test-server/ from this commit's checkout.
+    # TEMPORARY: pinned to a branch until aws-crypto-tools-commons#58 merges.
+    # That PR adds Test-Server-Override support to this reusable workflow; then switch to @main.
+    uses: aws/aws-crypto-tools-commons/.github/workflows/dbesdk-test-server-reusable.yml@lucmcdon/db-esdk-rust-native-harness
+    with:
+      runner: *codebuild-linux
+      # Run only the tests that involve the Rust server; pairs like Java <--> .NET don't exercise this repo.
+      focus: rust-native
+    secrets:
+      repo-pat: ${{ secrets.COMMONS_REPO_PAT }}
+
   # Benchmarks only upload to CloudWatch on the daily run.
   # Not in pr-ci-all-required, so a slow or noisy benchmark can't block a merge.
   benchmarks:
@@ -439,6 +478,7 @@ jobs:
       - esdk-test-server
       - mpl-test-server
       - prim-test-server
+      - db-esdk-test-server
       - gen-errors
       - license-headers
     runs-on: *codebuild-linux

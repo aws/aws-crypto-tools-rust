@@ -1,0 +1,118 @@
+[package]
+name = "aws-db-esdk"
+version = "0.1.0"
+edition = "2024"
+keywords = ["cryptography", "security", "encryption", "dynamodb"]
+categories = ["cryptography"]
+license = "Apache-2.0"
+description = "AWS Database Encryption SDK for DynamoDB in Rust: client-side encryption and signing of DynamoDB items."
+repository = "https://github.com/aws/aws-crypto-tools-rust"
+authors = ["AWS-CryptoTools"]
+readme = "README.md"
+
+[lib]
+name = "aws_db_esdk"
+# The benchmarks use criterion; running the lib under libtest would reject criterion's flags.
+bench = false
+
+[dependencies]
+aws-crypto-mpl = { path = "../mpl", default-features = false, features = ["ddb"] }
+aws-mpl-primitives = { path = "../prim", default-features = false }
+aws-smithy-types = "1.8.1"
+aws-types = "1.6.0"
+base64 = "0.23.1"
+zeroize = "1.9.0"
+
+[dev-dependencies]
+tokio = { version = "1.49", features = ["macros", "rt-multi-thread", "time"] }
+uuid = { version = "1.27.0", features = ["v4"] }
+aws-smithy-http-client = { version = "1.5.0", features = ["rustls-aws-lc"] }
+# The Client tests implement its HttpClient trait to fake DynamoDB in-process.
+aws-smithy-runtime-api = "1.19.2"
+criterion = { version = "=0.5.1", default-features = false, features = ["cargo_bench_support"] }
+
+[[bench]]
+name = "item_encryptor"
+harness = false
+
+# These examples call AWS, so they need the AWS SDK clients.
+[[example]]
+name = "basic_put_get"
+required-features = ["kms", "default-aws-sdk-clients"]
+
+[[example]]
+name = "basic_searchable_encryption"
+required-features = ["kms", "default-aws-sdk-clients"]
+
+[[example]]
+name = "beacon_styles_searchable_encryption"
+required-features = ["kms", "default-aws-sdk-clients"]
+
+[[example]]
+name = "branch_key_supplier"
+required-features = ["kms", "default-aws-sdk-clients"]
+
+[[example]]
+name = "complex_searchable_encryption"
+required-features = ["kms", "default-aws-sdk-clients"]
+
+[[example]]
+name = "compound_beacon_searchable_encryption"
+required-features = ["kms", "default-aws-sdk-clients"]
+
+[[example]]
+name = "create_keystore_key"
+required-features = ["kms", "default-aws-sdk-clients"]
+
+[[example]]
+name = "custom_cmm"
+required-features = ["kms", "default-aws-sdk-clients"]
+
+[[example]]
+name = "get_encrypted_data_key_description"
+required-features = ["kms", "default-aws-sdk-clients"]
+
+[[example]]
+name = "handling_errors"
+required-features = ["kms", "default-aws-sdk-clients"]
+
+[[example]]
+name = "hierarchical_keyring"
+required-features = ["kms", "default-aws-sdk-clients"]
+
+[[example]]
+name = "migration_plaintext_to_awsdbe"
+required-features = ["kms", "default-aws-sdk-clients"]
+
+[[example]]
+name = "multi_put_get"
+required-features = ["kms", "default-aws-sdk-clients"]
+
+[[example]]
+name = "per_request_credentials"
+required-features = ["kms", "default-aws-sdk-clients"]
+
+[[example]]
+name = "rotate_branch_key"
+required-features = ["kms", "default-aws-sdk-clients"]
+
+[[example]]
+name = "shared_storm_tracking_cache"
+required-features = ["kms", "default-aws-sdk-clients"]
+
+[[example]]
+name = "virtual_beacon_searchable_encryption"
+required-features = ["kms", "default-aws-sdk-clients"]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[features]
+default = ["aws-lc-sys", "kms", "default-aws-sdk-clients", "rt-tokio"]
+# The crypto backend: `aws-lc-sys` (the default), or `fips` for AWS-LC's FIPS module.
+aws-lc-sys = ["aws-mpl-primitives/aws-lc-sys", "aws-crypto-mpl/aws-lc-sys"]
+fips = ["aws-mpl-primitives/fips", "aws-crypto-mpl/fips"]
+kms = ["aws-crypto-mpl/kms"]
+default-aws-sdk-clients = ["aws-crypto-mpl/default-aws-sdk-clients"]
+rt-tokio = ["aws-crypto-mpl/rt-tokio"]
