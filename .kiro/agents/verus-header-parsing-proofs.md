@@ -130,7 +130,7 @@ spec fn valid_<structure>(s: <Struct>) -> bool {
 
 Fill the predicates from the profile's format tables (profile appendix `domain.md` §Header field tables).
 
-**Example from the ESDK profile:** `domain.md` §Spec-conformance skeletons (`valid_header_v1`, `valid_header_v2`).
+**Example from the ESDK profile:** profile appendix `domain.md` §Spec-conformance skeletons (`valid_header_v1`, `valid_header_v2`).
 
 ## Process
 

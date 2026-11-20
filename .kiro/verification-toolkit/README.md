@@ -63,7 +63,7 @@ Counts ("N verified") never go in the profile. The profile names the commands an
 
 ## Reference syntax
 
-Generic files point at the profile as profile `crates[].verify_cmd` (dotted path; `[]` means each list entry) and at an appendix as profile appendix `targets.md` §<heading>.
+Generic files point at the profile as profile `crates[].verify_cmd` (dotted path; `[]` means each list entry) and at an appendix as profile appendix `targets.md` §<heading> (the file named in profile `appendices`).
 
 ## Example rule
 

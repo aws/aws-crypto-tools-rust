@@ -201,7 +201,7 @@ Source: `.kiro/agents/verification-recommender.md` §Agent Assignment Rules (the
 |------------------|----------------|-------------|
 | FFI memory safety (unsafe blocks) | `verus-unsafe-ffi-safety` | Proving pointer validity across C boundary (no in-crate `unsafe` today) |
 
-## Zero-panic (prim panic points)
+## Zero-panic (boundary crate panic points)
 
 Source: `.kiro/agents/verus-zero-panic.md` §Real prim panic points (VR-008, VR-006 and VR-009 prim half all in-crate). Counts in the copied scope note are a dated snapshot; read live counts from profile `artifacts.counts_source`.
 
@@ -297,7 +297,7 @@ Source: `.kiro/agents/verus-zero-panic.md` §Process, step 1 (the file lists).
 > - `esdk/src/message/body/body_encrypt.rs` (`construct_frame`, `write_frame_prefix`), `esdk/src/message/body/body_aad.rs`, `esdk/src/message/body/body_decrypt.rs` — frame construction, body AAD, and decryption. Put the synchronous decision core inside the `verus! { }` block in the real file; leave the async writer/reader as an unverified adapter around it.
 > - `esdk/src/encrypt.rs`, `esdk/src/key_derivation.rs` — encrypt orchestration and key derivation.
 
-The same step lists the prim files under "In-crate in `prim` (checked by `make -C prim verus`)": `prim/src/ecdsa.rs` (VR-008), `prim/src/lib.rs` (VR-006, VR-014) and `prim/src/hkdf.rs` (VR-009 prim half), each marked "Already proven; build on it, don't re-prove." The per-file detail of those bullets matches §Zero-panic (prim panic points) and is not repeated here (summary, not a verbatim copy).
+The same step lists the prim files under "In-crate in `prim` (checked by `make -C prim verus`)": `prim/src/ecdsa.rs` (VR-008), `prim/src/lib.rs` (VR-006, VR-014) and `prim/src/hkdf.rs` (VR-009 prim half), each marked "Already proven; build on it, don't re-prove." The per-file detail of those bullets matches §Zero-panic (boundary crate panic points) and is not repeated here (summary, not a verbatim copy).
 
 Source: `.kiro/agents/verus-zero-panic.md` §Rules (the ESDK-target bullet).
 

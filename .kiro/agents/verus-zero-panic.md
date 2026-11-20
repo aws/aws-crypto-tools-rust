@@ -64,7 +64,7 @@ You must prove absence of ALL of these panic sources:
 
 ## Panic points in this library
 
-See profile appendix `targets.md` §Zero-panic (prim panic points) for the library's panic points in its boundary crate and what is and is not proven for each, and profile `do_not_redo.zero_panic` for the cores to build on. Status per target: profile `targets` and `artifacts.status_oracle`.
+See profile appendix `targets.md` §Zero-panic (boundary crate panic points) for the library's panic points in its boundary crate and what is and is not proven for each, and profile `do_not_redo.zero_panic` for the cores to build on. Status per target: profile `targets` and `artifacts.status_oracle`.
 
 ## Shared Constants
 
@@ -391,7 +391,7 @@ fn sign_fixed_len_core<F: FnMut() -> Result<aws_lc_rs::signature::Signature, Sig
 
    In every file, look for all `[]` indexing, `.unwrap()`, `.expect()`, arithmetic operations, and slice operations.
 
-   **Do not redo work that is already proven.** Read profile `do_not_redo.zero_panic`, the status oracle (profile `artifacts.status_oracle`) and `.kiro/agents/verus-capabilities.md` first, and build on the existing cores rather than re-proving them (the library's list: profile appendix `targets.md` §Do not redo and §Zero-panic (prim panic points)). Counts: read them from the live tool output (profile `artifacts.counts_source`). Never claim a count from reading code.
+   **Do not redo work that is already proven.** Read profile `do_not_redo.zero_panic`, the status oracle (profile `artifacts.status_oracle`) and `.kiro/agents/verus-capabilities.md` first, and build on the existing cores rather than re-proving them (the library's list: profile appendix `targets.md` §Do not redo and §Zero-panic (boundary crate panic points)). Counts: read them from the live tool output (profile `artifacts.counts_source`). Never claim a count from reading code.
 
 2. **Read the Specification:** Read the formal spec documents in profile `spec.per_agent_documents.zero_panic` (under `spec.location`; if absent and `spec.may_be_absent`, fetch with `spec.resolver`).
 
@@ -414,7 +414,7 @@ fn sign_fixed_len_core<F: FnMut() -> Result<aws_lc_rs::signature::Signature, Sig
 
 6. **Prove Composability:** Show that the preconditions of each callee are satisfied by the caller's context:
    - An orchestration function calls a frame-construction function — prove the frame params satisfy the callee's requires
-   - A call that crosses into another verified crate cannot see that crate's `verus!` cores; keep it in the unverified adapter. The library's example: profile appendix `targets.md` §Zero-panic (prim panic points).
+   - A call that crosses into another verified crate cannot see that crate's `verus!` cores; keep it in the unverified adapter. The library's example: profile appendix `targets.md` §Zero-panic (boundary crate panic points).
 
 7. **Mutation step:** before calling the proof done, mutation-test every new `ensures`, `requires`, type invariant, loop invariant and `decreases` using the recipe in "Mutation testing" in the `verus` skill. Run the tautology check (is the real loop or guard inside `verus!`, and does dropping it make Verus fail?), log each mutation (Id, Mutation, Result line, Errors, Reverted), and record the outcome class of each (Verus-caught, compiler-caught, review-only, adapter glue never caught). An obligation that no mutation breaks does not count.
 
@@ -427,7 +427,7 @@ fn sign_fixed_len_core<F: FnMut() -> Result<aws_lc_rs::signature::Signature, Sig
 These come from the `verus` skill and `.kiro/agents/verus-capabilities.md`. They decide what is provable in the shipped crate:
 
 - Verus cannot verify `async fn` or `dyn` trait objects. Keep decision logic in a synchronous core inside `verus!`; the async writers/readers stay unverified glue.
-- A verified fn cannot freely name a type declared outside `verus!` (dependency types, the crate's error type). Two ways out: keep that type in an unverified adapter, or — for a genuinely external type Verus cannot model — declare a trusted boundary with `external_type_specification` / `assume_specification` (only in a crate whose profile `tcb.crate_rules` allow it). The latter is for FFI/std only (invariant #7: model the FFI contract explicitly), never an escape hatch over your own loop or logic. The library's concrete example: profile appendix `targets.md` §Zero-panic (prim panic points).
+- A verified fn cannot freely name a type declared outside `verus!` (dependency types, the crate's error type). Two ways out: keep that type in an unverified adapter, or — for a genuinely external type Verus cannot model — declare a trusted boundary with `external_type_specification` / `assume_specification` (only in a crate whose profile `tcb.crate_rules` allow it). The latter is for FFI/std only (invariant #7: model the FFI contract explicitly), never an escape hatch over your own loop or logic. The library's concrete example: profile appendix `targets.md` §Zero-panic (boundary crate panic points).
 - A trait declared in `verus!` but implemented outside has its `ensures` trusted silently — use `requires`-only traits.
 - `to_be_bytes` is not modeled by vstd. Use the library's verified encoders (profile appendix `idioms.md`).
 - Never hide exec code behind `#[cfg(not(verus_keep_ghost))]`. Keep one definition per type.

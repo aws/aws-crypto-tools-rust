@@ -417,7 +417,7 @@ Use `assert(expr);` liberally to probe what the verifier knows at each point. Ve
 
 ## Library profile
 
-The library profile is at `.kiro/verification-profile/verification-profile.yaml`; read it before any proof work. This skill uses profile `crates` (commands, feature sets, result line, cache bust), `toolchain`, `tcb`, `typestate_gates`, `ids`, `packaging_decisions` and the appendix `idioms.md`.
+The library profile is at `.kiro/verification-profile/verification-profile.yaml`; read it before any proof work. This skill uses profile `crates` (commands, feature sets, result line, cache bust), `toolchain`, `tcb`, `typestate_gates`, `ids`, `packaging_decisions` and profile appendix `idioms.md`.
 Counts are never in the profile: re-read them from the live run (profile `artifacts.counts_source`).
 
 ## References

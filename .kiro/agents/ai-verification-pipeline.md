@@ -104,7 +104,7 @@ Before generating new threats, ground the model in demonstrated exploitability:
 ### Threat Categories to Cover
 
 - Cryptographic threats: Algorithm downgrade, key commitment bypass, non-committing ciphertext
-- Key management threats: Wrapping key compromise, credential theft enabling KMS access
+- Key management threats: Wrapping key compromise, credential theft enabling access to the key management service
 - Application-level threats: Host compromise, memory exposure, dependency supply chain
 - Operational threats: Replay/reordering, DoS via malformed messages, side-channel attacks
 
@@ -148,11 +148,11 @@ This stage runs **in parallel** with threat modeling, not after it. Many valuabl
 Driven by `verus-capabilities`, not by the threat model. Sweep the code and the capability map for provable properties:
 
 1. **Enumerate provable surfaces** using the four Verus categories in `verus-capabilities.md`:
-   - *Functional correctness:* decision cores in profile `crates[].source_dirs` (crates with `verus_enabled: true`). Done work: profile `targets` and appendix `targets.md` §Category 1a … §Category 1d. Check the status oracle (profile `artifacts.status_oracle`) before scoping
-   - *Ordering (Category 1e):* an order between async steps that can be written as a token minted by a sync verified gate (done: profile `typestate_gates` and appendix `targets.md` §Category 1e)
+   - *Functional correctness:* decision cores in profile `crates[].source_dirs` (crates with `verus_enabled: true`). Done work: profile `targets` and profile appendix `targets.md` §Category 1a, §Category 1b, §Category 1c and §Category 1d. Check the status oracle (profile `artifacts.status_oracle`) before scoping
+   - *Ordering (Category 1e):* an order between async steps that can be written as a token minted by a sync verified gate (done: profile `typestate_gates` and profile appendix `targets.md` §Category 1e)
    - *Zero-panic:* indexing, slicing and arithmetic sites in profile `crates[].source_dirs` that can be extracted into synchronous `verus!` cores (lint settings: profile appendix `idioms.md`); input-dependent `.expect` sites (re-check each before citing it)
    - *Low-level & unsafe:* see profile `unsafe_surface`; pointer validity supplied by a foreign caller is trusted, not provable
-   - *Concurrency:* see appendix `targets.md` §Category 4 (async code is not verifiable; a hand-written lock protocol would be)
+   - *Concurrency:* see profile appendix `targets.md` §Category 4 (async code is not verifiable; a hand-written lock protocol would be)
 2. **Filter with the decision aid** in `verus-capabilities.md`: keep only properties that are Verus-provable **and** provable in place here. Discard crypto hardness, external-service policy, probabilistic properties, timing, absence-of-code/confinement, an async order that cannot be written as a token, and anything inside a crate with `verus_enabled: false` (record those as out of scope or model-only, with the reason).
 3. **Skip what is already proven:** check profile `targets` and the status oracle (profile `artifacts.status_oracle`) first.
 4. **Prefer quick wins and blast radius:** a small sync core called on every encrypt or decrypt protects every caller.
