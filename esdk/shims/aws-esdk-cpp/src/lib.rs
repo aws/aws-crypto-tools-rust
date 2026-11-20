@@ -14,6 +14,12 @@
     clippy::boxed_local,
     reason = "destructors accept Box<T> to transfer ownership back to Rust for dropping"
 )]
+// Only items that need a feature's dependencies are gated.
+// A build without some features leaves the plain types and helpers for that API unused.
+#![cfg_attr(
+    not(all(feature = "kms", feature = "ddb", feature = "rt-tokio")),
+    allow(dead_code, unused_imports)
+)]
 
 // File-wide invariants.
 // Each requirement below holds for every type and operation in this file.
@@ -171,10 +177,7 @@ use aws_smithy_runtime_api::client::runtime_components::RuntimeComponentsBuilder
 use aws_smithy_runtime_api::client::runtime_plugin::RuntimePlugin;
 use std::num::NonZeroU32;
 use std::sync::LazyLock;
-#[cfg(feature = "rt-tokio")]
-use std::time::Duration;
-#[cfg(any(feature = "kms", feature = "ddb"))]
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 // ESDK Rust's methods are all async. This runtime runs those async methods for C++ users.
 static TOKIO_RUNTIME: LazyLock<tokio::runtime::Runtime> = LazyLock::new(|| {
@@ -186,11 +189,6 @@ static TOKIO_RUNTIME: LazyLock<tokio::runtime::Runtime> = LazyLock::new(|| {
 });
 
 #[cxx::bridge(namespace = "aws_esdk_ffi")]
-// A build without some features leaves the structs for their API unused.
-#[cfg_attr(
-    not(all(feature = "kms", feature = "ddb", feature = "rt-tokio")),
-    allow(dead_code)
-)]
 mod ffi {
     // cxx does not support passing Rust's Option or C++'s optional across the FFI boundary.
     // For basic types, wrap data crossing the boundary inside a pseudo-optional struct.
@@ -525,8 +523,7 @@ mod ffi {
 }
 
 macro_rules! opt_to_option {
-    ($($(#[$attr:meta])* $opt:ident => $t:ty),* $(,)?) => {$(
-        $(#[$attr])*
+    ($($opt:ident => $t:ty),* $(,)?) => {$(
         impl ffi::$opt {
             /// `Some(value)` when `set` is true, else `None`.
             fn to_option(&self) -> Option<$t> {
@@ -539,16 +536,13 @@ macro_rules! opt_to_option {
 opt_to_option!(
     OptU32 => u32,
     OptU64 => u64,
-    #[cfg(any(feature = "kms", feature = "ddb"))]
     OptString => String,
     OptAlgId => ffi::EsdkAlgorithmSuiteId,
     OptCommitmentPolicy => ffi::EsdkCommitmentPolicy,
     OptSignedStreaming => ffi::SignedStreaming,
-    #[cfg(feature = "rt-tokio")]
     OptDuration => ffi::Duration,
 );
 
-#[cfg(any(feature = "kms", feature = "ddb"))]
 impl ffi::OptCredentials {
     /// `Some(&value)` when `set` is true, else `None`.
     fn as_option(&self) -> Option<&ffi::Credentials> {
@@ -582,8 +576,6 @@ struct Keyring {
     inner: SharedKeyring,
 }
 
-// Only the hierarchical keyring reads a cache.
-#[cfg_attr(not(all(feature = "kms", feature = "ddb")), allow(dead_code))]
 struct CryptographicMaterialsCache {
     inner: SharedCmc,
 }
@@ -992,7 +984,6 @@ fn make_kms_config(
 }
 
 /// Converts a bridge duration to a `Duration`.
-#[cfg(feature = "rt-tokio")]
 fn from_ffi_duration(d: ffi::Duration, field: &str, op: &str) -> Result<Duration, String> {
     Duration::from_secs(d.secs)
         .checked_add(Duration::from_nanos(u64::from(d.nanos)))
@@ -1134,7 +1125,6 @@ fn make_retry_config(config: &ffi::RetryConfig) -> Option<aws_config::retry::Ret
 
 // A library built on the AWS SDK for Rust identifies itself with FrameworkMetadata.
 // The SDK renders it into the User-Agent as `lib/<name>/<version>`.
-#[cfg(any(feature = "kms", feature = "ddb"))]
 const SHIM_FRAMEWORK_NAME: &str = "AwsEncryptionSdk-Shim-C++-Rust";
 
 //= spec/shim/esdk-shim.md#service-client-configuration
@@ -1573,7 +1563,6 @@ fn kms_client_with_headers(
     }))
 }
 
-#[cfg(feature = "kms")]
 /// Adds fixed headers to every request.
 #[derive(Debug)]
 struct RequestHeaders(Vec<(String, String)>);
@@ -1655,7 +1644,6 @@ fn create_keystore(input: &ffi::KeyStoreConfig) -> Result<Box<KeyStore>, String>
     Ok(Box::new(KeyStore { inner }))
 }
 
-#[cfg(all(feature = "kms", feature = "ddb"))]
 /// An empty target list means no grant tokens were supplied.
 fn non_empty(tokens: &[String]) -> Option<Vec<String>> {
     (!tokens.is_empty()).then(|| tokens.to_vec())
@@ -2148,6 +2136,5 @@ pub fn into_keyring_handle(
     .cast()
 }
 
-// The tests use the hierarchical keyring throughout.
-#[cfg(all(test, feature = "kms", feature = "ddb"))]
+#[cfg(test)]
 mod tests;

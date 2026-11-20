@@ -243,6 +243,9 @@ auto guard(F&& f) -> decltype(f()) {
 ::ffi::OptString to_opt(const std::optional<std::string>& o, const std::string& name) {
     return o ? ::ffi::OptString{true, to_rust_string(*o, name)} : ::ffi::OptString{false, {}};
 }
+::ffi::OptDuration to_opt(const std::optional<std::chrono::nanoseconds>& o, const char* field) {
+    return o ? ::ffi::OptDuration{true, to_ffi(*o, field)} : ::ffi::OptDuration{false, {}};
+}
 ::ffi::OptAlgId to_opt(const std::optional<AlgorithmSuiteId>& o) {
     return o ? ::ffi::OptAlgId{true, to_ffi(*o)} : ::ffi::OptAlgId{false, {}};
 }
@@ -522,12 +525,6 @@ KeyStore::KeyStore(const std::string& table_name,
 // Cryptographic materials caches
 
 #if AWS_ESDK_CPP_RT_TOKIO
-namespace detail {
-::ffi::OptDuration to_opt(const std::optional<std::chrono::nanoseconds>& o, const char* field) {
-    return o ? ::ffi::OptDuration{true, to_ffi(*o, field)} : ::ffi::OptDuration{false, {}};
-}
-}  // namespace detail
-
 StormTrackingCmc::StormTrackingCmc(const StormTrackingCmcOptions& options)
     : CryptographicMaterialsCache(std::make_shared<detail::CryptographicMaterialsCacheImpl>(
           detail::Retained{}, detail::guard([&] {

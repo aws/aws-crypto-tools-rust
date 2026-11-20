@@ -108,6 +108,7 @@ fn unset_decrypt_input() -> ffi::DecryptInput<'static> {
     }
 }
 
+#[cfg(all(feature = "kms", feature = "ddb"))]
 fn unset_hierarchical_keyring_input() -> ffi::HierarchicalKeyringInput {
     ffi::HierarchicalKeyringInput {
         branch_key_id: String::new(),
@@ -118,6 +119,7 @@ fn unset_hierarchical_keyring_input() -> ffi::HierarchicalKeyringInput {
     }
 }
 
+#[cfg(all(feature = "kms", feature = "ddb"))]
 fn unset_keystore_config() -> ffi::KeyStoreConfig {
     ffi::KeyStoreConfig {
         ddb_table_name: String::new(),
@@ -175,6 +177,7 @@ fn client_config_with_credentials(credentials: ffi::Credentials) -> ffi::MplAwsC
     cfg
 }
 
+#[cfg(all(feature = "kms", feature = "ddb"))]
 fn keystore_config_with_clients(kms: &MplKmsClient, ddb: &MplDdbClient) -> ffi::KeyStoreConfig {
     let mut cfg = unset_keystore_config();
     cfg.kms_client = kms as *const MplKmsClient;
@@ -401,6 +404,7 @@ fn max_edks_zero_is_no_limit_positive_is_limit() {
 }
 
 #[test]
+#[cfg(all(feature = "kms", feature = "ddb"))]
 fn make_kms_config_accepts_key_arn() {
     use aws_crypto_mpl::key_store::types::KmsConfiguration;
     //= spec/shim/esdk-shim.md#kms-configuration
@@ -413,6 +417,7 @@ fn make_kms_config_accepts_key_arn() {
 }
 
 #[test]
+#[cfg(all(feature = "kms", feature = "ddb"))]
 fn make_kms_config_accepts_mr_key_arn() {
     use aws_crypto_mpl::key_store::types::KmsConfiguration;
     //= spec/shim/esdk-shim.md#kms-configuration
@@ -425,6 +430,7 @@ fn make_kms_config_accepts_mr_key_arn() {
 }
 
 #[test]
+#[cfg(all(feature = "kms", feature = "ddb"))]
 fn make_kms_config_accepts_discovery() {
     use aws_crypto_mpl::key_store::types::KmsConfiguration;
     //= spec/shim/esdk-shim.md#kms-configuration
@@ -437,6 +443,7 @@ fn make_kms_config_accepts_discovery() {
 }
 
 #[test]
+#[cfg(all(feature = "kms", feature = "ddb"))]
 fn make_kms_config_accepts_mr_discovery() {
     use aws_crypto_mpl::key_store::types::KmsConfiguration;
     //= spec/shim/esdk-shim.md#kms-configuration
@@ -449,6 +456,7 @@ fn make_kms_config_accepts_mr_discovery() {
 }
 
 #[test]
+#[cfg(all(feature = "kms", feature = "ddb"))]
 fn make_kms_config_rejects_unknown_type() {
     //= spec/shim/esdk-shim.md#kms-configuration
     //= type=test
@@ -752,6 +760,7 @@ fn decrypt_rejects_null_keyring() {
 }
 
 #[test]
+#[cfg(all(feature = "kms", feature = "ddb"))]
 fn create_keystore_defaults_absent_clients() {
     //= spec/shim/esdk-shim.md#create-key-store
     //= type=test
@@ -772,6 +781,7 @@ fn create_keystore_defaults_absent_clients() {
 }
 
 #[test]
+#[cfg(all(feature = "kms", feature = "ddb"))]
 fn create_keystore_rejects_unset_kms_config_type() {
     let kms = create_kms_client(&unset_client_config()).expect("kms client");
     let ddb = create_ddb_client(&unset_client_config()).expect("ddb client");
@@ -788,6 +798,7 @@ fn create_keystore_rejects_unset_kms_config_type() {
 }
 
 #[test]
+#[cfg(all(feature = "kms", feature = "ddb"))]
 fn create_hierarchical_keyring_rejects_null_key_store() {
     //= spec/shim/esdk-shim.md#create-hierarchical-keyring
     //= type=test
@@ -803,6 +814,7 @@ fn create_hierarchical_keyring_rejects_null_key_store() {
     );
 }
 
+#[cfg(all(feature = "kms", feature = "ddb"))]
 fn hierarchical_keyring_input_with_ttl(
     key_store: &KeyStore,
     ttl: ffi::Duration,
@@ -815,6 +827,7 @@ fn hierarchical_keyring_input_with_ttl(
 }
 
 #[test]
+#[cfg(all(feature = "kms", feature = "ddb"))]
 fn create_hierarchical_keyring_passes_ttl_nanos_to_the_core() {
     let kms = create_kms_client(&unset_client_config()).expect("kms client");
     let ddb = create_ddb_client(&unset_client_config()).expect("ddb client");
@@ -845,6 +858,7 @@ fn create_hierarchical_keyring_passes_ttl_nanos_to_the_core() {
 }
 
 #[test]
+#[cfg(all(feature = "kms", feature = "ddb"))]
 fn create_hierarchical_keyring_defers_to_the_default_cache() {
     let kms = create_kms_client(&unset_client_config()).expect("kms client");
     let ddb = create_ddb_client(&unset_client_config()).expect("ddb client");
@@ -876,6 +890,7 @@ fn create_hierarchical_keyring_defers_to_the_default_cache() {
 }
 
 #[test]
+#[cfg(all(feature = "kms", feature = "ddb"))]
 fn create_hierarchical_keyring_uses_the_supplied_cache() {
     let kms = create_kms_client(&unset_client_config()).expect("kms client");
     let ddb = create_ddb_client(&unset_client_config()).expect("ddb client");
@@ -902,6 +917,7 @@ fn create_hierarchical_keyring_uses_the_supplied_cache() {
 }
 
 #[test]
+#[cfg(feature = "rt-tokio")]
 fn create_default_cmc_builds_a_default_storm_tracking_cache() {
     let cache = create_default_cmc(10).expect("default cache should build");
     assert_eq!(cache.inner.grace_period(), Some(Duration::from_secs(10)));
@@ -913,6 +929,7 @@ fn create_default_cmc_builds_a_default_storm_tracking_cache() {
 }
 
 #[test]
+#[cfg(feature = "rt-tokio")]
 fn unset_storm_tracking_options_keep_the_core_defaults() {
     let cache = create_storm_tracking_cmc(&unset_storm_tracking_options())
         .expect("storm-tracking cache should build");
@@ -932,6 +949,7 @@ fn storm_tracking_options() -> ffi::StormTrackingCmcOptions {
 }
 
 #[test]
+#[cfg(feature = "rt-tokio")]
 fn create_storm_tracking_cmc_passes_each_option_to_the_core() {
     //= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
     //= type=test
@@ -952,6 +970,7 @@ fn create_storm_tracking_cmc_passes_each_option_to_the_core() {
 }
 
 #[test]
+#[cfg(feature = "rt-tokio")]
 fn create_storm_tracking_cmc_rejects_zero_sleep() {
     let mut options = storm_tracking_options();
     options.sleep = set_duration(0, 0);
@@ -963,6 +982,7 @@ fn create_storm_tracking_cmc_rejects_zero_sleep() {
 }
 
 #[test]
+#[cfg(feature = "rt-tokio")]
 fn create_storm_tracking_cmc_rejects_out_of_range_durations() {
     let mut options = storm_tracking_options();
     options.grace_period = set_duration(u64::MAX, 1_000_000_000);
@@ -1014,6 +1034,7 @@ fn opt_to_option_returns_the_value_only_when_set() {
 }
 
 #[test]
+#[cfg(all(feature = "kms", feature = "ddb"))]
 fn create_keystore_forwards_id_and_grant_tokens() {
     let kms = create_kms_client(&unset_client_config()).expect("kms client");
     let ddb = create_ddb_client(&unset_client_config()).expect("ddb client");
@@ -1338,6 +1359,7 @@ fn opt_to_option_is_some_only_when_set() {
 // The built SdkConfig is opaque through the facade, so the values must be tested from Rust
 
 #[test]
+#[cfg(any(feature = "kms", feature = "ddb"))]
 fn shim_framework_metadata_is_valid() {
     //= spec/shim/esdk-shim.md#service-client-configuration
     //= type=test
@@ -1351,6 +1373,7 @@ fn shim_framework_metadata_is_valid() {
 }
 
 #[test]
+#[cfg(any(feature = "kms", feature = "ddb"))]
 fn create_sdk_config_defers_retry_when_unset() {
     let default_ref = TOKIO_RUNTIME.block_on(aws_config::load_defaults(
         aws_config::BehaviorVersion::latest(),
@@ -1367,6 +1390,7 @@ fn create_sdk_config_defers_retry_when_unset() {
 }
 
 #[test]
+#[cfg(any(feature = "kms", feature = "ddb"))]
 fn create_sdk_config_applies_every_field() {
     let mut cfg = unset_client_config();
     cfg.region = ffi::OptString {
@@ -1401,6 +1425,7 @@ fn create_sdk_config_applies_every_field() {
 }
 
 #[test]
+#[cfg(any(feature = "kms", feature = "ddb"))]
 fn create_sdk_config_adds_the_user_agent_once() {
     for _ in 0..2 {
         let sdk = create_sdk_config(&unset_client_config(), None).expect("build sdk config");
@@ -1414,6 +1439,7 @@ fn create_sdk_config_adds_the_user_agent_once() {
 }
 
 #[test]
+#[cfg(all(feature = "kms", feature = "ddb"))]
 fn clients_carry_an_explicit_http_client() {
     let cfg = unset_client_config();
     let kms = create_kms_client(&cfg).expect("kms client");
@@ -1437,17 +1463,24 @@ struct SigningHeaders {
     security_token: Option<String>,
 }
 
-impl aws_sdk_kms::config::Intercept for CaptureSigning {
+// The KMS and DynamoDB SDKs export the same interceptor types, so either one works.
+#[cfg(all(feature = "ddb", not(feature = "kms")))]
+use aws_sdk_dynamodb::config as sdk_config;
+#[cfg(feature = "kms")]
+use aws_sdk_kms::config as sdk_config;
+
+#[cfg(any(feature = "kms", feature = "ddb"))]
+impl sdk_config::Intercept for CaptureSigning {
     fn name(&self) -> &'static str {
         "CaptureSigning"
     }
 
     fn read_before_transmit(
         &self,
-        context: &aws_sdk_kms::config::interceptors::BeforeTransmitInterceptorContextRef<'_>,
-        _runtime_components: &aws_sdk_kms::config::RuntimeComponents,
-        _cfg: &mut aws_sdk_kms::config::ConfigBag,
-    ) -> Result<(), aws_sdk_kms::error::BoxError> {
+        context: &sdk_config::interceptors::BeforeTransmitInterceptorContextRef<'_>,
+        _runtime_components: &sdk_config::RuntimeComponents,
+        _cfg: &mut sdk_config::ConfigBag,
+    ) -> Result<(), aws_smithy_runtime_api::box_error::BoxError> {
         let headers = context.request().headers();
         *self.0.lock().unwrap() = Some(SigningHeaders {
             authorization: headers.get("authorization").unwrap_or_default().to_string(),
@@ -1463,6 +1496,7 @@ impl CaptureSigning {
     }
 }
 
+#[cfg(feature = "kms")]
 fn kms_signing(client: &MplKmsClient) -> SigningHeaders {
     let capture = CaptureSigning::default();
     let config = client
@@ -1476,6 +1510,7 @@ fn kms_signing(client: &MplKmsClient) -> SigningHeaders {
     capture.take()
 }
 
+#[cfg(feature = "ddb")]
 fn ddb_signing(client: &MplDdbClient) -> SigningHeaders {
     let capture = CaptureSigning::default();
     let config = client
@@ -1494,6 +1529,7 @@ fn ddb_signing(client: &MplDdbClient) -> SigningHeaders {
 }
 
 #[test]
+#[cfg(feature = "kms")]
 fn kms_clients_sign_with_their_own_credentials() {
     let cfg = client_config_with_credentials(test_credentials("AKIDBASE", "secret-base", None));
     let base = create_kms_client(&cfg).expect("kms client");
@@ -1524,6 +1560,7 @@ fn kms_clients_sign_with_their_own_credentials() {
 }
 
 #[test]
+#[cfg(feature = "ddb")]
 fn ddb_clients_sign_with_their_own_credentials() {
     let cfg = client_config_with_credentials(test_credentials("AKIDBASE", "secret-base", None));
     let base = create_ddb_client(&cfg).expect("ddb client");
@@ -1552,6 +1589,7 @@ fn ddb_clients_sign_with_their_own_credentials() {
 }
 
 #[test]
+#[cfg(all(feature = "kms", feature = "ddb"))]
 fn derived_clients_keep_the_base_configuration() {
     let mut cfg = client_config_with_credentials(test_credentials("AKIDBASE", "secret", None));
     cfg.retry.max_attempts = set_u32(5);
@@ -1571,6 +1609,7 @@ fn derived_clients_keep_the_base_configuration() {
 }
 
 #[test]
+#[cfg(all(feature = "kms", feature = "ddb"))]
 fn empty_credentials_are_rejected_without_echoing_them() {
     let kms = create_kms_client(&unset_client_config()).expect("kms client");
     let ddb = create_ddb_client(&unset_client_config()).expect("ddb client");
@@ -1596,6 +1635,7 @@ fn empty_credentials_are_rejected_without_echoing_them() {
 }
 
 #[test]
+#[cfg(any(feature = "kms", feature = "ddb"))]
 fn credentials_expiration_is_time_since_the_epoch() {
     let mut creds = test_credentials("AKID", "secret", None);
     let unset = credentials_target_to_core(&creds, "test").expect("credentials");
@@ -1709,6 +1749,7 @@ fn stream_write_after_worker_failure_surfaces_error() {
 #[derive(Debug, Clone, Default)]
 struct CaptureHeaders(std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>>);
 
+#[cfg(feature = "kms")]
 impl aws_sdk_kms::config::Intercept for CaptureHeaders {
     fn name(&self) -> &'static str {
         "CaptureHeaders"
@@ -1730,6 +1771,7 @@ impl aws_sdk_kms::config::Intercept for CaptureHeaders {
     }
 }
 
+#[cfg(feature = "kms")]
 fn kms_sent_headers(client: &MplKmsClient) -> Vec<(String, String)> {
     let capture = CaptureHeaders::default();
     let config = client
@@ -1751,6 +1793,7 @@ fn header_value<'a>(headers: &'a [(String, String)], name: &str) -> Option<&'a s
 }
 
 #[test]
+#[cfg(feature = "kms")]
 fn shim_user_agent_keeps_the_customers_app_id() {
     let loaded = SdkConfig::builder()
         .behavior_version(BehaviorVersion::latest())
@@ -1788,6 +1831,7 @@ fn http_header(name: &str, value: &str) -> ffi::HttpHeader {
 }
 
 #[test]
+#[cfg(feature = "kms")]
 fn kms_client_with_headers_sends_and_signs_the_headers() {
     let cfg = client_config_with_credentials(test_credentials("AKIDBASE", "secret-base", None));
     let base = create_kms_client(&cfg).expect("kms client");
@@ -1813,6 +1857,7 @@ fn kms_client_with_headers_sends_and_signs_the_headers() {
 }
 
 #[test]
+#[cfg(feature = "kms")]
 fn kms_client_with_headers_rejects_invalid_headers() {
     let base = create_kms_client(&unset_client_config()).expect("kms client");
     let cases = [
@@ -1894,10 +1939,12 @@ fn connection_counting_server() -> (String, std::sync::Arc<std::sync::atomic::At
 }
 
 /// A copy of `client` that sends to `url`, keeping its HTTP client.
+#[cfg(feature = "kms")]
 fn pointed_at(client: &MplKmsClient, url: &str) -> aws_sdk_kms::Client {
     aws_sdk_kms::Client::from_conf(client.inner.config().to_builder().endpoint_url(url).build())
 }
 
+#[cfg(feature = "kms")]
 fn list_keys(client: &aws_sdk_kms::Client) {
     TOKIO_RUNTIME
         .block_on(client.list_keys().send())
@@ -1909,6 +1956,7 @@ fn list_keys(client: &aws_sdk_kms::Client) {
 }
 
 #[test]
+#[cfg(feature = "kms")]
 fn clients_sharing_an_http_client_reuse_one_connection() {
     let (url, accepted) = connection_counting_server();
     let cfg = client_config_with_credentials(test_credentials("AKIDBASE", "secret-base", None));
@@ -1925,6 +1973,7 @@ fn clients_sharing_an_http_client_reuse_one_connection() {
 }
 
 #[test]
+#[cfg(feature = "kms")]
 fn clients_without_a_shared_http_client_use_their_own_connections() {
     let (url, accepted) = connection_counting_server();
     let cfg = client_config_with_credentials(test_credentials("AKIDBASE", "secret-base", None));
