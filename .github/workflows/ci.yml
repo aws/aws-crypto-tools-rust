@@ -424,6 +424,66 @@ jobs:
 
       - uses: mattsb42-meta/not-grep@1.0.1
 
+  # Fail a PR that changes a published crate's API in a way its version number does not allow.
+  # Each crate is compared with its newest release on crates.io; a crate with no release yet is skipped.
+  semver-checks:
+    name: semver-checks (${{ matrix.crate }})
+    needs: detect
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { crate: aws-mpl-primitives, dir: prim, first-release: 0.0.0 }
+          - { crate: aws-crypto-mpl, dir: mpl, first-release: 0.0.0 }
+          # aws-esdk 1.x on crates.io is the Dafny-based implementation, with a different API.
+          - { crate: aws-esdk, dir: esdk, first-release: 2.0.0 }
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: 'true'
+
+      - name: Find the release to compare with
+        id: baseline
+        env:
+          CRATE: ${{ matrix.crate }}
+          FIRST_RELEASE: ${{ matrix.first-release }}
+        run: |
+          set -euo pipefail
+          versions=$(curl -sf -A "aws-crypto-tools-rust CI" "https://crates.io/api/v1/crates/${CRATE}/versions" \
+            | jq -r '.versions[] | select(.yanked | not) | .num' || true)
+          baseline=""
+          for v in $versions; do
+            # Keep releases at or after FIRST_RELEASE; `sort -V -C` succeeds when its input is in order.
+            if printf '%s\n%s\n' "$FIRST_RELEASE" "$v" | sort -V -C; then
+              baseline=$(printf '%s\n%s\n' "$baseline" "$v" | sed '/^$/d' | sort -V | tail -n1)
+            fi
+          done
+          if [ -z "$baseline" ]; then
+            echo "::notice::${CRATE} has no release at or after ${FIRST_RELEASE}; skipping."
+          fi
+          echo "version=${baseline}" >> "$GITHUB_OUTPUT"
+
+      - name: Install Rust toolchain
+        if: steps.baseline.outputs.version != ''
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-semver-checks
+        if: steps.baseline.outputs.version != ''
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-semver-checks
+
+      - name: Check against ${{ matrix.crate }} ${{ steps.baseline.outputs.version }}
+        if: steps.baseline.outputs.version != ''
+        run: >-
+          cargo semver-checks
+          --manifest-path ${{ matrix.dir }}/Cargo.toml
+          --baseline-version ${{ steps.baseline.outputs.version }}
+          --default-features
+
   pr-ci-all-required:
     if: always()
     needs:
@@ -441,6 +501,7 @@ jobs:
       - prim-test-server
       - gen-errors
       - license-headers
+      - semver-checks
     runs-on: *codebuild-linux
     steps:
       - name: Check job results
