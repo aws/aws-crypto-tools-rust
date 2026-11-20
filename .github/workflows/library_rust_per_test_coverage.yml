@@ -1,0 +1,116 @@
+# Record which library lines each of a project's own tests runs, for the duvet test reach check.
+#
+# A push or a nightly run records every test.
+# A pull request records only the tests whose duvet test annotations or cited code it changes,
+# and records nothing when there are none.
+name: Library Rust Per-Test Coverage
+
+on:
+  workflow_call:
+    inputs:
+      project:
+        description: "Project subdirectory to measure (esdk or mpl)."
+        required: true
+        type: string
+      crate:
+        description: "The project's package name (e.g. aws-esdk)."
+        required: true
+        type: string
+
+jobs:
+  perTestCoverage:
+    name: ${{ inputs.project }} per-test coverage
+    runs-on: codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: 'true'
+          fetch-depth: 0
+
+      - name: Check out the commons per-test coverage tools
+        uses: actions/checkout@v6
+        with:
+          repository: aws/aws-crypto-tools-commons
+          ref: lucmcdon/test-server-infra
+          path: commons
+          sparse-checkout: test-server-common/tools
+
+      - name: Record every test
+        if: github.event_name != 'pull_request'
+        run: |
+          echo "PER_TEST_RUN=true" >> "$GITHUB_ENV"
+          echo "PER_TEST_FILTER=all()" >> "$GITHUB_ENV"
+
+      - name: Pick the tests this pull request's duvet annotations name
+        if: github.event_name == 'pull_request'
+        env:
+          PROJECT: ${{ inputs.project }}
+          CRATE: ${{ inputs.crate }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          python3 commons/test-server-common/tools/duvet_test_reach.py \
+            --language rust --library "$PROJECT" --repository "$GITHUB_REPOSITORY" --repo-root . \
+            --source "$PROJECT/src" --local-tests "$PROJECT/tests" --crate "$CRATE" \
+            --changed-since "library=$BASE_SHA" --select-tests "$RUNNER_TEMP/selection.json"
+          filter=$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["local"])' "$RUNNER_TEMP/selection.json")
+          if [ -z "$filter" ]; then
+            echo "PER_TEST_RUN=false" >> "$GITHUB_ENV"
+            echo "This pull request changes no duvet annotation of a local test: nothing to record."
+          else
+            echo "PER_TEST_RUN=true" >> "$GITHUB_ENV"
+            echo "PER_TEST_FILTER=$filter" >> "$GITHUB_ENV"
+          fi
+
+      - name: Install CMake
+        if: env.PER_TEST_RUN == 'true'
+        run: sudo apt-get update && sudo apt-get install -y cmake
+
+      - uses: ./.github/actions/setup-rust
+        if: env.PER_TEST_RUN == 'true'
+        with:
+          components: llvm-tools-preview
+          workspaces: ${{ inputs.project }}
+
+      - name: Install cargo-llvm-cov
+        if: env.PER_TEST_RUN == 'true'
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Install cargo-nextest
+        if: env.PER_TEST_RUN == 'true'
+        uses: taiki-e/install-action@cargo-nextest
+
+      - name: Configure AWS Credentials
+        if: env.PER_TEST_RUN == 'true'
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-region: us-west-2
+          role-to-assume: arn:aws:iam::370957321024:role/GitHub-CI-Public-ESDK-Dafny-Role-us-west-2
+          role-session-name: RustPerTestCoverage
+          special-characters-workaround: "true"
+
+      # nextest runs each test in its own process, and the runner gives each one its own profile file.
+      - name: Record the lines each test runs
+        if: env.PER_TEST_RUN == 'true'
+        working-directory: ${{ inputs.project }}
+        env:
+          RUSTFLAGS: "-C debuginfo=0"
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER: python3 ${{ github.workspace }}/commons/test-server-common/tools/per_test_coverage.py run-test
+          PER_TEST_COVERAGE_DIR: ${{ runner.temp }}/per-test-raw
+          PER_TEST_REPOSITORY: ${{ github.repository }}
+          PER_TEST_ROOT: ${{ github.workspace }}
+        run: cargo llvm-cov nextest --all-features --workspace --no-report --no-fail-fast -E "$PER_TEST_FILTER"
+
+      - name: Write the per-test line coverage
+        if: env.PER_TEST_RUN == 'true'
+        run: python3 commons/test-server-common/tools/per_test_coverage.py build "$RUNNER_TEMP/per-test-raw" "$RUNNER_TEMP/per-test-coverage/per-test-coverage"
+
+      - name: Upload the per-test line coverage
+        if: env.PER_TEST_RUN == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: per-test-coverage-${{ inputs.project }}
+          path: ${{ runner.temp }}/per-test-coverage
+          if-no-files-found: error

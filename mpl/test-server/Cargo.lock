@@ -137,6 +137,7 @@ dependencies = [
  "futures-util",
  "serde",
  "serde_bytes",
+ "test-server-control",
  "tokio",
  "tower",
  "uuid",
@@ -1739,6 +1740,13 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
+]
+
+[[package]]
+name = "test-server-control"
+version = "0.1.0"
+dependencies = [
+ "tokio",
 ]
 
 [[package]]

@@ -1,4 +1,5 @@
-# Assert that every line of executable code added or changed in the PR is covered by tests.
+# Assert that every line of executable code added or changed in the PR is covered by tests,
+# and that tests take every branch on those lines.
 # There is no minimum bar for the project's total coverage.
 name: Library Rust Coverage
 
@@ -9,6 +10,11 @@ on:
         description: "Project subdirectory to measure (e.g. mpl, esdk)."
         required: true
         type: string
+      test-server-report:
+        description: "Artifact of a TestServer run in this workflow run whose coverage/rust.lcov also counts. Empty for none."
+        required: false
+        type: string
+        default: ""
 
 jobs:
   patchCoverage:
@@ -26,9 +32,18 @@ jobs:
       - name: Install CMake
         run: sudo apt-get update && sudo apt-get install -y cmake
 
+      # cargo llvm-cov --branch needs a nightly compiler.
+      - name: Install the nightly Rust toolchain for branch coverage
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly-2026-10-26
+          components: llvm-tools-preview
+
+      - name: Use the nightly toolchain for every cargo command below
+        run: echo "RUSTUP_TOOLCHAIN=nightly-2026-10-26" >> "$GITHUB_ENV"
+
       - uses: ./.github/actions/setup-rust
         with:
-          components: llvm-tools-preview
           workspaces: ${{ inputs.project }}
 
       - name: Install cargo-llvm-cov
@@ -55,11 +70,11 @@ jobs:
             echo "FEATURE_FLAGS=--all-features" >> "$GITHUB_ENV"
           fi
 
-      - name: Generate line coverage
+      - name: Generate line and branch coverage
         working-directory: ${{ inputs.project }}
         env:
           RUSTFLAGS: "-C debuginfo=0"
-        run: cargo llvm-cov $FEATURE_FLAGS --workspace --lcov --remap-path-prefix --output-path lcov.info --verbose
+        run: cargo llvm-cov $FEATURE_FLAGS --workspace --branch --lcov --skip-functions --remap-path-prefix --output-path lcov.info --verbose
 
       # Diff PR coverage against base branch coverage
       - name: Re-root coverage paths to the repository root
@@ -75,5 +90,55 @@ jobs:
           done < <(sed -n 's|^SF:||p' '${{ inputs.project }}/lcov.info' | sort -u)
           exit "$missing"
 
+      # The test server dashboard merges this report, line by line,
+      # with the coverage that the cross-language test server gives the same commit.
+      - name: Write the line and branch coverage report
+        run: |
+          mkdir -p "$RUNNER_TEMP/local-coverage"
+          cp '${{ inputs.project }}/lcov.info' "$RUNNER_TEMP/local-coverage/${{ inputs.project }}.lcov"
+
+      - name: Upload the line and branch coverage report
+        uses: actions/upload-artifact@v7
+        with:
+          name: local-coverage-${{ inputs.project }}
+          path: ${{ runner.temp }}/local-coverage/${{ inputs.project }}.lcov
+          if-no-files-found: error
+
+      # The cross-language TestServer runs this project's code too, so its coverage counts toward the gates.
+      # Its lcov paths are already relative to the repository root.
+      - name: Download the TestServer's line coverage
+        if: inputs.test-server-report != ''
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.test-server-report }}
+          path: ${{ runner.temp }}/test-server-report
+
+      # Both gates count a line or branch as covered when any report covers it.
+      # The TestServer report also measures the test servers' own code, which the gates leave out.
+      - name: List the coverage reports
+        run: |
+          set -euo pipefail
+          reports='${{ inputs.project }}/lcov.info'
+          if [ -d "$RUNNER_TEMP/test-server-report" ]; then
+            reports+=" $(find "$RUNNER_TEMP/test-server-report" -path '*/coverage/rust.lcov' | tr '\n' ' ')"
+          fi
+          echo "Coverage reports: $reports"
+          echo "COVERAGE_REPORTS=$reports" >> "$GITHUB_ENV"
+
       - name: Enforce 100% patch coverage
-        run: diff-cover '${{ inputs.project }}/lcov.info' --compare-branch 'origin/${{ github.base_ref }}' --fail-under 100
+        run: diff-cover $COVERAGE_REPORTS --exclude '*/test-server/*' '*/test-server-control/*' --compare-branch 'origin/${{ github.base_ref }}' --fail-under 100
+
+      - name: Check out the branch coverage gate
+        uses: actions/checkout@v6
+        with:
+          repository: aws/aws-crypto-tools-commons
+          ref: lucmcdon/test-server-infra
+          path: commons
+          sparse-checkout: test-server-common/tools
+
+      # diff-cover does not check branches.
+      - name: Enforce 100% branch coverage of changed lines
+        run: >-
+          python3 commons/test-server-common/tools/branch_gate.py --base 'origin/${{ github.base_ref }}'
+          --exclude '*/test-server/*' --exclude '*/test-server-control/*' $COVERAGE_REPORTS

@@ -6,6 +6,12 @@ pattern = "./src/**/*.rs"
 [[source]]
 pattern = "./tests/**/*.rs"
 
+# The shared test-server Tests that run for Rust.
+# CI downloads this file; locally, `make -C test-server test-server-duvet` writes it.
+[[source]]
+pattern = "./build/test-server-duvet/*.java"
+type = "test"
+
 [[specification]]
 source = "spec/data-format/message-header.md"
 
