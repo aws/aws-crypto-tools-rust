@@ -1,12 +1,9 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// A child process created by fork() can use the shim with objects it creates itself,
-// even after the parent has used the shim.
-// The parent uses the shim before and after the child runs, so neither process breaks the other.
+// A process forked before the shim is used can use the shim.
+// A process forked after the shim is used gets a ValidationException instead of hanging.
 
-#include <chrono>
-#include <csignal>
 #include <cstdint>
 #include <cstdio>
 #include <sstream>
@@ -22,11 +19,15 @@ namespace {
 
 constexpr unsigned CHILD_TIMEOUT_SECONDS = 30;
 
-// Encrypts and decrypts with a new keyring, once in one call and once as a stream.
-bool round_trip() {
+Aws::Esdk::RawAesKeyring make_keyring() {
     const std::vector<std::uint8_t> wrapping_key(32, 0x01);
-    const Aws::Esdk::RawAesKeyring keyring("fork-test", "fork-test", wrapping_key,
-                                           Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16);
+    return Aws::Esdk::RawAesKeyring("fork-test", "fork-test", wrapping_key,
+                                    Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16);
+}
+
+// Encrypts and decrypts, once in one call and once as a stream.
+bool round_trip() {
+    const auto keyring = make_keyring();
     const Aws::Esdk::Client esdk;
     const std::string plaintext = "fork test";
 
@@ -35,7 +36,6 @@ bool round_trip() {
         return false;
     }
 
-    // Streams run on the shim's runtime threads, which fork() does not copy.
     std::istringstream plain_in(plaintext);
     std::stringstream cipher;
     esdk.encrypt_stream(plain_in, cipher, keyring);
@@ -44,65 +44,85 @@ bool round_trip() {
     return plain_out.str() == plaintext;
 }
 
-// Makes a real DynamoDB call, which waits on the runtime's network I/O.
-// The made-up credentials make the call fail, so it needs network access but no AWS account.
-bool network_call_returns() {
-    const auto config = Aws::Esdk::AwsSdkClientConfig().with_region("us-west-2").with_credentials(
-        Aws::Esdk::Credentials("AKIDFORKTEST", "fork-test-secret"));
-    const Aws::Esdk::KeyStore key_store(
-        "fork-test-table", "fork-test-table",
-        "arn:aws:kms:us-west-2:111122223333:key/00000000-0000-0000-0000-000000000000",
-        Aws::Esdk::KeyStoreOptions()
-            .with_kms_client(Aws::Esdk::KmsClient(config))
-            .with_ddb_client(Aws::Esdk::DdbClient(config)));
-    const Aws::Esdk::HierarchicalKeyring keyring(key_store, "fork-test-branch-key", std::chrono::seconds(60));
+// True if encrypt, encrypt_stream and creating a KMS client all throw the fork error.
+bool rejected_after_fork() {
+    const auto keyring = make_keyring();
+    const Aws::Esdk::Client esdk;
+    const std::string plaintext = "fork test";
+    int rejected = 0;
     try {
-        Aws::Esdk::Client().encrypt(std::string("fork test"), keyring);
-    } catch (const Aws::Esdk::AwsEncryptionSdkException&) {
-        return true;
+        esdk.encrypt(plaintext, keyring);
+    } catch (const Aws::Esdk::ValidationException& e) {
+        if (std::string(e.what()).find("before this process was forked") != std::string::npos) {
+            ++rejected;
+        }
     }
-    return false;
+    try {
+        std::istringstream plain_in(plaintext);
+        std::stringstream cipher;
+        esdk.encrypt_stream(plain_in, cipher, keyring);
+    } catch (const Aws::Esdk::ValidationException& e) {
+        if (std::string(e.what()).find("before this process was forked") != std::string::npos) {
+            ++rejected;
+        }
+    }
+    try {
+        Aws::Esdk::KmsClient(Aws::Esdk::AwsSdkClientConfig().with_region("us-west-2"));
+    } catch (const Aws::Esdk::ValidationException& e) {
+        if (std::string(e.what()).find("before this process was forked") != std::string::npos) {
+            ++rejected;
+        }
+    }
+    return rejected == 3;
+}
+
+// Runs `check` in a child process. Returns false if it fails, throws or hangs.
+bool in_child(bool (*check)(), const char* name) {
+    const pid_t pid = fork();
+    if (pid < 0) {
+        std::perror("fork");
+        return false;
+    }
+    if (pid == 0) {
+        // Kill the child if it hangs, so the test fails instead of waiting forever.
+        alarm(CHILD_TIMEOUT_SECONDS);
+        try {
+            _exit(check() ? 0 : 1);
+        } catch (const std::exception& e) {
+            std::fprintf(stderr, "%s: %s\n", name, e.what());
+            _exit(2);
+        }
+    }
+    int status = 0;
+    waitpid(pid, &status, 0);
+    if (WIFSIGNALED(status)) {
+        std::fprintf(stderr, "FAIL: %s: child killed by signal %d\n", name, WTERMSIG(status));
+        return false;
+    }
+    if (WEXITSTATUS(status) != 0) {
+        std::fprintf(stderr, "FAIL: %s: child exited with %d\n", name, WEXITSTATUS(status));
+        return false;
+    }
+    return true;
 }
 
 }  // namespace
 
 int main() {
-    if (!round_trip()) {
-        std::fprintf(stderr, "FAIL: parent round trip before fork\n");
-        return 1;
-    }
-
-    const pid_t pid = fork();
-    if (pid < 0) {
-        std::perror("fork");
-        return 1;
-    }
-    if (pid == 0) {
-        // A hang in the child kills it, so the parent sees a failure instead of waiting forever.
-        alarm(CHILD_TIMEOUT_SECONDS);
-        try {
-            if (!round_trip()) _exit(2);
-            _exit(network_call_returns() ? 0 : 4);
-        } catch (const std::exception& e) {
-            std::fprintf(stderr, "child: %s\n", e.what());
-            _exit(3);
-        }
-    }
-
-    int status = 0;
-    waitpid(pid, &status, 0);
-    if (WIFSIGNALED(status)) {
-        std::fprintf(stderr, "FAIL: child killed by signal %d (SIGALRM means it hung)\n",
-                     WTERMSIG(status));
-        return 1;
-    }
-    if (WEXITSTATUS(status) != 0) {
-        std::fprintf(stderr, "FAIL: child exited with %d\n", WEXITSTATUS(status));
-        return 1;
-    }
+    // Accepts a child forked before the main process uses the shim
+    if (!in_child(round_trip, "forked before use")) return 1;
 
     if (!round_trip()) {
-        std::fprintf(stderr, "FAIL: parent round trip after fork\n");
+        std::fprintf(stderr, "FAIL: main process round trip\n");
+        return 1;
+    }
+
+    // Rejects a child forked after the main process uses the shim
+    if (!in_child(rejected_after_fork, "forked after use")) return 1;
+
+    // The rejected child did not break the main process
+    if (!round_trip()) {
+        std::fprintf(stderr, "FAIL: main process round trip after fork\n");
         return 1;
     }
     std::printf("PASS: fork\n");

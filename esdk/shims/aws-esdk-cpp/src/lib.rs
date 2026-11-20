@@ -152,64 +152,50 @@ use aws_smithy_runtime::client::defaults::default_http_client_plugin_v2;
 use aws_smithy_runtime_api::client::runtime_components::RuntimeComponentsBuilder;
 use aws_smithy_runtime_api::client::runtime_plugin::RuntimePlugin;
 use std::num::NonZeroU32;
-use std::sync::atomic::{AtomicPtr, Ordering};
+use std::sync::LazyLock;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, SystemTime};
 
-/// A value that each process builds for itself on first use.
-///
-/// fork() copies the parent's memory into the child, but not its threads.
-/// A copied Tokio runtime has no worker threads and shares the parent's epoll instance,
-/// and copied AWS SDK clients share the parent's open connections.
-/// Using such a copy in the child hangs the child or corrupts the parent.
-/// So the first use in a new process builds a new value, and the copy is leaked:
-/// dropping it would also touch the parent's threads and epoll instance.
-struct PerProcess<T> {
-    /// The process that built the value, and the value. Never freed.
-    current: AtomicPtr<(u32, T)>,
-    init: fn() -> T,
-}
-
-impl<T> PerProcess<T> {
-    const fn new(init: fn() -> T) -> Self {
-        Self {
-            current: AtomicPtr::new(std::ptr::null_mut()),
-            init,
-        }
-    }
-
-    fn get(&'static self) -> &'static T {
-        let pid = std::process::id();
-        loop {
-            let current = self.current.load(Ordering::Acquire);
-            // SAFETY: a non-null pointer came from Box::into_raw below and is never freed.
-            if let Some((owner, value)) = unsafe { current.as_ref() }
-                && *owner == pid
-            {
-                return value;
-            }
-            let built = Box::into_raw(Box::new((pid, (self.init)())));
-            match self
-                .current
-                .compare_exchange(current, built, Ordering::AcqRel, Ordering::Acquire)
-            {
-                // SAFETY: `built` is now stored in `current` and is never freed.
-                Ok(_) => return unsafe { &(*built).1 },
-                // Another thread of this process stored its value first; use that one.
-                // SAFETY: `built` came from Box::into_raw above and was not stored.
-                Err(_) => drop(unsafe { Box::from_raw(built) }),
-            }
-        }
-    }
-}
-
 // ESDK Rust's methods are all async. This runtime runs those async methods for C++ users.
-static TOKIO_RUNTIME: PerProcess<tokio::runtime::Runtime> = PerProcess::new(|| {
+// Call it through `runtime`, which refuses to run in a process forked after it started.
+static TOKIO_RUNTIME: LazyLock<tokio::runtime::Runtime> = LazyLock::new(|| {
+    RUNTIME_PID.store(std::process::id(), Ordering::Relaxed);
     // Fails only if the OS cannot start threads; unrecoverable, so panic here.
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
         .unwrap()
 });
+
+/// The ID of the process that started `TOKIO_RUNTIME`, or 0 before it starts.
+static RUNTIME_PID: AtomicU32 = AtomicU32::new(0);
+
+/// The shim's runtime, or an error in a process forked after the runtime started.
+///
+/// fork() copies the runtime into the child process but not its threads,
+/// and locks those threads held stay locked in the child.
+/// Using the copy hangs the child and can crash the main process,
+/// so this returns an error instead.
+fn runtime(operation: &str) -> Result<&'static tokio::runtime::Runtime, String> {
+    same_process(
+        RUNTIME_PID.load(Ordering::Relaxed),
+        std::process::id(),
+        operation,
+    )?;
+    Ok(&TOKIO_RUNTIME)
+}
+
+fn same_process(started_in: u32, current: u32, operation: &str) -> Result<(), String> {
+    if started_in != 0 && started_in != current {
+        return Err(shim_err(
+            ffi::ShimErrorKind::Validation,
+            operation,
+            "the shim was used before this process was forked; \
+             use the shim only in processes that did not use it before fork()",
+        ));
+    }
+    Ok(())
+}
 
 #[cxx::bridge(namespace = "aws_esdk_ffi")]
 mod ffi {
@@ -1135,8 +1121,8 @@ fn shim_framework_metadata() -> FrameworkMetadata {
 
 // Loaded once per process.
 // Every client config derives from it, so clients without explicit credentials share one credential chain.
-static DEFAULT_SDK_CONFIG: PerProcess<Result<SdkConfig, String>> =
-    PerProcess::new(load_default_sdk_config);
+static DEFAULT_SDK_CONFIG: LazyLock<Result<SdkConfig, String>> =
+    LazyLock::new(load_default_sdk_config);
 
 /// The AWS SDK's default HTTPS client.
 fn default_http_client() -> Option<SharedHttpClient> {
@@ -1146,8 +1132,7 @@ fn default_http_client() -> Option<SharedHttpClient> {
 }
 
 fn load_default_sdk_config() -> Result<SdkConfig, String> {
-    let shared_config = TOKIO_RUNTIME
-        .get()
+    let shared_config = runtime("client configuration")?
         .block_on(aws_config::defaults(BehaviorVersion::latest()).load());
     Ok(with_shim_user_agent(shared_config))
 }
@@ -1214,8 +1199,8 @@ fn create_sdk_config(
     input: &ffi::MplAwsClientConfig,
     http_client: Option<&HttpClient>,
 ) -> Result<SdkConfig, String> {
+    runtime("client configuration")?;
     let mut builder = DEFAULT_SDK_CONFIG
-        .get()
         .as_ref()
         .map_err(Clone::clone)?
         .to_builder();
@@ -1357,7 +1342,7 @@ fn encrypt(input: &ffi::EncryptInput) -> Result<ffi::EncryptOutput, String> {
         .set_algorithm_suite_id(settings.algorithm_suite_id)
         .set_frame_length(settings.frame_length.map(NonZeroU32::get))
         .send();
-    let output = TOKIO_RUNTIME.get().block_on(output).map_err(core_err)?;
+    let output = runtime("encrypt")?.block_on(output).map_err(core_err)?;
     Ok(ffi::EncryptOutput {
         //= spec/shim/esdk-shim.md#encrypt-outputs
         //# - MUST return the used algorithm suite, converted as defined in
@@ -1392,7 +1377,7 @@ fn decrypt(input: &ffi::DecryptInput) -> Result<ffi::DecryptOutput, String> {
         )))
         .keyring(keyring.inner.clone())
         .send();
-    let output = TOKIO_RUNTIME.get().block_on(output).map_err(core_err)?;
+    let output = runtime("decrypt")?.block_on(output).map_err(core_err)?;
     Ok(ffi::DecryptOutput {
         //= spec/shim/esdk-shim.md#decrypt-outputs
         //# - MUST return the used algorithm suite, converted as defined in
@@ -1619,8 +1604,7 @@ fn create_keystore(input: &ffi::KeyStoreConfig) -> Result<Box<KeyStore>, String>
         .set_kms_client(unsafe { input.kms_client.as_ref() }.map(|c| c.inner.clone()))
         .set_ddb_client(unsafe { input.ddb_client.as_ref() }.map(|c| c.inner.clone()));
 
-    let inner = TOKIO_RUNTIME
-        .get()
+    let inner = runtime("create_keystore")?
         .block_on(builder.build())
         .map_err(core_err)?;
     Ok(Box::new(KeyStore { inner }))
@@ -1739,8 +1723,7 @@ fn create_hierarchical_keyring(
     if let Some(partition_id) = partition_id {
         builder = builder.partition_id(partition_id);
     }
-    let keyring = TOKIO_RUNTIME
-        .get()
+    let keyring = runtime("create_hierarchical_keyring")?
         .block_on(builder.build())
         .map_err(core_err)?;
 
@@ -2006,10 +1989,10 @@ fn create_encrypt_stream(input: &ffi::EncryptInput) -> Result<Box<EncryptStream>
         .set_algorithm_suite_id(settings.algorithm_suite_id)
         .set_frame_length(settings.frame_length.map(NonZeroU32::get))
         .set_plaintext_length_bound(input.plaintext_length_bound.to_option());
+    let runtime = runtime("encrypt_stream")?;
     Ok(Box::new(EncryptStream {
         state: StreamState::spawn("encrypt_stream", move |mut reader, mut writer| {
-            let output = TOKIO_RUNTIME
-                .get()
+            let output = runtime
                 .block_on(
                     builder
                         .plaintext(&mut reader)
@@ -2052,10 +2035,10 @@ fn create_decrypt_stream(input: &ffi::DecryptInput) -> Result<Box<DecryptStream>
                 .map(signed_streaming_target_to_core)
                 .transpose()?,
         );
+    let runtime = runtime("decrypt_stream")?;
     Ok(Box::new(DecryptStream {
         state: StreamState::spawn("decrypt_stream", move |mut reader, mut writer| {
-            let output = TOKIO_RUNTIME
-                .get()
+            let output = runtime
                 .block_on(
                     builder
                         .ciphertext(&mut reader)

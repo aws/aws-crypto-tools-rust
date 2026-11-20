@@ -1020,7 +1020,6 @@ fn create_keystore_forwards_id_and_grant_tokens() {
 
     let unset = create_keystore(&keystore_config_with_clients(&kms, &ddb)).expect("key store");
     let info = TOKIO_RUNTIME
-        .get()
         .block_on(unset.inner.get_key_store_info().send())
         .expect("info");
     assert!(info.grant_tokens().is_empty());
@@ -1033,7 +1032,6 @@ fn create_keystore_forwards_id_and_grant_tokens() {
     cfg.grant_tokens = vec!["g1".to_string(), "g2".to_string()];
     let store = create_keystore(&cfg).expect("key store");
     let info = TOKIO_RUNTIME
-        .get()
         .block_on(store.inner.get_key_store_info().send())
         .expect("info");
     assert_eq!(info.key_store_id(), "the-id");
@@ -1354,7 +1352,7 @@ fn shim_framework_metadata_is_valid() {
 
 #[test]
 fn create_sdk_config_defers_retry_when_unset() {
-    let default_ref = TOKIO_RUNTIME.get().block_on(aws_config::load_defaults(
+    let default_ref = TOKIO_RUNTIME.block_on(aws_config::load_defaults(
         aws_config::BehaviorVersion::latest(),
     ));
     let sdk = create_sdk_config(&unset_client_config(), None).expect("build sdk config");
@@ -1473,9 +1471,7 @@ fn kms_signing(client: &MplKmsClient) -> SigningHeaders {
         .to_builder()
         .interceptor(capture.clone())
         .build();
-    let result = TOKIO_RUNTIME
-        .get()
-        .block_on(aws_sdk_kms::Client::from_conf(config).list_keys().send());
+    let result = TOKIO_RUNTIME.block_on(aws_sdk_kms::Client::from_conf(config).list_keys().send());
     assert!(result.is_err(), "the interceptor stops every request");
     capture.take()
 }
@@ -1488,7 +1484,7 @@ fn ddb_signing(client: &MplDdbClient) -> SigningHeaders {
         .to_builder()
         .interceptor(capture.clone())
         .build();
-    let result = TOKIO_RUNTIME.get().block_on(
+    let result = TOKIO_RUNTIME.block_on(
         aws_sdk_dynamodb::Client::from_conf(config)
             .list_tables()
             .send(),
@@ -1742,9 +1738,7 @@ fn kms_sent_headers(client: &MplKmsClient) -> Vec<(String, String)> {
         .to_builder()
         .interceptor(capture.clone())
         .build();
-    let result = TOKIO_RUNTIME
-        .get()
-        .block_on(aws_sdk_kms::Client::from_conf(config).list_keys().send());
+    let result = TOKIO_RUNTIME.block_on(aws_sdk_kms::Client::from_conf(config).list_keys().send());
     assert!(result.is_err(), "the interceptor stops every request");
     capture.0.lock().unwrap().clone()
 }
@@ -1845,13 +1839,12 @@ fn connection_counting_server() -> (String, std::sync::Arc<std::sync::atomic::At
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     let listener = TOKIO_RUNTIME
-        .get()
         .block_on(tokio::net::TcpListener::bind("127.0.0.1:0"))
         .expect("bind");
     let url = format!("http://{}", listener.local_addr().expect("local addr"));
     let accepted = std::sync::Arc::new(AtomicUsize::new(0));
     let counter = accepted.clone();
-    TOKIO_RUNTIME.get().spawn(async move {
+    TOKIO_RUNTIME.spawn(async move {
         loop {
             let Ok((mut socket, _)) = listener.accept().await else { return };
             counter.fetch_add(1, Ordering::SeqCst);
@@ -1907,11 +1900,10 @@ fn pointed_at(client: &MplKmsClient, url: &str) -> aws_sdk_kms::Client {
 
 fn list_keys(client: &aws_sdk_kms::Client) {
     TOKIO_RUNTIME
-        .get()
         .block_on(client.list_keys().send())
         .expect("list_keys against the local server");
     // Wait for the connection to return to the pool so the next request reuses it.
-    TOKIO_RUNTIME.get().block_on(async {
+    TOKIO_RUNTIME.block_on(async {
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     });
 }
@@ -1945,31 +1937,17 @@ fn clients_without_a_shared_http_client_use_their_own_connections() {
     assert_eq!(accepted.load(std::sync::atomic::Ordering::SeqCst), 2);
 }
 
-// Threads that race on the first use all get the value of the one that stored first.
 #[test]
-fn per_process_gives_every_thread_one_value() {
-    static BUILT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-    static VALUE: PerProcess<usize> = PerProcess::new(|| {
-        // Slow enough that every thread builds a value before any stores one.
-        std::thread::sleep(Duration::from_millis(50));
-        BUILT.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
-    });
-    let start = std::sync::Barrier::new(8);
-    let values: Vec<&usize> = std::thread::scope(|scope| {
-        let handles: Vec<_> = (0..8)
-            .map(|_| {
-                scope.spawn(|| {
-                    start.wait();
-                    VALUE.get()
-                })
-            })
-            .collect();
-        handles.into_iter().map(|h| h.join().unwrap()).collect()
-    });
+fn same_process_rejects_only_a_process_forked_after_the_runtime_started() {
+    // Accepts a runtime that has not started yet
+    assert!(same_process(0, 42, "encrypt").is_ok());
+    // Accepts the process that started the runtime
+    assert!(same_process(42, 42, "encrypt").is_ok());
+    // Rejects a process forked after the runtime started
+    let err = expect_err(same_process(42, 43, "encrypt"));
     assert!(
-        BUILT.load(std::sync::atomic::Ordering::SeqCst) > 1,
-        "no thread lost the race"
+        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, "")),
+        "{err}"
     );
-    assert!(values.iter().all(|v| std::ptr::eq(*v, values[0])));
-    assert!(std::ptr::eq(VALUE.get(), values[0]));
+    assert!(err.contains("before this process was forked"), "{err}");
 }
