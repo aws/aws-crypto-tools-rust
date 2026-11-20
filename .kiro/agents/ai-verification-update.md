@@ -124,6 +124,9 @@ delta.
   (YAML: `ids.yaml_id_format`); the next free id is profile `ids.next_free`.
   Re-check with profile `ids.next_free_check` before using it; an id written in
   an agent file or the profile is never a real target until that check passes.
+  Ids in profile `ids.external_ids` belong to other repositories: never take or
+  reuse them, and write them in full. Profile `ids.known_gaps` are known gaps in
+  the numbering, not missing targets: do not fill or renumber them.
 - **Triage every proposed target through `verus-capabilities.md`** before
   recommending it: is it Verus-provable *and* present in this repo? Record
   non-provable candidates (timing, crypto hardness, external-service policy,

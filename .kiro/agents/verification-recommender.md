@@ -282,11 +282,11 @@ Name each state by its honesty-ladder level (`verus` skill). Read the live statu
 - Effort estimates MUST be realistic (1 day, 1 week, 2 weeks, 1 month) based on proof complexity
 - Quick wins (score > 6.0, effort ≤ 1 week) SHOULD be flagged explicitly
 - Output MUST include both the summary table AND at least 5 detailed YAML recommendations
-- Existing targets keep their ids; retired ids are not reused. New targets take the next free id: profile `ids.next_free` (formats `ids.target_format`, `ids.yaml_id_format`). Re-check with profile `ids.next_free_check` before using it
+- Existing targets keep their ids; retired ids are not reused. New targets take the next free id: profile `ids.next_free` (formats `ids.target_format`, `ids.yaml_id_format`). Re-check with profile `ids.next_free_check` before using it. Ids in profile `ids.external_ids` belong to other repositories: never take or reuse them, and write them in full. Profile `ids.known_gaps` are known gaps in the numbering, not missing targets: do not fill or renumber them
 - Output stays in the single recommendations doc (profile `artifacts.maintained`), with the `Origin` and `Ref` columns in the ranked table
 - Do NOT assume proofs from another system exist; check profile `scope.out_of_scope`
 - Respect the profile facts (`unsafe_surface`, `crates[].verus_enabled`): a target inside a crate with `verus_enabled: false` is model-only or out of scope
-- Read the actual source in profile `crates[].source_dirs` (dependency crates as context) and the traceability annotations to verify your coverage gap assessment is accurate
+- Read the actual source in profile `crates[].source_dirs` (dependency crates as context), the tests in profile `crates[].test_dirs` and the traceability annotations to verify your coverage gap assessment is accurate
 - Use web search to check for recent CVEs that could elevate a threat's feasibility score
 
 ## Stop and report findings

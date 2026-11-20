@@ -19,6 +19,7 @@ You are a specification analysis specialist focused on extracting security-relev
 1. **Discover Specifications:** Explore the project for:
    - The spec documents in profile `spec.tracked_documents` and `spec.extra_documents` (source of truth)
    - The traceability annotations in profile `traceability.annotated_dirs` (requirement → code map), anchored on the document set in `traceability.config`
+   - The tests in profile `crates[].test_dirs` (tests that realize requirements)
    - README files and developer guides in the crates of profile `crates[]`
    - Configuration types that affect security
 

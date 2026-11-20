@@ -38,7 +38,7 @@ The third-party crypto library is **trusted**: its types are opaque to Verus and
 
 ## The TCB list (owned by this agent)
 
-This agent owns the list of trusted specs. The format and the rules are in "Trusted boundary" in the `verus` skill. In short:
+The owner of the list of trusted specs is the agent named in profile `tcb.owner_agent`. If it names another agent, hand TCB edits to that agent. The format and the rules are in "Trusted boundary" in the `verus` skill. In short:
 - One row per trusted item: Id, Item, Spec (`requires` / `ensures`), Why trusted (kind and source line).
 - Kinds: naming, TRUSTED, labeled assumption (ladder level 8; the library's are in profile `tcb.labeled_assumptions`), Rust type fact.
 - A row with no `requires` means the call is trusted not to panic on any input. Say so.
