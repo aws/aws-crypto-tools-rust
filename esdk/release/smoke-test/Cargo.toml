@@ -1,0 +1,17 @@
+[package]
+name = "aws-esdk-release-smoke-test"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[[bin]]
+name = "aws_esdk_release_smoke_test"
+path = "src/main.rs"
+
+# Depends on aws-esdk exactly as an external consumer would. The release script
+# rewrites the `aws-esdk` source to the Brazil-published crate before running
+# this against a release candidate; committed here it points at the in-repo
+# crate so the harness runs from a plain checkout.
+[dependencies]
+aws-esdk = { path = "../.." }
+tokio = { version = "1.49.0", features = ["rt-multi-thread", "macros"] }
