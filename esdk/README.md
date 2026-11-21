@@ -129,6 +129,7 @@ Run one with `cargo run --example <name>`:
 | `shared_storm_tracking_cache` | share one cache across two hierarchical keyrings | KMS + DynamoDB |
 | `handling_errors` | handle the errors a hierarchical keyring and its key store return | KMS + DynamoDB |
 | `per_request_credentials` | call AWS KMS with credentials issued for one request | KMS + DynamoDB |
+| `caching_cmm` | reuse data keys across messages with a caching CMM | no |
 
 The examples that need AWS also need credentials, a KMS key, and a key store table in DynamoDB.
 
