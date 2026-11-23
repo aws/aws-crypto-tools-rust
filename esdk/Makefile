@@ -1,4 +1,4 @@
-.PHONY: clippy test examples duvet
+.PHONY: clippy test examples duvet verus
 
 clippy:
 	cargo clippy --tests
@@ -35,3 +35,9 @@ duvet:
 	@test -e spec || ln -s ../spec spec
 	rm -rf .duvet/reports .duvet/requirements
 	duvet report
+# Verify the verus! blocks in src/ with cargo-verus (installed at ~/verus).
+# The aws-esdk "verification results::" line must read "N verified, 0 errors".
+verus:
+	PATH="$(HOME)/verus:$$PATH" cargo verus verify
+	# aws-lc-rs needs a crypto backend, so the minimal build keeps aws-lc-sys (as CI does).
+	PATH="$(HOME)/verus:$$PATH" cargo verus verify --no-default-features --features aws-lc-sys

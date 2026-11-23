@@ -6,6 +6,8 @@ use crate::Error;
 use crate::err;
 use crate::serr;
 
+use vstd::prelude::*;
+
 use aws_lc_rs::encoding::AsBigEndian;
 use aws_lc_rs::encoding::AsDer;
 use aws_lc_rs::encoding::EcPrivateKeyRfc5915Der;
@@ -80,14 +82,14 @@ impl DigestContext {
     /// Returns an [`Error`] if `out` is not exactly
     /// [`DigestContext::output_len`] bytes.
     pub fn finish(self, out: &mut [u8]) -> Result<(), Error> {
-        let want_len = self.output_len();
-        if out.len() != want_len {
+        // The guard and the copy live in the verified `digest_finish_core`
+        // (VR-013(b)); `out` is unchanged on Err.
+        if let Err(crate::OutLenMismatch { want_len }) = digest_finish_core(self.context, out) {
             return err(format!(
                 "output buffer of {} bytes does not match the {want_len} byte digest",
                 out.len()
             ));
         }
-        out.copy_from_slice(self.context.finish().as_ref());
         Ok(())
     }
 
@@ -130,23 +132,6 @@ const fn get_ver_alg(x: EcdsaSignatureAlgorithm) -> &'static EcdsaVerificationAl
     }
 }
 
-/// Maximum number of signing attempts made while looking for a DER
-/// signature of the canonical length (see [`sign_fixed_len`]).
-///
-/// Each attempt succeeds with probability 1/2, which follows from the
-/// encoding rather than from measurement. `r` and `s` are each encoded as a
-/// DER INTEGER, and each independently takes a leading `0x00` byte exactly
-/// when its high bit is set — probability 1/2 apiece. So a signature runs
-/// one byte long when both take the pad (1/4), one byte short when neither
-/// does (1/4), and lands on the canonical length when exactly one does
-/// (1/2). An `r` or `s` whose top byte is zero shortens it further, which
-/// shifts the rate by about 1/256.
-///
-/// At p = 1/2, exhausting 128 attempts has probability 2^-128, negligible
-/// against the other failure modes of signing. The expected number of
-/// attempts is 2, so a bound this loose costs nothing in practice.
-const MAX_SIGN_ATTEMPTS: u32 = 128;
-
 /// The DER-encoded signature length [`ecdsa_sign`] emits for `alg`: 71
 /// bytes for P-256, 103 for P-384.
 ///
@@ -162,6 +147,139 @@ pub const fn signature_len(alg: EcdsaSignatureAlgorithm) -> usize {
     }
 }
 
+verus! {
+
+// Declares `aws-lc-rs`'s `Signature` to Verus as an opaque type. The proof
+// assumes nothing about its contents and only uses the length of `as_ref()`.
+// `ExSignature` exists only for Verus and is never constructed, so the Debug
+// and docs lints are allowed.
+#[verifier::external_type_specification]
+#[verifier::external_body]
+#[doc(hidden)]
+#[allow(missing_debug_implementations, missing_docs, dead_code)]
+pub struct ExSignature(aws_lc_rs::signature::Signature);
+
+// The bytes of a candidate signature. The spec says nothing about their
+// length; the code checks the length at runtime before copying.
+pub assume_specification[ <aws_lc_rs::signature::Signature as AsRef<[u8]>>::as_ref ](
+    s: &aws_lc_rs::signature::Signature,
+) -> &[u8];
+
+// `<[u8]>::copy_from_slice`. vstd carries this exact specification (in
+// `vstd::std_specs::slice`), but this toolchain does not register it for a
+// downstream crate, so it is restated here verbatim. The `requires` is the
+// std precondition — equal destination and source lengths — which is exactly
+// what makes the copy panic-free; this declaration does not weaken it.
+pub assume_specification<T: Copy>[ <[T]>::copy_from_slice ](dst: &mut [T], src: &[T])
+    requires
+        old(dst)@.len() == src@.len(),
+    ensures
+        final(dst)@ == src@;
+
+/// The verified core of [`DigestContext::finish`] (VR-013(b), pipeline
+/// target VR-2026-C03).
+///
+/// Returns `Err` unless `out.len()` equals the context's output length, and
+/// only then finalizes the digest and copies it. Verus proves the copy is in
+/// bounds from the guard and the trusted length fact A5 (see
+/// `aws_lc_specs`). Panic freedom of the finalize itself rests on A5: the
+/// aws-lc-rs `expect("EVP_DigestFinal failed")` is trusted unreachable. On
+/// `Err`, `out` is unchanged and the context is dropped without finalizing,
+/// as before.
+fn digest_finish_core(
+    context: aws_lc_rs::digest::Context,
+    out: &mut [u8],
+) -> (r: Result<(), crate::OutLenMismatch>)
+    ensures
+        (r is Ok) <==> old(out)@.len() == crate::aws_lc_specs::spec_context_output_len(&context),
+        r matches Err(e) ==> e.want_len == crate::aws_lc_specs::spec_context_output_len(&context)
+            && final(out)@ == old(out)@,
+        r is Ok ==> final(out)@.len() == old(out)@.len(),
+{
+    let want_len = context.algorithm().output_len();
+    if out.len() != want_len {
+        return Err(crate::OutLenMismatch { want_len });
+    }
+    let d = context.finish();
+    out.copy_from_slice(d.as_ref());
+    Ok(())
+}
+
+/// Maximum number of signing attempts made while looking for a DER
+/// signature of the canonical length (see [`sign_fixed_len`]).
+///
+/// Each attempt succeeds with probability 1/2, which follows from the
+/// encoding rather than from measurement. `r` and `s` are each encoded as a
+/// DER INTEGER, and each independently takes a leading `0x00` byte exactly
+/// when its high bit is set — probability 1/2 apiece. So a signature runs
+/// one byte long when both take the pad (1/4), one byte short when neither
+/// does (1/4), and lands on the canonical length when exactly one does
+/// (1/2). An `r` or `s` whose top byte is zero shortens it further, which
+/// shifts the rate by about 1/256.
+///
+/// At p = 1/2, exhausting 128 attempts has probability 2^-128, negligible
+/// against the other failure modes of signing. The expected number of
+/// attempts is 2, so a bound this loose costs nothing in practice.
+///
+/// Defined inside `verus!` so it can bound the verified retry loop
+/// (`decreases MAX_SIGN_ATTEMPTS - attempt`); this is the single definition,
+/// erased to a plain `const` for the cargo build.
+const MAX_SIGN_ATTEMPTS: u32 = 128;
+
+/// Why [`sign_fixed_len_core`] stopped without writing a signature. Verus
+/// does not model the crate [`Error`] type, so the core returns this enum and
+/// [`sign_fixed_len`] converts it to the same [`Error`] callers got before.
+enum SignCoreError {
+    /// A single signing attempt (the external `aws-lc-rs` call) failed.
+    Failed,
+    /// No candidate of the required length appeared within [`MAX_SIGN_ATTEMPTS`].
+    Exhausted,
+}
+
+/// The verified core of the bounded signing retry: call `sign_once` until it
+/// yields a DER signature of exactly `signature.len()` bytes, write it into
+/// `signature`, and give up after [`MAX_SIGN_ATTEMPTS`].
+///
+/// Verus proves two things here (VR-008):
+///
+/// - The loop runs at most [`MAX_SIGN_ATTEMPTS`] times.
+/// - `copy_from_slice` cannot panic, because it runs only when the candidate
+///   has the same length as `signature`.
+///
+/// It proves nothing about the signature itself; that comes from `aws-lc-rs`.
+fn sign_fixed_len_core<F: FnMut() -> Result<aws_lc_rs::signature::Signature, SignCoreError>>(
+    signature: &mut [u8],
+    mut sign_once: F,
+) -> Result<(), SignCoreError>
+    requires
+        // `sign_once` has no precondition, so it can always be called.
+        forall|f: F| #[trigger] call_requires(f, ()),
+{
+    let want_len = signature.len();
+    let mut attempt: u32 = 0;
+    while attempt < MAX_SIGN_ATTEMPTS
+        invariant
+            attempt <= MAX_SIGN_ATTEMPTS,
+            want_len == signature@.len(),
+            forall|f: F| #[trigger] call_requires(f, ()),
+        decreases MAX_SIGN_ATTEMPTS - attempt,
+    {
+        // Apply the loop invariant to this `sign_once`.
+        assert(call_requires(sign_once, ()));
+        let candidate = sign_once()?;
+        let candidate_bytes: &[u8] = candidate.as_ref();
+        if candidate_bytes.len() == want_len {
+            // The lengths match, so `copy_from_slice` cannot panic.
+            signature.copy_from_slice(candidate_bytes);
+            return Ok(());
+        }
+        attempt += 1;
+    }
+    Err(SignCoreError::Exhausted)
+}
+
+} // verus!
+
 /// Call `sign_once` until it produces a DER signature of exactly
 /// `signature.len()` bytes, writing it into `signature` and giving up after
 /// [`MAX_SIGN_ATTEMPTS`].
@@ -173,6 +291,11 @@ pub const fn signature_len(alg: EcdsaSignatureAlgorithm) -> usize {
 /// making the attempts independent; a deterministic scheme (RFC 6979)
 /// would produce the same length forever and always exhaust the retries.
 ///
+/// This thin adapter owns only the pieces Verus does not model: it builds the
+/// crate [`Error`] values (with `format!`), while the verified
+/// [`sign_fixed_len_core`] owns the proven loop bound and the bounds-safe
+/// copy (VR-008). No crypto property is proven: `sign_once` is trusted.
+///
 /// # Errors
 ///
 /// Returns an [`Error`] if `sign_once` fails, or if no signature of
@@ -182,16 +305,25 @@ fn sign_fixed_len(
     mut sign_once: impl FnMut() -> Result<aws_lc_rs::signature::Signature, Error>,
 ) -> Result<(), Error> {
     let want_len = signature.len();
-    for _ in 0..MAX_SIGN_ATTEMPTS {
-        let candidate = sign_once()?;
-        if candidate.as_ref().len() == want_len {
-            signature.copy_from_slice(candidate.as_ref());
-            return Ok(());
+    // `sign_failure` captures the signing error so its message is preserved
+    // across the verus-internal `SignCoreError` boundary.
+    let mut sign_failure: Option<Error> = None;
+    let result = sign_fixed_len_core(signature, || match sign_once() {
+        Ok(candidate) => Ok(candidate),
+        Err(e) => {
+            sign_failure = Some(e);
+            Err(SignCoreError::Failed)
         }
+    });
+    match result {
+        Ok(()) => Ok(()),
+        Err(SignCoreError::Failed) => {
+            Err(sign_failure.unwrap_or_else(|| serr("ECDSA signing failed".to_owned())))
+        }
+        Err(SignCoreError::Exhausted) => err(format!(
+            "no {want_len} byte DER signature produced in {MAX_SIGN_ATTEMPTS} attempts"
+        )),
     }
-    err(format!(
-        "no {want_len} byte DER signature produced in {MAX_SIGN_ATTEMPTS} attempts"
-    ))
 }
 
 /// Check that a caller-supplied signature buffer is the length `alg`
@@ -400,4 +532,33 @@ pub fn ecdsa_generate_keypair(alg: EcdsaSignatureAlgorithm) -> Result<SignatureK
         verification_key,
         signing_key,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sign_fixed_len_maps_failure_and_exhaustion() {
+        // (a) A failing `sign_once` is reported with its own error.
+        let e = sign_fixed_len(&mut [0; 103], || Err(serr("boom".to_owned()))).unwrap_err();
+        assert_eq!(e.message(), "boom");
+
+        // (b) No DER ECDSA signature is 1 byte long, so every attempt is
+        // retried until the attempt limit.
+        let kp =
+            EcdsaKeyPair::generate(&aws_lc_rs::signature::ECDSA_P384_SHA384_ASN1_SIGNING).unwrap();
+        let rng = SystemRandom::new();
+        let mut attempts = 0u32;
+        let e = sign_fixed_len(&mut [0; 1], || {
+            attempts += 1;
+            Ok(kp.sign(&rng, b"m").expect("ECDSA signing must succeed"))
+        })
+        .unwrap_err();
+        assert_eq!(
+            e.message(),
+            "no 1 byte DER signature produced in 128 attempts"
+        );
+        assert_eq!(attempts, MAX_SIGN_ATTEMPTS);
+    }
 }

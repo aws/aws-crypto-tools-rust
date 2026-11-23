@@ -11,8 +11,115 @@ use crate::message::serialize_functions::{
     read_bytes, read_into_vec, read_seq_u32_bounded, read_u32, write_to_sink,
 };
 use crate::message::{Error, header, ser_err, serialize_functions};
+use crate::secret::{self, MessageKey};
 use crate::shapes::{Sink, Source, Tee};
-use aws_mpl_primitives::aes_decrypt;
+use vstd::prelude::*;
+
+verus! {
+
+/// The regular-frame step as a spec: the next expected sequence number,
+/// or `None` if the frame is rejected.
+pub(crate) open spec fn spec_next_expected_frame(seq_num: u32, expected: u32) -> Option<u32> {
+    if seq_num == expected && expected < u32::MAX {
+        Some((expected + 1) as u32)
+    } else {
+        None
+    }
+}
+
+/// The sequence number expected after a regular frame numbered `seq_num`,
+/// or `None` if `seq_num` is not `expected` or `expected` has no successor.
+fn next_expected_frame(seq_num: u32, expected: u32) -> (r: Option<u32>)
+    ensures
+        (r is Some) <==> (seq_num == expected && expected < u32::MAX),
+        r matches Some(n) ==> n == expected + 1,
+        r == spec_next_expected_frame(seq_num, expected),
+{
+    if seq_num == expected {
+        expected.checked_add(1)
+    } else {
+        None
+    }
+}
+
+/// Whether a final frame numbered `seq_num` is accepted when `expected` is next.
+fn final_frame_seq_ok(seq_num: u32, expected: u32) -> (ok: bool)
+    ensures
+        ok <==> seq_num == expected,
+{
+    seq_num == expected
+}
+
+/// Whether the regular frames numbered `seqs`, in order, are all accepted by
+/// `next_expected_frame` starting from `expected`.
+///
+/// `read_and_decrypt_framed_message_body` is the unverified async adapter these
+/// specs describe: it sets `expected_frame = START_SEQUENCE_NUMBER`, replaces it
+/// with `next_expected_frame`'s result after each regular frame, and checks the
+/// final frame with `final_frame_seq_ok`.
+spec fn accepts_run(seqs: Seq<u32>, expected: u32) -> bool
+    decreases seqs.len(),
+{
+    if seqs.len() == 0 {
+        true
+    } else {
+        match spec_next_expected_frame(seqs[0], expected) {
+            Some(n) => accepts_run(seqs.drop_first(), n),
+            None => false,
+        }
+    }
+}
+
+/// The expected sequence number after the regular frames `seqs`, starting from `expected`.
+spec fn run_end(seqs: Seq<u32>, expected: u32) -> int
+    decreases seqs.len(),
+{
+    if seqs.len() == 0 {
+        expected as int
+    } else {
+        match spec_next_expected_frame(seqs[0], expected) {
+            Some(n) => run_end(seqs.drop_first(), n),
+            None => expected as int,
+        }
+    }
+}
+
+/// An accepted run of regular frames is numbered consecutively from `expected`,
+/// and the next expected number is `expected` plus the run length.
+proof fn lemma_accepts_run(seqs: Seq<u32>, expected: u32)
+    requires
+        accepts_run(seqs, expected),
+    ensures
+        forall|i: int| 0 <= i < seqs.len() ==> seqs[i] as int == expected as int + i,
+        run_end(seqs, expected) == expected as int + seqs.len(),
+    decreases seqs.len(),
+{
+    if seqs.len() > 0 {
+        let n = (expected + 1) as u32;
+        lemma_accepts_run(seqs.drop_first(), n);
+        assert forall|i: int| 0 <= i < seqs.len() implies seqs[i] as int == expected as int + i by {
+            if i > 0 {
+                assert(seqs[i] == seqs.drop_first()[i - 1]);
+            }
+        }
+    }
+}
+
+/// Frames start at 1: in a message the decryptor accepts, regular frame `i`
+/// (0-based) has sequence number `i + 1`, and the final frame's sequence number
+/// equals the total frame count (message-body.md#final-frame-sequence-number).
+proof fn lemma_frames_start_at_1(seqs: Seq<u32>, final_seq: u32)
+    requires
+        accepts_run(seqs, START_SEQUENCE_NUMBER),
+        final_seq as int == run_end(seqs, START_SEQUENCE_NUMBER),
+    ensures
+        forall|i: int| 0 <= i < seqs.len() ==> seqs[i] as int == i + 1,
+        final_seq as int == seqs.len() + 1,
+{
+    lemma_accepts_run(seqs, START_SEQUENCE_NUMBER);
+}
+
+} // verus!
 
 /// Write the previous frame's plaintext to the output, or fail if streaming a signed message.
 async fn release_previous_frame(
@@ -33,7 +140,7 @@ pub(crate) async fn read_and_decrypt_framed_message_body(
     ciphertext: &mut dyn Source,
     w: &mut dyn Sink,
     header: &HeaderInfo,
-    key: &[u8],
+    key: &MessageKey,
     sig_digest: &mut Tee,
     fail_if_multi_frame: bool,
 ) -> Result<Vec<u8>, Error> {
@@ -143,7 +250,7 @@ pub(crate) async fn read_and_decrypt_framed_message_body(
             //= spec/data-format/message-body.md#regular-frame-sequence-number
             //# The sequence number MUST be interpreted as a UInt32.
             let seq_num: u32 = read_u32(ciphertext, sig_digest).await?;
-            if seq_num != expected_frame {
+            if !final_frame_seq_ok(seq_num, expected_frame) {
                 return ser_err("final sequence number out of order");
             }
 
@@ -276,35 +383,35 @@ pub(crate) async fn read_and_decrypt_framed_message_body(
                 //= reason=`?` propagates aes_decrypt errors, halting decryption immediately
                 //# If this decryption fails, this operation MUST immediately halt and fail.
                 // final frame is empty, so return last full frame
-                aes_decrypt(
+                secret::open(
                     alg_suite,
                     key,
-                    &enc_content,
+                    secret::open_buffers(&enc_content, Vec::new()),
                     //= spec/data-format/message-body.md#final-frame-authentication-tag
                     //= reason=auth_tag is passed to aes_decrypt which uses it to authenticate the final frame
                     //# It MUST be used to authenticate the final frame.
                     &auth_tag,
                     &iv,
                     &aad,
-                    &mut [],
                 )?;
             } else {
                 // write previous frame's data, now that we know we have another frame.
                 if expected_frame != START_SEQUENCE_NUMBER {
                     release_previous_frame(w, &result, fail_if_multi_frame).await?;
                 }
-                result.resize(enc_content.len(), 0);
                 //= spec/client-apis/decrypt.md#decrypt-the-message-body
                 //= reason=`?` propagates aes_decrypt errors, halting decryption immediately
                 //# If this decryption fails, this operation MUST immediately halt and fail.
-                aes_decrypt(
+                //
+                // `open_buffers` resizes the reused `result` buffer to the
+                // ciphertext length (VR-016).
+                result = secret::open(
                     alg_suite,
                     key,
-                    &enc_content,
+                    secret::open_buffers(&enc_content, core::mem::take(&mut result)),
                     &auth_tag,
                     &iv,
                     &aad,
-                    &mut result,
                 )?;
             }
 
@@ -328,9 +435,13 @@ pub(crate) async fn read_and_decrypt_framed_message_body(
         //= spec/client-apis/decrypt.md#decrypt-the-message-body
         //# Otherwise, the Decrypt operation MUST treat them as the [Sequence Number](../data-format/message-body.md#regular-frame-sequence-number)
         //# and deserialize the following bytes according to the [regular frame spec](../data-format/message-body.md#regular-frame).
-        if seq_num != expected_frame {
+        //
+        // `next_expected_frame` also returns `None` when `expected_frame == u32::MAX`, but that
+        // arm is unreachable here: this branch has `seq_num != ENDFRAME_SEQUENCE_NUMBER`
+        // (`u32::MAX`), so `seq_num == expected_frame` already rules it out.
+        let Some(next) = next_expected_frame(seq_num, expected_frame) else {
             return ser_err("sequence number out of order");
-        }
+        };
 
         //= spec/client-apis/decrypt.md#decrypt-the-message-body
         //= type=implication
@@ -353,7 +464,7 @@ pub(crate) async fn read_and_decrypt_framed_message_body(
         //= spec/client-apis/decrypt.md#decrypt-the-message-body
         //# Otherwise, this value MUST be 1 greater than the value of the sequence number
         //# of the previous frame.
-        expected_frame += 1;
+        expected_frame = next;
 
         // IV
 
@@ -389,7 +500,6 @@ pub(crate) async fn read_and_decrypt_framed_message_body(
         //= reason=read_into_vec fills a Vec<u8>; the bytes are not reinterpreted as any other type
         //# The encrypted content MUST be interpreted as bytes.
         read_into_vec(ciphertext, frame_length_usize, &mut enc_content, sig_digest).await?;
-        result.resize(frame_length_usize, 0);
 
         // Authentication Tag
 
@@ -466,7 +576,7 @@ pub(crate) async fn read_and_decrypt_framed_message_body(
         //= spec/client-apis/decrypt.md#decrypt-the-message-body
         //= reason=`?` propagates aes_decrypt errors, halting decryption immediately
         //# If this decryption fails, this operation MUST immediately halt and fail.
-        aes_decrypt(
+        result = secret::open(
             alg_suite,
             //= spec/client-apis/decrypt.md#decrypt-the-message-body
             //= reason=key is the derived data key passed from step_decrypt_body
@@ -475,7 +585,10 @@ pub(crate) async fn read_and_decrypt_framed_message_body(
             //= spec/client-apis/decrypt.md#decrypt-the-message-body
             //= reason=enc_content is the encrypted content deserialized from the frame
             //# - The ciphertext MUST be the encrypted content deserialized from the frame or body.
-            &enc_content,
+            //
+            // `open_buffers` resizes the reused `result` buffer to the
+            // ciphertext length (VR-016).
+            secret::open_buffers(&enc_content, core::mem::take(&mut result)),
             //= spec/client-apis/decrypt.md#decrypt-the-message-body
             //= reason=auth_tag is the authentication tag deserialized from the frame
             //# - The tag MUST be the authentication tag deserialized from the frame or body.
@@ -486,7 +599,6 @@ pub(crate) async fn read_and_decrypt_framed_message_body(
             //# padded to the [IV length](../data-format/message-header.md#iv-length) with 0.
             &iv,
             &aad,
-            &mut result,
         )?;
     }
 }
@@ -494,7 +606,7 @@ pub(crate) async fn read_and_decrypt_framed_message_body(
 pub(crate) async fn read_and_decrypt_non_framed_message_body(
     ciphertext: &mut dyn Source,
     header: &HeaderInfo,
-    key: &[u8],
+    key: &MessageKey,
     sig_digest: &mut Tee,
 ) -> Result<Vec<u8>, Error> {
     // nonframed write-path requirements: ESDK only encrypts framed data
@@ -644,12 +756,10 @@ pub(crate) async fn read_and_decrypt_non_framed_message_body(
         &mut aad,
     );
 
-    let mut result: Vec<u8> = enc_content.clone();
-
     //= spec/client-apis/decrypt.md#nonframed-message-body-decryption
     //= reason=`?` propagates aes_decrypt errors, halting decryption immediately
     //# If this decryption fails, this operation MUST immediately halt and fail.
-    aes_decrypt(
+    let result = secret::open(
         get_alg_suite(&header.suite)?,
         //= spec/client-apis/decrypt.md#nonframed-message-body-decryption
         //# - The cipherkey MUST be the derived data key.
@@ -661,12 +771,40 @@ pub(crate) async fn read_and_decrypt_non_framed_message_body(
         //= spec/client-apis/decrypt.md#decrypt-the-message-body
         //= reason=enc_content is passed as the ciphertext input to aes_decrypt
         //# - The ciphertext MUST be the encrypted content deserialized from the frame or body.
-        &enc_content,
+        //
+        // The plaintext buffer starts as a copy of the ciphertext, as before;
+        // `open_buffers` keeps it at the ciphertext length (VR-016).
+        secret::open_buffers(&enc_content, enc_content.clone()),
         &auth_tag,
         &iv,
         &aad,
-        result.as_mut(),
     )?;
 
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn next_expected_frame_cases() {
+        assert_eq!(next_expected_frame(1, 1), Some(2));
+        assert_eq!(next_expected_frame(2, 1), None);
+        assert_eq!(next_expected_frame(0, 1), None);
+        assert_eq!(
+            next_expected_frame(u32::MAX - 1, u32::MAX - 1),
+            Some(u32::MAX)
+        );
+        assert_eq!(next_expected_frame(u32::MAX, u32::MAX), None);
+    }
+
+    #[test]
+    fn final_frame_seq_ok_cases() {
+        assert!(final_frame_seq_ok(1, 1));
+        assert!(final_frame_seq_ok(u32::MAX, u32::MAX));
+        assert!(!final_frame_seq_ok(2, 1));
+        assert!(!final_frame_seq_ok(0, 1));
+        assert!(!final_frame_seq_ok(1, 2));
+    }
 }
