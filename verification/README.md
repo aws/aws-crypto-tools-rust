@@ -17,22 +17,23 @@ with plain rustc and verifies only `esdk`. Run from the repo root:
 make -C esdk verus
 ```
 
-It verifies `vstd` first (`1858 verified, 0 errors`, cached after the first
-run); the `aws-esdk` result is the second `verification results::` line.
-Current output for both runs (default, and
+The `aws-esdk` result is the first `verification results::` line after
+`Checking aws-esdk v...`. vstd (`1858 verified, 0 errors`) and
+aws-mpl-primitives print their own lines before it only when they are not
+cached; a cached esdk prints no line (run `touch esdk/src/lib.rs` first).
+Output at `9964b20b` for both runs (default, and
 `--no-default-features --features aws-lc-sys`):
 
 ```
-verification results:: 97 verified, 0 errors
-verification results:: 97 verified, 0 errors
+verification results:: 99 verified, 0 errors
+verification results:: 99 verified, 0 errors
 ```
 
-The count is Verus's obligation count, not a function count; the checked
-fns are 54 exec fns (13 before the in-crate work, 22 before VR-009, 24 before
-VR-011, 34 before VR-001 / VR-012, 45 before VR-017 / VR-018, 52 before VR-019) and 11 proof
-fns. The table below lists the fns up to VR-011 plus VR-016, VR-017 and
+The count is Verus's obligation count, not a function count. No tool prints
+a function count; by reading the code, the checked fns are 55 exec fns and
+11 proof fns. The table below lists the fns up to VR-011 plus VR-016, VR-017 and
 VR-018; the VR-001 (a), VR-012, decrypt-order token
-(VR-001 (b), VR-002), VR-015 and VR-019 rows are in the per-fn table of
+(VR-001 (b), VR-002), VR-015, VR-019 and VR-020 rows are in the per-fn table of
 `docs/verus-proofs-report.md` ("In-crate proofs"). Each fn is inside a
 `verus!` block; paths are under `esdk/src/message/` unless they start with
 `esdk/src/`:
@@ -126,7 +127,7 @@ facts (MPL-Verus `docs/bug-reports/BUG-07-prim-aes-buffer-handling.md`). The
 aws-lc-rs calls they make are specified, not verified, in
 `prim/src/aws_lc_specs.rs`; the full TCB list (A1–A20, including the trusted
 output lengths, no-panic of every call, and A-OPEN) is in
-`docs/verus-proofs-report.md` under "VR-013 / VR-014 TCB". OOM is out of scope.
+`docs/verus-proofs-report.md` under "TCB table (trusted specs and laws)". OOM is out of scope.
 
 **Nightly-only attribute (for PR #103 reviewers).** `prim/src/lib.rs` has
 `#![cfg_attr(verus_keep_ghost, feature(sized_hierarchy))]` and
@@ -202,12 +203,12 @@ step 7). Full record: VR-2026-011 in `docs/verification-recommendations.md`.
   `START_SEQUENCE_NUMBER` and feeds each `next_expected_frame` result into the
   next iteration is unverified glue, checked by tests.
 - **Header-auth ordering (verify before decrypt),**
-  `header_auth_ordering_proofs.rs`. The order is the sequence of `.await?`
-  calls in the async `decrypt_steps` (`esdk/src/decrypt.rs`), and "verified" is
-  the `Result` of the aws-lc-rs tag check. Verus cannot verify async fns, and a
-  sync core would only prove `Ok ⇒ Ok`. The model was re-audited against the
-  current order (parse → materials → verify header → decrypt body → verify
-  signature → release last frame) and matches.
+  `header_auth_ordering_proofs.rs`. No longer model-only: VR-002 (and the
+  commitment order, VR-001 (b), `commitment_ordering_proofs.rs`) moved to the
+  shipped code as typestate tokens in `esdk/src/decrypt_gate.rs`. Verus proves
+  each token is created only when its check passed, and the compiler enforces
+  that frames cannot be decrypted without it (see `docs/verus-proofs-report.md`,
+  "VR-001 (b) and VR-002 in-crate"). Both models are kept as superseded history.
 - **EDK list loop,** `io_stream_aligned.rs::read_edks`. The count decision is
   in-crate (`edk_count_check`); what is left is a `for` loop of `.await?` reads
   over `dyn Source` and the MPL `EncryptedDataKey` builder. No sync decision
@@ -218,11 +219,10 @@ step 7). Full record: VR-2026-011 in `docs/verification-recommendations.md`.
 - **Frame ciphertext ‖ tag,** `frame_layout_proofs.rs`. `aes_encrypt`
   (`aws-mpl-primitives`, aws-lc-rs FFI) appends them, and the frame is released
   through `dyn Sink` / `DigestWriter`; neither is verifiable from esdk.
-- **AES-GCM buffer bounds,** `aes_gcm_bounds_proofs.rs`. The code is in `prim`,
-  which `make -C esdk verus` builds with plain rustc. Verifying it in place
-  would add `vstd` and Verus metadata to the published `aws-mpl-primitives`
-  crate, which this work does not do. The model was re-audited against
-  `prim/src/lib.rs` and matches.
+- **AES-GCM buffer bounds,** `aes_gcm_bounds_proofs.rs`. No longer model-only:
+  Verus was later enabled in `prim`, and VR-006 is proven in-crate in
+  `prim/src/lib.rs` (see "In-crate proofs (shipped `prim` code)" above). The
+  model is kept as superseded history.
 - **Zeroization,** `zeroize_proofs.rs`: unchanged, deferred; out of scope for
   this work. It models a `write_volatile` loop that was removed in `a864ad87`;
   the current `zeroize`-crate derive is not verified.
@@ -238,8 +238,9 @@ Each proof file here is a **faithful, self-contained Verus model** of a
 specific function in the ESDK, carrying the executable body as it was when the
 model was written, plus `requires`/`ensures` contracts. They were written
 before the in-crate seam existed. They import nothing from `esdk`, so they can
-drift from the shipped code. **All 10 models are kept** (none removed), and
-`make -C verification verify` still checks them.
+drift from the shipped code. **All 11 models are kept** (none removed), and
+`make -C verification verify` still checks them: at `9964b20b`, 78 verified,
+0 errors in total over the 11 files.
 
 | File | Status |
 |------|--------|
@@ -251,8 +252,9 @@ drift from the shipped code. **All 10 models are kept** (none removed), and
 | `frame_sequence_proofs.rs` | Superseded in-crate: the regular-frame step (`next_expected_frame`), the final-frame check (`final_frame_seq_ok`) and the start-at-1 / sequential-run lemmas (`lemma_frames_start_at_1`, `lemma_accepts_run`), all in `body_decrypt.rs`. The async loop that threads `expected_frame` is unverified glue. |
 | `io_stream_model.rs` | Possibly stale: the readers are now async over `dyn Source`, `read_into_vec` reads in chunks, and EC parsing moved to MPL. |
 | `io_stream_aligned.rs` | Superseded in-crate: bounded readers, big-endian decoding, header-field and EDK-count checks, the regular- and final-frame sequence checks and start-at-1. Model-only: the EDK list loop (`read_edks`; an async loop over `dyn Source`). Obsolete: the EC sub-parser (parsing is now in MPL). The `ByteReader` loops are possibly stale for the same reasons as `io_stream_model.rs`. |
-| `header_auth_ordering_proofs.rs` | Model-only, re-audited against the current `decrypt_steps` (`esdk/src/decrypt.rs`): the ordering lives in an async fn and the tag check is aws-lc-rs. |
-| `aes_gcm_bounds_proofs.rs` | Model-only, re-audited against `prim/src/lib.rs`: the code is in `prim`, which is not Verus-checked. |
+| `header_auth_ordering_proofs.rs` | Superseded in-crate (VR-002) by the `HeaderVerified` token in `esdk/src/decrypt_gate.rs`; kept as history. |
+| `commitment_ordering_proofs.rs` | Superseded in-crate (VR-001 (b)) by the `CommitmentAccepted` token in `esdk/src/decrypt_gate.rs`; kept as history. |
+| `aes_gcm_bounds_proofs.rs` | Superseded in-crate (VR-006) by `aes_encrypt_extend_core` and `aes_decrypt_len_ok` in `prim/src/lib.rs`; kept as history. |
 
 "Possibly stale" means the model still verifies but its body was not
 re-checked against the current source. The historical notes below describe the

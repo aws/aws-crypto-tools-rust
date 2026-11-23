@@ -4,7 +4,7 @@
 **Date:** September 2026  
 **Scope:** AWS Encryption SDK (Rust implementation — `aws-esdk` crate, v2.0.0)  
 **Code Baseline:** commit `d8c1c3d` ("feat(esdk-cpp): C++ shim types, raw AES keyring round trip (#66)")  
-**Revised:** November 2026, against `2fb844fa` (branch `Mahnush_Verus`). Rechecked at that commit: the MPL dependency path (§1, §3.1a), commitment-policy enforcement (§7.2, E3, §15.2), key zeroization (I1, §15.2), in-tree `unsafe` (§12.2), the dependency table (§12.3), FIPS features (§12.4), the spec source (§16) and the verification status (§14). The verification status reflects the in-crate prim proofs (VR-006/008/009 prim half) and VR-001 properties (a) in-crate and (b) model-only; VR-001 (b) and VR-002 were later moved in-crate on branch `vr001b-vr002-stage2` (§14, T1/E3 residual risk). The threat analysis in the other sections is the `d8c1c3d` analysis and was not re-audited.  
+**Revised:** November 2026, against `2fb844fa` (branch `Mahnush_Verus`). Rechecked at that commit: the MPL dependency path (§1, §3.1a), commitment-policy enforcement (§7.2, E3, §15.2), key zeroization (I1, §15.2), in-tree `unsafe` (§12.2), the dependency table (§12.3), FIPS features (§12.4), the spec source (§16) and the verification status (§14). The verification status reflects the in-crate prim proofs (VR-006/008/009 prim half) and VR-001 properties (a) in-crate and (b) model-only; VR-001 (b) and VR-002 were later moved in-crate on branch `vr001b-vr002-stage2` (§14, T1/E3 residual risk). The threat analysis in the other sections is the `d8c1c3d` analysis and was not re-audited. Revised again against `9964b20b` (branch `Mahnush_Verus`): only the §14 verification status (counts re-run there; VR-020 added), the VR-020 note under the §8.2 table (T5) and the T1 residual risk were rechecked.  
 **Methodology:** STRIDE + Attack Trees + Risk-Based Verification Prioritization  
 **Classification:** Internal  
 **Pipeline Reference:** `.kiro/agents/ai-verification-pipeline.md`
@@ -335,6 +335,12 @@ Plaintext Data Key (generated per message)
 | T7 | Footer signature removal | A6 | TB4 |
 | T8 | Commit key manipulation | A10 | TB4 |
 
+T5 status at `9964b20b`: the encryption context is authenticated through the header AAD (T1). On
+decrypt, the encryption context to only authenticate is Verus-proven in-crate to be the
+materials' encryption context restricted to the required encryption context keys (VR-020,
+`esdk/src/decrypt.rs`), relative to the trusted row T-cmp; the adapter around it is code reading
+and no live end-to-end test covers it. See §14.
+
 ### 8.3 Repudiation
 
 | ID | Threat | Target | Entry Point |
@@ -497,6 +503,11 @@ check result is passed in, that aws-lc-rs AES-GCM accepts only a valid tag, and 
 decrypted only through `step_decrypt_body`. The earlier model
 (`verification/header_auth_ordering_proofs.rs`) is superseded — see
 [Verification Recommendations](#14-verification-recommendations-prioritized).
+On decrypt, the encryption context to only authenticate (it goes into the header-auth AAD) is
+Verus-proven in-crate to be the materials' encryption context restricted to the required
+encryption context keys (VR-020, `esdk/src/decrypt.rs`), relative to the trusted row T-cmp. The
+adapter that passes the materials' fields is code reading, and no live end-to-end test covers
+it (the Duvet-annotated tests are disabled).
 
 ---
 
@@ -862,16 +873,18 @@ All targets reference real files in this repository. Scores below are the origin
 the current coverage gaps, full scoring and agent assignments see
 `docs/verification-recommendations.md`.
 
-**Verification status on branch `verus-encrypt-signing-key-presence`** (in-crate counts; the model
-results are unchanged since `5ea2a804`). Verus checks two things:
+**Verification status at `9964b20b` (branch `Mahnush_Verus`)** (counts re-run there; the model
+results are unchanged since `5ea2a804`). This block was last written for branch
+`verus-encrypt-signing-key-presence` (97 verified); VR-020 was added after it. Verus checks two
+things:
 
 - **In-crate (shipped `esdk` code).** `make -C esdk verus` verifies the `verus!` blocks in
-  `esdk/src/message/`, `esdk/src/key_derivation.rs`, `esdk/src/secret.rs` and
-  `esdk/src/decrypt_gate.rs`, `esdk/src/encrypt.rs` and `esdk/src/encrypt_gate.rs` (54 exec fns,
-  11 proof fns): `97 verified,
-  0 errors` for both the default features and `--no-default-features --features aws-lc-sys` (40 at
-  `5ea2a804`, 45 after VR-009, 57 after VR-011, 69 after VR-012, 73 after the VR-001 (b) / VR-002
-  tokens, 77 after VR-015, 81 after VR-016, 94 after VR-017 / VR-018). This
+  `esdk/src/message/`, `esdk/src/key_derivation.rs`, `esdk/src/secret.rs`,
+  `esdk/src/decrypt_gate.rs`, `esdk/src/decrypt.rs`, `esdk/src/encrypt.rs` and
+  `esdk/src/encrypt_gate.rs`: `99 verified, 0 errors` for both the default features and
+  `--no-default-features --features aws-lc-sys` (40 at `5ea2a804`, 45 after VR-009, 57 after
+  VR-011, 69 after VR-012, 73 after the VR-001 (b) / VR-002 tokens, 77 after VR-015, 81 after
+  VR-016, 94 after VR-017 / VR-018, 97 after VR-019). This
   covers parts of VR-003 (big-endian decoding, bounded readers, header-field decisions, the 0x41
   Base64 hint), VR-004 (regular- and final-frame sequence checks, frames-start-at-1 lemmas),
   VR-005 (body AAD, IV, frame prefix layout), VR-007 (EDK count check), the esdk half of VR-009
@@ -881,8 +894,11 @@ results are unchanged since `5ea2a804`). Verus checks two things:
   gets a plaintext buffer as long as its ciphertext, so BUG-07(b) is unreachable from esdk),
   VR-017 (encrypt-side MAX_DATA budget and frame sequence numbers; Attack Tree 1) and VR-018
   (encrypt-side suite-data and data-key length checks), and VR-019 (the encrypt signing-key
-  check, one direction only; threat R3/R1). The async readers and loops around these cores
-  are unverified glue.
+  check, one direction only; threat R3/R1), and VR-020 (on decrypt, the encryption context to
+  only authenticate is the materials' encryption context restricted to the required keys,
+  relative to the trusted row T-cmp; capability-driven, no threat entry, but it bears on T1 and
+  T5). The async readers and loops around these
+  cores are unverified glue.
 - **Decrypt order (VR-001 (b), VR-002), Verus plus the compiler.** Verus proves that the
   `CommitmentAccepted` and `HeaderVerified` tokens in `esdk/src/decrypt_gate.rs` are created only
   when the commitment check and the header tag check passed. The compiler enforces the order: only
@@ -900,6 +916,12 @@ results are unchanged since `5ea2a804`). Verus checks two things:
   `aes_gcm_bounds_proofs.rs`) are superseded by in-crate proofs and kept as history.
   The VR-010 model describes a `write_volatile` loop that no longer exists (removed in
   `a864ad87`); it is deferred and unchanged.
+- **VR-020 (encryption context to only authenticate):** `required_ec_entries` in
+  `esdk/src/decrypt.rs` is Verus-proven in-crate to return exactly the materials' encryption
+  context restricted to the required encryption context keys. It rests on the trusted row T-cmp
+  (`obeys_cmp::<String>()`: `String` comparison obeys the laws vstd's `BTreeMap` / `BTreeSet`
+  specs need). The adapter around it and its call site are code reading. No live end-to-end test
+  covers the clause: the Duvet-annotated tests are disabled; an in-module unit test covers the core.
 - **VR-001 (key commitment):** the commitment equality/length decision in `validate_suite_data`
   is Verus-proven in-crate (property a); the check-before-frame-decryption order (property b) is
   in-crate through the tokens above; constant time (property c) is trusted to aws-lc-rs.

@@ -339,7 +339,7 @@ tcb:
     - "prim/src/ecdsa.rs (VR-008 specs: ExSignature, Signature::as_ref, copy_from_slice; reused by VR-013)"
     - "esdk/src/decrypt.rs (VR-020: T-cmp is the `requires obeys_cmp::<String>()` of required_ec_entries; no external spec)"
   # Doc section with the TCB table; read by: ffi, update, proof-reviewer
-  doc_section: "docs/verus-proofs-report.md, section \"VR-013 / VR-014 TCB (`prim/src/aws_lc_specs.rs`)\""
+  doc_section: "docs/verus-proofs-report.md, section \"TCB table (trusted specs and laws)\" (prim/src/aws_lc_specs.rs rows A1-A20 and T-ty, T-AsRef, T-uf; the esdk row T-cmp)"
   # Row ids of the TCB table and the row-id convention; read by: ffi, update, capabilities, R1, proof-reviewer
   row_ids: "T-ty, T-AsRef, T-uf, A1-A20, T-cmp. Convention: `A<n>` = an `assume_specification` row in prim/src/aws_lc_specs.rs; `T-<name>` = a type fact, trait spec or law (T-ty, T-AsRef, T-uf, T-cmp)"
   # TCB rows that are labeled assumptions (ladder level 8); read by: ffi, capabilities, update

@@ -1,7 +1,7 @@
 # Verus Proofs — Work Report
 
 **Repository:** `aws-crypto-tools-rust` (AWS Encryption SDK for Rust)
-**Code baseline:** commit `d8c1c3d` for the standalone models; the "In-crate proofs" section and the status tables are current at `99a02892` (branch `r1-validate-vr020`, VR-020; the counts were re-run there and the other rows were last rechecked at `2fb844fa` and on the branches named in the update notes)
+**Code baseline:** commit `d8c1c3d` for the standalone models; the in-crate counts are current at `9964b20b` (branch `Mahnush_Verus`; esdk, prim and the models re-run there; the TCB table heading was renamed in the same revision). Before that, the "In-crate proofs" section and the status tables were current at `99a02892` (branch `r1-validate-vr020`, VR-020, now part of `Mahnush_Verus`; the other rows were last rechecked at `2fb844fa` and on the branches named in the update notes)
 **Date:** September 2026 (models); November 2026 (in-crate)
 **Verus:** `0.2026.07.12.0b42f4c`, toolchain `1.96.0` (binary at `~/verus/verus`)
 **Pipeline / targets:** `.kiro/agents/ai-verification-pipeline.md`, `docs/verification-recommendations.md`
@@ -113,7 +113,7 @@ make -C verification verify
 > **18 verified, 0 errors** on both feature sets (10 before, +8 cores). The
 > aws-lc-rs calls now sit inside the verified cores behind explicit
 > `assume_specification`s in a new TCB module, `prim/src/aws_lc_specs.rs` (the
-> TCB list is under "VR-013 / VR-014 TCB"). **New build attributes for PR #103
+> TCB list is under "TCB table (trusted specs and laws)"). **New build attributes for PR #103
 > reviewers:** `#![cfg_attr(verus_keep_ghost, feature(sized_hierarchy))]` in
 > `prim/src/lib.rs` (a nightly-only feature, enabled only in Verus builds) and a
 > `[lints.rust] unexpected_cfgs = { level = "warn", check-cfg =
@@ -309,7 +309,7 @@ make -C verification verify
 >   behavior or API change. See "VR-020" under "In-crate proofs".
 
 ### Adherence to the Verus skill invariants (esdk)
-- No proof was weakened: **no** `assume(...)`, `admit()`, or `#[verifier::external]` anywhere in esdk. In esdk there is exactly **one** `#[verifier::external_body]` — the `utf8_check` wrapper around `std::str::from_utf8` in the AAD sub-parser — used per Verus skill invariant #11 for a std call Verus cannot evaluate (the same role `tag_ok` plays for the AES-GCM check). Its `ensures` is a **trusted boundary, not a proof**: the UTF-8-validation correctness is delegated to the std library; everything around it (that the parser rejects non-UTF-8 with `Err`, never panics) is proven. This is called out explicitly in §5.
+- No proof was weakened: **no** `assume(...)`, `admit()`, or `#[verifier::external]` anywhere in esdk. Correction at `9964b20b`: `grep -rn external_body esdk/src` finds no hit, so esdk has **no** `#[verifier::external_body]`. The one described next is in the standalone model `verification/io_stream_aligned.rs`, not in esdk: the `utf8_check` wrapper around `std::str::from_utf8` in the modeled AAD sub-parser, used per Verus skill invariant #11 for a std call Verus cannot evaluate (the same role `tag_ok` plays for the AES-GCM check). Its `ensures` is a **trusted boundary, not a proof**: the UTF-8-validation correctness is delegated to the std library; everything around it (that the parser rejects non-UTF-8 with `Err`, never panics) is proven. This is called out explicitly in §5.
 - Every "verified" claim is backed by actual `0 errors` tool output.
 - Preconditions are satisfiable by real callers (not over-constrained).
 - No `ensures` was changed to match buggy behavior.
@@ -332,8 +332,10 @@ Run from the repo root:
 make -C esdk verus
 ```
 
-Output (the `aws-esdk` line; `vstd` is verified first with
-`1858 verified, 0 errors` and cached afterwards). Default features, then
+Output at `9964b20b` (re-run after `touch esdk/src/lib.rs`): the `aws-esdk` line is the
+first `verification results::` line after `Checking aws-esdk v...`. vstd
+(`1858 verified, 0 errors`) and aws-mpl-primitives print their own lines
+before it when they are not cached. Default features, then
 `--no-default-features --features aws-lc-sys`:
 
 ```
@@ -341,8 +343,8 @@ verification results:: 99 verified, 0 errors
 verification results:: 99 verified, 0 errors
 ```
 
-The count is Verus's obligation count, not a function count; the checked
-fns are 55 exec fns (13 before the in-crate work, 22 before VR-009, 24 before
+The count is Verus's obligation count, not a function count. By reading the
+code (no tool prints a function count), the checked fns are 55 exec fns (13 before the in-crate work, 22 before VR-009, 24 before
 VR-011, 34 before VR-001, 35 before VR-012, 36 before the VR-001 (b) / VR-002
 tokens, 39 before VR-015, 43 before VR-016 and VR-015 (b), 45 before VR-017 /
 VR-018, 52 before VR-019, 54 before VR-020) and 11 proof fns (3 before VR-012; the two VR-012 round-trip lemmas bring
@@ -1411,7 +1413,11 @@ with the future vstd feature-gating work (PR #103 open question 1, approach B):
 if vstd and the `verus!` items become feature-gated, this cfg_attr and the
 proxy must be gated the same way.
 
-### VR-013 / VR-014 TCB (`prim/src/aws_lc_specs.rs`)
+### TCB table (trusted specs and laws)
+
+Until it gained the esdk row T-cmp (VR-020), this section was named after
+VR-013 and VR-014 and `prim/src/aws_lc_specs.rs` only; the rows are unchanged.
+
 
 Naming-only entries introduce a symbol and claim nothing. TRUSTED entries are
 real assumptions about aws-lc-rs 1.18.1. No entry has a `requires`, so **every
@@ -1513,7 +1519,7 @@ independent evidence beyond that.
 | VR-018 encrypt header length checks | **in-crate** (`esdk/src/encrypt.rs`): `check_v2_suite_data` (present and exactly `algorithm_suite_data_length()` bytes, in that order) and `data_key_len_ok` (accept iff equal) | the expected lengths come from MPL (`algorithm_suite_data_length`) and the const table `get_encrypt_key_length`; the adapters map variants to today's errors |
 | VR-019 encrypt signing-key check (threat R3; counterpart of VR-015 (b)) | **in-crate, one direction** (`esdk/src/encrypt_gate.rs`): `signing_key_gate` returns a `SigningKeyPresent` iff the suite signs and a signing key is present, and the token holds that key; the compiler enforces that `ecdsa_sign_digest` in step 4 gets the key only through the token. Same error, message, order and place as before | **finding VR-019 F1:** esdk rejects a missing key only in step 4, after the header and body are written, and does not reject a key for a non-signing suite. Both rely on the MPL (`GetEncryptionMaterials::send` / `check_encryption_materials`, `EncryptionMaterialsBuilder::build`), which is trusted code reading. Also trusted: the real suite flag and key are passed; `encrypt_steps` runs step 4 for every signing suite; aws-lc-rs signing |
 | VR-016 decrypt buffer sizing (BUG-07(b) in esdk) | **in-crate** (`esdk/src/secret.rs`): `secret::open` takes only an `OpenBuffers`, built only by the verified `open_buffers`; its type invariant says the plaintext buffer is as long as the ciphertext. All 5 esdk open sites go through it, so BUG-07(b) is unreachable from esdk, Verus-proven | trusted: the TB-A body of `secret::open` passes the two fields to `aes_decrypt` unchanged; what aws-lc-rs does with a mismatch stays under A-OPEN |
-| VR-020 encryption context to only authenticate (`client-apis/decrypt.md`) | **in-crate** (`esdk/src/decrypt.rs`, branch `r1-validate-vr020`): `required_ec_entries` returns the materials' encryption context restricted to the required encryption context keys (`out@ == ec@.restrict(keys@)`), relative to TCB row T-cmp; mutation-tested (loop invariant 2 is redundant and review-only) | **trusted:** T-cmp (`obeys_cmp::<String>()`) and vstd's btree / `String` specs. **Code reading:** the adapter `build_encryption_context_to_only_authenticate` (`as_map`, `as_set`, `EncryptionContext::from`) and its call site pass the materials' own fields; no tool catches a change there (mutation M7). No live end-to-end test: the Duvet-annotated tests are disabled (`TODO(native-mpl)`); the live test is the in-module unit test |
+| VR-020 encryption context to only authenticate (`client-apis/decrypt.md`) | **in-crate** (`esdk/src/decrypt.rs`, branch `r1-validate-vr020`; on `Mahnush_Verus` at `9964b20b`): `required_ec_entries` returns the materials' encryption context restricted to the required encryption context keys (`out@ == ec@.restrict(keys@)`), relative to TCB row T-cmp; mutation-tested (loop invariant 2 is redundant and review-only) | **trusted:** T-cmp (`obeys_cmp::<String>()`) and vstd's btree / `String` specs. **Code reading:** the adapter `build_encryption_context_to_only_authenticate` (`as_map`, `as_set`, `EncryptionContext::from`) and its call site pass the materials' own fields; no tool catches a change there (mutation M7). No live end-to-end test: the Duvet-annotated tests are disabled (`TODO(native-mpl)`); the live test is the in-module unit test |
 | Infra: I/O seam | `esdk` is Verus-buildable; sync `verus!` cores are verified in-crate behind the async `Source`/`Tee` adapters (see "In-crate proofs") | the async adapters themselves stay unverified glue |
 
 ---
@@ -1566,7 +1572,7 @@ proof files and `verification/README.md`:
 - **`construct_frame` FFI + trait I/O**: `aes_encrypt` (aws-lc-rs) is modeled by its length contract with the FFI output as a real `&[u8]`; the `dyn SafeWrite` release and the ciphertext byte *values* are out of scope.
 - **Parser/sequence trait-object reads**: the proofs cover the decision/state-machine given the read value; the trait-object read itself is out of scope (this is exactly what the `io_stream_*` abstraction is designed to close).
 
-- **UTF-8 validation (AAD sub-parser)**: the encryption-context key/value strings are validated with `std::str::from_utf8`, which Verus cannot evaluate. This is wrapped in the single `#[verifier::external_body]` in the project (`utf8_check`), whose `ensures ok == utf8_valid(bytes@)` is a **trusted boundary**: we assert the std check agrees with an abstract `utf8_valid` predicate. What is proven is that the parser branches on the result and rejects non-UTF-8 with `Err(Utf8)`, never panicking. The correctness of UTF-8 validation itself is delegated to std.
+- **UTF-8 validation (AAD sub-parser)**: the encryption-context key/value strings are validated with `std::str::from_utf8`, which Verus cannot evaluate. This is wrapped in the only function-level `#[verifier::external_body]` in the project (`utf8_check`, in the model `verification/io_stream_aligned.rs`; the `external_body` attributes in `prim/src/aws_lc_specs.rs` and `prim/src/ecdsa.rs` sit on the wrapper structs of `external_type_specification`s), whose `ensures ok == utf8_valid(bytes@)` is a **trusted boundary**: we assert the std check agrees with an abstract `utf8_valid` predicate. What is proven is that the parser branches on the result and rejects non-UTF-8 with `Err(Utf8)`, never panicking. The correctness of UTF-8 validation itself is delegated to std.
 
 The `aws-lc-rs` FFI calls themselves (AES-GCM seal/open, ECDSA sign, HKDF
 extract/expand/fill) are **deliberately not** targeted directly — proving them
@@ -1579,7 +1585,7 @@ VR-008 (the ECDSA retry loop and copy) and VR-009 prim half (the HKDF
 (the digest / HMAC / KBKDF / RNG / constant-time wrapper guards) and VR-014
 (the AES `Vec` effects, BUG-07). VR-013/VR-014 call the FFI from inside
 `verus!` through `assume_specification`s, never `external_body`; their
-trusted facts are listed in "VR-013 / VR-014 TCB". The crypto and the FFI
+trusted facts are listed in "TCB table (trusted specs and laws)". The crypto and the FFI
 results stay the trusted boundary.
 
 ---

@@ -263,7 +263,7 @@ The cryptographic primitives live in `prim/` and wrap aws-lc-rs's safe API. aws-
 
 Source: `.kiro/agents/verus-unsafe-ffi-safety.md` §The TCB list (owned by this agent), "Where the list lives in this repo".
 
-> Where the list lives in this repo: the code in `prim/src/aws_lc_specs.rs` (and the VR-008 specs in `prim/src/ecdsa.rs`), and the table in the "VR-013 / VR-014 TCB" section of `docs/verus-proofs-report.md`. When a row is added, changed or removed, update both and check they agree.
+> Where the list lives in this repo: the code in `prim/src/aws_lc_specs.rs` (and the VR-008 specs in `prim/src/ecdsa.rs`), and the table in the "TCB table (trusted specs and laws)" section of `docs/verus-proofs-report.md`. When a row is added, changed or removed, update both and check they agree.
 
 Source: `.kiro/agents/verus-unsafe-ffi-safety.md` §The TCB list, "What the boundary does **not** prove".
 
