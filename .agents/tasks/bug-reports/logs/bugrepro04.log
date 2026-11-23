@@ -1,0 +1,12 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 28.99s
+     Running unittests src/lib.rs (/tmp/bugrepro04/target/debug/deps/aws_crypto_mpl-ad1ccd7bf6286406)
+
+running 1 test
+REPRO BUG-04 MRDiscovery(us-west-2), record SRK  arn:aws:kms:us-east-1:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab -> Ok("arn:aws:kms:us-west-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab")
+REPRO BUG-04 MRDiscovery(us-west-2), record MRK  arn:aws:kms:us-east-1:111122223333:key/mrk-1234abcd-12ab-34cd-56ef-1234567890ab -> Ok("arn:aws:kms:us-west-2:111122223333:key/mrk-1234abcd-12ab-34cd-56ef-1234567890ab")
+REPRO BUG-04 Discovery,              record SRK  arn:aws:kms:us-east-1:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab -> Ok("arn:aws:kms:us-east-1:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab")
+REPRO BUG-04 SRK ARN changed by MRDiscovery: true
+test keystore::kms_ops::zz_bugrepro_04::mrdiscovery_rewrites_region_of_single_region_key ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

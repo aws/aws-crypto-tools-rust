@@ -1,0 +1,60 @@
+BASELINE: verification results:: 19 verified, 0 errors (exit 0)
+m01_prefix_to_exact_match [predicted: reject] build: starts_with replaced by equality with `aws-kms` (the check the code comment warns against)
+    -> 11 verified, 8 errors  REJECTED
+    failing lemmas: ['theorem_reserved_namespace_rejected', 'theorem_ok_implies_not_reserved', 'theorem_build_ok_iff', 'lemma_check_order', 'theorem_emitted_provider_id_not_kms', 'theorem_never_attempts_kms_edks', 'theorem_stricter_than_s2', 'theorem_built_keyring_satisfies_s1']
+m02_case_insensitive_compare [predicted: reject] build: byte prefix replaced by an ASCII case-insensitive prefix test
+    -> 17 verified, 2 errors  REJECTED
+    failing lemmas: ['theorem_build_ok_iff', 'lemma_case_variant_builds']
+m03_different_prefix_string [predicted: reject] reserved(): last byte 0x73 -> 0x74 (`aws-kmt`)
+    -> 18 verified, 1 errors  REJECTED
+    failing lemmas: ['lemma_reserved_bytes']
+m04_prefix_check_dropped [predicted: reject] build: the reserved-namespace branch condition replaced by `false`
+    -> 11 verified, 8 errors  REJECTED
+    failing lemmas: ['theorem_reserved_namespace_rejected', 'theorem_ok_implies_not_reserved', 'theorem_build_ok_iff', 'lemma_check_order', 'theorem_emitted_provider_id_not_kms', 'theorem_never_attempts_kms_edks', 'theorem_stricter_than_s2', 'theorem_built_keyring_satisfies_s1']
+m05_check_after_key_length [predicted: reject] build: key-length check moved before the reserved-namespace check
+    -> 17 verified, 2 errors  REJECTED
+    failing lemmas: ['theorem_reserved_namespace_rejected', 'lemma_check_order']
+m06_wrong_error_variant [predicted: reject] build: reserved namespace returns BErr::KeyLen instead of ReservedNs
+    -> 17 verified, 2 errors  REJECTED
+    failing lemmas: ['theorem_reserved_namespace_rejected', 'lemma_check_order']
+m07_seven_byte_test_wrong_byte [predicted: reject] pre7: byte 3 compared with 0x5f instead of 0x2d
+    -> 18 verified, 1 errors  REJECTED
+    failing lemmas: ['lemma_has_prefix_iff_bytes']
+m08_emitted_id_is_key_name [predicted: reject] emitted_provider_id returns the key name instead of the namespace
+    -> 17 verified, 2 errors  REJECTED
+    failing lemmas: ['theorem_emitted_provider_id_not_kms', 'theorem_built_keyring_satisfies_s1']
+m09_decrypt_filter_is_prefix [predicted: reject] attempts_edk: equality replaced by `the EDK id starts with the namespace`
+    -> 18 verified, 1 errors  REJECTED
+    failing lemmas: ['theorem_never_attempts_kms_edks']
+m10_ns_ok_not_negated [predicted: reject] ns_ok: negation dropped
+    -> 13 verified, 6 errors  REJECTED
+    failing lemmas: ['lemma_kms_provider_ids_rejected', 'theorem_build_ok_iff', 'theorem_case_variants_accepted', 'lemma_accepted_witnesses', 'theorem_matches_s1', 'ns_accepted']
+m11_wrong_key_length_table [predicted: reject] alg_key_len: A256 maps to 24 instead of 32
+    -> 18 verified, 1 errors  REJECTED
+    failing lemmas: ['lemma_case_variant_builds']
+m12_spec_s1_weakened [predicted: reject] spec_s1: the prefix conjunct dropped (only inequality with `aws-kms` kept)
+    -> 18 verified, 1 errors  REJECTED
+    failing lemmas: ['theorem_matches_s1']
+m13_exec_length_guard_too_small [predicted: reject] ns_has_reserved_prefix: length guard `< 7` changed to `< 6`, so ns[6] can be out of bounds
+    -> 18 verified, 1 errors  REJECTED
+    failing lemmas: ['ns_has_reserved_prefix']
+m14_exec_wrong_byte [predicted: reject] ns_has_reserved_prefix: last compared byte 0x73 -> 0x74
+    -> 18 verified, 1 errors  REJECTED
+    failing lemmas: ['ns_has_reserved_prefix']
+m15_witness_accepted_is_reserved [predicted: reject] lemma_accepted_witnesses: the witness `aws_kms` is changed to `aws-kms` (a reserved string)
+    -> 18 verified, 1 errors  REJECTED
+    failing lemmas: ['lemma_accepted_witnesses']
+s01_kms_id_tail_typo [predicted: survive] kms_id_ecdh: last byte 0x68 -> 0x69 (tail of an ID typed out; only its first 7 bytes matter)
+    -> 19 verified, 0 errors  SURVIVED
+s02_lower_range_changed [predicted: survive] lower(): the upper bound 0x5a changed to 0x59 (`lower` is only used in a hypothesis of theorem_case_variants_accepted)
+    -> 19 verified, 0 errors  SURVIVED
+s03_unused_key_name_field_changed [predicted: survive] build: Ok keyring stores `c.ns` as key_name instead of `c.name` (no theorem reads key_name except m08's emitted id)
+    -> 19 verified, 0 errors  SURVIVED
+
+SUMMARY: 18 mutants, 15 rejected, 3 survived, 0 differ from prediction
+
+SURVIVOR REASONS (predicted before the run, all three survived)
+s01: only the first 7 bytes of a KMS provider ID matter to every claim. The tail bytes of the four typed-out IDs are not used by any statement, so a tail typo does not change a result. The IDs are a spec copy (A_SPEC_IDS), checked by reading, not by Verus.
+s02: `lower` appears only in the hypothesis of theorem_case_variants_accepted. The theorem holds for any definition of `lower`, so changing it cannot break the proof. `lower` only describes what a case variant is.
+s03: the `key_name` field of the built keyring is read by no theorem except through emitted_provider_id in the m08 mutant. In the shipped model it is carried along and not used by any claim. Not a claim about the key name.
+NOTE m03: a different prefix string is rejected only by `lemma_reserved_bytes`, which pins the seven bytes of reserved(). The other lemmas follow the constant, so they would pass for any prefix. The correspondence of the constant with raw_aes_keyring.rs :52 is code reading (H_CONST).

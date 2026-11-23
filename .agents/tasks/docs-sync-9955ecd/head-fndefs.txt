@@ -1,0 +1,42 @@
+DEF-MISMATCH	docs/verification-targets.md:52	Duration cited :702	defined at esdk/shims/aws-esdk-cpp/src/lib.rs:391
+DEF-MISMATCH	docs/verification-targets.md:72	check cited :360	defined at mpl/tests/test_builder_getters.rs:32, prim/tests/test_error.rs:256
+DEF-MISMATCH	docs/verification-targets.md:215	check cited :105	defined at mpl/tests/test_builder_getters.rs:32, prim/tests/test_error.rs:256
+DEF-MISMATCH	docs/verification-targets.md:215	call cited :179	defined at esdk/shims/aws-esdk-cpp/test-server/tests/hierarchical_round_trip.rs:28, esdk/shims/aws-esdk-cpp/test-server/tests/raw_aes_round_trip.rs:21, esdk/shims/aws-esdk-cpp/test-server/tests/stream_round_trip.rs:25, esdk/test-server/tests/stream_round_trip.rs:21
+DEF-MISMATCH	docs/verification-targets.md:239	keyring cited :82	defined at esdk/src/shapes.rs:590, esdk/src/shapes.rs:791, esdk/src/shapes.rs:970, esdk/src/shapes.rs:1129
+DEF-MISMATCH	docs/verification-targets.md:287	name cited :605	defined at esdk/examples/per_request_credentials.rs:37, esdk/performance-tests/src/benchmark.rs:46, esdk/shims/aws-esdk-cpp/src/lib.rs:1504, esdk/shims/aws-esdk-cpp/src/tests.rs:1441
+DEF-MISMATCH	docs/verification-targets.md:312	call cited :136	defined at esdk/shims/aws-esdk-cpp/test-server/tests/hierarchical_round_trip.rs:28, esdk/shims/aws-esdk-cpp/test-server/tests/raw_aes_round_trip.rs:21, esdk/shims/aws-esdk-cpp/test-server/tests/stream_round_trip.rs:25, esdk/test-server/tests/stream_round_trip.rs:21
+DEF-MISMATCH	docs/verification-targets.md:360	check cited :720	defined at mpl/tests/test_builder_getters.rs:32, prim/tests/test_error.rs:256
+DEF-MISMATCH	docs/verification-targets.md:360	deref cited :728	defined at esdk/src/shapes.rs:200, mpl/src/shared.rs:115
+DEF-MISMATCH	docs/verification-targets.md:360	handle cited :1655	defined at mpl/tests/test_local_cmc.rs:47, mpl/tests/test_local_cmc.rs:75, mpl/tests/test_storm_tracking_cmc.rs:29, mpl/tests/test_storm_tracking_cmc.rs:48
+DEF-MISMATCH	docs/verification-targets.md:360	into_keyring_handle cited :2054	defined at esdk/shims/aws-esdk-cpp/src/lib.rs:2059
+DEF-MISMATCH	docs/verification-targets/01-threat-driven.md:204	check cited :105	defined at mpl/tests/test_builder_getters.rs:32, prim/tests/test_error.rs:256
+DEF-MISMATCH	docs/verification-targets/01-threat-driven.md:290	on_encrypt cited :665	defined at esdk/examples/custom_keyring.rs:30, esdk/shims/aws-esdk-cpp/examples/custom-keyring/src/lib.rs:31, esdk/tests/test_custom_keyring.rs:68, esdk/tests/test_custom_keyring.rs:199
+DEF-MISMATCH	docs/verification-targets/01-threat-driven.md:290	decrypt_edk_at_version cited :908	defined at mpl/src/aws_kms/hierarchical_keyring.rs:901
+DEF-MISMATCH	docs/verification-targets/01-threat-driven.md:348	call cited :136	defined at esdk/shims/aws-esdk-cpp/test-server/tests/hierarchical_round_trip.rs:28, esdk/shims/aws-esdk-cpp/test-server/tests/raw_aes_round_trip.rs:21, esdk/shims/aws-esdk-cpp/test-server/tests/stream_round_trip.rs:25, esdk/test-server/tests/stream_round_trip.rs:21
+DEF-MISMATCH	docs/verification-targets/01-threat-driven.md:390	in_flight_ttl cited :333	defined at mpl/src/cmc/storm_tracking.rs:169, mpl/src/cmc/storm_tracking.rs:475
+DEF-MISMATCH	docs/verification-targets/01-threat-driven.md:391	grace_interval cited :680	defined at mpl/src/cmc/storm_tracking.rs:157, mpl/src/cmc/storm_tracking.rs:459
+DEF-MISMATCH	docs/verification-targets/01-threat-driven.md:439	call cited :472	defined at esdk/shims/aws-esdk-cpp/test-server/tests/hierarchical_round_trip.rs:28, esdk/shims/aws-esdk-cpp/test-server/tests/raw_aes_round_trip.rs:21, esdk/shims/aws-esdk-cpp/test-server/tests/stream_round_trip.rs:25, esdk/test-server/tests/stream_round_trip.rs:21
+DEF-MISMATCH	docs/verification-targets/01-threat-driven.md:486	on_encrypt cited :700	defined at esdk/examples/custom_keyring.rs:30, esdk/shims/aws-esdk-cpp/examples/custom-keyring/src/lib.rs:31, esdk/tests/test_custom_keyring.rs:68, esdk/tests/test_custom_keyring.rs:199
+DEF-MISMATCH	docs/verification-targets/01-threat-driven.md:486	decrypt_edk_at_version cited :943	defined at mpl/src/aws_kms/hierarchical_keyring.rs:901
+DEF-MISMATCH	docs/verification-targets/01-threat-driven.md:534	aes_encrypt cited :163	defined at prim/src/lib.rs:175, prim/test-server/src/handlers.rs:43
+DEF-MISMATCH	docs/verification-targets/01-threat-driven.md:536	on_decrypt cited :767	defined at esdk/examples/custom_keyring.rs:44, esdk/shims/aws-esdk-cpp/examples/custom-keyring/src/lib.rs:45, esdk/tests/test_custom_keyring.rs:87, esdk/tests/test_custom_keyring.rs:211
+DEF-MISMATCH	docs/verification-targets/01-threat-driven.md:666	call cited :198	defined at esdk/shims/aws-esdk-cpp/test-server/tests/hierarchical_round_trip.rs:28, esdk/shims/aws-esdk-cpp/test-server/tests/raw_aes_round_trip.rs:21, esdk/shims/aws-esdk-cpp/test-server/tests/stream_round_trip.rs:25, esdk/test-server/tests/stream_round_trip.rs:21
+DEF-MISMATCH	docs/verification-targets/01-threat-driven.md:1000	on_decrypt_uses_branch_key_id_supplier_when_configured cited :1640	defined at mpl/tests/test_aws_kms_hierarchical_keyring.rs:2161
+DEF-MISMATCH	docs/verification-targets/01-threat-driven.md:1061	RawAesKeyring cited :81	defined at mpl/src/keyring/raw_aes_keyring.rs:59
+DEF-MISMATCH	docs/verification-targets/01-threat-driven.md:1061	SignatureKeyPair cited :336	defined at prim/src/ecdsa.rs:326
+DEF-MISMATCH	docs/verification-targets/01-threat-driven.md:1098	check cited :720	defined at mpl/tests/test_builder_getters.rs:32, prim/tests/test_error.rs:256
+DEF-MISMATCH	docs/verification-targets/01-threat-driven.md:1099	ddb_client cited :1565	defined at esdk/shims/aws-esdk-cpp/src/lib.rs:1403, esdk/tests/fake_aws/mod.rs:110, mpl/src/key_store/branch_key_store.rs:105, mpl/src/key_store/branch_key_store.rs:345
+DEF-MISMATCH	docs/verification-targets/01-threat-driven.md:1099	handle cited :1655	defined at mpl/tests/test_local_cmc.rs:47, mpl/tests/test_local_cmc.rs:75, mpl/tests/test_storm_tracking_cmc.rs:29, mpl/tests/test_storm_tracking_cmc.rs:48
+DEF-MISMATCH	docs/verification-targets/01-threat-driven.md:1100	into_keyring_handle cited :2054	defined at esdk/shims/aws-esdk-cpp/src/lib.rs:2059
+DEF-MISMATCH	docs/verification-targets/01-threat-driven.md:1184	check cited :360	defined at mpl/tests/test_builder_getters.rs:32, prim/tests/test_error.rs:256
+DEF-MISMATCH	docs/verification-targets/02-capability-driven.md:12	add_data_key cited :767	defined at mpl/src/structures/decryption_materials.rs:45, mpl/src/structures/encryption_materials.rs:48, mpl/tests/test_materials_checks.rs:180
+DEF-MISMATCH	docs/verification-targets/02-capability-driven.md:290	check cited :60	defined at mpl/tests/test_builder_getters.rs:32, prim/tests/test_error.rs:256
+DEF-MISMATCH	docs/verification-targets/02-capability-driven.md:291	check cited :365	defined at mpl/tests/test_builder_getters.rs:32, prim/tests/test_error.rs:256
+DEF-MISMATCH	docs/verification-targets/02-capability-driven.md:291	check cited :56	defined at mpl/tests/test_builder_getters.rs:32, prim/tests/test_error.rs:256
+DEF-MISMATCH	docs/verification-targets/02-capability-driven.md:292	check cited :303	defined at mpl/tests/test_builder_getters.rs:32, prim/tests/test_error.rs:256
+DEF-MISMATCH	docs/verification-targets/02-capability-driven.md:293	check cited :489	defined at mpl/tests/test_builder_getters.rs:32, prim/tests/test_error.rs:256
+DEF-MISMATCH	docs/verification-targets/02-capability-driven.md:293	add_data_key cited :767	defined at mpl/src/structures/decryption_materials.rs:45, mpl/src/structures/encryption_materials.rs:48, mpl/tests/test_materials_checks.rs:180
+DEF-MISMATCH	docs/verification-targets/02-capability-driven.md:293	add_data_key cited :727	defined at mpl/src/structures/decryption_materials.rs:45, mpl/src/structures/encryption_materials.rs:48, mpl/tests/test_materials_checks.rs:180
+DEF-MISMATCH	docs/verification-targets/02-capability-driven.md:479	build_base cited :95	defined at mpl/src/key_store/encryption_context.rs:40
+DEF-MISMATCH	docs/verification-targets/04-validation.md:40	BranchKey cited :701	defined at prim/src/error.rs:238
+SUMMARY	def-ok=240	def-mismatch=41

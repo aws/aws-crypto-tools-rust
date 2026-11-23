@@ -1,0 +1,79 @@
+note: automatically chose triggers for this expression:
+   --> verus-proofs/c01_ec_roundtrip.rs:941:13
+    |
+941 |             assert forall|y: Str| keys.to_set().contains(y) <==> s.contains(y) by {
+    |             ^^^^^^
+
+note:   trigger 1 of 1:
+   --> verus-proofs/c01_ec_roundtrip.rs:941:66
+    |
+941 |             assert forall|y: Str| keys.to_set().contains(y) <==> s.contains(y) by {
+    |                                                                  ^^^^^^^^^^^^^
+
+note: automatically chose triggers for this expression:
+    --> verus-proofs/c01_ec_roundtrip.rs:1405:18
+     |
+1405 | ...=> (exists|s: Str| custom_ec(ec).contains_key(s) && x == custom_prefix() + s),
+     |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+note:   trigger 1 of 1:
+    --> verus-proofs/c01_ec_roundtrip.rs:1405:72
+     |
+1405 | ...(ec).contains_key(s) && x == custom_prefix() + s),
+     |                                 ^^^^^^^^^^^^^^^^^^^
+
+note: automatically chose triggers for this expression:
+    --> verus-proofs/c01_ec_roundtrip.rs:1426:12
+     |
+1426 | ...if exists|s: Str| custom_ec(ec).contains_key(s) && x == custom_prefix() + s {
+     |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+note:   trigger 1 of 1:
+    --> verus-proofs/c01_ec_roundtrip.rs:1426:65
+     |
+1426 | ...(ec).contains_key(s) && x == custom_prefix() + s {
+     |                                 ^^^^^^^^^^^^^^^^^^^
+
+note: automatically chose triggers for this expression:
+    --> verus-proofs/c01_ec_roundtrip.rs:1427:21
+     |
+1427 | ... = choose|s: Str| custom_ec(ec).contains_key(s) && x == custom_prefix() + s;
+     |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+note:   trigger 1 of 1:
+    --> verus-proofs/c01_ec_roundtrip.rs:1427:74
+     |
+1427 | ...(ec).contains_key(s) && x == custom_prefix() + s;
+     |                                 ^^^^^^^^^^^^^^^^^^^
+
+note: automatically chose triggers for this expression:
+    --> verus-proofs/c01_ec_roundtrip.rs:1418:14
+     |
+1418 | ...=> (exists|s: Str| custom_ec(ec).contains_key(s) && x == custom_prefix() + s) by {
+     |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+note:   trigger 1 of 1:
+    --> verus-proofs/c01_ec_roundtrip.rs:1418:68
+     |
+1418 | ...(ec).contains_key(s) && x == custom_prefix() + s) by {
+     |                                 ^^^^^^^^^^^^^^^^^^^
+
+note: Verus printed one or more automatically chosen quantifier triggers
+      because it had low confidence in the chosen triggers.
+      To suppress these messages, do one of the following:
+        (1) manually annotate a single desired trigger using #[trigger]
+            (example: forall|i: int, j: int| f(i) && #[trigger] g(i) && #[trigger] h(j)),
+        (2) manually annotate multiple desired triggers using #![trigger ...]
+            (example: forall|i: int| #![trigger f(i)] #![trigger g(i)] f(i) && g(i)),
+        (3) accept the automatically chosen trigger using #![auto]
+            (example: forall|i: int, j: int| #![auto] f(i) && g(i) && h(j))
+        (4) use the --triggers-mode silent command-line option to suppress all printing of triggers.
+      (Note: triggers are used by the underlying SMT theorem prover to instantiate quantifiers;
+      the theorem prover instantiates a quantifier whenever some expression matches the
+      pattern specified by one of the quantifier's triggers.)
+    --> verus-proofs/c01_ec_roundtrip.rs:1418:14
+     |
+1418 | ...=> (exists|s: Str| custom_ec(ec).contains_key(s) && x == custom_prefix() + s) by {
+     |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+verification results:: 40 verified, 0 errors

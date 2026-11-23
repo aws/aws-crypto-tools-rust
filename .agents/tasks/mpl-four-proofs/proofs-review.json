@@ -1,0 +1,14 @@
+{
+  "verdict": "CHANGES_REQUESTED",
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "MEDIUM",
+      "file": "/Users/mahnush/Desktop/ESDK-Rust-Verus/MPL/esdk-native-mpl/verus-proofs/c08_cache_usage_counters.rs",
+      "target": "C08: Cache model (Map<Id, UM>), theorem_update_step 'no other identifier changes', theorem_cache_refines_entry_run, theorem_no_wrap_any_calls, header section 4 (A_ALL_CALLS, H_ARC_SHARED) and section WHAT IS NOT PROVED; also .agents/tasks/mpl-four-proofs/c08-notes.md sections 4, 5, 10",
+      "problem": "The model gives each identifier its own counters. In the code the map stores CacheEntry handles (Arc<CacheEntryInner> with Mutex<UsageMetadata>, entry.rs:136-146). PutCacheEntryInput is Clone and carries a CacheEntry by value (operation.rs:11-31), put_cache_entry does cache.put(identifier, entry) (local.rs:280-300), and get_cache_entry returns a clone (local.rs:148). The same handle can therefore be stored under two identifiers through public API. Then update_usage_metadata(B) changes the counters seen through A, so 'no other identifier changes' (theorem_update_step) and the per-identifier exact totals of R4/R5 (counting only calls addressed to that identifier) are false for that reachable state. No A_* or H_* hypothesis excludes it: A_ALL_CALLS speaks of 'the cell' but bytes_for(calls, id) does not list calls addressed to an alias, and H_ARC_SHARED mentions sharing only for get_fresh and O1. Per-call no-wrap, both-or-neither and evict-the-addressed-slot (R1, R2, R7) still hold under aliasing.",
+      "fix": "Add to header section 4 a hypothesis A_NO_ALIAS (ASSUMED, for R3 'no other identifier changes', R4, R5): no CacheEntry handle (original or clone) is stored under two identifiers, so distinct identifiers have distinct counter cells; state that put_cache_entry takes a cloneable handle so this is a premise about callers that the code does not enforce. Reword A_ALL_CALLS so it does not claim calls lists all changes when handles are shared (or merge it into A_NO_ALIAS). Add to WHAT IS NOT PROVED that under aliasing the per-identifier totals and the 'no other identifier changes' clause do not hold while R1/R2 (per-call no-wrap, both-or-neither) do. Mark the doc comments of theorem_update_step, theorem_cache_refines_entry_run, theorem_no_wrap_any_calls and the R3/R4/R5 header lines 'relative to A_NO_ALIAS'. Mirror the same hypothesis in c08-notes.md sections 4, 5 and the suggested docs wording. No change to the proved obligations is needed (re-run must stay '20 verified, 0 errors')."
+    }
+  ],
+  "reviewDoc": "/Users/mahnush/Desktop/ESDK-Rust-Verus/MPL/esdk-native-mpl/.agents/tasks/mpl-four-proofs/proofs-review.md"
+}

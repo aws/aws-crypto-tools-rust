@@ -1,0 +1,38 @@
+=== [1/2] ORIGINAL reproducer (.agents/tasks/bug-reports/reproducers/zz_bugrepro_08_build_base_dead_branch.rs) copied unchanged into mpl/tests; cargo test --test zz_bugrepro_08_build_base_dead_branch -- --nocapture ===
+   Compiling aws-crypto-mpl v0.1.0 (/Users/mahnush/Desktop/ESDK-Rust-Verus/MPL/esdk-native-mpl/mpl)
+error[E0433]: cannot find `keystore` in `aws_crypto_mpl`
+ --> tests/zz_bugrepro_08_build_base_dead_branch.rs:2:21
+  |
+2 | ...ws_crypto_mpl::keystore::encryption_context::{
+  |                   ^^^^^^^^ could not find `keystore` in `aws_crypto_mpl`
+
+error[E0603]: module `structures` is private
+  --> tests/zz_bugrepro_08_build_base_dead_branch.rs:5:21
+   |
+ 5 | ...pto_mpl::structures::EncryptionContext;
+   |             ^^^^^^^^^^ private module
+   |
+note: the module `structures` is defined here
+  --> src/lib.rs:14:1
+   |
+14 | mod structures;
+   | ^^^^^^^^^^^^^^
+
+Some errors have detailed explanations: E0433, E0603.
+For more information about an error, try `rustc --explain E0433`.
+error: could not compile `aws-crypto-mpl` (test "zz_bugrepro_08_build_base_dead_branch") due to 2 previous errors
+[exit code: 101]
+
+=== [2/2] ADAPTED reproducer (.agents/tasks/bug-recheck/reproducers/zz_bugrepro_08_build_base_dead_branch.rs); same command ===
+   Compiling aws-crypto-mpl v0.1.0 (/Users/mahnush/Desktop/ESDK-Rust-Verus/MPL/esdk-native-mpl/mpl)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.67s
+     Running tests/zz_bugrepro_08_build_base_dead_branch.rs (target/debug/deps/zz_bugrepro_08_build_base_dead_branch-94e27269699c5e5a)
+
+running 1 test
+REPRO BUG-08 active is_ok = true, decrypt_only is_ok = true
+REPRO BUG-08 10 custom entries in, 10 prefixed entries out: ["aws-crypto-ec:a", "aws-crypto-ec:aws-crypto-ec:a", "aws-crypto-ec:branch-key-id", "aws-crypto-ec:create-time", "aws-crypto-ec:enc", "aws-crypto-ec:hierarchy-version", "aws-crypto-ec:kms-arn", "aws-crypto-ec:tablename", "aws-crypto-ec:type", "aws-crypto-ec:version"]
+test inputs_named_by_the_comment_do_not_reach_the_collision_branch ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+[exit code: 0]

@@ -1,0 +1,11 @@
+merged: ranked rows with Proof status column: 35; YAML blocks: 13
+01: ranked rows with Proof status column: 27; YAML blocks: 27
+02: ranked rows with Proof status column: 8; YAML blocks: 8
+format-checked md files: 11
+rerun T02: 21 verified, 1 errors
+rerun C01: 40 verified, 0 errors
+rerun C02: 21 verified, 0 errors
+rerun T03: 39 verified, 0 errors
+rerun T05: 33 verified, 0 errors
+git diff --quiet HEAD -- mpl prim esdk verus-proofs RECHECK: exit 0
+PROBLEMS: none

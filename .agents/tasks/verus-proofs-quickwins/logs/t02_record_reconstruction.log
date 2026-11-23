@@ -1,0 +1,12 @@
+error: postcondition not satisfied
+   --> verus-proofs/t02_record_reconstruction.rs:771:9
+    |
+767 | proof fn lemma_g1_spec_soundness_FAILS(ec: Ec, pt: Seq<u8>)
+    |       ----------------------------------------------------- at the end of the function body
+...
+771 |         spec_accepts(ec, pt),
+    |         ^^^^^^^^^^^^^^^^^^^^ failed this postcondition
+
+verification results:: 21 verified, 1 errors
+error: aborting due to 1 previous error
+

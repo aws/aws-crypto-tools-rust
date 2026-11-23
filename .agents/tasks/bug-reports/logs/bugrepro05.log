@@ -1,0 +1,13 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.17s
+     Running tests/zz_bugrepro_05_short_edk_lookup.rs (target/debug/deps/zz_bugrepro_05_short_edk_lookup-ee52a035cd021dba)
+
+running 1 test
+REPRO BUG-05b ciphertext_len=43: on_decrypt is_err=true keystore get_branch_key_version calls=0 inner_error=Some("HierarchicalKeyring::on_decrypt: EDK ciphertext too short to contain branch-key version: 43 bytes (need at least 44)")
+REPRO BUG-05b ciphertext_len=44: on_decrypt is_err=true keystore get_branch_key_version calls=1 inner_error=Some("Branch key unwrap: ciphertext too short: 44 < 60")
+REPRO BUG-05b ciphertext_len=50: on_decrypt is_err=true keystore get_branch_key_version calls=1 inner_error=Some("Branch key unwrap: ciphertext too short: 50 < 60")
+REPRO BUG-05b ciphertext_len=59: on_decrypt is_err=true keystore get_branch_key_version calls=1 inner_error=Some("Branch key unwrap: ciphertext too short: 59 < 60")
+REPRO BUG-05b ciphertext_len=60: on_decrypt is_err=true keystore get_branch_key_version calls=1 inner_error=Some("Branch key unwrap: AES-256-GCM decrypt failed")
+test short_edk_reaches_keystore_before_rejection ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

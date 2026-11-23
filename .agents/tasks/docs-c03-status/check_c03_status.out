@@ -1,0 +1,18 @@
+merged: 38 ranked rows; 2 Proof status cells changed
+01: 27 ranked rows; 0 Proof status cells changed
+02: 8 ranked rows; 2 Proof status cells changed
+rank+score columns identical to HEAD: True (73 rows)
+merged: YAML blocks changed: ['VR-2026-C02', 'VR-2026-C03', 'VR-2026-T26']
+01: YAML blocks changed: ['VR-2026-T26']
+02: YAML blocks changed: ['VR-2026-C02', 'VR-2026-C03']
+origin/Mahnush_Verus: 8d6381eb82daee55ecf32911d6ef8b48690d68b9
+assume_specification occurrences in aws_lc_specs.rs: 20
+merge-base 5f2dc72 left/right ['20', '47']
+01 lines 747-750 identical to HEAD (BUG-10 cites them): True
+docs/threat-model.md -> merged: 9 cites checked, 0 problems
+docs/threat-model.md -> 01: 13 cites checked, 0 problems
+docs/completeness-audit.md -> merged: 13 cites checked, 0 problems
+docs/completeness-audit.md -> 01: 13 cites checked, 0 problems
+git diff --quiet HEAD -- mpl prim esdk verus-proofs docs/bug-reports docs/spec-security-analysis.md docs/chorus/MPL-Bug-Reports.*: exit 0
+12 new file:line citations into mpl/ and prim/ checked
+PROBLEMS: none

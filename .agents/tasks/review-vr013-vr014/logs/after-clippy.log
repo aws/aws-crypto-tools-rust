@@ -1,0 +1,215 @@
+cargo clippy --tests --examples
+    Checking zeroize v1.9.1
+    Checking verus_builtin v0.0.0-2026-05-17-0151
+    Checking aws-lc-sys v0.45.0
+    Checking vstd v0.0.0-2026-06-14-0213
+    Checking aws-lc-rs v1.18.1
+    Checking aws-mpl-primitives v0.1.0 (/private/tmp/review-mahnush-verus/prim)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.60s
+cargo clippy --tests --examples --no-default-features --features fips
+   Compiling aws-lc-fips-sys v0.14.2
+warning: aws-lc-fips-sys@0.14.2: Emitting configuration: cargo:rustc-cfg=aarch64_apple_darwin
+warning: aws-lc-fips-sys@0.14.2: Building with: CMake
+warning: aws-lc-fips-sys@0.14.2: Symbol Prefix: Some("aws_lc_fips_0_14_2")
+error: failed to run custom build command for `aws-lc-fips-sys v0.14.2`
+
+Caused by:
+  process didn't exit successfully: `/private/tmp/review-mahnush-verus/prim/target/debug/build/aws-lc-fips-sys-77a4413364e73b5e/build-script-main` (exit status: 101)
+  --- stdout
+  cargo:rerun-if-env-changed=AWS_LC_FIPS_SYS_NO_PREFIX_aarch64_apple_darwin
+  cargo:rerun-if-env-changed=AWS_LC_FIPS_SYS_NO_PREFIX
+  cargo:rerun-if-env-changed=AWS_LC_FIPS_SYS_PREGENERATING_BINDINGS_aarch64_apple_darwin
+  cargo:rerun-if-env-changed=AWS_LC_FIPS_SYS_PREGENERATING_BINDINGS
+  cargo:rerun-if-env-changed=AWS_LC_FIPS_SYS_EXTERNAL_BINDGEN_aarch64_apple_darwin
+  cargo:rerun-if-env-changed=AWS_LC_FIPS_SYS_EXTERNAL_BINDGEN
+  cargo:rerun-if-env-changed=AWS_LC_FIPS_SYS_NO_ASM_aarch64_apple_darwin
+  cargo:rerun-if-env-changed=AWS_LC_FIPS_SYS_NO_ASM
+  cargo:rerun-if-env-changed=AWS_LC_FIPS_SYS_PREBUILT_NASM_aarch64_apple_darwin
+  cargo:rerun-if-env-changed=AWS_LC_FIPS_SYS_PREBUILT_NASM
+  cargo:rerun-if-env-changed=AWS_LC_FIPS_SYS_C_STD_aarch64_apple_darwin
+  cargo:rerun-if-env-changed=AWS_LC_FIPS_SYS_C_STD
+  cargo:rerun-if-env-changed=AWS_LC_FIPS_SYS_CMAKE_BUILDER_aarch64_apple_darwin
+  cargo:rerun-if-env-changed=AWS_LC_FIPS_SYS_CMAKE_BUILDER
+  cargo:rerun-if-env-changed=AWS_LC_FIPS_SYS_NO_PREGENERATED_SRC_aarch64_apple_darwin
+  cargo:rerun-if-env-changed=AWS_LC_FIPS_SYS_NO_PREGENERATED_SRC
+  cargo:rerun-if-env-changed=AWS_LC_FIPS_SYS_SMALL_aarch64_apple_darwin
+  cargo:rerun-if-env-changed=AWS_LC_FIPS_SYS_SMALL
+  cargo:rerun-if-env-changed=AWS_LC_FIPS_SYS_EFFECTIVE_TARGET_aarch64_apple_darwin
+  cargo:rerun-if-env-changed=AWS_LC_FIPS_SYS_EFFECTIVE_TARGET
+  cargo:rerun-if-env-changed=AWS_LC_FIPS_SYS_NO_JITTER_ENTROPY_aarch64_apple_darwin
+  cargo:rerun-if-env-changed=AWS_LC_FIPS_SYS_NO_JITTER_ENTROPY
+  cargo:rerun-if-env-changed=AWS_LC_FIPS_SYS_NO_U1_BINDINGS_aarch64_apple_darwin
+  cargo:rerun-if-env-changed=AWS_LC_FIPS_SYS_NO_U1_BINDINGS
+  cargo:rerun-if-env-changed=AWS_LC_FIPS_SYS_INCLUDES_aarch64_apple_darwin
+  cargo:rerun-if-env-changed=AWS_LC_FIPS_SYS_INCLUDES
+  cargo:rerun-if-env-changed=AWS_LC_FIPS_SYS_SANITIZER_aarch64_apple_darwin
+  cargo:rerun-if-env-changed=AWS_LC_FIPS_SYS_SANITIZER
+  cargo:rerun-if-env-changed=AWS_LC_FIPS_SYS_LINK_WHOLE_ARCHIVE_aarch64_apple_darwin
+  cargo:rerun-if-env-changed=AWS_LC_FIPS_SYS_LINK_WHOLE_ARCHIVE
+  cargo:rerun-if-env-changed=AWS_LC_FIPS_SYS_STATIC_aarch64_apple_darwin
+  cargo:rerun-if-env-changed=AWS_LC_FIPS_SYS_STATIC
+  cargo:rerun-if-env-changed=AWS_LC_FIPS_SYS_SYSTEM_DIR_aarch64_apple_darwin
+  cargo:rerun-if-env-changed=AWS_LC_FIPS_SYS_SYSTEM_DIR
+  cargo:rerun-if-env-changed=AWS_LC_FIPS_SYS_USE_SYSTEM_aarch64_apple_darwin
+  cargo:rerun-if-env-changed=AWS_LC_FIPS_SYS_USE_SYSTEM
+  cargo:rerun-if-env-changed=AWS_LC_FIPS_SYS_SYSTEM_BINDINGS_aarch64_apple_darwin
+  cargo:rerun-if-env-changed=AWS_LC_FIPS_SYS_SYSTEM_BINDINGS
+  cargo:rerun-if-env-changed=AWS_LC_FIPS_SYS_SYSTEM_SKIP_VERSION_CHECK_aarch64_apple_darwin
+  cargo:rerun-if-env-changed=AWS_LC_FIPS_SYS_SYSTEM_SKIP_VERSION_CHECK
+  cargo:warning=Emitting configuration: cargo:rustc-cfg=aarch64_apple_darwin
+  cargo:rustc-cfg=aarch64_apple_darwin
+  cargo:rerun-if-env-changed=OPENSSL_DIR_aarch64_apple_darwin
+  cargo:rerun-if-env-changed=OPENSSL_DIR
+  cargo:rerun-if-env-changed=OPENSSL_INCLUDE_DIR_aarch64_apple_darwin
+  cargo:rerun-if-env-changed=OPENSSL_INCLUDE_DIR
+  cargo:rerun-if-env-changed=OPENSSL_LIB_DIR_aarch64_apple_darwin
+  cargo:rerun-if-env-changed=OPENSSL_LIB_DIR
+  cargo:rerun-if-env-changed=OPENSSL_NO_PKG_CONFIG
+  cargo:rerun-if-env-changed=PKG_CONFIG_aarch64-apple-darwin
+  cargo:rerun-if-env-changed=PKG_CONFIG_aarch64_apple_darwin
+  cargo:rerun-if-env-changed=HOST_PKG_CONFIG
+  cargo:rerun-if-env-changed=PKG_CONFIG
+  cargo:rerun-if-env-changed=OPENSSL_STATIC
+  cargo:rerun-if-env-changed=OPENSSL_DYNAMIC
+  cargo:rerun-if-env-changed=PKG_CONFIG_ALL_STATIC
+  cargo:rerun-if-env-changed=PKG_CONFIG_ALL_DYNAMIC
+  cargo:rerun-if-env-changed=PKG_CONFIG_PATH_aarch64-apple-darwin
+  cargo:rerun-if-env-changed=PKG_CONFIG_PATH_aarch64_apple_darwin
+  cargo:rerun-if-env-changed=HOST_PKG_CONFIG_PATH
+  cargo:rerun-if-env-changed=PKG_CONFIG_PATH
+  cargo:rerun-if-env-changed=PKG_CONFIG_LIBDIR_aarch64-apple-darwin
+  cargo:rerun-if-env-changed=PKG_CONFIG_LIBDIR_aarch64_apple_darwin
+  cargo:rerun-if-env-changed=HOST_PKG_CONFIG_LIBDIR
+  cargo:rerun-if-env-changed=PKG_CONFIG_LIBDIR
+  cargo:rerun-if-env-changed=PKG_CONFIG_SYSROOT_DIR_aarch64-apple-darwin
+  cargo:rerun-if-env-changed=PKG_CONFIG_SYSROOT_DIR_aarch64_apple_darwin
+  cargo:rerun-if-env-changed=HOST_PKG_CONFIG_SYSROOT_DIR
+  cargo:rerun-if-env-changed=PKG_CONFIG_SYSROOT_DIR
+  cargo:rerun-if-env-changed=OPENSSL_STATIC
+  cargo:rerun-if-env-changed=OPENSSL_DYNAMIC
+  cargo:rerun-if-env-changed=PKG_CONFIG_ALL_STATIC
+  cargo:rerun-if-env-changed=PKG_CONFIG_ALL_DYNAMIC
+  cargo:rerun-if-env-changed=PKG_CONFIG_aarch64-apple-darwin
+  cargo:rerun-if-env-changed=PKG_CONFIG_aarch64_apple_darwin
+  cargo:rerun-if-env-changed=HOST_PKG_CONFIG
+  cargo:rerun-if-env-changed=PKG_CONFIG
+  cargo:rerun-if-env-changed=OPENSSL_STATIC
+  cargo:rerun-if-env-changed=OPENSSL_DYNAMIC
+  cargo:rerun-if-env-changed=PKG_CONFIG_ALL_STATIC
+  cargo:rerun-if-env-changed=PKG_CONFIG_ALL_DYNAMIC
+  cargo:rerun-if-env-changed=PKG_CONFIG_PATH_aarch64-apple-darwin
+  cargo:rerun-if-env-changed=PKG_CONFIG_PATH_aarch64_apple_darwin
+  cargo:rerun-if-env-changed=HOST_PKG_CONFIG_PATH
+  cargo:rerun-if-env-changed=PKG_CONFIG_PATH
+  cargo:rerun-if-env-changed=PKG_CONFIG_LIBDIR_aarch64-apple-darwin
+  cargo:rerun-if-env-changed=PKG_CONFIG_LIBDIR_aarch64_apple_darwin
+  cargo:rerun-if-env-changed=HOST_PKG_CONFIG_LIBDIR
+  cargo:rerun-if-env-changed=PKG_CONFIG_LIBDIR
+  cargo:rerun-if-env-changed=PKG_CONFIG_SYSROOT_DIR_aarch64-apple-darwin
+  cargo:rerun-if-env-changed=PKG_CONFIG_SYSROOT_DIR_aarch64_apple_darwin
+  cargo:rerun-if-env-changed=HOST_PKG_CONFIG_SYSROOT_DIR
+  cargo:rerun-if-env-changed=PKG_CONFIG_SYSROOT_DIR
+  cargo:rerun-if-env-changed=AWS_LC_NO_PKG_CONFIG
+  cargo:rerun-if-env-changed=PKG_CONFIG_aarch64-apple-darwin
+  cargo:rerun-if-env-changed=PKG_CONFIG_aarch64_apple_darwin
+  cargo:rerun-if-env-changed=HOST_PKG_CONFIG
+  cargo:rerun-if-env-changed=PKG_CONFIG
+  cargo:rerun-if-env-changed=AWS_LC_STATIC
+  cargo:rerun-if-env-changed=AWS_LC_DYNAMIC
+  cargo:rerun-if-env-changed=PKG_CONFIG_ALL_STATIC
+  cargo:rerun-if-env-changed=PKG_CONFIG_ALL_DYNAMIC
+  cargo:rerun-if-env-changed=PKG_CONFIG_PATH_aarch64-apple-darwin
+  cargo:rerun-if-env-changed=PKG_CONFIG_PATH_aarch64_apple_darwin
+  cargo:rerun-if-env-changed=HOST_PKG_CONFIG_PATH
+  cargo:rerun-if-env-changed=PKG_CONFIG_PATH
+  cargo:rerun-if-env-changed=PKG_CONFIG_LIBDIR_aarch64-apple-darwin
+  cargo:rerun-if-env-changed=PKG_CONFIG_LIBDIR_aarch64_apple_darwin
+  cargo:rerun-if-env-changed=HOST_PKG_CONFIG_LIBDIR
+  cargo:rerun-if-env-changed=PKG_CONFIG_LIBDIR
+  cargo:rerun-if-env-changed=PKG_CONFIG_SYSROOT_DIR_aarch64-apple-darwin
+  cargo:rerun-if-env-changed=PKG_CONFIG_SYSROOT_DIR_aarch64_apple_darwin
+  cargo:rerun-if-env-changed=HOST_PKG_CONFIG_SYSROOT_DIR
+  cargo:rerun-if-env-changed=PKG_CONFIG_SYSROOT_DIR
+  cargo:rerun-if-env-changed=LIBCRYPTO_NO_PKG_CONFIG
+  cargo:rerun-if-env-changed=PKG_CONFIG_aarch64-apple-darwin
+  cargo:rerun-if-env-changed=PKG_CONFIG_aarch64_apple_darwin
+  cargo:rerun-if-env-changed=HOST_PKG_CONFIG
+  cargo:rerun-if-env-changed=PKG_CONFIG
+  cargo:rerun-if-env-changed=LIBCRYPTO_STATIC
+  cargo:rerun-if-env-changed=LIBCRYPTO_DYNAMIC
+  cargo:rerun-if-env-changed=PKG_CONFIG_ALL_STATIC
+  cargo:rerun-if-env-changed=PKG_CONFIG_ALL_DYNAMIC
+  cargo:rerun-if-env-changed=PKG_CONFIG_PATH_aarch64-apple-darwin
+  cargo:rerun-if-env-changed=PKG_CONFIG_PATH_aarch64_apple_darwin
+  cargo:rerun-if-env-changed=HOST_PKG_CONFIG_PATH
+  cargo:rerun-if-env-changed=PKG_CONFIG_PATH
+  cargo:rerun-if-env-changed=PKG_CONFIG_LIBDIR_aarch64-apple-darwin
+  cargo:rerun-if-env-changed=PKG_CONFIG_LIBDIR_aarch64_apple_darwin
+  cargo:rerun-if-env-changed=HOST_PKG_CONFIG_LIBDIR
+  cargo:rerun-if-env-changed=PKG_CONFIG_LIBDIR
+  cargo:rerun-if-env-changed=PKG_CONFIG_SYSROOT_DIR_aarch64-apple-darwin
+  cargo:rerun-if-env-changed=PKG_CONFIG_SYSROOT_DIR_aarch64_apple_darwin
+  cargo:rerun-if-env-changed=HOST_PKG_CONFIG_SYSROOT_DIR
+  cargo:rerun-if-env-changed=PKG_CONFIG_SYSROOT_DIR
+  cargo:rerun-if-env-changed=LIBCRYPTO_STATIC
+  cargo:rerun-if-env-changed=LIBCRYPTO_DYNAMIC
+  cargo:rerun-if-env-changed=PKG_CONFIG_ALL_STATIC
+  cargo:rerun-if-env-changed=PKG_CONFIG_ALL_DYNAMIC
+  cargo:rerun-if-env-changed=PKG_CONFIG_aarch64-apple-darwin
+  cargo:rerun-if-env-changed=PKG_CONFIG_aarch64_apple_darwin
+  cargo:rerun-if-env-changed=HOST_PKG_CONFIG
+  cargo:rerun-if-env-changed=PKG_CONFIG
+  cargo:rerun-if-env-changed=LIBCRYPTO_STATIC
+  cargo:rerun-if-env-changed=LIBCRYPTO_DYNAMIC
+  cargo:rerun-if-env-changed=PKG_CONFIG_ALL_STATIC
+  cargo:rerun-if-env-changed=PKG_CONFIG_ALL_DYNAMIC
+  cargo:rerun-if-env-changed=PKG_CONFIG_PATH_aarch64-apple-darwin
+  cargo:rerun-if-env-changed=PKG_CONFIG_PATH_aarch64_apple_darwin
+  cargo:rerun-if-env-changed=HOST_PKG_CONFIG_PATH
+  cargo:rerun-if-env-changed=PKG_CONFIG_PATH
+  cargo:rerun-if-env-changed=PKG_CONFIG_LIBDIR_aarch64-apple-darwin
+  cargo:rerun-if-env-changed=PKG_CONFIG_LIBDIR_aarch64_apple_darwin
+  cargo:rerun-if-env-changed=HOST_PKG_CONFIG_LIBDIR
+  cargo:rerun-if-env-changed=PKG_CONFIG_LIBDIR
+  cargo:rerun-if-env-changed=PKG_CONFIG_SYSROOT_DIR_aarch64-apple-darwin
+  cargo:rerun-if-env-changed=PKG_CONFIG_SYSROOT_DIR_aarch64_apple_darwin
+  cargo:rerun-if-env-changed=HOST_PKG_CONFIG_SYSROOT_DIR
+  cargo:rerun-if-env-changed=PKG_CONFIG_SYSROOT_DIR
+  cargo:rerun-if-env-changed=LIBCRYPTO_AWSLC_NO_PKG_CONFIG
+  cargo:rerun-if-env-changed=PKG_CONFIG_aarch64-apple-darwin
+  cargo:rerun-if-env-changed=PKG_CONFIG_aarch64_apple_darwin
+  cargo:rerun-if-env-changed=HOST_PKG_CONFIG
+  cargo:rerun-if-env-changed=PKG_CONFIG
+  cargo:rerun-if-env-changed=LIBCRYPTO_AWSLC_STATIC
+  cargo:rerun-if-env-changed=LIBCRYPTO_AWSLC_DYNAMIC
+  cargo:rerun-if-env-changed=PKG_CONFIG_ALL_STATIC
+  cargo:rerun-if-env-changed=PKG_CONFIG_ALL_DYNAMIC
+  cargo:rerun-if-env-changed=PKG_CONFIG_PATH_aarch64-apple-darwin
+  cargo:rerun-if-env-changed=PKG_CONFIG_PATH_aarch64_apple_darwin
+  cargo:rerun-if-env-changed=HOST_PKG_CONFIG_PATH
+  cargo:rerun-if-env-changed=PKG_CONFIG_PATH
+  cargo:rerun-if-env-changed=PKG_CONFIG_LIBDIR_aarch64-apple-darwin
+  cargo:rerun-if-env-changed=PKG_CONFIG_LIBDIR_aarch64_apple_darwin
+  cargo:rerun-if-env-changed=HOST_PKG_CONFIG_LIBDIR
+  cargo:rerun-if-env-changed=PKG_CONFIG_LIBDIR
+  cargo:rerun-if-env-changed=PKG_CONFIG_SYSROOT_DIR_aarch64-apple-darwin
+  cargo:rerun-if-env-changed=PKG_CONFIG_SYSROOT_DIR_aarch64_apple_darwin
+  cargo:rerun-if-env-changed=HOST_PKG_CONFIG_SYSROOT_DIR
+  cargo:rerun-if-env-changed=PKG_CONFIG_SYSROOT_DIR
+  Ignoring candidate AWS-LC at /opt/homebrew/Cellar/openssl@3/3.6.1: Failed to read /opt/homebrew/Cellar/openssl@3/3.6.1/include/openssl/base.h: No such file or directory (os error 2)
+  Ignoring candidate AWS-LC at /opt/homebrew/Cellar/openssl@3/3.6.1: Failed to read /opt/homebrew/Cellar/openssl@3/3.6.1/include/openssl/base.h: No such file or directory (os error 2)
+  cargo:warning=Building with: CMake
+  cargo:warning=Symbol Prefix: Some("aws_lc_fips_0_14_2")
+  cargo:rerun-if-env-changed=AWS_LC_FIPS_SYS_CMAKE_aarch64_apple_darwin
+  cargo:rerun-if-env-changed=AWS_LC_FIPS_SYS_CMAKE
+  cargo:rerun-if-env-changed=CMAKE_aarch64_apple_darwin
+  cargo:rerun-if-env-changed=CMAKE
+
+  --- stderr
+  Missing dependency: cmake
+
+  thread 'main' (6933451) panicked at /Users/mahnush/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/aws-lc-fips-sys-0.14.2/builder/main.rs:1377:34:
+  called `Result::unwrap()` on an `Err` value: "Required build dependency is missing. Halting build."
+  note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+make: *** [clippy] Error 101
+exit 2

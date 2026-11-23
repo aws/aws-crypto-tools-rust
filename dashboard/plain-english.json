@@ -1,0 +1,790 @@
+{
+  "_about": "Hand-maintained plain-English text for the MPL verification dashboard. Every card cites the doc sections it was written from. The generator checks that each cited locator text exists in the cited file. Facts, numbers, scores and ranks are NOT kept here: they are read from docs/ and verus-proofs/ by generate_dashboard.py.",
+  "evidence_labels": {
+    "proved": "Checked by Verus on a model. Verus is a proof checker for Rust. Evidence label 'proved' always means model level here.",
+    "assumed": "Taken as true by the proof. Verus does not check it.",
+    "code_reading": "A person read the shipped code and judged that it matches the model. Nothing checks this."
+  },
+  "honesty_levels": [
+    {
+      "key": "in_crate",
+      "label": "Proved in the shipped code",
+      "rank": 1,
+      "text": "Verus checks the real library code, not a copy. No target is at this level on this branch."
+    },
+    {
+      "key": "in_crate_other_branch",
+      "label": "Partly proved in the shipped code, on another branch only",
+      "rank": 2,
+      "text": "Verus checks the real code, partly, and only on branch Mahnush_Verus. It relies on 20 assumed aws-lc-rs facts. This branch has no such proof, so nothing about the code here is proved."
+    },
+    {
+      "key": "model_proved",
+      "label": "Model proof, no failing check",
+      "rank": 3,
+      "text": "Verus checks a hand-written copy (a model) of the code and finds no failing check. The code itself is not checked. The result holds only under the listed assumptions."
+    },
+    {
+      "key": "model_partly",
+      "label": "Model proof, with an intentional failing check",
+      "rank": 4,
+      "text": "Verus checks a model. One or more checks fail on purpose. Each failing check states a rule that the code does not follow, so the failure is the evidence of a bug or a spec gap."
+    },
+    {
+      "key": "not_started",
+      "label": "No proof yet",
+      "rank": 5,
+      "text": "The target is ranked and described, but no proof has been written. Nothing is checked."
+    }
+  ],
+  "page_rules": [
+    "Every number on this page is read from the repository docs or from a recorded Verus run. Nothing is typed in by hand.",
+    "A proof result is marked STALE when the proof file has changed since the run that produced the result.",
+    "No level is shown as an upgrade of a lower level. A model proof is never shown as a proof of the shipped code.",
+    "Scores, ranks, coverage gaps and quick wins are copied from docs/mpl-verification-targets.md. They are not recomputed and a proof does not change them.",
+    "A passing model proof does not mean a threat is handled. It means only what its card says it checks.",
+    "If a docs statement and a Verus run disagree, the page shows the disagreement and uses the weaker reading."
+  ],
+  "glossary": [
+    {"term": "Model-level proof", "text": "A proof about a hand-written copy of the code, written in a form Verus can read. The copy is called a model. Verus checks the logic of the model. A person checks that the model matches the code. Nothing checks that automatically, so an edit to the real code would not be noticed."},
+    {"term": "Shipped code", "text": "The Rust code in mpl/, prim/ and esdk/ as users get it. On this branch no proof checks it."},
+    {"term": "Verus", "text": "A tool that checks proofs written next to Rust code. It reports how many checks pass and how many fail."},
+    {"term": "Check (verification obligation)", "text": "One statement that Verus tries to prove. The line 'N verified, M errors' counts them. It does not count properties of the product."},
+    {"term": "Expected failure", "text": "A check that is written to fail on purpose. It states what the spec requires. The code does not meet it, so Verus rejects it. The failure is the finding. It is not a broken proof. Names in the proof files end in _FAILS or _EXPECTED_FAIL."},
+    {"term": "Assumption (A_ names)", "text": "A fact the proof takes as true without checking it. Example: KMS only decrypts when the context matches. If an assumption is wrong, the proof says nothing. Names starting with A_ (and A1, A3 and so on in one file) are assumptions."},
+    {"term": "Hypothesis (H_ names)", "text": "A condition about how the model relates to the code or how the code is used. A premise is a condition a theorem is stated under. A code-reading hypothesis is a fact a person checked by reading the code. Names starting with H_ are hypotheses. The page shows which kind each one is."},
+    {"term": "Honesty level", "text": "How strong the evidence for a target is: proved in the shipped code, partly proved in the shipped code on another branch (under 20 assumed aws-lc-rs facts), model proof, model proof with an intentional failing check, or no proof yet. A level is never shown as better than it is."},
+    {"term": "Stale result", "text": "A recorded proof result is stale when the proof file has changed since the run that produced it. A stale result must be re-run before it is trusted."},
+    {"term": "Target (T01 to T27, C01 to C08)", "text": "One thing the verification work proposes to prove. T targets come from the threat model. C targets come from a sweep of what the library can do. Retired targets are listed but not counted."},
+    {"term": "Score, rank, coverage gap, quick win", "text": "The score is severity x coverage gap x feasibility x blast radius, as recorded in the docs. The rank orders the targets by score. The coverage gap says how little existing tests cover the property. A quick win has a score above 6.0 and an effort of one week or less. This page copies these values and never recomputes them."},
+    {"term": "Threat (TM-MPL-nnn)", "text": "A threat from docs/mpl-threat-model.md. Each has a risk rating of Low, Medium or High. The threat model has 26 threats."},
+    {"term": "Bug (BUG-nn)", "text": "A bug report in docs/mpl-bug-reports/. Open means the code on main still has the problem. Fixed means it was fixed on main."},
+    {"term": "G1", "text": "A gap found in the spec review. The spec says a branch key record must have create-time and hierarchy-version. The code accepts a record without them."},
+    {"term": "Branch key", "text": "A key that protects other keys. The key store keeps branch keys as records in a DynamoDB table and uses AWS KMS to protect them."},
+    {"term": "KMS and DynamoDB", "text": "AWS KMS is the AWS service that creates and manages encryption keys. DynamoDB is the AWS database that holds key-store records."},
+    {"term": "Encryption context (EC)", "text": "A set of labelled text values that is bound to an encryption. Decryption works only if the same values are supplied again."},
+    {"term": "AAD", "text": "Additional authenticated data. Data that an encryption protects against change but does not hide. The encryption context is used as AAD."},
+    {"term": "Keyring and EDK", "text": "A keyring protects and recovers the data key for a message. An EDK (encrypted data key) is the protected copy of that key stored in the message."},
+    {"term": "CMM", "text": "Cryptographic materials manager. It decides which algorithm suite and keys are used and asks the keyrings to do the work."},
+    {"term": "Commitment policy", "text": "A setting that says whether messages must use algorithm suites that bind the ciphertext to one key. It guards against attacks where one ciphertext decrypts under two keys."},
+    {"term": "Cache identifier", "text": "A fingerprint (SHA-384 hash) used to look up cached branch keys. Two different keyring settings must never produce the same one."},
+    {"term": "NUL byte", "text": "The byte with value zero (0x00). The cache identifier uses it as a separator. A field that contains it can make two different settings look the same (BUG-06)."},
+    {"term": "TTL and grace interval", "text": "TTL is how long a cache entry may be used. The grace interval is a wait before a second caller may refresh the same entry."},
+    {"term": "Panic", "text": "A Rust crash. The program stops the current work instead of returning an error."},
+    {"term": "Mutex and poisoned lock", "text": "A mutex is a lock that lets one thread use shared data at a time. If a thread panics while it holds the lock, the lock is marked poisoned and later users get an error."},
+    {"term": "Mahnush_Verus", "text": "Another branch of the repository that holds in-crate Verus proofs (VR-013, VR-014 for C03). Nothing from it is merged here."},
+    {"term": "Consistency check", "text": "A proof that compares two descriptions of the same thing and finds that they agree, for example a table in the code and the matching table in the spec text. Both were written by hand. It does not show that the code is right, and it cannot see a mistake that was typed into both."},
+    {"term": "PDK and materials", "text": "A PDK is a plaintext data key, the unencrypted key that protects the message. Materials are the bundle of algorithm suite, encryption context and keys that the keyrings and the materials manager pass to each other."},
+    {"term": "UUID", "text": "A 16-byte identifier, written as 36 characters of hex digits and hyphens, for example 41424344-4546-4748-494a-4b4c4d4e4f50. The branch key store uses one as the version of a branch key."},
+    {"term": "Provider info and IV", "text": "Provider info is a field of an encrypted data key (EDK). It tells a keyring how the key was wrapped. For the raw AES keyring it holds the IV, the one-time value that AES-GCM needs for each wrap."},
+    {"term": "Rotating a branch key", "text": "Rotation creates a new version of a branch key. The old version stays in the table as a decrypt-only record, and a new active record is written. The function is version_key."},
+    {"term": "ARN, Region and multi-Region key", "text": "An ARN (Amazon Resource Name) is the identifier of an AWS resource such as a KMS key. A Region is an AWS location such as us-east-1. A multi-Region key (MRK) has copies in several Regions. Its key id starts with mrk-."},
+    {"term": "Discovery and MRDiscovery", "text": "Two settings of the key store that decrypt with the key named in the record instead of one configured key. MRDiscovery also replaces the Region in that key's ARN with the configured Region."}
+  ],
+  "hypotheses": {
+    "A_STR": {"kind": "assumed", "text": "Strings behave as sequences of characters in the model. Byte and character splits agree because the relevant text is ASCII."},
+    "A_ITER": {"kind": "assumed", "text": "Walking through a map visits each key exactly once. This holds for the map type used (BTreeMap), but Verus cannot check it."},
+    "A_BLD": {"kind": "assumed", "text": "The builder for branch key material behaves as the T02 model says."},
+    "A_DDB": {"kind": "assumed", "text": "DynamoDB returns exactly the attributes that were written."},
+    "A_NAME": {"kind": "assumed", "text": "The reader and the writer use the same key store name."},
+    "A_KMS": {"kind": "assumed", "text": "KMS binds the context given at write time and accepts a decrypt only for an equal context."},
+    "A_NUM": {"kind": "assumed", "text": "The hierarchy-version value is written as a canonical number."},
+    "A_ARN": {"kind": "assumed", "text": "The record lookup returns the record for the requested id and type. ARN resolution, grant tokens and other KMS errors are not modeled."},
+    "A_MR": {"kind": "assumed", "text": "The code's own test for a multi-Region key ARN is used as the definition. It is looser than the spec."},
+    "A_KDF": {"kind": "assumed", "text": "The key-derivation function (KBKDF) is left unspecified. The proof does not say what it computes."},
+    "A_STD": {"kind": "assumed", "text": "Standard Rust byte conversions behave as documented."},
+    "A_LBL": {"kind": "assumed", "text": "The label bytes and constants were copied by hand from the source. A script compared them and found them equal."},
+    "A_DIGEST_CR": {"kind": "assumed", "text": "SHA-384 is treated as never giving the same output for different inputs. The real hash can, but no one can find such inputs."},
+    "A_RNG": {"kind": "assumed", "text": "Each call to the random generator fills the whole buffer or fails. Nothing is assumed about the values."},
+    "A_AES": {"kind": "assumed", "text": "A successful AES-GCM encryption grows the output by the message length plus 16 bytes. Nothing else about AES-GCM is assumed."},
+    "A_VSTD": {"kind": "assumed", "text": "Verus's standard-library specs for vectors, slices and arrays are correct."},
+    "A_TYP": {"kind": "assumed", "text": "Rust array types fix the lengths."},
+    "A_ALLOC": {"kind": "assumed", "text": "Allocating the output vector succeeds."},
+    "A_TIME_RANGE": {"kind": "assumed", "text": "The range of times a SystemTime can hold. The proof uses the 64-bit Unix range. The language does not fix it."},
+    "A_NOW": {"kind": "assumed", "text": "The clock reading is a time that can be represented."},
+    "A_NOW_CAP": {"kind": "assumed", "text": "Used for one proposed fix only: the clock never reads past the year 3000."},
+    "A_MUTEX": {"kind": "assumed", "text": "A panic while a lock is held poisons it, and locking a poisoned lock gives an error. This is from the Rust documentation."},
+    "A1": {"kind": "assumed", "text": "Verus's own spec for copy_from_slice: it needs equal lengths and writes the whole target."},
+    "A3": {"kind": "assumed", "text": "The signing step is abstract. Nothing is assumed about its randomness, so the chance of using up all attempts is not covered."},
+    "A4": {"kind": "assumed", "text": "The calls into aws-lc-rs have no stated contract. That none of them panics or hangs is assumed."},
+    "A5": {"kind": "assumed", "text": "A ghost log counts calls. It is only as good as the manual check that the shipped loop calls the signer once per attempt."},
+    "A_RNG_FRESH": {"kind": "not_assumed", "text": "That random draws are uniform and independent. It is not assumed, not used and not proved."},
+    "H_WF": {"kind": "premise", "text": "The written context has a table name and no enc entry. This is proved for every context the builders produce."},
+    "H_ENUM": {"kind": "premise", "text": "The loops visit every entry of the maps. It can be satisfied."},
+    "H_LEN_FITS": {"kind": "assumed", "text": "Every field is shorter than 2^32 bytes. Needed only for the length-prefixed fix, which a real fix would have to check."},
+    "H_RNG_DIFFERS": {"kind": "premise", "text": "Two calls draw different salts or IVs. It is only the 'if' part of one result and is never established."},
+    "H_SAME_EC": {"kind": "code_reading", "text": "One local context goes to both the KMS call and the stored record. A later edit that breaks this would not be detected."},
+    "H_MODEL_MATCH": {"kind": "code_reading", "text": "The model equals the shipped code at the lines named in the proof file header. A person checked this by reading."},
+    "H_BYTES": {"kind": "code_reading", "text": "Fields are byte sequences. Whether a collision partner is valid UTF-8 is not modeled."},
+    "H_SCOPE_PAIRING": {"kind": "code_reading", "text": "The encrypt scope is always used without a version and the decrypt scope always with one."},
+    "H_VERSION_NO_NUL": {"kind": "code_reading", "text": "The version is a hyphenated UUID string and cannot contain a zero byte."},
+    "H_NO_DIGEST_ERROR": {"kind": "code_reading", "text": "The hash call cannot fail."},
+    "H_AAD_PURE": {"kind": "code_reading", "text": "The helpers that build the AAD and the version bytes are pure functions."},
+    "H_NO_STATE": {"kind": "code_reading", "text": "The wrap function keeps no state between calls."},
+    "H_WIPE": {"kind": "code_reading", "text": "The derived key is wiped when dropped. Verus cannot model this, so nothing is proved about wiping."},
+    "H_STD_ADD": {"kind": "code_reading", "text": "Rust's + on SystemTime panics on overflow. Read in the standard library source."},
+    "H_STD_UNIX": {"kind": "code_reading", "text": "The steps of the Unix time addition, read in the standard library source. Other platforms are not modeled."},
+    "H_REACH": {"kind": "code_reading", "text": "Which of the four additions can be reached with a large duration."},
+    "H_STATE_LOCKED_SITES": {"kind": "code_reading", "text": "Two of the four additions run while the cache state lock is held."},
+    "H_NO_LOCK_KEYRING": {"kind": "code_reading", "text": "The other two additions, in the keyring, run with no lock held."},
+    "H_NO_CLEAR": {"kind": "code_reading", "text": "Nothing in the library clears a poisoned lock."},
+    "H_LOCAL_SEPARATE": {"kind": "code_reading", "text": "The local cache has its own lock, so the other cache's panic does not poison it."},
+    "H_UNWIND": {"kind": "code_reading", "text": "Panics unwind. With abort-on-panic the process would end instead."},
+    "H_CLOCK": {"kind": "code_reading", "text": "In production the clock is SystemTime::now. The override is for tests."},
+    "H_ORACLE": {"kind": "code_reading", "text": "The shipped ARN-compatibility function equals the modeled one. A person audited this."},
+    "H_BUILD": {"kind": "code_reading", "text": "The configuration used at call time is the one that build() checked."},
+    "H_CALLER": {"kind": "code_reading", "text": "The callers pass only the returned value as the KMS key id. A person read this."},
+    "A_SPEC_COPY": {"kind": "assumed", "text": "The spec table rows (11 ESDK suites and 7 other ids) were typed in by hand from the spec. A script compares them with the spec file. Verus does not."},
+    "A_CODE_COPY": {"kind": "assumed", "text": "The code table rows, the order of the list of suites and two key-size constants were typed in by hand from algorithm_suite.rs. A script compares them with the code. Verus does not see the Rust file."},
+    "A_PRIM_COPY": {"kind": "assumed", "text": "The key lengths and signature field sizes of the primitives were typed in by hand from the prim crate, with two small lookup functions."},
+    "A_FMT": {"kind": "assumed", "text": "The spec versions '1.0' and '2.0' correspond to the code values 1 and 2."},
+    "A_NA": {"kind": "assumed", "text": "The spec value 'N/A' for the suite data length corresponds to 0 in the code."},
+    "A_INT": {"kind": "assumed", "text": "All values are at most 49, so no arithmetic in the model overflows."},
+    "A_FIND": {"kind": "assumed", "text": "Looking up a suite by id returns the first match in list order. This is standard Rust behavior that vstd does not specify."},
+    "H_TABLE_ONLY": {"kind": "code_reading", "text": "Every suite value in the program comes from the table, because the struct has private fields and is built only there. A new constructor elsewhere would break this."},
+    "H_ONLY_ESDK": {"kind": "code_reading", "text": "Only the ESDK suites exist in the code. The spec also lists suites for two other products, S3EC and DBE. The code does not implement them."},
+    "H_ALL": {"kind": "code_reading", "text": "The list of all suites has the 11 suites in the order modeled. A missing suite would be a compile error."},
+    "H_FROM_ID": {"kind": "code_reading", "text": "Looking up a suite by id is a plain search of that list, with no other path."},
+    "H_CURVE_MAP": {"kind": "code_reading", "text": "The two places that map a signature algorithm to a curve are one-to-one and cover both algorithms."},
+    "H_AES_MAP": {"kind": "code_reading", "text": "One function maps a key length to an AES variant for message bodies. Keyrings do not choose an AES variant from the key length."},
+    "H_NO_SALT": {"kind": "code_reading", "text": "No code reads a salt length from the table, because the table has none."},
+    "A_BYTES": {"kind": "assumed", "text": "A namespace is any sequence of bytes in the model. Every Rust string is one, so the results cover all strings."},
+    "A_SPEC_IDS": {"kind": "assumed", "text": "The four AWS KMS provider ids were typed in by hand from the spec files. Only their first seven bytes matter to any result."},
+    "H_STD_STARTS": {"kind": "code_reading", "text": "Rust's starts_with on strings is a byte-by-byte prefix test. It does not fold case or normalize text. Read in the standard library source."},
+    "H_CONST": {"kind": "code_reading", "text": "The reserved prefix is defined once, has the seven bytes of 'aws-kms' and is used once, in build."},
+    "H_BUILD_ORDER": {"kind": "code_reading", "text": "In build, the four required-field checks come first, then the reserved-name check, then the key length check."},
+    "H_ONLY_BUILD": {"kind": "code_reading", "text": "A keyring is created only inside build, after the check. So every keyring comes from a build that returned Ok."},
+    "H_NS_UNCHANGED": {"kind": "code_reading", "text": "The namespace that is checked is the same value that is stored in the keyring."},
+    "H_EDK_ID": {"kind": "code_reading", "text": "The provider id of every encrypted data key the keyring writes is its namespace."},
+    "H_DECRYPT_FILTER": {"kind": "code_reading", "text": "On decrypt, the keyring tries only encrypted data keys whose provider id equals its own namespace exactly."},
+    "H_CONSUMERS": {"kind": "code_reading", "text": "In this repository the only comparisons of a provider id with a constant are exact and case-sensitive. Consumers outside the repository are not covered."},
+    "A_LOCK_EXCL": {"kind": "assumed", "text": "A held lock gives exclusive access. The model runs calls one at a time, each as one step. Real threads are covered only as some serial order."},
+    "A_NO_ALIAS": {"kind": "assumed", "text": "No cache entry handle is stored under two identifiers, so each identifier has its own counters. The code does not enforce this."},
+    "A_ALL_CALLS": {"kind": "assumed", "text": "Every change to a counter goes through update_usage_metadata for the identifier that holds it. record_use is public, so this is a premise about callers."},
+    "A_NO_PUT": {"kind": "assumed", "text": "During the call sequence nothing replaces or deletes the entry by another route."},
+    "H_STD_CHECKED_ADD": {"kind": "code_reading", "text": "The 64-bit checked_add returns nothing exactly when the true sum is above the maximum. This is the documented standard library contract. Verus's own spec for it was also cross-checked with a hand-written comparison."},
+    "H_ONLY_SITES": {"kind": "code_reading", "text": "The only arithmetic on the two counters is the two checked_add calls in record_use. The fields are private."},
+    "H_NO_PANIC_IN_GUARD": {"kind": "code_reading", "text": "Nothing between taking the entry lock and returning in record_use can panic, so the two stores are not interrupted."},
+    "H_STORE_FLOW": {"kind": "code_reading", "text": "update_usage_metadata locks the store once, then does a peek, record_use and at most one removal under that lock. A poisoned lock returns an error before any change."},
+    "H_LRU_OPS": {"kind": "code_reading", "text": "In the lru crate, peek changes nothing and pop removes exactly the key asked for."},
+    "H_BUILDER_ANY": {"kind": "code_reading", "text": "A builder can set the start counters to any pair of 64-bit values, so the proof does not assume they start small."},
+    "H_DELEGATION": {"kind": "code_reading", "text": "The default and storm-tracking caches pass the call through unchanged. A cache written outside this repository is not covered."},
+    "H_ARC_SHARED": {"kind": "code_reading", "text": "A clone of a cache entry shares its counters. This is why A_NO_ALIAS is a separate premise."},
+    "A_TABLE_COPY": {"kind": "assumed", "text": "The suite table is a copy of the C05 copy of the code table, typed in by hand. Only the key length is used. A script compares it with the source."},
+    "A_SPEC_COLS_COPY": {"kind": "assumed", "text": "Two columns of the spec (key length and key-derivation input length) were typed in by hand. A script compares them with the spec file."},
+    "A_FIT": {"kind": "assumed", "text": "The spec says the data key must 'fit' the key derivation or the encryption algorithm. The proof reads this as 'has the suite's key length'. This is an interpretation."},
+    "A_OTHER_OK": {"kind": "assumed", "text": "The other checks in build are replaced by one yes-or-no value. This is sound only if none of them can turn an error into success or change the stored key."},
+    "A_ERR": {"kind": "assumed", "text": "Error kinds are not modeled. Only success against failure is claimed."},
+    "A_LEN": {"kind": "assumed", "text": "A key length is any usize. The model allows more lengths than the code can produce."},
+    "A_RNG_FAIL": {"kind": "assumed", "text": "The key generators are modeled for success only. On failure the code returns an error before it builds a key."},
+    "H_CLOSED": {"kind": "code_reading", "text": "The only writes to a materials value's data key are in the two add-key methods and the two builds. The fields are private, the structs are non-exhaustive, there is no mutable method and there is no unsafe code in mpl/src. A new constructor or method would break this."},
+    "H_NO_MUT": {"kind": "code_reading", "text": "A holder of the materials cannot change the length of the key inside them."},
+    "H_SUITE_FIXED": {"kind": "code_reading", "text": "Nothing changes the suite of a materials value after build."},
+    "H_BUILD_SAME_SUITE": {"kind": "code_reading", "text": "In both builds, the suite that is checked is the suite that is stored."},
+    "H_BUILD_OTHER": {"kind": "code_reading", "text": "The checks after the key check in build only return errors. The built value copies the key unchanged."},
+    "H_ENC_DEC_SAME": {"kind": "code_reading", "text": "For this property, encryption and decryption materials differ only in fields the model ignores. The model lets one sequence mix both, which allows more than the real code does."},
+    "H_GEN_SUITE": {"kind": "code_reading", "text": "Both keyrings generate a key with the suite of the materials that then receive it."},
+    "H_FILL_SLICE": {"kind": "code_reading", "text": "The random-bytes function fills a slice, and a slice cannot change length. The random values are not modeled."},
+    "H_VEC_LEN": {"kind": "code_reading", "text": "vec![0u8; n] has length n. Verus checks this through vstd."},
+    "H_RAW_DEC_LOOP": {"kind": "code_reading", "text": "In raw AES decrypt, the materials change only at the final add-key call. A key that fails an earlier check is skipped."},
+    "H_HIER_DEC_LOOP": {"kind": "code_reading", "text": "In hierarchical decrypt, the first successfully unwrapped key is passed to add-key and the call returns. The model takes its length as arbitrary."},
+    "H_NO_OTHER_PRODUCER": {"kind": "code_reading", "text": "No other file in mpl/src creates a plaintext data key, and esdk/src has none."},
+    "A_EDK_ABS": {"kind": "assumed", "text": "An encrypted data key is three abstract fields. The checks only compare keys for equality, as the code does, and never read their content."},
+    "A_CT_EQ": {"kind": "assumed", "text": "Comparing two data keys or two signing keys is plain byte equality. The source of the Rust wrapper in aws-lc-rs 1.18.1 was read. The C function it calls was not read. Timing is not modeled."},
+    "A_SUITE_COPY": {"kind": "assumed", "text": "Two yes/no facts for each of the 11 suites are typed in by hand from the suite table. The facts are whether it signs with a public key and whether it signs with a shared key. They are typed a second time to compare. The same mistake typed in both places would not be seen. C05 covers the whole table."},
+    "A_SPEC_FN": {"kind": "assumed", "text": "A keyring or materials manager is modeled as a pure function from input to an optional output. Side effects, crashes, endless loops and concurrency are not modeled. The results hold for every such function."},
+    "H_ALL_FIELDS": {"kind": "code_reading", "text": "The 7 fields of the encryption materials and the 6 of the decryption materials in the model are all the fields of the two structs. A new field would not be compared by the check and would break the proof until the model is updated."},
+    "H_SUITE_ID": {"kind": "code_reading", "text": "The suite id type has exactly one variant today (an ESDK suite). A second variant would add suites that the model does not have, and the proof would have to be redone."},
+    "H_ALL_BUILT": {"kind": "code_reading", "text": "Every materials value comes from build() (the function that makes materials), from a copy (Clone) or from the add_data_key and add_encrypted_data_key methods. No other code in mpl/src changes a field. A person searched for this."},
+    "H_BUILD_SYM": {"kind": "code_reading", "text": "The builders (the build() functions that make materials) return an error if a suite that has no shared-key signing is given symmetric signing keys. With all 11 suites, that field is empty on every built value. This is what keeps finding F1 closed."},
+    "H_SEND_BODY": {"kind": "code_reading", "text": "The four send() bodies are as modeled. A copy of the input is taken before the call. An error from the keyring or manager is passed on. The check runs. The output is returned only if it passes. A person read them."},
+    "H_NO_INTERIOR": {"kind": "code_reading", "text": "The materials cannot be changed through a shared reference (Rust calls this having no interior mutability). So the copy taken before the call equals what the keyring received, and the keyring cannot change it."},
+    "H_DIRECT_CALL": {"kind": "code_reading", "text": "Keyring and Cmm are public traits, so a user's type can call its own method and skip the check. Only five scratch test programs outside any crate do so. No library code does."},
+    "H_WIRING": {"kind": "code_reading", "text": "The table of call paths in the proof header is complete for mpl/ and esdk/ at the commit named there. It was found by searching and reading. A new call site would break it."},
+    "H_EC_LIST": {"kind": "code_reading", "text": "The encryption context is a sorted map and is written out by walking it in key order. Equal maps give equal lists, and the reverse. Sortedness is not used by any proof."},
+    "H_UUID_PARSE": {"kind": "code_reading", "text": "The uuid crate (version 1.27.0) reads a 36-byte text as hex digits in either case with hyphens at four fixed places. The accept test is proved equal to the model's. Copying the parser into the model is code reading."},
+    "H_UUID_FMT": {"kind": "code_reading", "text": "Turning 16 bytes into text with the uuid crate gives the 36-character lowercase hyphenated form."},
+    "H_VERSION_FLOW": {"kind": "code_reading", "text": "On decrypt, the version string that unwrap uses comes from the stored record, not from the request. So wrap and unwrap build the same AAD only if the record's string parses to the bytes wrap wrote. The step from request to record belongs to the key store and is not shown."},
+    "H_KEY_SEPARATION": {"kind": "not_assumed", "text": "That different branch key ids or versions give different AES-GCM keys. The target text uses this to call the collision harmless. It is not used and not proved here."},
+    "A_MAP": {"kind": "assumed", "text": "Get, insert and clone on the sorted map type (BTreeMap), and insert on the sorted set type (BTreeSet), behave like the matching operations on a mathematical map and set. These are standard library contracts. Verus has no spec for them over strings."},
+    "H_LOOKUP_ORIGINAL": {"kind": "code_reading", "text": "The key lookup in the loop is on the original message context. That is a separate value from the result and is not changed."},
+    "H_ONE_ERROR_SITE": {"kind": "code_reading", "text": "The loop has exactly one place where it returns an error, and no path that panics (crashes) in the cases reached."},
+    "H_BUILD_CHECK": {"kind": "code_reading", "text": "DecryptionMaterials::build rejects a required key that is not in the context. The proof only states that this check cannot fire. It does not depend on the check existing."},
+    "H_ASC": {"kind": "code_reading", "text": "The context is walked in ascending key order. This is used only to say which conflicting key the real code names. No theorem depends on it."},
+    "A_NONCE": {"kind": "assumed", "text": "A wrong-length IV makes aes_decrypt return an error and not panic. It is read from prim/src/lib.rs. It appears only in a comment, and no theorem uses it."},
+    "H_NO_OVERFLOW": {"kind": "code_reading", "text": "The conditions that the executable models require, such as no number overflowing, hold at the real call sites. A person checked this by reading."},
+    "H_CALLER_IV": {"kind": "code_reading", "text": "The only caller of serialize_provider_info passes a 12-byte IV. A person read this."},
+    "H_ONLY_CALLER_DECODE": {"kind": "code_reading", "text": "The only caller of decryptable_edk_iv is the keyring's decrypt step. A person read this."},
+    "H_IV_FLOW": {"kind": "code_reading", "text": "The same IV goes to the encryption call and into the provider info. The IV read back goes to the decryption call. A person read this."},
+    "H_ALG_CONSTANTS": {"kind": "code_reading", "text": "All three wrapping algorithms use a 12-byte IV and a 16-byte tag. A person read this."},
+    "H_NO_OTHER_READER": {"kind": "code_reading", "text": "Nothing else reads this layout. A person searched for it."},
+    "A_COPY": {"kind": "assumed", "text": "The blocks marked COPIED in the proof file equal the text of the T01 and C01 proofs. A script compares them. Verus does not."},
+    "H_ONLY_THESE_OPS": {"kind": "code_reading", "text": "No other statement changes the two new contexts between their creation and the two calls that make the records. So the model covers the whole derivation."},
+    "H_OLD_EC": {"kind": "code_reading", "text": "The old context is the one built from the fetched record, and it is moved into the new decrypt-only context. A person read this."},
+    "H_NO_ENC": {"kind": "code_reading", "text": "The attributes of the fetched record do not include the enc entry, which is held separately. Only the check on the written attributes uses this."},
+    "H_SORT_KEY": {"kind": "code_reading", "text": "The record is fetched by branch key id and type branch:ACTIVE, so the type of the fetched item is branch:ACTIVE. This is DynamoDB behavior and is not checked."},
+    "H_ITEM": {"kind": "assumed", "text": "item_from_ec_and_enc skips the table name and writes the other context entries as attributes. It is taken from the T01 and C01 proofs."},
+    "H_OLD_BUILT": {"kind": "assumed", "text": "The old active context was made by the builder functions. Only the builder-agreement checks need this. It holds for records written by create_key (T01). For records from another writer it is not shown."},
+    "A_MRK_SPEC": {"kind": "assumed", "text": "The proof's test for a multi-Region key ARN (service kms, resource type key, id starts with mrk-) is the proof author's reading of the spec file aws-kms-key-arn.md. It is not code."},
+    "A_FIX_MODEL": {"kind": "assumed", "text": "The model of the fix follows the first option written in the BUG-04 report. It is not code in the repository."},
+    "H_REGION_CFG": {"kind": "code_reading", "text": "The configured Region has no colon. The MRDiscovery builder only checks that a Region was set. The Region-rewrite checks need this. A person read it."}
+  },
+  "proofs": {
+    "T02": {
+      "hypotheses": ["A_STR"],
+      "expected_failures": ["lemma_g1_spec_soundness_FAILS"],
+      "failure_explanation": "The failing check states the spec rule that a record must contain create-time and hierarchy-version before it is accepted. The code does not enforce this rule, so Verus rejects the check. That rejection is the evidence of gap G1: the code accepts records that the spec says to reject. The proof is not broken. The check was left failing and was not weakened.",
+      "result_clause": "the one failing check is the intentional one for gap G1 (the code accepts a record without two fields the spec requires), not a broken proof",
+      "sources": [{"doc": "docs/mpl-verification-targets.md", "locator": "G1 confirmed formally (T02)"}, {"doc": "verus-proofs/README.md", "locator": "## T02: record reconstruction"}]
+    },
+    "C01": {
+      "hypotheses": ["A_ITER", "A_STR", "A_BLD", "A_DDB", "A_NAME"],
+      "expected_failures": [],
+      "result_clause": "this holds under assumption A_ITER, and two results also need A_DDB and A_NAME",
+      "sources": [{"doc": "verus-proofs/README.md", "locator": "## C01: encryption-context builders"}]
+    },
+    "C02": {
+      "hypotheses": ["A1", "A3", "A4", "A5"],
+      "expected_failures": [],
+      "result_clause": "the signing closure and the aws-lc-rs calls are abstract",
+      "sources": [{"doc": "verus-proofs/README.md", "locator": "## C02: bounded ECDSA signing loop"}]
+    },
+    "T01": {
+      "hypotheses": ["A_KMS", "A_DDB", "A_NUM", "A_NAME", "A_ITER", "A_ARN", "A_STR", "A_BLD", "H_WF", "H_ENUM", "H_SAME_EC"],
+      "expected_failures": [],
+      "result_clause": "KMS and DynamoDB are modeled by assumptions, so the KMS part is shown relative to those assumptions",
+      "sources": [{"doc": "verus-proofs/README.md", "locator": "## T01: key-store authenticated encryption context"}]
+    },
+    "T03": {
+      "hypotheses": ["H_ORACLE", "H_BUILD", "H_CALLER", "A_STR", "A_MR"],
+      "expected_failures": [],
+      "result_clause": "discovery modes are out of scope",
+      "sources": [{"doc": "verus-proofs/README-t03-t05.md", "locator": "## T03: pinned-mode KMS key ARN resolution"}]
+    },
+    "T04": {
+      "hypotheses": ["A_RNG", "A_KDF", "A_AES", "A_STD", "A_VSTD", "A_TYP", "A_ALLOC", "H_RNG_DIFFERS", "A_RNG_FRESH", "H_MODEL_MATCH", "H_AAD_PURE", "H_NO_STATE", "H_WIPE"],
+      "expected_failures": [],
+      "result_clause": "it shows the structure of the draws and the output, not that the salt or IV is fresh",
+      "sources": [{"doc": "verus-proofs/README.md", "locator": "## T04: branch-key wrap"}]
+    },
+    "T05": {
+      "hypotheses": ["A_KDF", "A_STD", "A_LBL", "A_VSTD", "A_TYP"],
+      "expected_failures": [],
+      "result_clause": "it shows what the key-derivation primitive receives, not what it computes",
+      "sources": [{"doc": "verus-proofs/README-t03-t05.md", "locator": "## T05: KBKDF fixed-info string"}]
+    },
+    "T06": {
+      "hypotheses": ["A_TIME_RANGE", "A_NOW", "A_NOW_CAP", "A_MUTEX", "H_STD_ADD", "H_STD_UNIX", "H_MODEL_MATCH", "H_REACH", "H_STATE_LOCKED_SITES", "H_NO_LOCK_KEYRING", "H_NO_CLEAR", "H_LOCAL_SEPARATE", "H_UNWIND", "H_CLOCK"],
+      "expected_failures": [
+        "lemma_bug01_site_702_no_overflow_for_any_accepted_ttl_EXPECTED_FAIL",
+        "lemma_bug01_site_945_no_overflow_for_any_accepted_ttl_EXPECTED_FAIL",
+        "lemma_bug01_site_333_no_overflow_for_any_accepted_in_flight_ttl_EXPECTED_FAIL",
+        "lemma_bug01_site_680_no_overflow_for_any_accepted_grace_interval_EXPECTED_FAIL"
+      ],
+      "failure_explanation": "There are four failing checks, one for each place where time is added. Each states 'no crash for every setting the builder accepts'. That claim is false: for example Duration::MAX is accepted and makes the addition panic. Verus rejects the claim and the proof gives the counterexample. This is the evidence of BUG-01. The proof is not broken. The checks were left failing and were not weakened.",
+      "result_clause": "the four failing checks are the intentional ones for BUG-01 (one per time addition), not a broken proof",
+      "sources": [{"doc": "docs/mpl-verification-targets.md", "locator": "BUG-01 confirmed formally (T06)"}, {"doc": "verus-proofs/README.md", "locator": "## T06: `SystemTime + Duration` additions"}]
+    },
+    "T13": {
+      "hypotheses": ["A_DIGEST_CR", "H_LEN_FITS", "H_MODEL_MATCH", "H_BYTES", "H_SCOPE_PAIRING", "H_VERSION_NO_NUL", "H_NO_DIGEST_ERROR"],
+      "expected_failures": ["lemma_bug06_injectivity_without_nul_precondition_EXPECTED_FAIL"],
+      "failure_explanation": "The failing check states that different settings always give different cache identifiers, for every input. That claim is false when a field contains a zero byte, and the proof contains concrete examples. Verus rejects the claim, and a companion lemma proves the claim false, not only unproved. This is the evidence of BUG-06. The proof is not broken. The check was left failing and was not weakened.",
+      "result_clause": "the one failing check is the intentional one for BUG-06 (identifiers can collide when a field contains a zero byte), not a broken proof",
+      "sources": [{"doc": "docs/mpl-verification-targets.md", "locator": "BUG-06 confirmed formally (T13)"}, {"doc": "verus-proofs/README.md", "locator": "## T13: cache identifier"}]
+    },
+    "C05": {
+      "hypotheses": ["A_SPEC_COPY", "A_CODE_COPY", "A_PRIM_COPY", "A_FMT", "A_NA", "A_INT", "A_FIND", "A_VSTD", "H_MODEL_MATCH", "H_TABLE_ONLY", "H_ONLY_ESDK", "H_ALL", "H_FROM_ID", "H_CURVE_MAP", "H_AES_MAP", "H_NO_SALT"],
+      "expected_failures": [],
+      "result_clause": "it is a consistency check of two hand-typed tables, the code table against the spec text, and finds no mismatch",
+      "sources": [{"doc": "verus-proofs/README.md", "locator": "## C05: algorithm suite table"}, {"doc": "docs/mpl-verification-targets.md", "locator": "**C05: no gap found at model level"}]
+    },
+    "T24": {
+      "hypotheses": ["A_BYTES", "A_SPEC_IDS", "A_VSTD", "H_STD_STARTS", "H_CONST", "H_BUILD_ORDER", "H_ONLY_BUILD", "H_NS_UNCHANGED", "H_EDK_ID", "H_DECRYPT_FILTER", "H_CONSUMERS", "H_MODEL_MATCH"],
+      "expected_failures": [],
+      "result_clause": "it shows the reserved-name check for all byte strings and finds no gap, but it does not show that TM-MPL-001 is handled",
+      "sources": [{"doc": "verus-proofs/README.md", "locator": "## T24: reserved `aws-kms` namespace"}, {"doc": "docs/mpl-verification-targets.md", "locator": "**T24: no gap found at model level.**"}]
+    },
+    "C08": {
+      "hypotheses": ["A_VSTD", "A_LOCK_EXCL", "A_NO_ALIAS", "A_ALL_CALLS", "A_NO_PUT", "H_STD_CHECKED_ADD", "H_ONLY_SITES", "H_NO_PANIC_IN_GUARD", "H_STORE_FLOW", "H_LRU_OPS", "H_BUILDER_ANY", "H_DELEGATION", "H_ARC_SHARED", "H_MODEL_MATCH"],
+      "expected_failures": [],
+      "result_clause": "no gap was found, the per-identifier parts assume no shared counters, and the no-wrap part rests on Rust's checked_add contract",
+      "sources": [{"doc": "verus-proofs/README.md", "locator": "## C08: cache usage counters"}, {"doc": "docs/mpl-verification-targets.md", "locator": "**C08: no gap found at model level.**"}]
+    },
+    "C04": {
+      "hypotheses": ["A_TABLE_COPY", "A_SPEC_COLS_COPY", "A_FIT", "A_OTHER_OK", "A_ERR", "A_LEN", "A_RNG_FAIL", "A_VSTD", "H_MODEL_MATCH", "H_CLOSED", "H_NO_MUT", "H_SUITE_FIXED", "H_BUILD_SAME_SUITE", "H_BUILD_OTHER", "H_ENC_DEC_SAME", "H_GEN_SUITE", "H_FILL_SLICE", "H_VEC_LEN", "H_RAW_DEC_LOOP", "H_HIER_DEC_LOOP", "H_NO_OTHER_PRODUCER", "H_TABLE_ONLY"],
+      "expected_failures": [],
+      "result_clause": "no gap was found, and the list of code paths rests on code reading",
+      "sources": [{"doc": "verus-proofs/README.md", "locator": "## C04: plaintext data key length invariant"}, {"doc": "docs/mpl-verification-targets.md", "locator": "**C04: no gap found at model level.**"}]
+    },
+    "C07": {
+      "hypotheses": ["A_STR", "A_BYTES", "A_EDK_ABS", "A_CT_EQ", "A_SUITE_COPY", "A_ERR", "A_SPEC_FN", "A_VSTD", "H_MODEL_MATCH", "H_ALL_FIELDS", "H_SUITE_ID", "H_ALL_BUILT", "H_BUILD_SYM", "H_SEND_BODY", "H_NO_INTERIOR", "H_DIRECT_CALL", "H_WIRING"],
+      "hypothesis_overrides": {
+        "A_STR": {"text": "A string used as a context key, a context value, a required key or a provider id is a number in the model. Only equality is used. The one special value is the public key name aws-crypto-public-key."},
+        "A_BYTES": {"text": "A key held as bytes is a sequence of bytes in the model. Only equality is used."},
+        "A_VSTD": {"text": "Verus, Z3 (the solver that Verus uses) and the Verus library rules for sequences, maps and sets are correct."}
+      },
+      "expected_failures": [],
+      "result_clause": "no check fails, and one latent finding (F1, a field the checks do not read) is recorded; part of the result is a consistency check of the rules against the target text, and that every send() path runs the check rests on code reading",
+      "sources": [{"doc": "verus-proofs/README.md", "locator": "## C07: materials transition checks"}, {"doc": "docs/mpl-verification-targets.md", "locator": "**C07: no gap found that fails a proof at model level"}]
+    },
+    "T10": {
+      "hypotheses": ["A_ALLOC", "A_VSTD", "H_MODEL_MATCH", "H_AAD_PURE", "H_BYTES", "H_EC_LIST", "H_UUID_PARSE", "H_UUID_FMT", "H_VERSION_FLOW", "H_KEY_SEPARATION"],
+      "hypothesis_overrides": {
+        "A_ALLOC": {"text": "Allocating the output vector succeeds, and the sum of the field sizes does not overflow."},
+        "A_VSTD": {"text": "Verus, Z3 (the solver that Verus uses) and the Verus library rules for sequences, vectors, slices and arrays are correct. Two facts about single bytes are proved by bit-level reasoning in Z3."},
+        "H_BYTES": {"text": "A string is its UTF-8 bytes. UTF-8 is the text encoding of Rust strings. Whether bytes form valid UTF-8 is not modeled. The concrete collision uses only ASCII bytes (plain English letters and digits), so each of its fields is a valid string. compute_aad does not check the branch key id."}
+      },
+      "expected_failures": ["lemma_aad_injective_all_inputs_EXPECTED_FAIL"],
+      "failure_explanation": "The failing check claims that two different (branch key id, version, context) inputs never give the same AAD. That claim is false. A longer id can absorb the first bytes of the version and context that follow a shorter id, and the proof gives a concrete pair with the same 42 bytes. Verus rejects the claim. A second check shows that the claim is false and not only unproved. The check was left failing and was not weakened. It is a finding about the layout, which the spec fixes. It is not a broken proof and not a mismatch between code and spec.",
+      "result_clause": "the one failing check is the intentional one for finding F1 (the AAD can be equal for ids of different length), not a broken proof",
+      "sources": [{"doc": "verus-proofs/README.md", "locator": "## T10: branch-key AAD and UUID codec"}, {"doc": "docs/mpl-verification-targets.md", "locator": "**T10, F1: the branch-key AAD has no length or separator"}]
+    },
+    "T12": {
+      "hypotheses": ["A_STR", "A_MAP", "A_ITER", "H_MODEL_MATCH", "H_LOOKUP_ORIGINAL", "H_ONE_ERROR_SITE", "H_WIRING", "H_BUILD_CHECK", "H_ASC"],
+      "hypothesis_overrides": {
+        "A_STR": {"text": "A string is a sequence of characters in the model. Only equality is used. Verus does not check that a Rust String behaves like this."},
+        "A_ITER": {"text": "Walking through the reproduced context visits every key at least once, with its value. The proof needs less than the BTreeMap guarantee of exactly once, in order."},
+        "H_WIRING": {"text": "In decrypt_materials, an error from the merge is returned before the keyring is called. The merged context is only read, then stored unchanged in the materials. A person read this."}
+      },
+      "expected_failures": [],
+      "result_clause": "no gap was found, and part of the result is a consistency check against the spec text",
+      "sources": [{"doc": "verus-proofs/README.md", "locator": "## T12: reproduced encryption context merge"}, {"doc": "docs/mpl-verification-targets.md", "locator": "**T12: no gap found at model level.**"}]
+    },
+    "T20": {
+      "hypotheses": ["A_BYTES", "A_STD", "A_NONCE", "H_MODEL_MATCH", "H_NO_OVERFLOW", "H_CALLER_IV", "H_ONLY_CALLER_DECODE", "H_IV_FLOW", "H_ALG_CONSTANTS", "H_NO_OTHER_READER"],
+      "hypothesis_overrides": {
+        "A_BYTES": {"text": "Key names, provider ids and provider info are any sequences of bytes in the model. Every Rust string is one, so the results cover all strings."},
+        "A_STD": {"text": "The Rust functions split_at, try_into, to_be_bytes, from_be_bytes and slice comparison behave as documented. Verus has no specs for them."}
+      },
+      "expected_failures": [],
+      "result_clause": "no gap was found, and part is a consistency check against the spec text",
+      "sources": [{"doc": "verus-proofs/README.md", "locator": "## T20: raw AES keyring provider-info codec"}, {"doc": "docs/mpl-verification-targets.md", "locator": "**T20: no gap found at model level.**"}]
+    },
+    "T18": {
+      "hypotheses": ["A_STR", "A_MAP", "A_ITER", "A_COPY", "H_MODEL_MATCH", "H_ONLY_THESE_OPS", "H_OLD_EC", "H_NO_ENC", "H_SORT_KEY", "H_ITEM", "H_OLD_BUILT"],
+      "hypothesis_overrides": {
+        "A_MAP": {"text": "Insert, remove, get and clone on the sorted map type (BTreeMap) behave like the matching operations on a mathematical map. These are standard library contracts. Verus has no spec for them over strings."},
+        "A_ITER": {"text": "Walking through a map visits each key exactly once. Only the builder-agreement checks use this."}
+      },
+      "expected_failures": [],
+      "result_clause": "no gap was found, and part is a consistency check against the spec text",
+      "sources": [{"doc": "verus-proofs/README.md", "locator": "## T18: `version_key` encryption context derivation"}, {"doc": "docs/mpl-verification-targets.md", "locator": "**T18: no gap found at model level.**"}]
+    },
+    "T17": {
+      "hypotheses": ["A_STR", "A_STD", "A_ALLOC", "A_VSTD", "A_MRK_SPEC", "A_FIX_MODEL", "H_MODEL_MATCH", "H_REGION_CFG", "H_CALLER"],
+      "hypothesis_overrides": {
+        "A_STD": {"text": "The models of splitn, split, split_once and format! follow the documented behavior of Rust. Verus has no specs for them."}
+      },
+      "expected_failures": ["lemma_bug04_region_rewritten_only_for_mrk_EXPECTED_FAIL"],
+      "failure_explanation": "The failing check states the intended rule. A record that parses, is not an alias and is not a multi-Region key ARN should come back from MRDiscovery unchanged. That claim is false for the shipped arm. A single-Region key ARN in us-east-1 comes back with us-west-2. Verus rejects the claim and the proof gives this counterexample. A second check shows the claim is false and not only unproved. The check was left failing and was not weakened. It is the evidence of BUG-04. It is not a broken proof.",
+      "result_clause": "the one failing check is the intentional one for BUG-04, not a broken proof",
+      "sources": [{"doc": "verus-proofs/README.md", "locator": "## T17: Discovery and MrDiscovery ARN construction"}, {"doc": "docs/mpl-verification-targets.md", "locator": "**T17, F1: MrDiscovery rewrites the region of every accepted ARN"}]
+    }
+  },
+  "c03_other_branch": {
+    "doc": "docs/mpl-verification-targets.md",
+    "locator": "### C03: in-crate proof on branch Mahnush_Verus (not on this branch)",
+    "sentence_template": "On branch Mahnush_Verus the docs record {result} for the whole prim crate there, not only C03. The status is partly proved, under 20 assumed aws-lc-rs facts. These numbers are taken from the docs and were not re-run here. This branch has no such proof."
+  },
+  "bugs": {
+    "BUG-01": {
+      "plain": "A very large time setting makes the keyring or cache code crash when it adds the time to the clock.",
+      "relation": {"kind": "confirmed_by_model_proof", "target": "T06", "text": "The T06 model proof shows that an accepted setting such as Duration::MAX makes each of the four additions panic. The four intentional failing checks are the evidence. Model level only."},
+      "sources": [{"doc": "docs/mpl-bug-reports/BUG-01-ttl-duration-overflow-panic.md", "locator": "# BUG-01"}, {"doc": "docs/mpl-verification-targets.md", "locator": "BUG-01 confirmed formally (T06)"}]
+    },
+    "BUG-02": {
+      "plain": "A decrypted data key could have the wrong length. Fixed on main.",
+      "relation": {"kind": "none", "target": "", "text": "Fixed. The C04 model proof shows that every modeled path that accepts a data key enforces the suite length. Model level only. It does not re-prove that the old code had the bug."},
+      "sources": [{"doc": "docs/mpl-bug-reports/BUG-02-plaintext-data-key-length-not-enforced.md", "locator": "# BUG-02"}]
+    },
+    "BUG-03": {
+      "plain": "Two different byte strings could decode to the same encryption context. Fixed on main.",
+      "relation": {"kind": "none", "target": "", "text": "Fixed. Target T15 would check that only one byte form is accepted. No proof yet."},
+      "sources": [{"doc": "docs/mpl-bug-reports/BUG-03-encryption-context-deserialize-accepts-unsorted.md", "locator": "# BUG-03"}]
+    },
+    "BUG-04": {
+      "plain": "One discovery mode rewrites the Region of every key ARN that is not an alias, including single-Region keys. For a key in another Region, KMS is expected to refuse the request (it fails closed). That KMS step was inferred and not run.",
+      "relation": {"kind": "confirmed_by_model_proof", "target": "T17", "text": "The T17 model proof shows that MRDiscovery rewrites the Region of a single-Region key ARN. The intentional failing check is the evidence. Model level only."},
+      "sources": [{"doc": "docs/mpl-bug-reports/BUG-04-mrdiscovery-rewrites-non-mrk-arn-region.md", "locator": "# BUG-04"}, {"doc": "docs/mpl-bug-reports/BUG-04-mrdiscovery-rewrites-non-mrk-arn-region.md", "locator": "## Formal check (T17)"}]
+    },
+    "BUG-05": {
+      "plain": "(a) The default materials manager panics if key generation fails. (b) An encrypted data key that is too short still causes one key-store read before it is rejected. The reports say (b) is likely not a bug.",
+      "relation": {"kind": "none", "target": "", "text": "Targets T16 and T27 cover these. No proof yet."},
+      "sources": [{"doc": "docs/mpl-bug-reports/BUG-05-keygen-expect-and-short-edk-keystore-lookup.md", "locator": "# BUG-05"}]
+    },
+    "BUG-06": {
+      "plain": "Two different keyring settings can produce the same cache identifier when a field contains a zero byte. With a shared cache, one keyring can then receive the other's cached key.",
+      "relation": {"kind": "confirmed_by_model_proof", "target": "T13", "text": "The T13 model proof shows the identifier is unique exactly when no field contains a zero byte, with concrete collisions. The intentional failing check is the evidence. Model level only. The bug was already confirmed end to end by a test on main."},
+      "sources": [{"doc": "docs/mpl-bug-reports/BUG-06-cache-identifier-not-injective-with-nul.md", "locator": "# BUG-06"}, {"doc": "docs/mpl-verification-targets.md", "locator": "BUG-06 confirmed formally (T13)"}]
+    },
+    "BUG-07": {
+      "plain": "(a) The AES encrypt helper leaves the plaintext in the caller's buffer when it fails. (b) The AES decrypt length check is weaker than the library underneath, which gives a less helpful error.",
+      "relation": {"kind": "other_branch", "target": "C03", "text": "The prim-side facts are partly proved in the shipped prim code on branch Mahnush_Verus (target C03), under assumed aws-lc-rs facts. This branch has no such proof. What the callers in mpl do with the buffer is code reading and belongs to T26."},
+      "sources": [{"doc": "docs/mpl-bug-reports/BUG-07-prim-aes-buffer-handling.md", "locator": "# BUG-07"}, {"doc": "docs/mpl-verification-targets.md", "locator": "BUG-07(a), prim side (C03, VR-014; not on this branch)"}]
+    },
+    "BUG-08": {
+      "plain": "An error branch for colliding custom keys can never run. This is informational: behavior is correct, the comment is misleading.",
+      "relation": {"kind": "model_relates", "target": "C01", "text": "The C01 model proof shows the branch is dead if and only if assumption A_ITER holds, and live if a key repeats. This does not confirm a defect. It explains the dead code at model level."},
+      "sources": [{"doc": "docs/mpl-bug-reports/BUG-08-build-base-collision-branch-unreachable.md", "locator": "# BUG-08"}, {"doc": "docs/mpl-verification-targets.md", "locator": "**BUG-08 (C01).**"}]
+    },
+    "BUG-09": {
+      "plain": "A cached key could be used up to one second after its lifetime. Informational. Fixed on main.",
+      "relation": {"kind": "none", "target": "", "text": "Fixed. Target T14 would check the exact comparison. No proof yet."},
+      "sources": [{"doc": "docs/mpl-bug-reports/BUG-09-cache-ttl-check-whole-second-truncation.md", "locator": "# BUG-09"}]
+    },
+    "BUG-10": {
+      "plain": "The raw AES keyring drops a decrypted data key without wiping it when the key has the wrong length.",
+      "relation": {"kind": "none", "target": "", "text": "Target T26 covers this. No proof yet, and no proof of any kind exists for it."},
+      "sources": [{"doc": "docs/mpl-bug-reports/BUG-10-raw-aes-on-decrypt-unwiped-data-key.md", "locator": "# BUG-10"}]
+    }
+  },
+  "high_threats_plain": {
+    "TM-MPL-005": "Someone swaps a valid key-store record for another valid record, or replays an older one, so the reader trusts the wrong key record.",
+    "TM-MPL-009": "Two different keyring settings get the same cache identifier, so one keyring is given the other's cached key.",
+    "TM-MPL-010": "A shared cache gives branch key material to a keyring that should not have it."
+  },
+  "retired": {
+    "T08": "The unsafe loop that wiped a data key was removed from the code, so the target no longer applies. Its concern moved to T26.",
+    "C06": "The integer division that mixed up grace period and TTL was removed from the code, so the target no longer applies."
+  },
+  "targets": {
+    "T01": {
+      "title": "Key-store records are read back with the same context that KMS checked",
+      "area": "The branch key store. It saves branch keys as records in a DynamoDB table. AWS KMS protects each record's key and binds an encryption context (a set of labelled values) to it.",
+      "risk": "A record could be swapped for another valid record, or the reader could trust labels that KMS never checked. This is threat TM-MPL-005, rated High. If the context used when reading differed from the one KMS checked, the reader would act on unchecked values.",
+      "checks": "That three contexts are equal for a record: the one written with it, the one KMS checks when it unlocks it, and the one the reader rebuilds. It also checks that writing and reading back adds, drops or changes nothing, and that rotating to a new key version keeps this.",
+      "not_shown": "It does not show that KMS or DynamoDB behave as assumed. Both are modeled by assumptions (A_KMS, A_DDB). It does not cover replay of an older genuine record. A later edit to kms_ops.rs or branch_key_store.rs would not be detected.",
+      "notes": ["The two context builders are separate functions with no shared code. They agree today. An edit to one alone would break the match (observation O1, code reading)."],
+      "sources": [{"doc": "docs/mpl-verification-targets/01-threat-driven.md", "locator": "id: VR-2026-T01"}, {"doc": "verus-proofs/README.md", "locator": "## T01: key-store authenticated encryption context"}, {"doc": "docs/mpl-verification-targets.md", "locator": "**T01: no gap found at model level.**"}]
+    },
+    "T02": {
+      "title": "A stored key record should be accepted only when it is well formed (gap G1: two required fields are not checked)",
+      "area": "The branch key store, in the step that turns a decrypted record back into key material (record.rs).",
+      "risk": "A malformed or wrongly typed record could be accepted. The spec also says a record must have create-time and hierarchy-version fields, and the code does not check for them (gap G1). The impact is low: a record changed after encryption already fails at KMS, and no key is exposed or mis-selected.",
+      "checks": "That the code accepts a record exactly when its type, version, key id and 32-byte key are valid, and that every rejection has a known cause. On acceptance the outputs are exactly the values in the record. One more check states the spec rule that both fields must be present.",
+      "not_shown": "It does not cover the step that reads the record from the database, where the key came from, or replay of an older genuine record. It checks a model, not the shipped code.",
+      "notes": [],
+      "sources": [{"doc": "docs/mpl-verification-targets/01-threat-driven.md", "locator": "id: VR-2026-T02"}, {"doc": "verus-proofs/README.md", "locator": "## T02: record reconstruction"}, {"doc": "docs/mpl-verification-targets.md", "locator": "**G1 confirmed formally (T02).**"}]
+    },
+    "T03": {
+      "title": "The key store always asks KMS to use the configured key",
+      "area": "The branch key store, in the step that chooses which KMS key to call (resolve_key_store_arn). It covers the modes where the store is set to one single-Region key or one multi-Region key.",
+      "risk": "Someone who can write records in the database could name a different KMS key inside a record. The decrypt call would then go to a key they chose. This is threat TM-MPL-002 (a forged record).",
+      "checks": "That in both modes the KMS key used is always the configured one, never the one stored in the record. The record's key is accepted only if it is compatible: identical for a single-Region key, or the same multi-Region key in another Region. Otherwise the call fails with a validation error.",
+      "not_shown": "It does not cover the two discovery modes (see BUG-04 and T17). It does not show that KMS authenticates the record, and it does not cover replay of an older genuine record. It checks a model, not the shipped code.",
+      "notes": ["Finding O1: two identical alias ARNs fail the code's match, where the spec text would match. The code is stricter than the spec, and the case cannot occur for a configuration that build() accepts.", "Finding O2: the model of ARN validity accepts an ARN with empty partition, region and account. That is looser than the spec. It does not affect this property. It is a gap in configuration checking."],
+      "sources": [{"doc": "docs/mpl-verification-targets/01-threat-driven.md", "locator": "id: VR-2026-T03"}, {"doc": "verus-proofs/README-t03-t05.md", "locator": "## T03: pinned-mode KMS key ARN resolution"}, {"doc": "docs/mpl-verification-targets.md", "locator": "**O1, DEV-ALIAS (T03).**"}]
+    },
+    "T04": {
+      "title": "Wrapping a branch key draws a separate salt and IV and builds the documented layout",
+      "area": "The branch key store's wrapping step (branch_key_wrap::wrap). It protects a data key with AES-GCM, using a key derived from the branch key. Each call needs two one-time values: a 16-byte salt and a 12-byte IV.",
+      "risk": "Reusing a salt or IV with the same key would weaken the encryption. This is threat TM-MPL-012.",
+      "checks": "That on every successful call the code makes two separate random draws, the salt first and then the IV. The salt goes to the key derivation and the IV to AES-GCM. The output is salt, IV, version, ciphertext and tag, and it is 60 + n bytes long for an n-byte data key.",
+      "not_shown": "It does not show that the salt or the IV is fresh, random or unique. That comes from the random generator in aws-lc-rs, which the model only assumes fills its buffer. It does not show that wrap can succeed at all. It does not cover wiping of the derived key. It checks a model, not the shipped code.",
+      "notes": ["Low-severity observation O1 (code reading, not proved): if the AES step fails after it copied the message, the output buffer can hold a clear copy of the data key, and wrap drops it without wiping. See BUG-07 and T26."],
+      "sources": [{"doc": "docs/mpl-verification-targets/01-threat-driven.md", "locator": "id: VR-2026-T04"}, {"doc": "verus-proofs/README.md", "locator": "## T04: branch-key wrap"}, {"doc": "docs/mpl-verification-targets.md", "locator": "**T04, what is not proved (TM-MPL-012).**"}]
+    },
+    "T05": {
+      "title": "The key-derivation step receives exactly the documented inputs",
+      "area": "The branch key store's wrapping code (derive_branch_key). It derives a 32-byte key from the branch key with KBKDF, a standard key-derivation method, using HMAC-SHA-256 and a short fixed information string.",
+      "risk": "A wrong algorithm, a wrong argument order or a wrong layout of the information string would give weaker or incompatible keys. This is threat TM-MPL-014. The spec does not state the layout. It exists only in the code and in a test helper.",
+      "checks": "That the function passes HMAC-SHA-256, the branch key as the key, a 38-byte information string and a 32-byte output length to the primitive. The string is the label 'aws-kms-hierarchy', a zero byte, the 16-byte salt and the bytes 00 00 01 00. Wrap and unwrap use the same salt, so they pass the same input.",
+      "not_shown": "It does not check the derived key. The key-derivation output is left unspecified, so the proof shows which arguments the primitive receives, not that the result is correct. It does not cover aws-lc-rs, interoperability with other implementations, or wiping.",
+      "notes": ["Finding F1 (spec gap, not a code defect): the spec does not state this layout.", "Observation F3: no test compares the output with a known-answer value, so a layout change would not be caught by tests."],
+      "sources": [{"doc": "docs/mpl-verification-targets/01-threat-driven.md", "locator": "id: VR-2026-T05"}, {"doc": "verus-proofs/README-t03-t05.md", "locator": "## T05: KBKDF fixed-info string in `derive_branch_key`"}, {"doc": "docs/mpl-verification-targets.md", "locator": "**F1 (T05).**"}]
+    },
+    "T06": {
+      "title": "A very large time setting can crash the keyring and cache code (BUG-01)",
+      "area": "The hierarchical keyring and the storm-tracking cache. Four places add a length of time (a TTL or a grace interval) to the current time.",
+      "risk": "The builders accept very large values such as Duration::MAX. The addition then overflows and the program panics (crashes) on first use. Two of the four places run while a cache lock is held. A panic there poisons the lock, and later calls on that cache return an internal error. This is BUG-01 (open, rated Low), linked to threats TM-MPL-018, 022 and 023.",
+      "checks": "That below a stated safe size the addition cannot overflow. That for settings the builders accept, such as Duration::MAX, each of the four additions panics. That after a panic at the two locked places the lock is poisoned and later cache calls return an error (relative to an assumption about locks). That two proposed fixes work at model level.",
+      "not_shown": "It does not show the range of SystemTime on any platform. That range is assumed (A_TIME_RANGE). It does not cover builds that abort on panic, other sources of panic, or the shipped code. Which upper bound a fix should use is an owner decision.",
+      "notes": [],
+      "sources": [{"doc": "docs/mpl-verification-targets/01-threat-driven.md", "locator": "id: VR-2026-T06"}, {"doc": "verus-proofs/README.md", "locator": "## T06: `SystemTime + Duration` additions"}, {"doc": "docs/mpl-verification-targets.md", "locator": "**BUG-01 confirmed formally (T06).**"}]
+    },
+    "T07": {
+      "title": "The raw AES keyring draws its IV with one random call and passes valid AES arguments",
+      "area": "The raw AES keyring, where the user supplies the AES wrapping key, and the AES functions in the primitives crate (prim).",
+      "risk": "Reusing an IV with the same AES-GCM key breaks the encryption. This is threat TM-MPL-011. Wrong lengths passed to the AES calls would cause errors.",
+      "checks": "That every built keyring has a wrapping key of the right length for its algorithm. That each wrap draws a new 12-byte IV with one random call and stores it nowhere else, and uses the same bytes as the AES nonce and in the key's provider info. That every AES call meets the length rules, so the only decrypt error is a failed authentication. On success the ciphertext is the data key length plus 16 bytes.",
+      "not_shown": "A proof of this structure would not show that the IV is random or unique. That rests on the random generator in aws-lc-rs and would be assumed. The docs note that plaintext left in a buffer when aes_encrypt fails (BUG-07a) is tracked under T26, not here.",
+      "notes": [],
+      "sources": [{"doc": "docs/mpl-verification-targets/01-threat-driven.md", "locator": "id: VR-2026-T07"}]
+    },
+    "T09": {
+      "title": "Commitment-policy rules allow only the permitted algorithm suites",
+      "area": "The commitment policy tables and the default materials manager (CMM) gates that decide which algorithm suite may be used to encrypt or decrypt.",
+      "risk": "A suite that does not commit to its key could be accepted where commitment is required, or a policy could be bypassed. These are threats TM-MPL-006 (suite downgrade) and TM-MPL-008 (non-committing suite).",
+      "checks": "That commitment is reported for exactly two suites (0x0478 and 0x0578). That the allow tables match the spec for 3 policies and 11 suites, and that each policy's default suite is allowed for encryption. That encryption succeeds only with an allowed suite, and that decryption fails before any keyring is called when the suite is not allowed.",
+      "not_shown": "A custom CMM behind SharedCmm is not policy-checked inside the MPL: its send() checks only completeness. The proof would cover the default CMM gates. The default suite for the FORBID policy is a documented deviation from the spec and is still non-committing.",
+      "notes": [],
+      "sources": [{"doc": "docs/mpl-verification-targets/01-threat-driven.md", "locator": "id: VR-2026-T09"}]
+    },
+    "T10": {
+      "title": "In the model, the data that a wrapped branch key is bound to (the AAD) can be the same for key ids of different length (finding F1)",
+      "area": "The branch key store's wrapping code. compute_aad (in branch_key_wrap.rs) builds the AAD, the extra data that AES-GCM authenticates with each wrapped branch key. A branch key is wrapped (encrypted) with AES-GCM, a standard way to encrypt and check data in one step. Wrap is the function that does this. Unwrap is the function that undoes it. The key version is a UUID, a 36-character text identifier such as 41424344-4546-4748-494a-4b4c4d4e4f50. uuid_str_to_16_bytes turns it into 16 bytes. uuid_16_bytes_to_str, in the hierarchical keyring, turns 16 bytes back into text.",
+      "risk": "The threat is that wrap and unwrap build the AAD differently, which breaks the binding of a wrapped key to its context. This is threat TM-MPL-013. The proof also found that the layout can give the same AAD for ids of different length (finding F1). Whether that matters is not shown. No severity is assigned and no exploit is claimed.",
+      "checks": "That compute_aad succeeds exactly when the version is a 36-character hyphenated UUID and the encryption context can be written out. The version is checked first. That the result is the fixed label aws-kms-hierarchy (17 bytes), the branch key id, the version (16 bytes) and the written-out context, joined in that order. This part is a consistency check. The model is written as that joined sequence. The proof reads back the position of each field and checks the 17 and 16 byte sizes against the spec table. That for one branch key id, different (version, context) pairs give different AAD. That for ids of equal length, different (id, version, context) triples give different AAD. That two different inputs can share an AAD only if their ids differ in length, with the exact condition. That converting 16 bytes to text and back returns the same 16 bytes, for every input. That the UUID check accepts the hex digits (0 to 9 and a to f) in upper and lower case. So turning text into bytes and back gives the same text only for lowercase text. That if wrap accepted a version string and decrypt rebuilds the string from the version bytes, both sides build the same AAD. This relies on a code-reading assumption about where the version string comes from. One check fails on purpose. It claims that the AAD is unique for all inputs, which is false.",
+      "not_shown": "It does not show that the real code has these properties. The collision was also run once on the real compute_aad, with one pair of inputs, in a scratch program outside the repository. The two outputs were identical. That is one run, not a proof. It does not show that TM-MPL-013 is handled. It does not show whether the collision matters. That depends on whether different branch key ids and versions always give different AES-GCM keys. The target text relies on that. The proof neither uses nor proves it. It does not cover AES-GCM, crashes, error text, reading an encryption context back from bytes (T15), or the less common UUID text forms. It does not cover the key derivation either, which is the step that turns a branch key into an AES-GCM key. The 17 label bytes are typed twice and compared only with each other. So the proof does not show that they spell aws-kms-hierarchy. A person compared them with the real constant.",
+      "notes": [
+        "The failing check is the evidence for finding F1. Concrete pair: id b, version 41424344-4546-4748-494a-4b4c4d4e4f50 and context {\"k\": \"v\"}, against id bABCDEFGH, version 494a4b4c-4d4e-4f50-0001-00016b000176 and an empty context. Both give the same 42 bytes.",
+        "The spec fixes this layout (aws-kms-hierarchical-keyring.md lines 337 to 342 list the id with no length prefix). So the code follows the spec. This is not a mismatch between code and spec.",
+        "The same kind of weakness, no separator between variable fields, is BUG-06 in target T13, in a different structure. The two are not duplicates. No bug report was changed.",
+        "Observations, not gaps: two version strings that differ only in letter case give the same AAD. What the key store does with an uppercase string was not examined. The UUID check looks at the shape and not at the UUID version digit. Yet structures.md line 406 says the stored version must be a version 4 UUID (a randomly generated one). unwrap reads the version bytes from the ciphertext and discards them.",
+        "For T04: T04 took the results of compute_aad and uuid_str_to_16_bytes as given values. T10 gives the value each returns for all inputs. The T04 assumption H_AAD_PURE is not proved by this. It is reduced to code reading."
+      ],
+      "sources": [{"doc": "docs/mpl-verification-targets/01-threat-driven.md", "locator": "id: VR-2026-T10"}, {"doc": "verus-proofs/README.md", "locator": "## T10: branch-key AAD and UUID codec"}, {"doc": "docs/mpl-verification-targets.md", "locator": "**T10, F1: the branch-key AAD has no length or separator"}]
+    },
+    "T11": {
+      "title": "Key ARN matching accepts only the intended keys",
+      "area": "The code that decides whether two KMS key ARNs (names of keys) refer to the same key, including multi-Region keys, which have copies in other Regions.",
+      "risk": "A match test that is too loose could accept a key that is not the configured one. This is threat TM-MPL-004.",
+      "checks": "That the match is true exactly when neither input is an alias and the inputs are identical, or both are multi-Region key ARNs that differ at most in Region. That the match is symmetric. That the compatibility test is exact equality for a single key, the multi-Region match for a multi-Region key, and always true for the discovery modes.",
+      "not_shown": "The docs flag one thing to settle: the match splits an ARN into exactly 6 parts, while the ARN parser splits into at most 6. The proof would not settle which is intended.",
+      "notes": [],
+      "sources": [{"doc": "docs/mpl-verification-targets/01-threat-driven.md", "locator": "id: VR-2026-T11"}]
+    },
+    "T12": {
+      "title": "In the model, a successful merge of encryption contexts on decrypt keeps every entry of both inputs and changes none. The merge fails if the two contexts disagree on a shared key",
+      "area": "The default materials manager (CMM), in the step that merges the encryption context stored in the message with the reproduced encryption context. That is an extra context the caller supplies when decrypting. The function is merge_reproduced_encryption_context in default_cmm.rs. An encryption context is a set of labelled text values that is bound to the message.",
+      "risk": "A merge that dropped or changed a value could make decryption use a different context than the one bound at encryption. This is threat TM-MPL-017. The proof finds no gap in the model.",
+      "checks": "The function is one loop. This is partly a consistency check against the spec text (cmm-interface.md). The proof restates the spec sentences without the loop and shows that the model of the loop equals them. The proof for the loop is a proof step repeated over the list of entries (an induction). The merge succeeds exactly when both contexts agree on every key they share. A conflicting key at any position makes it fail, and the error names a real conflict. On success, the result holds every message entry unchanged and every reproduced entry with its value, and nothing else. That is all entries of both contexts together, whichever one is listed first. The required keys are exactly the reproduced keys that the message context does not have. The required keys are the encryption context keys that the caller must supply again on decrypt. The verdict, the merged context and the required keys do not depend on the order in which the reproduced context is walked. Merging again with the same reproduced context changes nothing. The check in DecryptionMaterials::build that every required key is in the context cannot fail on the merge output. Three parts are more than the spec text. First, the loop never overwrites a message entry. The code throws away the result of the insert, so an overwrite would be silent. Second, the exact set of required keys. Third, the order independence. No check was written to fail, because no gap was found.",
+      "not_shown": "It does not show that the real code has these properties. A person compared the model with the code by reading. It does not show that TM-MPL-017 is handled. The model of the merge loses nothing of either input. That does not show that the decryptor's authenticated data equals the encryptor's. That also needs the encrypt side, the context the caller passes, the keyring's authenticated data, the ESDK header parse (T15) and the C07 checks. None of these is modeled. It does not cover how the sorted map and sorted set types that the code uses (BTreeMap and BTreeSet) behave, string comparison, error text or the rest of decrypt_materials. The spec has one optional sentence (it says MAY, which means optional, at cmm-interface.md lines 161 to 163). The code does not implement it. That is not a gap.",
+      "notes": [
+        "Observation, not a gap: the code does not claim order independence. The proof shows the verdict and the result do not depend on the order, but the key named in the error does. The shipped code walks the keys in ascending order, so it names the smallest conflicting key.",
+        "Observation, not a gap, no exploit claimed: for a signing suite, decrypt_materials reads the key aws-crypto-public-key from the merged context. If the message context lacks it and the reproduced context (the caller's own input) has it, the verification key comes from the reproduced context. The spec says only that the encryption context includes this key. It does not say which context. This follows from taking all entries of both contexts together."
+      ],
+      "sources": [{"doc": "docs/mpl-verification-targets/01-threat-driven.md", "locator": "id: VR-2026-T12"}, {"doc": "verus-proofs/README.md", "locator": "## T12: reproduced encryption context merge"}, {"doc": "docs/mpl-verification-targets.md", "locator": "**T12: no gap found at model level.**"}]
+    },
+    "T13": {
+      "title": "Two keyring settings can get the same cache identifier (BUG-06)",
+      "area": "The hierarchical keyring's cache lookup. The function build_cache_identifier joins the partition id, key store name, branch key id and version with zero-byte separators and hashes the result with SHA-384. The hash is the key for cached branch keys.",
+      "risk": "If a field contains a zero byte, two different settings can produce the same identifier. With a shared cache, keyring B can then be given the branch key of key store A. This is BUG-06 (open, rated High, confirmed end to end by a test on main) and threats TM-MPL-009 and TM-MPL-010, both rated High.",
+      "checks": "That the preimage (the bytes that are hashed) is unique exactly when no field contains a zero byte, with concrete collisions for the encrypt and decrypt cases. That two proposed fixes work at model level: forbid zero bytes, or put a length in front of each field. That encrypt and decrypt identifiers never coincide.",
+      "not_shown": "It does not show that a real deployment can be set up to collide. BUG-06 states the preconditions: a shared cache and settings that contain zero bytes. SHA-384 is modeled as never colliding. Cache hit logic, TTL and panics are not covered. It checks a model, not the shipped code.",
+      "notes": [],
+      "sources": [{"doc": "docs/mpl-verification-targets/01-threat-driven.md", "locator": "id: VR-2026-T13"}, {"doc": "verus-proofs/README.md", "locator": "## T13: cache identifier"}, {"doc": "docs/mpl-verification-targets.md", "locator": "**BUG-06 confirmed formally (T13).**"}]
+    },
+    "T14": {
+      "title": "The keyring cache holds only branch keys and honors the exact lifetime",
+      "area": "The hierarchical keyring's use of its cache: which entries it stores, when it considers an entry too old, and how it generates its default partition id.",
+      "risk": "A shared cache could hand back the wrong kind of entry, or an entry could be used past its lifetime. This is threat TM-MPL-010, rated High.",
+      "checks": "That only branch-key entries are stored and that any other kind read back is an error. That an entry is used only if its age is at most the TTL, compared as exact durations. That the default partition id is 16 bytes with the version 4 UUID bits. That cached entries carry no suite or commitment state.",
+      "not_shown": "The docs state one consequence a proof would record: an entry whose creation time is in the future counts as fresh. Whether to reject that is an owner decision. The older one-second overshoot (BUG-09) is fixed.",
+      "notes": [],
+      "sources": [{"doc": "docs/mpl-verification-targets/01-threat-driven.md", "locator": "id: VR-2026-T14"}]
+    },
+    "T15": {
+      "title": "An encryption context has exactly one valid byte form",
+      "area": "The EncryptionContext type, in the code that turns a context into bytes (to_bytes) and bytes back into a context (from_bytes).",
+      "risk": "If two different byte strings decoded to the same context, the bytes could be changed without notice. This was BUG-03, now fixed. The threats are TM-MPL-013 and TM-MPL-017.",
+      "checks": "That to_bytes succeeds exactly when the context has at most 65535 entries and every key and value is at most 65535 bytes. That it writes the sorted spec layout, that different contexts give different bytes, and that reading the bytes back returns the context. That any bytes that from_bytes accepts are exactly the canonical form.",
+      "not_shown": "The docs expect this proof to succeed because BUG-03 is fixed. It would not cover the ESDK header parser, which has its own code.",
+      "notes": [],
+      "sources": [{"doc": "docs/mpl-verification-targets/01-threat-driven.md", "locator": "id: VR-2026-T15"}, {"doc": "docs/mpl-bug-reports/BUG-03-encryption-context-deserialize-accepts-unsorted.md", "locator": "Severity: Low. No production caller"}]
+    },
+    "T16": {
+      "title": "Malformed input should return an error, not crash (BUG-05a panics today)",
+      "area": "The places in the library that cut slices, index arrays or call expect on data that can come from outside: encrypted data keys, encryption context bytes and ARN strings.",
+      "risk": "A malformed message or setting could cause a panic (a crash) instead of an error. This is threat TM-MPL-023. One listed place is BUG-05(a), a panic if ECDSA key generation fails.",
+      "checks": "That for every input these paths return a result and never panic. Every slice or index is preceded by a guard that keeps it in range, every length conversion has exactly the right length, and offset arithmetic cannot overflow.",
+      "not_shown": "The docs list the storm-tracking expect calls as test-only and out of scope. BUG-05(b) is not a panic: a short encrypted data key costs one lookup before it is rejected.",
+      "notes": [],
+      "sources": [{"doc": "docs/mpl-verification-targets/01-threat-driven.md", "locator": "id: VR-2026-T16"}]
+    },
+    "T17": {
+      "title": "In the model, the two discovery modes accept the same records, but MRDiscovery rewrites the Region of single-Region keys too (BUG-04)",
+      "area": "The branch key store, when it reads a record in one of the two discovery modes. Discovery uses the KMS key ARN stored in the record as it is. MRDiscovery replaces the Region in that ARN with the configured Region. An ARN (Amazon Resource Name) is the identifier of a key. A Region is an AWS location such as us-east-1. A multi-Region key has copies in several Regions, and its key id starts with mrk-. An alias is a KMS name that points to a key. The functions are resolve_key_store_arn, reject_alias_arn, rewrite_arn_region and parse_arn, in kms_ops.rs and kms_config.rs.",
+      "risk": "The spec text conflicts with itself. Two sentences without a MUST (the spec's word for a required rule) say MRDiscovery changes the Region only for multi-Region keys. The one sentence with a MUST has no such limit, and the code follows that one. The code changes the Region for every key ARN that is not an alias. For a single-Region key in another Region, the new ARN is expected to name no existing key. BUG-04 and the threat model say KMS then refuses the request (it fails closed). That KMS step was inferred and not run. This is BUG-04 (open). The threat model lists TM-MPL-007. Its words: a Discovery or MRDiscovery setting decrypts a record under an alias or an attacker-region key. An attacker-region key is a key in a Region the attacker chose.",
+      "checks": "Discovery returns the record's ARN unchanged exactly when the ARN parses and is not an alias. MRDiscovery accepts and rejects the same records. For every accepted record, MRDiscovery returns the ARN with only the Region replaced. That includes single-Region keys, which is the BUG-04 behavior. Part of this is a consistency check, because the model is written as that case split. The proof also states the intended rule: a key ARN that is not a multi-Region key comes back unchanged. That check fails on purpose. Its counterexample is a single-Region key ARN in us-east-1, which comes back with us-west-2. The failing check is the evidence of a real gap (BUG-04), not a broken proof.",
+      "not_shown": "It does not show that the shipped code has these properties. A person compared the model with kms_ops.rs by reading. It does not show that TM-MPL-007 is handled. Whether a record is genuine and what KMS does with the ARN are not modeled. It does not show that the fix proposed in BUG-04 is the right fix. It does not show that the returned ARN is the key id that KMS receives.",
+      "notes": [
+        "The code has no multi-Region test on this arm. rewrite_arn_region rebuilds the ARN with the new Region for every ARN that passes the alias check. The only starts_with(\"key/mrk-\") test is in is_multi_region_arn (mrk_match.rs). The key store does not call it for the two discovery modes.",
+        "A model of the first fix in the BUG-04 report passes the same claim. That fix tests for mrk- before the rewrite. The counterexample goes away. The fix model is not code in the repository.",
+        "Spec conflict: the intended rule comes from two spec sentences that have no MUST, in branch-key-store.md. It also comes from the Dafny version of the library. Dafny is the language of the other implementation. The one sentence with a MUST has no multi-Region condition, and the code follows it literally.",
+        "Observation, not a gap: the fix test would miss a multi-Region key id that contains a colon, which the code rewrites today. Whether a real key id can look like that was not examined. Neither shipped discovery arm rejects an ARN whose service is not KMS. An s3 ARN is accepted, and MRDiscovery rewrites its Region."
+      ],
+      "sources": [{"doc": "docs/mpl-verification-targets/01-threat-driven.md", "locator": "id: VR-2026-T17"}, {"doc": "verus-proofs/README.md", "locator": "## T17: Discovery and MrDiscovery ARN construction"}, {"doc": "docs/mpl-verification-targets.md", "locator": "**T17, F1: MrDiscovery rewrites the region of every accepted ARN"}]
+    },
+    "T18": {
+      "title": "In the model, rotating a branch key changes only three entries of the context and keeps all others",
+      "area": "The branch key store, in version_key (branch_key_store.rs). Rotating a branch key creates a new key version. It writes two records: a new decrypt-only record and a new active record. Each record has an encryption context, a set of labelled text values that is bound to the key. version_key builds both new contexts inline from the old active context. A custom entry is a value the caller supplied. It is stored under a name that starts with aws-crypto-ec:.",
+      "risk": "If rotation dropped or changed a context value, the new records would no longer match the key's identity. The threat model lists TM-MPL-016, a bypass of the check that stops two rotations from overwriting each other's active record. It calls this an optimistic-lock bypass, or version race. The proof covers the context contents only, not the race.",
+      "checks": "The model rewrites the old context in the code's order. In the new decrypt-only context, type becomes branch:version: plus the version, create-time becomes the new time, and version is removed. The new active context starts from that one. Its version becomes branch:version: plus the version, and its type becomes branch:ACTIVE. Every other entry is kept. These are the branch key id, KMS key identifier (ARN), hierarchy version, table name and all custom entries. Hierarchy version is a format number, 1 in every record that create_key writes. The two new records have different primary keys (the branch key id plus the record type, which DynamoDB uses to find a record). The active record keeps the primary key of the old active record. If the old context came from the builder functions, the new ones equal the builder output. Part of this is a consistency check against the spec item lists.",
+      "not_shown": "It does not show that the shipped code has these properties. A person compared the model with branch_key_store.rs by reading. It does not show that TM-MPL-016 is handled. The checks DynamoDB runs on each write, the race between two rotations, and the KMS step that authenticates the old record are not modeled. The format of the version and time is not modeled either. Whether the old record is genuine is the subject of T01.",
+      "notes": [
+        "Observation, not a gap: attributes that the format does not name are copied unchanged into both new records. The spec is silent on this.",
+        "Observation, not a gap: hierarchy-version is the stored value. The spec writes the literal 1. They are equal for every record that create_key writes.",
+        "Observation, not a gap: one spec line says the KMS ARN is the configured KMS key. An earlier sentence says the stored ARN must not change. The code follows the second. They differ only when a multi-Region key (a KMS key with copies in other Regions) is configured under a different ARN.",
+        "Observation, not a gap: version_key does not check the old context, so a malformed old record is rotated as it is."
+      ],
+      "sources": [{"doc": "docs/mpl-verification-targets/01-threat-driven.md", "locator": "id: VR-2026-T18"}, {"doc": "verus-proofs/README.md", "locator": "## T18: `version_key` encryption context derivation"}, {"doc": "docs/mpl-verification-targets.md", "locator": "**T18: no gap found at model level.**"}]
+    },
+    "T19": {
+      "title": "The hierarchical keyring tries only encrypted data keys that name the right branch key",
+      "area": "The hierarchical keyring, in the step that picks the branch key id (a fixed one, or one from a supplier) and filters encrypted data keys on decrypt.",
+      "risk": "A malicious or message-driven supplier could return a branch key id chosen by an attacker. This is threat TM-MPL-003.",
+      "checks": "That with a fixed id the resolved id is exactly that id. That on decrypt a key is tried only if its provider id and provider info match the resolved id. That the cache and key-store query use that id and the version bytes from the key. That encrypt writes the resolved id as provider info.",
+      "not_shown": "It would show the id is bound consistently. It would not show the id is one the application should serve. Which tenant ids may be decrypted is the application's job. The returned materials are not compared with the request, because decrypt fails closed through the AAD.",
+      "notes": [],
+      "sources": [{"doc": "docs/mpl-verification-targets/01-threat-driven.md", "locator": "id: VR-2026-T19"}]
+    },
+    "T20": {
+      "title": "In the model, the raw AES provider info can be written and read back, and its parser handles any input without going out of range",
+      "area": "The raw AES keyring wraps (encrypts) the data key with an AES key that the caller holds. Each encrypted data key (EDK) carries a provider info field. This field holds the IV, the one-time value that AES-GCM needs for each wrap. AES-GCM is a standard way to encrypt and check data in one step. The check value it adds is the tag. serialize_provider_info writes the field and decryptable_edk_iv reads it back. Both are in raw_aes_keyring.rs. Each keyring has a namespace and a key name. It puts its namespace on each EDK as the provider id and keeps its key name in the provider info. A keyring ignores an EDK that has another namespace or key name.",
+      "risk": "A malformed or forged provider info could make the parser panic (crash) or return the wrong IV. The threat model lists TM-MPL-023 (panic on malformed input), TM-MPL-011 (IV reuse) and TM-MPL-001 (a provider id that impersonates a KMS keyring). The proof covers the byte format only.",
+      "checks": "The writer produces the key name, the tag length (128, in bits), the IV length (12, in bytes) and then the IV. Each length is a 4-byte number. The parser returns the IV exactly when the provider id equals the namespace and the info has that shape. For a 12-byte IV, writing then parsing gives back the IV. An IV of any other length is never accepted. The model of the parser reads any provider id and any info without an out-of-range read, an overflow or a failed conversion. For 12-byte IVs, different names or IVs give different info. A keyring accepts another keyring's EDK exactly when the namespaces and key names are equal. Each rejection is checked on its own: wrong id, wrong length, wrong name, wrong tag-length field, wrong IV-length field. Part of this is a consistency check against a spec table typed by hand.",
+      "not_shown": "It does not show that the shipped code has these properties. A person compared the model with the code by reading, and a later edit to the code would not be noticed. It does not show that TM-MPL-023, TM-MPL-011 or TM-MPL-001 is handled. It does not show that IVs are random or unique (that is T07). It does not cover the rest of decryption: the ciphertext split, the AES-GCM call and the key length check. The AWS Encryption SDK (ESDK) header stores provider info with a 2-byte length. That is a different function and is not modeled.",
+      "notes": [
+        "Observation, not a gap: serialize_provider_info checks the IV length only with debug_assert! (a check that runs in debug builds only). Its only caller passes a 12-byte IV, which a person read.",
+        "Observation, not a gap: an empty key name is accepted and works. The code takes the key name from the keyring and requires the total length to be exactly the name plus 20 bytes. That is stricter than the spec text."
+      ],
+      "sources": [{"doc": "docs/mpl-verification-targets/01-threat-driven.md", "locator": "id: VR-2026-T20"}, {"doc": "verus-proofs/README.md", "locator": "## T20: raw AES keyring provider-info codec"}, {"doc": "docs/mpl-verification-targets.md", "locator": "**T20: no gap found at model level.**"}]
+    },
+    "T21": {
+      "title": "The storm-tracking cache should obey its spec limits (docs expect four failures today)",
+      "area": "The storm-tracking cache. It limits how many callers fetch the same missing key at once, and it makes other callers wait for the first one.",
+      "risk": "A bad setting or a logic error could cause a stampede of requests, a stuck wait, a stuck in-flight mark or a panic. This is threat TM-MPL-018.",
+      "checks": "That the builder enforces the spec ordering of its settings (the docs expect this to fail because the check regressed). That the number of in-flight keys stays within the fan-out limit. That a key already in flight gets a new leader only after its grace interval. That a put writes the cache before it clears the mark. That a poisoned lock gives an error. The docs also state three more expected failures: a failed leader's mark is never cleared, a waiter can have no deadline, and a panic can happen while the lock is held.",
+      "not_shown": "The docs exclude liveness under a real scheduler and the interleavings of threads. The last three checks come from static reasoning and have not been run.",
+      "notes": [],
+      "sources": [{"doc": "docs/mpl-verification-targets/01-threat-driven.md", "locator": "id: VR-2026-T21"}]
+    },
+    "T22": {
+      "title": "Debug output and error details never include secret bytes",
+      "area": "The Debug formatting of key types, materials, keyrings and errors, and the data-key information attached to errors.",
+      "risk": "Secret bytes could leak into logs or error messages. This is threat TM-MPL-021.",
+      "checks": "That every Debug output, and every error's attached key information, depends only on non-secret fields and never on secret bytes or encrypted-key ciphertext.",
+      "not_shown": "Errors keep the provider id and provider info of the message's encrypted data keys. These are not secret, but they come from the message sender and can contain a KMS key ARN with an account id. The proof does not claim that it is appropriate to log or to return to a sender.",
+      "notes": [],
+      "sources": [{"doc": "docs/mpl-verification-targets/01-threat-driven.md", "locator": "id: VR-2026-T22"}]
+    },
+    "T23": {
+      "title": "The local cache respects its capacity and expiry",
+      "area": "The local in-memory cache (LocalCmc) that holds cached branch keys.",
+      "risk": "A cache that exceeds its capacity or returns expired entries could force many requests to KMS. This is threat TM-MPL-022.",
+      "checks": "That the cache is absent exactly when its capacity is zero, and otherwise never holds more than its capacity after any operation. That a read never returns an expired entry. That pruning scans at most the tail size or the number of entries. That a poisoned lock is an error.",
+      "not_shown": "The docs note that this is the base of the storm-tracking cache (T21) and list no further limits.",
+      "notes": [],
+      "sources": [{"doc": "docs/mpl-verification-targets/01-threat-driven.md", "locator": "id: VR-2026-T23"}]
+    },
+    "T24": {
+      "title": "Raw AES keyrings cannot be built with the reserved aws-kms name",
+      "area": "The builder of the raw AES keyring (RawAesKeyringBuilder::build). The user chooses a key namespace. The keyring writes it into every encrypted data key as the provider id.",
+      "risk": "A raw AES keyring could write encrypted data keys whose provider id looks like one from an AWS KMS keyring. This is threat TM-MPL-001.",
+      "checks": "That build fails for every namespace, as any sequence of bytes, that starts with the seven bytes of 'aws-kms'. That build succeeds only when the four required fields are set, the namespace is not reserved and the key length fits the algorithm. That the provider id of every encrypted data key the keyring writes has no 'aws-kms' prefix. That holds because the id is the namespace (code-reading hypothesis H_EDK_ID). That a built keyring never tries to decrypt a key with such a provider id (code-reading hypothesis H_DECRYPT_FILTER). It also lists what the check accepts: case variants such as AWS-KMS, padded names, look-alike characters and the empty name. No check was written to fail, because no gap was found.",
+      "not_shown": "It does not show that the shipped code has these properties. It does not show that TM-MPL-001 is handled. Only one check, in one constructor, of one keyring type is modeled. Keyring types written by callers and encrypted data keys built by hand are not covered. The check is a byte test that does not ignore case. A consumer outside this repository that compared names without regard to case is a documented exclusion of TM-MPL-001, and this proof does not close it. Key validity beyond its length, the AES-GCM wrap and decryption are not covered. Whether accepting the empty namespace is fine is outside this target.",
+      "notes": [
+        "Observation, not a gap: the check accepts AWS-KMS, Aws-Kms, aws_kms, xaws-kms, aws-km, a name with a leading space, look-alike characters and the empty string. Both spec sentences name only the lowercase string and ask for no case folding. In this repository the provider ids are compared exactly (code reading).",
+        "No gap against the spec: one spec sentence is a prefix rule and the other is an equality rule. The check is not narrower than either, and it is stricter than the equality rule."
+      ],
+      "sources": [{"doc": "docs/mpl-verification-targets/01-threat-driven.md", "locator": "id: VR-2026-T24"}, {"doc": "verus-proofs/README.md", "locator": "## T24: reserved `aws-kms` namespace"}, {"doc": "docs/mpl-verification-targets.md", "locator": "**T24: no gap found at model level.**"}]
+    },
+    "T25": {
+      "title": "C++ shim handles should be checked before they are used (the C++ adopt function has no check today)",
+      "area": "The C++ shim (esdk/shims/aws-esdk-cpp), which lies outside mpl/ and prim/. It passes raw pointers from C++ to MPL objects and is the only unsafe code that reaches MPL key material.",
+      "risk": "A dangling, forged or doubly owned pointer from C++ would cause undefined behavior. This is threat TM-MPL-024.",
+      "checks": "The part Rust can check: every use of a raw pointer is preceded by a null check, a null required handle gives a validation error, a null optional handle gives none, and no handle is used after the shim frees it. Also, into_keyring_handle returns a non-null pointer to a new box that nothing else aliases.",
+      "not_shown": "Whether a non-null pointer from C++ is valid is a caller obligation and is trusted, not proved. The C++ adopt function has no null, type or ownership check, and no Rust-side proof can fix that. A hardening change is an owner decision.",
+      "notes": [],
+      "sources": [{"doc": "docs/mpl-verification-targets/01-threat-driven.md", "locator": "id: VR-2026-T25"}]
+    },
+    "T26": {
+      "title": "Secret key bytes should be wiped on every exit path (docs expect five failures today)",
+      "area": "Temporary buffers that hold plaintext keys in the raw AES keyring, the AES helper, the branch key wrap, the key-store KMS code, the local cache and the ECDSA key generation.",
+      "risk": "A secret could stay in freed memory after an error or after a cache entry expires. Reading it needs access to the process memory. This is threat TM-MPL-015, rated Low. Related reports are BUG-07(a) and BUG-10.",
+      "checks": "That every buffer that held plaintext key bytes is either moved into an owner that wipes on drop or wiped before it is dropped, on every exit path. The docs expect this to fail at five places (F1 to F5), among them the decrypt buffers, the AES helper on error, and the key generation error path.",
+      "not_shown": "The docs exclude copies made when a vector grows, allocator and operating-system residency, the cache holding branch keys for their lifetime by design, and aws-lc-rs internal buffers. Fixes change behavior and are owner decisions.",
+      "notes": [],
+      "sources": [{"doc": "docs/mpl-verification-targets/01-threat-driven.md", "locator": "id: VR-2026-T26"}]
+    },
+    "T27": {
+      "title": "Key-store reads per decrypt are bounded (provisional)",
+      "area": "The hierarchical keyring's decrypt loop and the storm-tracking cache. The sender of a message chooses how many encrypted data keys it holds and which key versions they name.",
+      "risk": "Each matching key can cost a cache lookup and, on a miss, a key-store read. With no cap and no cache for failed reads, a sender could drive many reads. This is threat TM-MPL-025, rated Medium and provisional: it is static reasoning and unconfirmed until a reproducer exists.",
+      "checks": "That the loop runs at most as many times as there are keys, and makes at most as many cache lookups and key-store reads as there are matching keys. The docs expect this to pass. They also expect a second check to fail: no bound on reads exists that does not depend on the number of keys the sender chose.",
+      "not_shown": "The docs exclude wall-clock time, DynamoDB and KMS cost, and thread interleavings, which belong to T21. Which bound to add is an owner decision.",
+      "notes": [],
+      "sources": [{"doc": "docs/mpl-verification-targets/01-threat-driven.md", "locator": "id: VR-2026-T27"}]
+    },
+    "C01": {
+      "title": "Encryption-context builders and record reconstruction undo each other",
+      "area": "The branch key store's code that builds the encryption context for a record (encryption_context.rs) and the code that rebuilds key material from a record (record.rs).",
+      "risk": "A key written by the store could be read back with a different id, version or custom context. The targets doc cites no threat for this target. Related: BUG-08, an error branch that can never run.",
+      "checks": "That for a non-empty id and version, a 32-byte key and any custom context, building the context and reading it back returns the same id, version, custom context and key. That the builders fail only on an empty id or version. That the collision error branch in build_base is dead exactly when assumption A_ITER holds.",
+      "not_shown": "It does not model the KMS step (T01 does), the database read, rotation, error text or replay. The proof holds only under A_ITER, and two results also need A_DDB and A_NAME. It checks a model, not the shipped code.",
+      "notes": [],
+      "sources": [{"doc": "docs/mpl-verification-targets/02-capability-driven.md", "locator": "id: VR-2026-C01"}, {"doc": "verus-proofs/README.md", "locator": "## C01: encryption-context builders"}, {"doc": "docs/mpl-verification-targets.md", "locator": "- **BUG-08 (C01).**"}]
+    },
+    "C02": {
+      "title": "The signing retry loop is bounded and writes only whole signatures",
+      "area": "The ECDSA signing code in the primitives crate (prim::ecdsa, function sign_fixed_len). It retries signing until it gets a signature of the required length.",
+      "risk": "The loop could run without end, panic, or leave a half-written signature in the caller's buffer. The targets doc cites no threat for this target.",
+      "checks": "That the signing step is called at most 128 times. That on success the buffer holds exactly one whole signature of the required length. That on failure the buffer is unchanged. That a wrong-length buffer is rejected with no signing call.",
+      "not_shown": "It does not cover signature verification, key generation, a panic inside aws-lc-rs, timing, or the tiny chance that all 128 attempts fail. The signing step is abstract. The docs record that branch Mahnush_Verus proves the retry bound on the real loop (VR-008), so this proof is partly superseded there.",
+      "notes": [],
+      "sources": [{"doc": "docs/mpl-verification-targets/02-capability-driven.md", "locator": "id: VR-2026-C02"}, {"doc": "verus-proofs/README.md", "locator": "## C02: bounded ECDSA signing loop"}, {"doc": "docs/mpl-verification-targets.md", "locator": "C02 and VR-008."}]
+    },
+    "C03": {
+      "title": "Primitive wrappers should handle bad lengths as errors (partly proved on another branch, under 20 assumed aws-lc-rs facts)",
+      "area": "The primitives crate (prim). It wraps aws-lc-rs for HMAC, digests, AES encryption and decryption, key derivation and random bytes.",
+      "risk": "A wrong buffer length could cause a panic, a truncated result or a buffer left in a surprising state. BUG-07 is one case: AES encrypt leaves plaintext in the buffer on an error. The targets doc cites no threat for this target.",
+      "checks": "On branch Mahnush_Verus, Verus checks the real prim code. For HMAC and digests, success happens exactly when the output buffer has the right length, and on an error the buffer is unchanged. For AES encrypt, the docs list the buffer contents on each error and success path. For AES decrypt, a success implies equal lengths, relative to an assumption about aws-lc-rs.",
+      "not_shown": "The proof is not on this branch, where prim has no Verus annotations. It rests on 20 stated assumptions about aws-lc-rs. It does not prove that no listed function panics for any argument. It does not prove that hkdf and hkdf_expand output lengths are right end to end: only the decision functions are proved. It says nothing about wiping. The docs call it partly proved.",
+      "notes": [],
+      "sources": [{"doc": "docs/mpl-verification-targets/02-capability-driven.md", "locator": "id: VR-2026-C03"}, {"doc": "docs/mpl-verification-targets.md", "locator": "### C03: in-crate proof on branch Mahnush_Verus (not on this branch)"}]
+    },
+    "C04": {
+      "title": "A plaintext data key always has the length the suite requires",
+      "area": "The materials structures (encryption and decryption materials) and every code path that puts a plaintext data key into them. A plaintext data key is the unencrypted key that protects the message.",
+      "risk": "A data key of the wrong length could be accepted. This was BUG-02, now fixed on main. The targets doc cites no threat for this target. The nearest threats are TM-MPL-006 and TM-MPL-023.",
+      "checks": "That the length check accepts exactly the key length of the suite. That the four places that accept a data key (add a key to encryption materials, add one to decryption materials, and the two build calls) store it only when it passes. That both random key generators make a key of the suite's length. That after build and any sequence of the eight modeled paths in any order, every materials value that holds a key holds one of the suite's length. That the key length times 8 equals the key size column of the spec. That a right-length key is accepted, and a key one byte too short or too long, or an empty key, is rejected for every suite. The docs expected this to pass after the BUG-02 fix, and it does. No check was written to fail.",
+      "not_shown": "It does not show that the shipped code has these properties. It does not show that the list of paths is complete. That comes from reading and searching the code, and a new constructor or setter in mpl/src would break it. It does not show that the key is random, secret, wiped or the right bytes. The suite table is a copy of a copy, typed in by hand. The ESDK code that checks the length again (esdk/src/key_derivation.rs) is not modeled. The model does not contain the code from before the fix, so it does not re-prove that BUG-02 caused the old failure. It does not show that any threat is handled.",
+      "notes": [
+        "Observation, not a defect: the PlaintextDataKey type itself enforces no length, because its constructors are public. The rule rests on the four checks and on the materials fields being private.",
+        "Observation: in raw AES decrypt, the length test at raw_aes_keyring.rs:489 is redundant for the rule. It changes behavior, because a wrong length skips to the next key instead of ending the call with an error.",
+        "Code reading, not proved: in the hierarchical keyring's decrypt, a wrong-length key from unwrap ends the call with an error and later encrypted data keys are not tried. It fails closed."
+      ],
+      "sources": [{"doc": "docs/mpl-verification-targets/02-capability-driven.md", "locator": "id: VR-2026-C04"}, {"doc": "verus-proofs/README.md", "locator": "## C04: plaintext data key length invariant"}, {"doc": "docs/mpl-verification-targets.md", "locator": "**C04: no gap found at model level.**"}]
+    },
+    "C05": {
+      "title": "A hand-typed copy of the algorithm suite table agrees with a hand-typed copy of the spec table",
+      "area": "The table of the 11 algorithm suites that the ESDK uses (EsdkAlgorithmSuiteId::specification()) and the constants that depend on it, such as key lengths and verification key sizes.",
+      "risk": "A wrong or duplicated entry in the table would give a suite the wrong parameters or make two suites look the same. The targets doc cites no threat for this target.",
+      "checks": "This is a consistency check of the suite table against the spec text. It is not a deep property. That the model of the table equals the spec row for each of the 11 suites, field by field. That suite ids are unique, never 00 00, and differ from the 7 ids of other spec suites. That the list of all suites has each suite once, and that looking up an id gives back its suite. That key commitment (a feature that ties a message to one key), message format version 2 and a suite data length of 32 bytes occur together and only together. That no suite signs with a shared secret key. That key lengths (16, 24 or 32 bytes) agree with the sizes in the primitives. That the public key sizes for signatures (33 or 49 bytes) equal the sizes in the primitives. No check was written to fail, because no gap was found.",
+      "not_shown": "It does not show that the shipped code has these properties. It does not show that the spec is right. Both tables are typed in by hand. If the same mistake is typed into both copies, Verus cannot see it. A script compares the copies with the sources, but a script is not a proof. Suites of two other products, S3EC and DBE, are not modeled. Only their ids are, to check that no id repeats. How callers use the table is not covered. The 22 existing tests already cover the same finite domain, so the added value is low.",
+      "notes": [
+        "Observation, not a gap: a doc comment on id_bytes says ids are unique across every suite format, but the code has only the ESDK format. Uniqueness across formats is shown only against the spec ids.",
+        "Observation: the header of the spec file says version 0.4.0, but its change log lists 0.5.0. This is a nit in the spec document and does not affect the proof."
+      ],
+      "sources": [{"doc": "docs/mpl-verification-targets/02-capability-driven.md", "locator": "id: VR-2026-C05"}, {"doc": "verus-proofs/README.md", "locator": "## C05: algorithm suite table"}, {"doc": "docs/mpl-verification-targets.md", "locator": "**C05: no gap found at model level"}]
+    },
+    "C07": {
+      "title": "The rules that stop a keyring from changing the suite or context are checked on a model. That every call runs them is not proved",
+      "area": "The materials checks in materials_checks.rs and the send() calls on keyrings and on materials managers (CMMs). The checks are check_encryption_transition, check_decryption_transition, check_encryption_materials_complete and check_decryption_materials_complete. The last two are completeness checks: the output must have a plaintext data key, and on encrypt at least one encrypted data key. A keyring adds the data keys. A materials manager asks the keyring for them. send() is the library method that calls a keyring or a materials manager and then runs the check on the result. Materials are the bundle of suite, encryption context and keys that is passed along.",
+      "risk": "A keyring, including one that a user wrote, could change the algorithm suite or the encryption context while it adds keys, and nobody would notice. The targets doc cites no threat for this target.",
+      "checks": "This is partly a consistency check against the target text. Eight of the nine encryption rules and all eight decryption rules are plain field comparisons. The model copies them from the code. The proof restates them in the words of the target. Verus checks that the two wordings agree. It does not check that the code does what the model says. The parts that are more than that follow. The transition checks compare the materials before and after a keyring call. They accept a pair only if the suite, the encryption context, the required keys and the signing key (on encrypt) or the verification key (on decrypt) are unchanged. The required keys are the encryption context keys that the caller must supply again on decrypt. They also require that the plaintext data key (PDK, the unencrypted key that protects the message) is only added. The encrypted data keys (EDKs, the locked copies of that key) may only be added. Repeats count: a key listed twice before must be listed twice after. Order does not matter. An accepted pair differs only in the PDK and the EDK list on encrypt, and only in the PDK on decrypt. This covers all 7 fields of the encryption materials and all 6 of the decryption materials. This holds under two assumptions that a person checked by reading the code. First, the builders (the build() functions that make materials) keep the shared-key signing keys empty for all 11 suites. Second, every materials value comes from build(), from a copy (Clone) or from the add methods. A keyring that changes the materials only through add_data_key and add_encrypted_data_key is accepted, if the materials it received passed the basic validity check. Accepted encrypt steps can be chained. After one accepted decrypt step, no second one is accepted. The proof also checks a model of the four send() calls, written as the docs describe them. In that model, a keyring returns success only after the transition check passed. A materials manager returns success only after the completeness check passed. That follows from how the model is written. It shows the property is well formed. It does not show that the real send() has it. No check was written to fail.",
+      "not_shown": "It does not show that the real code has these properties. A person compared the model with the code by reading. It does not show that every call reaches a send() that runs the check. That comes from searching and reading the code only. The model does not contain the list of call paths. Anyone who writes their own keyring or manager type can call its method directly and skip the check. No such call was found in the library, the ESDK, the examples or the tests. Five scratch bug-reproduction programs outside any crate do call a keyring directly. A new call would break that finding. The send() of a materials manager runs only the completeness check, on the output alone. It has no earlier copy to compare with. That is target T09 and is not proved. It does not show that a keyring is correct. That the key is random is not covered by any proof. The key length is target C04. That an encrypted key decrypts to the plaintext key is not covered. It does not show that any threat is handled, because C07 cites none. The 27 existing tests were read, not run.",
+      "notes": [
+        "Latent finding F1 (present in the check but not reachable today), not a defect today: neither transition check reads the symmetric signing keys (keys for signing with a shared secret). With all 11 suites, the builders (the build() functions that make materials) keep that field empty, so no real pair can differ there. The protection is in the builders, not in the check. A future suite with that kind of signing would remove it. The proof states this as a fact about the check. It is not a failing check.",
+        "Observation, not a gap: the target text writes the EDK rule as a subset test. The code counts repeats, and so does the proof.",
+        "Observation, for the owner: if the old materials already hold a PDK, an unchanged copy is accepted. The spec (keyring-interface.md lines 126 to 127) says a keyring that attempted neither behavior must fail. The check does not enforce that. It is not a failing check, because the check's own comment says what a keyring may do.",
+        "Observation: neither transition check looks at the length of the PDK. That is target C04."
+      ],
+      "sources": [{"doc": "docs/mpl-verification-targets/02-capability-driven.md", "locator": "id: VR-2026-C07"}, {"doc": "verus-proofs/README.md", "locator": "## C07: materials transition checks"}, {"doc": "docs/mpl-verification-targets.md", "locator": "**C07: no gap found that fails a proof at model level"}]
+    },
+    "C08": {
+      "title": "Cache usage counters never wrap around",
+      "area": "The two usage counters of a cache entry, messages used and bytes used (CacheEntry::record_use), and the cache call that updates them (update_usage_metadata). Both counters are 64-bit numbers.",
+      "risk": "A counter that wrapped could let a future caching materials manager exceed its usage limits. No code in the repository calls update_usage_metadata today, so the risk is for a future caller. Reaching 2^64 messages or bytes is beyond any real workload. The targets doc cites no threat for this target.",
+      "checks": "That for every start value and every byte count, record_use succeeds exactly when neither 'messages plus 1' nor 'bytes plus the byte count' is above the 64-bit maximum. That on success both counters hold the exact sums, and on failure both are unchanged. That update_usage_metadata removes the entry exactly when record_use fails. That for any sequence of calls, the entry survives exactly when the exact totals still fit. That a poisoned cache lock gives an internal error and changes nothing. No check was written to fail, because no gap was found.",
+      "not_shown": "It does not show that the shipped code has these properties. The statements about each identifier hold only if no cache entry handle is stored under two identifiers (A_NO_ALIAS). The code does not enforce that, because put_cache_entry takes a handle that can be cloned. They also assume that every counter change goes through update_usage_metadata and that nothing replaces the entry. Calls are modeled one at a time, so threads are not covered. The no-wrap part rests on the documented behavior of Rust's checked_add, so the argument for that part is short. Cache order, capacity, time limits and any usage limit policy are not covered. No threat is cited, so no threat status changes.",
+      "notes": [
+        "Observation, not a gap: a handle taken before an eviction still accepts record_use afterward. After a failed call the counters are unchanged, so a later call with fewer bytes can succeed. The counters stay exact. Whether this matters depends on a future caching manager.",
+        "Observation, not a wrap: one handle can be stored under two identifiers, and then a call for one identifier changes the counters seen under the other. Even then, each call still cannot wrap, changes both counters or neither, and removes the addressed entry on failure.",
+        "Spec note: the only spec text on usage metadata says updating it SHOULD be atomic. The spec has no overflow rule. The targets YAML cites a spec anchor that does not exist in the spec checkout."
+      ],
+      "sources": [{"doc": "docs/mpl-verification-targets/02-capability-driven.md", "locator": "id: VR-2026-C08"}, {"doc": "verus-proofs/README.md", "locator": "## C08: cache usage counters"}, {"doc": "docs/mpl-verification-targets.md", "locator": "**C08: no gap found at model level.**"}]
+    }
+  }
+}

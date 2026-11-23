@@ -1,0 +1,14 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.16s
+     Running tests/zz_bugrepro_06_cache_id_nul.rs (target/debug/deps/zz_bugrepro_06_cache_id_nul-84998f297ba693c2)
+
+running 2 tests
+REPRO BUG-06 encrypt-scope ids equal for (p="tenant\0x", n="L") vs (p="tenant", n="x\0L"): true
+REPRO BUG-06 decrypt-scope ids equal for (n="L", bkid="bk\0x") vs (n="L\0bk", bkid="x"): true
+REPRO BUG-06 control (no NUL, p="tenantx") equal to first: false
+test identifier_collides_when_fields_contain_nul ... ok
+REPRO BUG-06 keystore A get_active calls = 1, keystore B get_active calls = 0
+REPRO BUG-06 keyring B's EDK unwraps with keystore A's branch key: true; with keystore B's own branch key: false
+test shared_cache_serves_other_keyrings_branch_key ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+

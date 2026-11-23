@@ -1,0 +1,9 @@
+HEAD: 66aba1c28c319dd5b6dfa2b11607300d9d0955a1
+status --porcelain (before setup): <empty, clean>
+verus --version:
+Verus
+  Version: 0.2026.07.12.0b42f4c
+  Profile: release
+  Platform: macos_aarch64
+  Toolchain: 1.96.0-aarch64-apple-darwin
+

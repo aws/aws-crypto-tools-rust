@@ -1,0 +1,172 @@
+18|ALT|esdk/shims/aws-esdk-cpp/src/lib.rs:2059|into_keyring_handle
+18|RANGE|mpl/src/lib.rs:1564-1565|len=43
+18|RANGE|mpl/src/lib.rs:1570-1571|len=43
+18|RANGE|mpl/src/lib.rs:1655|len=43
+18|RANGE|mpl/src/lib.rs:1661|len=43
+18|RANGE|mpl/src/lib.rs:2054|len=43
+36|MISS|mpl/tests/test_keyring_memory.rs:100|ids=['Feasibility', 'Likelihood', 'Medium', 'Coverage'] line=async fn raw_aes_keyring() {
+36|MISS|mpl/tests/test_keyring_memory.rs:113|ids=['test_keyring_memory'] line=async fn hierarchical_keyring() {
+62|ALT|esdk/shims/aws-esdk-cpp/src/lib.rs:2059-2066|into_keyring_handle,into_raw
+62|MISS|esdk/shims/aws-esdk-cpp/src/lib.rs:1570|ids=['reaching', 'objects', 'shim'] line=.set_kms_client(unsafe { input.kms_client.as_ref() }.map(|c| c.inner.clone()))
+64|MISS|mpl/src/cmc/entry.rs:201-205|ids=['Duvet'] line=//= spec/framework/cryptographic-materials-cache.md#usage-metadata
+219|MISS|mpl/src/key_store/kms_ops.rs:172|ids=['decrypt_branch_key'] line=let record_kms_arn = record.attributes.get(ATTR_KMS_ARN).ok_or_else(|| {
+228|RANGE|mpl/src/key_store/kms_ops.rs:677|len=302
+228|RANGE|mpl/src/key_store/kms_ops.rs:690|len=302
+228|RANGE|mpl/src/key_store/kms_ops.rs:692|len=302
+230|RANGE|mpl/src/key_store/kms_ops.rs:531|len=302
+230|RANGE|mpl/src/key_store/kms_ops.rs:553|len=302
+230|RANGE|mpl/src/key_store/kms_ops.rs:574|len=302
+245|ALT|esdk/examples/branch_key_id_supplier.rs (+21):77|encryption_context
+245|MISS|mpl/src/key_store/branch_key_store.rs:1098|ids=['branch_key_store'] line=let attr = if key == ATTR_HIERARCHY_VERSION {
+270|ALT|mpl/src/key_store/kms_config.rs (+1):105|KmsMrKeyArn
+270|ALT|mpl/src/key_store/kms_ops.rs:88|resolve_key_store_arn
+270|ALT|mpl/src/key_store/kms_ops.rs:94-95|KmsKeyArn,KmsMrKeyArn
+292|ALT|mpl/tests/test_aws_kms_hierarchical_keyring_integ.rs:692|Discovery
+292|ALT|mpl/tests/test_aws_kms_hierarchical_keyring_integ.rs:801|get_active_branch_key
+356|ALT|mpl/tests/test_aws_kms_hierarchical_keyring_integ.rs (+1):665|HierarchicalKeyring
+356|RANGE|mpl/src/aws_kms/cache_entry_identifier.rs:908|len=66
+357|ALT|mpl/src/aws_kms/hierarchical_keyring.rs:626|generate_partition_id
+357|RANGE|mpl/src/aws_kms/cache_entry_identifier.rs:595-599|len=66
+358|ALT|mpl/src/aws_kms/hierarchical_keyring.rs:831|resolve_branch_key_id
+358|RANGE|mpl/src/aws_kms/cache_entry_identifier.rs:605|len=66
+458|MISS|mpl/src/cmc/storm_tracking.rs:535|ids=['HierarchicalKeyringBuilder'] line=self
+458|MISS|mpl/src/cmc/storm_tracking.rs:547|ids=['is_zero'] line=pub fn set_fan_out(mut self, v: Option<usize>) -> Self {
+459|MISS|mpl/src/cmc/storm_tracking.rs:606|ids=['StormTrackingCmcBuilder'] line=pub fn build(self) -> Result<StormTrackingCmc, Error> {
+486|ALT|mpl/tests/test_aws_kms_hierarchical_keyring.rs:225|build_with_sub_second_ttl_keeps_it_exactly
+487|ALT|mpl/tests/test_storm_tracking_cmc.rs:680|storm_tracking
+508|ALT|esdk/shims/aws-esdk-cpp/src/lib.rs (+1):146|RawAesKeyring
+508|ALT|mpl/src/keyring/raw_aes_keyring.rs:163|aes_encrypt
+508|RANGE|prim/src/lib.rs:350|len=329
+509|ALT|esdk/src/message/body/body_decrypt.rs (+1):472|aes_decrypt
+509|ALT|esdk/tests/test_helpers.rs:422|RawAesKeyring,Keyring
+509|RANGE|prim/src/lib.rs:399|len=329
+556|ALT|mpl/tests/test_raw_aes_keyring.rs:700|on_encrypt
+556|MISS|mpl/src/aws_kms/hierarchical_keyring.rs:943|ids=['on_encrypt', 'decrypt_edk_at_version'] line=.materials(CachedMaterials::BranchKey(bkm.clone()))
+608|MISS|mpl/src/cmc/storm_tracking.rs:734|ids=['Builtin', 'HierarchicalKeyring', 'Keyring', 'on_decrypt'] line=let cached = self.inner.local.get_fresh(cache_id)?;
+610|ALT|mpl/src/aws_kms/hierarchical_keyring.rs:867|try_decrypt_edk
+610|RANGE|mpl/src/cmc/storm_tracking.rs:879|len=775
+610|RANGE|mpl/src/cmc/storm_tracking.rs:889-894|len=775
+611|ALT|mpl/src/aws_kms/hierarchical_keyring.rs:901|decrypt_edk_at_version
+611|ALT|mpl/src/aws_kms/hierarchical_keyring.rs:934-938|get_branch_key_version
+611|RANGE|mpl/src/cmc/storm_tracking.rs:908|len=775
+611|RANGE|mpl/src/cmc/storm_tracking.rs:916-924|len=775
+612|RANGE|mpl/src/cmc/storm_tracking.rs:947-953|len=775
+650|RANGE|esdk/src/config.rs:236-249|len=151
+657|MISS|mpl/tests/test_aws_kms_hierarchical_keyring.rs:1764|ids=['ierarchical_keyring'] line=assert_eq!(key_store.get_version_calls(), 1);
+657|MISS|mpl/tests/test_aws_kms_hierarchical_keyring.rs:2192|ids=['ical_keyring'] line=assert_eq!(key_store.get_version_calls(), 1);
+691|RANGE|prim/src/ecdsa.rs:471|len=403
+691|RANGE|prim/src/ecdsa.rs:489|len=403
+692|ALT|esdk/shims/aws-esdk-cpp/test-server/tests/stream_round_trip.rs (+12):162|ciphertext
+692|ALT|esdk/shims/aws-esdk-cpp/test-server/tests/stream_round_trip.rs (+13):163|ciphertext
+693|ALT|mpl/src/aws_kms/branch_key_wrap.rs:185|aes_encrypt
+694|ALT|mpl/tests/test_builder_getters.rs:767|on_decrypt
+694|MISS|prim/src/ecdsa.rs:230|ids=['branch_key_wrap'] line=check_sig_len(alg, signature)?;
+700|ALT|mpl/src/structures/decryption_materials.rs (+1):139|SigningKey
+719|MISS|mpl/src/aws_kms/hierarchical_keyring.rs:767|ids=['caller_obligation_wrap'] line=materials.add_data_key(PlaintextDataKey::new(plaintext_dk_bytes))?;
+720|MISS|prim/src/ecdsa.rs:391-392|ids=['ve_unwiped', 'ghost_signing_key_vec', 'FAILS'] line=if verification_key.len() != field_size(alg) {
+842|MISS|mpl/src/cmm/default_cmm.rs:198|ids=['decrypt_materials'] line=let (ec, required_encryption_context_keys) = merge_reproduced_encryption_context(
+881|ALT|esdk/shims/aws-esdk-cpp/src/tests.rs (+7):43|CommitmentPolicy
+881|ALT|mpl/src/structures/commitment_policy.rs:62|allows_for_encrypt
+882|ALT|esdk/tests/test_cmm_algorithm_suite_override.rs (+5):85|DefaultCmm
+882|MISS|mpl/src/structures/materials_checks.rs:97|ids=['DefaultCmm', 'get_encryption_materials'] line=));
+883|MISS|mpl/src/structures/materials_checks.rs:184|ids=['decrypt_materials'] line=}
+912|ALT|mpl/tests/test_default_cmm.rs:168-171|SharedCmm
+915|ALT|mpl/test-server/tests/static_keyring.rs:184|default_cmm
+915|MISS|esdk/src/materials.rs:130|ids=['default_cmm', 'ESDK'] line=if !policy.allows_for_decrypt(materials.algorithm_suite_id()) {
+915|MISS|esdk/src/materials.rs:202|ids=['ESDK'] line=if !policy.allows_for_encrypt(materials.algorithm_suite_id()) {
+939|RANGE|mpl/src/aws_kms/user_agent.rs:236|len=19
+939|RANGE|mpl/src/aws_kms/user_agent.rs:249|len=19
+939|RANGE|mpl/src/aws_kms/user_agent.rs:252|len=19
+939|RANGE|mpl/src/aws_kms/user_agent.rs:256|len=19
+939|RANGE|mpl/src/aws_kms/user_agent.rs:879|len=19
+939|RANGE|mpl/src/aws_kms/user_agent.rs:892|len=19
+940|ALT|mpl/src/aws_kms/hierarchical_keyring.rs:734|on_decrypt
+940|ALT|mpl/src/keyring/raw_aes_keyring.rs (+1):469|split_at
+940|ALT|mpl/src/keyring/raw_aes_keyring.rs (+2):201|split_at
+940|ALT|mpl/src/keyring/raw_aes_keyring.rs:206|split_at
+940|ALT|mpl/src/keyring/raw_aes_keyring.rs:212|split_at
+941|ALT|esdk/shims/aws-esdk-cpp/test-server/src/seam.rs (+9):145|EncryptionContext
+941|ALT|esdk/src/client.rs (+21):166-197|EncryptionContext
+941|ALT|mpl/tests/test_aws_kms_mrk_match.rs:40-41|aws_kms_mrk_match_for_decrypt
+942|ALT|mpl/src/cmm/default_cmm.rs (+2):138|ecdsa_generate_keypair
+942|ALT|mpl/test-server/tests/static_keyring.rs (+1):123|DefaultCmm
+942|RANGE|mpl/src/aws_kms/user_agent.rs:64|len=19
+943|ALT|mpl/src/key_store/branch_key_store.rs:719|new_decrypt_only_ec,ATTR_TYPE
+953|ALT|prim/tests/test_aes.rs:138|EXPECTED
+962|ALT|mpl/tests/test_aws_kms_hierarchical_keyring.rs:1187|unwrap_too_short_ciphertext_returns_error
+962|ALT|mpl/tests/test_aws_kms_hierarchical_keyring.rs:1841|on_decrypt_skips_edks_with_non_utf8_provider_info
+965|MISS|mpl/src/key_store/branch_key_store.rs:101-108|ids=['expect', 'Option'] line=fn kms_client(&self) -> &KmsClient {
+966|MISS|mpl/src/key_store/branch_key_store.rs:199|ids=['expect'] line=grant_tokens: Option<Vec<String>>,
+966|MISS|mpl/src/key_store/branch_key_store.rs:213|ids=['expect'] line=/// Set or clear the DynamoDB table name from an `Option`.
+966|MISS|mpl/src/key_store/branch_key_store.rs:227|ids=['expect'] line=/// Set the logical name cryptographically bound to all keys in the
+988|ALT|esdk/tests/test_error_ux.rs (+1):239|StormTrackingCmc
+988|MISS|mpl/src/aws_kms/hierarchical_keyring.rs:606|ids=['StormTrackingCmcBuilder'] line=
+989|ALT|mpl/src/cmc/storm_tracking.rs:264|classify_and_mark
+989|ALT|mpl/src/cmc/storm_tracking.rs:313|Wait,deadline
+990|ALT|esdk/shims/aws-esdk-cpp/src/lib.rs (+1):388|in_flight_ttl
+990|ALT|esdk/shims/aws-esdk-cpp/src/lib.rs (+2):378-382|in_flight_ttl
+990|ALT|mpl/src/cmc/storm_tracking.rs (+1):333|in_flight_ttl
+990|ALT|mpl/src/cmc/storm_tracking.rs:360|wait_for_leader
+990|ALT|mpl/tests/test_storm_tracking_cmc.rs:390-394|in_flight_ttl
+991|ALT|mpl/src/cmc/storm_tracking.rs:729|get_cache_entry
+992|ALT|mpl/src/cmc/storm_tracking.rs:661|within_grace_period
+992|ALT|mpl/src/cmc/storm_tracking.rs:675|within_grace_interval
+993|MISS|mpl/src/aws_kms/hierarchical_keyring.rs:934-938|ids=['HierarchicalKeyring', 'decrypt_edk_at_version'] line=.get_branch_key_version()
+1015|ALT|mpl/src/cmc/storm_tracking.rs:313|deadline
+1018|ALT|mpl/src/cmc/storm_tracking.rs (+1):333|in_flight_ttl
+1019|ALT|mpl/src/cmc/storm_tracking.rs (+1):680|inflight,grace_interval
+1021|ALT|esdk/shims/aws-esdk-cpp/src/lib.rs (+2):248|Internal
+1029|MISS|mpl/src/aws_kms/hierarchical_keyring.rs:322-323|ids=['FAILS'] line=self.inner.branch_key_id.as_deref()
+1033|MISS|mpl/src/aws_kms/hierarchical_keyring.rs:313|ids=['FAILS'] line=#[must_use]
+1090|RANGE|mpl/src/structures/encryption_context.rs:468|len=323
+1101|MISS|mpl/tests/test_encryption_context.rs:502-533|ids=['er_keys_rejected_on_deserialize'] line=fn test_deserialize_rejects_invalid_utf8_key() {
+1123|ALT|mpl/src/key_store/kms_ops.rs:118|reject_alias_arn
+1123|ALT|mpl/src/key_store/kms_ops.rs:144|rewrite_arn_region
+1207|ALT|mpl/tests/test_builder_getters.rs:760|on_decrypt
+1208|MISS|mpl/src/aws_kms/hierarchical_keyring.rs:722|ids=['on_encrypt'] line=.key_provider_info(branch_key_id.into_bytes())
+1208|MISS|mpl/src/aws_kms/hierarchical_keyring.rs:908|ids=['decrypt_edk_at_version'] line=let cache_id = cache_entry_identifier::build_cache_identifier(
+1224|ALT|mpl/tests/test_aws_kms_hierarchical_keyring.rs:1841|_non_utf8_provider_info
+1224|ALT|mpl/tests/test_aws_kms_hierarchical_keyring.rs:1872|on_decrypt_skips_edks_with_wrong_branch_key_id
+1224|ALT|mpl/tests/test_aws_kms_hierarchical_keyring.rs:2161|decrypt_uses_branch_key_id_supplier_when_configured
+1224|RANGE|mpl/src/aws_kms/hierarchical_keyring.rs:1640|len=1008
+1225|ALT|esdk/shims/aws-esdk-cpp/src/tests.rs:831|hierarchical_keyring
+1225|ALT|esdk/tests/test_input_builders.rs:198|DefaultCmm
+1225|RANGE|mpl/src/cmm/default_cmm.rs:760|len=304
+1285|ALT|mpl/tests/test_key_store_branch_key_store_integ.rs (+1):191|branch_key_materials
+1289|MISS|mpl/src/error/generated.rs:271|ids=['NoMatchingDataKey', 'Debug'] line=d.field("encrypted_data_keys", &self.data_keys);
+1331|MISS|esdk/shims/aws-esdk-cpp/src/lib.rs:1287|ids=['unsafe'] line=let keyring = require_handle(input.keyring, "keyring", "encrypt")?;
+1331|MISS|esdk/shims/aws-esdk-cpp/src/lib.rs:1331|ids=['unsafe'] line=let keyring = require_handle(input.keyring, "keyring", "decrypt")?;
+1331|MISS|esdk/shims/aws-esdk-cpp/src/lib.rs:1652|ids=['unsafe'] line=let key_store = require_handle(input.key_store, "key_store", "create_hierarchical_keyring"
+1331|MISS|esdk/shims/aws-esdk-cpp/src/lib.rs:1942|ids=['unsafe'] line=let keyring = require_handle(input.keyring, "keyring", "encrypt_stream")?;
+1331|MISS|esdk/shims/aws-esdk-cpp/src/lib.rs:1985|ids=['unsafe'] line=let keyring = require_handle(input.keyring, "keyring", "decrypt_stream")?;
+1337|MISS|esdk/shims/aws-esdk-cpp/include/aws/esdk/EncryptionSDK.h:656-663|ids=['EncryptionSDK'] line=/// Adopts a custom keyring defined in Rust.
+1352|RANGE|mpl/src/lib.rs:2050-2054|len=43
+1369|MISS|prim/src/lib.rs:180-204|ids=['Custom'] line=aad: &[u8],
+1369|RANGE|mpl/src/lib.rs:2037-2054|len=43
+1369|RANGE|mpl/src/lib.rs:718-719|len=43
+1442|MISS|mpl/src/keyring/raw_aes_keyring.rs:350|ids=['RawAesKeyringBuilder'] line=pub fn build(mut self) -> Result<RawAesKeyring, Error> {
+1473|MISS|mpl/src/structures/algorithm_suite.rs:439|ids=['write_volatile'] line=#[must_use]
+1491|MISS|mpl/test-server/src/handlers.rs:137-147|ids=['clients', 'built', 'request', 'data'] line=let kms = aws_sdk_kms::Client::new(&sdk_config(req.kms_client_region).await);
+1491|MISS|mpl/test-server/src/handlers.rs:425-430|ids=['server', 'main', 'handlers'] line=/// provider chain.
+1513|MISS|esdk/shims/aws-esdk-cpp/include/aws/esdk/EncryptionSDK.h:656-663|ids=['Caller'] line=/// Adopts a custom keyring defined in Rust.
+1520|MISS|mpl/src/aws_kms/branch_key_wrap.rs:236|ids=['branch_key_wrap'] line=if ciphertext.len() < FIXED_OVERHEAD_LEN {
+1520|MISS|mpl/src/aws_kms/branch_key_wrap.rs:236|ids=['inside', 'error', 'message', 'cites', 'Resolved'] line=if ciphertext.len() < FIXED_OVERHEAD_LEN {
+1521|MISS|mpl/src/structures/branch_key_materials.rs:205|ids=['beacon_key_materials'] line=impl Drop for BranchKeyMaterials {
+1522|ALT|mpl/tests/test_key_store_branch_key_store.rs (+1):530|response
+1522|MISS|mpl/src/keyring/raw_aes_keyring.rs:530|ids=['Number'] line=}
+1522|MISS|mpl/src/keyring/raw_aes_keyring.rs:531|ids=['MUST'] line=}
+1522|RANGE|mpl/src/keyring/raw_aes_keyring.rs:552|len=545
+1522|RANGE|mpl/src/keyring/raw_aes_keyring.rs:552|len=545
+1522|RANGE|mpl/src/keyring/raw_aes_keyring.rs:552|len=545
+1522|RANGE|mpl/src/keyring/raw_aes_keyring.rs:553|len=545
+1522|RANGE|mpl/src/keyring/raw_aes_keyring.rs:573|len=545
+1522|RANGE|mpl/src/keyring/raw_aes_keyring.rs:573|len=545
+1522|RANGE|mpl/src/keyring/raw_aes_keyring.rs:573|len=545
+1522|RANGE|mpl/src/keyring/raw_aes_keyring.rs:574|len=545
+1522|RANGE|mpl/src/keyring/raw_aes_keyring.rs:677|len=545
+1522|RANGE|mpl/src/keyring/raw_aes_keyring.rs:677|len=545
+1522|RANGE|mpl/src/keyring/raw_aes_keyring.rs:688-691|len=545
+1522|RANGE|mpl/src/keyring/raw_aes_keyring.rs:690|len=545
+1522|RANGE|mpl/src/keyring/raw_aes_keyring.rs:692|len=545
+1522|RANGE|mpl/src/keyring/raw_aes_keyring.rs:693|len=545
+1523|RANGE|mpl/src/lib.rs:2037-2054|len=43

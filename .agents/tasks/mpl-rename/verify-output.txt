@@ -1,0 +1,454 @@
+=== 0. state: branch / HEAD
+MPL-Verus
+bd24f61
+
+=== 1. renames (git status --short; git diff -M HEAD --summary / --stat)
+ M .agents/tasks/docs-proof-status/check_proof_status.py
+ M .agents/tasks/docs-sync-9955ecd/check_bug_xrefs.py
+ M .agents/tasks/docs-sync-9955ecd/check_chorus_consistency.py
+ M .agents/tasks/docs-sync-9955ecd/check_citations.py
+ M .agents/tasks/docs-sync-9955ecd/check_citations_bugdocs.py
+ M .agents/tasks/docs-sync-9955ecd/check_citations_v2.py
+ M .agents/tasks/docs-sync-9955ecd/check_citations_v3.py
+ M .agents/tasks/docs-sync-9955ecd/check_extras.py
+ M .agents/tasks/docs-sync-9955ecd/check_fn_defs.py
+ M .agents/tasks/docs-sync-9955ecd/check_fn_defs_bugdocs.py
+ M .agents/tasks/docs-sync-9955ecd/check_fn_defs_v2.py
+ M .agents/tasks/docs-sync-9955ecd/check_misc.py
+ M .agents/tasks/docs-sync-9955ecd/check_prose_scores.py
+ M .agents/tasks/docs-sync-9955ecd/check_ratings.py
+ M .agents/tasks/docs-sync-9955ecd/check_scores.py
+ M .agents/tasks/docs-sync-9955ecd/check_stride_map.py
+ M .agents/tasks/docs-sync-9955ecd/check_threat_refs.py
+ M .agents/tasks/pipeline-rerun-620771c/check_citations.py
+ M .agents/tasks/pipeline-rerun-620771c/check_fn_defs.py
+ M .agents/tasks/pipeline-rerun-620771c/check_scores.py
+ M .kiro/agents/verification-recommender.md
+ M docs/chorus/MPL-Bug-Reports.docx
+ M docs/chorus/MPL-Bug-Reports.md
+ M docs/chorus/MPL-Threat-Model.docx
+ M docs/chorus/MPL-Threat-Model.md
+RM docs/bug-reports/BUG-01-ttl-duration-overflow-panic.md -> docs/mpl-bug-reports/BUG-01-ttl-duration-overflow-panic.md
+RM docs/bug-reports/BUG-02-plaintext-data-key-length-not-enforced.md -> docs/mpl-bug-reports/BUG-02-plaintext-data-key-length-not-enforced.md
+RM docs/bug-reports/BUG-03-encryption-context-deserialize-accepts-unsorted.md -> docs/mpl-bug-reports/BUG-03-encryption-context-deserialize-accepts-unsorted.md
+RM docs/bug-reports/BUG-04-mrdiscovery-rewrites-non-mrk-arn-region.md -> docs/mpl-bug-reports/BUG-04-mrdiscovery-rewrites-non-mrk-arn-region.md
+RM docs/bug-reports/BUG-05-keygen-expect-and-short-edk-keystore-lookup.md -> docs/mpl-bug-reports/BUG-05-keygen-expect-and-short-edk-keystore-lookup.md
+RM docs/bug-reports/BUG-06-cache-identifier-not-injective-with-nul.md -> docs/mpl-bug-reports/BUG-06-cache-identifier-not-injective-with-nul.md
+RM docs/bug-reports/BUG-07-prim-aes-buffer-handling.md -> docs/mpl-bug-reports/BUG-07-prim-aes-buffer-handling.md
+RM docs/bug-reports/BUG-08-build-base-collision-branch-unreachable.md -> docs/mpl-bug-reports/BUG-08-build-base-collision-branch-unreachable.md
+RM docs/bug-reports/BUG-09-cache-ttl-check-whole-second-truncation.md -> docs/mpl-bug-reports/BUG-09-cache-ttl-check-whole-second-truncation.md
+RM docs/bug-reports/BUG-10-raw-aes-on-decrypt-unwiped-data-key.md -> docs/mpl-bug-reports/BUG-10-raw-aes-on-decrypt-unwiped-data-key.md
+RM docs/bug-reports/README.md -> docs/mpl-bug-reports/README.md
+RM docs/bug-reports/RECHECK-main-620771c.md -> docs/mpl-bug-reports/RECHECK-main-620771c.md
+RM docs/completeness-audit.md -> docs/mpl-completeness-audit.md
+RM docs/spec-security-analysis.md -> docs/mpl-spec-security-analysis.md
+RM docs/threat-model.md -> docs/mpl-threat-model.md
+RM docs/verification-targets.md -> docs/mpl-verification-targets.md
+RM docs/verification-targets/01-threat-driven.md -> docs/mpl-verification-targets/01-threat-driven.md
+RM docs/verification-targets/02-capability-driven.md -> docs/mpl-verification-targets/02-capability-driven.md
+RM docs/verification-targets/04-validation.md -> docs/mpl-verification-targets/04-validation.md
+ M verus-proofs/README-t03-t05.md
+ M verus-proofs/README.md
+?? .agents/tasks/mpl-rename/
+--- rename summary (similarity)
+ rename docs/{bug-reports => mpl-bug-reports}/BUG-01-ttl-duration-overflow-panic.md (98%)
+ rename docs/{bug-reports => mpl-bug-reports}/BUG-02-plaintext-data-key-length-not-enforced.md (98%)
+ rename docs/{bug-reports => mpl-bug-reports}/BUG-03-encryption-context-deserialize-accepts-unsorted.md (97%)
+ rename docs/{bug-reports => mpl-bug-reports}/BUG-04-mrdiscovery-rewrites-non-mrk-arn-region.md (97%)
+ rename docs/{bug-reports => mpl-bug-reports}/BUG-05-keygen-expect-and-short-edk-keystore-lookup.md (95%)
+ rename docs/{bug-reports => mpl-bug-reports}/BUG-06-cache-identifier-not-injective-with-nul.md (98%)
+ rename docs/{bug-reports => mpl-bug-reports}/BUG-07-prim-aes-buffer-handling.md (98%)
+ rename docs/{bug-reports => mpl-bug-reports}/BUG-08-build-base-collision-branch-unreachable.md (97%)
+ rename docs/{bug-reports => mpl-bug-reports}/BUG-09-cache-ttl-check-whole-second-truncation.md (97%)
+ rename docs/{bug-reports => mpl-bug-reports}/BUG-10-raw-aes-on-decrypt-unwiped-data-key.md (84%)
+ rename docs/{bug-reports => mpl-bug-reports}/README.md (83%)
+ rename docs/{bug-reports => mpl-bug-reports}/RECHECK-main-620771c.md (98%)
+ rename docs/{completeness-audit.md => mpl-completeness-audit.md} (76%)
+ rename docs/{spec-security-analysis.md => mpl-spec-security-analysis.md} (99%)
+ rename docs/{threat-model.md => mpl-threat-model.md} (97%)
+ rename docs/{verification-targets.md => mpl-verification-targets.md} (97%)
+ rename docs/{verification-targets => mpl-verification-targets}/01-threat-driven.md (99%)
+ rename docs/{verification-targets => mpl-verification-targets}/02-capability-driven.md (99%)
+ rename docs/{verification-targets => mpl-verification-targets}/04-validation.md (91%)
+--- count of renames: 19   (expected 19 = 4 top-level docs + 3 files in verification-targets/ + 12 files in bug-reports/)
+--- path-only proof for every renamed/modified .md (forward rule + inverse)
+md files compared: 24; path-only violations: 0; total lines with path/link text changed: 146
+exit 0
+--- RECHECK snapshot: line diff old->new (only path/link text may differ)
+< - What was re-checked: the nine findings in `docs/bug-reports/BUG-01..BUG-09` (summary in `docs/bug-reports/README.md`).
+> - What was re-checked: the nine findings in `docs/mpl-bug-reports/BUG-01..BUG-09` (summary in `docs/mpl-bug-reports/README.md`).
+< IDs and ratings are from `docs/threat-model.md` (TM-MPL-001..026, HEAD 9955ecd) and `docs/verification-targets.md`; the bug to threat to target mapping is `docs/complet
+> IDs and ratings are from `docs/mpl-threat-model.md` (TM-MPL-001..026, HEAD 9955ecd) and `docs/mpl-verification-targets.md`; the bug to threat to target mapping is `docs
+--- RECHECK with the path rewrite undone (strip 'mpl-' on renamed names) vs HEAD: must be identical
+RECHECK identical apart from path text
+
+=== 2. link checker (docs/ + verus-proofs/ *.md): working tree vs HEAD
+unresolved now:       83; unresolved at HEAD:       85
+NEW unresolved (not present at HEAD after mapping old->new names): 0
+pre-existing unresolved (same at HEAD, shown with new names): 83
+   PRE  ('docs/chorus/MPL-Bug-Reports.md', 'tick', 'mpl/src/keystore/')
+   PRE  ('docs/chorus/MPL-Bug-Reports.md', 'tick', 'mpl/src/keystore/encryption_context.rs')
+   PRE  ('docs/chorus/MPL-Bug-Reports.md', 'tick', 'mpl/src/keystore/kms_ops.rs')
+   PRE  ('docs/chorus/MPL-Bug-Reports.md', 'tick', 'mpl/tests/test_keystore_encryption_context.rs')
+   PRE  ('docs/chorus/MPL-Bug-Reports.md', 'tickbare', 'branch-key-store.md')
+   PRE  ('docs/chorus/MPL-Threat-Model.md', 'tick', 'docs/mpl-bug-reports/BUG-01')
+   PRE  ('docs/chorus/MPL-Threat-Model.md', 'tick', 'mpl/.duvet/config.toml')
+   PRE  ('docs/mpl-bug-reports/BUG-02-plaintext-data-key-length-not-enforced.md', 'link', 'algorithm-suites.md#encryption-algorithm')
+   PRE  ('docs/mpl-bug-reports/BUG-02-plaintext-data-key-length-not-enforced.md', 'link', 'algorithm-suites.md#key-derivation-algorithm')
+   PRE  ('docs/mpl-bug-reports/BUG-02-plaintext-data-key-length-not-enforced.md', 'link', 'algorithm-suites.md#key-derivation-input-length')
+   PRE  ('docs/mpl-bug-reports/BUG-02-plaintext-data-key-length-not-enforced.md', 'tick', 'mpl/tests/zz_bugrepro_02_pdk_length.rs')
+   PRE  ('docs/mpl-bug-reports/BUG-03-encryption-context-deserialize-accepts-unsorted.md', 'tick', 'esdk/src/message/encryption_context.rs::read_canonical_ec')
+   PRE  ('docs/mpl-bug-reports/BUG-03-encryption-context-deserialize-accepts-unsorted.md', 'tick', 'mpl/tests/zz_bugrepro_03_ec_unsorted.rs')
+   PRE  ('docs/mpl-bug-reports/BUG-04-mrdiscovery-rewrites-non-mrk-arn-region.md', 'tick', 'mpl/src/keystore/')
+   PRE  ('docs/mpl-bug-reports/BUG-04-mrdiscovery-rewrites-non-mrk-arn-region.md', 'tick', 'mpl/src/keystore/kms_ops.rs')
+   PRE  ('docs/mpl-bug-reports/BUG-04-mrdiscovery-rewrites-non-mrk-arn-region.md', 'tickbare', 'branch-key-store.md')
+   PRE  ('docs/mpl-bug-reports/BUG-05-keygen-expect-and-short-edk-keystore-lookup.md', 'link', 'structures.md#signing-key')
+   PRE  ('docs/mpl-bug-reports/BUG-06-cache-identifier-not-injective-with-nul.md', 'tick', 'mpl/src/keystore/config.rs')
+   PRE  ('docs/mpl-bug-reports/BUG-07-prim-aes-buffer-handling.md', 'tick', 'esdk/src/secret.rs')
+   PRE  ('docs/mpl-bug-reports/BUG-07-prim-aes-buffer-handling.md', 'tick', 'prim/tests/test_wrapper_contracts.rs')
+   PRE  ('docs/mpl-bug-reports/BUG-07-prim-aes-buffer-handling.md', 'tick', 'prim/tests/zz_bugrepro_07_aes_buffers.rs')
+   PRE  ('docs/mpl-bug-reports/BUG-08-build-base-collision-branch-unreachable.md', 'link', './structures.md#encryption-context-3')
+   PRE  ('docs/mpl-bug-reports/BUG-08-build-base-collision-branch-unreachable.md', 'tick', 'mpl/src/keystore/')
+   PRE  ('docs/mpl-bug-reports/BUG-08-build-base-collision-branch-unreachable.md', 'tick', 'mpl/src/keystore/attributes.rs')
+   PRE  ('docs/mpl-bug-reports/BUG-08-build-base-collision-branch-unreachable.md', 'tick', 'mpl/src/keystore/encryption_context.rs')
+   PRE  ('docs/mpl-bug-reports/BUG-08-build-base-collision-branch-unreachable.md', 'tick', 'mpl/tests/test_keystore_encryption_context.rs')
+   PRE  ('docs/mpl-bug-reports/BUG-09-cache-ttl-check-whole-second-truncation.md', 'tick', 'mpl/tests/zz_bugrepro_09_ttl_truncation.rs')
+   PRE  ('docs/mpl-bug-reports/RECHECK-main-620771c.md', 'tick', '.agents/tasks/bug-recheck/logs/recheckNN.log')
+   PRE  ('docs/mpl-bug-reports/RECHECK-main-620771c.md', 'tick', 'docs/mpl-bug-reports/BUG-01..BUG-09')
+   PRE  ('docs/mpl-bug-reports/RECHECK-main-620771c.md', 'tick', 'mpl/src/key_store/zz_bugrepro_04.rs')
+   PRE  ('docs/mpl-bug-reports/RECHECK-main-620771c.md', 'tick', 'mpl/src/keystore/')
+   PRE  ('docs/mpl-bug-reports/RECHECK-main-620771c.md', 'tick', 'mpl/src/keystore/encryption_context.rs')
+   PRE  ('docs/mpl-bug-reports/RECHECK-main-620771c.md', 'tick', 'mpl/src/keystore/kms_ops.rs')
+   PRE  ('docs/mpl-bug-reports/RECHECK-main-620771c.md', 'tick', 'mpl/src/keystore/mod.rs')
+   PRE  ('docs/mpl-completeness-audit.md', 'tickbare', 'algorithm-suites.md')
+   PRE  ('docs/mpl-completeness-audit.md', 'tickbare', 'branch-key-store.md')
+   PRE  ('docs/mpl-completeness-audit.md', 'tickbare', 'commitment-policy.md')
+   PRE  ('docs/mpl-completeness-audit.md', 'tickbare', 'sweep1-spec-matrix.md')
+   PRE  ('docs/mpl-completeness-audit.md', 'tickbare', 'sweep2-code-findings.md')
+   PRE  ('docs/mpl-completeness-audit.md', 'tickbare', 'sweep2-code-matrix.md')
+   PRE  ('docs/mpl-completeness-audit.md', 'tickbare', 'sweep3-bugs.md')
+   PRE  ('docs/mpl-completeness-audit.md', 'tickbare', 'sweep4-threat-target.md')
+   PRE  ('docs/mpl-completeness-audit.md', 'tickbare', 'verus-capabilities.md')
+   PRE  ('docs/mpl-spec-security-analysis.md', 'tick', 'mpl/.duvet/config.toml')
+   PRE  ('docs/mpl-spec-security-analysis.md', 'tick', 'mpl/src/structures/materials_checks.rs:18,37,72,117,157,177')
+   PRE  ('docs/mpl-spec-security-analysis.md', 'tickbare', 'algorithm-suites.md')
+   PRE  ('docs/mpl-spec-security-analysis.md', 'tickbare', 'aws-kms-hierarchical-keyring.md')
+   PRE  ('docs/mpl-spec-security-analysis.md', 'tickbare', 'aws-kms-key-arn.md')
+   PRE  ('docs/mpl-spec-security-analysis.md', 'tickbare', 'aws-kms-mrk-match-for-decrypt.md')
+   PRE  ('docs/mpl-spec-security-analysis.md', 'tickbare', 'branch-key-store.md')
+   PRE  ('docs/mpl-spec-security-analysis.md', 'tickbare', 'cmm-interface.md')
+   PRE  ('docs/mpl-spec-security-analysis.md', 'tickbare', 'commitment-policy.md')
+   PRE  ('docs/mpl-spec-security-analysis.md', 'tickbare', 'cryptographic-materials-cache.md')
+   PRE  ('docs/mpl-spec-security-analysis.md', 'tickbare', 'default-cmm.md')
+   PRE  ('docs/mpl-spec-security-analysis.md', 'tickbare', 'keyring-interface.md')
+   PRE  ('docs/mpl-spec-security-analysis.md', 'tickbare', 'raw-aes-keyring.md')
+   PRE  ('docs/mpl-spec-security-analysis.md', 'tickbare', 'storm-tracking-cryptographic-materials-cache.md')
+   PRE  ('docs/mpl-spec-security-analysis.md', 'tickbare', 'structures.md')
+   PRE  ('docs/mpl-spec-security-analysis.md', 'tickbare', 'transitive-requirements.md')
+   PRE  ('docs/mpl-threat-model.md', 'tick', 'docs/mpl-bug-reports/BUG-01..BUG-09')
+   PRE  ('docs/mpl-threat-model.md', 'tick', 'mpl/.duvet/config.toml')
+   PRE  ('docs/mpl-threat-model.md', 'tickbare', 'cryptographic-materials-cache.md')
+   PRE  ('docs/mpl-threat-model.md', 'tickbare', 'scope.md')
+   PRE  ('docs/mpl-threat-model.md', 'tickbare', 'transitive-requirements.md')
+   PRE  ('docs/mpl-verification-targets.md', 'tick', 'prim/src/aws_lc_specs.rs')
+   PRE  ('docs/mpl-verification-targets.md', 'tickbare', 'branch-key-store.md')
+   PRE  ('docs/mpl-verification-targets/01-threat-driven.md', 'tickbare', 'branch-key-store.md')
+   PRE  ('docs/mpl-verification-targets/01-threat-driven.md', 'tickbare', 'cryptographic-materials-cache.md')
+   PRE  ('docs/mpl-verification-targets/02-capability-driven.md', 'tick', 'prim/src/aws_lc_specs.rs')
+   PRE  ('docs/mpl-verification-targets/04-validation.md', 'tick', 'mpl/src/keystore/')
+   PRE  ('docs/mpl-verification-targets/04-validation.md', 'tickbare', 'aws-kms-hierarchical-keyring.md')
+   PRE  ('docs/mpl-verification-targets/04-validation.md', 'tickbare', 'branch-key-store.md')
+   PRE  ('docs/mpl-verification-targets/04-validation.md', 'tickbare', 'rerun.md')
+   PRE  ('docs/mpl-verification-targets/04-validation.md', 'tickbare', 'results.md')
+   PRE  ('docs/mpl-verification-targets/04-validation.md', 'tickbare', 'shim.md')
+   PRE  ('docs/mpl-verification-targets/04-validation.md', 'tickbare', 'storm-tracking-cryptographic-materials-cache.md')
+   PRE  ('verus-proofs/README-t03-t05.md', 'tickbare', 'aws-kms-hierarchical-keyring.md')
+   PRE  ('verus-proofs/README-t03-t05.md', 'tickbare', 'aws-kms-key-arn.md')
+   PRE  ('verus-proofs/README-t03-t05.md', 'tickbare', 'aws-kms-mrk-match-for-decrypt.md')
+   PRE  ('verus-proofs/README-t03-t05.md', 'tickbare', 'branch-key-store.md')
+   PRE  ('verus-proofs/README-t03-t05.md', 'tickbare', 't05-notes.md')
+   PRE  ('verus-proofs/README.md', 'tickbare', 'branch-key-store.md')
+   PRE  ('verus-proofs/README.md', 'tickbare', 'structures.md')
+fixed vs HEAD: 2
+   GONE ('docs/mpl-completeness-audit.md', 'tick', '.agents/tasks/pipeline-rerun-620771c/spec-pinned')
+   GONE ('docs/mpl-spec-security-analysis.md', 'tick', '.agents/tasks/pipeline-rerun-620771c/spec-pinned/')
+
+=== 3. old paths left in docs/ verus-proofs/*.md .kiro/ ../.kiro/ (must be empty except listed .rs)
+grep .md exit 1 (1 = none found)
+--- old bare names (threat-model.md, spec-security-analysis.md, verification-targets.md, completeness-audit.md, bug-reports/) not preceded by mpl-/tasks/
+exit 1 (1 = none)
+--- chorus .docx text (plain) for old paths
+docs/chorus/MPL-Bug-Reports.docx: 0 old-path lines
+docs/chorus/MPL-Threat-Model.docx: 0 old-path lines
+--- .rs files mentioning old docs paths (known stale, left as is)
+verus-proofs/c02_sign_fixed_len.rs:326:/// This is the C02 `formal_spec` (docs/verification-targets/02-capability-driven.md) made precise.
+verus-proofs/t03_resolve_pinned_arn.rs:16:// PROPERTY (docs/verification-targets/01-threat-driven.md, VR-2026-T03; spec
+--- other repo files outside .agents/tasks mentioning old paths
+./verus-proofs/c02_sign_fixed_len.rs
+./verus-proofs/t03_resolve_pinned_arn.rs
+--- scripts under .agents with old docs paths remaining (historical or one-shot)
+.agents/tasks/audit-light/sweep2_cov.sh
+.agents/tasks/audit-light/sweep34_targets.py
+.agents/tasks/docs-c03-status/check_c03_status.py
+.agents/tasks/docs-c03-status/edit_others.py
+.agents/tasks/docs-c03-status/edit_targets.py
+.agents/tasks/docs-c03-status/rank_score_diff.sh
+.agents/tasks/docs-proof-status/edit_targets.py
+.agents/tasks/docs-sync-9955ecd/manual1.sh
+
+=== 4. checker scripts
+--- docs-sync-9955ecd/check_scores.py
+  C08: 2 x 0.6 x 0.4 x 2 = 0.96 (doc 0.96)
+PROBLEMS: none
+--- check_threat_refs (new paths)
+  TM-MPL-019 -> mentioned in: ['01', 'merged']
+  TM-MPL-020 -> mentioned in: ['01', 'merged']
+  TM-MPL-026 -> mentioned in: ['01', '02', 'merged']
+--- check_ratings (new paths)
+appendix rows: 26
+targets checked: 35 mismatches: 0
+--- check_stride_map (new paths)
+STRIDE rows 6 threats 26 problems 0
+--- check_prose_scores (new paths)
+mentions checked: 30 mismatching: 0 mismatching on history lines: 1
+  hist ('01-threat-driven.md', 74, 'T21', '1.96', '2.24')
+--- check_extras (new paths)
+02 ranked table rows: 7 order matches merged: True rank col sequential: True
+01 claims T27 at rank 10 table has 10
+PROBLEMS: none
+--- check_misc (new paths)
+check7 retired block present 02 C06 True True
+check9 merged blocks: 13 origins: {'threat-driven': ['T01', 'T02', 'T03', 'T04', 'T05', 'T13', 'T25', 'T26', 'T27'], 'capability-driven': ['C01', 'C02', 'C03', 'C07']}
+PROBLEMS: none
+--- check_bug_xrefs (new paths)
+risk rows: 26
+problems: 0
+--- check_chorus_consistency (new paths)
+NOTE contains 'unverified' threat 588 8. Advisory verification. The previous edition marked CVE-2026-6550 / GHSA-v638-38fc-rhfv as unverified. It has since been verified against 
+README severities {'BUG-01': 'Low', 'BUG-02': 'Medium', 'BUG-03': 'Low', 'BUG-04': 'Low', 'BUG-05': 'Low', 'BUG-06': 'High', 'BUG-07': 'Low', 'BUG-08': 'Informational', 'BUG-09': 'Informational', 'BUG
+problems: 0
+--- check_citations (new paths)
+docs/mpl-verification-targets/04-validation.md	222	MISS	mpl/src/aws_kms/branch_key_wrap.rs:230	ids=['branch_key_wrap'] line=pub fn unwrap(	`:471`, `:489`, `:494`, `:497`; `branch_key_wrap.rs` `:157`, 
+docs/mpl-verification-targets/04-validation.md	222	MISS	mpl/src/aws_kms/branch_key_wrap.rs:275	ids=['branch_key_wrap'] line=let mut plaintext = vec![0u8; encrypted_key.len()];	`:489`, `:494`, `:497`; 
+docs/mpl-verification-targets/04-validation.md	222	NOID	prim/src/lib.rs:215	if plain_text.len() < cipher_text.len() {	`:494`, `:497`; `branch_key_wrap.rs` `:157`, `:199`, `:230`, `:275`; `
+--- check_fn_defs (new paths)
+DEF-MISMATCH	docs/mpl-verification-targets/02-capability-driven.md:568	build_base cited :95	defined at mpl/src/key_store/encryption_context.rs:40
+DEF-MISMATCH	docs/mpl-verification-targets/04-validation.md:69	on_decrypt_uses_branch_key_id_supplier_when_configured cited :1640	defined at mpl/tests/test_aws_kms_hierarchical_keyring.rs:2161
+SUMMARY	def-ok=340	def-mismatch=127
+--- pipeline-rerun-620771c/check_scores.py
+PROBLEMS: none
+--- every check_*.py in docs-sync-9955ecd: full output at pristine HEAD (HEAD scripts + HEAD docs in /tmp/mpl-head) vs working tree (changed scripts + renamed docs); identical after removing the 'mpl-' prefix (tab columns 1-4 only: the 5th/6th columns are a text snippet whose window shifts by the 4-char prefix)?
+same output  check_bug_xrefs.py (       2 lines)
+same output  check_chorus_consistency.py (      10 lines)
+same output  check_citations.py (    2161 lines)
+DIFFERENT    check_citations_bugdocs.py
+250c250
+< docs/bug-reports/BUG-10-raw-aes-on-decrypt-unwiped-data-key.md	64	MISS	mpl/src/keyring/raw_aes_keyring.rs:471
+---
+> docs/bug-reports/BUG-10-raw-aes-on-decrypt-unwiped-data-key.md	64	OK	mpl/src/keyring/raw_aes_keyring.rs:471
+same output  check_citations_chorus.py (     284 lines)
+same output  check_citations_v2.py (    2161 lines)
+same output  check_citations_v3.py (    2123 lines)
+same output  check_extras.py (       8 lines)
+same output  check_fn_defs.py (     128 lines)
+same output  check_fn_defs_bugdocs.py (      49 lines)
+same output  check_fn_defs_chorus.py (      17 lines)
+same output  check_fn_defs_v2.py (     128 lines)
+same output  check_misc.py (      18 lines)
+same output  check_prose_scores.py (       2 lines)
+same output  check_ratings.py (       2 lines)
+same output  check_scores.py (      38 lines)
+same output  check_stride_map.py (       1 lines)
+same output  check_threat_refs.py (      10 lines)
+same output  pipeline-rerun-620771c/check_scores.py
+same output  pipeline-rerun-620771c/check_citations.py
+same output  pipeline-rerun-620771c/check_fn_defs.py
+--- 'HTML tag outside code' in BUG-10 is pre-existing? (same regex on HEAD file)
+['<u8>']
+--- check_proof_status.py: baseline (pristine HEAD copy in /tmp/mpl-head, same script) vs working tree
+problem lines: HEAD baseline 73 vs now 75; differences:
+4,5c4,5
+< format-checked md files: 0
+< git diff --quiet HEAD -- mpl prim esdk verus-proofs RECHECK: exit 0
+---
+> format-checked md files: 21
+> git diff --quiet HEAD -- mpl prim esdk verus-proofs RECHECK: exit 1
+79a80,81
+>   - docs/bug-reports/BUG-10-raw-aes-on-decrypt-unwiped-data-key.md: HTML tag outside code
+>   - forbidden paths changed
+(the script already reports problems on pristine HEAD, it is a one-shot post-edit validator; the differences above come from the dirty tree: it format-checks changed files and its diff guard sees the renamed RECHECK/README paths)
+--- rank+score columns of the ranked tables: HEAD old paths vs working tree new paths
+      76 /tmp/rs-head.txt
+      76 /tmp/rs-now.txt
+     152 total
+rank+score columns IDENTICAL
+
+=== 5. code unchanged
+git diff --quiet HEAD -- mpl prim esdk: exit 0
+git diff --quiet HEAD -- 'verus-proofs/*.rs': exit 0
+untracked/changed under mpl prim esdk or verus-proofs/*.rs:
+       0
+verus-proofs changes (only the two READMEs expected):
+ M verus-proofs/README-t03-t05.md
+ M verus-proofs/README.md
+sha256 of verus-proofs/*.rs working tree vs HEAD:
+same verus-proofs/c01_ec_roundtrip.rs d266597083141d47
+same verus-proofs/c02_sign_fixed_len.rs 1cee411299d29a1e
+same verus-proofs/t02_record_reconstruction.rs 241f1cd133aa408d
+same verus-proofs/t03_resolve_pinned_arn.rs 7508a1090fe6902a
+same verus-proofs/t05_kbkdf_fixed_info.rs 986744de667b3fc9
+
+=== 6. .kiro/agents copies byte-identical
+IDENTICAL
+ .kiro/agents/verification-recommender.md | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+=== 7. no file at old paths, no empty dirs
+absent docs/threat-model.md
+absent docs/spec-security-analysis.md
+absent docs/verification-targets.md
+absent docs/verification-targets
+absent docs/completeness-audit.md
+absent docs/bug-reports
+empty dirs under docs:        0
+chorus
+mpl-bug-reports
+mpl-completeness-audit.md
+mpl-spec-security-analysis.md
+mpl-threat-model.md
+mpl-verification-targets
+mpl-verification-targets.md
+
+docs/chorus:
+MPL-Bug-Reports.docx
+MPL-Bug-Reports.md
+MPL-Threat-Model.docx
+MPL-Threat-Model.md
+
+docs/mpl-bug-reports:
+BUG-01-ttl-duration-overflow-panic.md
+BUG-02-plaintext-data-key-length-not-enforced.md
+BUG-03-encryption-context-deserialize-accepts-unsorted.md
+BUG-04-mrdiscovery-rewrites-non-mrk-arn-region.md
+BUG-05-keygen-expect-and-short-edk-keystore-lookup.md
+BUG-06-cache-identifier-not-injective-with-nul.md
+BUG-07-prim-aes-buffer-handling.md
+BUG-08-build-base-collision-branch-unreachable.md
+BUG-09-cache-ttl-check-whole-second-truncation.md
+BUG-10-raw-aes-on-decrypt-unwiped-data-key.md
+README.md
+RECHECK-main-620771c.md
+
+docs/mpl-verification-targets:
+01-threat-driven.md
+02-capability-driven.md
+04-validation.md
+
+=== 8. collisions with origin/Mahnush_Verus
+origin/Mahnush_Verus tip: 8d6381e
+--- comm -12, docs/ only, tracked files after rename
+(end; empty above = no docs/ collision)
+--- comm -12 at HEAD (before rename), docs/ only
+docs/threat-model.md
+--- paths outside docs/ present on both branches (same path) with DIFFERENT content (real collisions); identical-content shared paths are not listed
+.kiro/agents/ai-verification-pipeline.md
+.kiro/agents/spec-analyzer.md
+.kiro/agents/threat-model-generator.md
+.kiro/agents/verification-recommender.md
+.kiro/agents/verus-capabilities.md
+.kiro/agents/verus-header-parsing-proofs.md
+.kiro/agents/verus-unsafe-ffi-safety.md
+.kiro/agents/verus-zero-panic.md
+.kiro/skills/verus/SKILL.md
+esdk/Cargo.lock
+esdk/Cargo.toml
+esdk/Makefile
+esdk/performance-tests/Cargo.lock
+esdk/shims/aws-esdk-cpp/test-server/Cargo.lock
+esdk/src/decrypt.rs
+esdk/src/encrypt.rs
+esdk/src/key_derivation.rs
+esdk/src/lib.rs
+esdk/src/message/body/body_aad.rs
+esdk/src/message/body/body_decrypt.rs
+esdk/src/message/body/body_encrypt.rs
+esdk/src/message/encrypted_data_keys.rs
+esdk/src/message/header.rs
+esdk/src/message/header_types.rs
+esdk/src/message/serialize_functions.rs
+esdk/src/message/v1_header_body.rs
+esdk/test-server/Cargo.lock
+esdk/tests/test_custom_keyring.rs
+mpl/Cargo.lock
+mpl/test-server/Cargo.lock
+prim/Cargo.lock
+prim/Cargo.toml
+prim/Makefile
+prim/src/ecdsa.rs
+prim/src/hkdf.rs
+prim/src/lib.rs
+prim/test-server/Cargo.lock
+prim/tests/test_hkdf.rs
+(end)
+--- number of shared paths outside docs/ (identical content, no conflict): 347
+--- .kiro/agents, .kiro/skills and verus-proofs paths on Mahnush_Verus vs here
+(.agents/ and verus-proofs/ paths on Mahnush_Verus shown above, if any)
+
+=== 9. docx
+-rw-r--r--@ 1 mahnush  staff  50842 Nov 17 22:56 docs/chorus/MPL-Bug-Reports.docx
+-rw-r--r--@ 1 mahnush  staff  50803 Nov 17 22:56 docs/chorus/MPL-Threat-Model.docx
+docs/chorus/MPL-Bug-Reports.docx
+MPL Native Rust: Bug Reports for Engineering Discussion
+
+docs/chorus/MPL-Threat-Model.docx
+MPL Threat Model: AWS Cryptographic Material Providers Library (native Rust)
+
+
+=== 10. final git status
+ M .agents/tasks/docs-proof-status/check_proof_status.py
+ M .agents/tasks/docs-sync-9955ecd/check_bug_xrefs.py
+ M .agents/tasks/docs-sync-9955ecd/check_chorus_consistency.py
+ M .agents/tasks/docs-sync-9955ecd/check_citations.py
+ M .agents/tasks/docs-sync-9955ecd/check_citations_bugdocs.py
+ M .agents/tasks/docs-sync-9955ecd/check_citations_v2.py
+ M .agents/tasks/docs-sync-9955ecd/check_citations_v3.py
+ M .agents/tasks/docs-sync-9955ecd/check_extras.py
+ M .agents/tasks/docs-sync-9955ecd/check_fn_defs.py
+ M .agents/tasks/docs-sync-9955ecd/check_fn_defs_bugdocs.py
+ M .agents/tasks/docs-sync-9955ecd/check_fn_defs_v2.py
+ M .agents/tasks/docs-sync-9955ecd/check_misc.py
+ M .agents/tasks/docs-sync-9955ecd/check_prose_scores.py
+ M .agents/tasks/docs-sync-9955ecd/check_ratings.py
+ M .agents/tasks/docs-sync-9955ecd/check_scores.py
+ M .agents/tasks/docs-sync-9955ecd/check_stride_map.py
+ M .agents/tasks/docs-sync-9955ecd/check_threat_refs.py
+ M .agents/tasks/pipeline-rerun-620771c/check_citations.py
+ M .agents/tasks/pipeline-rerun-620771c/check_fn_defs.py
+ M .agents/tasks/pipeline-rerun-620771c/check_scores.py
+ M .kiro/agents/verification-recommender.md
+ M docs/chorus/MPL-Bug-Reports.docx
+ M docs/chorus/MPL-Bug-Reports.md
+ M docs/chorus/MPL-Threat-Model.docx
+ M docs/chorus/MPL-Threat-Model.md
+RM docs/bug-reports/BUG-01-ttl-duration-overflow-panic.md -> docs/mpl-bug-reports/BUG-01-ttl-duration-overflow-panic.md
+RM docs/bug-reports/BUG-02-plaintext-data-key-length-not-enforced.md -> docs/mpl-bug-reports/BUG-02-plaintext-data-key-length-not-enforced.md
+RM docs/bug-reports/BUG-03-encryption-context-deserialize-accepts-unsorted.md -> docs/mpl-bug-reports/BUG-03-encryption-context-deserialize-accepts-unsorted.md
+RM docs/bug-reports/BUG-04-mrdiscovery-rewrites-non-mrk-arn-region.md -> docs/mpl-bug-reports/BUG-04-mrdiscovery-rewrites-non-mrk-arn-region.md
+RM docs/bug-reports/BUG-05-keygen-expect-and-short-edk-keystore-lookup.md -> docs/mpl-bug-reports/BUG-05-keygen-expect-and-short-edk-keystore-lookup.md
+RM docs/bug-reports/BUG-06-cache-identifier-not-injective-with-nul.md -> docs/mpl-bug-reports/BUG-06-cache-identifier-not-injective-with-nul.md
+RM docs/bug-reports/BUG-07-prim-aes-buffer-handling.md -> docs/mpl-bug-reports/BUG-07-prim-aes-buffer-handling.md
+RM docs/bug-reports/BUG-08-build-base-collision-branch-unreachable.md -> docs/mpl-bug-reports/BUG-08-build-base-collision-branch-unreachable.md
+RM docs/bug-reports/BUG-09-cache-ttl-check-whole-second-truncation.md -> docs/mpl-bug-reports/BUG-09-cache-ttl-check-whole-second-truncation.md
+RM docs/bug-reports/BUG-10-raw-aes-on-decrypt-unwiped-data-key.md -> docs/mpl-bug-reports/BUG-10-raw-aes-on-decrypt-unwiped-data-key.md
+RM docs/bug-reports/README.md -> docs/mpl-bug-reports/README.md
+RM docs/bug-reports/RECHECK-main-620771c.md -> docs/mpl-bug-reports/RECHECK-main-620771c.md
+RM docs/completeness-audit.md -> docs/mpl-completeness-audit.md
+RM docs/spec-security-analysis.md -> docs/mpl-spec-security-analysis.md
+RM docs/threat-model.md -> docs/mpl-threat-model.md
+RM docs/verification-targets.md -> docs/mpl-verification-targets.md
+RM docs/verification-targets/01-threat-driven.md -> docs/mpl-verification-targets/01-threat-driven.md
+RM docs/verification-targets/02-capability-driven.md -> docs/mpl-verification-targets/02-capability-driven.md
+RM docs/verification-targets/04-validation.md -> docs/mpl-verification-targets/04-validation.md
+ M verus-proofs/README-t03-t05.md
+ M verus-proofs/README.md
+?? .agents/tasks/mpl-rename/

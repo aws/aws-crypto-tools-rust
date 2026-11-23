@@ -1,0 +1,263 @@
+docs/chorus/MPL-Threat-Model.md	90	NOID	mpl/src/cmc/entry.rs:201-204	//= spec/framework/cryptographic-materials-cache.md#usage-metadata	or the MPL. `mpl/` and `prim/` contain exactly one annotation block (`
+docs/chorus/MPL-Threat-Model.md	246	OK	mpl/src/keyring/raw_aes_keyring.rs:350	build	- Mitigation: `RawAesKeyringBuilder::build` (`
+docs/chorus/MPL-Threat-Model.md	246	ALT	esdk/tests/test_create_esdk_client.rs (+3):52	raw_aes_keyring	.rs:350`) rejects any namespace that starts with `aws-kms` (constant `
+docs/chorus/MPL-Threat-Model.md	246	MISS	mpl/src/keyring/raw_aes_keyring.rs:360	ids=['constant'] line=if key_namespace.starts_with(RESERVED_KEY_NAMESPACE_PREFIX) {	ects any namespace that starts with `aws-kms` (constant `:52`, check `
+docs/chorus/MPL-Threat-Model.md	252	OK	mpl/src/key_store/kms_ops.rs:88	configured	the configured ARN as the KMS `KeyId` after the compatibility check (`
+docs/chorus/MPL-Threat-Model.md	252	ALT	esdk/examples/per_request_credentials.rs (+7):94-95	key_store	d` after the compatibility check (`mpl/src/key_store/kms_ops.rs:88`, `
+docs/chorus/MPL-Threat-Model.md	252	ALT	esdk/performance-tests/src/benchmark.rs (+7):105	key_store	he compatibility check (`mpl/src/key_store/kms_ops.rs:88`, `:94-95`, `
+docs/chorus/MPL-Threat-Model.md	252	OK	mpl/src/key_store/branch_key_store.rs:381	build	5`, `:105`). `DynamoDbKeyStore::build` validates the configured ARN (`
+docs/chorus/MPL-Threat-Model.md	253	OK	mpl/src/key_store/kms_ops.rs:96-103	Discovery	- Residual: by spec, Discovery modes trust the record's ARN (`
+docs/chorus/MPL-Threat-Model.md	254	OK	mpl/src/aws_kms/hierarchical_keyring.rs:692	get_active_branch_key	. The hierarchical keyring calls `get_active_branch_key` on encrypt (`
+docs/chorus/MPL-Threat-Model.md	254	ALT	esdk/shims/aws-esdk-cpp/src/tests.rs:792	hierarchical_keyring	2`), which runs the same `decrypt_branch_key` with the record's ARN (`
+docs/chorus/MPL-Threat-Model.md	254	OK	mpl/src/key_store/branch_key_store.rs:801	record,nch_key	ecrypt_branch_key` with the record's ARN (`branch_key_store.rs:792`, `
+docs/chorus/MPL-Threat-Model.md	259	NOID	mpl/src/aws_kms/hierarchical_keyring.rs:187	pub trait BranchKeyIdSupplier: Send + Sync {	igation: the supplier is caller-provided trusted code (public trait, `
+docs/chorus/MPL-Threat-Model.md	259	MISS	mpl/src/aws_kms/hierarchical_keyring.rs:665	ids=['hierarchical_keyring'] line=let cache_id = cache_entry_identifier::build_cache_identifier(	chical_keyring.rs:187`). The resolved id is bound into the cache id (`
+docs/chorus/MPL-Threat-Model.md	259	MISS	mpl/src/aws_kms/hierarchical_keyring.rs:908	ids=['hierarchical_keyring'] line=let cache_id = cache_entry_identifier::build_cache_identifier(	eyring.rs:187`). The resolved id is bound into the cache id (`:665`, `
+docs/chorus/MPL-Threat-Model.md	259	NOID	mpl/src/aws_kms/hierarchical_keyring.rs:722	.key_provider_info(branch_key_id.into_bytes())	 bound into the cache id (`:665`, `:908`) and the EDK provider info (`
+docs/chorus/MPL-Threat-Model.md	259	NOID	mpl/src/aws_kms/branch_key_wrap.rs:61	pub fn compute_aad(	er info (`:722`), and the AAD uses the id of the returned materials (`
+docs/chorus/MPL-Threat-Model.md	260	NOID	mpl/src/aws_kms/hierarchical_keyring.rs:747	.resolve_branch_key_id(materials.encryption_context())	on decrypt the supplier's input is the message's encryption context (`
+docs/chorus/MPL-Threat-Model.md	260	ALT	esdk/shims/aws-esdk-cpp/src/tests.rs:831	hierarchical_keyring	 is the message's encryption context (`hierarchical_keyring.rs:747`, `
+docs/chorus/MPL-Threat-Model.md	267	OK	mpl/src/aws_kms/mrk_match.rs:24-27	aws_kms_mrk_match_for_decrypt	- Mitigation: `aws_kms_mrk_match_for_decrypt` rejects aliases (`
+docs/chorus/MPL-Threat-Model.md	267	OK	mpl/src/aws_kms/mrk_match.rs:52	is_multi_region_arn	 true only on byte equality or, for MRK ARNs (`is_multi_region_arn`, `
+docs/chorus/MPL-Threat-Model.md	267	OK	mpl/src/key_store/kms_config.rs:86	is_arn_compatible	hen every part except the region is equal. `is_arn_compatible` is at `
+docs/chorus/MPL-Threat-Model.md	273	OK	mpl/src/key_store/branch_key_store.rs:132-136	tablename	yption context and authenticated by KMS Decrypt or ReEncrypt as AAD (`
+docs/chorus/MPL-Threat-Model.md	273	OK	mpl/src/key_store/kms_ops.rs:49	key_store,build_authenticated_encryption_context	tore.rs:132-136`; `kms_ops::build_authenticated_encryption_context`, `
+docs/chorus/MPL-Threat-Model.md	273	OK	mpl/src/key_store/record.rs:95	Materials,authenticated,context	m the authenticated context, with a strict 32-byte branch-key check (`
+docs/chorus/MPL-Threat-Model.md	273	OK	mpl/src/key_store/record.rs:164	authenticated,context,byte	t, with a strict 32-byte branch-key check (`key_store/record.rs:95`, `
+docs/chorus/MPL-Threat-Model.md	274	MISS	mpl/src/aws_kms/hierarchical_keyring.rs:692-696	ids=['KeyStore'] line=.get_active_branch_key()	not compare the returned materials' id and version with the request (`
+docs/chorus/MPL-Threat-Model.md	274	MISS	mpl/src/aws_kms/hierarchical_keyring.rs:934-939	ids=['hierarchical_keyring'] line=.get_branch_key_version()	 id and version with the request (`hierarchical_keyring.rs:692-696`, `
+docs/chorus/MPL-Threat-Model.md	274	MISS	mpl/src/key_store/client_impl.rs:305-308	ids=['hierarchical_keyring'] line=pub async fn send(self) -> Result<GetActiveBranchKeyOutput, Error> {	ion with the request (`hierarchical_keyring.rs:692-696`, `:934-939`; `
+docs/chorus/MPL-Threat-Model.md	274	ALT	esdk/shims/aws-esdk-cpp/src/lib.rs (+1):373-376	key_store	keyring.rs:692-696`, `:934-939`; `key_store/client_impl.rs:305-308`, `
+docs/chorus/MPL-Threat-Model.md	274	MISS	mpl/src/key_store/encryption_context.rs:91-102	ids=['although', 'decrypt', 'still', 'binds', 'them'] line=if ec	 decrypt the AAD still binds them. BUG-08 (a dead collision `Err` in `
+docs/chorus/MPL-Threat-Model.md	275	OK	mpl/src/key_store/branch_key_store.rs:148	fetch_record,GetItem	 `fetch_record` uses a plain `GetItem` with no consistent-read flag (`
+docs/chorus/MPL-Threat-Model.md	275	OK	mpl/src/key_store/branch_key_store.rs:155-163	GetItem	n `GetItem` with no consistent-read flag (`branch_key_store.rs:148`, `
+docs/chorus/MPL-Threat-Model.md	275	MISS	mpl/src/key_store/branch_key_store.rs:752	ids=['branch_key_store', 'VersionKey'] line=.condition_expression("attribute_exists(#branch_key_id) AND #enc = :encOld")	ember the highest version it has seen. VersionKey's optimistic lock (`
+docs/chorus/MPL-Threat-Model.md	280	OK	mpl/src/aws_kms/branch_key_wrap.rs:61	compute_aad	byte version and serialized context the same way on wrap and unwrap (`
+docs/chorus/MPL-Threat-Model.md	280	MISS	mpl/src/aws_kms/branch_key_wrap.rs:92	ids=['branch_key_wrap', 'UUID'] line=fn uuid_str_to_16_bytes(s: &str, branch_key_id: &str) -> Result<[u8; VERSION_LEN], Error> 	`). The version is parsed strictly as a 36-character canonical UUID (`
+docs/chorus/MPL-Threat-Model.md	280	OK	mpl/src/structures/encryption_context.rs:145	from_bytes	om_bytes` rejects out-of-order and duplicate keys and invalid UTF-8 (`
+docs/chorus/MPL-Threat-Model.md	281	MISS	mpl/tests/test_encryption_context.rs:468	ids=['from_bytes'] line=fn test_deserialize_accepts_empty_key_length_currently_unenforced() {	rmat strictness are unproven. `from_bytes` still accepts empty keys (`
+docs/chorus/MPL-Threat-Model.md	286	OK	mpl/src/key_store/branch_key_store.rs:743	attribute_not_exists	ctWriteItems`: `attribute_not_exists` for the new DECRYPT_ONLY item (`
+docs/chorus/MPL-Threat-Model.md	286	OK	mpl/src/key_store/branch_key_store.rs:752	ute_exists,branch_key_id	nd `attribute_exists(#branch_key_id) AND #enc = :encOld` for ACTIVE (`
+docs/chorus/MPL-Threat-Model.md	286	OK	mpl/src/key_store/branch_key_store.rs:641	ACTIVE,version_key	nc = :encOld` for ACTIVE (`:752`). The function is at `version_key` (`
+docs/chorus/MPL-Threat-Model.md	292	OK	mpl/src/cmm/default_cmm.rs:198	reproduced,required,encryption	d appends reproduced-only pairs as required encryption context keys (`
+docs/chorus/MPL-Threat-Model.md	292	MISS	mpl/src/cmm/default_cmm.rs:273	ids=['default_cmm'] line=fn merge_reproduced_encryption_context(	 required encryption context keys (`mpl/src/cmm/default_cmm.rs:198`, `
+docs/chorus/MPL-Threat-Model.md	292	ALT	esdk/shims/aws-esdk-cpp/test-server/tests/hierarchical_round_trip.rs (+1):82-89	default_cmm	ecks reject a keyring that changes the context or the required keys (`
+docs/chorus/MPL-Threat-Model.md	300	OK	mpl/src/aws_kms/user_agent.rs:9	AwsCryptographicMPL,Rust,version	ork metadata `AwsCryptographicMPL-Rust/<version>` in its user agent (`
+docs/chorus/MPL-Threat-Model.md	300	OK	mpl/src/aws_kms/user_agent.rs:15-19	Rust,version,user_agent	ust/<version>` in its user agent (`mpl/src/aws_kms/user_agent.rs:9`, `
+docs/chorus/MPL-Threat-Model.md	308	OK	mpl/src/aws_kms/hierarchical_keyring.rs:626	UUID	- Mitigation: the default partition id is a fresh random v4 UUID (`
+docs/chorus/MPL-Threat-Model.md	308	OK	mpl/src/aws_kms/hierarchical_keyring.rs:1000	cache,BranchKey	he cache returns only `BranchKey` entries to the keyring (kind check `
+docs/chorus/MPL-Threat-Model.md	308	OK	mpl/src/aws_kms/hierarchical_keyring.rs:989-995	BranchKey	 Entries older than the TTL are refetched, with an exact comparison (`
+docs/chorus/MPL-Threat-Model.md	309	OK	mpl/src/cmc/mod.rs:88-90	grace_period	 checked. It can also report `grace_period() = None` (trait default, `
+docs/chorus/MPL-Threat-Model.md	309	ALT	mpl/src/aws_kms/hierarchical_keyring.rs (+2):700	BranchKey,CachedMaterials	 is withdrawn: the keyring caches only `CachedMaterials::BranchKey` (`
+docs/chorus/MPL-Threat-Model.md	309	ALT	mpl/src/aws_kms/hierarchical_keyring.rs (+1):943	BranchKey,CachedMaterials	drawn: the keyring caches only `CachedMaterials::BranchKey` (`:700`, `
+docs/chorus/MPL-Threat-Model.md	310	OK	mpl/src/aws_kms/hierarchical_keyring.rs:991-994	cache_entry_within_limits,duration_since,hin_limits	_entry_within_limits` maps a `duration_since` error to zero elapsed (`
+docs/chorus/MPL-Threat-Model.md	316	OK	mpl/src/structures/algorithm_suite.rs:505	PlaintextDataKey	et type: `PlaintextDataKey`, `SigningKey` and `SymmetricSigningKey` (`
+docs/chorus/MPL-Threat-Model.md	316	ALT	mpl/test-server/src/handlers.rs:571	SymmetricSigningKey	 `SymmetricSigningKey` (`mpl/src/structures/algorithm_suite.rs:505`, `
+docs/chorus/MPL-Threat-Model.md	316	MISS	mpl/src/structures/algorithm_suite.rs:655	ids=['structures', 'algorithm_suite'] line=#[derive(Clone, Zeroize, ZeroizeOnDrop)]	ricSigningKey` (`mpl/src/structures/algorithm_suite.rs:505`, `:571`, `
+docs/chorus/MPL-Threat-Model.md	316	ALT	mpl/src/structures/beacon_key_materials.rs:205-219	BeaconKeyMaterials	, `BranchKeyMaterials` and `BeaconKeyMaterials` with their builders (`
+docs/chorus/MPL-Threat-Model.md	316	ALT	mpl/tests/test_key_store_branch_key_store_integ.rs (+1):221-235	branch_key_materials	eyMaterials` with their builders (`branch_key_materials.rs:205-219`, `
+docs/chorus/MPL-Threat-Model.md	316	OK	mpl/src/keyring/raw_aes_keyring.rs:72-78	wrapping	`, `beacon_key_materials.rs:221-235`), and the raw-AES wrapping key (`
+docs/chorus/MPL-Threat-Model.md	316	OK	mpl/src/aws_kms/branch_key_wrap.rs:135	derived,branch,Zeroizing	(`raw_aes_keyring.rs:72-78`). The derived branch key is `Zeroizing` (`
+docs/chorus/MPL-Threat-Model.md	317	NOID	mpl/src/keyring/raw_aes_keyring.rs:471	let mut plaintext_dk = vec![0u8; encrypted_key.len()];	error-path copies remain: the raw-AES decrypt buffer on error paths (`
+docs/chorus/MPL-Threat-Model.md	317	MISS	mpl/src/keyring/raw_aes_keyring.rs:489	ids=['raw_aes_keyring'] line=if plaintext_dk.len() != expected_dk_len {	the raw-AES decrypt buffer on error paths (`raw_aes_keyring.rs:471`, `
+docs/chorus/MPL-Threat-Model.md	317	MISS	mpl/src/key_store/kms_ops.rs:207	ids=['unwrap', 'branch_key_wrap', 'Blob'] line=.into_inner();	 returned by `branch_key_wrap::unwrap`, the KMS SDK response `Blob` (`
+docs/chorus/MPL-Threat-Model.md	317	MISS	prim/src/lib.rs:185-188	ids=['Blob', 'kms_ops'] line=cipher_text.extend_from_slice(message);	rap`, the KMS SDK response `Blob` (`kms_ops.rs:207`), and BUG-07(a) (`
+docs/chorus/MPL-Threat-Model.md	318	ALT	mpl/src/cmc/storm_tracking.rs:69	LocalCmc	when it falls in the pruned tail, or when it is evicted at capacity (`
+docs/chorus/MPL-Threat-Model.md	318	OK	mpl/src/cmc/local.rs:131	expired,entry,tail	e pruned tail, or when it is evicted at capacity (`cmc/local.rs:69`, `
+docs/chorus/MPL-Threat-Model.md	318	MISS	mpl/src/cmc/local.rs:166	ids=['local'] line=fn prune_tail(&self, cache: &mut Inner) {	 tail, or when it is evicted at capacity (`cmc/local.rs:69`, `:131`, `
+docs/chorus/MPL-Threat-Model.md	318	OK	prim/src/ecdsa.rs:324-326	SignatureKeyPair	 in a plain `Vec` inside `SignatureKeyPair`, which is not zeroizing (`
+docs/chorus/MPL-Threat-Model.md	318	OK	prim/src/ecdsa.rs:387	which	natureKeyPair`, which is not zeroizing (`prim/src/ecdsa.rs:324-326`, `
+docs/chorus/MPL-Threat-Model.md	318	MISS	prim/src/ecdsa.rs:391-392	ids=['ecdsa'] line=if verification_key.len() != field_size(alg) {	prim/src/ecdsa.rs:324-326`, `:387`); on the length-check error path (`
+docs/chorus/MPL-Threat-Model.md	323	MISS	mpl/src/structures/algorithm_suite.rs:564	ids=['beacon', 'keys', 'example', 'SignatureKeyPair'] line=impl fmt::Debug for PlaintextDataKey {	beacon keys, the raw-AES keyring and `SignatureKeyPair` (for example `
+docs/chorus/MPL-Threat-Model.md	323	ALT	esdk/tests/test_encrypt_behavior.rs:612	algorithm_suite	eyring and `SignatureKeyPair` (for example `algorithm_suite.rs:564`, `
+docs/chorus/MPL-Threat-Model.md	323	ALT	esdk/tests/test_encrypt_behavior.rs:696	algorithm_suite	nd `SignatureKeyPair` (for example `algorithm_suite.rs:564`, `:612`, `
+docs/chorus/MPL-Threat-Model.md	323	NOID	prim/src/ecdsa.rs:335	impl std::fmt::Debug for SignatureKeyPair {	atureKeyPair` (for example `algorithm_suite.rs:564`, `:612`, `:696`; `
+docs/chorus/MPL-Threat-Model.md	324	OK	mpl/src/error/generated.rs:1064	NoMatchingDataKey	econd pass): `NoMatchingDataKey` keeps the message's EDK identities (`
+docs/chorus/MPL-Threat-Model.md	324	MISS	mpl/src/error/generated.rs:1591	ids=['NoMatchingDataKey', 'error', 'generated'] line=pub fn encrypted_data_keys(&self) -> &[DataKeyInfo] {	 message's EDK identities (`mpl/src/error/generated.rs:1064`, getter `
+docs/chorus/MPL-Threat-Model.md	331	MISS	mpl/src/cmc/storm_tracking.rs:274	ids=['Mitigation'] line=if state.inflight.len() >= self.inner.fan_out {	- Mitigation: fan-out bounds concurrent refreshes (`
+docs/chorus/MPL-Threat-Model.md	331	MISS	mpl/src/cmc/storm_tracking.rs:310	ids=['storm_tracking'] line=if state.inflight.len() >= self.inner.fan_out {	ut bounds concurrent refreshes (`mpl/src/cmc/storm_tracking.rs:274`, `
+docs/chorus/MPL-Threat-Model.md	331	OK	mpl/src/cmc/storm_tracking.rs:248	poisoned,lock,Internal	lock maps to an `Internal` error instead of a panic on the hot path (`
+docs/chorus/MPL-Threat-Model.md	331	MISS	mpl/src/cmc/storm_tracking.rs:721	ids=['Internal'] line=Cmc::put_cache_entry(&self.inner.local, input).await?;	). A put writes the inner cache before it clears the in-flight mark (`
+docs/chorus/MPL-Threat-Model.md	331	NOID	mpl/src/cmc/storm_tracking.rs:725	state.inflight.remove(&cache_id);	 writes the inner cache before it clears the in-flight mark (`:721`, `
+docs/chorus/MPL-Threat-Model.md	332	OK	mpl/src/cmc/storm_tracking.rs:606	build	mitigation regressed (first pass): `StormTrackingCmcBuilder::build` (`
+docs/chorus/MPL-Threat-Model.md	332	OK	mpl/tests/test_storm_tracking_cmc.rs:388	grace_period	 grace period and grace interval. A test accepts `grace_period = 0` (`
+docs/chorus/MPL-Threat-Model.md	333	OK	mpl/src/cmc/storm_tracking.rs:249-255	in_flight_ttl	turns `Throttling` until a call for a different key prunes the mark (`
+docs/chorus/MPL-Threat-Model.md	333	MISS	mpl/src/cmc/storm_tracking.rs:322-323	ids=['Throttling', 'storm_tracking'] line=if elapsed > self.inner.in_flight_ttl {	ferent key prunes the mark (`mpl/src/cmc/storm_tracking.rs:249-255`, `
+docs/chorus/MPL-Threat-Model.md	333	OK	mpl/src/cmc/storm_tracking.rs:310-313	deadline	. (2) A waiter blocked by a full fan-out has no deadline of its own (`
+docs/chorus/MPL-Threat-Model.md	333	NOID	mpl/src/cmc/storm_tracking.rs:333	deadline: Some(now + self.inner.in_flight_ttl),	 its own (`:310-313`). (3) BUG-01 plus the state lock: the panics at `
+docs/chorus/MPL-Threat-Model.md	333	NOID	mpl/src/cmc/storm_tracking.rs:680	now < inflight + grace_interval	:310-313`). (3) BUG-01 plus the state lock: the panics at `:333` and `
+docs/chorus/MPL-Threat-Model.md	338	OK	mpl/src/aws_kms/hierarchical_keyring.rs:567-574	tokio	ult cache is storm tracking over a 1000-entry LRU with tail pruning (`
+docs/chorus/MPL-Threat-Model.md	338	MISS	mpl/src/cmc/local.rs:166	ids=['tokio', 'hierarchical_keyring'] line=fn prune_tail(&self, cache: &mut Inner) {	1000-entry LRU with tail pruning (`hierarchical_keyring.rs:567-574`; `
+docs/chorus/MPL-Threat-Model.md	338	OK	mpl/src/aws_kms/hierarchical_keyring.rs:575-581	tokio	/local.rs:166`). Without `rt-tokio`, the caller must supply a cache (`
+docs/chorus/MPL-Threat-Model.md	339	NOID	mpl/src/aws_kms/hierarchical_keyring.rs:931-955	let bkm = self	- Residual: a failed key-store lookup is never put in the cache (`
+docs/chorus/MPL-Threat-Model.md	344	MISS	mpl/src/aws_kms/hierarchical_keyring.rs:879	ids=['try_decrypt_edk'] line=if ciphertext.len() < CIPHERTEXT_VERSION_OFFSET + CIPHERTEXT_VERSION_LEN {	ecrypt_edk` checks for at least 44 bytes before reading the version (`
+docs/chorus/MPL-Threat-Model.md	344	MISS	mpl/src/aws_kms/branch_key_wrap.rs:236	ids=['hierarchical_keyring', 'unwrap', 'branch_key_wrap'] line=if ciphertext.len() < FIXED_OVERHEAD_LEN {	ranch_key_wrap::unwrap` checks for at least 60 bytes before slicing (`
+docs/chorus/MPL-Threat-Model.md	344	ALT	esdk/src/shapes.rs:767	EncryptionContext	rors on malformed input. BUG-02 is fixed (the key length is checked, `
+docs/chorus/MPL-Threat-Model.md	344	OK	mpl/src/structures/algorithm_suite.rs:547	length	 is fixed (the key length is checked, `hierarchical_keyring.rs:767`, `
+docs/chorus/MPL-Threat-Model.md	345	OK	mpl/src/cmm/default_cmm.rs:137-138	expect,ECDSA	- Residual: still open are BUG-05(a) (`.expect` on ECDSA keygen, `
+docs/chorus/MPL-Threat-Model.md	345	MISS	mpl/src/aws_kms/hierarchical_keyring.rs:702	ids=['byte', 'costs', 'store', 'before', 'rejected'] line=.expiry_time(now + self.inner.ttl)	l before it is rejected), BUG-01(a/d) (a huge configured TTL panics, `
+docs/chorus/MPL-Threat-Model.md	345	MISS	mpl/src/aws_kms/hierarchical_keyring.rs:945	ids=['hierarchical_keyring'] line=.expiry_time(now + self.inner.ttl)	1(a/d) (a huge configured TTL panics, `hierarchical_keyring.rs:702`, `
+docs/chorus/MPL-Threat-Model.md	345	MISS	prim/src/lib.rs:215	ids=['maps', 'every', 'callee', 'error', 'authentication'] line=if plain_text.len() < cipher_text.len() {	rypt` maps every callee error to "authentication tag did not match", `
+docs/chorus/MPL-Threat-Model.md	345	MISS	prim/src/lib.rs:229	ids=['aes_decrypt'] line=.map_err(|_| serr("authentication tag did not match".to_owned()))?;	 error to "authentication tag did not match", `prim/src/lib.rs:215`, `
+docs/chorus/MPL-Threat-Model.md	349	ALT	mpl/tests/test_builder_getters.rs:751-772	on_decrypt	very EDK that names the configured branch key id, one after another (`
+docs/chorus/MPL-Threat-Model.md	349	OK	mpl/src/aws_kms/hierarchical_keyring.rs:889-894	branch	branch key id, one after another (`hierarchical_keyring.rs:751-772`, `
+docs/chorus/MPL-Threat-Model.md	350	NOID	mpl/src/aws_kms/hierarchical_keyring.rs:901	async fn decrypt_edk_at_version(	ation paths: (1) one key-store read per EDK with an unknown version (`
+docs/chorus/MPL-Threat-Model.md	350	MISS	mpl/src/aws_kms/hierarchical_keyring.rs:934	ids=['hierarchical_keyring'] line=.get_branch_key_version()	read per EDK with an unknown version (`hierarchical_keyring.rs:901`, `
+docs/chorus/MPL-Threat-Model.md	350	ALT	mpl/src/aws_kms/branch_key_wrap.rs:4	hierarchical_keyring	4`), with no negative caching. A message can list up to 65,535 EDKs (`
+docs/chorus/MPL-Threat-Model.md	350	OK	esdk/src/config.rs:35	max_encrypted_data_keys,ESDK	:4`), and the ESDK cap `max_encrypted_data_keys` defaults to `None` (`
+docs/chorus/MPL-Threat-Model.md	350	OK	esdk/src/config.rs:42	ed_data_keys	ax_encrypted_data_keys` defaults to `None` (`esdk/src/config.rs:35`, `
+docs/chorus/MPL-Threat-Model.md	350	NOID	mpl/src/cmc/storm_tracking.rs:115	pub const DEFAULT_STORM_FAN_OUT: usize = 20;	is never cleared (TM-MPL-018, finding 1). The default fan-out is 20 (`
+docs/chorus/MPL-Threat-Model.md	351	NOID	mpl/src/aws_kms/hierarchical_keyring.rs:752-763	if edk.key_provider_id() != KEY_PROVIDER_ID_HIERARCHY {	ame the configured (or supplier-chosen) branch key id are attempted (`
+docs/chorus/MPL-Threat-Model.md	351	ALT	esdk/shims/aws-esdk-cpp/src/tests.rs:879	hierarchical_keyring,ical_keyring	(`hierarchical_keyring.rs:752-763`), the version must have 16 bytes (`
+docs/chorus/MPL-Threat-Model.md	359	OK	mpl/src/cmm/default_cmm.rs:97	allows_for_encrypt	aultCmm` rejects a requested suite that is not `allows_for_encrypt` (`
+docs/chorus/MPL-Threat-Model.md	359	OK	mpl/src/cmm/default_cmm.rs:184	allows_for_decrypt	lt_cmm.rs:97`) and a message suite that is not `allows_for_decrypt` (`
+docs/chorus/MPL-Threat-Model.md	359	MISS	mpl/src/structures/commitment_policy.rs:62	ids=['allows_for_decrypt'] line=pub const fn allows_for_encrypt(self, id: AlgorithmSuiteId) -> bool {	e suite that is not `allows_for_decrypt` (`:184`); the tables are at `
+docs/chorus/MPL-Threat-Model.md	359	ALT	esdk/examples/custom_cmm.rs (+8):77	commitment_policy	4`); the tables are at `mpl/src/structures/commitment_policy.rs:62`, `
+docs/chorus/MPL-Threat-Model.md	359	OK	mpl/src/structures/materials_checks.rs:78-81	suite	`:77`. The transition check stops a keyring from changing the suite (`
+docs/chorus/MPL-Threat-Model.md	359	MISS	mpl/src/structures/algorithm_suite.rs:547	ids=['SharedKeyring', 'send'] line=pub(crate) fn check_data_key_length(	ring` `send()`. The plaintext data key length is bound to the suite (`
+docs/chorus/MPL-Threat-Model.md	359	OK	esdk/src/decrypt.rs:413	algorithm_suite	hecks the message's suite against its policy before calling the CMM (`
+docs/chorus/MPL-Threat-Model.md	359	OK	esdk/src/materials.rs:130	decrypt	 (`esdk/src/decrypt.rs:413`) and re-checks the CMM's returned suite (`
+docs/chorus/MPL-Threat-Model.md	359	OK	esdk/src/materials.rs:202	materials	and re-checks the CMM's returned suite (`esdk/src/materials.rs:130`, `
+docs/chorus/MPL-Threat-Model.md	360	MISS	mpl/src/structures/commitment_policy.rs:43-50	ids=['FORBID_ENCRYPT_ALLOW_DECRYPT'] line=pub const fn default_algorithm_suite_id(self) -> AlgorithmSuiteId {	 trace. The `FORBID_ENCRYPT_ALLOW_DECRYPT` default suite is `03 78` (`
+docs/chorus/MPL-Threat-Model.md	360	OK	mpl/src/cmm/fluent_builders.rs:171	send	d pass: `SharedCmm::send()` checks only that its output is complete (`
+docs/chorus/MPL-Threat-Model.md	360	OK	mpl/src/cmm/fluent_builders.rs:319	send	ecks only that its output is complete (`cmm/fluent_builders.rs:171`, `
+docs/chorus/MPL-Threat-Model.md	365	MISS	mpl/src/key_store/kms_ops.rs:96-103	ids=['resolve_key_store_arn', 'ey_store_arn', 'ARNs'] line=KmsConfiguration::Discovery(_) => {	`resolve_key_store_arn` rejects alias ARNs for both discovery modes (`
+docs/chorus/MPL-Threat-Model.md	365	OK	mpl/src/key_store/kms_ops.rs:118	reject_alias_arn	Ns for both discovery modes (`kms_ops.rs:96-103`, `reject_alias_arn` `
+docs/chorus/MPL-Threat-Model.md	366	MISS	mpl/src/key_store/kms_ops.rs:100-103	ids=['Region'] line=KmsConfiguration::MrDiscovery(mr_discovery) => {	rewrites the region of any record ARN, including single-Region keys (`
+docs/chorus/MPL-Threat-Model.md	366	OK	mpl/src/key_store/kms_ops.rs:144	rewrite_arn_region	uding single-Region keys (`kms_ops.rs:100-103`, `rewrite_arn_region` `
+docs/chorus/MPL-Threat-Model.md	372	MISS	mpl/src/structures/commitment_policy.rs:43-58	ids=['REQUIRE'] line=pub const fn default_algorithm_suite_id(self) -> AlgorithmSuiteId {	mit-key suites (`05 78`) are the default under the REQUIRE policies (`
+docs/chorus/MPL-Threat-Model.md	373	OK	mpl/src/cmc/entry.rs:26	Encryption,CachedMaterials,Decryption	MPL-006. `CachedMaterials::Encryption` and `Decryption` kinds exist (`
+docs/chorus/MPL-Threat-Model.md	373	OK	mpl/src/cmc/entry.rs:28	Decryption	Encryption` and `Decryption` kinds exist (`mpl/src/cmc/entry.rs:26`, `
+docs/chorus/MPL-Threat-Model.md	377	MISS	mpl/src/aws_kms/cache_entry_identifier.rs:35	ids=['single', 'separators', 'length', 'prefixes'] line=pub fn build_cache_identifier(	| 0 || version]`, with single NUL separators and no length prefixes (`
+docs/chorus/MPL-Threat-Model.md	377	MISS	mpl/src/aws_kms/cache_entry_identifier.rs:42-60	ids=['single', 'separators', 'length', 'prefixes', 'aws_kms'] line=let mut buf: Vec<u8> = vec![	 no length prefixes (`mpl/src/aws_kms/cache_entry_identifier.rs:35`, `
+docs/chorus/MPL-Threat-Model.md	377	MISS	mpl/src/aws_kms/hierarchical_keyring.rs:665	ids=['sites'] line=let cache_id = cache_entry_identifier::build_cache_identifier(	`mpl/src/aws_kms/cache_entry_identifier.rs:35`, `:42-60`; call sites `
+docs/chorus/MPL-Threat-Model.md	377	MISS	mpl/src/aws_kms/hierarchical_keyring.rs:908	ids=['hierarchical_keyring'] line=let cache_id = cache_entry_identifier::build_cache_identifier(	entifier.rs:35`, `:42-60`; call sites `hierarchical_keyring.rs:665`, `
+docs/chorus/MPL-Threat-Model.md	378	NOID	mpl/src/aws_kms/hierarchical_keyring.rs:596	Some(s) => s.into_bytes(),	thing checks the inputs: the partition id is the caller's raw bytes (`
+docs/chorus/MPL-Threat-Model.md	378	OK	mpl/src/aws_kms/hierarchical_keyring.rs:626	UUID	eyring.rs:596`), the default random 16-byte UUID can contain `0x00` (`
+docs/chorus/MPL-Threat-Model.md	378	OK	mpl/src/aws_kms/hierarchical_keyring.rs:600-605	logical,name,store	x00` (`:626`), the logical name is used as the key store returns it (`
+docs/chorus/MPL-Threat-Model.md	378	NOID	mpl/src/aws_kms/hierarchical_keyring.rs:1000	fn as_branch_key_materials(entry: &CacheEntry) -> Result<&BranchKeyMaterials, Error> {	n or a supplier. The only post-hit guard is the material-kind check (`
+docs/chorus/MPL-Threat-Model.md	379	NOID	mpl/src/aws_kms/hierarchical_keyring.rs:894	let branch_key_version = uuid_16_bytes_to_str(&version_bytes);	t be a NUL vector, because it is rendered as hex digits and hyphens (`
+docs/chorus/MPL-Threat-Model.md	385	MISS	mpl/src/keyring/raw_aes_keyring.rs:146	ids=['CSPRNG'] line=fn wrap_data_key(	- Mitigation: a fresh 12-byte IV from the CSPRNG on every wrap (`
+docs/chorus/MPL-Threat-Model.md	385	MISS	mpl/src/keyring/raw_aes_keyring.rs:151-152	ids=['raw_aes_keyring'] line=let mut iv = vec![0u8; IV_LENGTH];	 the CSPRNG on every wrap (`mpl/src/keyring/raw_aes_keyring.rs:146`, `
+docs/chorus/MPL-Threat-Model.md	385	OK	prim/src/lib.rs:188	try_assume_unique_for_key,Nonce	, passed to `prim::aes_encrypt` (`Nonce::try_assume_unique_for_key`, `
+docs/chorus/MPL-Threat-Model.md	391	OK	mpl/src/aws_kms/branch_key_wrap.rs:157	wrap	- Mitigation: a fresh 16-byte salt and 12-byte IV on every `wrap` (`
+docs/chorus/MPL-Threat-Model.md	391	MISS	mpl/src/aws_kms/branch_key_wrap.rs:164	ids=['wrap', 'aws_kms', 'branch_key_wrap'] line=generate_random_bytes(&mut salt).map_err(|e| {	2-byte IV on every `wrap` (`mpl/src/aws_kms/branch_key_wrap.rs:157`, `
+docs/chorus/MPL-Threat-Model.md	391	MISS	mpl/src/aws_kms/branch_key_wrap.rs:170	ids=['aws_kms', 'branch_key_wrap'] line=generate_random_bytes(&mut iv).map_err(|e| {	V on every `wrap` (`mpl/src/aws_kms/branch_key_wrap.rs:157`, `:164`, `
+docs/chorus/MPL-Threat-Model.md	397	OK	prim/src/lib.rs:313	HMAC,kbkdf_ctr_hmac	-108 counter-mode HMAC-SHA-256), computed by `prim::kbkdf_ctr_hmac` (`
+docs/chorus/MPL-Threat-Model.md	397	OK	mpl/src/aws_kms/branch_key_wrap.rs:122	derive_branch_key	mac` (`prim/src/lib.rs:313`); the derivation is `derive_branch_key` (`
+docs/chorus/MPL-Threat-Model.md	403	NOID	mpl/src/cmc/entry.rs:201-204	//= spec/framework/cryptographic-materials-cache.md#usage-metadata	s no MPL Duvet config; `mpl/` and `prim/` hold one annotation block (`
+docs/chorus/MPL-Threat-Model.md	408	NOID	esdk/shims/aws-esdk-cpp/src/lib.rs:167	#[cxx::bridge(namespace = "aws_esdk_ffi")]	dangling, forged or double-adopted pointer. The shim's `cxx` bridge (`
+docs/chorus/MPL-Threat-Model.md	408	OK	esdk/shims/aws-esdk-cpp/src/lib.rs:715	require_handle	`, null-checked and then dereferenced in `unsafe` (`require_handle`, `
+docs/chorus/MPL-Threat-Model.md	408	ALT	esdk/shims/aws-esdk-cpp/src/tests.rs:720	require_handle	d and then dereferenced in `unsafe` (`require_handle`, `lib.rs:715`, `
+docs/chorus/MPL-Threat-Model.md	408	ALT	esdk/shims/aws-esdk-cpp/src/tests.rs:728	require_handle	en dereferenced in `unsafe` (`require_handle`, `lib.rs:715`, `:720`, `
+docs/chorus/MPL-Threat-Model.md	408	NOID	esdk/shims/aws-esdk-cpp/src/lib.rs:1570	.set_kms_client(unsafe { input.kms_client.as_ref() }.map(|c| c.inner.clone()))	re_handle`, `lib.rs:715`, `:720`, `:728`; optional clients and cache `
+docs/chorus/MPL-Threat-Model.md	408	MISS	esdk/shims/aws-esdk-cpp/src/lib.rs:1571	ids=['optional', 'clients', 'cache'] line=.set_ddb_client(unsafe { input.ddb_client.as_ref() }.map(|c| c.inner.clone()));	`, `lib.rs:715`, `:720`, `:728`; optional clients and cache `:1570`, `
+docs/chorus/MPL-Threat-Model.md	408	NOID	esdk/shims/aws-esdk-cpp/src/lib.rs:1661	let cache = unsafe { input.cache.as_ref() }.map(|c| c.inner.clone());	s:715`, `:720`, `:728`; optional clients and cache `:1570`, `:1571`, `
+docs/chorus/MPL-Threat-Model.md	408	OK	esdk/shims/aws-esdk-cpp/src/lib.rs:2059-2066	into_keyring_handle	 An adopted keyring is a type-erased `void*` (`into_keyring_handle`, `
+docs/chorus/MPL-Threat-Model.md	408	OK	esdk/shims/aws-esdk-cpp/src/EncryptionSDK.cpp:541-547	into,type	opt` turns into a `rust::Box` with no null, type or ownership check (`
+docs/chorus/MPL-Threat-Model.md	408	MISS	esdk/shims/aws-esdk-cpp/include/aws/esdk/EncryptionSDK.h:656-664	ids=['null', 'type', 'ownership', 'header'] line=/// Adopts a custom keyring defined in Rust.	ll, type or ownership check (`src/EncryptionSDK.cpp:541-547`; header `
+docs/chorus/MPL-Threat-Model.md	414	NOID	mpl/test-server/src/main.rs:26-27	let addr = SocketAddr::from(([127, 0, 0, 1], port));	ur test-server crates bind `127.0.0.1` only and authenticate no one (`
+docs/chorus/MPL-Threat-Model.md	414	OK	prim/test-server/src/main.rs:23-24	server	` only and authenticate no one (`mpl/test-server/src/main.rs:26-27`; `
+docs/chorus/MPL-Threat-Model.md	414	OK	esdk/test-server/src/main.rs:26-27	server	est-server/src/main.rs:26-27`; `prim/test-server/src/main.rs:23-24`; `
+docs/chorus/MPL-Threat-Model.md	414	OK	esdk/shims/aws-esdk-cpp/test-server/src/main.rs:26-27	server	est-server/src/main.rs:23-24`; `esdk/test-server/src/main.rs:26-27`; `
+docs/chorus/MPL-Threat-Model.md	414	OK	mpl/test-server/src/handlers.rs:137-147	DynamoDbKeyStore	gions, table names and KMS ARNs, using the ambient credential chain (`
+docs/chorus/MPL-Threat-Model.md	414	OK	mpl/test-server/src/handlers.rs:425-430	ambient,credential,chain	ambient credential chain (`mpl/test-server/src/handlers.rs:137-147`, `
+docs/chorus/MPL-Bug-Reports.md	109	NOID	mpl/src/aws_kms/hierarchical_keyring.rs:702	.expiry_time(now + self.inner.ttl)	- `
+docs/chorus/MPL-Bug-Reports.md	109	MISS	mpl/src/aws_kms/hierarchical_keyring.rs:945	ids=['aws_kms', 'hierarchical_keyring', 'OnEncrypt'] line=.expiry_time(now + self.inner.ttl)	l/src/aws_kms/hierarchical_keyring.rs:702` (OnEncrypt cache put) and `
+docs/chorus/MPL-Bug-Reports.md	110	NOID	mpl/src/aws_kms/hierarchical_keyring.rs:547	if ttl.is_zero() {	- `
+docs/chorus/MPL-Bug-Reports.md	111	NOID	mpl/src/cmc/storm_tracking.rs:333	deadline: Some(now + self.inner.in_flight_ttl),	- `
+docs/chorus/MPL-Bug-Reports.md	111	ALT	mpl/tests/test_storm_tracking_cmc.rs:680	storm_tracking	- `mpl/src/cmc/storm_tracking.rs:333` (per-waiter deadline) and `
+docs/chorus/MPL-Bug-Reports.md	112	NOID	mpl/src/cmc/storm_tracking.rs:606-626	pub fn build(self) -> Result<StormTrackingCmc, Error> {	- `
+docs/chorus/MPL-Bug-Reports.md	127	MISS	mpl/src/aws_kms/hierarchical_keyring.rs:342	ids=['a1e23d7', 'Originally'] line=&self.inner.partition_id_bytes	Originally reported at `a1e23d7`: `
+docs/chorus/MPL-Bug-Reports.md	127	MISS	mpl/src/aws_kms/hierarchical_keyring.rs:585	ids=['a1e23d7', 'hierarchical_keyring'] line=&& grace_period >= ttl	Originally reported at `a1e23d7`: `hierarchical_keyring.rs:342`, `
+docs/chorus/MPL-Bug-Reports.md	127	MISS	mpl/src/aws_kms/hierarchical_keyring.rs:150	ids=['hierarchical_keyring'] line=pub fn get_branch_key_id(&self) -> &Option<String> {	rted at `a1e23d7`: `hierarchical_keyring.rs:342`, `:585` (validation `
+docs/chorus/MPL-Bug-Reports.md	127	NOID	mpl/src/cmc/storm_tracking.rs:446	}	a1e23d7`: `hierarchical_keyring.rs:342`, `:585` (validation `:150`); `
+docs/chorus/MPL-Bug-Reports.md	127	ALT	mpl/tests/test_aws_kms_hierarchical_keyring.rs:536	storm_tracking	eyring.rs:342`, `:585` (validation `:150`); `storm_tracking.rs:446`, `
+docs/chorus/MPL-Bug-Reports.md	127	ALT	esdk/tests/test_encrypt_behavior.rs (+4):108-143	validation	rm_tracking.rs:446`, `:536` (validation `ValidatedConfig::from_raw`, `
+docs/chorus/MPL-Bug-Reports.md	204	MISS	mpl/src/key_store/kms_ops.rs:100-103	ids=['main', 'Current'] line=KmsConfiguration::MrDiscovery(mr_discovery) => {	Current code (`main` `620771c`): `
+docs/chorus/MPL-Bug-Reports.md	204	OK	mpl/src/key_store/kms_ops.rs:88	key_store,resolve_key_store_arn,MrDiscovery	kms_ops.rs:100-103` (the MrDiscovery arm of `resolve_key_store_arn`, `
+docs/chorus/MPL-Bug-Reports.md	204	ALT	esdk/shims/aws-esdk-cpp/src/lib.rs (+3):144-157	MrDiscovery	100-103` (the MrDiscovery arm of `resolve_key_store_arn`, `:88`) and `
+docs/chorus/MPL-Bug-Reports.md	204	MISS	mpl/src/aws_kms/mrk_match.rs:52	ids=['rewrite_arn_region', 'There'] line=fn is_multi_region_arn(s: &str) -> bool {	e_arn_region`). There is no `mrk-` check. An MRK predicate exists in `
+docs/chorus/MPL-Bug-Reports.md	204	MISS	mpl/src/key_store/kms_ops.rs:179	ids=['KeyId', 'decrypt_branch_key'] line=let resolved_key_id = resolve_key_store_arn(kms_config, record_kms_arn, branch_key_id)?;	The resolved ARN is used as the KMS `KeyId` in `decrypt_branch_key` (`
+docs/chorus/MPL-Bug-Reports.md	204	MISS	mpl/src/key_store/branch_key_store.rs:663	ids=['kms_ops', 'version_key', 'crypt_branch_key'] line=let resolved_arn = resolve_key_store_arn(	Id` in `decrypt_branch_key` (`kms_ops.rs:179`) and in `version_key` (`
+docs/chorus/MPL-Bug-Reports.md	219	BADFILE	mpl/src/keystore/kms_ops.rs:104		Originally reported at `a1e23d7`: `
+docs/chorus/MPL-Bug-Reports.md	219	NOFILE	:132		lly reported at `a1e23d7`: `mpl/src/keystore/kms_ops.rs:104-107` and `
+docs/chorus/MPL-Bug-Reports.md	219	MISS	mpl/src/key_store/kms_ops.rs:169	ids=['decrypt_branch_key'] line=) -> Result<Vec<u8>, Error> {	keystore/kms_ops.rs:104-107` and `:132-148`; `decrypt_branch_key` at `
+docs/chorus/MPL-Bug-Reports.md	219	ALT	esdk/tests/test_error_ux.rs (+1):442	version_key	132-148`; `decrypt_branch_key` at `kms_ops.rs:169`; `version_key` at `
+docs/chorus/MPL-Bug-Reports.md	247	MISS	mpl/tests/test_aws_kms_hierarchical_keyring_integ.rs:815-866	ids=['a1e23d7'] line=// us-west-2 client reaches the MRK replica; plain `Discovery` passes the	e23d7`. The original report noted that the existing integration test `
+docs/chorus/MPL-Bug-Reports.md	289	NOID	mpl/src/cmm/default_cmm.rs:137-138	let keys = ecdsa_generate_keypair(alg)	- (a) `
+docs/chorus/MPL-Bug-Reports.md	289	MISS	prim/src/ecdsa.rs:373	ids=['default_cmm'] line=pub fn ecdsa_generate_keypair(alg: EcdsaSignatureAlgorithm) -> Result<SignatureKeyPair, Er	- (a) `mpl/src/cmm/default_cmm.rs:137-138`. `
+docs/chorus/MPL-Bug-Reports.md	289	OK	prim/src/ecdsa.rs:375	ecdsa_generate_keypair	m/src/ecdsa.rs:373` (`ecdsa_generate_keypair`) has four `Err` paths (`
+docs/chorus/MPL-Bug-Reports.md	289	MISS	prim/src/ecdsa.rs:380	ids=['ecdsa_generate_keypair'] line=.map_err(|_| serr("ECDSA public-key compression failed".to_owned()))?;	dsa.rs:373` (`ecdsa_generate_keypair`) has four `Err` paths (`:375`, `
+docs/chorus/MPL-Bug-Reports.md	289	MISS	prim/src/ecdsa.rs:386	ids=['a_generate_keypair'] line=.map_err(|_| serr("ECDSA private-key DER encoding failed".to_owned()))?;	73` (`ecdsa_generate_keypair`) has four `Err` paths (`:375`, `:380`, `
+docs/chorus/MPL-Bug-Reports.md	289	MISS	prim/src/ecdsa.rs:391-396	ids=['te_keypair'] line=if verification_key.len() != field_size(alg) {	dsa_generate_keypair`) has four `Err` paths (`:375`, `:380`, `:386`, `
+docs/chorus/MPL-Bug-Reports.md	290	NOID	mpl/src/aws_kms/hierarchical_keyring.rs:879	if ciphertext.len() < CIPHERTEXT_VERSION_OFFSET + CIPHERTEXT_VERSION_LEN {	- (b) `
+docs/chorus/MPL-Bug-Reports.md	290	MISS	mpl/src/aws_kms/hierarchical_keyring.rs:934	ids=['aws_kms', 'hierarchical_keyring'] line=.get_branch_key_version()	79` checks only for at least 44 bytes before the key store lookup at `
+docs/chorus/MPL-Bug-Reports.md	290	MISS	mpl/src/aws_kms/branch_key_wrap.rs:236	ids=['unwrap', 'branch_key_wrap'] line=if ciphertext.len() < FIXED_OVERHEAD_LEN {	60-byte minimum is enforced afterwards in `branch_key_wrap::unwrap` (`
+docs/chorus/MPL-Bug-Reports.md	297	MISS	mpl/src/cmm/default_cmm.rs:114-115	ids=['a1e23d7', 'Originally'] line=return Err(Error::new(	Originally reported at `a1e23d7`: (a) `
+docs/chorus/MPL-Bug-Reports.md	297	MISS	prim/src/ecdsa.rs:370-400	ids=['a1e23d7', 'default_cmm'] line=/// Returns an [`Error`] if key generation fails, if either key cannot be	Originally reported at `a1e23d7`: (a) `default_cmm.rs:114-115`, `
+docs/chorus/MPL-Bug-Reports.md	297	MISS	mpl/src/aws_kms/hierarchical_keyring.rs:536-542	ids=['default_cmm', 'ecdsa'] line=let Self {	3d7`: (a) `default_cmm.rs:114-115`, `prim/src/ecdsa.rs:370-400`; (b) `
+docs/chorus/MPL-Bug-Reports.md	297	MISS	mpl/src/aws_kms/hierarchical_keyring.rs:570-572	ids=['ecdsa', 'hierarchical_keyring'] line=None => DefaultCmc::builder()	rim/src/ecdsa.rs:370-400`; (b) `hierarchical_keyring.rs:536-542` and `
+docs/chorus/MPL-Bug-Reports.md	297	ALT	mpl/test-server/tests/hierarchical_keyring.rs:231-236	hierarchical_keyring	a.rs:370-400`; (b) `hierarchical_keyring.rs:536-542` and `:570-572`, `
+docs/chorus/MPL-Bug-Reports.md	348	MISS	mpl/src/cmm/default_cmm.rs:100	ids=['expect', 'Result'] line=format!(	 `Result`s considered "cannot fail"? The verification analysis lists `
+docs/chorus/MPL-Bug-Reports.md	348	ALT	esdk/shims/aws-esdk-cpp/test-server/src/backend.rs (+1):123	default_cmm	e verification analysis lists `default_cmm.rs:100` at `a1e23d7` (now `
+docs/chorus/MPL-Bug-Reports.md	348	ALT	esdk/shims/aws-esdk-cpp/test-server/tests/raw_aes_round_trip.rs (+2):64	default_cmm	0` at `a1e23d7` (now `default_cmm.rs:123`, provably unreachable) and `
+docs/chorus/MPL-Bug-Reports.md	383	MISS	mpl/src/aws_kms/cache_entry_identifier.rs:35-66	ids=['main', 'Current'] line=pub fn build_cache_identifier(	Current code (`main` `620771c`): `
+docs/chorus/MPL-Bug-Reports.md	383	MISS	mpl/src/aws_kms/hierarchical_keyring.rs:665	ids=['unchanged', 'numbers', 'same', 'called'] line=let cache_id = cache_entry_identifier::build_cache_identifier(	ile is unchanged, so the line numbers are the same). It is called at `
+docs/chorus/MPL-Bug-Reports.md	383	ALT	mpl/tests/test_storm_tracking_cmc.rs:908	unchanged	led at `mpl/src/aws_kms/hierarchical_keyring.rs:665` (OnEncrypt) and `
+docs/chorus/MPL-Bug-Reports.md	383	OK	mpl/src/aws_kms/hierarchical_keyring.rs:596	partition	 still not checked for NUL. The partition ID is the caller's string (`
+docs/chorus/MPL-Bug-Reports.md	383	OK	mpl/src/aws_kms/hierarchical_keyring.rs:626	UUID	erarchical_keyring.rs:596`) or the 16-byte form of a random v4 UUID (`
+docs/chorus/MPL-Bug-Reports.md	383	OK	mpl/src/aws_kms/hierarchical_keyring.rs:600-605	byte,logical,store	ical key store name is read from the key store and used as returned (`
+docs/chorus/MPL-Bug-Reports.md	399	MISS	mpl/src/aws_kms/cache_entry_identifier.rs:35-66	ids=['a1e23d7', 'Originally'] line=pub fn build_cache_identifier(	Originally reported at `a1e23d7`: the same `
+docs/chorus/MPL-Bug-Reports.md	399	MISS	mpl/src/aws_kms/hierarchical_keyring.rs:306	ids=['a1e23d7', 'cache_entry_identifier'] line=/// Start a builder for `HierarchicalKeyring`.	at `a1e23d7`: the same `cache_entry_identifier.rs:35-66`; call sites `
+docs/chorus/MPL-Bug-Reports.md	399	MISS	mpl/src/aws_kms/hierarchical_keyring.rs:550	ids=['cache_entry_identifier', 'hierarchical_keyring'] line="TTL must be greater than zero",	y_identifier.rs:35-66`; call sites `hierarchical_keyring.rs:306` and `
+docs/chorus/MPL-Bug-Reports.md	399	ALT	mpl/src/keyring/fluent_builders.rs:196	hierarchical_keyring	call sites `hierarchical_keyring.rs:306` and `:550`; partition ID at `
+docs/chorus/MPL-Bug-Reports.md	399	NOID	mpl/src/aws_kms/hierarchical_keyring.rs:269	#[derive(Clone)]	`hierarchical_keyring.rs:306` and `:550`; partition ID at `:196` and `
+docs/chorus/MPL-Bug-Reports.md	472	NOID	prim/src/lib.rs:175-197	pub fn aes_encrypt(	- `
+docs/chorus/MPL-Bug-Reports.md	473	NOID	prim/src/lib.rs:215	if plain_text.len() < cipher_text.len() {	- `
+docs/chorus/MPL-Bug-Reports.md	475	OK	mpl/src/keyring/raw_aes_keyring.rs:163	aes_encrypt	- In-repo callers of `aes_encrypt`: `
+docs/chorus/MPL-Bug-Reports.md	475	OK	mpl/src/aws_kms/branch_key_wrap.rs:199	aes_encrypt	 callers of `aes_encrypt`: `mpl/src/keyring/raw_aes_keyring.rs:163`, `
+docs/chorus/MPL-Bug-Reports.md	475	MISS	esdk/src/message/body/body_encrypt.rs:244	ids=['raw_aes_keyring', 'aws_kms', 'branch_key_wrap'] line=aes_encrypt(	g/raw_aes_keyring.rs:163`, `mpl/src/aws_kms/branch_key_wrap.rs:199`, `
+docs/chorus/MPL-Bug-Reports.md	475	MISS	esdk/src/encrypt.rs:776	ids=['body_encrypt'] line=aes_encrypt(	ranch_key_wrap.rs:199`, `esdk/src/message/body/body_encrypt.rs:244`, `
+docs/chorus/MPL-Bug-Reports.md	488	MISS	prim/src/lib.rs:197-218	ids=['a1e23d7', 'Originally'] line=}	Originally reported at `a1e23d7`: `
+docs/chorus/MPL-Bug-Reports.md	488	MISS	prim/src/lib.rs:207	ids=['a1e23d7'] line=alg: AesGcm,	iginally reported at `a1e23d7`: `prim/src/lib.rs:197-218` (append at `
+docs/chorus/MPL-Bug-Reports.md	488	NOID	prim/src/lib.rs:236	///	orted at `a1e23d7`: `prim/src/lib.rs:197-218` (append at `:207`) and `
+docs/chorus/MPL-Bug-Reports.md	488	BADFILE	src/aead/unbound_key.rs:140		.rs:197-218` (append at `:207`) and `:236` (guard); aws-lc-rs 1.17.1 `
+docs/chorus/MPL-Bug-Reports.md	488	MISS	mpl/src/keyring/raw_aes_keyring.rs:225	ids=['aead', 'unbound_key'] line=#[derive(Clone, Default)]	 (guard); aws-lc-rs 1.17.1 `src/aead/unbound_key.rs:140`; callers at `
+docs/chorus/MPL-Bug-Reports.md	488	MISS	mpl/src/aws_kms/branch_key_wrap.rs:192	ids=['callers', 'raw_aes_keyring'] line=let mut output =	 `src/aead/unbound_key.rs:140`; callers at `raw_aes_keyring.rs:225`, `
+docs/chorus/MPL-Bug-Reports.md	488	MISS	esdk/src/message/body/body_encrypt.rs:239	ids=['raw_aes_keyring', 'branch_key_wrap'] line=//= reason=aes_encrypt output tag bytes are written directly to frame_buf, interpreted as 	140`; callers at `raw_aes_keyring.rs:225`, `branch_key_wrap.rs:192`, `
+docs/chorus/MPL-Bug-Reports.md	488	ALT	mpl/src/aws_kms/hierarchical_keyring.rs:715	branch_key_wrap	es_keyring.rs:225`, `branch_key_wrap.rs:192`, `body_encrypt.rs:239`, `
+docs/chorus/MPL-Bug-Reports.md	501	ALT	mpl/tests/test_encryption_materials.rs:434	PlaintextDataKey	ped `Vec` is not wiped, while `PlaintextDataKey` offers `zeroize()` (`
+docs/chorus/MPL-Bug-Reports.md	501	OK	mpl/src/structures/algorithm_suite.rs:505	Zeroize,ZeroizeOnDrop,PlaintextDataKey	p is gone: `PlaintextDataKey` derives `Zeroize` and `ZeroizeOnDrop` (`
+docs/chorus/MPL-Bug-Reports.md	502	NOID	mpl/src/keyring/raw_aes_keyring.rs:309	#[must_use]	- (b) No security impact. In-repo callers size the buffer exactly (`
+docs/chorus/MPL-Bug-Reports.md	502	MISS	mpl/src/aws_kms/branch_key_wrap.rs:267	ids=['raw_aes_keyring'] line=// Build the AAD using the materials' branch_key_id, branch_key_version,	. In-repo callers size the buffer exactly (`raw_aes_keyring.rs:309`, `
+docs/chorus/MPL-Bug-Reports.md	502	MISS	mpl/src/keyring/raw_aes_keyring.rs:471	ids=['branch_key_wrap', 'a1e23d7'] line=let mut plaintext_dk = vec![0u8; encrypted_key.len()];	`raw_aes_keyring.rs:309`, `branch_key_wrap.rs:267` at `a1e23d7`; now `
+docs/chorus/MPL-Bug-Reports.md	502	MISS	mpl/src/aws_kms/branch_key_wrap.rs:275	ids=['a1e23d7', 'raw_aes_keyring'] line=let mut plaintext = vec![0u8; encrypted_key.len()];	anch_key_wrap.rs:267` at `a1e23d7`; now `raw_aes_keyring.rs:471` and `
+docs/chorus/MPL-Bug-Reports.md	538	OK	mpl/src/structures/algorithm_suite.rs:505	PlaintextDataKey	consistent with the zeroize-on-drop that `PlaintextDataKey` now has (`
+docs/chorus/MPL-Bug-Reports.md	564	OK	mpl/src/key_store/encryption_context.rs:40	build_base	Current code (`main` `620771c`): `build_base` (`
+docs/chorus/MPL-Bug-Reports.md	564	ALT	esdk/examples/branch_key_id_supplier.rs (+54):86-104	key_store,encryption_context	base` (`mpl/src/key_store/encryption_context.rs:40`), custom-EC loop `
+docs/chorus/MPL-Bug-Reports.md	564	ALT	esdk/examples/custom_cmm.rs (+37):95-101	tion_context	ore/encryption_context.rs:40`), custom-EC loop `:86-104`, dead `Err` `
+docs/chorus/MPL-Bug-Reports.md	564	MISS	mpl/src/key_store/encryption_context.rs:60-79	ids=['base', 'keys', 'inserted'] line=ec.insert(	p `:86-104`, dead `Err` `:95-101`. The six base keys are inserted at `
+docs/chorus/MPL-Bug-Reports.md	564	MISS	mpl/src/key_store/attributes.rs:11-17	ids=['base', 'keys', 'inserted', 'constants'] line=pub const ATTR_BRANCH_KEY_ID: &str = "branch-key-id";	 `:95-101`. The six base keys are inserted at `:60-79` (constants in `
+docs/chorus/MPL-Bug-Reports.md	564	OK	mpl/src/key_store/attributes.rs:24	crypto	_store/attributes.rs:11-17`), and none starts with `aws-crypto-ec:` (`
+docs/chorus/MPL-Bug-Reports.md	564	OK	mpl/src/structures/encryption_context.rs:16	BTreeMap,String	tributes.rs:24`). The custom EC is now a `BTreeMap<String, String>` (`
+docs/chorus/MPL-Bug-Reports.md	577	BADFILE	mpl/src/keystore/encryption_context.rs:109		Originally reported at `a1e23d7`: `
+docs/chorus/MPL-Bug-Reports.md	593	BADFILE	mpl/tests/test_keystore_encryption_context.rs:234		gument. The test `distinct_non_utf8_custom_ec_keys_do_not_collapse` (`
+docs/chorus/MPL-Bug-Reports.md	593	OK	mpl/tests/test_key_store_encryption_context.rs:127	custom_ec_keys_are_prefixed_with_aws_crypto_ec	ers the prefixing (`custom_ec_keys_are_prefixed_with_aws_crypto_ec`, `
+docs/chorus/MPL-Bug-Reports.md	625	OK	mpl/src/structures/algorithm_suite.rs:547	check_data_key_length	 so the test fails at its own `unwrap()`. | `check_data_key_length`, `
+docs/chorus/MPL-Bug-Reports.md	625	OK	mpl/src/structures/encryption_materials.rs:365	check_data_key_length,algorithm_suite	pl/src/structures/algorithm_suite.rs:547`, called from the builders (`
+docs/chorus/MPL-Bug-Reports.md	625	ALT	mpl/test-server/src/handlers.rs (+3):303	encryption_materials	te.rs:547`, called from the builders (`encryption_materials.rs:365`, `
+docs/chorus/MPL-Bug-Reports.md	625	ALT	esdk/src/materials.rs:60	decryption_materials	aterials.rs:365`, `decryption_materials.rs:303`) and `add_data_key` (`
+docs/chorus/MPL-Bug-Reports.md	625	ALT	esdk/examples/custom_cmm.rs (+1):56	encryption_materials	materials.rs:303`) and `add_data_key` (`encryption_materials.rs:60`, `
+docs/chorus/MPL-Bug-Reports.md	625	OK	mpl/src/aws_kms/hierarchical_keyring.rs:767	OnDecrypt,add_data_key	aterials.rs:56`). The hierarchical OnDecrypt calls `add_data_key` at `
+docs/chorus/MPL-Bug-Reports.md	626	OK	mpl/src/structures/encryption_context.rs:145	from_bytes	ted. | `EncryptionContext::from_bytes` (renamed from `deserialize`), `
+docs/chorus/MPL-Bug-Reports.md	626	ALT	esdk/shims/aws-esdk-cpp/test-server/tests/stream_round_trip.rs (+19):199	encryption_context	e`), `mpl/src/structures/encryption_context.rs:145`; duplicate check `
+docs/chorus/MPL-Bug-Reports.md	626	OK	mpl/src/structures/encryption_context.rs:205-210	duplicate,order	ures/encryption_context.rs:145`; duplicate check `:199`, order check `
+docs/chorus/MPL-Bug-Reports.md	626	NOID	mpl/src/structures/encryption_context.rs:230	fn utf8(bytes: &[u8], field: &str) -> Result<String, Error> {	rs:145`; duplicate check `:199`, order check `:205-210`, UTF-8 check `
+docs/chorus/MPL-Bug-Reports.md	627	OK	mpl/src/aws_kms/hierarchical_keyring.rs:989-995	cache_entry_within_limits	 1.5 s, the keystore is called again. | `cache_entry_within_limits`, `
+docs/chorus/MPL-Bug-Reports.md	627	OK	mpl/tests/test_aws_kms_hierarchical_keyring.rs:1547	on_encrypt_ttl_compares_the_full_duration	tion`s. Regression test `on_encrypt_ttl_compares_the_full_duration`, `
+docs/chorus/MPL-Bug-Reports.md	629	MISS	mpl/src/aws_kms/hierarchical_keyring.rs:414-423	ids=['a1e23d7', 'Originally'] line=/// To set a value, use [`Self::ttl`].	Originally reported locations at `a1e23d7`: BUG-02 `
+docs/chorus/MPL-Bug-Reports.md	629	ALT	esdk/tests/test_required_encryption_context.rs (+3):30-89	hierarchical_keyring	ed locations at `a1e23d7`: BUG-02 `hierarchical_keyring.rs:414-423`, `
+docs/chorus/MPL-Bug-Reports.md	629	ALT	esdk/examples/custom_cmm.rs (+13):28-81	encryption_materials	 `hierarchical_keyring.rs:414-423`, `encryption_materials.rs:30-89`, `
+docs/chorus/MPL-Bug-Reports.md	629	ALT	esdk/tests/test_custom_cmm.rs (+5):109	encryption_materials	ryption_materials.rs:30-89`, `decryption_materials.rs:28-81`; BUG-03 `
+docs/chorus/MPL-Bug-Reports.md	629	NOID	mpl/src/aws_kms/hierarchical_keyring.rs:620-626		8-81`; BUG-03 `mpl/src/structures/encryption_context.rs:109`; BUG-09 `
