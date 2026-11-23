@@ -12,7 +12,7 @@ Open `dashboard/verification-dashboard.html` by double-click. It needs no server
 3. The target table lists all 33 active targets in recorded rank order. Click a target ID to open its plain-English card.
 4. Each card says what part of the library the target covers, what could go wrong, what the proof checks (or would check), what it does not show, and the result in one sentence.
 5. A proof marked STALE changed after its result was recorded. Re-run it before relying on the number.
-6. A check that fails on purpose (T02, T06, T10, T13) is the evidence of a bug or spec gap. It is not a broken proof. The page explains each one.
+6. A check that fails on purpose (T02, T06, T10, T13, T17) is the evidence of a bug or spec gap. It is not a broken proof. The page explains each one.
 7. The glossary at the bottom explains model-level proof, expected failure, assumptions (A_ names), hypotheses (H_ names) and the honesty levels.
 
 ## Files

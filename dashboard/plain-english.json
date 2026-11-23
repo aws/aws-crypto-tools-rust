@@ -75,7 +75,11 @@
     {"term": "Mahnush_Verus", "text": "Another branch of the repository that holds in-crate Verus proofs (VR-013, VR-014 for C03). Nothing from it is merged here."},
     {"term": "Consistency check", "text": "A proof that compares two descriptions of the same thing and finds that they agree, for example a table in the code and the matching table in the spec text. Both were written by hand. It does not show that the code is right, and it cannot see a mistake that was typed into both."},
     {"term": "PDK and materials", "text": "A PDK is a plaintext data key, the unencrypted key that protects the message. Materials are the bundle of algorithm suite, encryption context and keys that the keyrings and the materials manager pass to each other."},
-    {"term": "UUID", "text": "A 16-byte identifier, written as 36 characters of hex digits and hyphens, for example 41424344-4546-4748-494a-4b4c4d4e4f50. The branch key store uses one as the version of a branch key."}
+    {"term": "UUID", "text": "A 16-byte identifier, written as 36 characters of hex digits and hyphens, for example 41424344-4546-4748-494a-4b4c4d4e4f50. The branch key store uses one as the version of a branch key."},
+    {"term": "Provider info and IV", "text": "Provider info is a field of an encrypted data key (EDK). It tells a keyring how the key was wrapped. For the raw AES keyring it holds the IV, the one-time value that AES-GCM needs for each wrap."},
+    {"term": "Rotating a branch key", "text": "Rotation creates a new version of a branch key. The old version stays in the table as a decrypt-only record, and a new active record is written. The function is version_key."},
+    {"term": "ARN, Region and multi-Region key", "text": "An ARN (Amazon Resource Name) is the identifier of an AWS resource such as a KMS key. A Region is an AWS location such as us-east-1. A multi-Region key (MRK) has copies in several Regions. Its key id starts with mrk-."},
+    {"term": "Discovery and MRDiscovery", "text": "Two settings of the key store that decrypt with the key named in the record instead of one configured key. MRDiscovery also replaces the Region in that key's ARN with the configured Region."}
   ],
   "hypotheses": {
     "A_STR": {"kind": "assumed", "text": "Strings behave as sequences of characters in the model. Byte and character splits agree because the relevant text is ASCII."},
@@ -206,7 +210,24 @@
     "H_LOOKUP_ORIGINAL": {"kind": "code_reading", "text": "The key lookup in the loop is on the original message context. That is a separate value from the result and is not changed."},
     "H_ONE_ERROR_SITE": {"kind": "code_reading", "text": "The loop has exactly one place where it returns an error, and no path that panics (crashes) in the cases reached."},
     "H_BUILD_CHECK": {"kind": "code_reading", "text": "DecryptionMaterials::build rejects a required key that is not in the context. The proof only states that this check cannot fire. It does not depend on the check existing."},
-    "H_ASC": {"kind": "code_reading", "text": "The context is walked in ascending key order. This is used only to say which conflicting key the real code names. No theorem depends on it."}
+    "H_ASC": {"kind": "code_reading", "text": "The context is walked in ascending key order. This is used only to say which conflicting key the real code names. No theorem depends on it."},
+    "A_NONCE": {"kind": "assumed", "text": "A wrong-length IV makes aes_decrypt return an error and not panic. It is read from prim/src/lib.rs. It appears only in a comment, and no theorem uses it."},
+    "H_NO_OVERFLOW": {"kind": "code_reading", "text": "The conditions that the executable models require, such as no number overflowing, hold at the real call sites. A person checked this by reading."},
+    "H_CALLER_IV": {"kind": "code_reading", "text": "The only caller of serialize_provider_info passes a 12-byte IV. A person read this."},
+    "H_ONLY_CALLER_DECODE": {"kind": "code_reading", "text": "The only caller of decryptable_edk_iv is the keyring's decrypt step. A person read this."},
+    "H_IV_FLOW": {"kind": "code_reading", "text": "The same IV goes to the encryption call and into the provider info. The IV read back goes to the decryption call. A person read this."},
+    "H_ALG_CONSTANTS": {"kind": "code_reading", "text": "All three wrapping algorithms use a 12-byte IV and a 16-byte tag. A person read this."},
+    "H_NO_OTHER_READER": {"kind": "code_reading", "text": "Nothing else reads this layout. A person searched for it."},
+    "A_COPY": {"kind": "assumed", "text": "The blocks marked COPIED in the proof file equal the text of the T01 and C01 proofs. A script compares them. Verus does not."},
+    "H_ONLY_THESE_OPS": {"kind": "code_reading", "text": "No other statement changes the two new contexts between their creation and the two calls that make the records. So the model covers the whole derivation."},
+    "H_OLD_EC": {"kind": "code_reading", "text": "The old context is the one built from the fetched record, and it is moved into the new decrypt-only context. A person read this."},
+    "H_NO_ENC": {"kind": "code_reading", "text": "The attributes of the fetched record do not include the enc entry, which is held separately. Only the check on the written attributes uses this."},
+    "H_SORT_KEY": {"kind": "code_reading", "text": "The record is fetched by branch key id and type branch:ACTIVE, so the type of the fetched item is branch:ACTIVE. This is DynamoDB behavior and is not checked."},
+    "H_ITEM": {"kind": "assumed", "text": "item_from_ec_and_enc skips the table name and writes the other context entries as attributes. It is taken from the T01 and C01 proofs."},
+    "H_OLD_BUILT": {"kind": "assumed", "text": "The old active context was made by the builder functions. Only the builder-agreement checks need this. It holds for records written by create_key (T01). For records from another writer it is not shown."},
+    "A_MRK_SPEC": {"kind": "assumed", "text": "The proof's test for a multi-Region key ARN (service kms, resource type key, id starts with mrk-) is the proof author's reading of the spec file aws-kms-key-arn.md. It is not code."},
+    "A_FIX_MODEL": {"kind": "assumed", "text": "The model of the fix follows the first option written in the BUG-04 report. It is not code in the repository."},
+    "H_REGION_CFG": {"kind": "code_reading", "text": "The configured Region has no colon. The MRDiscovery builder only checks that a Region was set. The Region-rewrite checks need this. A person read it."}
   },
   "proofs": {
     "T02": {
@@ -328,6 +349,36 @@
       "expected_failures": [],
       "result_clause": "no gap was found, and part of the result is a consistency check against the spec text",
       "sources": [{"doc": "verus-proofs/README.md", "locator": "## T12: reproduced encryption context merge"}, {"doc": "docs/mpl-verification-targets.md", "locator": "**T12: no gap found at model level.**"}]
+    },
+    "T20": {
+      "hypotheses": ["A_BYTES", "A_STD", "A_NONCE", "H_MODEL_MATCH", "H_NO_OVERFLOW", "H_CALLER_IV", "H_ONLY_CALLER_DECODE", "H_IV_FLOW", "H_ALG_CONSTANTS", "H_NO_OTHER_READER"],
+      "hypothesis_overrides": {
+        "A_BYTES": {"text": "Key names, provider ids and provider info are any sequences of bytes in the model. Every Rust string is one, so the results cover all strings."},
+        "A_STD": {"text": "The Rust functions split_at, try_into, to_be_bytes, from_be_bytes and slice comparison behave as documented. Verus has no specs for them."}
+      },
+      "expected_failures": [],
+      "result_clause": "no gap was found, and part is a consistency check against the spec text",
+      "sources": [{"doc": "verus-proofs/README.md", "locator": "## T20: raw AES keyring provider-info codec"}, {"doc": "docs/mpl-verification-targets.md", "locator": "**T20: no gap found at model level.**"}]
+    },
+    "T18": {
+      "hypotheses": ["A_STR", "A_MAP", "A_ITER", "A_COPY", "H_MODEL_MATCH", "H_ONLY_THESE_OPS", "H_OLD_EC", "H_NO_ENC", "H_SORT_KEY", "H_ITEM", "H_OLD_BUILT"],
+      "hypothesis_overrides": {
+        "A_MAP": {"text": "Insert, remove, get and clone on the sorted map type (BTreeMap) behave like the matching operations on a mathematical map. These are standard library contracts. Verus has no spec for them over strings."},
+        "A_ITER": {"text": "Walking through a map visits each key exactly once. Only the builder-agreement checks use this."}
+      },
+      "expected_failures": [],
+      "result_clause": "no gap was found, and part is a consistency check against the spec text",
+      "sources": [{"doc": "verus-proofs/README.md", "locator": "## T18: `version_key` encryption context derivation"}, {"doc": "docs/mpl-verification-targets.md", "locator": "**T18: no gap found at model level.**"}]
+    },
+    "T17": {
+      "hypotheses": ["A_STR", "A_STD", "A_ALLOC", "A_VSTD", "A_MRK_SPEC", "A_FIX_MODEL", "H_MODEL_MATCH", "H_REGION_CFG", "H_CALLER"],
+      "hypothesis_overrides": {
+        "A_STD": {"text": "The models of splitn, split, split_once and format! follow the documented behavior of Rust. Verus has no specs for them."}
+      },
+      "expected_failures": ["lemma_bug04_region_rewritten_only_for_mrk_EXPECTED_FAIL"],
+      "failure_explanation": "The failing check states the intended rule. A record that parses, is not an alias and is not a multi-Region key ARN should come back from MRDiscovery unchanged. That claim is false for the shipped arm. A single-Region key ARN in us-east-1 comes back with us-west-2. Verus rejects the claim and the proof gives this counterexample. A second check shows the claim is false and not only unproved. The check was left failing and was not weakened. It is the evidence of BUG-04. It is not a broken proof.",
+      "result_clause": "the one failing check is the intentional one for BUG-04, not a broken proof",
+      "sources": [{"doc": "verus-proofs/README.md", "locator": "## T17: Discovery and MrDiscovery ARN construction"}, {"doc": "docs/mpl-verification-targets.md", "locator": "**T17, F1: MrDiscovery rewrites the region of every accepted ARN"}]
     }
   },
   "c03_other_branch": {
@@ -352,9 +403,9 @@
       "sources": [{"doc": "docs/mpl-bug-reports/BUG-03-encryption-context-deserialize-accepts-unsorted.md", "locator": "# BUG-03"}]
     },
     "BUG-04": {
-      "plain": "One discovery mode rewrites the Region of every KMS key ARN, including single-Region keys. KMS then rejects the request, so the request is refused (it fails closed).",
-      "relation": {"kind": "none", "target": "", "text": "Target T17 would state the rule. No proof yet. The T03 proof does not cover discovery modes."},
-      "sources": [{"doc": "docs/mpl-bug-reports/BUG-04-mrdiscovery-rewrites-non-mrk-arn-region.md", "locator": "# BUG-04"}]
+      "plain": "One discovery mode rewrites the Region of every key ARN that is not an alias, including single-Region keys. For a key in another Region, KMS is expected to refuse the request (it fails closed). That KMS step was inferred and not run.",
+      "relation": {"kind": "confirmed_by_model_proof", "target": "T17", "text": "The T17 model proof shows that MRDiscovery rewrites the Region of a single-Region key ARN. The intentional failing check is the evidence. Model level only."},
+      "sources": [{"doc": "docs/mpl-bug-reports/BUG-04-mrdiscovery-rewrites-non-mrk-arn-region.md", "locator": "# BUG-04"}, {"doc": "docs/mpl-bug-reports/BUG-04-mrdiscovery-rewrites-non-mrk-arn-region.md", "locator": "## Formal check (T17)"}]
     },
     "BUG-05": {
       "plain": "(a) The default materials manager panics if key generation fails. (b) An encrypted data key that is too short still causes one key-store read before it is rejected. The reports say (b) is likely not a bug.",
@@ -542,22 +593,32 @@
       "sources": [{"doc": "docs/mpl-verification-targets/01-threat-driven.md", "locator": "id: VR-2026-T16"}]
     },
     "T17": {
-      "title": "Discovery modes should rewrite the Region only for multi-Region keys (BUG-04 rewrites every non-alias key ARN today)",
-      "area": "The branch key store, in the two discovery modes that accept the key named in a record instead of one configured key.",
-      "risk": "In MRDiscovery mode the code rewrites the Region of every non-alias key ARN, including single-Region keys, where the spec says multi-Region keys only. KMS then rejects the request, so the request is refused (it fails closed). This is BUG-04 (open, rated Low) and threat TM-MPL-007.",
-      "checks": "That Discovery mode accepts the record's ARN exactly when it parses and is not an alias. That MRDiscovery rewrites the Region only for multi-Region key ARNs. The docs expect the second check to fail today. It would pass once the code rewrites the Region only for multi-Region key ARNs (an mrk- check).",
-      "not_shown": "The docs list no further limits for this target.",
-      "notes": [],
-      "sources": [{"doc": "docs/mpl-verification-targets/01-threat-driven.md", "locator": "id: VR-2026-T17"}]
+      "title": "In the model, the two discovery modes accept the same records, but MRDiscovery rewrites the Region of single-Region keys too (BUG-04)",
+      "area": "The branch key store, when it reads a record in one of the two discovery modes. Discovery uses the KMS key ARN stored in the record as it is. MRDiscovery replaces the Region in that ARN with the configured Region. An ARN (Amazon Resource Name) is the identifier of a key. A Region is an AWS location such as us-east-1. A multi-Region key has copies in several Regions, and its key id starts with mrk-. An alias is a KMS name that points to a key. The functions are resolve_key_store_arn, reject_alias_arn, rewrite_arn_region and parse_arn, in kms_ops.rs and kms_config.rs.",
+      "risk": "The spec text conflicts with itself. Two sentences without a MUST (the spec's word for a required rule) say MRDiscovery changes the Region only for multi-Region keys. The one sentence with a MUST has no such limit, and the code follows that one. The code changes the Region for every key ARN that is not an alias. For a single-Region key in another Region, the new ARN is expected to name no existing key. BUG-04 and the threat model say KMS then refuses the request (it fails closed). That KMS step was inferred and not run. This is BUG-04 (open). The threat model lists TM-MPL-007. Its words: a Discovery or MRDiscovery setting decrypts a record under an alias or an attacker-region key. An attacker-region key is a key in a Region the attacker chose.",
+      "checks": "Discovery returns the record's ARN unchanged exactly when the ARN parses and is not an alias. MRDiscovery accepts and rejects the same records. For every accepted record, MRDiscovery returns the ARN with only the Region replaced. That includes single-Region keys, which is the BUG-04 behavior. Part of this is a consistency check, because the model is written as that case split. The proof also states the intended rule: a key ARN that is not a multi-Region key comes back unchanged. That check fails on purpose. Its counterexample is a single-Region key ARN in us-east-1, which comes back with us-west-2. The failing check is the evidence of a real gap (BUG-04), not a broken proof.",
+      "not_shown": "It does not show that the shipped code has these properties. A person compared the model with kms_ops.rs by reading. It does not show that TM-MPL-007 is handled. Whether a record is genuine and what KMS does with the ARN are not modeled. It does not show that the fix proposed in BUG-04 is the right fix. It does not show that the returned ARN is the key id that KMS receives.",
+      "notes": [
+        "The code has no multi-Region test on this arm. rewrite_arn_region rebuilds the ARN with the new Region for every ARN that passes the alias check. The only starts_with(\"key/mrk-\") test is in is_multi_region_arn (mrk_match.rs). The key store does not call it for the two discovery modes.",
+        "A model of the first fix in the BUG-04 report passes the same claim. That fix tests for mrk- before the rewrite. The counterexample goes away. The fix model is not code in the repository.",
+        "Spec conflict: the intended rule comes from two spec sentences that have no MUST, in branch-key-store.md. It also comes from the Dafny version of the library. Dafny is the language of the other implementation. The one sentence with a MUST has no multi-Region condition, and the code follows it literally.",
+        "Observation, not a gap: the fix test would miss a multi-Region key id that contains a colon, which the code rewrites today. Whether a real key id can look like that was not examined. Neither shipped discovery arm rejects an ARN whose service is not KMS. An s3 ARN is accepted, and MRDiscovery rewrites its Region."
+      ],
+      "sources": [{"doc": "docs/mpl-verification-targets/01-threat-driven.md", "locator": "id: VR-2026-T17"}, {"doc": "verus-proofs/README.md", "locator": "## T17: Discovery and MrDiscovery ARN construction"}, {"doc": "docs/mpl-verification-targets.md", "locator": "**T17, F1: MrDiscovery rewrites the region of every accepted ARN"}]
     },
     "T18": {
-      "title": "Rotating a branch key keeps the record's context",
-      "area": "The branch key store, in the step that creates a new key version (version_key). It builds the contexts for the new decrypt-only record and the new active record.",
-      "risk": "If rotation dropped or changed a context value, the new records would not match the old key's identity. The threat in the threat model is TM-MPL-016 (version race).",
-      "checks": "That the new decrypt-only context is the old one with the version and creation time changed. That the new active context is that one with the active type. That both keep the branch key id, KMS ARN, hierarchy version, table name and every custom entry, and that they agree with the shared builder functions.",
-      "not_shown": "DynamoDB transaction behavior is excluded. The docs note that version_key still builds the new contexts inline.",
-      "notes": [],
-      "sources": [{"doc": "docs/mpl-verification-targets/01-threat-driven.md", "locator": "id: VR-2026-T18"}]
+      "title": "In the model, rotating a branch key changes only three entries of the context and keeps all others",
+      "area": "The branch key store, in version_key (branch_key_store.rs). Rotating a branch key creates a new key version. It writes two records: a new decrypt-only record and a new active record. Each record has an encryption context, a set of labelled text values that is bound to the key. version_key builds both new contexts inline from the old active context. A custom entry is a value the caller supplied. It is stored under a name that starts with aws-crypto-ec:.",
+      "risk": "If rotation dropped or changed a context value, the new records would no longer match the key's identity. The threat model lists TM-MPL-016, a bypass of the check that stops two rotations from overwriting each other's active record. It calls this an optimistic-lock bypass, or version race. The proof covers the context contents only, not the race.",
+      "checks": "The model rewrites the old context in the code's order. In the new decrypt-only context, type becomes branch:version: plus the version, create-time becomes the new time, and version is removed. The new active context starts from that one. Its version becomes branch:version: plus the version, and its type becomes branch:ACTIVE. Every other entry is kept. These are the branch key id, KMS key identifier (ARN), hierarchy version, table name and all custom entries. Hierarchy version is a format number, 1 in every record that create_key writes. The two new records have different primary keys (the branch key id plus the record type, which DynamoDB uses to find a record). The active record keeps the primary key of the old active record. If the old context came from the builder functions, the new ones equal the builder output. Part of this is a consistency check against the spec item lists.",
+      "not_shown": "It does not show that the shipped code has these properties. A person compared the model with branch_key_store.rs by reading. It does not show that TM-MPL-016 is handled. The checks DynamoDB runs on each write, the race between two rotations, and the KMS step that authenticates the old record are not modeled. The format of the version and time is not modeled either. Whether the old record is genuine is the subject of T01.",
+      "notes": [
+        "Observation, not a gap: attributes that the format does not name are copied unchanged into both new records. The spec is silent on this.",
+        "Observation, not a gap: hierarchy-version is the stored value. The spec writes the literal 1. They are equal for every record that create_key writes.",
+        "Observation, not a gap: one spec line says the KMS ARN is the configured KMS key. An earlier sentence says the stored ARN must not change. The code follows the second. They differ only when a multi-Region key (a KMS key with copies in other Regions) is configured under a different ARN.",
+        "Observation, not a gap: version_key does not check the old context, so a malformed old record is rotated as it is."
+      ],
+      "sources": [{"doc": "docs/mpl-verification-targets/01-threat-driven.md", "locator": "id: VR-2026-T18"}, {"doc": "verus-proofs/README.md", "locator": "## T18: `version_key` encryption context derivation"}, {"doc": "docs/mpl-verification-targets.md", "locator": "**T18: no gap found at model level.**"}]
     },
     "T19": {
       "title": "The hierarchical keyring tries only encrypted data keys that name the right branch key",
@@ -569,13 +630,16 @@
       "sources": [{"doc": "docs/mpl-verification-targets/01-threat-driven.md", "locator": "id: VR-2026-T19"}]
     },
     "T20": {
-      "title": "The raw AES provider-info format round-trips and parsing is total",
-      "area": "The raw AES keyring's small byte format that carries the IV inside the provider info of an encrypted data key.",
-      "risk": "A malformed or forged provider info could cause a parse error or a panic, or a wrong IV. The threats are TM-MPL-023, TM-MPL-011 and TM-MPL-001.",
-      "checks": "That the writer produces the key name, then 128 and 12 as 4-byte numbers, then the IV. That the parser returns the IV exactly when the provider id equals the namespace and the info has that shape for a 12-byte IV. That writing and parsing round-trip and that parsing never fails with a crash.",
-      "not_shown": "The docs describe this as the parser half of T07 and list no further limits.",
-      "notes": [],
-      "sources": [{"doc": "docs/mpl-verification-targets/01-threat-driven.md", "locator": "id: VR-2026-T20"}]
+      "title": "In the model, the raw AES provider info can be written and read back, and its parser handles any input without going out of range",
+      "area": "The raw AES keyring wraps (encrypts) the data key with an AES key that the caller holds. Each encrypted data key (EDK) carries a provider info field. This field holds the IV, the one-time value that AES-GCM needs for each wrap. AES-GCM is a standard way to encrypt and check data in one step. The check value it adds is the tag. serialize_provider_info writes the field and decryptable_edk_iv reads it back. Both are in raw_aes_keyring.rs. Each keyring has a namespace and a key name. It puts its namespace on each EDK as the provider id and keeps its key name in the provider info. A keyring ignores an EDK that has another namespace or key name.",
+      "risk": "A malformed or forged provider info could make the parser panic (crash) or return the wrong IV. The threat model lists TM-MPL-023 (panic on malformed input), TM-MPL-011 (IV reuse) and TM-MPL-001 (a provider id that impersonates a KMS keyring). The proof covers the byte format only.",
+      "checks": "The writer produces the key name, the tag length (128, in bits), the IV length (12, in bytes) and then the IV. Each length is a 4-byte number. The parser returns the IV exactly when the provider id equals the namespace and the info has that shape. For a 12-byte IV, writing then parsing gives back the IV. An IV of any other length is never accepted. The model of the parser reads any provider id and any info without an out-of-range read, an overflow or a failed conversion. For 12-byte IVs, different names or IVs give different info. A keyring accepts another keyring's EDK exactly when the namespaces and key names are equal. Each rejection is checked on its own: wrong id, wrong length, wrong name, wrong tag-length field, wrong IV-length field. Part of this is a consistency check against a spec table typed by hand.",
+      "not_shown": "It does not show that the shipped code has these properties. A person compared the model with the code by reading, and a later edit to the code would not be noticed. It does not show that TM-MPL-023, TM-MPL-011 or TM-MPL-001 is handled. It does not show that IVs are random or unique (that is T07). It does not cover the rest of decryption: the ciphertext split, the AES-GCM call and the key length check. The AWS Encryption SDK (ESDK) header stores provider info with a 2-byte length. That is a different function and is not modeled.",
+      "notes": [
+        "Observation, not a gap: serialize_provider_info checks the IV length only with debug_assert! (a check that runs in debug builds only). Its only caller passes a 12-byte IV, which a person read.",
+        "Observation, not a gap: an empty key name is accepted and works. The code takes the key name from the keyring and requires the total length to be exactly the name plus 20 bytes. That is stricter than the spec text."
+      ],
+      "sources": [{"doc": "docs/mpl-verification-targets/01-threat-driven.md", "locator": "id: VR-2026-T20"}, {"doc": "verus-proofs/README.md", "locator": "## T20: raw AES keyring provider-info codec"}, {"doc": "docs/mpl-verification-targets.md", "locator": "**T20: no gap found at model level.**"}]
     },
     "T21": {
       "title": "The storm-tracking cache should obey its spec limits (docs expect four failures today)",

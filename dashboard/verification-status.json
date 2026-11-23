@@ -1,11 +1,11 @@
 {
   "generated": {
-    "commit": "2ddfefa7e71fc53147dec2c230853ffca0520f1a",
-    "commit_short": "2ddfefa",
+    "commit": "a85a7cda674dac52d05ce885fc57ad0b329638c1",
+    "commit_short": "a85a7cd",
     "branch": "MPL-Verus",
     "sources_clean": true,
     "dirty_paths": [],
-    "timestamp_utc": "2026-11-20T18:19:23Z",
+    "timestamp_utc": "2026-11-23T01:04:01Z",
     "generator": "dashboard/generate_dashboard.py",
     "schema_version": 1,
     "commit_meaning": "the commit whose docs/ and verus-proofs/ were read; the dashboard files are committed after it"
@@ -16,8 +16,8 @@
   "verus": {
     "version": "0.2026.07.12.0b42f4c",
     "platform": "release, macos_aarch64, 1.96.0-aarch64-apple-darwin",
-    "runs_recorded_at": "2026-11-20T18:19:09Z",
-    "runs_recorded_on_commit": "2ddfefa",
+    "runs_recorded_at": "2026-11-23T01:03:42Z",
+    "runs_recorded_on_commit": "a85a7cd",
     "command": "~/verus/verus verus-proofs/<file>.rs, run from the repo root"
   },
   "scope_statement": "Every proof on this branch checks a hand-written model of the code. None checks the shipped code.",
@@ -74,14 +74,14 @@
     "level_counts": {
       "in_crate": 0,
       "in_crate_other_branch": 1,
-      "model_proved": 12,
-      "model_partly": 4,
-      "not_started": 16
+      "model_proved": 14,
+      "model_partly": 5,
+      "not_started": 13
     },
-    "targets_with_model_proof_on_this_branch": 16,
+    "targets_with_model_proof_on_this_branch": 19,
     "targets_with_proof_in_shipped_code_on_this_branch": 0,
     "targets_with_proof_on_other_branch_only": 1,
-    "targets_without_proof": 16,
+    "targets_without_proof": 13,
     "high_threat_count": 3,
     "high_threats_with_current_model_proof": 3,
     "threat_count": 26,
@@ -101,10 +101,10 @@
     ],
     "open_bugs_confirmed_by_model_proof": [
       "BUG-01",
+      "BUG-04",
       "BUG-06"
     ],
     "open_bugs_with_no_proof_on_this_branch": [
-      "BUG-04",
       "BUG-05",
       "BUG-07",
       "BUG-10"
@@ -113,9 +113,10 @@
       "T02",
       "T13",
       "T06",
-      "T10"
+      "T10",
+      "T17"
     ],
-    "intentional_failing_checks": 7,
+    "intentional_failing_checks": 8,
     "stale_proofs": [],
     "proofs_not_run": [],
     "unexpected_failures": [],
@@ -236,22 +237,22 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T01",
-            "line": 199
+            "line": 222
           },
           {
             "doc": "verus-proofs/README.md",
             "locator": "## T01: key-store authenticated encryption context",
-            "line": 192
+            "line": 198
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "**T01: no gap found at model level.**",
-            "line": 211
+            "line": 244
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 315
+            "line": 365
           }
         ]
       },
@@ -292,22 +293,22 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T02",
-            "line": 265
+            "line": 288
           },
           {
             "doc": "verus-proofs/README.md",
             "locator": "## T02: record reconstruction",
-            "line": 61
+            "line": 67
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "**G1 confirmed formally (T02).**",
-            "line": 207
+            "line": 240
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 315
+            "line": 365
           }
         ]
       },
@@ -353,17 +354,17 @@
           {
             "doc": "verus-proofs/README.md",
             "locator": "## C01: encryption-context builders",
-            "line": 98
+            "line": 104
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "- **BUG-08 (C01).**",
-            "line": 267
+            "line": 317
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 315
+            "line": 365
           }
         ]
       },
@@ -407,17 +408,17 @@
           {
             "doc": "verus-proofs/README.md",
             "locator": "## C02: bounded ECDSA signing loop",
-            "line": 146
+            "line": 152
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "C02 and VR-008.",
-            "line": 128
+            "line": 134
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 315
+            "line": 365
           }
         ]
       },
@@ -460,12 +461,12 @@
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "### C03: in-crate proof on branch Mahnush_Verus (not on this branch)",
-            "line": 75
+            "line": 81
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 315
+            "line": 365
           }
         ]
       },
@@ -509,7 +510,7 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T03",
-            "line": 346
+            "line": 369
           },
           {
             "doc": "verus-proofs/README-t03-t05.md",
@@ -519,12 +520,12 @@
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "**O1, DEV-ALIAS (T03).**",
-            "line": 208
+            "line": 241
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 315
+            "line": 365
           }
         ]
       },
@@ -573,17 +574,17 @@
           {
             "doc": "verus-proofs/README.md",
             "locator": "## C07: materials transition checks",
-            "line": 504
+            "line": 510
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "**C07: no gap found that fails a proof at model level",
-            "line": 247
+            "line": 280
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 315
+            "line": 365
           }
         ]
       },
@@ -626,22 +627,22 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T04",
-            "line": 390
+            "line": 413
           },
           {
             "doc": "verus-proofs/README.md",
             "locator": "## T04: branch-key wrap",
-            "line": 274
+            "line": 280
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "**T04, what is not proved (TM-MPL-012).**",
-            "line": 218
+            "line": 251
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 315
+            "line": 365
           }
         ]
       },
@@ -685,22 +686,22 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T13",
-            "line": 435
+            "line": 458
           },
           {
             "doc": "verus-proofs/README.md",
             "locator": "## T13: cache identifier",
-            "line": 237
+            "line": 243
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "**BUG-06 confirmed formally (T13).**",
-            "line": 214
+            "line": 247
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 315
+            "line": 365
           }
         ]
       },
@@ -744,7 +745,7 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T05",
-            "line": 498
+            "line": 521
           },
           {
             "doc": "verus-proofs/README-t03-t05.md",
@@ -754,12 +755,12 @@
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "**F1 (T05).**",
-            "line": 210
+            "line": 243
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 315
+            "line": 365
           }
         ]
       },
@@ -804,22 +805,22 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T06",
-            "line": 540
+            "line": 563
           },
           {
             "doc": "verus-proofs/README.md",
             "locator": "## T06: `SystemTime + Duration` additions",
-            "line": 320
+            "line": 326
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "**BUG-01 confirmed formally (T06).**",
-            "line": 222
+            "line": 255
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 315
+            "line": 365
           }
         ]
       },
@@ -859,12 +860,12 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T07",
-            "line": 596
+            "line": 619
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 315
+            "line": 365
           }
         ]
       },
@@ -904,12 +905,12 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T14",
-            "line": 644
+            "line": 667
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 315
+            "line": 365
           }
         ]
       },
@@ -950,12 +951,12 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T27",
-            "line": 698
+            "line": 721
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 315
+            "line": 365
           }
         ]
       },
@@ -996,12 +997,12 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T26",
-            "line": 782
+            "line": 805
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 315
+            "line": 365
           }
         ]
       },
@@ -1048,22 +1049,22 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T10",
-            "line": 867
+            "line": 890
           },
           {
             "doc": "verus-proofs/README.md",
             "locator": "## T10: branch-key AAD and UUID codec",
-            "line": 544
+            "line": 550
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "**T10, F1: the branch-key AAD has no length or separator",
-            "line": 254
+            "line": 287
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 315
+            "line": 365
           }
         ]
       },
@@ -1101,12 +1102,12 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T11",
-            "line": 909
+            "line": 932
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 315
+            "line": 365
           }
         ]
       },
@@ -1150,22 +1151,22 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T12",
-            "line": 948
+            "line": 971
           },
           {
             "doc": "verus-proofs/README.md",
             "locator": "## T12: reproduced encryption context merge",
-            "line": 590
+            "line": 596
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "**T12: no gap found at model level.**",
-            "line": 261
+            "line": 294
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 315
+            "line": 365
           }
         ]
       },
@@ -1215,17 +1216,17 @@
           {
             "doc": "verus-proofs/README.md",
             "locator": "## C04: plaintext data key length invariant",
-            "line": 467
+            "line": 473
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "**C04: no gap found at model level.**",
-            "line": 242
+            "line": 275
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 315
+            "line": 365
           }
         ]
       },
@@ -1264,12 +1265,12 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T09",
-            "line": 989
+            "line": 1012
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 315
+            "line": 365
           }
         ]
       },
@@ -1316,17 +1317,17 @@
           {
             "doc": "verus-proofs/README.md",
             "locator": "## C05: algorithm suite table",
-            "line": 358
+            "line": 364
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "**C05: no gap found at model level",
-            "line": 228
+            "line": 261
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 315
+            "line": 365
           }
         ]
       },
@@ -1366,12 +1367,12 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T16",
-            "line": 1045
+            "line": 1068
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 315
+            "line": 365
           }
         ]
       },
@@ -1411,12 +1412,12 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T21",
-            "line": 1098
+            "line": 1121
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 315
+            "line": 365
           }
         ]
       },
@@ -1457,7 +1458,7 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T15",
-            "line": 1193
+            "line": 1216
           },
           {
             "doc": "docs/mpl-bug-reports/BUG-03-encryption-context-deserialize-accepts-unsorted.md",
@@ -1467,7 +1468,7 @@
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 315
+            "line": 365
           }
         ]
       },
@@ -1484,7 +1485,7 @@
       "effort": "1 week",
       "agent": "mpl-verus-header-parsing-proofs",
       "technical_name": "Discovery / MRDiscovery ARN (kms_ops.rs:96-102, :118, :144)",
-      "title": "Discovery modes should rewrite the Region only for multi-Region keys (BUG-04 rewrites every non-alias key ARN today)",
+      "title": "In the model, the two discovery modes accept the same records, but MRDiscovery rewrites the Region of single-Region keys too (BUG-04)",
       "threats": [
         "TM-MPL-007"
       ],
@@ -1492,31 +1493,49 @@
       "bugs": [
         "BUG-04"
       ],
-      "level": "not_started",
-      "proof": null,
+      "level": "model_partly",
+      "proof": {
+        "file": "verus-proofs/t17_discovery_arn_region.rs",
+        "state": "current"
+      },
       "card": {
-        "area": "The branch key store, in the two discovery modes that accept the key named in a record instead of one configured key.",
-        "risk": "In MRDiscovery mode the code rewrites the Region of every non-alias key ARN, including single-Region keys, where the spec says multi-Region keys only. KMS then rejects the request, so the request is refused (it fails closed). This is BUG-04 (open, rated Low) and threat TM-MPL-007.",
-        "checks_label": "What a proof would check",
-        "checks": "That Discovery mode accepts the record's ARN exactly when it parses and is not an alias. That MRDiscovery rewrites the Region only for multi-Region key ARNs. The docs expect the second check to fail today. It would pass once the code rewrites the Region only for multi-Region key ARNs (an mrk- check).",
-        "not_shown": "No proof exists yet, so nothing here is machine-checked. The docs list no further limits for this target.",
-        "result": "No proof exists yet, so there is no result.",
-        "notes": [],
-        "expected_failure_explanation": "",
+        "area": "The branch key store, when it reads a record in one of the two discovery modes. Discovery uses the KMS key ARN stored in the record as it is. MRDiscovery replaces the Region in that ARN with the configured Region. An ARN (Amazon Resource Name) is the identifier of a key. A Region is an AWS location such as us-east-1. A multi-Region key has copies in several Regions, and its key id starts with mrk-. An alias is a KMS name that points to a key. The functions are resolve_key_store_arn, reject_alias_arn, rewrite_arn_region and parse_arn, in kms_ops.rs and kms_config.rs.",
+        "risk": "The spec text conflicts with itself. Two sentences without a MUST (the spec's word for a required rule) say MRDiscovery changes the Region only for multi-Region keys. The one sentence with a MUST has no such limit, and the code follows that one. The code changes the Region for every key ARN that is not an alias. For a single-Region key in another Region, the new ARN is expected to name no existing key. BUG-04 and the threat model say KMS then refuses the request (it fails closed). That KMS step was inferred and not run. This is BUG-04 (open). The threat model lists TM-MPL-007. Its words: a Discovery or MRDiscovery setting decrypts a record under an alias or an attacker-region key. An attacker-region key is a key in a Region the attacker chose.",
+        "checks_label": "What the proof checks",
+        "checks": "Discovery returns the record's ARN unchanged exactly when the ARN parses and is not an alias. MRDiscovery accepts and rejects the same records. For every accepted record, MRDiscovery returns the ARN with only the Region replaced. That includes single-Region keys, which is the BUG-04 behavior. Part of this is a consistency check, because the model is written as that case split. The proof also states the intended rule: a key ARN that is not a multi-Region key comes back unchanged. That check fails on purpose. Its counterexample is a single-Region key ARN in us-east-1, which comes back with us-west-2. The failing check is the evidence of a real gap (BUG-04), not a broken proof.",
+        "not_shown": "It does not show that the shipped code has these properties. A person compared the model with kms_ops.rs by reading. It does not show that TM-MPL-007 is handled. Whether a record is genuine and what KMS does with the ARN are not modeled. It does not show that the fix proposed in BUG-04 is the right fix. It does not show that the returned ARN is the key id that KMS receives.",
+        "result": "Verus reports 47 passing checks and 1 failing check on a model of this code, not on the shipped code; the one failing check is the intentional one for BUG-04, not a broken proof.",
+        "notes": [
+          "The code has no multi-Region test on this arm. rewrite_arn_region rebuilds the ARN with the new Region for every ARN that passes the alias check. The only starts_with(\"key/mrk-\") test is in is_multi_region_arn (mrk_match.rs). The key store does not call it for the two discovery modes.",
+          "A model of the first fix in the BUG-04 report passes the same claim. That fix tests for mrk- before the rewrite. The counterexample goes away. The fix model is not code in the repository.",
+          "Spec conflict: the intended rule comes from two spec sentences that have no MUST, in branch-key-store.md. It also comes from the Dafny version of the library. Dafny is the language of the other implementation. The one sentence with a MUST has no multi-Region condition, and the code follows it literally.",
+          "Observation, not a gap: the fix test would miss a multi-Region key id that contains a colon, which the code rewrites today. Whether a real key id can look like that was not examined. Neither shipped discovery arm rejects an ARN whose service is not KMS. An s3 ARN is accepted, and MRDiscovery rewrites its Region."
+        ],
+        "expected_failure_explanation": "The failing check states the intended rule. A record that parses, is not an alias and is not a multi-Region key ARN should come back from MRDiscovery unchanged. That claim is false for the shipped arm. A single-Region key ARN in us-east-1 comes back with us-west-2. Verus rejects the claim and the proof gives this counterexample. A second check shows the claim is false and not only unproved. The check was left failing and was not weakened. It is the evidence of BUG-04. It is not a broken proof.",
         "sources": [
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T17",
-            "line": 1236
+            "line": 1259
+          },
+          {
+            "doc": "verus-proofs/README.md",
+            "locator": "## T17: Discovery and MrDiscovery ARN construction",
+            "line": 687
+          },
+          {
+            "doc": "docs/mpl-verification-targets.md",
+            "locator": "**T17, F1: MrDiscovery rewrites the region of every accepted ARN",
+            "line": 310
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 315
+            "line": 365
           }
         ]
       },
-      "docs_proof_status": "None yet"
+      "docs_proof_status": "Partly proved (model level, not the shipped code, under stated hypotheses): 47 verified, 1 errors"
     },
     {
       "id": "T18",
@@ -1529,37 +1548,55 @@
       "effort": "1 week",
       "agent": "mpl-verus-header-parsing-proofs",
       "technical_name": "version_key EC derivation (branch_key_store.rs:641, :706-722)",
-      "title": "Rotating a branch key keeps the record's context",
+      "title": "In the model, rotating a branch key changes only three entries of the context and keeps all others",
       "threats": [
         "TM-MPL-016"
       ],
       "threats_note": "",
       "bugs": [],
-      "level": "not_started",
-      "proof": null,
+      "level": "model_proved",
+      "proof": {
+        "file": "verus-proofs/t18_version_key_ec.rs",
+        "state": "current"
+      },
       "card": {
-        "area": "The branch key store, in the step that creates a new key version (version_key). It builds the contexts for the new decrypt-only record and the new active record.",
-        "risk": "If rotation dropped or changed a context value, the new records would not match the old key's identity. The threat in the threat model is TM-MPL-016 (version race).",
-        "checks_label": "What a proof would check",
-        "checks": "That the new decrypt-only context is the old one with the version and creation time changed. That the new active context is that one with the active type. That both keep the branch key id, KMS ARN, hierarchy version, table name and every custom entry, and that they agree with the shared builder functions.",
-        "not_shown": "No proof exists yet, so nothing here is machine-checked. DynamoDB transaction behavior is excluded. The docs note that version_key still builds the new contexts inline.",
-        "result": "No proof exists yet, so there is no result.",
-        "notes": [],
+        "area": "The branch key store, in version_key (branch_key_store.rs). Rotating a branch key creates a new key version. It writes two records: a new decrypt-only record and a new active record. Each record has an encryption context, a set of labelled text values that is bound to the key. version_key builds both new contexts inline from the old active context. A custom entry is a value the caller supplied. It is stored under a name that starts with aws-crypto-ec:.",
+        "risk": "If rotation dropped or changed a context value, the new records would no longer match the key's identity. The threat model lists TM-MPL-016, a bypass of the check that stops two rotations from overwriting each other's active record. It calls this an optimistic-lock bypass, or version race. The proof covers the context contents only, not the race.",
+        "checks_label": "What the proof checks",
+        "checks": "The model rewrites the old context in the code's order. In the new decrypt-only context, type becomes branch:version: plus the version, create-time becomes the new time, and version is removed. The new active context starts from that one. Its version becomes branch:version: plus the version, and its type becomes branch:ACTIVE. Every other entry is kept. These are the branch key id, KMS key identifier (ARN), hierarchy version, table name and all custom entries. Hierarchy version is a format number, 1 in every record that create_key writes. The two new records have different primary keys (the branch key id plus the record type, which DynamoDB uses to find a record). The active record keeps the primary key of the old active record. If the old context came from the builder functions, the new ones equal the builder output. Part of this is a consistency check against the spec item lists.",
+        "not_shown": "It does not show that the shipped code has these properties. A person compared the model with branch_key_store.rs by reading. It does not show that TM-MPL-016 is handled. The checks DynamoDB runs on each write, the race between two rotations, and the KMS step that authenticates the old record are not modeled. The format of the version and time is not modeled either. Whether the old record is genuine is the subject of T01.",
+        "result": "Verus reports 40 passing checks and 0 failing checks on a model of this code, not on the shipped code; no gap was found, and part is a consistency check against the spec text.",
+        "notes": [
+          "Observation, not a gap: attributes that the format does not name are copied unchanged into both new records. The spec is silent on this.",
+          "Observation, not a gap: hierarchy-version is the stored value. The spec writes the literal 1. They are equal for every record that create_key writes.",
+          "Observation, not a gap: one spec line says the KMS ARN is the configured KMS key. An earlier sentence says the stored ARN must not change. The code follows the second. They differ only when a multi-Region key (a KMS key with copies in other Regions) is configured under a different ARN.",
+          "Observation, not a gap: version_key does not check the old context, so a malformed old record is rotated as it is."
+        ],
         "expected_failure_explanation": "",
         "sources": [
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T18",
-            "line": 1280
+            "line": 1305
+          },
+          {
+            "doc": "verus-proofs/README.md",
+            "locator": "## T18: `version_key` encryption context derivation",
+            "line": 659
+          },
+          {
+            "doc": "docs/mpl-verification-targets.md",
+            "locator": "**T18: no gap found at model level.**",
+            "line": 305
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 315
+            "line": 365
           }
         ]
       },
-      "docs_proof_status": "None yet"
+      "docs_proof_status": "Proved (model level, not the shipped code, under stated hypotheses): 40 verified, 0 errors"
     },
     {
       "id": "T19",
@@ -1595,12 +1632,12 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T19",
-            "line": 1321
+            "line": 1348
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 315
+            "line": 365
           }
         ]
       },
@@ -1617,7 +1654,7 @@
       "effort": "1 week",
       "agent": "mpl-verus-header-parsing-proofs",
       "technical_name": "raw-AES provider-info codec (:129, :191)",
-      "title": "The raw AES provider-info format round-trips and parsing is total",
+      "title": "In the model, the raw AES provider info can be written and read back, and its parser handles any input without going out of range",
       "threats": [
         "TM-MPL-001",
         "TM-MPL-011",
@@ -1625,31 +1662,47 @@
       ],
       "threats_note": "",
       "bugs": [],
-      "level": "not_started",
-      "proof": null,
+      "level": "model_proved",
+      "proof": {
+        "file": "verus-proofs/t20_raw_aes_provider_info.rs",
+        "state": "current"
+      },
       "card": {
-        "area": "The raw AES keyring's small byte format that carries the IV inside the provider info of an encrypted data key.",
-        "risk": "A malformed or forged provider info could cause a parse error or a panic, or a wrong IV. The threats are TM-MPL-023, TM-MPL-011 and TM-MPL-001.",
-        "checks_label": "What a proof would check",
-        "checks": "That the writer produces the key name, then 128 and 12 as 4-byte numbers, then the IV. That the parser returns the IV exactly when the provider id equals the namespace and the info has that shape for a 12-byte IV. That writing and parsing round-trip and that parsing never fails with a crash.",
-        "not_shown": "No proof exists yet, so nothing here is machine-checked. The docs describe this as the parser half of T07 and list no further limits.",
-        "result": "No proof exists yet, so there is no result.",
-        "notes": [],
+        "area": "The raw AES keyring wraps (encrypts) the data key with an AES key that the caller holds. Each encrypted data key (EDK) carries a provider info field. This field holds the IV, the one-time value that AES-GCM needs for each wrap. AES-GCM is a standard way to encrypt and check data in one step. The check value it adds is the tag. serialize_provider_info writes the field and decryptable_edk_iv reads it back. Both are in raw_aes_keyring.rs. Each keyring has a namespace and a key name. It puts its namespace on each EDK as the provider id and keeps its key name in the provider info. A keyring ignores an EDK that has another namespace or key name.",
+        "risk": "A malformed or forged provider info could make the parser panic (crash) or return the wrong IV. The threat model lists TM-MPL-023 (panic on malformed input), TM-MPL-011 (IV reuse) and TM-MPL-001 (a provider id that impersonates a KMS keyring). The proof covers the byte format only.",
+        "checks_label": "What the proof checks",
+        "checks": "The writer produces the key name, the tag length (128, in bits), the IV length (12, in bytes) and then the IV. Each length is a 4-byte number. The parser returns the IV exactly when the provider id equals the namespace and the info has that shape. For a 12-byte IV, writing then parsing gives back the IV. An IV of any other length is never accepted. The model of the parser reads any provider id and any info without an out-of-range read, an overflow or a failed conversion. For 12-byte IVs, different names or IVs give different info. A keyring accepts another keyring's EDK exactly when the namespaces and key names are equal. Each rejection is checked on its own: wrong id, wrong length, wrong name, wrong tag-length field, wrong IV-length field. Part of this is a consistency check against a spec table typed by hand.",
+        "not_shown": "It does not show that the shipped code has these properties. A person compared the model with the code by reading, and a later edit to the code would not be noticed. It does not show that TM-MPL-023, TM-MPL-011 or TM-MPL-001 is handled. It does not show that IVs are random or unique (that is T07). It does not cover the rest of decryption: the ciphertext split, the AES-GCM call and the key length check. The AWS Encryption SDK (ESDK) header stores provider info with a 2-byte length. That is a different function and is not modeled.",
+        "result": "Verus reports 45 passing checks and 0 failing checks on a model of this code, not on the shipped code; no gap was found, and part is a consistency check against the spec text.",
+        "notes": [
+          "Observation, not a gap: serialize_provider_info checks the IV length only with debug_assert! (a check that runs in debug builds only). Its only caller passes a 12-byte IV, which a person read.",
+          "Observation, not a gap: an empty key name is accepted and works. The code takes the key name from the keyring and requires the total length to be exactly the name plus 20 bytes. That is stricter than the spec text."
+        ],
         "expected_failure_explanation": "",
         "sources": [
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T20",
-            "line": 1361
+            "line": 1388
+          },
+          {
+            "doc": "verus-proofs/README.md",
+            "locator": "## T20: raw AES keyring provider-info codec",
+            "line": 634
+          },
+          {
+            "doc": "docs/mpl-verification-targets.md",
+            "locator": "**T20: no gap found at model level.**",
+            "line": 300
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 315
+            "line": 365
           }
         ]
       },
-      "docs_proof_status": "None yet"
+      "docs_proof_status": "Proved (model level, not the shipped code, under stated hypotheses): 45 verified, 0 errors"
     },
     {
       "id": "T22",
@@ -1683,12 +1736,12 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T22",
-            "line": 1400
+            "line": 1429
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 315
+            "line": 365
           }
         ]
       },
@@ -1726,12 +1779,12 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T25",
-            "line": 1448
+            "line": 1477
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 315
+            "line": 365
           }
         ]
       },
@@ -1769,12 +1822,12 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T23",
-            "line": 1525
+            "line": 1554
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 315
+            "line": 365
           }
         ]
       },
@@ -1818,22 +1871,22 @@
           {
             "doc": "docs/mpl-verification-targets/01-threat-driven.md",
             "locator": "id: VR-2026-T24",
-            "line": 1562
+            "line": 1591
           },
           {
             "doc": "verus-proofs/README.md",
             "locator": "## T24: reserved `aws-kms` namespace",
-            "line": 394
+            "line": 400
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "**T24: no gap found at model level.**",
-            "line": 232
+            "line": 265
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 315
+            "line": 365
           }
         ]
       },
@@ -1881,17 +1934,17 @@
           {
             "doc": "verus-proofs/README.md",
             "locator": "## C08: cache usage counters",
-            "line": 431
+            "line": 437
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "**C08: no gap found at model level.**",
-            "line": 236
+            "line": 269
           },
           {
             "doc": "docs/mpl-verification-targets.md",
             "locator": "## 1. Combined ranked summary",
-            "line": 315
+            "line": 365
           }
         ]
       },
@@ -1905,7 +1958,7 @@
       "state": "current",
       "file_sha256_now": "824216521e4359431dbd44088b1a940ec84978796717c7edc6e2f34e235184f1",
       "file_sha256_at_run": "824216521e4359431dbd44088b1a940ec84978796717c7edc6e2f34e235184f1",
-      "run_at": "2026-11-20T18:19:15Z",
+      "run_at": "2026-11-23T01:03:47Z",
       "verified": 52,
       "errors": 0,
       "exit_code": 0,
@@ -1982,7 +2035,7 @@
       "state": "current",
       "file_sha256_now": "241f1cd133aa408d80214282fd7738447e2ded553bbea53cef9e8108224ba191",
       "file_sha256_at_run": "241f1cd133aa408d80214282fd7738447e2ded553bbea53cef9e8108224ba191",
-      "run_at": "2026-11-20T18:19:16Z",
+      "run_at": "2026-11-23T01:03:48Z",
       "verified": 21,
       "errors": 1,
       "exit_code": 1,
@@ -2016,7 +2069,7 @@
       "state": "current",
       "file_sha256_now": "d266597083141d47ebcdb19bd9a0798cdadac455ce99969391039ef0e7665c94",
       "file_sha256_at_run": "d266597083141d47ebcdb19bd9a0798cdadac455ce99969391039ef0e7665c94",
-      "run_at": "2026-11-20T18:19:11Z",
+      "run_at": "2026-11-23T01:03:43Z",
       "verified": 40,
       "errors": 0,
       "exit_code": 0,
@@ -2063,7 +2116,7 @@
       "state": "current",
       "file_sha256_now": "1cee411299d29a1ec729745da81c83ca002fbc01052ec0def1707ce12464e820",
       "file_sha256_at_run": "1cee411299d29a1ec729745da81c83ca002fbc01052ec0def1707ce12464e820",
-      "run_at": "2026-11-20T18:19:11Z",
+      "run_at": "2026-11-23T01:03:44Z",
       "verified": 21,
       "errors": 0,
       "exit_code": 0,
@@ -2105,7 +2158,7 @@
       "state": "current",
       "file_sha256_now": "7508a1090fe6902a9eca7bcf19c754a3a0228acf1a7190c753090899c6f15795",
       "file_sha256_at_run": "7508a1090fe6902a9eca7bcf19c754a3a0228acf1a7190c753090899c6f15795",
-      "run_at": "2026-11-20T18:19:16Z",
+      "run_at": "2026-11-23T01:03:49Z",
       "verified": 39,
       "errors": 0,
       "exit_code": 0,
@@ -2152,7 +2205,7 @@
       "state": "current",
       "file_sha256_now": "2e7b175f337b7f1239301fc6f1021c63d9b000bf2d3e51d1f0f47949dbb7c0a8",
       "file_sha256_at_run": "2e7b175f337b7f1239301fc6f1021c63d9b000bf2d3e51d1f0f47949dbb7c0a8",
-      "run_at": "2026-11-20T18:19:13Z",
+      "run_at": "2026-11-23T01:03:45Z",
       "verified": 65,
       "errors": 0,
       "exit_code": 0,
@@ -2259,7 +2312,7 @@
       "state": "current",
       "file_sha256_now": "9bef3d8ae2d91bd358557c170d1c11dd8a2725468235469e860ebe864fa2c0ab",
       "file_sha256_at_run": "9bef3d8ae2d91bd358557c170d1c11dd8a2725468235469e860ebe864fa2c0ab",
-      "run_at": "2026-11-20T18:19:17Z",
+      "run_at": "2026-11-23T01:03:50Z",
       "verified": 45,
       "errors": 0,
       "exit_code": 0,
@@ -2346,7 +2399,7 @@
       "state": "current",
       "file_sha256_now": "ee93828c47731a2c2bef1c020a53cb9e089f2c8cdde86d97cd541ab534d36261",
       "file_sha256_at_run": "ee93828c47731a2c2bef1c020a53cb9e089f2c8cdde86d97cd541ab534d36261",
-      "run_at": "2026-11-20T18:19:23Z",
+      "run_at": "2026-11-23T01:03:55Z",
       "verified": 42,
       "errors": 1,
       "exit_code": 1,
@@ -2410,7 +2463,7 @@
       "state": "current",
       "file_sha256_now": "986744de667b3fc939bc39285818fb82411a9b9cc04a876a1f5b7d1493b55cc0",
       "file_sha256_at_run": "986744de667b3fc939bc39285818fb82411a9b9cc04a876a1f5b7d1493b55cc0",
-      "run_at": "2026-11-20T18:19:18Z",
+      "run_at": "2026-11-23T01:03:51Z",
       "verified": 33,
       "errors": 0,
       "exit_code": 0,
@@ -2457,7 +2510,7 @@
       "state": "current",
       "file_sha256_now": "a21ec7e219eed1be289851a0ec71b9ce5367b7fa2a3c01e2f7401e3255ff16b6",
       "file_sha256_at_run": "a21ec7e219eed1be289851a0ec71b9ce5367b7fa2a3c01e2f7401e3255ff16b6",
-      "run_at": "2026-11-20T18:19:19Z",
+      "run_at": "2026-11-23T01:03:51Z",
       "verified": 28,
       "errors": 4,
       "exit_code": 1,
@@ -2571,7 +2624,7 @@
       "state": "current",
       "file_sha256_now": "17e34528cb23794cab1e3e94e226f5b842cc5199d67d6e8b95d8816deb469e18",
       "file_sha256_at_run": "17e34528cb23794cab1e3e94e226f5b842cc5199d67d6e8b95d8816deb469e18",
-      "run_at": "2026-11-20T18:19:20Z",
+      "run_at": "2026-11-23T01:03:53Z",
       "verified": 55,
       "errors": 1,
       "exit_code": 1,
@@ -2650,7 +2703,7 @@
       "state": "current",
       "file_sha256_now": "7b1e3492fce0293484e87a509b12b8a1d10fa18b399a6b4d0168937b974bf68e",
       "file_sha256_at_run": "7b1e3492fce0293484e87a509b12b8a1d10fa18b399a6b4d0168937b974bf68e",
-      "run_at": "2026-11-20T18:19:21Z",
+      "run_at": "2026-11-23T01:03:54Z",
       "verified": 20,
       "errors": 0,
       "exit_code": 0,
@@ -2717,7 +2770,7 @@
       "state": "current",
       "file_sha256_now": "f21902c0dac5cf7b4eff00a30b9059e0ea093853a767343183624b16101d546f",
       "file_sha256_at_run": "f21902c0dac5cf7b4eff00a30b9059e0ea093853a767343183624b16101d546f",
-      "run_at": "2026-11-20T18:19:12Z",
+      "run_at": "2026-11-23T01:03:44Z",
       "verified": 24,
       "errors": 0,
       "exit_code": 0,
@@ -2849,7 +2902,7 @@
       "state": "current",
       "file_sha256_now": "f4ac8ddd77869ef116bfcc2c9c747463416f845aea39b6b2ae434a6c844aaa9f",
       "file_sha256_at_run": "f4ac8ddd77869ef116bfcc2c9c747463416f845aea39b6b2ae434a6c844aaa9f",
-      "run_at": "2026-11-20T18:19:12Z",
+      "run_at": "2026-11-23T01:03:45Z",
       "verified": 22,
       "errors": 0,
       "exit_code": 0,
@@ -2946,12 +2999,235 @@
       ]
     },
     {
+      "target": "T17",
+      "file": "verus-proofs/t17_discovery_arn_region.rs",
+      "state": "current",
+      "file_sha256_now": "7edf03a65e12c7a56026d80388f1bb25c49d4242f060dc093730bfe9c8191fcc",
+      "file_sha256_at_run": "7edf03a65e12c7a56026d80388f1bb25c49d4242f060dc093730bfe9c8191fcc",
+      "run_at": "2026-11-23T01:03:58Z",
+      "verified": 47,
+      "errors": 1,
+      "exit_code": 1,
+      "verus_output_line": "verification results:: 47 verified, 1 errors",
+      "failing_obligations": [
+        {
+          "function": "lemma_bug04_region_rewritten_only_for_mrk_EXPECTED_FAIL",
+          "line": 1343
+        }
+      ],
+      "expected_failures": [
+        "lemma_bug04_region_rewritten_only_for_mrk_EXPECTED_FAIL"
+      ],
+      "unexpected_failures": [],
+      "expected_failures_not_seen": [],
+      "docs_result_line": "verification results:: 47 verified, 1 errors",
+      "docs_match_run": true,
+      "level": "model_partly",
+      "failure_explanation": "The failing check states the intended rule. A record that parses, is not an alias and is not a multi-Region key ARN should come back from MRDiscovery unchanged. That claim is false for the shipped arm. A single-Region key ARN in us-east-1 comes back with us-west-2. Verus rejects the claim and the proof gives this counterexample. A second check shows the claim is false and not only unproved. The check was left failing and was not weakened. It is the evidence of BUG-04. It is not a broken proof.",
+      "hypotheses": [
+        {
+          "name": "A_STR",
+          "kind": "assumed",
+          "text": "Strings behave as sequences of characters in the model. Byte and character splits agree because the relevant text is ASCII."
+        },
+        {
+          "name": "A_STD",
+          "kind": "assumed",
+          "text": "The models of splitn, split, split_once and format! follow the documented behavior of Rust. Verus has no specs for them."
+        },
+        {
+          "name": "A_ALLOC",
+          "kind": "assumed",
+          "text": "Allocating the output vector succeeds."
+        },
+        {
+          "name": "A_VSTD",
+          "kind": "assumed",
+          "text": "Verus's standard-library specs for vectors, slices and arrays are correct."
+        },
+        {
+          "name": "A_MRK_SPEC",
+          "kind": "assumed",
+          "text": "The proof's test for a multi-Region key ARN (service kms, resource type key, id starts with mrk-) is the proof author's reading of the spec file aws-kms-key-arn.md. It is not code."
+        },
+        {
+          "name": "A_FIX_MODEL",
+          "kind": "assumed",
+          "text": "The model of the fix follows the first option written in the BUG-04 report. It is not code in the repository."
+        },
+        {
+          "name": "H_MODEL_MATCH",
+          "kind": "code_reading",
+          "text": "The model equals the shipped code at the lines named in the proof file header. A person checked this by reading."
+        },
+        {
+          "name": "H_REGION_CFG",
+          "kind": "code_reading",
+          "text": "The configured Region has no colon. The MRDiscovery builder only checks that a Region was set. The Region-rewrite checks need this. A person read it."
+        },
+        {
+          "name": "H_CALLER",
+          "kind": "code_reading",
+          "text": "The callers pass only the returned value as the KMS key id. A person read this."
+        }
+      ]
+    },
+    {
+      "target": "T18",
+      "file": "verus-proofs/t18_version_key_ec.rs",
+      "state": "current",
+      "file_sha256_now": "00779f944e2bf5ba57b8ea7edec7564020f42b36b3932f0d4b85f0d727a9f78f",
+      "file_sha256_at_run": "00779f944e2bf5ba57b8ea7edec7564020f42b36b3932f0d4b85f0d727a9f78f",
+      "run_at": "2026-11-23T01:03:59Z",
+      "verified": 40,
+      "errors": 0,
+      "exit_code": 0,
+      "verus_output_line": "verification results:: 40 verified, 0 errors",
+      "failing_obligations": [],
+      "expected_failures": [],
+      "unexpected_failures": [],
+      "expected_failures_not_seen": [],
+      "docs_result_line": "verification results:: 40 verified, 0 errors",
+      "docs_match_run": true,
+      "level": "model_proved",
+      "failure_explanation": "",
+      "hypotheses": [
+        {
+          "name": "A_STR",
+          "kind": "assumed",
+          "text": "Strings behave as sequences of characters in the model. Byte and character splits agree because the relevant text is ASCII."
+        },
+        {
+          "name": "A_MAP",
+          "kind": "assumed",
+          "text": "Insert, remove, get and clone on the sorted map type (BTreeMap) behave like the matching operations on a mathematical map. These are standard library contracts. Verus has no spec for them over strings."
+        },
+        {
+          "name": "A_ITER",
+          "kind": "assumed",
+          "text": "Walking through a map visits each key exactly once. Only the builder-agreement checks use this."
+        },
+        {
+          "name": "A_COPY",
+          "kind": "assumed",
+          "text": "The blocks marked COPIED in the proof file equal the text of the T01 and C01 proofs. A script compares them. Verus does not."
+        },
+        {
+          "name": "H_MODEL_MATCH",
+          "kind": "code_reading",
+          "text": "The model equals the shipped code at the lines named in the proof file header. A person checked this by reading."
+        },
+        {
+          "name": "H_ONLY_THESE_OPS",
+          "kind": "code_reading",
+          "text": "No other statement changes the two new contexts between their creation and the two calls that make the records. So the model covers the whole derivation."
+        },
+        {
+          "name": "H_OLD_EC",
+          "kind": "code_reading",
+          "text": "The old context is the one built from the fetched record, and it is moved into the new decrypt-only context. A person read this."
+        },
+        {
+          "name": "H_NO_ENC",
+          "kind": "code_reading",
+          "text": "The attributes of the fetched record do not include the enc entry, which is held separately. Only the check on the written attributes uses this."
+        },
+        {
+          "name": "H_SORT_KEY",
+          "kind": "code_reading",
+          "text": "The record is fetched by branch key id and type branch:ACTIVE, so the type of the fetched item is branch:ACTIVE. This is DynamoDB behavior and is not checked."
+        },
+        {
+          "name": "H_ITEM",
+          "kind": "assumed",
+          "text": "item_from_ec_and_enc skips the table name and writes the other context entries as attributes. It is taken from the T01 and C01 proofs."
+        },
+        {
+          "name": "H_OLD_BUILT",
+          "kind": "assumed",
+          "text": "The old active context was made by the builder functions. Only the builder-agreement checks need this. It holds for records written by create_key (T01). For records from another writer it is not shown."
+        }
+      ]
+    },
+    {
+      "target": "T20",
+      "file": "verus-proofs/t20_raw_aes_provider_info.rs",
+      "state": "current",
+      "file_sha256_now": "4d012ab053c69574da151c31eb8e3304074eaaf4c76663f2f340276a063b6913",
+      "file_sha256_at_run": "4d012ab053c69574da151c31eb8e3304074eaaf4c76663f2f340276a063b6913",
+      "run_at": "2026-11-23T01:04:00Z",
+      "verified": 45,
+      "errors": 0,
+      "exit_code": 0,
+      "verus_output_line": "verification results:: 45 verified, 0 errors",
+      "failing_obligations": [],
+      "expected_failures": [],
+      "unexpected_failures": [],
+      "expected_failures_not_seen": [],
+      "docs_result_line": "verification results:: 45 verified, 0 errors",
+      "docs_match_run": true,
+      "level": "model_proved",
+      "failure_explanation": "",
+      "hypotheses": [
+        {
+          "name": "A_BYTES",
+          "kind": "assumed",
+          "text": "Key names, provider ids and provider info are any sequences of bytes in the model. Every Rust string is one, so the results cover all strings."
+        },
+        {
+          "name": "A_STD",
+          "kind": "assumed",
+          "text": "The Rust functions split_at, try_into, to_be_bytes, from_be_bytes and slice comparison behave as documented. Verus has no specs for them."
+        },
+        {
+          "name": "A_NONCE",
+          "kind": "assumed",
+          "text": "A wrong-length IV makes aes_decrypt return an error and not panic. It is read from prim/src/lib.rs. It appears only in a comment, and no theorem uses it."
+        },
+        {
+          "name": "H_MODEL_MATCH",
+          "kind": "code_reading",
+          "text": "The model equals the shipped code at the lines named in the proof file header. A person checked this by reading."
+        },
+        {
+          "name": "H_NO_OVERFLOW",
+          "kind": "code_reading",
+          "text": "The conditions that the executable models require, such as no number overflowing, hold at the real call sites. A person checked this by reading."
+        },
+        {
+          "name": "H_CALLER_IV",
+          "kind": "code_reading",
+          "text": "The only caller of serialize_provider_info passes a 12-byte IV. A person read this."
+        },
+        {
+          "name": "H_ONLY_CALLER_DECODE",
+          "kind": "code_reading",
+          "text": "The only caller of decryptable_edk_iv is the keyring's decrypt step. A person read this."
+        },
+        {
+          "name": "H_IV_FLOW",
+          "kind": "code_reading",
+          "text": "The same IV goes to the encryption call and into the provider info. The IV read back goes to the decryption call. A person read this."
+        },
+        {
+          "name": "H_ALG_CONSTANTS",
+          "kind": "code_reading",
+          "text": "All three wrapping algorithms use a 12-byte IV and a 16-byte tag. A person read this."
+        },
+        {
+          "name": "H_NO_OTHER_READER",
+          "kind": "code_reading",
+          "text": "Nothing else reads this layout. A person searched for it."
+        }
+      ]
+    },
+    {
       "target": "T24",
       "file": "verus-proofs/t24_raw_aes_namespace.rs",
       "state": "current",
       "file_sha256_now": "5079d2fa38e8ea851025fbff988566d00c23dbfa9f9efb4be0352724c2bca585",
       "file_sha256_at_run": "5079d2fa38e8ea851025fbff988566d00c23dbfa9f9efb4be0352724c2bca585",
-      "run_at": "2026-11-20T18:19:23Z",
+      "run_at": "2026-11-23T01:04:01Z",
       "verified": 19,
       "errors": 0,
       "exit_code": 0,
@@ -3033,7 +3309,7 @@
       "state": "current",
       "file_sha256_now": "898a969dcbd0eb033d17e0c695bf38125d2eeb73d8859724c59a4a2f6bbde2c6",
       "file_sha256_at_run": "898a969dcbd0eb033d17e0c695bf38125d2eeb73d8859724c59a4a2f6bbde2c6",
-      "run_at": "2026-11-20T18:19:13Z",
+      "run_at": "2026-11-23T01:03:46Z",
       "verified": 20,
       "errors": 0,
       "exit_code": 0,
@@ -3134,8 +3410,8 @@
       "related_targets": [
         {
           "id": "T20",
-          "level": "not_started",
-          "state": null
+          "level": "model_proved",
+          "state": "current"
         },
         {
           "id": "T24",
@@ -3269,8 +3545,8 @@
       "related_targets": [
         {
           "id": "T17",
-          "level": "not_started",
-          "state": null
+          "level": "model_partly",
+          "state": "current"
         }
       ],
       "bugs": [
@@ -3362,8 +3638,8 @@
         },
         {
           "id": "T20",
-          "level": "not_started",
-          "state": null
+          "level": "model_proved",
+          "state": "current"
         }
       ],
       "bugs": [
@@ -3469,8 +3745,8 @@
       "related_targets": [
         {
           "id": "T18",
-          "level": "not_started",
-          "state": null
+          "level": "model_proved",
+          "state": "current"
         }
       ],
       "bugs": []
@@ -3626,8 +3902,8 @@
         },
         {
           "id": "T20",
-          "level": "not_started",
-          "state": null
+          "level": "model_proved",
+          "state": "current"
         }
       ],
       "bugs": [
@@ -3727,7 +4003,7 @@
         {
           "doc": "docs/mpl-verification-targets.md",
           "locator": "BUG-01 confirmed formally (T06)",
-          "line": 222
+          "line": 255
         }
       ]
     },
@@ -3811,18 +4087,23 @@
         "T17"
       ],
       "priority_doc": "3 – Medium",
-      "plain": "One discovery mode rewrites the Region of every KMS key ARN, including single-Region keys. KMS then rejects the request, so the request is refused (it fails closed).",
+      "plain": "One discovery mode rewrites the Region of every key ARN that is not an alias, including single-Region keys. For a key in another Region, KMS is expected to refuse the request (it fails closed). That KMS step was inferred and not run.",
       "proof_relation": {
-        "kind": "none",
-        "target": "",
-        "text": "Target T17 would state the rule. No proof yet. The T03 proof does not cover discovery modes.",
-        "status": ""
+        "kind": "confirmed_by_model_proof",
+        "target": "T17",
+        "text": "The T17 model proof shows that MRDiscovery rewrites the Region of a single-Region key ARN. The intentional failing check is the evidence. Model level only.",
+        "status": "confirmed (current run)"
       },
       "sources": [
         {
           "doc": "docs/mpl-bug-reports/BUG-04-mrdiscovery-rewrites-non-mrk-arn-region.md",
           "locator": "# BUG-04",
           "line": 1
+        },
+        {
+          "doc": "docs/mpl-bug-reports/BUG-04-mrdiscovery-rewrites-non-mrk-arn-region.md",
+          "locator": "## Formal check (T17)",
+          "line": 132
         }
       ]
     },
@@ -3894,7 +4175,7 @@
         {
           "doc": "docs/mpl-verification-targets.md",
           "locator": "BUG-06 confirmed formally (T13)",
-          "line": 214
+          "line": 247
         }
       ]
     },
@@ -3934,7 +4215,7 @@
         {
           "doc": "docs/mpl-verification-targets.md",
           "locator": "BUG-07(a), prim side (C03, VR-014; not on this branch)",
-          "line": 269
+          "line": 319
         }
       ]
     },
@@ -3970,7 +4251,7 @@
         {
           "doc": "docs/mpl-verification-targets.md",
           "locator": "**BUG-08 (C01).**",
-          "line": 267
+          "line": 317
         }
       ]
     },
@@ -4169,32 +4450,48 @@
     {
       "term": "UUID",
       "text": "A 16-byte identifier, written as 36 characters of hex digits and hyphens, for example 41424344-4546-4748-494a-4b4c4d4e4f50. The branch key store uses one as the version of a branch key."
+    },
+    {
+      "term": "Provider info and IV",
+      "text": "Provider info is a field of an encrypted data key (EDK). It tells a keyring how the key was wrapped. For the raw AES keyring it holds the IV, the one-time value that AES-GCM needs for each wrap."
+    },
+    {
+      "term": "Rotating a branch key",
+      "text": "Rotation creates a new version of a branch key. The old version stays in the table as a decrypt-only record, and a new active record is written. The function is version_key."
+    },
+    {
+      "term": "ARN, Region and multi-Region key",
+      "text": "An ARN (Amazon Resource Name) is the identifier of an AWS resource such as a KMS key. A Region is an AWS location such as us-east-1. A multi-Region key (MRK) has copies in several Regions. Its key id starts with mrk-."
+    },
+    {
+      "term": "Discovery and MRDiscovery",
+      "text": "Two settings of the key store that decrypt with the key named in the record instead of one configured key. MRDiscovery also replaces the Region in that key's ARN with the configured Region."
     }
   ],
   "sources": [
     {
       "path": "docs/mpl-verification-targets.md",
-      "sha256": "d69f54a2ca9ca781bb5567b10638ec1ce6ad7d328e5bc6aec9a3a4009067aa3f"
+      "sha256": "094293348c8aec7c82ef672cf523dc1541f8b6ac60db90df6af79b1ad014624b"
     },
     {
       "path": "docs/mpl-verification-targets/01-threat-driven.md",
-      "sha256": "b63cabef865e21252953b51288b2e22015a93816f005156d60060aa64d20dce0"
+      "sha256": "fd4d901cdb0df3ef4a2e9966703bb60471f3e5535363ff00c277576c4651b2d8"
     },
     {
       "path": "docs/mpl-verification-targets/02-capability-driven.md",
-      "sha256": "77d965d970d2fe72eb28e9c5b4a7f882a89cef52188387adffc5c78162bf82cb"
+      "sha256": "5db8e8f7ec5a2694b01ac5ea0889ffd056bb617e598ba591bab2d43e0d0dd356"
     },
     {
       "path": "docs/mpl-threat-model.md",
-      "sha256": "9bb91244179148813060876429a983249ceb334094744fe70c703c146680f187"
+      "sha256": "3f0f08c450088a0df7edde4188d4d6920224f98969b9d4f9711f8226aee0d7cd"
     },
     {
       "path": "docs/mpl-bug-reports/README.md",
-      "sha256": "1bfef4890212b781187e67a20a5c6fd3625675f296f6d2e8aef62ca6764c6271"
+      "sha256": "e51dcdeee86583099676041b4dc253e878bd9aed95817396eab910771fa13cd5"
     },
     {
       "path": "verus-proofs/README.md",
-      "sha256": "d8d222d47267114a3fc223a6654f05ab951d34354b84df2f527e22e2f316ff18"
+      "sha256": "913e324727e5c9c4b28e674c82a158d194414ac2c0dad17815d9b2c7d0671dc5"
     },
     {
       "path": "verus-proofs/README-t03-t05.md",
@@ -4257,6 +4554,18 @@
       "sha256": "f4ac8ddd77869ef116bfcc2c9c747463416f845aea39b6b2ae434a6c844aaa9f"
     },
     {
+      "path": "verus-proofs/t17_discovery_arn_region.rs",
+      "sha256": "7edf03a65e12c7a56026d80388f1bb25c49d4242f060dc093730bfe9c8191fcc"
+    },
+    {
+      "path": "verus-proofs/t18_version_key_ec.rs",
+      "sha256": "00779f944e2bf5ba57b8ea7edec7564020f42b36b3932f0d4b85f0d727a9f78f"
+    },
+    {
+      "path": "verus-proofs/t20_raw_aes_provider_info.rs",
+      "sha256": "4d012ab053c69574da151c31eb8e3304074eaaf4c76663f2f340276a063b6913"
+    },
+    {
       "path": "verus-proofs/t24_raw_aes_namespace.rs",
       "sha256": "5079d2fa38e8ea851025fbff988566d00c23dbfa9f9efb4be0352724c2bca585"
     },
@@ -4266,7 +4575,7 @@
     },
     {
       "path": "dashboard/plain-english.json",
-      "sha256": "91802fe6f2bb81612bb03d9bc33c94bd097b7ab9cf4e988bf99b23922bc92fce"
+      "sha256": "8dcfc502fb555c6aef121ce4316e973921b299867568d93a7bfa14632f8e97ca"
     }
   ]
 }
