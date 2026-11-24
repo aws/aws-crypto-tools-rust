@@ -267,8 +267,6 @@ jobs:
       spec-command: scripts/resolve-spec.sh
       spec-root: .
       artifact-name: esdk-test-server-duvet
-    secrets:
-      repo-pat: ${{ secrets.COMMONS_REPO_PAT }}
 
   mpl-test-server-duvet:
     name: MPL TestServer duvet annotations
@@ -474,8 +472,6 @@ jobs:
       local-tests: ${{ matrix.local-tests }}
       crate: ${{ matrix.crate }}
       artifacts: ${{ matrix.artifacts }}
-    secrets:
-      repo-pat: ${{ secrets.COMMONS_REPO_PAT }}
 
   # Mutation testing: does some test fail when the library code is changed in small ways?
   # A pull request mutates only the lines it changes and fails if one of those mutants survives.
@@ -501,8 +497,6 @@ jobs:
       server: ${{ matrix.server }}
       commons-ref: lucmcdon/test-server-infra
       aws-role-arn: arn:aws:iam::370957321024:role/GitHub-CI-Public-ESDK-Dafny-Role-us-west-2
-    secrets:
-      repo-pat: ${{ secrets.COMMONS_REPO_PAT }}
 
   # Benchmarks only upload to CloudWatch on the daily run.
   # Not in pr-ci-all-required, so a slow or noisy benchmark can't block a merge.
