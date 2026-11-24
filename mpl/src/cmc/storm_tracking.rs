@@ -229,8 +229,8 @@ impl StormTrackingCmc {
     }
 
     /// Acquire the state mutex, prune inflight entries that have exceeded
-    /// `in_flight_ttl` (skipping `skip_key` so the caller's own TTL check
-    /// still fires against a fresh view of that key), and return the guard.
+    /// `in_flight_ttl` (skipping `skip_key`, whose mark the caller checks
+    /// itself), and return the guard.
     ///
     /// All non-observability state-touching paths use this helper so
     /// pruning stays uniform across the classifier, the wait loop, and
@@ -317,12 +317,6 @@ impl StormTrackingCmc {
                         }
                     }
                     Some(inflight_t) => {
-                        let elapsed = now.duration_since(inflight_t).unwrap_or(Duration::ZERO);
-
-                        if elapsed > self.inner.in_flight_ttl {
-                            return Err(in_flight_ttl_exceeded());
-                        }
-
                         if within_grace_interval(inflight_t, now, self.inner.grace_interval) {
                             // Another thread is fetching; wait until it
                             // completes or its grace interval elapses.
