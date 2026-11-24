@@ -303,6 +303,7 @@ jobs:
     if: fromJSON(needs.detect.outputs.jobs)['api-examples'] != null
     permissions:
       contents: read
+      pull-requests: write
     uses: ./.github/workflows/api_examples.yml
 
   test-server-builds:
