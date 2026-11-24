@@ -287,8 +287,6 @@ jobs:
       spec-command: scripts/resolve-spec.sh
       spec-root: .
       artifact-name: mpl-test-server-duvet
-    secrets:
-      repo-pat: ${{ secrets.COMMONS_REPO_PAT }}
 
   # 100% of new lines must be covered by tests.
   # Coverage is measured against the PR's base branch, so it only runs on PRs.
