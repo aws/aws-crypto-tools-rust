@@ -144,7 +144,8 @@ jobs:
               ],
               "duvet": [
                 {"when": "esdk", "name": "esdk", "project": "esdk", "artifact": "esdk-duvet-report", "test-server-duvet": "esdk-test-server-duvet"},
-                {"when": "esdk", "name": "aws-esdk-cpp", "project": "esdk/shims/aws-esdk-cpp", "artifact": "aws-esdk-cpp-duvet-report"}
+                {"when": "esdk", "name": "aws-esdk-cpp", "project": "esdk/shims/aws-esdk-cpp", "artifact": "aws-esdk-cpp-duvet-report"},
+                {"when": "mpl", "name": "mpl", "project": "mpl", "artifact": "mpl-duvet-report", "test-server-duvet": "mpl-test-server-duvet"}
               ],
               "test-server-builds": [
                 {"when": "esdk-test-server", "name": "esdk-test-server", "server": "esdk/test-server", "runner": "codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}"},
@@ -267,6 +268,26 @@ jobs:
       spec-root: .
       artifact-name: esdk-test-server-duvet
 
+  mpl-test-server-duvet:
+    name: MPL TestServer duvet annotations
+    needs: detect
+    if: fromJSON(needs.detect.outputs.jobs)['duvet'] != null
+    permissions:
+      contents: read
+      # The reusable workflow's resolve job reads this pull request's
+      # Test-Server-Override lines.
+      pull-requests: read
+    uses: aws/aws-crypto-tools-commons/.github/workflows/test-server-duvet-reusable.yml@main
+    with:
+      runner: *codebuild-linux
+      commons-ref: main
+      product: mpl
+      language: rust
+      config-path: mpl/test-server
+      spec-command: scripts/resolve-spec.sh
+      spec-root: .
+      artifact-name: mpl-test-server-duvet
+
   # 100% of new lines must be covered by tests.
   # Coverage is measured against the PR's base branch, so it only runs on PRs.
   coverage:
@@ -298,7 +319,7 @@ jobs:
 
   duvet:
     name: Duvet
-    needs: [detect, test-server-duvet]
+    needs: [detect, test-server-duvet, mpl-test-server-duvet]
     if: fromJSON(needs.detect.outputs.jobs)['duvet'] != null
     permissions:
       contents: read
@@ -546,6 +567,7 @@ jobs:
       - coverage
       - cpp-shim
       - test-server-duvet
+      - mpl-test-server-duvet
       - cpp-coverage
       - duvet
       - smithy-conformance
