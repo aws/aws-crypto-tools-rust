@@ -6,7 +6,7 @@ use aws_esdk::{Client, Config, Error};
 
 #[test]
 fn builder() -> Result<(), Error> {
-    // api-example: api=client way=builder takes=none kind=pass
+    // api-example: api=client way=builder kind=pass have="a few settings"
     // snippet-start
     let esdk_client = Client::builder()
         .commitment_policy(CommitmentPolicy::RequireEncryptRequireDecrypt)
@@ -23,7 +23,7 @@ fn builder() -> Result<(), Error> {
 
 #[test]
 fn from_conf() -> Result<(), Error> {
-    // api-example: api=client way=from_conf takes=Config kind=pass
+    // api-example: api=client way=from_conf takes=Config kind=pass have="a config"
     // snippet-start
     let config = Config::builder().max_encrypted_data_keys(3).build()?;
     let esdk_client = Client::from_conf(config);
@@ -42,7 +42,7 @@ fn from_conf() -> Result<(), Error> {
 
 #[test]
 fn default() -> Result<(), Error> {
-    // api-example: api=client way=default takes=none kind=pass
+    // api-example: api=client way=default kind=pass have="nothing"
     // snippet-start
     let esdk_client = Client::default();
     // snippet-end
@@ -60,7 +60,7 @@ fn default() -> Result<(), Error> {
 
 #[test]
 fn commitment_policy() -> Result<(), Error> {
-    // api-example: api=client way=commitment_policy takes=CommitmentPolicy kind=pass
+    // api-example: api=client way=commitment_policy takes=CommitmentPolicy kind=pass have="one of the listed choices"
     // snippet-start
     let esdk_client = Client::builder()
         .commitment_policy(CommitmentPolicy::RequireEncryptAllowDecrypt)
@@ -71,7 +71,7 @@ fn commitment_policy() -> Result<(), Error> {
         CommitmentPolicy::RequireEncryptAllowDecrypt
     );
 
-    // api-example: api=client way=set_commitment_policy takes=Option<CommitmentPolicy> kind=pass
+    // api-example: api=client way=set_commitment_policy takes=Option<CommitmentPolicy> kind=pass have="a value that may be missing"
     // snippet-start
     let commitment_policy: Option<CommitmentPolicy> =
         Some(CommitmentPolicy::RequireEncryptAllowDecrypt);
@@ -84,7 +84,7 @@ fn commitment_policy() -> Result<(), Error> {
         esdk_client.config().commitment_policy()
     );
 
-    // api-example: api=client way=commitment_policy kind=omitted
+    // api-example: api=client way=commitment_policy kind=omitted have="nothing"
     // snippet-start
     let esdk_client = Client::builder().build()?;
     // snippet-end
@@ -97,13 +97,13 @@ fn commitment_policy() -> Result<(), Error> {
 
 #[test]
 fn max_encrypted_data_keys() -> Result<(), Error> {
-    // api-example: api=client way=max_encrypted_data_keys takes=usize kind=pass
+    // api-example: api=client way=max_encrypted_data_keys takes=usize kind=pass have="a number"
     // snippet-start
     let esdk_client = Client::builder().max_encrypted_data_keys(3).build()?;
     // snippet-end
     assert_eq!(esdk_client.config().max_encrypted_data_keys(), Some(3));
 
-    // api-example: api=client way=set_max_encrypted_data_keys takes=Option<usize> kind=pass
+    // api-example: api=client way=set_max_encrypted_data_keys takes=Option<usize> kind=pass have="a value that may be missing"
     // snippet-start
     let max_encrypted_data_keys: Option<usize> = Some(3);
     let mut client_builder = Client::builder();
@@ -115,7 +115,7 @@ fn max_encrypted_data_keys() -> Result<(), Error> {
         esdk_client.config().max_encrypted_data_keys()
     );
 
-    // api-example: api=client way=max_encrypted_data_keys kind=omitted
+    // api-example: api=client way=max_encrypted_data_keys kind=omitted have="nothing"
     // snippet-start
     let esdk_client = Client::builder().build()?;
     // snippet-end

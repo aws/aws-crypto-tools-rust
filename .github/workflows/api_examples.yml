@@ -1,5 +1,5 @@
 # Reusable workflow: list every way to build each keyring, CMM and the ESDK client,
-# then check that the tests in mpl/tests and esdk/tests have an example of each.
+# then check that the api_examples tests in mpl and esdk have an example of each.
 # The commons workflow uploads api-examples.json for the API examples dashboard.
 name: API examples
 
@@ -8,7 +8,7 @@ on:
 
 jobs:
   discover:
-    name: List the public API
+    name: Run the examples and list the public API
     runs-on: codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}
     permissions:
       contents: read
@@ -26,6 +26,16 @@ jobs:
           workspaces: |
             mpl
             esdk
+
+      # The dashboard links to this run as proof that the snippets compile and pass,
+      # so the surfaces are only uploaded after these tests pass.
+      - name: Run the MPL API examples
+        working-directory: mpl
+        run: cargo test --test api_examples
+
+      - name: Run the ESDK API examples
+        working-directory: esdk
+        run: cargo test --test api_examples
 
       # rustdoc JSON is a nightly-only output.
       - name: Install nightly Rust
@@ -56,9 +66,9 @@ jobs:
       matrix:
         include:
           - library: mpl
-            src: mpl/tests
+            src: mpl/tests/api_examples
           - library: esdk
-            src: esdk/tests
+            src: esdk/tests/api_examples
     permissions:
       contents: read
     uses: aws/aws-crypto-tools-commons/.github/workflows/api-examples.yml@lucmcdon/api-examples

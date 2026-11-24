@@ -54,7 +54,7 @@ async fn assert_same_key(encrypting_keyring: &RawAesKeyring, decrypting_keyring:
 #[tokio::test]
 async fn builder() -> Result<(), Error> {
     let wrapping_key = wrapping_key_from_secret_store();
-    // api-example: api=raw-aes-keyring way=builder takes=none kind=pass
+    // api-example: api=raw-aes-keyring way=builder kind=pass have="bytes from a secret store"
     // snippet-start
     let raw_aes_keyring = RawAesKeyring::builder()
         .key_namespace("my-key-namespace")
@@ -71,7 +71,7 @@ async fn builder() -> Result<(), Error> {
 async fn key_namespace() -> Result<(), Error> {
     let wrapping_key = wrapping_key_from_secret_store();
     let app_config = app_config();
-    // api-example: api=raw-aes-keyring way=key_namespace takes=&str kind=pass
+    // api-example: api=raw-aes-keyring way=key_namespace takes=&str kind=pass have="a string"
     // snippet-start
     let raw_aes_keyring = RawAesKeyring::builder()
         .key_namespace("my-key-namespace")
@@ -82,7 +82,7 @@ async fn key_namespace() -> Result<(), Error> {
     // snippet-end
     assert_eq!(raw_aes_keyring.key_namespace(), "my-key-namespace");
 
-    // api-example: api=raw-aes-keyring way=key_namespace takes=String kind=pass
+    // api-example: api=raw-aes-keyring way=key_namespace takes=String kind=pass have="a string from your config"
     // snippet-start
     let key_namespace: String = app_config.key_namespace;
     let raw_aes_keyring_from_string = RawAesKeyring::builder()
@@ -94,7 +94,7 @@ async fn key_namespace() -> Result<(), Error> {
     // snippet-end
     assert_same_key(&raw_aes_keyring, &raw_aes_keyring_from_string).await;
 
-    // api-example: api=raw-aes-keyring way=set_key_namespace takes=Option<String> kind=pass
+    // api-example: api=raw-aes-keyring way=set_key_namespace takes=Option<String> kind=pass have="a value that may be missing"
     // snippet-start
     let key_namespace: Option<String> = Some("my-key-namespace".to_string());
     let raw_aes_keyring_from_option = RawAesKeyring::builder()
@@ -122,7 +122,7 @@ async fn key_namespace() -> Result<(), Error> {
 async fn key_name() -> Result<(), Error> {
     let wrapping_key = wrapping_key_from_secret_store();
     let app_config = app_config();
-    // api-example: api=raw-aes-keyring way=key_name takes=&str kind=pass
+    // api-example: api=raw-aes-keyring way=key_name takes=&str kind=pass have="a string"
     // snippet-start
     let raw_aes_keyring = RawAesKeyring::builder()
         .key_namespace("my-key-namespace")
@@ -133,7 +133,7 @@ async fn key_name() -> Result<(), Error> {
     // snippet-end
     assert_eq!(raw_aes_keyring.key_name(), "my-key-name");
 
-    // api-example: api=raw-aes-keyring way=key_name takes=String kind=pass
+    // api-example: api=raw-aes-keyring way=key_name takes=String kind=pass have="a string from your config"
     // snippet-start
     let key_name: String = app_config.key_name;
     let raw_aes_keyring_from_string = RawAesKeyring::builder()
@@ -145,7 +145,7 @@ async fn key_name() -> Result<(), Error> {
     // snippet-end
     assert_same_key(&raw_aes_keyring, &raw_aes_keyring_from_string).await;
 
-    // api-example: api=raw-aes-keyring way=set_key_name takes=Option<String> kind=pass
+    // api-example: api=raw-aes-keyring way=set_key_name takes=Option<String> kind=pass have="a value that may be missing"
     // snippet-start
     let key_name: Option<String> = Some("my-key-name".to_string());
     let raw_aes_keyring_from_option = RawAesKeyring::builder()
@@ -171,7 +171,7 @@ async fn key_name() -> Result<(), Error> {
 
 #[tokio::test]
 async fn wrapping_key() -> Result<(), Error> {
-    // api-example: api=raw-aes-keyring way=wrapping_key takes=Vec<u8> kind=pass
+    // api-example: api=raw-aes-keyring way=wrapping_key takes=Vec<u8> kind=pass have="bytes from a secret store"
     // snippet-start
     let wrapping_key: Vec<u8> = wrapping_key_from_secret_store();
     let raw_aes_keyring = RawAesKeyring::builder()
@@ -183,7 +183,7 @@ async fn wrapping_key() -> Result<(), Error> {
     // snippet-end
 
     let key_bytes = wrapping_key_from_secret_store();
-    // api-example: api=raw-aes-keyring way=wrapping_key takes=&[u8] kind=pass
+    // api-example: api=raw-aes-keyring way=wrapping_key takes=&[u8] kind=pass have="bytes in memory"
     // snippet-start
     let wrapping_key: &[u8] = &key_bytes;
     let raw_aes_keyring_from_slice = RawAesKeyring::builder()
@@ -195,7 +195,7 @@ async fn wrapping_key() -> Result<(), Error> {
     // snippet-end
     assert_same_key(&raw_aes_keyring, &raw_aes_keyring_from_slice).await;
 
-    // api-example: api=raw-aes-keyring way=set_wrapping_key takes=Option<Vec<u8>> kind=pass
+    // api-example: api=raw-aes-keyring way=set_wrapping_key takes=Option<Vec<u8>> kind=pass have="a value that may be missing"
     // snippet-start
     let wrapping_key: Option<Vec<u8>> = Some(wrapping_key_from_secret_store());
     let raw_aes_keyring_from_option = RawAesKeyring::builder()
@@ -234,7 +234,7 @@ async fn wrapping_key() -> Result<(), Error> {
 #[tokio::test]
 async fn wrapping_alg() -> Result<(), Error> {
     let wrapping_key = wrapping_key_from_secret_store();
-    // api-example: api=raw-aes-keyring way=wrapping_alg takes=AesWrappingAlg kind=pass
+    // api-example: api=raw-aes-keyring way=wrapping_alg takes=AesWrappingAlg kind=pass have="one of the listed choices"
     // snippet-start
     let raw_aes_keyring = RawAesKeyring::builder()
         .key_namespace("my-key-namespace")
@@ -248,7 +248,7 @@ async fn wrapping_alg() -> Result<(), Error> {
         AesWrappingAlg::AlgAes256GcmIv12Tag16
     );
 
-    // api-example: api=raw-aes-keyring way=set_wrapping_alg takes=Option<AesWrappingAlg> kind=pass
+    // api-example: api=raw-aes-keyring way=set_wrapping_alg takes=Option<AesWrappingAlg> kind=pass have="a value that may be missing"
     // snippet-start
     let wrapping_alg: Option<AesWrappingAlg> = Some(AesWrappingAlg::AlgAes256GcmIv12Tag16);
     let raw_aes_keyring_from_option = RawAesKeyring::builder()

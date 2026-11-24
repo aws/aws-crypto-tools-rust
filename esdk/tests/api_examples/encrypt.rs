@@ -11,7 +11,7 @@ use aws_esdk::{Client, Error};
 async fn encrypt() -> Result<(), Error> {
     let esdk_client = Client::default();
     let raw_aes_keyring = raw_aes_keyring();
-    // api-example: api=encrypt way=encrypt takes=none kind=pass
+    // api-example: api=encrypt way=encrypt kind=pass have="bytes in memory and a keyring"
     // snippet-start
     let plaintext = b"my secret data";
     let encrypt_output = esdk_client
@@ -29,7 +29,7 @@ async fn encrypt() -> Result<(), Error> {
 async fn plaintext() -> Result<(), Error> {
     let esdk_client = Client::default();
     let raw_aes_keyring = raw_aes_keyring();
-    // api-example: api=encrypt way=plaintext takes=&[u8] kind=pass
+    // api-example: api=encrypt way=plaintext takes=&[u8] kind=pass have="bytes in memory"
     // snippet-start
     let plaintext: &[u8] = b"my secret data";
     let encrypt_output = esdk_client
@@ -41,7 +41,7 @@ async fn plaintext() -> Result<(), Error> {
     // snippet-end
     assert_eq!(decrypt(encrypt_output.ciphertext()).await?, plaintext);
 
-    // api-example: api=encrypt way=set_plaintext takes=Option<&[u8]> kind=pass
+    // api-example: api=encrypt way=set_plaintext takes=Option<&[u8]> kind=pass have="a value that may be missing"
     // snippet-start
     let plaintext: Option<&[u8]> = Some(b"my secret data");
     let encrypt_output = esdk_client
@@ -69,7 +69,7 @@ async fn encryption_context() -> Result<(), Error> {
     let esdk_client = Client::default();
     let raw_aes_keyring = raw_aes_keyring();
     let app_config = app_config();
-    // api-example: api=encrypt way=encryption_context takes=&str kind=pass
+    // api-example: api=encrypt way=encryption_context takes=&str kind=pass have="a few pairs"
     // snippet-start
     let encrypt_output = esdk_client
         .encrypt()
@@ -84,7 +84,7 @@ async fn encryption_context() -> Result<(), Error> {
         Some("my-tenant")
     );
 
-    // api-example: api=encrypt way=encryption_context takes=String kind=pass
+    // api-example: api=encrypt way=encryption_context takes=String kind=pass have="a string from your config"
     // snippet-start
     let tenant: String = app_config.tenant;
     let encrypt_output_from_string = esdk_client
@@ -102,7 +102,7 @@ async fn encryption_context() -> Result<(), Error> {
         encrypt_output.encryption_context().get("tenant")
     );
 
-    // api-example: api=encrypt way=set_encryption_context takes=Option<EncryptionContext> kind=pass
+    // api-example: api=encrypt way=set_encryption_context takes=Option<EncryptionContext> kind=pass have="a map"
     // snippet-start
     let encryption_context = EncryptionContext::from([("tenant", "my-tenant")]);
     let encrypt_output_from_option = esdk_client
@@ -120,7 +120,7 @@ async fn encryption_context() -> Result<(), Error> {
         encrypt_output.encryption_context().get("tenant")
     );
 
-    // api-example: api=encrypt way=encryption_context kind=omitted
+    // api-example: api=encrypt way=encryption_context kind=omitted have="nothing"
     // snippet-start
     let encrypt_output = esdk_client
         .encrypt()
@@ -137,7 +137,7 @@ async fn encryption_context() -> Result<(), Error> {
 async fn algorithm_suite_id() -> Result<(), Error> {
     let esdk_client = Client::default();
     let raw_aes_keyring = raw_aes_keyring();
-    // api-example: api=encrypt way=algorithm_suite_id takes=AlgorithmSuiteId kind=pass
+    // api-example: api=encrypt way=algorithm_suite_id takes=AlgorithmSuiteId kind=pass have="one of the listed choices"
     // snippet-start
     let encrypt_output = esdk_client
         .encrypt()
@@ -152,7 +152,7 @@ async fn algorithm_suite_id() -> Result<(), Error> {
         AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey
     );
 
-    // api-example: api=encrypt way=set_algorithm_suite_id takes=Option<AlgorithmSuiteId> kind=pass
+    // api-example: api=encrypt way=set_algorithm_suite_id takes=Option<AlgorithmSuiteId> kind=pass have="a value that may be missing"
     // snippet-start
     let algorithm_suite_id: Option<AlgorithmSuiteId> =
         Some(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey);
@@ -170,7 +170,7 @@ async fn algorithm_suite_id() -> Result<(), Error> {
     );
 
     // The default suite for the default commitment policy signs the message.
-    // api-example: api=encrypt way=algorithm_suite_id kind=omitted
+    // api-example: api=encrypt way=algorithm_suite_id kind=omitted have="nothing"
     // snippet-start
     let encrypt_output = esdk_client
         .encrypt()
@@ -204,7 +204,7 @@ async fn frame_length() -> Result<(), Error> {
     let esdk_client = Client::default();
     let raw_aes_keyring = raw_aes_keyring();
     let plaintext = vec![0x42; 10_000];
-    // api-example: api=encrypt way=frame_length takes=u32 kind=pass
+    // api-example: api=encrypt way=frame_length takes=u32 kind=pass have="a number"
     // snippet-start
     let encrypt_output = esdk_client
         .encrypt()
@@ -216,7 +216,7 @@ async fn frame_length() -> Result<(), Error> {
     // snippet-end
     assert_eq!(decrypt(encrypt_output.ciphertext()).await?, plaintext);
 
-    // api-example: api=encrypt way=set_frame_length takes=Option<u32> kind=pass
+    // api-example: api=encrypt way=set_frame_length takes=Option<u32> kind=pass have="a value that may be missing"
     // snippet-start
     let frame_length: Option<u32> = Some(1024);
     let encrypt_output_from_option = esdk_client
@@ -233,7 +233,7 @@ async fn frame_length() -> Result<(), Error> {
         encrypt_output.ciphertext().len()
     );
 
-    // api-example: api=encrypt way=frame_length kind=omitted
+    // api-example: api=encrypt way=frame_length kind=omitted have="nothing"
     // snippet-start
     let encrypt_output_default_frames = esdk_client
         .encrypt()
@@ -263,7 +263,7 @@ async fn frame_length() -> Result<(), Error> {
 async fn keyring() -> Result<(), Error> {
     let esdk_client = Client::default();
     let raw_aes_keyring = raw_aes_keyring();
-    // api-example: api=encrypt way=keyring takes=RawAesKeyring kind=pass
+    // api-example: api=encrypt way=keyring takes=RawAesKeyring kind=pass have="a keyring"
     // snippet-start
     let encrypt_output = esdk_client
         .encrypt()
@@ -277,7 +277,7 @@ async fn keyring() -> Result<(), Error> {
         b"my secret data"
     );
 
-    // api-example: api=encrypt way=set_keyring takes=Option<RawAesKeyring> kind=pass
+    // api-example: api=encrypt way=set_keyring takes=Option<RawAesKeyring> kind=pass have="a keyring"
     // snippet-start
     let encrypt_output = esdk_client
         .encrypt()
@@ -291,7 +291,7 @@ async fn keyring() -> Result<(), Error> {
         b"my secret data"
     );
 
-    // api-example: api=encrypt way=keyring kind=omitted
+    // api-example: api=encrypt way=keyring kind=omitted have="nothing"
     // snippet-start
     let default_cmm = DefaultCmm::new(raw_aes_keyring.clone());
     let encrypt_output = esdk_client
@@ -325,7 +325,7 @@ async fn keyring() -> Result<(), Error> {
 async fn cmm() -> Result<(), Error> {
     let esdk_client = Client::default();
     let raw_aes_keyring = raw_aes_keyring();
-    // api-example: api=encrypt way=cmm takes=DefaultCmm kind=pass
+    // api-example: api=encrypt way=cmm takes=DefaultCmm kind=pass have="a CMM"
     // snippet-start
     let default_cmm = DefaultCmm::new(raw_aes_keyring.clone());
     let encrypt_output = esdk_client
@@ -340,7 +340,7 @@ async fn cmm() -> Result<(), Error> {
         b"my secret data"
     );
 
-    // api-example: api=encrypt way=set_cmm takes=Option<SharedCmm> kind=pass
+    // api-example: api=encrypt way=set_cmm takes=Option<SharedCmm> kind=pass have="a value that may be missing"
     // snippet-start
     let cmm: Option<SharedCmm> = Some(SharedCmm::new(DefaultCmm::new(raw_aes_keyring.clone())));
     let encrypt_output = esdk_client
@@ -355,7 +355,7 @@ async fn cmm() -> Result<(), Error> {
         b"my secret data"
     );
 
-    // api-example: api=encrypt way=cmm kind=omitted
+    // api-example: api=encrypt way=cmm kind=omitted have="nothing"
     // snippet-start
     let encrypt_output = esdk_client
         .encrypt()

@@ -34,7 +34,7 @@ impl BranchKeyIdSupplier for TenantBranchKeyIdSupplier {
 #[tokio::test]
 async fn builder() -> Result<(), Error> {
     let dynamodb_key_store = dynamodb_key_store().await;
-    // api-example: api=hierarchical-keyring way=builder takes=none kind=pass
+    // api-example: api=hierarchical-keyring way=builder kind=pass have="a key store"
     // snippet-start
     let hierarchical_keyring = HierarchicalKeyring::builder()
         .key_store(dynamodb_key_store)
@@ -53,7 +53,7 @@ async fn builder() -> Result<(), Error> {
 #[tokio::test]
 async fn key_store() -> Result<(), Error> {
     let dynamodb_key_store = dynamodb_key_store().await;
-    // api-example: api=hierarchical-keyring way=key_store takes=DynamoDbKeyStore kind=pass
+    // api-example: api=hierarchical-keyring way=key_store takes=DynamoDbKeyStore kind=pass have="a key store"
     // snippet-start
     let hierarchical_keyring = HierarchicalKeyring::builder()
         .key_store(dynamodb_key_store.clone())
@@ -71,7 +71,7 @@ async fn key_store() -> Result<(), Error> {
         .to_string();
     assert_eq!(logical_key_store_name, "KeyStoreDdbTable");
 
-    // api-example: api=hierarchical-keyring way=set_key_store takes=Option<SharedKeyStore> kind=pass
+    // api-example: api=hierarchical-keyring way=set_key_store takes=Option<SharedKeyStore> kind=pass have="a value that may be missing"
     // snippet-start
     let key_store: Option<SharedKeyStore> = Some(SharedKeyStore::new(dynamodb_key_store));
     let hierarchical_keyring = HierarchicalKeyring::builder()
@@ -105,7 +105,7 @@ async fn key_store() -> Result<(), Error> {
 #[tokio::test]
 async fn ttl() -> Result<(), Error> {
     let dynamodb_key_store = dynamodb_key_store().await;
-    // api-example: api=hierarchical-keyring way=ttl takes=Duration kind=pass
+    // api-example: api=hierarchical-keyring way=ttl takes=Duration kind=pass have="a duration"
     // snippet-start
     let hierarchical_keyring = HierarchicalKeyring::builder()
         .key_store(dynamodb_key_store.clone())
@@ -116,7 +116,7 @@ async fn ttl() -> Result<(), Error> {
     // snippet-end
     assert_eq!(hierarchical_keyring.ttl(), Duration::from_secs(600));
 
-    // api-example: api=hierarchical-keyring way=set_ttl takes=Option<Duration> kind=pass
+    // api-example: api=hierarchical-keyring way=set_ttl takes=Option<Duration> kind=pass have="a value that may be missing"
     // snippet-start
     let ttl: Option<Duration> = Some(Duration::from_secs(600));
     let hierarchical_keyring_from_option = HierarchicalKeyring::builder()
@@ -158,7 +158,7 @@ async fn ttl() -> Result<(), Error> {
 async fn branch_key_id() -> Result<(), Error> {
     let dynamodb_key_store = dynamodb_key_store().await;
     let app_config = app_config();
-    // api-example: api=hierarchical-keyring way=branch_key_id takes=&str kind=pass
+    // api-example: api=hierarchical-keyring way=branch_key_id takes=&str kind=pass have="a string"
     // snippet-start
     let hierarchical_keyring = HierarchicalKeyring::builder()
         .key_store(dynamodb_key_store.clone())
@@ -172,7 +172,7 @@ async fn branch_key_id() -> Result<(), Error> {
         Some("my-branch-key-id")
     );
 
-    // api-example: api=hierarchical-keyring way=branch_key_id takes=String kind=pass
+    // api-example: api=hierarchical-keyring way=branch_key_id takes=String kind=pass have="a string from your config"
     // snippet-start
     let branch_key_id: String = app_config.branch_key_id;
     let hierarchical_keyring_from_string = HierarchicalKeyring::builder()
@@ -187,7 +187,7 @@ async fn branch_key_id() -> Result<(), Error> {
         hierarchical_keyring.branch_key_id()
     );
 
-    // api-example: api=hierarchical-keyring way=set_branch_key_id takes=Option<String> kind=pass
+    // api-example: api=hierarchical-keyring way=set_branch_key_id takes=Option<String> kind=pass have="a value that may be missing"
     // snippet-start
     let branch_key_id: Option<String> = Some("my-branch-key-id".to_string());
     let hierarchical_keyring_from_option = HierarchicalKeyring::builder()
@@ -202,7 +202,7 @@ async fn branch_key_id() -> Result<(), Error> {
         hierarchical_keyring.branch_key_id()
     );
 
-    // api-example: api=hierarchical-keyring way=branch_key_id kind=omitted
+    // api-example: api=hierarchical-keyring way=branch_key_id kind=omitted have="nothing"
     // snippet-start
     let hierarchical_keyring = HierarchicalKeyring::builder()
         .key_store(dynamodb_key_store.clone())
@@ -230,7 +230,7 @@ async fn branch_key_id() -> Result<(), Error> {
 #[tokio::test]
 async fn branch_key_id_supplier() -> Result<(), Error> {
     let dynamodb_key_store = dynamodb_key_store().await;
-    // api-example: api=hierarchical-keyring way=branch_key_id_supplier takes=BranchKeyIdSupplier kind=pass
+    // api-example: api=hierarchical-keyring way=branch_key_id_supplier takes=BranchKeyIdSupplier kind=pass have="a branch key ID supplier"
     // snippet-start
     let hierarchical_keyring = HierarchicalKeyring::builder()
         .key_store(dynamodb_key_store.clone())
@@ -241,7 +241,7 @@ async fn branch_key_id_supplier() -> Result<(), Error> {
     // snippet-end
     assert!(hierarchical_keyring.branch_key_id_supplier().is_some());
 
-    // api-example: api=hierarchical-keyring way=set_branch_key_id_supplier takes=Option<SharedBranchKeyIdSupplier> kind=pass
+    // api-example: api=hierarchical-keyring way=set_branch_key_id_supplier takes=Option<SharedBranchKeyIdSupplier> kind=pass have="a value that may be missing"
     // snippet-start
     let supplier: Option<SharedBranchKeyIdSupplier> =
         Some(SharedBranchKeyIdSupplier::new(TenantBranchKeyIdSupplier));
@@ -254,7 +254,7 @@ async fn branch_key_id_supplier() -> Result<(), Error> {
     // snippet-end
     assert!(hierarchical_keyring.branch_key_id_supplier().is_some());
 
-    // api-example: api=hierarchical-keyring way=branch_key_id_supplier kind=omitted
+    // api-example: api=hierarchical-keyring way=branch_key_id_supplier kind=omitted have="nothing"
     // snippet-start
     let hierarchical_keyring = HierarchicalKeyring::builder()
         .key_store(dynamodb_key_store)
@@ -272,7 +272,7 @@ async fn branch_key_id_supplier() -> Result<(), Error> {
 #[tokio::test]
 async fn cache() -> Result<(), Error> {
     let dynamodb_key_store = dynamodb_key_store().await;
-    // api-example: api=hierarchical-keyring way=cache takes=DefaultCmc kind=pass
+    // api-example: api=hierarchical-keyring way=cache takes=DefaultCmc kind=pass have="a cache"
     // snippet-start
     let default_cmc = DefaultCmc::builder().entry_capacity(100).build()?;
     let hierarchical_keyring = HierarchicalKeyring::builder()
@@ -284,7 +284,7 @@ async fn cache() -> Result<(), Error> {
         .await?;
     // snippet-end
 
-    // api-example: api=hierarchical-keyring way=cache takes=LocalCmc kind=pass
+    // api-example: api=hierarchical-keyring way=cache takes=LocalCmc kind=pass have="a cache"
     // snippet-start
     let local_cmc = LocalCmc::builder().entry_capacity(100).build()?;
     let hierarchical_keyring = HierarchicalKeyring::builder()
@@ -296,7 +296,7 @@ async fn cache() -> Result<(), Error> {
         .await?;
     // snippet-end
 
-    // api-example: api=hierarchical-keyring way=cache takes=StormTrackingCmc kind=pass
+    // api-example: api=hierarchical-keyring way=cache takes=StormTrackingCmc kind=pass have="a cache"
     // snippet-start
     let storm_tracking_cmc = StormTrackingCmc::builder().entry_capacity(100).build()?;
     let hierarchical_keyring = HierarchicalKeyring::builder()
@@ -308,7 +308,7 @@ async fn cache() -> Result<(), Error> {
         .await?;
     // snippet-end
 
-    // api-example: api=hierarchical-keyring way=set_cache takes=Option<SharedCmc> kind=pass
+    // api-example: api=hierarchical-keyring way=set_cache takes=Option<SharedCmc> kind=pass have="a value that may be missing"
     // snippet-start
     let cache: Option<SharedCmc> = Some(SharedCmc::new(
         DefaultCmc::builder().entry_capacity(100).build()?,
@@ -322,7 +322,7 @@ async fn cache() -> Result<(), Error> {
         .await?;
     // snippet-end
 
-    // api-example: api=hierarchical-keyring way=cache kind=omitted
+    // api-example: api=hierarchical-keyring way=cache kind=omitted have="nothing"
     // snippet-start
     let hierarchical_keyring = HierarchicalKeyring::builder()
         .key_store(dynamodb_key_store.clone())
@@ -357,7 +357,7 @@ async fn cache() -> Result<(), Error> {
 async fn partition_id() -> Result<(), Error> {
     let dynamodb_key_store = dynamodb_key_store().await;
     let app_config = app_config();
-    // api-example: api=hierarchical-keyring way=partition_id takes=&str kind=pass
+    // api-example: api=hierarchical-keyring way=partition_id takes=&str kind=pass have="a string"
     // snippet-start
     let hierarchical_keyring = HierarchicalKeyring::builder()
         .key_store(dynamodb_key_store.clone())
@@ -368,7 +368,7 @@ async fn partition_id() -> Result<(), Error> {
         .await?;
     // snippet-end
 
-    // api-example: api=hierarchical-keyring way=partition_id takes=String kind=pass
+    // api-example: api=hierarchical-keyring way=partition_id takes=String kind=pass have="a string from your config"
     // snippet-start
     let partition_id: String = app_config.partition_id;
     let hierarchical_keyring = HierarchicalKeyring::builder()
@@ -380,7 +380,7 @@ async fn partition_id() -> Result<(), Error> {
         .await?;
     // snippet-end
 
-    // api-example: api=hierarchical-keyring way=set_partition_id takes=Option<String> kind=pass
+    // api-example: api=hierarchical-keyring way=set_partition_id takes=Option<String> kind=pass have="a value that may be missing"
     // snippet-start
     let partition_id: Option<String> = Some("my-partition-id".to_string());
     let hierarchical_keyring = HierarchicalKeyring::builder()
@@ -392,7 +392,7 @@ async fn partition_id() -> Result<(), Error> {
         .await?;
     // snippet-end
 
-    // api-example: api=hierarchical-keyring way=partition_id kind=omitted
+    // api-example: api=hierarchical-keyring way=partition_id kind=omitted have="nothing"
     // snippet-start
     let hierarchical_keyring = HierarchicalKeyring::builder()
         .key_store(dynamodb_key_store)
