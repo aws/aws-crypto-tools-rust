@@ -17,6 +17,7 @@
 //! and says what each one means.
 //! The code around each block is setup and assertions, which the dashboard does not show.
 
+mod aws_kms_keyring;
 mod default_cmm;
 mod hierarchical_keyring;
 mod raw_aes_keyring;

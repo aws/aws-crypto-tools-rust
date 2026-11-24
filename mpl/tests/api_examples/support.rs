@@ -11,11 +11,11 @@ pub use aws_crypto_mpl::cmm::DefaultCmm;
 pub use aws_crypto_mpl::key_store::types::KmsConfiguration;
 pub use aws_crypto_mpl::key_store::{DynamoDbKeyStore, SharedKeyStore};
 pub use aws_crypto_mpl::keyring::{
-    BranchKeyIdSupplier, GetBranchKeyIdInput, GetBranchKeyIdOutput, HierarchicalKeyring,
-    RawAesKeyring, SharedBranchKeyIdSupplier,
+    AwsKmsKeyring, BranchKeyIdSupplier, GetBranchKeyIdInput, GetBranchKeyIdOutput,
+    HierarchicalKeyring, RawAesKeyring, SharedBranchKeyIdSupplier,
 };
 pub use aws_crypto_mpl::types::AesWrappingAlg;
-pub use aws_crypto_mpl::{Error, async_trait, aws_sdk_dynamodb, aws_sdk_kms};
+pub use aws_crypto_mpl::{Error, async_trait, aws_config, aws_sdk_dynamodb, aws_sdk_kms};
 
 /// Stands in for settings that the customer's application loads.
 pub struct AppConfig {
@@ -23,6 +23,8 @@ pub struct AppConfig {
     pub key_name: String,
     pub branch_key_id: String,
     pub partition_id: String,
+    pub kms_key_arn: String,
+    pub grant_token: String,
 }
 
 pub fn app_config() -> AppConfig {
@@ -31,6 +33,9 @@ pub fn app_config() -> AppConfig {
         key_name: "my-key-name".to_string(),
         branch_key_id: "my-branch-key-id".to_string(),
         partition_id: "my-partition-id".to_string(),
+        kms_key_arn: "arn:aws:kms:us-west-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab"
+            .to_string(),
+        grant_token: "my-grant-token".to_string(),
     }
 }
 
@@ -40,7 +45,7 @@ pub fn wrapping_key_from_secret_store() -> Vec<u8> {
 }
 
 /// The tests never call AWS, so the clients have a fixed region and no credentials.
-fn kms_client() -> aws_sdk_kms::Client {
+pub fn make_kms_client() -> aws_sdk_kms::Client {
     let config = aws_sdk_kms::Config::builder()
         .region(aws_sdk_kms::config::Region::new("us-west-2"))
         .behavior_version(aws_sdk_kms::config::BehaviorVersion::latest())
@@ -64,7 +69,7 @@ pub async fn make_dynamodb_key_store() -> DynamoDbKeyStore {
         .kms_configuration(KmsConfiguration::kms_key_arn(
             "arn:aws:kms:us-west-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab",
         ))
-        .kms_client(kms_client())
+        .kms_client(make_kms_client())
         .ddb_client(dynamodb_client())
         .build()
         .await

@@ -33,7 +33,7 @@ COMPONENT_GROUPS = [("Keyrings", "SharedKeyring"), ("CMMs", "SharedCmm")]
 OPERATIONS = ["encrypt", "decrypt"]
 
 # Words that the display name spells in capitals.
-ACRONYMS = {"aes": "AES", "kms": "KMS", "cmm": "CMM", "rsa": "RSA", "ecdh": "ECDH", "mrk": "MRK"}
+ACRONYMS = {"aws": "AWS", "aes": "AES", "kms": "KMS", "cmm": "CMM", "rsa": "RSA", "ecdh": "ECDH", "mrk": "MRK"}
 
 
 def words(type_name):
