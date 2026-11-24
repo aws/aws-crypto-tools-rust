@@ -1,0 +1,72 @@
+# Reusable workflow: list every way to build each keyring, CMM and the ESDK client,
+# then check that the tests in mpl/tests and esdk/tests have an example of each.
+# The commons workflow uploads api-examples.json for the API examples dashboard.
+name: API examples
+
+on:
+  workflow_call:
+
+jobs:
+  discover:
+    name: List the public API
+    runs-on: codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: ./.github/actions/setup-rust
+        with:
+          workspaces: |
+            mpl
+            esdk
+
+      # rustdoc JSON is a nightly-only output.
+      - name: Install nightly Rust
+        run: rustup toolchain install nightly --profile minimal
+
+      - name: List the public API
+        run: python3 scripts/api-examples/surface.py "$RUNNER_TEMP/surface"
+
+      - name: Upload the MPL surface
+        uses: actions/upload-artifact@v7
+        with:
+          name: rust-api-surface-mpl
+          path: ${{ runner.temp }}/surface/mpl/surface.json
+          if-no-files-found: error
+
+      - name: Upload the ESDK surface
+        uses: actions/upload-artifact@v7
+        with:
+          name: rust-api-surface-esdk
+          path: ${{ runner.temp }}/surface/esdk/surface.json
+          if-no-files-found: error
+
+  examples:
+    name: Examples (${{ matrix.library }})
+    needs: discover
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - library: mpl
+            src: mpl/tests
+          - library: esdk
+            src: esdk/tests
+    permissions:
+      contents: read
+    uses: aws/aws-crypto-tools-commons/.github/workflows/api-examples.yml@lucmcdon/api-examples
+    with:
+      library: ${{ matrix.library }}
+      language: rust
+      surface-artifact: rust-api-surface-${{ matrix.library }}
+      surface-path: surface.json
+      src: ${{ matrix.src }}
+      commons-ref: lucmcdon/api-examples
+      runner: codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}
