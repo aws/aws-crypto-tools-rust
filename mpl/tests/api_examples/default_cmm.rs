@@ -1,21 +1,16 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-use std::time::Duration;
-
-use super::{dynamodb_key_store, raw_aes_keyring};
-use aws_crypto_mpl::Error;
-use aws_crypto_mpl::cmm::DefaultCmm;
-use aws_crypto_mpl::keyring::HierarchicalKeyring;
+use super::support::*;
 use aws_crypto_mpl::types::{CommitmentPolicy, EncryptionContext, EsdkCommitmentPolicy};
 
 #[tokio::test]
 async fn new_with_raw_aes_keyring() -> Result<(), Error> {
-    // api-example: api=default-cmm way=new takes=RawAesKeyring kind=pass have="a keyring"
-    // snippet-start
-    let raw_aes_keyring = raw_aes_keyring();
+    // api-example: api=default-cmm frame way=new
+    let raw_aes_keyring = make_raw_aes_keyring();
+    // api-example: call
     let default_cmm = DefaultCmm::new(raw_aes_keyring);
-    // snippet-end
+    // api-example: end
     // The materials carry one encrypted data key, which the raw AES keyring wrapped.
     let materials = default_cmm
         .get_encryption_materials()
@@ -38,9 +33,8 @@ async fn new_with_raw_aes_keyring() -> Result<(), Error> {
 #[allow(unused_variables)]
 #[tokio::test]
 async fn new_with_hierarchical_keyring() -> Result<(), Error> {
-    let dynamodb_key_store = dynamodb_key_store().await;
-    // api-example: api=default-cmm way=new takes=HierarchicalKeyring kind=pass have="a keyring"
-    // snippet-start
+    let dynamodb_key_store = make_dynamodb_key_store().await;
+    // api-example: api=default-cmm way=new have="a hierarchical keyring" takes=HierarchicalKeyring
     let hierarchical_keyring = HierarchicalKeyring::builder()
         .key_store(dynamodb_key_store)
         .branch_key_id("my-branch-key-id")
@@ -48,6 +42,6 @@ async fn new_with_hierarchical_keyring() -> Result<(), Error> {
         .build()
         .await?;
     let default_cmm = DefaultCmm::new(hierarchical_keyring);
-    // snippet-end
+    // api-example: end
     Ok(())
 }

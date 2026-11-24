@@ -10,3 +10,7 @@
 
 # Resolved spec dependency
 /spec/
+
+# Written in CI by aws-crypto-tools-commons' api-examples/combos.py
+/mpl/tests/api_example_combos.rs
+/esdk/tests/api_example_combos.rs
