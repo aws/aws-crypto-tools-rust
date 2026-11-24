@@ -11,7 +11,7 @@ endif
 
 LINK_LIBS = $(STATICLIB) -lpthread -ldl $(PLATFORM_LIBS)
 
-CXXFLAGS_COMMON = -Iinclude -std=c++17
+CXXFLAGS_COMMON = -Iinclude -I$(PROFILE_DIR)/include -std=c++17
 COV_CXXFLAGS ?=
 
 example: examples/basic_hierarchical_keyring_example.cpp include/aws/esdk/EncryptionSDK.h src/lib.rs $(STATICLIB)
@@ -67,7 +67,7 @@ adopt_keyring_test: tests/adopt_keyring_test.cpp tests/esdk_test_support.h inclu
 custom_keyring_example: examples/custom-keyring/src/lib.rs examples/custom-keyring/example.cpp include/aws/esdk/EncryptionSDK.h src/lib.rs
 	cd examples/custom-keyring && cargo build
 	$(CXX) examples/custom-keyring/example.cpp \
-		-Iinclude \
+		-Iinclude -Iexamples/custom-keyring/target/debug/include \
 		examples/custom-keyring/target/debug/libcustom_keyring_example.a \
 		-lpthread -ldl $(PLATFORM_LIBS) \
 		-std=c++17 \
@@ -101,8 +101,7 @@ test_resource_leaks: tests/test_resource_leaks.cpp tests/esdk_test_support.h inc
 # This test runs during compilation (static asserts)
 enum_parity: enum_parity_test.cpp include/aws/esdk/EncryptionSDK.h src/lib.rs $(STATICLIB)
 	$(CXX) -c enum_parity_test.cpp \
-		-Itarget/cxxbridge -Iinclude \
-		-std=c++17 \
+		-Itarget/cxxbridge $(CXXFLAGS_COMMON) \
 		-o enum_parity_test.o
 
 clean:

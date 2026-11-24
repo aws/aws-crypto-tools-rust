@@ -98,6 +98,16 @@ jobs:
               - '!mpl/test-server/**'
               - '!esdk/test-server/**'
               - '!esdk/shims/aws-esdk-cpp/test-server/**'
+            api-examples:
+              - 'prim/**'
+              - 'mpl/**'
+              - 'esdk/**'
+              - 'scripts/api-examples/**'
+              - 'scripts/smithy-conformance/rust_surface.py'
+              - '!prim/test-server/**'
+              - '!mpl/test-server/**'
+              - '!esdk/test-server/**'
+              - '!esdk/shims/aws-esdk-cpp/test-server/**'
             # Any change to CI (workflows, actions, CI config) runs all of CI.
             ci:
               - '.github/**'
@@ -179,6 +189,9 @@ jobs:
                 {"when": "esdk", "crate": "esdk", "product": "esdk", "server": "esdk/test-server:esdk-test-server"},
                 {"when": "mpl", "crate": "mpl", "product": "mpl", "server": "mpl/test-server:mpl-test-server"},
                 {"when": "prim", "crate": "prim", "product": "primitives", "server": "prim/test-server:primitives-test-server"}
+              ],
+              "api-examples": [
+                {"when": "api-examples"}
               ]
             }
         run: |
@@ -335,6 +348,16 @@ jobs:
     permissions:
       contents: read
     uses: ./.github/workflows/smithy_conformance.yml
+
+  # Every public way to build a keyring, CMM or the ESDK client needs an example in the tests.
+  api-examples:
+    name: API examples
+    needs: detect
+    if: fromJSON(needs.detect.outputs.jobs)['api-examples'] != null
+    permissions:
+      contents: read
+      pull-requests: write
+    uses: ./.github/workflows/api_examples.yml
 
   test-server-builds:
     name: TestServer builds
@@ -571,6 +594,7 @@ jobs:
       - cpp-coverage
       - duvet
       - smithy-conformance
+      - api-examples
       - test-server-builds
       - esdk-test-server
       - mpl-test-server

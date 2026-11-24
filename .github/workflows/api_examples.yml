@@ -1,0 +1,126 @@
+# Reusable workflow: list every way to build each keyring, CMM and the ESDK client,
+# then check that the api_examples tests in mpl and esdk have an example of each.
+# The commons workflow uploads api-examples.json for the API examples dashboard.
+name: API examples
+
+on:
+  workflow_call:
+
+jobs:
+  discover:
+    name: Run the examples and list the public API
+    runs-on: codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: ./.github/actions/setup-rust
+        with:
+          workspaces: |
+            mpl
+            esdk
+
+      # The dashboard links to this run as proof that the snippets compile and pass,
+      # so the surfaces are only uploaded after these tests pass.
+      - name: Run the MPL API examples
+        working-directory: mpl
+        run: cargo test --test api_examples
+
+      - name: Run the ESDK API examples
+        working-directory: esdk
+        run: cargo test --test api_examples
+
+      # rustdoc JSON is a nightly-only output.
+      - name: Install nightly Rust
+        run: rustup toolchain install nightly --profile minimal
+
+      - name: List the public API
+        run: python3 scripts/api-examples/surface.py "$RUNNER_TEMP/surface"
+
+      # combos.py writes tests/api_example_combos.rs: one test for each call that the
+      # API examples page can make from these examples. Its results go next to surface.json.
+      - name: Check out the combos generator
+        uses: actions/checkout@v6
+        with:
+          repository: aws/aws-crypto-tools-commons
+          ref: lucmcdon/api-examples
+          path: .api-examples-commons
+          sparse-checkout: api-examples
+          persist-credentials: false
+
+      - name: Build and run every MPL call
+        working-directory: mpl
+        env:
+          OUT: ${{ runner.temp }}/surface/mpl
+        run: |
+          set -o pipefail
+          python3 ../.api-examples-commons/api-examples/combos.py generate --surface "$OUT/surface.json" \
+            --src tests/api_examples --template tests/api_examples/combos.template \
+            --out tests/api_example_combos.rs --manifest "$OUT/combos.json"
+          cargo test --test api_example_combos 2>&1 | tee "$RUNNER_TEMP/mpl-combos.log"
+          python3 ../.api-examples-commons/api-examples/combos.py record --manifest "$OUT/combos.json" \
+            --libtest "$RUNNER_TEMP/mpl-combos.log"
+
+      - name: Build and run every ESDK call
+        working-directory: esdk
+        env:
+          OUT: ${{ runner.temp }}/surface/esdk
+        run: |
+          set -o pipefail
+          python3 ../.api-examples-commons/api-examples/combos.py generate --surface "$OUT/surface.json" \
+            --src tests/api_examples --template tests/api_examples/combos.template \
+            --out tests/api_example_combos.rs --manifest "$OUT/combos.json"
+          cargo test --test api_example_combos 2>&1 | tee "$RUNNER_TEMP/esdk-combos.log"
+          python3 ../.api-examples-commons/api-examples/combos.py record --manifest "$OUT/combos.json" \
+            --libtest "$RUNNER_TEMP/esdk-combos.log"
+
+      - name: Upload the MPL surface
+        uses: actions/upload-artifact@v7
+        with:
+          name: rust-api-surface-mpl
+          path: |
+            ${{ runner.temp }}/surface/mpl/surface.json
+            ${{ runner.temp }}/surface/mpl/combos.json
+          if-no-files-found: error
+
+      - name: Upload the ESDK surface
+        uses: actions/upload-artifact@v7
+        with:
+          name: rust-api-surface-esdk
+          path: |
+            ${{ runner.temp }}/surface/esdk/surface.json
+            ${{ runner.temp }}/surface/esdk/combos.json
+          if-no-files-found: error
+
+  examples:
+    name: Examples (${{ matrix.library }})
+    needs: discover
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - library: mpl
+            src: mpl/tests/api_examples
+          - library: esdk
+            src: esdk/tests/api_examples
+    permissions:
+      contents: read
+      # The commons workflow keeps one comment on the PR that links to the playground.
+      pull-requests: write
+    uses: aws/aws-crypto-tools-commons/.github/workflows/api-examples.yml@lucmcdon/api-examples
+    with:
+      library: ${{ matrix.library }}
+      language: rust
+      surface-artifact: rust-api-surface-${{ matrix.library }}
+      surface-path: surface.json
+      src: ${{ matrix.src }}
+      template: ${{ matrix.src }}/combos.template
+      commons-ref: lucmcdon/api-examples
+      runner: codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}
