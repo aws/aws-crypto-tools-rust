@@ -18,9 +18,8 @@ pub enum ServerError {
 }
 
 /// The members of `ESDKClientError`.
-/// The shared tests compare everything but `message` when the error checks
-/// in `feature-config.json` turn them on.
-/// The formats are in `ErrorFields` in the commons repository's test-server-common/tests-support.
+/// When `feature-config.json` turns the error checks on, the shared tests compare every member but `message`.
+/// `ErrorFields` in commons' test-server-common/tests-support defines the formats.
 #[derive(Debug, Clone, Default)]
 pub struct Details {
     pub message: String,
@@ -81,8 +80,7 @@ impl ServerError {
         }
     }
 
-    /// Serialize to the rpcv2Cbor error body: a CBOR map of `__type`, `message`,
-    /// and each `ESDKClientError` member that has a value.
+    /// Serialize to the rpcv2Cbor error body: a CBOR map of `__type`, `message` and each member that has a value.
     pub fn to_cbor(&self) -> Vec<u8> {
         let text = |s: &str| Value::Text(s.to_owned());
         let mut map = vec![
@@ -131,8 +129,7 @@ fn kind(e: &Error) -> &'static str {
         Error::Serialization(_) => "Serialization",
         Error::Io(_) => "Io",
         Error::Internal(_) => "Internal",
-        // A variant added after this server was written.
-        // No expected kind is named "Unknown", so a test that checks the kind fails.
+        // No test expects "Unknown", so a kind check on a new variant fails until it is listed here.
         _ => "Unknown",
     }
 }

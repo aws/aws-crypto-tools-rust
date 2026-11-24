@@ -8,7 +8,7 @@ use aws_crypto_mpl::error::{ConflictReason, Resource};
 use ciborium::value::Value;
 
 /// A modeled TestServer error.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ServerError {
     /// Framework-side failure (bad request, unknown operation, unknown ID, etc.).
     Generic(String),
@@ -17,9 +17,8 @@ pub enum ServerError {
 }
 
 /// The members of `MPLClientError`.
-/// The shared tests compare everything but `message` when the error checks
-/// in `feature-config.json` turn them on.
-/// The formats are in `ErrorFields` in the commons repository's test-server-common/tests-support.
+/// When `feature-config.json` turns the error checks on, the shared tests compare every member but `message`.
+/// `ErrorFields` in commons' test-server-common/tests-support defines the formats.
 #[derive(Debug, Clone, Default)]
 pub struct Details {
     pub message: String,
@@ -92,9 +91,7 @@ impl ServerError {
         }
     }
 
-    /// Serialize to the rpcv2Cbor error body: a CBOR map of `__type`, `message`,
-    /// each `MPLClientError` member that has a value, and `collectedErrors`
-    /// when the MPL collected any.
+    /// Serialize to the rpcv2Cbor error body: a CBOR map of `__type`, `message` and each member that has a value.
     pub fn to_cbor(&self) -> Vec<u8> {
         let text = |s: &str| Value::Text(s.to_owned());
         let mut map = vec![
@@ -131,7 +128,6 @@ impl ServerError {
             }
         }
         let mut buf = Vec::new();
-        // Serializing a hand-built Value to a Vec never fails.
         ciborium::into_writer(&Value::Map(map), &mut buf).expect("CBOR error encoding");
         buf
     }
@@ -152,8 +148,7 @@ fn kind(e: &Error) -> &'static str {
         Error::Service(_) => "Service",
         Error::Dispatch(_) => "Dispatch",
         Error::Internal(_) => "Internal",
-        // A variant added after this server was written.
-        // No expected kind is named "Unknown", so a test that checks the kind fails.
+        // No test expects "Unknown", so a kind check on a new variant fails until it is listed here.
         _ => "Unknown",
     }
 }

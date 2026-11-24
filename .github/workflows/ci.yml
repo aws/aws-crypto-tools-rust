@@ -292,7 +292,7 @@ jobs:
   # Coverage is measured against the PR's base branch, so it only runs on PRs.
   coverage:
     name: Patch coverage (${{ matrix.project }})
-    # The MPL TestServer's line coverage of the Rust server counts toward the mpl gate.
+    # The MPL TestServer's coverage of the Rust MPL counts toward the mpl check.
     # always(): run even when that job is skipped or fails.
     needs: [detect, mpl-test-server]
     if: always() && github.event_name == 'pull_request' && fromJSON(needs.detect.outputs.jobs)['coverage'] != null

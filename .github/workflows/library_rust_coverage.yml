@@ -104,7 +104,7 @@ jobs:
           path: ${{ runner.temp }}/local-coverage/${{ inputs.project }}.lcov
           if-no-files-found: error
 
-      # The cross-language TestServer runs this project's code too, so its coverage counts toward the gates.
+      # The cross-language TestServer runs this project's code too, so its coverage counts.
       # Its lcov paths are already relative to the repository root.
       - name: Download the TestServer's line coverage
         if: inputs.test-server-report != ''
@@ -114,8 +114,8 @@ jobs:
           name: ${{ inputs.test-server-report }}
           path: ${{ runner.temp }}/test-server-report
 
-      # Both gates count a line or branch as covered when any report covers it.
-      # The TestServer report also measures the test servers' own code, which the gates leave out.
+      # Both checks count a line or branch as covered when any report covers it.
+      # The TestServer report also measures the test servers' own code, which both checks exclude.
       - name: List the coverage reports
         run: |
           set -euo pipefail
@@ -129,7 +129,7 @@ jobs:
       - name: Enforce 100% patch coverage
         run: diff-cover $COVERAGE_REPORTS --exclude '*/test-server/*' '*/test-server-control/*' --compare-branch 'origin/${{ github.base_ref }}' --fail-under 100
 
-      - name: Check out the branch coverage gate
+      - name: Check out the commons branch coverage tool
         uses: actions/checkout@v6
         with:
           repository: aws/aws-crypto-tools-commons
