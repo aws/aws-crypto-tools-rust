@@ -1,0 +1,4 @@
+/target
+# Resolve dependencies fresh on each run so the harness mirrors an external
+# consumer of the published crate rather than pinning the in-repo path deps.
+Cargo.lock
