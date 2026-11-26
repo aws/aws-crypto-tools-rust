@@ -9,6 +9,9 @@ pattern = "./src/**/*.rs"
 pattern = "./build/test-server-duvet/*.java"
 type = "test"
 
+[[specification]]
+source = "spec/framework/aws-kms/aws-kms-keyring.md"
+
 [report.html]
 enabled = true
 

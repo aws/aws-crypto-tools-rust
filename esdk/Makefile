@@ -17,7 +17,7 @@ LOCAL_ONLY ?=
 # Cargo discovers examples at examples/NAME.rs and examples/NAME/main.rs; match both.
 EXAMPLES := $(basename $(notdir $(wildcard examples/*.rs))) \
             $(notdir $(patsubst %/main.rs,%,$(wildcard examples/*/main.rs)))
-CREDS_EXAMPLES := branch_key_id_supplier handling_errors hierarchical_keyring per_request_credentials rotate_branch_key shared_storm_tracking_cache
+CREDS_EXAMPLES := aws_kms_keyring branch_key_id_supplier handling_errors hierarchical_keyring per_request_credentials rotate_branch_key shared_storm_tracking_cache
 ifeq ($(LOCAL_ONLY),)
 RUN_EXAMPLES := $(EXAMPLES)
 else
