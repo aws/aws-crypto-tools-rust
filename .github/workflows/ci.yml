@@ -749,12 +749,9 @@ jobs:
         env:
           PR: ${{ github.repository }}#${{ github.event.pull_request.number }}
           PR_FINDINGS_CACHE: ${{ runner.temp }}/pr-findings-cache
-        # This demo's links open the preview dashboard that the preview command serves on your machine,
-        # because aws.github.io has no PR Review tab until commons #96 and #97 merge.
         run: >-
           python3 commons/test-server-common/tools/pr_findings.py build "$PR" --run "$GITHUB_RUN_ID"
           --exclude '*/test-server/*' --exclude '*/test-server-control/*' --fuzz-count 20
-          --dashboard 'http://localhost:8765/?ref=lucmcdon/api-examples'
           --out "$RUNNER_TEMP/findings.json" --summary "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v7
