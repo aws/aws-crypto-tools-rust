@@ -655,7 +655,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: aws/aws-crypto-tools-commons
-          ref: lucmcdon/api-examples
+          ref: lucmcdon/test-server-infra
           path: commons
           persist-credentials: false
 
@@ -739,7 +739,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: aws/aws-crypto-tools-commons
-          ref: lucmcdon/pr-findings
+          ref: lucmcdon/test-server-infra
           path: commons
           sparse-checkout: test-server-common/tools
           persist-credentials: false
