@@ -193,3 +193,6 @@ fluent_keyring!(
     super::RawAesKeyring,
     crate::aws_kms::hierarchical_keyring::HierarchicalKeyring
 );
+
+#[cfg(feature = "kms")]
+fluent_keyring!(crate::aws_kms::aws_kms_keyring::AwsKmsKeyring);

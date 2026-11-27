@@ -3,13 +3,13 @@
     "hierarchical",
     "raw-aes",
     "default-cmm-reproduced-encryption-context",
-    "streaming"
+    "streaming",
+    "aws-kms"
   ],
   "unsupportedFeatures": [
     "raw-rsa",
     "raw-ecdh",
     "multi",
-    "aws-kms",
     "aws-kms-multi",
     "aws-kms-discovery",
     "aws-kms-mrk",

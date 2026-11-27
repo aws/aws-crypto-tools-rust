@@ -4,7 +4,8 @@
 //! Translate the modeled CMM/Keyring configuration into an `aws-esdk`
 //! [`SharedKeyring`](aws_esdk::keyring::SharedKeyring).
 //!
-//! Both keyrings are built from the MPL ([`aws_crypto_mpl`]):
+//! The keyrings are built from the MPL ([`aws_crypto_mpl`]):
+//! - AWS KMS via [`AwsKmsKeyring`].
 //! - Raw AES via [`RawAesKeyring`].
 //! - AWS KMS Hierarchical via [`HierarchicalKeyring`] over the key store [`DynamoDbKeyStore::builder`](aws_crypto_mpl::key_store::DynamoDbKeyStore::builder) builds.
 //!
@@ -15,11 +16,13 @@ use std::time::Duration;
 
 use crate::error::ServerError;
 use crate::model::{
-    AwsKmsHierarchicalKeyringConfig, CryptographicMaterialsManager, Keyring, RawAesKeyringConfig,
+    AwsKmsHierarchicalKeyringConfig, AwsKmsKeyringConfig, CryptographicMaterialsManager, Keyring,
+    RawAesKeyringConfig,
 };
 use aws_crypto_mpl::key_store::types::KmsConfiguration;
 use aws_crypto_mpl::key_store::DynamoDbKeyStore;
-use aws_crypto_mpl::keyring::{HierarchicalKeyring, RawAesKeyring};
+use aws_crypto_mpl::keyring::{AwsKmsKeyring, HierarchicalKeyring, RawAesKeyring};
+use aws_crypto_mpl::{aws_config, aws_sdk_kms};
 use aws_esdk::keyring::SharedKeyring;
 
 /// Resolve a CMM configuration to the keyring the ESDK client will use.
@@ -71,6 +74,9 @@ pub async fn keyring_for_config(keyring: &Keyring) -> Result<SharedKeyring, Serv
         )));
     }
 
+    if let Some(aws_kms) = &keyring.aws_kms {
+        return build_aws_kms(aws_kms).await;
+    }
     if let Some(raw_aes) = &keyring.raw_aes {
         return build_raw_aes(raw_aes).await;
     }
@@ -78,7 +84,7 @@ pub async fn keyring_for_config(keyring: &Keyring) -> Result<SharedKeyring, Serv
         return build_hierarchical(hierarchical).await;
     }
     Err(ServerError::generic(
-        "only RawAes and AwsKmsHierarchical keyrings are wired in the Rust language server",
+        "only AwsKms, RawAes and AwsKmsHierarchical keyrings are wired in the Rust language server",
     ))
 }
 
@@ -100,6 +106,40 @@ async fn build_raw_aes(config: &RawAesKeyringConfig) -> Result<SharedKeyring, Se
         .wrapping_key(config.wrapping_key.clone())
         .wrapping_alg(wrapping_alg)
         .build()
+        .map_err(|e| ServerError::generic(e.to_string()))?;
+    Ok(SharedKeyring::new(keyring))
+}
+
+/// The region of a KMS key ARN, if it is one.
+fn region_of(key_id: &str) -> Option<String> {
+    let parts: Vec<&str> = key_id.split(':').collect();
+    match parts.as_slice() {
+        ["arn", _, "kms", region, _, _] if !region.is_empty() => Some((*region).to_owned()),
+        _ => None,
+    }
+}
+
+/// The ambient AWS configuration, in the region of `key_id` when it is a KMS key ARN.
+async fn sdk_config_for(key_id: &str) -> aws_config::SdkConfig {
+    // AWS KMS rejects an ARN whose region differs from the client's.
+    let mut loader = aws_config::defaults(aws_config::BehaviorVersion::latest());
+    if let Some(region) = region_of(key_id) {
+        loader = loader.region(aws_config::Region::new(region));
+    }
+    loader.load().await
+}
+
+async fn kms_client_for(key_id: &str) -> aws_sdk_kms::Client {
+    aws_sdk_kms::Client::new(&sdk_config_for(key_id).await)
+}
+
+async fn build_aws_kms(config: &AwsKmsKeyringConfig) -> Result<SharedKeyring, ServerError> {
+    let keyring = AwsKmsKeyring::builder()
+        .kms_key_id(config.kms_key_id.clone())
+        .kms_client(kms_client_for(&config.kms_key_id).await)
+        .set_grant_tokens(config.grant_tokens.clone())
+        .build()
+        .await
         .map_err(|e| ServerError::generic(e.to_string()))?;
     Ok(SharedKeyring::new(keyring))
 }
