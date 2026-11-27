@@ -167,9 +167,11 @@ coverage:
 # Union of coverage from Rust tests and C++ unit/integ tests.
 # Requires creds. COV_CPP_REPORT picks the report format (see coverage-cpp-html).
 COV_CPP_REPORT ?= report
+# COV_ENV_ARGS adds cargo llvm-cov build options, such as --branch.
+COV_ENV_ARGS ?=
 coverage-cpp:
 	cargo llvm-cov clean --workspace
-	eval "$$(cargo llvm-cov show-env --export-prefix)" && \
+	eval "$$(cargo llvm-cov show-env --export-prefix $(COV_ENV_ARGS))" && \
 	cargo build && \
 	cargo test --lib && \
 	PROFILE_DIR="$${CARGO_TARGET_DIR:-target}/debug" && \

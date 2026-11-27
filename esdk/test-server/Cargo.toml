@@ -16,6 +16,7 @@ aws-esdk = { path = ".." }
 # The MPL aws-esdk is built on, for the keyrings and key store the server
 # constructs.
 aws-crypto-mpl = { path = "../../mpl" }
+test-server-control = { path = "../../test-server-control", features = ["server"] }
 
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal"] }
 axum = "0.8"
@@ -26,3 +27,6 @@ uuid = { version = "1", features = ["v4"] }
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(testserver_coverage)", "cfg(testserver_mutants)"] }

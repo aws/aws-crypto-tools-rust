@@ -1,0 +1,16 @@
+'$schema' = "https://awslabs.github.io/duvet/config/v0.4.0.json"
+
+[[source]]
+pattern = "./src/**/*.rs"
+
+# The shared test-server Tests that run for Rust.
+# CI downloads this file; locally, `make -C test-server test-server-duvet` writes it.
+[[source]]
+pattern = "./build/test-server-duvet/*.java"
+type = "test"
+
+[report.html]
+enabled = true
+
+[report.snapshot]
+enabled = false

@@ -1,4 +1,5 @@
-# Assert that every line of executable code added or changed in the PR is covered by tests.
+# Assert that every line of executable code added or changed in the PR is covered by tests,
+# and that tests take every branch on those lines.
 # There is no minimum bar for the project's total coverage.
 name: Library C++ Shim Coverage
 
@@ -22,9 +23,18 @@ jobs:
       - name: Install CMake
         run: sudo apt-get update && sudo apt-get install -y cmake
 
+      # cargo llvm-cov --branch needs a nightly compiler.
+      - name: Install the nightly Rust toolchain for branch coverage
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly-2026-10-26
+          components: llvm-tools-preview
+
+      - name: Use the nightly toolchain for every cargo command below
+        run: echo "RUSTUP_TOOLCHAIN=nightly-2026-10-26" >> "$GITHUB_ENV"
+
       - uses: ./.github/actions/setup-rust
         with:
-          components: llvm-tools-preview
           workspaces: esdk/shims/aws-esdk-cpp
 
       # The C++ side must be compiled by the clang whose LLVM major matches
@@ -55,7 +65,7 @@ jobs:
           role-session-name: CppShimCoverage
           special-characters-workaround: "true"
 
-      - name: Generate line coverage
+      - name: Generate line and branch coverage
         working-directory: esdk/shims/aws-esdk-cpp
         env:
           # Drop debug info to save RAM
@@ -65,7 +75,7 @@ jobs:
           ESDK_TEST_LOGICAL_KEYSTORE: KeyStoreDdbTable
           ESDK_TEST_BRANCH_KEY_ID: 3ce7656b-e166-40f3-8c9b-a920ce6596cd
           ESDK_TEST_REGION: us-west-2
-        run: make coverage-cpp COV_CPP_REPORT="report --lcov --output-path lcov.info"
+        run: make coverage-cpp COV_ENV_ARGS=--branch COV_CPP_REPORT="report --branch --lcov --skip-functions --output-path lcov.info"
 
       # Diff PR coverage against base branch coverage
       - name: Re-root coverage paths to the repository root
@@ -90,3 +100,14 @@ jobs:
 
       - name: Enforce 100% patch coverage
         run: diff-cover 'esdk/shims/aws-esdk-cpp/lcov.info' --compare-branch 'origin/${{ github.base_ref }}' --fail-under 100
+
+      - name: Check out the commons branch coverage tool
+        uses: actions/checkout@v6
+        with:
+          repository: aws/aws-crypto-tools-commons
+          ref: lucmcdon/test-server-infra
+          path: commons
+          sparse-checkout: test-server-common/tools
+
+      - name: Enforce 100% branch coverage of changed lines
+        run: python3 commons/test-server-common/tools/branch_gate.py --base 'origin/${{ github.base_ref }}' 'esdk/shims/aws-esdk-cpp/lcov.info'

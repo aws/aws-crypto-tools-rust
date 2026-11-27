@@ -25,5 +25,8 @@ async fn main() {
         .await
         .unwrap_or_else(|e| panic!("failed to bind {addr}: {e}"));
     eprintln!("listening at http://127.0.0.1:{port}");
-    axum::serve(listener, router).await.expect("server error");
+    axum::serve(listener, router)
+        .with_graceful_shutdown(test_server_control::shutdown_signal())
+        .await
+        .expect("server error");
 }

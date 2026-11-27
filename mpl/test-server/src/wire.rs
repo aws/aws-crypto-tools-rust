@@ -21,9 +21,32 @@ use std::sync::Arc;
 
 /// Build the router. Shared with tests so they can drive the real wire in-process.
 pub fn app(state: Arc<AppState>) -> Router {
-    Router::new()
-        .route("/service/:service/operation/:operation", post(dispatch))
-        .with_state(state)
+    let router = Router::new().route("/service/:service/operation/:operation", post(dispatch));
+    #[cfg(testserver_coverage)]
+    let router = router.route("/control/coverage", post(dump_coverage));
+    #[cfg(testserver_mutants)]
+    let router = router.route("/control/mutant", post(set_mutant));
+    router.with_state(state)
+}
+
+/// Writes the coverage of the test that just ran to the file named in the body.
+#[cfg(testserver_coverage)]
+async fn dump_coverage(path: String) -> Result<(), (axum::http::StatusCode, String)> {
+    test_server_control::dump_coverage(&path)
+        .map_err(|message| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, message))
+}
+
+/// Turns on the mutant whose id is the body, for mutation testing.
+#[cfg(testserver_mutants)]
+async fn set_mutant(id: String) -> Result<(), (axum::http::StatusCode, String)> {
+    let parsed = id.trim().parse().map_err(|e| {
+        (
+            axum::http::StatusCode::BAD_REQUEST,
+            format!("bad mutant id {id:?}: {e}"),
+        )
+    })?;
+    test_server_control::mutant::set(parsed);
+    Ok(())
 }
 
 async fn dispatch(
