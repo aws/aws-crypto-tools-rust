@@ -12,7 +12,7 @@ path = "src/main.rs"
 
 [dependencies]
 aws-crypto-mpl = { path = ".." }
-test-server-control = { path = "../../test-server-control" }
+test-server-control = { path = "../../test-server-control", features = ["server"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal"] }
 axum = "0.7"
 futures-util = { version = "0.3", default-features = false, features = ["std"] }

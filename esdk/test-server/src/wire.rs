@@ -35,26 +35,22 @@ pub fn app(state: Arc<AppState>) -> Router {
 
 /// Writes the coverage of the test that just ran to the file named in the body.
 #[cfg(testserver_coverage)]
-async fn dump_coverage(path: String) -> (axum::http::StatusCode, String) {
-    match test_server_control::dump_coverage(&path) {
-        Ok(()) => (axum::http::StatusCode::OK, String::new()),
-        Err(message) => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, message),
-    }
+async fn dump_coverage(path: String) -> Result<(), (axum::http::StatusCode, String)> {
+    test_server_control::dump_coverage(&path)
+        .map_err(|message| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, message))
 }
 
 /// Turns on the mutant whose id is the body, for mutation testing.
 #[cfg(testserver_mutants)]
-async fn set_mutant(id: String) -> (axum::http::StatusCode, String) {
-    match id.trim().parse() {
-        Ok(id) => {
-            test_server_control::mutant::set(id);
-            (axum::http::StatusCode::OK, String::new())
-        }
-        Err(e) => (
+async fn set_mutant(id: String) -> Result<(), (axum::http::StatusCode, String)> {
+    let parsed = id.trim().parse().map_err(|e| {
+        (
             axum::http::StatusCode::BAD_REQUEST,
             format!("bad mutant id {id:?}: {e}"),
-        ),
-    }
+        )
+    })?;
+    test_server_control::mutant::set(parsed);
+    Ok(())
 }
 
 async fn dispatch(

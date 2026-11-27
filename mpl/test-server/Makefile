@@ -6,9 +6,7 @@ BIN      := target/release/mpl-test-server
 PID_FILE := .server.pid
 LOG_FILE := .server.log
 
-# Commons coordinates for `make test-server-duvet`. They live in
-# server-config.json next to this Makefile; COMMONS_BRANCH overrides the
-# configured branch at invocation time.
+# `make test-server-duvet` clones commons from server-config.json; COMMONS_BRANCH=<b> picks another branch.
 MAKEFILE_DIR := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 REPO_ROOT    := $(abspath $(MAKEFILE_DIR)/../..)
 COMMONS_CONFIGURATION := $(MAKEFILE_DIR)/server-config.json
@@ -51,10 +49,11 @@ stop-server: ## Stop the background server and free PORT
 test: ## Run the server's tests
 	cargo test
 
-# A dry run of the commons Tests for Rust (no servers, a few seconds once
-# built), then copy the duvet test annotations of the Tests that run for Rust
-# into ../build/test-server-duvet/, which ../.duvet/config.toml reads. Needs a
-# JDK 21+ and network access to clone commons; no AWS credentials.
+# The local version of CI's mpl-test-server-duvet job.
+# It dry-runs the commons Tests for Rust, which starts no servers.
+# Then it writes the duvet test annotations of the Tests that ran into ../build/test-server-duvet/,
+# where ../.duvet/config.toml reads them.
+# Needs a JDK 21+ and network access to clone commons, but no AWS credentials.
 DUVET_OUT := $(abspath $(MAKEFILE_DIR)/../build/test-server-duvet)
 test-server-duvet: ## Write the shared Tests' duvet annotations that run for Rust; COMMONS_BRANCH=<b> overrides
 	@set -eo pipefail; \

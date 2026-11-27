@@ -101,11 +101,11 @@ jobs:
       - name: Enforce 100% patch coverage
         run: diff-cover 'esdk/shims/aws-esdk-cpp/lcov.info' --compare-branch 'origin/${{ github.base_ref }}' --fail-under 100
 
-      - name: Check out the branch coverage gate
+      - name: Check out the commons branch coverage tool
         uses: actions/checkout@v6
         with:
           repository: aws/aws-crypto-tools-commons
-          ref: lucmcdon/test-server-branch-coverage
+          ref: lucmcdon/test-server-infra
           path: commons
           sparse-checkout: test-server-common/tools
 

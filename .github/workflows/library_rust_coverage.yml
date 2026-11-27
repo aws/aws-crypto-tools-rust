@@ -90,8 +90,8 @@ jobs:
           done < <(sed -n 's|^SF:||p' '${{ inputs.project }}/lcov.info' | sort -u)
           exit "$missing"
 
-      # The test server dashboard merges this report, line by line, with the
-      # coverage the cross-language test server gives the same commit.
+      # The test server dashboard merges this report, line by line,
+      # with the coverage that the cross-language test server gives the same commit.
       - name: Write the line and branch coverage report
         run: |
           mkdir -p "$RUNNER_TEMP/local-coverage"
@@ -104,8 +104,7 @@ jobs:
           path: ${{ runner.temp }}/local-coverage/${{ inputs.project }}.lcov
           if-no-files-found: error
 
-      # The cross-language TestServer runs this project's code too, so its line
-      # coverage of the Rust server counts toward the gate.
+      # The cross-language TestServer runs this project's code too, so its coverage counts.
       # Its lcov paths are already relative to the repository root.
       - name: Download the TestServer's line coverage
         if: inputs.test-server-report != ''
@@ -115,36 +114,31 @@ jobs:
           name: ${{ inputs.test-server-report }}
           path: ${{ runner.temp }}/test-server-report
 
-      # diff-cover counts a line as covered when any report covers it.
-      # The TestServer report also measures the test servers' own source,
-      # which is not library code (ci.yml's library filters skip it too),
-      # so the gate leaves test-server files out.
-      - name: Enforce 100% patch coverage
+      # Both checks count a line or branch as covered when any report covers it.
+      # The TestServer report also measures the test servers' own code, which both checks exclude.
+      - name: List the coverage reports
         run: |
           set -euo pipefail
-          reports=('${{ inputs.project }}/lcov.info')
+          reports='${{ inputs.project }}/lcov.info'
           if [ -d "$RUNNER_TEMP/test-server-report" ]; then
-            while IFS= read -r f; do reports+=("$f"); done < <(find "$RUNNER_TEMP/test-server-report" -path '*/coverage/rust.lcov')
+            reports+=" $(find "$RUNNER_TEMP/test-server-report" -path '*/coverage/rust.lcov' | tr '\n' ' ')"
           fi
-          echo "Coverage reports: ${reports[*]}"
-          diff-cover "${reports[@]}" --exclude '*/test-server/*' '*/test-server-control/*' --compare-branch 'origin/${{ github.base_ref }}' --fail-under 100
+          echo "Coverage reports: $reports"
+          echo "COVERAGE_REPORTS=$reports" >> "$GITHUB_ENV"
 
-      - name: Check out the branch coverage gate
+      - name: Enforce 100% patch coverage
+        run: diff-cover $COVERAGE_REPORTS --exclude '*/test-server/*' '*/test-server-control/*' --compare-branch 'origin/${{ github.base_ref }}' --fail-under 100
+
+      - name: Check out the commons branch coverage tool
         uses: actions/checkout@v6
         with:
           repository: aws/aws-crypto-tools-commons
-          ref: lucmcdon/test-server-branch-coverage
+          ref: lucmcdon/test-server-infra
           path: commons
           sparse-checkout: test-server-common/tools
 
-      # diff-cover does not check branches. branch_gate.py counts a branch as
-      # taken when any report took it, like diff-cover does for lines.
+      # diff-cover does not check branches.
       - name: Enforce 100% branch coverage of changed lines
-        run: |
-          set -euo pipefail
-          reports=('${{ inputs.project }}/lcov.info')
-          if [ -d "$RUNNER_TEMP/test-server-report" ]; then
-            while IFS= read -r f; do reports+=("$f"); done < <(find "$RUNNER_TEMP/test-server-report" -path '*/coverage/rust.lcov')
-          fi
-          python3 commons/test-server-common/tools/branch_gate.py --base 'origin/${{ github.base_ref }}' \
-            --exclude '*/test-server/*' --exclude '*/test-server-control/*' "${reports[@]}"
+        run: >-
+          python3 commons/test-server-common/tools/branch_gate.py --base 'origin/${{ github.base_ref }}'
+          --exclude '*/test-server/*' --exclude '*/test-server-control/*' $COVERAGE_REPORTS

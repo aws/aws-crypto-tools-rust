@@ -6,7 +6,12 @@ license = "Apache-2.0"
 publish = false
 description = "Coverage and mutant controls the commons test runner sends to the Rust test servers."
 
+[features]
+# The mutation tool adds this crate to library crates, which need none of the server code.
+server = ["dep:tokio"]
+
 [dependencies]
+tokio = { version = "1", features = ["macros", "signal"], optional = true }
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ["cfg(testserver_coverage)", "cfg(testserver_mutants)"] }

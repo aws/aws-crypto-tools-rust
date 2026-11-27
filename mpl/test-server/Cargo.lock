@@ -1745,6 +1745,9 @@ dependencies = [
 [[package]]
 name = "test-server-control"
 version = "0.1.0"
+dependencies = [
+ "tokio",
+]
 
 [[package]]
 name = "time"

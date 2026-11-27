@@ -9,24 +9,19 @@
 //! Id 0 means no mutant.
 
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::LazyLock;
 
-const NOT_READ: u32 = u32::MAX;
-
-static ON: AtomicU32 = AtomicU32::new(NOT_READ);
+// A crate's own tests run one process per mutant and name it in TESTSERVER_MUTANT.
+// A test server starts with none on and gets each one from `set`.
+// A malformed value turns no mutant on, so every mutant survives and the run fails.
+static ON: LazyLock<AtomicU32> = LazyLock::new(|| {
+    let from_env = std::env::var("TESTSERVER_MUTANT").ok();
+    AtomicU32::new(from_env.and_then(|value| value.parse().ok()).unwrap_or(0))
+});
 
 /// Whether the mutant with this id is on.
 #[inline]
 pub fn is_on(id: u32) -> bool {
-    let on = ON.load(Ordering::Relaxed);
-    if on != NOT_READ {
-        return on == id;
-    }
-    // A crate's own tests run one process per mutant and name it in TESTSERVER_MUTANT.
-    let from_env = std::env::var("TESTSERVER_MUTANT")
-        .ok()
-        .and_then(|value| value.parse().ok())
-        .unwrap_or(0);
-    let _ = ON.compare_exchange(NOT_READ, from_env, Ordering::Relaxed, Ordering::Relaxed);
     ON.load(Ordering::Relaxed) == id
 }
 
