@@ -7,6 +7,7 @@
 //! The keyrings are built from the MPL ([`aws_crypto_mpl`]):
 //! - AWS KMS via [`AwsKmsKeyring`].
 //! - Raw AES via [`RawAesKeyring`].
+//! - Multi via [`MultiKeyring`].
 //! - AWS KMS Hierarchical via [`HierarchicalKeyring`] over the key store [`DynamoDbKeyStore::builder`](aws_crypto_mpl::key_store::DynamoDbKeyStore::builder) builds.
 //!
 //! Enforces the "exactly one variant member set" invariant that the Smithy
@@ -17,11 +18,11 @@ use std::time::Duration;
 use crate::error::ServerError;
 use crate::model::{
     AwsKmsHierarchicalKeyringConfig, AwsKmsKeyringConfig, CryptographicMaterialsManager, Keyring,
-    RawAesKeyringConfig,
+    MultiKeyringConfig, RawAesKeyringConfig,
 };
 use aws_crypto_mpl::key_store::types::KmsConfiguration;
 use aws_crypto_mpl::key_store::DynamoDbKeyStore;
-use aws_crypto_mpl::keyring::{AwsKmsKeyring, HierarchicalKeyring, RawAesKeyring};
+use aws_crypto_mpl::keyring::{AwsKmsKeyring, HierarchicalKeyring, MultiKeyring, RawAesKeyring};
 use aws_crypto_mpl::{aws_config, aws_sdk_kms};
 use aws_esdk::keyring::SharedKeyring;
 
@@ -83,8 +84,11 @@ pub async fn keyring_for_config(keyring: &Keyring) -> Result<SharedKeyring, Serv
     if let Some(hierarchical) = &keyring.aws_kms_hierarchical {
         return build_hierarchical(hierarchical).await;
     }
+    if let Some(multi) = &keyring.multi {
+        return build_multi(multi).await;
+    }
     Err(ServerError::generic(
-        "only AwsKms, RawAes and AwsKmsHierarchical keyrings are wired in the Rust language server",
+        "only AwsKms, RawAes, AwsKmsHierarchical and Multi keyrings are wired in the Rust language server",
     ))
 }
 
@@ -172,6 +176,24 @@ async fn build_hierarchical(
         .branch_key_id(config.branch_key_id.clone())
         .build()
         .await
+        .map_err(|e| ServerError::generic(e.to_string()))?;
+    Ok(SharedKeyring::new(keyring))
+}
+
+/// A multi-keyring of the modeled generator and child keyrings.
+async fn build_multi(config: &MultiKeyringConfig) -> Result<SharedKeyring, ServerError> {
+    let generator = match &config.generator {
+        Some(generator) => Some(Box::pin(keyring_for_config(generator)).await?),
+        None => None,
+    };
+    let mut child_keyrings = Vec::with_capacity(config.child_keyrings.len());
+    for child in &config.child_keyrings {
+        child_keyrings.push(Box::pin(keyring_for_config(child)).await?);
+    }
+    let keyring = MultiKeyring::builder()
+        .set_generator(generator)
+        .set_child_keyrings(Some(child_keyrings))
+        .build()
         .map_err(|e| ServerError::generic(e.to_string()))?;
     Ok(SharedKeyring::new(keyring))
 }
